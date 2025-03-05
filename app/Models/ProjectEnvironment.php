@@ -29,6 +29,11 @@ class ProjectEnvironment extends Model
 
     public function deployments()
     {
-        return $this->hasMany(Deployment::class);
+        return $this->hasMany(Deployment::class)->orderByDesc('created_at');
+    }
+
+    public function services()
+    {
+        return $this->hasMany(Service::class);
     }
 }

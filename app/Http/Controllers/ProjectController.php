@@ -62,9 +62,9 @@ class ProjectController extends Controller
     /**
      * Display the specified resource.
      */
-    public function show()
+    public function show(string $team, Project $project)
     {
-        return Inertia::render('projects/show');
+        return redirect()->route('teams.projects.environments.show', [$project->team->slug, $project->slug, $project->environments->first()->id]);
     }
 
     /**

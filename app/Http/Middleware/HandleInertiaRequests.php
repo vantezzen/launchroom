@@ -40,15 +40,21 @@ class HandleInertiaRequests extends Middleware
 
         $currentTeam = $request->route('team');
         if (is_string($currentTeam)) {
-            $currentTeam = $request->user()?->teams()->where('slug', $currentTeam)->first();
+            $currentTeam = $request->user()?->teams()->where('slug', $currentTeam)->firstOrFail();
         }
         optional($currentTeam)->load('projects');
 
         $currentProject = $request->route('project');
         if (is_string($currentProject)) {
-            $currentProject = $currentTeam->projects()->where('slug', $currentProject)->first();
+            $currentProject = $currentTeam->projects()->where('slug', $currentProject)->firstOrFail();
         }
         optional($currentProject)->load(['environments', 'environments.deployments']);
+
+        $currentEnvironment = $request->route('environment');
+        if (is_string($currentEnvironment)) {
+            $currentEnvironment = $currentProject->environments()->findOrFail($currentEnvironment);
+        }
+        optional($currentEnvironment)->load(['deployments', 'services']);
 
         return [
             ...parent::share($request),
@@ -61,6 +67,7 @@ class HandleInertiaRequests extends Middleware
 
             'currentTeam' => $currentTeam,
             'currentProject' => $currentProject,
+            'currentEnvironment' => $currentEnvironment,
         ];
     }
 }

@@ -22,17 +22,28 @@ class Deployment extends Model
         return $this->belongsTo(ProjectEnvironment::class, 'project_environment_id');
     }
 
-    public function addLogSection($title, $content)
+    public function addLogSection($title, $content, $prefix = 'log')
     {
         $this->refresh();
-        $this->output .= "\n\n## $title\n\n$content";
+        $this->output .= $this->addPrefixToAllLines("## $title\n$content\n", $prefix);
         $this->save();
     }
 
-    public function addLogText($content)
+    public function addLogText($content, $prefix = 'log')
     {
         $this->refresh();
-        $this->output .= "\n\n$content";
+        $this->output .= $this->addPrefixToAllLines($content."\n", $prefix);
         $this->save();
+    }
+
+    private function addPrefixToAllLines($content, $prefix)
+    {
+        $timestamp = now()->format('Y-m-d H:i:s');
+        $fullPrefix = "[$timestamp][$prefix] ";
+
+        return collect(explode("\n", $content))
+            ->filter(fn ($line) => ! empty($line))
+            ->map(fn ($line) => $fullPrefix.$line."\n")
+            ->implode("\n");
     }
 }

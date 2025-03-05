@@ -8,10 +8,9 @@ function AppHeaderProjectSelect() {
             auth: { teams },
             currentTeam,
             currentProject,
+            currentEnvironment,
         },
     } = usePage<SharedData>();
-
-    console.log('teams', currentProject);
 
     return (
         <div className="flex items-center space-x-2">
@@ -22,7 +21,7 @@ function AppHeaderProjectSelect() {
                 }}
                 value={currentTeam?.slug}
             >
-                <SelectTrigger className="min-w-50">
+                <SelectTrigger className="w-40">
                     <SelectValue placeholder="Select a team" />
                 </SelectTrigger>
 
@@ -46,7 +45,7 @@ function AppHeaderProjectSelect() {
                 }}
                 value={currentProject?.slug}
             >
-                <SelectTrigger className="min-w-50">
+                <SelectTrigger className="w-40">
                     <SelectValue placeholder="Select a project" />
                 </SelectTrigger>
 
@@ -60,6 +59,32 @@ function AppHeaderProjectSelect() {
                     <SelectItem value="create">New Project</SelectItem>
                 </SelectContent>
             </Select>
+
+            <div className="text-zinc-500">/</div>
+
+            {/* Environment Select */}
+            {currentEnvironment && (
+                <Select
+                    onValueChange={(value) => {
+                        router.visit(`/teams/${currentTeam?.slug}/projects/${currentTeam?.slug}/environments/${value}`);
+                    }}
+                    value={currentEnvironment.id}
+                >
+                    <SelectTrigger className="w-40">
+                        <SelectValue placeholder="Select an environment" />
+                    </SelectTrigger>
+
+                    <SelectContent>
+                        {currentProject?.environments?.map((environment) => (
+                            <SelectItem key={environment.id} value={environment.id}>
+                                {environment.name}
+                            </SelectItem>
+                        ))}
+
+                        <SelectItem value="create">New environment</SelectItem>
+                    </SelectContent>
+                </Select>
+            )}
         </div>
     );
 }

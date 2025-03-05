@@ -12,6 +12,14 @@ use App\Services\GitHub;
 class DeploymentController extends Controller
 {
     /**
+     * Display a listing of the resource.
+     */
+    public function index()
+    {
+        return inertia('deployments/index');
+    }
+
+    /**
      * Trigger a new deployment.
      */
     public function store(StoreDeploymentRequest $request)
@@ -34,18 +42,22 @@ class DeploymentController extends Controller
 
         DeployJob::dispatch($deployment);
 
-        return response()->redirectTo(route('teams.projects.show', [
+        return response()->redirectTo(route('teams.projects.environments.deployments.show', [
             $team->slug,
             $project->slug,
+            $environment->id,
+            $deployment->id,
         ]));
     }
 
     /**
      * Display the specified resource.
      */
-    public function show(Deployment $Deployment)
+    public function show(string $team, string $project, string $env, Deployment $Deployment)
     {
-        //
+        return inertia('deployments/show', [
+            'deployment' => $Deployment->load('environment.project.team'),
+        ]);
     }
 
     /**

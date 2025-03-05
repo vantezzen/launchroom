@@ -15,12 +15,12 @@ export default function TeamShow() {
 
     return (
         <AppLayout>
-            <Head title={currentTeam.name} />
+            <Head title={currentTeam?.name} />
 
             <PageLayout
-                title={currentTeam.name}
+                title={currentTeam?.name}
                 actions={
-                    <Link href={`/teams/${currentTeam.slug}/projects/create`}>
+                    <Link href={`/teams/${currentTeam?.slug}/projects/create`}>
                         <Button>
                             <Plus />
                             New project
@@ -29,13 +29,13 @@ export default function TeamShow() {
                 }
             >
                 <ProjectGrid
-                    projects={currentTeam.projects || []}
+                    projects={currentTeam?.projects || []}
                     onProjectClick={(project) => {
-                        router.visit(`/teams/${currentTeam.slug}/projects/${project.slug}`);
+                        router.visit(`/teams/${currentTeam?.slug}/projects/${project.slug}`);
                     }}
                 />
 
-                {!currentTeam.projects?.length && <EmptyState title="No projects" description="Create a project to get started." />}
+                {!currentTeam?.projects?.length && <EmptyState title="No projects" description="Create a project to get started." />}
             </PageLayout>
         </AppLayout>
     );

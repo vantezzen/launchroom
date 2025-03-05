@@ -1,7 +1,7 @@
 import { Badge } from '@/components/ui/badge';
 import { Project } from '@/types';
 import { timeAgo } from '@/utils/time';
-import { GitBranch, Github } from 'lucide-react';
+import { Github } from 'lucide-react';
 
 interface ProjectGridProps {
     projects: Project[];
@@ -74,10 +74,6 @@ export function ProjectGrid({ projects, onProjectClick }: ProjectGridProps) {
                             <span>
                                 {getRepoInfo(project.repository).owner}/{getRepoInfo(project.repository).name}
                             </span>
-                        </Badge>
-                        <Badge variant="outline" className="flex items-center space-x-1">
-                            <GitBranch className="h-3 w-3" />
-                            <span>{project.branch}</span>
                         </Badge>
                     </div>
 

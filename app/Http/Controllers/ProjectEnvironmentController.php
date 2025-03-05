@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Http\Requests\StoreProjectEnvironmentRequest;
 use App\Http\Requests\UpdateProjectEnvironmentRequest;
 use App\Models\ProjectEnvironment;
+use Inertia\Inertia;
 
 class ProjectEnvironmentController extends Controller
 {
@@ -37,7 +38,7 @@ class ProjectEnvironmentController extends Controller
      */
     public function show(ProjectEnvironment $projectEnvironment)
     {
-        //
+        return Inertia::render('environments/show');
     }
 
     /**

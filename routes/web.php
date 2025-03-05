@@ -22,7 +22,15 @@ Route::middleware(['auth', 'verified'])->group(function () {
         'projects' => 'project:slug',
         'teams' => 'team:slug',
     ]);
-    Route::resource('environments', ProjectEnvironmentController::class);
+    Route::resource('teams.projects.environments', ProjectEnvironmentController::class)->parameters([
+        'projects' => 'project:slug',
+        'teams' => 'team:slug',
+    ]);
+    Route::resource('teams.projects.environments.deployments', DeploymentController::class)->parameters([
+        'projects' => 'project:slug',
+        'teams' => 'team:slug',
+    ]);
+
     Route::resource('deployments', DeploymentController::class);
 
     Route::get('dashboard', function () {

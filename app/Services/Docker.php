@@ -66,7 +66,7 @@ class Docker
 
             if ($stderr !== false) {
                 $errorOutput .= $stderr;
-                $this->deployment->addLogText($stderr);
+                $this->deployment->addLogText($stderr, 'error');
             }
 
             flush(); // Ensure real-time output is displayed/logged

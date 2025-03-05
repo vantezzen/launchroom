@@ -27,8 +27,9 @@ export interface SharedData {
     quote: { message: string; author: string };
     auth: Auth;
 
-    currentTeam: Team;
-    currentProject: Project;
+    currentTeam?: Team;
+    currentProject?: Project;
+    currentEnvironment?: Environment;
 
     [key: string]: unknown;
 }
@@ -69,6 +70,19 @@ export interface Deployment {
     updated_at: string;
 }
 
+export interface Service {
+    id: string;
+    name: string;
+    project_environment_id: string;
+
+    category: string;
+    service_type: string;
+    environment_variables: Record<string, string>;
+
+    created_at: string;
+    updated_at: string;
+}
+
 export interface Environment {
     id: string;
     name: string;
@@ -76,6 +90,9 @@ export interface Environment {
     type: 'production' | 'staging' | 'testing' | 'development';
 
     deployments: Deployment[];
+    domains: string[];
+    environment_variables: Record<string, string>;
+    services: Service[];
 
     created_at: string;
     updated_at: string;

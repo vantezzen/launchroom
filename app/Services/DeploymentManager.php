@@ -32,6 +32,7 @@ class DeploymentManager
     {
         $this->deployment->status = 'deploying';
         $this->deployment->started_at = now();
+        $this->deployment->save();
 
         $this->pullLatestCode();
 
@@ -59,6 +60,12 @@ class DeploymentManager
         $this->deployment->status = 'succeeded';
         $this->deployment->finished_at = now();
         $this->deployment->save();
+
+        $this->deployment->environment->deployments()->where('id', '!=', $this->deployment->id)
+            ->where('is_latest', true)
+            ->update([
+                'is_latest' => false,
+            ]);
     }
 
     protected function pullLatestCode()

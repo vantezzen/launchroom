@@ -1,20 +1,21 @@
-import { Head, useForm, usePage } from '@inertiajs/react';
+import { useForm, usePage } from '@inertiajs/react';
 
 import { Button } from '@/components/ui/button';
-import AppLayout from '@/layouts/app-layout';
-import PageLayout from '@/layouts/page-layout';
+import EnvironmentLayout from '@/layouts/environment-layout';
 import { SharedData } from '@/types';
 import { FormEventHandler, useEffect } from 'react';
+import DeploymentDiagram from './components/DeploymentDiagram';
 
 export default function ProjectShow() {
     const { data, setData, post, errors, processing, recentlySuccessful } = useForm({
         project_environment_id: '',
     });
     const {
-        props: { currentTeam, currentProject },
+        props: { currentTeam, currentProject, currentEnvironment },
     } = usePage<SharedData>();
 
     useEffect(() => {
+        if (!currentProject) return;
         setData('project_environment_id', currentProject.environments[0].id);
     }, [currentProject]);
 
@@ -25,14 +26,15 @@ export default function ProjectShow() {
     };
 
     return (
-        <AppLayout>
-            <Head title={currentProject.name} />
-
-            <PageLayout title={currentProject.name}>
+        <EnvironmentLayout
+            title="Overview"
+            actions={
                 <Button disabled={processing} onClick={submit}>
                     Trigger build
                 </Button>
-            </PageLayout>
-        </AppLayout>
+            }
+        >
+            <DeploymentDiagram environment={currentEnvironment!} />
+        </EnvironmentLayout>
     );
 }
