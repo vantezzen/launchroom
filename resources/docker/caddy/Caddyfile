@@ -1,0 +1,7 @@
+* { 
+  handle_errors {
+    rewrite * /{http.error.status_code}.html
+    file_server
+  }
+  tls internal
+}

@@ -1,0 +1,24 @@
+services:
+  traefik:
+    image: traefik:v3.3
+    container_name: launchroom_traefik
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./traefik.yml:/etc/traefik/traefik.yml
+    ports:
+      - '80:80'
+      - '443:443'
+      - '8080:8080'
+
+  # errors:
+  #   image: caddy
+  #   volumes:
+  #     - ./errors:/usr/share/caddy
+  #     - ./caddy:/etc/caddy
+  #   labels:
+  #     - 'traefik.enable=true'
+  #     - 'traefik.http.routers.errors.entrypoints=web'
+  #     - 'traefik.http.routers.errors.rule=PathPrefix(`/`)'
+  #     - 'traefik.http.routers.errors.priority=1'
+  #     - 'traefik.http.routers.errors.service=errors-service'
+  #     - 'traefik.http.services.errors-service.loadbalancer.server.port=80'
