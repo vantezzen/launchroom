@@ -3,6 +3,8 @@
   - Analytics
   - HTTPS
 
+- Docker Container Stats
+
 - Installation
   - Check that docker is installed and working
   - 
