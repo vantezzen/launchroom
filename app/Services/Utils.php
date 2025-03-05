@@ -1,19 +1,21 @@
 <?php
+
 namespace App\Services;
 
-use Illuminate\Support\Str;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 class Utils
 {
-  public static function getUniqueSlug(string $name, string $table): string
-  {
-    $slug = Str::slug($name);
-    $fullSlug = $slug;
+    public static function getUniqueSlug(string $name, string $table): string
+    {
+        $slug = Str::slug($name);
+        $fullSlug = $slug;
 
-    while(DB::table($table)->where('slug', $fullSlug)->count() > 0) {
-      $fullSlug = $slug . '-' . Str::random(5);
+        while (DB::table($table)->where('slug', $fullSlug)->count() > 0) {
+            $fullSlug = $slug.'-'.Str::random(5);
+        }
+
+        return $fullSlug;
     }
-    return $fullSlug;
-  }
 }

@@ -1,57 +1,60 @@
 <?php
+
 namespace App\Services\DeploymentTemplates;
 
 class NextjsDeploymentTemplate extends DeploymentTemplate
 {
-  public function isResponsible(): bool {
-    if (!file_exists($this->baseDirectory . '/package.json')) {
-      return false;
+    public function isResponsible(): bool
+    {
+        if (! file_exists($this->baseDirectory.'/package.json')) {
+            return false;
+        }
+
+        $package = json_decode(file_get_contents($this->baseDirectory.'/package.json'), true);
+        $containsNextjs = isset($package['dependencies']['next']);
+        $containsReact = isset($package['dependencies']['react']);
+
+        return $containsNextjs && $containsReact;
     }
 
-    $package = json_decode(file_get_contents($this->baseDirectory . '/package.json'), true);
-    $containsNextjs = isset($package['dependencies']['next']);
-    $containsReact = isset($package['dependencies']['react']);
+    public function addDeploymentFiles(): void
+    {
+        // TODO: Add env
 
-    return $containsNextjs && $containsReact;
-  }
-
-  public function addDeploymentFiles(): void {
-    // TODO: Add env
-
-    // Add standalone mode to next.config.js/next.config.mjs/next.config.ts
-    $nextConfigFiles = glob($this->baseDirectory . '/next.config.*');
-    if (count($nextConfigFiles) === 0) {
-      $nextConfig = <<<NEXTCONFIG
+        // Add standalone mode to next.config.js/next.config.mjs/next.config.ts
+        $nextConfigFiles = glob($this->baseDirectory.'/next.config.*');
+        if (count($nextConfigFiles) === 0) {
+            $nextConfig = <<<'NEXTCONFIG'
 module.exports = {
   output: 'standalone',
 };
 NEXTCONFIG;
 
-      file_put_contents($this->baseDirectory . '/next.config.js', $nextConfig);
-    } else {
-      foreach ($nextConfigFiles as $nextConfigFile) {
-        $nextConfig = file_get_contents($nextConfigFile);
-        
-        if (!str_contains($nextConfig, 'output:')) {
-          
-          if (str_contains($nextConfig, 'module.exports = {')) {
-            $nextConfig = str_replace('module.exports = {', 'module.exports = { output: \'standalone\',', $nextConfig);
-          } else if (str_contains($nextConfig, 'export default {')) {
-            $nextConfig = str_replace('export default {', 'export default { output: \'standalone\',', $nextConfig);
-          } else if (str_contains($nextConfig, 'const nextConfig = {')) {
-            $nextConfig = str_replace('const nextConfig = {', 'const nextConfig = { output: \'standalone\',', $nextConfig);
-          } else {
-            throw new \Exception('Could not find a valid next.config.js export format. Please add `output: \'standalone\'` manually if you have customized your next config.');
-          }
+            file_put_contents($this->baseDirectory.'/next.config.js', $nextConfig);
+        } else {
+            foreach ($nextConfigFiles as $nextConfigFile) {
+                $nextConfig = file_get_contents($nextConfigFile);
 
-          file_put_contents($nextConfigFile, $nextConfig);
+                if (! str_contains($nextConfig, 'output:')) {
+
+                    if (str_contains($nextConfig, 'module.exports = {')) {
+                        $nextConfig = str_replace('module.exports = {', 'module.exports = { output: \'standalone\',', $nextConfig);
+                    } elseif (str_contains($nextConfig, 'export default {')) {
+                        $nextConfig = str_replace('export default {', 'export default { output: \'standalone\',', $nextConfig);
+                    } elseif (str_contains($nextConfig, 'const nextConfig = {')) {
+                        $nextConfig = str_replace('const nextConfig = {', 'const nextConfig = { output: \'standalone\',', $nextConfig);
+                    } else {
+                        throw new \Exception('Could not find a valid next.config.js export format. Please add `output: \'standalone\'` manually if you have customized your next config.');
+                    }
+
+                    file_put_contents($nextConfigFile, $nextConfig);
+                }
+
+            }
         }
 
-      }
-    }
-
-    // Add Dockerfile
-    $dockerfile = <<<DOCKERFILE
+        // Add Dockerfile
+        $dockerfile = <<<DOCKERFILE
 # syntax=docker.io/docker/dockerfile:1
 # Based on https://github.com/vercel/next.js/blob/canary/examples/with-docker/Dockerfile
 FROM node:20-alpine AS base
@@ -115,19 +118,20 @@ ENV HOSTNAME="0.0.0.0"
 CMD ["node", "server.js"]
 DOCKERFILE;
 
-    file_put_contents($this->baseDirectory . '/Dockerfile', $dockerfile);
-  }
+        file_put_contents($this->baseDirectory.'/Dockerfile', $dockerfile);
+    }
 
-  public function getDockerComposeContents(): array {
-    return [
-      'services' => [
-        'app' => [
-          'build' => '.',
-          'container_name' => 'app',
-          'restart' => 'unless-stopped',
-          
-        ],
-      ],
-    ];
-  }
+    public function getDockerComposeContents(): array
+    {
+        return [
+            'services' => [
+                'app' => [
+                    'build' => '.',
+                    'container_name' => 'app',
+                    'restart' => 'unless-stopped',
+
+                ],
+            ],
+        ];
+    }
 }

@@ -16,14 +16,13 @@ trait HasHashIds
      */
     public function newUniqueId()
     {
-        return (string) $this->hashPrefix . Str::ulid();
+        return (string) $this->hashPrefix.Str::ulid();
     }
 
     /**
      * Determine if given key is valid.
      *
      * @param  mixed  $value
-     * @return bool
      */
     protected function isValidUniqueId($value): bool
     {

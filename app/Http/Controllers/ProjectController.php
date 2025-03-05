@@ -41,7 +41,7 @@ class ProjectController extends Controller
      */
     public function store(StoreProjectRequest $request, Team $team)
     {
-        $slug = Utils::getUniqueSlug($request->name, "projects");
+        $slug = Utils::getUniqueSlug($request->name, 'projects');
 
         $project = $team->projects()->create([
             'name' => $request->name,

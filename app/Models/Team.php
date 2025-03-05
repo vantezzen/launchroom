@@ -10,6 +10,7 @@ class Team extends Model
 {
     /** @use HasFactory<\Database\Factories\TeamFactory> */
     use HasFactory;
+
     use HasHashIds;
 
     protected $fillable = ['name', 'slug', 'github_token', 'github_username'];

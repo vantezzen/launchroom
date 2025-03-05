@@ -24,6 +24,7 @@ class TeamController extends Controller
     public function store(StoreTeamRequest $request)
     {
         $team = auth()->user->teams()->create($request->validated());
+
         return to_route('teams.show', $team);
     }
 

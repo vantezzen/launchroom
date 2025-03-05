@@ -18,9 +18,9 @@ return new class extends Migration
             $table->string('name');
             $table->string('slug')->unique();
             $table->foreignIdFor(Team::class)->index();
-            
+
             $table->string('repository');
-            
+
             $table->timestamps();
         });
     }

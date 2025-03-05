@@ -20,7 +20,7 @@ return new class extends Migration
             $table->string('service_type');
             $table->json('environment_variables');
             $table->json('environment_types')->comment('Type of environments this service should be attached to (production, staging, testing, development)');
-            
+
             $table->timestamps();
         });
     }

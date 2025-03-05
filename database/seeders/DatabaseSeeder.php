@@ -31,12 +31,12 @@ class DatabaseSeeder extends Seeder
         $team->users()->attach($user);
 
         $project = Project::factory()->create([
-            'name' => 'Launchroom',
-            'slug' => 'launchroom',
-            'repository' => 'https://github.com/vantezzen/launchroom',
+            'name' => 'Wrapped',
+            'slug' => 'wrapped',
+            'repository' => 'https://github.com/vantezzen/wrapped',
             'team_id' => $team->id,
         ]);
-        
+
         $prodEnvironment = ProjectEnvironment::factory()->create([
             'project_id' => $project->id,
         ]);

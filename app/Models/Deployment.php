@@ -10,6 +10,7 @@ class Deployment extends Model
 {
     /** @use HasFactory<\Database\Factories\ProjectDeploymentFactory> */
     use HasFactory;
+
     use HasHashIds;
 
     protected $fillable = ['project_environment_id', 'commit_hash', 'status', 'output', 'is_latest', 'started_at', 'finished_at'];

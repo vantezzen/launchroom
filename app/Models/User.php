@@ -13,7 +13,9 @@ class User extends Authenticatable
 {
     /** @use HasFactory<\Database\Factories\UserFactory> */
     use HasFactory, Notifiable;
+
     use HasHashIds;
+
     protected $hashPrefix = 'usr_';
 
     /**
@@ -50,7 +52,8 @@ class User extends Authenticatable
         ];
     }
 
-    public function teams() {
+    public function teams()
+    {
         return $this->belongsToMany(Team::class);
     }
 }

@@ -10,9 +10,11 @@ class ProjectEnvironment extends Model
 {
     /** @use HasFactory<\Database\Factories\ProjectEnvironmentFactory> */
     use HasFactory;
+
     use HasHashIds;
 
     protected $fillable = ['project_id', 'name', 'type', 'domains', 'environment_variables'];
+
     protected $casts = [
         'domains' => 'array',
         'environment_variables' => 'array',

@@ -10,6 +10,7 @@ use Illuminate\Foundation\Queue\Queueable;
 class DeployJob implements ShouldQueue
 {
     use Queueable;
+
     public $timeout = 60 * 60; // 1 hour
 
     /**

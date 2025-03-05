@@ -26,7 +26,7 @@ class ProjectEnvironmentFactory extends Factory
             'environment_variables' => [
                 'APP_ENV' => 'production',
                 'APP_DEBUG' => 'false',
-            ]
+            ],
         ];
     }
 }
