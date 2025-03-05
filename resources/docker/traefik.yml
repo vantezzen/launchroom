@@ -14,4 +14,7 @@ entryPoints:
 
 accessLog: {}
 metrics:
-  otlp: {}
+  prometheus:
+    addEntryPointsLabels: true
+    addRoutersLabels: true
+    addServicesLabels: true

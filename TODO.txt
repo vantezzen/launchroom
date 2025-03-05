@@ -5,6 +5,11 @@
 
 - Docker Container Stats
 
+- Laravel Support
+  - Queue Worker
+
 - Installation
   - Check that docker is installed and working
-  - 
+  - Add Attributes table
+    - Server Attributes: IP, Admin Domain, etc.
+  - Firewall setup
