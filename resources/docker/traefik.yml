@@ -1,6 +1,7 @@
 providers:
   docker:
     defaultRule: 'Host(`{{ trimPrefix `/` .Name }}.docker.localhost`)'
+    network: launchroom_net
 
 api:
   insecure: true

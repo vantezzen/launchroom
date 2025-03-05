@@ -9,6 +9,8 @@ services:
       - '80:80'
       - '443:443'
       - '8080:8080'
+    networks:
+      - launchroom_net
 
   # errors:
   #   image: caddy
@@ -22,3 +24,7 @@ services:
   #     - 'traefik.http.routers.errors.priority=1'
   #     - 'traefik.http.routers.errors.service=errors-service'
   #     - 'traefik.http.services.errors-service.loadbalancer.server.port=80'
+
+networks:
+  launchroom_net:
+    external: true # docker network create launchroom_net

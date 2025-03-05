@@ -61,10 +61,19 @@ abstract class DeploymentTemplate {
 
     $compose['services']['app']['labels'] = [
       'traefik.enable=true',
+      'traefik.docker.network=launchroom_net',
       'traefik.http.routers.' . $routerName . '.rule=' . $hostRules,
-      'traefik.http.routers.' . $routerName . '.service=' . $routerName,
-      'traefik.http.middlewares.gzip.compress=true',
-      // 'traefik.http.services.' . $this->deployment->name . '.loadbalancer.server.port=' . $this->deployment->port,
+      // 'traefik.http.routers.' . $routerName . '.service=' . $routerName,
+      // 'traefik.http.middlewares.gzip.compress=true',
+      // 'traefik.http.services.' . $routerName . '.loadbalancer.server.port=3000', // TODO: Make customizable
+    ];
+    $compose['services']['app']['networks'] = [
+      ...$compose['services']['app']['networks'] ?? [],
+      'launchroom_net',
+    ];
+
+    $compose['networks']['launchroom_net'] = [
+      'external' => true,
     ];
 
     return $compose;
