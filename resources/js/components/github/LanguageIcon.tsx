@@ -7,7 +7,7 @@ interface LanguageIconProps {
 export function LanguageIcon({ language }: LanguageIconProps) {
     const iconProps = { className: 'w-5 h-5' };
 
-    switch (language.toLowerCase()) {
+    switch (language?.toLowerCase()) {
         case 'javascript':
             return <FileJson {...iconProps} className="text-yellow-500" />;
         case 'typescript':

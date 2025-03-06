@@ -18,4 +18,20 @@ class Utils
 
         return $fullSlug;
     }
+
+    public static function getCloudDomain(string $slug, string $environment): string
+    {
+        $baseIp = self::baseIp();
+
+        return "$slug-$environment.$baseIp.sslip.io";
+    }
+
+    public static function baseIp()
+    {
+        if (config('app.env') === 'local') {
+            return '127.0.0.1';
+        }
+
+        return explode(':', $_SERVER['HTTP_HOST'])[0];
+    }
 }

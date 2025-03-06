@@ -19,8 +19,8 @@ return new class extends Migration
             $table->string('name');
             $table->string('branch')->default('main');
             $table->enum('type', ['production', 'staging', 'testing', 'development']);
-            $table->json('domains');
-            $table->json('environment_variables');
+            $table->jsonb('domains');
+            $table->jsonb('environment_variables');
 
             $table->timestamps();
         });

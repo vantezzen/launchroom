@@ -3,6 +3,7 @@
 namespace App\Services\DeploymentTemplates;
 
 use App\Models\Deployment;
+use App\Services\DeploymentManager;
 use App\Services\Docker;
 use Symfony\Component\Yaml\Yaml;
 
@@ -52,8 +53,8 @@ abstract class DeploymentTemplate
     {
         $compose = $this->getDockerComposeContents();
         $compose = $this->addProxyDataToCompose($compose);
-
         // TODO: Add external services (databases, etc)
+        $compose = $this->addExternalServicesToCompose($compose);
 
         $dockerCompose = Yaml::dump($compose, 4, 2);
         file_put_contents($this->baseDirectory.'/docker-compose.yml', $dockerCompose);
@@ -72,14 +73,23 @@ abstract class DeploymentTemplate
             // 'traefik.http.middlewares.gzip.compress=true',
             // 'traefik.http.services.' . $routerName . '.loadbalancer.server.port=3000', // TODO: Make customizable
         ];
-        $compose['services']['app']['networks'] = [
-            ...$compose['services']['app']['networks'] ?? [],
-            'launchroom_net',
-        ];
+
+        foreach ($compose['services'] as $service => $config) {
+            $compose['services'][$service]['networks'] = [
+                ...$compose['services'][$service]['networks'] ?? [],
+                'launchroom_net',
+                'app',
+            ];
+            $compose['services'][$service]['environment'] = [
+                ...$compose['services'][$service]['environment'] ?? [],
+                ...$this->getEnvironmentVariables(),
+            ];
+        }
 
         $compose['networks']['launchroom_net'] = [
             'external' => true,
         ];
+        $compose['networks']['app'] = [];
 
         return $compose;
     }
@@ -88,6 +98,42 @@ abstract class DeploymentTemplate
     {
         // $this->docker->build();
         $this->docker->start();
+    }
+
+    protected function getEnvironmentVariables()
+    {
+        $environment = [
+            ...$this->deployment->environment->environment_variables,
+        ];
+        foreach ($this->deployment->environment->services as $service) {
+            $environment = [
+                ...$environment,
+                ...$service->environment_variables,
+            ];
+        }
+
+        return $environment;
+    }
+
+    protected function addExternalServicesToCompose($compose)
+    {
+        $externalServices = $this->deployment->environment->services;
+
+        foreach ($externalServices as $serviceDetails) {
+            $serviceName = $serviceDetails->service_type;
+            if (! isset(DeploymentManager::SERVICES[$serviceName])) {
+                $this->deployment->addLogText("Service {$serviceName} not found in services list.");
+
+                continue;
+            }
+
+            $serviceClass = DeploymentManager::SERVICES[$serviceName];
+            $service = new $serviceClass($serviceDetails);
+
+            $compose = $service->addToDockerCompose($compose);
+        }
+
+        return $compose;
     }
 
     public function deploy()

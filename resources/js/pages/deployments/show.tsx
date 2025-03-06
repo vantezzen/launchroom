@@ -57,10 +57,12 @@ export default function DeploymentShow({ deployment }: { deployment: Deployment 
             title={'Deployment Details'}
             actions={
                 <>
-                    <Button>
-                        <ExternalLink className="mr-2 h-4 w-4" />
-                        Visit
-                    </Button>
+                    <a href={`http://${currentEnvironment?.domains[0]}`} target="_blank" rel="noreferrer">
+                        <Button>
+                            <ExternalLink className="mr-2 h-4 w-4" />
+                            Visit
+                        </Button>
+                    </a>
                 </>
             }
         >

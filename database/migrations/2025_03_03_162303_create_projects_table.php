@@ -20,6 +20,7 @@ return new class extends Migration
             $table->foreignIdFor(Team::class)->index();
 
             $table->string('repository');
+            $table->jsonb('build_settings')->default('{}');
 
             $table->timestamps();
         });

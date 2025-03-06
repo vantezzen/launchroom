@@ -19,7 +19,7 @@ return new class extends Migration
             $table->foreignIdFor(ProjectEnvironment::class)->index();
             $table->string('category')->description('The category of service (e.g. database, cache, etc.)');
             $table->string('service_type')->description('The service type (e.g. MySQL, Redis, etc.)');
-            $table->json('environment_variables');
+            $table->jsonb('environment_variables');
 
             $table->timestamps();
         });

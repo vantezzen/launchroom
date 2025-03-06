@@ -1,9 +1,12 @@
+- Prod logs
 
 - Reverse Proxy Container
   - Analytics
   - HTTPS
 
 - Docker Container Stats
+
+- Docker Container Health Checks
 
 - Laravel Support
   - Queue Worker

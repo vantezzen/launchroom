@@ -34,14 +34,22 @@ class DatabaseSeeder extends Seeder
         $team->users()->attach($user);
 
         $project = Project::factory()->create([
-            'name' => 'Wrapped',
-            'slug' => 'wrapped',
-            'repository' => 'https://github.com/vantezzen/wrapped',
+            'name' => 'Laravel Demo',
+            'slug' => 'laravel-demo',
+            'repository' => 'https://github.com/vantezzen/laravel-demo',
             'team_id' => $team->id,
         ]);
 
         $prodEnvironment = ProjectEnvironment::factory()->create([
             'project_id' => $project->id,
+            'domains' => [
+                'laravel-demo-production.127.0.0.1.sslip.io',
+            ],
+            'environment_variables' => [
+                'APP_ENV' => 'production',
+                'APP_KEY' => 'base64:'.base64_encode(random_bytes(32)),
+                'APP_URL' => 'http://laravel-demo-production.127.0.0.1.sslip.io',
+            ],
         ]);
 
         Service::factory()->create([
@@ -50,10 +58,11 @@ class DatabaseSeeder extends Seeder
             'category' => 'database',
             'service_type' => 'mysql',
             'environment_variables' => [
+                'DB_CONNECTION' => 'mysql',
                 'DB_HOST' => 'mysql',
                 'DB_PORT' => 3306,
                 'DB_DATABASE' => 'default',
-                'DB_USERNAME' => 'root',
+                'DB_USERNAME' => 'app',
                 'DB_PASSWORD' => 'password',
             ],
         ]);

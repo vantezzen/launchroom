@@ -3,12 +3,19 @@
 namespace App\Services;
 
 use App\Models\Deployment;
+use App\Services\DeploymentServices\MySqlDeploymentService;
+use App\Services\DeploymentTemplates\LaravelDeploymentTemplate;
 use App\Services\DeploymentTemplates\NextjsDeploymentTemplate;
 
 class DeploymentManager
 {
     protected const TEMPLATES = [
         NextjsDeploymentTemplate::class,
+        LaravelDeploymentTemplate::class,
+    ];
+
+    public const SERVICES = [
+        'mysql' => MySqlDeploymentService::class,
     ];
 
     protected $templates;

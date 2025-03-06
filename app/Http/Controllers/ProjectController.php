@@ -52,7 +52,9 @@ class ProjectController extends Controller
         $project->environments()->create([
             'name' => 'Production',
             'type' => 'production',
-            'domains' => [],
+            'domains' => [
+                Utils::getCloudDomain($slug, 'production'),
+            ],
             'environment_variables' => [],
         ]);
 

@@ -3,6 +3,7 @@ import { useForm, usePage } from '@inertiajs/react';
 import { Button } from '@/components/ui/button';
 import EnvironmentLayout from '@/layouts/environment-layout';
 import { SharedData } from '@/types';
+import { Hammer } from 'lucide-react';
 import { FormEventHandler, useEffect } from 'react';
 import DeploymentDiagram from './components/DeploymentDiagram';
 
@@ -30,7 +31,8 @@ export default function ProjectShow() {
             title="Overview"
             actions={
                 <Button disabled={processing} onClick={submit}>
-                    Trigger build
+                    <Hammer />
+                    Trigger deployment
                 </Button>
             }
         >

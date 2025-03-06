@@ -36,7 +36,7 @@ export default function ProjectCreate({ repositories }: { repositories: Reposito
                             repositories={repositories}
                             onSelect={(repo) => {
                                 setSelectedRepository(repo);
-                                setData('name', repo.full_name);
+                                setData('name', repo.name);
                                 setData('repository', repo.html_url);
                             }}
                         />

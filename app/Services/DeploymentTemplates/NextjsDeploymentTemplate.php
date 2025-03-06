@@ -127,9 +127,7 @@ DOCKERFILE;
             'services' => [
                 'app' => [
                     'build' => '.',
-                    'container_name' => 'app',
                     'restart' => 'unless-stopped',
-
                 ],
             ],
         ];
