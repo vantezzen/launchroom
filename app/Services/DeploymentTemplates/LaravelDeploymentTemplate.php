@@ -93,4 +93,12 @@ DOCKERFILE;
             ],
         ];
     }
+
+    protected function getStaticEnvironmentVariables()
+    {
+        return [
+            'APP_ENV' => 'production',
+            'APP_URL' => $this->deployment->environment->domains[0],
+        ];
+    }
 }

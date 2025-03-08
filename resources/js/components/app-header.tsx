@@ -10,7 +10,7 @@ import { useInitials } from '@/hooks/use-initials';
 import { cn } from '@/lib/utils';
 import { type BreadcrumbItem, type NavItem, type SharedData } from '@/types';
 import { Link, usePage } from '@inertiajs/react';
-import { BookOpen, Search } from 'lucide-react';
+import { BookOpen, Folder, Telescope } from 'lucide-react';
 import AppHeaderProjectSelect from './app-header-project-select';
 import AppLogo from './app-logo';
 
@@ -23,15 +23,20 @@ const mainNavItems: NavItem[] = [
 ];
 
 const rightNavItems: NavItem[] = [
-    // {
-    //     title: 'Repository',
-    //     url: 'https://github.com/laravel/react-starter-kit',
-    //     icon: Folder,
-    // },
+    {
+        title: 'Repository',
+        url: 'https://github.com/vantezzen/launchroom',
+        icon: Folder,
+    },
     {
         title: 'Documentation',
-        url: 'https://laravel.com/docs/starter-kits',
+        url: 'https://github.com/vantezzen/launchroom#readme',
         icon: BookOpen,
+    },
+    {
+        title: 'Telescope',
+        url: '/telescope',
+        icon: Telescope,
     },
 ];
 
@@ -127,9 +132,9 @@ export function AppHeader({ breadcrumbs = [] }: AppHeaderProps) {
 
                     <div className="ml-auto flex items-center space-x-2">
                         <div className="relative flex items-center space-x-1">
-                            <Button variant="ghost" size="icon" className="group h-9 w-9 cursor-pointer">
+                            {/* <Button variant="ghost" size="icon" className="group h-9 w-9 cursor-pointer">
                                 <Search className="!size-5 opacity-80 group-hover:opacity-100" />
-                            </Button>
+                            </Button> */}
                             <div className="hidden lg:flex">
                                 {rightNavItems.map((item) => (
                                     <TooltipProvider key={item.title} delayDuration={0}>

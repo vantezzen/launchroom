@@ -107,8 +107,8 @@ export interface Project {
     team?: Team;
 
     environments: Environment[];
-
     repository: string;
+    deployment_template?: string;
 
     created_at: string;
     updated_at: string;

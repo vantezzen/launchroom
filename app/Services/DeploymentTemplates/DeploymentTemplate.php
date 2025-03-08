@@ -100,9 +100,21 @@ abstract class DeploymentTemplate
         $this->docker->start();
     }
 
+    /**
+     * Get the static environment variables that should be added to the .env file
+     * for all applications.
+     */
+    protected function getStaticEnvironmentVariables()
+    {
+        return [
+            'APP_ENV' => 'production',
+        ];
+    }
+
     protected function getEnvironmentVariables()
     {
         $environment = [
+            ...$this->getStaticEnvironmentVariables(),
             ...$this->deployment->environment->environment_variables,
         ];
         foreach ($this->deployment->environment->services as $service) {

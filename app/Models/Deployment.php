@@ -17,6 +17,10 @@ class Deployment extends Model
 
     protected $hashPrefix = 'depl_';
 
+    protected $dispatchesEvents = [
+        'updated' => \App\Events\DeploymentUpdated::class,
+    ];
+
     public function environment()
     {
         return $this->belongsTo(ProjectEnvironment::class, 'project_environment_id');

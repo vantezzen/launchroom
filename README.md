@@ -1,3 +1,9 @@
+<img src="resources/js/assets/launchroom.svg" 
+      alt="launchroom logo" 
+      width="200"
+      align="center"
+/>
+
 # launchroom
 
 > Framework-first, zero fuss self-hosted deployments

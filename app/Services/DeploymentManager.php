@@ -4,18 +4,20 @@ namespace App\Services;
 
 use App\Models\Deployment;
 use App\Services\DeploymentServices\MySqlDeploymentService;
+use App\Services\DeploymentServices\RedisDeploymentService;
 use App\Services\DeploymentTemplates\LaravelDeploymentTemplate;
 use App\Services\DeploymentTemplates\NextjsDeploymentTemplate;
 
 class DeploymentManager
 {
     protected const TEMPLATES = [
-        NextjsDeploymentTemplate::class,
-        LaravelDeploymentTemplate::class,
+        'nextjs' => NextjsDeploymentTemplate::class,
+        'laravel' => LaravelDeploymentTemplate::class,
     ];
 
     public const SERVICES = [
         'mysql' => MySqlDeploymentService::class,
+        'redis' => RedisDeploymentService::class,
     ];
 
     protected $templates;
@@ -49,6 +51,9 @@ class DeploymentManager
             $this->deployment->status = 'failed';
             $this->deployment->addLogSection('Error', 'No deployment template found for this codebase.');
             throw new \Exception('No deployment template found for this codebase.');
+        } else {
+            $this->deployment->environment->project->deployment_template = $this->activeTemplate::class;
+            $this->deployment->environment->project->save();
         }
         $this->deployment->addLogSection('Deploying', 'Starting deployment with '.class_basename($this->activeTemplate));
 
@@ -79,6 +84,7 @@ class DeploymentManager
     {
         // TODO: Handle auth for private repos
         // TODO: Switch branch
+        // TODO: Ignore overriding local changes
 
         if (! file_exists($this->getBaseDirectory())) {
             // Download codebase for the first time
@@ -88,7 +94,7 @@ class DeploymentManager
             $this->deployment->addLogSection('Clone Code', $output);
         } else {
             // Pull latest code
-            $updateCode = "cd {$this->getBaseDirectory()} && git pull 2>&1";
+            $updateCode = "cd {$this->getBaseDirectory()} && git stash drop && git pull 2>&1";
             $output = shell_exec($updateCode);
 
             $this->deployment->addLogSection('Update Code', $output);

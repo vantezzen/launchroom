@@ -13,7 +13,7 @@ class Service extends Model
 
     use HasHashIds;
 
-    protected $fillable = ['name', 'description', 'project_id', 'service_type', 'environment_variables', 'environment_types'];
+    protected $fillable = ['name', 'description', 'project_id', 'service_type', 'environment_variables', 'environment_types', 'category'];
 
     protected $casts = [
         'environment_variables' => 'array',

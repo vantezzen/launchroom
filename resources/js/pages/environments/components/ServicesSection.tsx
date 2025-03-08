@@ -1,9 +1,9 @@
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardTitle } from '@/components/ui/card';
 import { Service } from '@/types';
-import { Clock, Database, FileText, HardDrive, Layers, Plus } from 'lucide-react';
+import { Database, FileText, Layers } from 'lucide-react';
 import { forwardRef } from 'react';
+import AddServiceModal from './services/AddServiceModal';
 import { AppDetailItem, SectionHeader } from './shared';
 
 export default function ServicesSection({ services, servicesRef }: { services: Service[]; servicesRef: React.MutableRefObject<HTMLDivElement[]> }) {
@@ -19,62 +19,39 @@ export default function ServicesSection({ services, servicesRef }: { services: S
             <SectionHeader icon={<Database className="h-4 w-4 text-gray-500" />} title="Services" />
 
             {/* Database Services */}
-            {servicesByType.database.length > 0 ? (
-                servicesByType.database.map((service, index) => (
-                    <ServiceCard
-                        key={service.id}
-                        service={service}
-                        ref={(el) => {
-                            servicesRef.current[index] = el as HTMLDivElement;
-                        }}
-                    />
-                ))
-            ) : (
-                <EmptyServiceCard
-                    icon={<Database className="h-6 w-6 text-gray-400" />}
-                    title="No database"
-                    description="Add a database like MySQL, PostgreSQL"
+            {servicesByType.database.map((service, index) => (
+                <ServiceCard
+                    key={service.id}
+                    service={service}
+                    ref={(el) => {
+                        servicesRef.current[index] = el as HTMLDivElement;
+                    }}
                 />
-            )}
+            ))}
 
             {/* Cache Services */}
-            {servicesByType.cache.length > 0 ? (
-                servicesByType.cache.map((service, index) => (
-                    <ServiceCard
-                        key={service.id}
-                        service={service}
-                        ref={(el) => {
-                            servicesRef.current[index + servicesByType.database.length] = el as HTMLDivElement;
-                        }}
-                    />
-                ))
-            ) : (
-                <EmptyServiceCard icon={<Clock className="h-6 w-6 text-gray-400" />} title="No cache" description="Add a cache like Redis" />
-            )}
+            {servicesByType.cache.map((service, index) => (
+                <ServiceCard
+                    key={service.id}
+                    service={service}
+                    ref={(el) => {
+                        servicesRef.current[index + servicesByType.database.length] = el as HTMLDivElement;
+                    }}
+                />
+            ))}
 
             {/* Disk Services */}
-            {servicesByType.disk.length > 0 ? (
-                servicesByType.disk.map((service, index) => (
-                    <ServiceCard
-                        key={service.id}
-                        service={service}
-                        ref={(el) => {
-                            servicesRef.current[index + servicesByType.database.length + servicesByType.cache.length] = el as HTMLDivElement;
-                        }}
-                    />
-                ))
-            ) : (
-                <EmptyServiceCard
-                    icon={<HardDrive className="h-6 w-6 text-gray-400" />}
-                    title="No storage"
-                    description="Store images, videos, and more"
+            {servicesByType.disk.map((service, index) => (
+                <ServiceCard
+                    key={service.id}
+                    service={service}
+                    ref={(el) => {
+                        servicesRef.current[index + servicesByType.database.length + servicesByType.cache.length] = el as HTMLDivElement;
+                    }}
                 />
-            )}
+            ))}
 
-            <Button className="w-full">
-                <Plus className="h-4 w-4" />
-                Add service
-            </Button>
+            <AddServiceModal />
         </div>
     );
 }

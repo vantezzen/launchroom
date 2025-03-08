@@ -38,6 +38,7 @@ class DatabaseSeeder extends Seeder
             'slug' => 'laravel-demo',
             'repository' => 'https://github.com/vantezzen/laravel-demo',
             'team_id' => $team->id,
+            'deployment_template' => 'laravel',
         ]);
 
         $prodEnvironment = ProjectEnvironment::factory()->create([

@@ -9,7 +9,7 @@ export default function NetworkSection({ domains, networkRef }: { domains: strin
             <SectionHeader icon={<Globe className="h-4 w-4 text-gray-500" />} title="Network" />
 
             <Card ref={networkRef}>
-                <CardTitle>Edge network</CardTitle>
+                <CardTitle>Proxy</CardTitle>
                 <CardContent className="space-y-4">
                     <EdgeNetworkItem icon={<Shield className="h-4 w-4 text-gray-500" />} label="Proxy Network" status="active" />
                     <EdgeNetworkItem icon={<Globe className="h-4 w-4 text-gray-500" />} label="Analytics" status="active" />

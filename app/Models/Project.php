@@ -13,7 +13,7 @@ class Project extends Model
 
     use HasHashIds;
 
-    protected $fillable = ['name', 'description', 'team_id', 'slug', 'repository', 'branch'];
+    protected $fillable = ['name', 'description', 'team_id', 'slug', 'repository', 'branch', 'build_settings', 'deployment_template'];
 
     protected $hashPrefix = 'proj_';
 

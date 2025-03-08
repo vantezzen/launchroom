@@ -1,6 +1,7 @@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import useBaseUrl from '@/hooks/use-base-url';
+import useReloadOnChannel from '@/hooks/use-reload-on-channel';
 import EnvironmentLayout from '@/layouts/environment-layout';
 import { Deployment, SharedData } from '@/types';
 import { timeAgo } from '@/utils/time';
@@ -51,6 +52,8 @@ export default function DeploymentShow({ deployment }: { deployment: Deployment 
     const {
         props: { currentEnvironment },
     } = usePage<SharedData>();
+
+    useReloadOnChannel(`App.Models.Deployment.${deployment.id}`);
 
     return (
         <EnvironmentLayout

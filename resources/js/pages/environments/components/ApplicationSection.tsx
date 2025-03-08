@@ -1,7 +1,7 @@
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardTitle } from '@/components/ui/card';
 import { Environment } from '@/types';
-import { Calendar, Layers, Server } from 'lucide-react';
+import { Layers, Server } from 'lucide-react';
 import { AppDetailItem, SectionHeader } from './shared';
 
 export default function ApplicationSection({
@@ -30,8 +30,6 @@ export default function ApplicationSection({
                         label="Environment variables"
                         value={`${Object.keys(environment.environment_variables).length}`}
                     />
-                    <AppDetailItem icon={<Calendar className="h-4 w-4 text-gray-500" />} label="Scheduler" value="Enabled" isEnabled={true} />
-                    <AppDetailItem icon={<Calendar className="h-4 w-4 text-gray-500" />} label="Queue Worker" value="Enabled" isEnabled={true} />
                 </CardContent>
             </Card>
         </div>

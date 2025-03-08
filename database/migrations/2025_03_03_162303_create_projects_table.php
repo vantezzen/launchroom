@@ -21,6 +21,7 @@ return new class extends Migration
 
             $table->string('repository');
             $table->jsonb('build_settings')->default('{}');
+            $table->string('deployment_template')->nullable();
 
             $table->timestamps();
         });

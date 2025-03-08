@@ -4,7 +4,9 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\StoreServiceRequest;
 use App\Http\Requests\UpdateServiceRequest;
+use App\Models\ProjectEnvironment;
 use App\Models\Service;
+use App\Services\DeploymentManager;
 
 class ServiceController extends Controller
 {
@@ -27,9 +29,17 @@ class ServiceController extends Controller
     /**
      * Store a newly created resource in storage.
      */
-    public function store(StoreServiceRequest $request)
+    public function store(StoreServiceRequest $request, string $team, string $project, string $environment)
     {
-        //
+        $class = DeploymentManager::SERVICES[$request->type];
+        if (! class_exists($class)) {
+            abort(400, 'Invalid service type');
+        }
+
+        $env = ProjectEnvironment::findOrFail($environment);
+        $service = $class::createServiceInEnvironment($env, $request->validated());
+
+        return redirect()->route('teams.projects.environments.show', [$team, $project, $env]);
     }
 
     /**

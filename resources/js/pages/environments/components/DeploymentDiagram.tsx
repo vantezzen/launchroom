@@ -1,5 +1,5 @@
-import { AnimatedBeam } from '@/components/ui/animated-beam';
 import { DotPattern } from '@/components/ui/dot-pattern';
+import { TraceLine } from '@/components/ui/trace-line';
 import { Environment } from '@/types';
 import { useRef } from 'react';
 import ApplicationSection from './ApplicationSection';
@@ -27,10 +27,10 @@ export default function DeploymentDiagram({ environment }: { environment: Enviro
                     {/* Services Section */}
                     <ServicesSection services={environment.services} servicesRef={servicesRef} />
                 </div>
-                <AnimatedBeam duration={3} containerRef={containerRef} fromRef={networkRef} toRef={appRef} />
+                <TraceLine duration={6} containerRef={containerRef} fromRef={networkRef} toRef={appRef} />
 
                 {servicesRef.current.map((ref, index) => (
-                    <AnimatedBeam key={index} duration={3} containerRef={containerRef} fromRef={appRef} toRef={{ current: ref }} />
+                    <TraceLine key={index} duration={6} containerRef={containerRef} fromRef={appRef} toRef={{ current: ref }} />
                 ))}
 
                 <DotPattern className="opacity-30" />
