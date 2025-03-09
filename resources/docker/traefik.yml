@@ -18,3 +18,14 @@ metrics:
     addEntryPointsLabels: true
     addRoutersLabels: true
     addServicesLabels: true
+    headerLabels:
+      useragent: 'User-Agent'
+      xforwardedhost: 'X-Forwarded-Host'
+      xrequestpath: 'X-Replaced-Path'
+
+http:
+  middlewares:
+    addPathToMetrics:
+      replacePathRegex:
+        regex: '^/(.*)'
+        replacement: '/$1'

@@ -7,6 +7,7 @@ import { Link, usePage } from '@inertiajs/react';
 export const navigationItems = [
     { name: 'Overview', href: '' },
     { name: 'Deployments', href: 'deployments' },
+    { name: 'Metrics', href: 'metrics' },
     { name: 'Settings', href: 'settings' },
 ] as const;
 

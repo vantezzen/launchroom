@@ -1,15 +1,20 @@
+- Delete service 
+
 - Prod logs
 
-- Reverse Proxy Container
-  - Analytics
-  - HTTPS
-
 - Docker Container Stats
+- Prometheus Analytics
+
+- Application Settings
+  - Change name
+  - Delete
+
+- Custom Domains + HTTPS
 
 - Docker Container Health Checks
 
-- Laravel Support
-  - Queue Worker
+- Instance settings
+  - Disable registrations
 
 - Installation
   - Check that docker is installed and working

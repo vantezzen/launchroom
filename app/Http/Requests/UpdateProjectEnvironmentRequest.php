@@ -11,7 +11,7 @@ class UpdateProjectEnvironmentRequest extends FormRequest
      */
     public function authorize(): bool
     {
-        return false;
+        return true;
     }
 
     /**
@@ -22,7 +22,10 @@ class UpdateProjectEnvironmentRequest extends FormRequest
     public function rules(): array
     {
         return [
-            //
+            'name' => ['nullable', 'string', 'max:255'],
+            'type' => ['nullable', 'string', 'max:255'],
+            'domains' => ['nullable', 'array'],
+            'environment_variables' => ['nullable', 'array'],
         ];
     }
 }

@@ -35,4 +35,8 @@ return [
         ],
     ],
 
+    'prometheus' => [
+        'url' => env('PROMETHEUS_URL'),
+    ],
+
 ];

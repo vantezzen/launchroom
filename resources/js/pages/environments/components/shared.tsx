@@ -16,7 +16,19 @@ export function SectionHeader({ icon, title }: { icon: React.ReactNode; title: s
     );
 }
 
-export function AppDetailItem({ icon, label, value, isEnabled }: { icon: React.ReactNode; label: string; value: string; isEnabled?: boolean }) {
+export function AppDetailItem({
+    icon,
+    label,
+    value,
+    isEnabled,
+    action,
+}: {
+    icon: React.ReactNode;
+    label: string;
+    value: string;
+    isEnabled?: boolean;
+    action?: React.ReactNode;
+}) {
     return (
         <div className="flex items-center justify-between">
             <div className="flex flex-1 items-center space-x-2">
@@ -27,6 +39,7 @@ export function AppDetailItem({ icon, label, value, isEnabled }: { icon: React.R
                 {isEnabled !== undefined && <StatusIndicator status={isEnabled ? 'active' : 'inactive'} />}
                 <span className="text-sm font-medium">{value}</span>
             </div>
+            {action && <div className="ml-2">{action}</div>}
         </div>
     );
 }

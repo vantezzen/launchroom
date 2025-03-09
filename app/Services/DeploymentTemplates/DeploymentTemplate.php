@@ -69,6 +69,12 @@ abstract class DeploymentTemplate
             'traefik.enable=true',
             'traefik.docker.network=launchroom_net',
             'traefik.http.routers.'.$routerName.'.rule='.$hostRules,
+
+            // Add path info to metrics
+            // https://community.traefik.io/t/is-it-possible-to-have-requestpath-as-a-label-in-the-prometheus-metrics/19204/4
+            'traefik.http.middlewares.addPathToMetrics.replacepathregex.regex=^/(.*)',
+            'traefik.http.middlewares.addPathToMetrics.replacepathregex.replacement=/$1',
+            'traefik.http.routers.'.$routerName.'.middlewares=addPathToMetrics@docker',
             // 'traefik.http.routers.' . $routerName . '.service=' . $routerName,
             // 'traefik.http.middlewares.gzip.compress=true',
             // 'traefik.http.services.' . $routerName . '.loadbalancer.server.port=3000', // TODO: Make customizable

@@ -1,6 +1,6 @@
 import { SharedData } from '@/types';
 import { router, usePage } from '@inertiajs/react';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 
 function AppHeaderProjectSelect() {
     const {

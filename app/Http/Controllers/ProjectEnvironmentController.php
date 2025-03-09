@@ -28,9 +28,17 @@ class ProjectEnvironmentController extends Controller
     /**
      * Store a newly created resource in storage.
      */
-    public function store(StoreProjectEnvironmentRequest $request)
+    public function store(StoreProjectEnvironmentRequest $request, string $teamSlug, string $projectSlug)
     {
-        //
+        $team = auth()->user()->teams()->where('slug', $teamSlug)->firstOrFail();
+        $project = $team->projects()->where('slug', $projectSlug)->firstOrFail();
+        $projectEnvironment = $project->environments()->create($request->validated());
+
+        return redirect()->route('teams.projects.environments.show', [
+            'team' => $teamSlug,
+            'project' => $projectSlug,
+            'environment' => $projectEnvironment->id,
+        ]);
     }
 
     /**
@@ -52,9 +60,15 @@ class ProjectEnvironmentController extends Controller
     /**
      * Update the specified resource in storage.
      */
-    public function update(UpdateProjectEnvironmentRequest $request, ProjectEnvironment $projectEnvironment)
+    public function update(UpdateProjectEnvironmentRequest $request, string $teamSlug, string $projectSlug, ProjectEnvironment $projectEnvironment)
     {
-        //
+        $projectEnvironment->update($request->validated());
+
+        return redirect()->route('teams.projects.environments.show', [
+            'team' => $teamSlug,
+            'project' => $projectSlug,
+            'environment' => $projectEnvironment->first()->id,
+        ]);
     }
 
     /**
@@ -63,5 +77,10 @@ class ProjectEnvironmentController extends Controller
     public function destroy(ProjectEnvironment $projectEnvironment)
     {
         //
+    }
+
+    public function metrics()
+    {
+        return Inertia::render('environments/metrics');
     }
 }

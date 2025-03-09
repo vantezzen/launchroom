@@ -1,8 +1,10 @@
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardTitle } from '@/components/ui/card';
 import { Service } from '@/types';
-import { Database, FileText, Layers } from 'lucide-react';
-import { forwardRef } from 'react';
+import { ChevronRight, Database, FileText, Layers } from 'lucide-react';
+import { forwardRef, useState } from 'react';
+import { EnvironmentVariablePanel } from './EnvironmentVariablesPanel';
 import AddServiceModal from './services/AddServiceModal';
 import { AppDetailItem, SectionHeader } from './shared';
 
@@ -67,6 +69,7 @@ function EmptyServiceCard({ icon, title, description }: { icon: React.ReactNode;
 }
 
 const ServiceCard = forwardRef(function ServiceCard({ service }: { service: Service }, ref: React.Ref<HTMLDivElement>) {
+    const [isEditing, setIsEditing] = useState(false);
     const getServiceTypeBadge = () => {
         switch (service.category) {
             case 'database':
@@ -107,8 +110,23 @@ const ServiceCard = forwardRef(function ServiceCard({ service }: { service: Serv
                     icon={<Layers className="h-4 w-4 text-gray-500" />}
                     label="Environment variables"
                     value={`${Object.keys(service.environment_variables).length}`}
+                    action={
+                        <Button size="xs" variant="secondary" onClick={() => setIsEditing(!isEditing)}>
+                            <ChevronRight className="h-2 w-2 text-gray-700" />
+                        </Button>
+                    }
                 />
             </CardContent>
+
+            {isEditing && (
+                <EnvironmentVariablePanel
+                    isOpen={isEditing}
+                    onClose={() => setIsEditing(false)}
+                    initialVariables={service.environment_variables}
+                    allowEdit={false}
+                    title={`${service.name} Environment variables`}
+                />
+            )}
         </Card>
     );
 });

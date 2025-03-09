@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\DeploymentController;
+use App\Http\Controllers\MetricsController;
 use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\ProjectEnvironmentController;
 use App\Http\Controllers\ServiceController;
@@ -19,10 +20,13 @@ Route::middleware(['auth', 'verified'])->group(function () {
         'projects' => 'project:slug',
         'teams' => 'team:slug',
     ]);
+
     Route::resource('teams.projects.environments', ProjectEnvironmentController::class)->parameters([
         'projects' => 'project:slug',
         'teams' => 'team:slug',
     ]);
+    Route::get('teams/{team:slug}/projects/{project:slug}/environments/{environment}/metrics', [ProjectEnvironmentController::class, 'metrics']);
+
     Route::resource('teams.projects.environments.deployments', DeploymentController::class)->parameters([
         'projects' => 'project:slug',
         'teams' => 'team:slug',
@@ -33,6 +37,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
     ]);
 
     Route::resource('deployments', DeploymentController::class);
+
+    Route::get('metrics', [MetricsController::class, 'index'])->name('metrics.index');
 
     Route::get('/', function () {
         if (auth()->user()->teams->count() > 0) {
