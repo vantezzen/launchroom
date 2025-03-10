@@ -34,6 +34,7 @@ npm install
 cp .env.example .env
 php artisan key:generate
 php artisan migrate --seed
+php artisan reverb:install -n
 
 # Setup Docker
 docker network create launchroom_net
