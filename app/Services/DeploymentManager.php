@@ -100,4 +100,18 @@ class DeploymentManager
             $this->deployment->addLogSection('Update Code', $output);
         }
     }
+
+    public function getLogs()
+    {
+        $docker = new Docker($this->getBaseDirectory(), $this->deployment);
+
+        return $docker->getLogs();
+    }
+
+    public function getStats()
+    {
+        $docker = new Docker($this->getBaseDirectory(), $this->deployment);
+
+        return $docker->getStats();
+    }
 }

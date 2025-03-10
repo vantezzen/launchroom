@@ -9,17 +9,20 @@ import { useMetricsData } from './hooks';
 function RequestsPerPath({ filter, timeRange }: { filter: string; timeRange: string }) {
     const data = useMetricsData(`sum by (xrequestpath) (round(rate(traefik_router_requests_total${filter}[${timeRange}]) * time()/1000 ))`);
 
-    const chartData = useMemo(() => data?.map(({ metric, value }) => ({ name: metric.xrequestpath, value })), [data]);
+    const chartData = useMemo(
+        () => data?.map(({ metric, value }) => ({ name: metric.xrequestpath, value })).filter((metric) => metric.value > 0),
+        [data],
+    );
 
     if (!data) {
-        return <Skeleton className="h-[800px]" />;
+        return <Skeleton className="h-[400px]" />;
     }
 
     return (
         <Card>
             <CardTitle>Requests Per Path</CardTitle>
             <CardContent>
-                <ChartContainer config={{}}>
+                <ChartContainer config={{}} className="h-[300px] w-full">
                     <BarChart accessibilityLayer data={chartData}>
                         <CartesianGrid vertical={false} />
                         <XAxis dataKey="name" tickLine={false} tickMargin={10} axisLine={false} />

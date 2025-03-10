@@ -58,7 +58,7 @@ export default function ApplicationSection({
                     initialVariables={environment.environment_variables}
                     onSave={() => {
                         console.log('save');
-                        patch(route('teams.projects.environments.update', [currentTeam?.slug, currentProject?.slug, environment.id]));
+                        patch(route('environments.update', environment.id));
                     }}
                     onChange={(variables) => {
                         setData('environment_variables', variables);

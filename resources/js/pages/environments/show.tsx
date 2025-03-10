@@ -3,7 +3,7 @@ import { useForm, usePage } from '@inertiajs/react';
 import { Button } from '@/components/ui/button';
 import EnvironmentLayout from '@/layouts/environment-layout';
 import { SharedData } from '@/types';
-import { Hammer } from 'lucide-react';
+import { ExternalLink, Hammer } from 'lucide-react';
 import { FormEventHandler, useEffect } from 'react';
 import DeploymentDiagram from './components/DeploymentDiagram';
 
@@ -30,10 +30,18 @@ export default function ProjectShow() {
         <EnvironmentLayout
             title="Overview"
             actions={
-                <Button disabled={processing} onClick={submit}>
-                    <Hammer />
-                    Trigger deployment
-                </Button>
+                <>
+                    <a href={`http://${currentEnvironment?.domains[0]}`} target="_blank" rel="noreferrer">
+                        <Button variant="secondary">
+                            <ExternalLink className="mr-2 h-4 w-4" />
+                            Visit
+                        </Button>
+                    </a>
+                    <Button disabled={processing} onClick={submit}>
+                        <Hammer />
+                        Trigger deployment
+                    </Button>
+                </>
             }
         >
             <DeploymentDiagram environment={currentEnvironment!} />

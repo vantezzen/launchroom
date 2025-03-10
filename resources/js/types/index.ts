@@ -98,6 +98,23 @@ export interface Environment {
     updated_at: string;
 }
 
+export interface ProcessingUsage {
+    id: string;
+    project_environment_id: string;
+
+    cpu: number; // in %
+    mem_usage: number; // in bytes
+    mem_limit: number; // in bytes
+    mem_percent: number; // in %
+    net_in: number; // in bytes
+    net_out: number; // in bytes
+    block_in: number; // in bytes
+    block_out: number; // in bytes
+
+    created_at: string;
+    updated_at: string;
+}
+
 export interface Project {
     id: string;
     name: string;

@@ -1,6 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import useRouter from '@/hooks/use-router';
 import { cn } from '@/lib/utils';
 import { SharedData } from '@/types';
 import { AVAILABLE_SERVICES, AvailableService } from '@/types/config';
@@ -14,22 +15,14 @@ function AddServiceModal() {
     });
     const [show, setShow] = useState(false);
     const [confirmService, setConfirmService] = useState(false);
-    const {
-        props: { currentEnvironment, currentTeam, currentProject },
-    } = usePage<SharedData>();
+    const { route } = useRouter();
 
     const handleAddService = (type: string) => {
         setData('type', type);
         setConfirmService(true);
     };
     const submit = () => {
-        post(
-            route('teams.projects.environments.services.store', {
-                team: currentTeam?.slug,
-                project: currentProject?.slug,
-                environment: currentEnvironment?.id,
-            }),
-        );
+        post(route('teams.projects.environments.services.store'));
         setShow(false);
         setConfirmService(false);
     };

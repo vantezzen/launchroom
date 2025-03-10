@@ -13,6 +13,7 @@ require __DIR__.'/settings.php';
 require __DIR__.'/auth.php';
 
 Route::middleware(['auth', 'verified'])->group(function () {
+    // Views
     Route::resource('teams', TeamController::class)->parameters([
         'teams' => 'team:slug',
     ]);
@@ -20,12 +21,12 @@ Route::middleware(['auth', 'verified'])->group(function () {
         'projects' => 'project:slug',
         'teams' => 'team:slug',
     ]);
-
     Route::resource('teams.projects.environments', ProjectEnvironmentController::class)->parameters([
         'projects' => 'project:slug',
         'teams' => 'team:slug',
     ]);
     Route::get('teams/{team:slug}/projects/{project:slug}/environments/{environment}/metrics', [ProjectEnvironmentController::class, 'metrics']);
+    Route::get('teams/{team:slug}/projects/{project:slug}/environments/{environment}/logs', [ProjectEnvironmentController::class, 'logs']);
 
     Route::resource('teams.projects.environments.deployments', DeploymentController::class)->parameters([
         'projects' => 'project:slug',
@@ -36,6 +37,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
         'teams' => 'team:slug',
     ]);
 
+    // API
+    Route::resource('projects', ProjectController::class);
+    Route::resource('services', ServiceController::class);
+    Route::resource('environments', ProjectEnvironmentController::class);
     Route::resource('deployments', DeploymentController::class);
 
     Route::get('metrics', [MetricsController::class, 'index'])->name('metrics.index');

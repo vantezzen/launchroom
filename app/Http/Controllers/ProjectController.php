@@ -7,7 +7,6 @@ use App\Http\Requests\UpdateProjectRequest;
 use App\Models\Project;
 use App\Models\Team;
 use App\Services\GitHub;
-use App\Services\Utils;
 use Inertia\Inertia;
 
 class ProjectController extends Controller
@@ -41,7 +40,7 @@ class ProjectController extends Controller
      */
     public function store(StoreProjectRequest $request, Team $team)
     {
-        $slug = Utils::getUniqueSlug($request->name, 'projects');
+        $slug = getUniqueSlug($request->name, 'projects');
 
         $project = $team->projects()->create([
             'name' => $request->name,
@@ -53,12 +52,12 @@ class ProjectController extends Controller
             'name' => 'Production',
             'type' => 'production',
             'domains' => [
-                Utils::getCloudDomain($slug, 'production'),
+                getCloudDomain($slug, 'production'),
             ],
             'environment_variables' => [],
         ]);
 
-        return redirect()->route('teams.projects.show', [$team->slug, $project->slug]);
+        return redirect()->to(frontendRoute('teams.projects.show', $project));
     }
 
     /**
@@ -66,7 +65,7 @@ class ProjectController extends Controller
      */
     public function show(string $team, Project $project)
     {
-        return redirect()->route('teams.projects.environments.show', [$project->team->slug, $project->slug, $project->environments->first()->id]);
+        return redirect()->to(frontendRoute('teams.projects.environments.show', $project->environments->first()));
     }
 
     /**

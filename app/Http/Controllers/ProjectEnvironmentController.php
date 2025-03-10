@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Http\Requests\StoreProjectEnvironmentRequest;
 use App\Http\Requests\UpdateProjectEnvironmentRequest;
 use App\Models\ProjectEnvironment;
+use App\Services\DeploymentManager;
 use Inertia\Inertia;
 
 class ProjectEnvironmentController extends Controller
@@ -34,11 +35,7 @@ class ProjectEnvironmentController extends Controller
         $project = $team->projects()->where('slug', $projectSlug)->firstOrFail();
         $projectEnvironment = $project->environments()->create($request->validated());
 
-        return redirect()->route('teams.projects.environments.show', [
-            'team' => $teamSlug,
-            'project' => $projectSlug,
-            'environment' => $projectEnvironment->id,
-        ]);
+        return redirect()->to(frontendRoute('teams.projects.environments.show', $projectEnvironment));
     }
 
     /**
@@ -60,15 +57,12 @@ class ProjectEnvironmentController extends Controller
     /**
      * Update the specified resource in storage.
      */
-    public function update(UpdateProjectEnvironmentRequest $request, string $teamSlug, string $projectSlug, ProjectEnvironment $projectEnvironment)
+    public function update(UpdateProjectEnvironmentRequest $request, ProjectEnvironment $projectEnvironment)
     {
+        $projectEnvironment = $projectEnvironment->first();
         $projectEnvironment->update($request->validated());
 
-        return redirect()->route('teams.projects.environments.show', [
-            'team' => $teamSlug,
-            'project' => $projectSlug,
-            'environment' => $projectEnvironment->first()->id,
-        ]);
+        return redirect()->to(frontendRoute('teams.projects.environments.show', $projectEnvironment));
     }
 
     /**
@@ -79,8 +73,24 @@ class ProjectEnvironmentController extends Controller
         //
     }
 
-    public function metrics()
+    public function metrics(ProjectEnvironment $projectEnvironment)
     {
-        return Inertia::render('environments/metrics');
+        $projectEnvironment = $projectEnvironment->first();
+
+        $usage = $projectEnvironment->processingUsages()->latest(100)->get();
+
+        return Inertia::render('environments/metrics', compact('usage'));
+    }
+
+    public function logs(ProjectEnvironment $projectEnvironment)
+    {
+        $projectEnvironment = $projectEnvironment->first();
+        if (! $projectEnvironment->deployments()->exists()) {
+            return Inertia::render('environments/logs', ['logs' => '', 'error' => 'no_deployments']);
+        }
+        $deploymentManager = new DeploymentManager($projectEnvironment->deployments()->latest()->first());
+        $logs = $deploymentManager->getLogs();
+
+        return Inertia::render('environments/logs', compact('logs'));
     }
 }

@@ -45,13 +45,13 @@ class HandleInertiaRequests extends Middleware
         optional($currentTeam)->load('projects');
 
         $currentProject = $request->route('project');
-        if (is_string($currentProject)) {
+        if (is_string($currentProject) && $currentTeam) {
             $currentProject = $currentTeam->projects()->where('slug', $currentProject)->firstOrFail();
         }
         optional($currentProject)->load(['environments', 'environments.deployments']);
 
         $currentEnvironment = $request->route('environment');
-        if (is_string($currentEnvironment)) {
+        if (is_string($currentEnvironment) && $currentProject) {
             $currentEnvironment = $currentProject->environments()->findOrFail($currentEnvironment);
         }
         optional($currentEnvironment)->load(['deployments', 'services']);

@@ -39,7 +39,7 @@ class ServiceController extends Controller
         $env = ProjectEnvironment::findOrFail($environment);
         $service = $class::createServiceInEnvironment($env, $request->validated());
 
-        return redirect()->route('teams.projects.environments.show', [$team, $project, $env]);
+        return redirect()->to(frontendRoute('teams.projects.environments.show', $env));
     }
 
     /**

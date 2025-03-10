@@ -42,12 +42,7 @@ class DeploymentController extends Controller
 
         DeployJob::dispatch($deployment);
 
-        return response()->redirectTo(route('teams.projects.environments.deployments.show', [
-            $team->slug,
-            $project->slug,
-            $environment->id,
-            $deployment->id,
-        ]));
+        return redirect()->to(frontendRoute('teams.projects.environments.deployments.show', $deployment));
     }
 
     /**

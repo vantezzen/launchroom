@@ -8,6 +8,7 @@ export const navigationItems = [
     { name: 'Overview', href: '' },
     { name: 'Deployments', href: 'deployments' },
     { name: 'Metrics', href: 'metrics' },
+    { name: 'Logs', href: 'logs' },
     { name: 'Settings', href: 'settings' },
 ] as const;
 

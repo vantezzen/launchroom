@@ -1,4 +1,5 @@
 import { Badge } from '@/components/ui/badge';
+import EmptyState from '@/components/ui/empty-state';
 import useBaseUrl from '@/hooks/use-base-url';
 import EnvironmentLayout from '@/layouts/environment-layout';
 import { Deployment, SharedData } from '@/types';
@@ -109,6 +110,10 @@ export default function DeploymentsIndex() {
                         </div> */}
                     </Link>
                 ))}
+
+                {currentEnvironment?.deployments.length === 0 && (
+                    <EmptyState title="No deployments" description="Deployments will appear here once you deploy your application." />
+                )}
             </div>
         </EnvironmentLayout>
     );

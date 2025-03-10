@@ -1,11 +1,10 @@
 - Delete service 
 
-- Prod logs
-
 - Docker Container Stats
+  - Prune old data
 - Prometheus Analytics
 
-- Application Settings
+- Application/Environment Settings
   - Change name
   - Delete
 

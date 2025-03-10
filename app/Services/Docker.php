@@ -33,6 +33,64 @@ class Docker
         $this->runCommand('docker compose down --volumes --remove-orphans');
     }
 
+    public function getLogs()
+    {
+        $command = "cd {$this->baseDirectory} && docker compose logs --tail=1000";
+
+        return shell_exec($command);
+    }
+
+    public function getStats()
+    {
+        $command = "cd {$this->baseDirectory} && docker compose stats --no-stream";
+        $stats = shell_exec($command);
+        $stats = $this->parseDockerStats($stats);
+
+        return [
+            'cpu' => array_sum(array_column($stats, 'cpu')),
+            'mem_usage' => array_sum(array_column($stats, 'mem_usage')),
+            'mem_limit' => $stats[0]['mem_limit'],
+            'mem_percent' => array_sum(array_column($stats, 'mem_percent')),
+            'net_in' => array_sum(array_column($stats, 'net_in')),
+            'net_out' => array_sum(array_column($stats, 'net_out')),
+            'block_in' => array_sum(array_column($stats, 'block_in')),
+            'block_out' => array_sum(array_column($stats, 'block_out')),
+        ];
+    }
+
+    protected function parseDockerStats($statsOutput)
+    {
+        $lines = explode("\n", trim($statsOutput)); // Split output into lines
+        array_shift($lines); // Remove the header line
+
+        $parsedStats = [];
+
+        foreach ($lines as $line) {
+            // Normalize whitespace to properly split columns
+            $columns = preg_split('/\s{2,}/', trim($line));
+
+            if (count($columns) < 7) {
+                continue;
+            } // Ensure there are enough columns
+
+            $parsedStats[] = [
+                'container_id' => $columns[0],
+                'name' => $columns[1],
+                'cpu' => (float) rtrim($columns[2], '%'),
+                'mem_usage' => parseMemoryValue(explode(' / ', $columns[3])[0]), // Convert to bytes
+                'mem_limit' => parseMemoryValue(explode(' / ', $columns[3])[1]),
+                'mem_percent' => (float) rtrim($columns[4], '%'),
+                'net_in' => parseMemoryValue(explode(' / ', $columns[5])[0]), // Convert KB/MB/GB
+                'net_out' => parseMemoryValue(explode(' / ', $columns[5])[1]),
+                'block_in' => parseMemoryValue(explode(' / ', $columns[6])[0]),
+                'block_out' => parseMemoryValue(explode(' / ', $columns[6])[1]),
+                'pids' => (int) $columns[7],
+            ];
+        }
+
+        return $parsedStats;
+    }
+
     protected function runCommand($dockerCommand)
     {
         $command = "cd {$this->baseDirectory} && $dockerCommand";

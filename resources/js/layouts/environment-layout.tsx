@@ -21,14 +21,14 @@ function EnvironmentLayout({
 
     return (
         <AppLayout fullSizeContent>
-            <Head title={`${title} - ${currentProject.name}`} />
+            <Head title={`${title} - ${currentProject?.name}`} />
             <div className="flex w-full flex-col items-center">
                 <EnvironmentNavbar />
 
                 <div className="m-6 grid w-full max-w-5xl gap-3 p-8">
                     <div className="flex items-center justify-between">
                         <h1 className="text-3xl font-bold">{title}</h1>
-                        <div>{actions}</div>
+                        <div className="flex gap-2">{actions}</div>
                     </div>
                     <p>{subtitle}</p>
                     <div>{children}</div>

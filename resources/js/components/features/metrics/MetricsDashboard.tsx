@@ -1,41 +1,15 @@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { ProcessingUsage } from '@/types';
 import { useEffect, useState } from 'react';
 import HttpCodes from './HttpCodes';
 import MostUsedUserAgents from './MostUsedUserAgents';
+import ProcessingUsageDashboard from './ProcessingUsage';
 import RequestsPerPath from './RequestsPerPath';
 import TotalRequests from './TotalRequests';
 
 const TIME_RANGES = ['5m', '15m', '1h', '6h', '12h', '24h'];
 
-const fetchMetrics = async (query: string) => {
-    try {
-        const url = route('metrics.index', {
-            query,
-        });
-        const response = await fetch(url);
-        const data = await response.json();
-        return data.data.result;
-    } catch (error) {
-        console.error('Failed to fetch metrics', error);
-        return [];
-    }
-};
-
-type Metric = {
-    metric: Record<string, string>;
-    value: number;
-};
-type Metrics = {
-    requests?: Metric[];
-    paths?: Metric[];
-    userAgents?: Metric[];
-    responseTime?: Metric[];
-    httpCodes?: Metric[];
-    trafficIn?: Metric[];
-    trafficOut?: Metric[];
-};
-
-const MetricsDashboard = ({ service }: { service?: string }) => {
+const MetricsDashboard = ({ service, usage }: { service?: string; usage?: ProcessingUsage[] }) => {
     const [timeRange, setTimeRange] = useState('6h');
 
     const filter = service ? `{service="${service}"}` : '';
@@ -73,8 +47,13 @@ const MetricsDashboard = ({ service }: { service?: string }) => {
 
             <TotalRequests timeRange={timeRange} filter={filter} />
             <RequestsPerPath timeRange={timeRange} filter={filter} />
-            <MostUsedUserAgents timeRange={timeRange} filter={filter} />
-            <HttpCodes timeRange={timeRange} filter={filter} />
+
+            <div className="grid grid-cols-2 gap-3">
+                <MostUsedUserAgents timeRange={timeRange} filter={filter} />
+                <HttpCodes timeRange={timeRange} filter={filter} />
+            </div>
+
+            {usage && <ProcessingUsageDashboard usageData={usage} />}
         </div>
     );
 };

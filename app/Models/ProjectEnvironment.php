@@ -36,4 +36,9 @@ class ProjectEnvironment extends Model
     {
         return $this->hasMany(Service::class);
     }
+
+    public function processingUsages()
+    {
+        return $this->hasMany(ProcessingUsage::class);
+    }
 }
