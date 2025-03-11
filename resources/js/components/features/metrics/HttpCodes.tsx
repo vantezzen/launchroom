@@ -49,12 +49,14 @@ function HttpCodes({ filter, timeRange }: { filter: string; timeRange: string })
                         </TableRow>
                     </TableHeader>
                     <TableBody>
-                        {data?.map(({ metric, value }) => (
-                            <TableRow key={metric.code}>
-                                <TableCell>{metric.code}</TableCell>
-                                <TableCell>{formatNumber(value)}</TableCell>
-                            </TableRow>
-                        )) || (
+                        {data
+                            ?.filter((entry) => entry.value > 0)
+                            .map(({ metric, value }) => (
+                                <TableRow key={metric.code}>
+                                    <TableCell>{metric.code}</TableCell>
+                                    <TableCell>{formatNumber(value)}</TableCell>
+                                </TableRow>
+                            )) || (
                             <TableRow>
                                 <TableCell colSpan={2} className="text-center">
                                     No data available

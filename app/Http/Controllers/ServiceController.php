@@ -71,6 +71,9 @@ class ServiceController extends Controller
      */
     public function destroy(Service $service)
     {
-        //
+        $environment = $service->project_environment;
+        $service->delete();
+
+        return redirect()->to(frontendRoute('teams.projects.environments.show', $environment));
     }
 }

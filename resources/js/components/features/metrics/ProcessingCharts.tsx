@@ -7,7 +7,7 @@ export function NetworkChart({ data }: { data: ProcessingUsage[] }) {
     return (
         <ResponsiveContainer width="100%" height="100%">
             <LineChart
-                data={data.map((item) => ({ ...item, timestamp: new Date(item.created_at).getTime() }))}
+                data={data.map((item) => ({ ...item, timestamp: new Date(item.created_at).getTime() })).reverse()}
                 margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
             >
                 <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
@@ -29,7 +29,7 @@ export function DiskIOChart({ data }: { data: ProcessingUsage[] }) {
     return (
         <ResponsiveContainer width="100%" height="100%">
             <LineChart
-                data={data.map((item) => ({ ...item, timestamp: new Date(item.created_at).getTime() }))}
+                data={data.map((item) => ({ ...item, timestamp: new Date(item.created_at).getTime() })).reverse()}
                 margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
             >
                 <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />

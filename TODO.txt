@@ -1,8 +1,5 @@
-- Delete service 
-
-- Docker Container Stats
-  - Prune old data
 - Prometheus Analytics
+  - Validate requests
 
 - Application/Environment Settings
   - Change name

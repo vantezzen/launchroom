@@ -9,4 +9,6 @@ Artisan::command('inspire', function () {
 })->purpose('Display an inspiring quote');
 
 Schedule::command('telescope:prune')->daily();
+
+Schedule::command('app:prune-processing-usages')->daily();
 Schedule::command('app:get-processing-usages')->everyFiveMinutes();

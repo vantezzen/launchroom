@@ -1,6 +1,7 @@
 import { Card, CardContent, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { cn } from '@/lib/utils';
 import { formatNumber } from '@/utils/number';
 import { useMetricsData } from './hooks';
 
@@ -15,7 +16,7 @@ function MostUsedUserAgents({ filter, timeRange }: { filter: string; timeRange: 
         <Card>
             <CardTitle>Most Used User Agents</CardTitle>
             <CardContent>
-                <Table>
+                <Table className="w-full">
                     <TableHeader>
                         <TableRow>
                             <TableHead>User Agent</TableHead>
@@ -23,12 +24,16 @@ function MostUsedUserAgents({ filter, timeRange }: { filter: string; timeRange: 
                         </TableRow>
                     </TableHeader>
                     <TableBody>
-                        {data?.map(({ metric, value }) => (
-                            <TableRow key={metric.useragent}>
-                                <TableCell className={!metric.useragent ? 'text-gray-400' : ''}>{metric.useragent ?? 'N/A'}</TableCell>
-                                <TableCell>{formatNumber(value)}</TableCell>
-                            </TableRow>
-                        )) || (
+                        {data
+                            ?.filter((entry) => entry.value > 0)
+                            .map(({ metric, value }) => (
+                                <TableRow key={metric.useragent}>
+                                    <TableCell className={cn(!metric.useragent ? 'text-gray-400' : '', 'whitespace-pre-wrap')}>
+                                        {metric.useragent ?? 'N/A'}
+                                    </TableCell>
+                                    <TableCell>{formatNumber(value)}</TableCell>
+                                </TableRow>
+                            )) || (
                             <TableRow>
                                 <TableCell colSpan={2} className="text-center">
                                     No data available

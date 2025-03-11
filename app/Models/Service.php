@@ -21,4 +21,9 @@ class Service extends Model
     ];
 
     protected $hashPrefix = 'serv_';
+
+    public function project_environment()
+    {
+        return $this->belongsTo(ProjectEnvironment::class);
+    }
 }

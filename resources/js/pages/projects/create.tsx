@@ -2,7 +2,7 @@ import { Transition } from '@headlessui/react';
 import { Head, useForm, usePage } from '@inertiajs/react';
 import { FormEventHandler, useState } from 'react';
 
-import RepositorySelector from '@/components/github/RepositorySelector';
+import RepositorySelector, { UrlRepository } from '@/components/github/RepositorySelector';
 import { Button } from '@/components/ui/button';
 import AppLayout from '@/layouts/app-layout';
 import CardLayout from '@/layouts/card-layout';
@@ -13,7 +13,7 @@ export default function ProjectCreate({ repositories }: { repositories: Reposito
         name: '',
         repository: '',
     });
-    const [selectedRepository, setSelectedRepository] = useState<Repository | null>(null);
+    const [selectedRepository, setSelectedRepository] = useState<Repository | UrlRepository | null>(null);
 
     const {
         props: { currentTeam },
@@ -22,7 +22,7 @@ export default function ProjectCreate({ repositories }: { repositories: Reposito
     const submit: FormEventHandler = (e) => {
         e.preventDefault();
 
-        post(route('teams.projects.store', { team: currentTeam.slug }));
+        post(route('teams.projects.store', { team: currentTeam?.slug }));
     };
 
     return (

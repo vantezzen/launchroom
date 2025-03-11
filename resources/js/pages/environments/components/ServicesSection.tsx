@@ -1,8 +1,17 @@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardTitle } from '@/components/ui/card';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuGroup,
+    DropdownMenuItem,
+    DropdownMenuLabel,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Service } from '@/types';
-import { ChevronRight, Database, FileText, Layers } from 'lucide-react';
+import { useForm } from '@inertiajs/react';
+import { ChevronRight, Database, FileText, Layers, Menu, Trash2 } from 'lucide-react';
 import { forwardRef, useState } from 'react';
 import { EnvironmentVariablePanel } from './EnvironmentVariablesPanel';
 import AddServiceModal from './services/AddServiceModal';
@@ -58,18 +67,14 @@ export default function ServicesSection({ services, servicesRef }: { services: S
     );
 }
 
-function EmptyServiceCard({ icon, title, description }: { icon: React.ReactNode; title: string; description: string }) {
-    return (
-        <div className="flex flex-col items-center justify-center space-y-2 rounded-lg border border-dashed border-gray-200 bg-white p-6">
-            {icon}
-            <h3 className="font-medium text-gray-700">{title}</h3>
-            <p className="text-sm text-gray-500">{description}</p>
-        </div>
-    );
-}
-
 const ServiceCard = forwardRef(function ServiceCard({ service }: { service: Service }, ref: React.Ref<HTMLDivElement>) {
-    const [isEditing, setIsEditing] = useState(false);
+    const { data, setData, delete: destroy, errors, processing } = useForm();
+
+    const handleDelete = () => {
+        destroy(route('services.destroy', { service: service.id }));
+    };
+
+    const [isEditingEnvVars, setIsEditingEnvVars] = useState(false);
     const getServiceTypeBadge = () => {
         switch (service.category) {
             case 'database':
@@ -102,6 +107,37 @@ const ServiceCard = forwardRef(function ServiceCard({ service }: { service: Serv
                 <span className="truncate">{service.name}</span>
                 <div className="flex items-center space-x-2">
                     <Badge className={getBadgeColor()}>{getServiceTypeBadge()}</Badge>
+
+                    <DropdownMenu>
+                        <DropdownMenuTrigger>
+                            <Button size="xs" variant="ghost">
+                                <Menu className="h-2 w-2 text-gray-700" />
+                            </Button>
+                        </DropdownMenuTrigger>
+
+                        <DropdownMenuContent className="w-56">
+                            <DropdownMenuLabel>Actions</DropdownMenuLabel>
+
+                            <DropdownMenuGroup>
+                                <DropdownMenuItem
+                                    variant="destructive"
+                                    onClick={() => {
+                                        if (
+                                            confirm(
+                                                'Are you sure you want to delete this service? This will PERMANENTLY delete all data associated with this service.',
+                                            )
+                                        ) {
+                                            handleDelete();
+                                        }
+                                    }}
+                                    disabled={processing}
+                                >
+                                    <Trash2 />
+                                    <span>Delete</span>
+                                </DropdownMenuItem>
+                            </DropdownMenuGroup>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
                 </div>
             </CardTitle>
             <CardContent className="space-y-4">
@@ -111,17 +147,17 @@ const ServiceCard = forwardRef(function ServiceCard({ service }: { service: Serv
                     label="Environment variables"
                     value={`${Object.keys(service.environment_variables).length}`}
                     action={
-                        <Button size="xs" variant="secondary" onClick={() => setIsEditing(!isEditing)}>
+                        <Button size="xs" variant="secondary" onClick={() => setIsEditingEnvVars(!isEditingEnvVars)}>
                             <ChevronRight className="h-2 w-2 text-gray-700" />
                         </Button>
                     }
                 />
             </CardContent>
 
-            {isEditing && (
+            {isEditingEnvVars && (
                 <EnvironmentVariablePanel
-                    isOpen={isEditing}
-                    onClose={() => setIsEditing(false)}
+                    isOpen={isEditingEnvVars}
+                    onClose={() => setIsEditingEnvVars(false)}
                     initialVariables={service.environment_variables}
                     allowEdit={false}
                     title={`${service.name} Environment variables`}

@@ -139,7 +139,12 @@ function ServiceSection({
 function ServiceCard({ service, onSelect, className }: { service: AvailableService; onSelect: () => void; className?: string }) {
     return (
         <button
-            onClick={onSelect}
+            onClick={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+
+                onSelect();
+            }}
             className={cn(
                 'z-10 flex cursor-pointer flex-col items-center justify-between gap-4 rounded-lg border bg-white p-4 duration-100 hover:bg-zinc-50',
                 className,

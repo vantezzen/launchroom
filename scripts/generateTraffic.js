@@ -1,23 +1,19 @@
-const URLS = [
-    'http://laravel-demo-production.127.0.0.1.sslip.io/',
-    'http://laravel-demo-production.127.0.0.1.sslip.io/database',
-    'http://laravel-demo-production.127.0.0.1.sslip.io/cache',
-    'http://laravel-demo-production.127.0.0.1.sslip.io/queue',
-];
-const requests = 10000;
+const URLS = {
+    'http://laravel-demo-production.127.0.0.1.sslip.io/': 10,
+    'http://laravel-demo-production.127.0.0.1.sslip.io/database': 5,
+    'http://laravel-demo-production.127.0.0.1.sslip.io/cache': 3,
+    'http://laravel-demo-production.127.0.0.1.sslip.io/queue': 1,
+};
+const SECONDS_PER_ROUND = 5;
 
 const generateTraffic = async () => {
-    const randomIndex = Math.floor(Math.random() * URLS.length);
-    const url = URLS[randomIndex];
-    console.log(`Sending request to ${url}`);
-    try {
-        await fetch(url);
-        console.log(`Request to ${url} sent successfully`);
-    } catch (error) {
-        console.error(`Error sending request to ${url}: ${error}`);
+    for (const [url, times] of Object.entries(URLS)) {
+        for (let i = 0; i < times; i++) {
+            fetch(url)
+                .then(() => console.log(`Successfully fetched ${url}`))
+                .catch((error) => console.error(`Error fetching ${url}: ${error}`));
+        }
     }
 };
 
-for (let i = 0; i < requests; i++) {
-    generateTraffic();
-}
+setInterval(generateTraffic, SECONDS_PER_ROUND * 1000);

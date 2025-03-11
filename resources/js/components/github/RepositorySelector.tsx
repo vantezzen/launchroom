@@ -6,13 +6,21 @@ import { GithubOwner, Repository } from '@/types';
 import { timeAgo } from '@/utils/time';
 import { Check, ChevronDown, Lock, Search } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { Input } from '../ui/input';
 import { LanguageIcon } from './LanguageIcon';
 
-function RepositorySelector({ repositories, onSelect }: { repositories: Repository[]; onSelect: (repository: Repository) => void }) {
+export type UrlRepository = {
+    name: string;
+    html_url: string;
+    full_name: string;
+};
+
+function RepositorySelector({ repositories, onSelect }: { repositories: Repository[]; onSelect: (repository: Repository | UrlRepository) => void }) {
     const [search, setSearch] = useState('');
     const [selectedOwner, setSelectedOwner] = useState<GithubOwner | null>(null);
     const [ownerPopoverOpen, setOwnerPopoverOpen] = useState(false);
     const [visibleCount, setVisibleCount] = useState(6);
+    const [directUrl, setDirectUrl] = useState('');
 
     // Extract unique owners from repository list
     const owners = useMemo(() => {
@@ -105,7 +113,6 @@ function RepositorySelector({ repositories, onSelect }: { repositories: Reposito
                     />
                 </div>
             </div>
-
             {/* Repository list */}
             <div className="rounded-md border">
                 {filteredRepositories.length === 0 ? (
@@ -145,6 +152,41 @@ function RepositorySelector({ repositories, onSelect }: { repositories: Reposito
                         )}
                     </>
                 )}
+            </div>
+
+            <div className="flex items-center">
+                <div className="flex-grow border-t border-gray-200"></div>
+                <span className="mx-4 text-gray-300">or</span>
+                <div className="flex-grow border-t border-gray-200"></div>
+            </div>
+
+            <div className="flex items-center gap-3">
+                <Input
+                    placeholder="https://github.com/vantezzen/launchroom"
+                    type="url"
+                    value={directUrl}
+                    onChange={(e) => setDirectUrl(e.target.value)}
+                />
+                <Button
+                    onClick={() => {
+                        const repoRegex = /https:\/\/github\.com\/(?<name>\w+)\/(?<repo>\w+)\/?.*/;
+
+                        const match = directUrl.match(repoRegex);
+                        if (match) {
+                            onSelect({
+                                full_name: `${match.groups?.name}/${match.groups?.repo}`,
+                                name: match.groups?.repo || '',
+                                html_url: directUrl,
+                            });
+                        } else {
+                            alert(
+                                'This does not look like a valid GitHub repository URL. Please make sure to use a valid URL i the format "https://github.com/vantezzen/launchroom".',
+                            );
+                        }
+                    }}
+                >
+                    Use URL
+                </Button>
             </div>
         </div>
     );
