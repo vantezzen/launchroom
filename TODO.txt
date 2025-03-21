@@ -1,6 +1,10 @@
 - Prometheus Analytics
   - Validate requests
 
+- Deployment
+  - Change branch
+  - Add auth
+
 - Application/Environment Settings
   - Change name
   - Delete
