@@ -1,6 +1,3 @@
-- Prometheus Analytics
-  - Validate requests
-
 - CD trigger
   - Webhook for public servers
   - schedule for private servers
@@ -9,9 +6,15 @@
   - Change name
   - Delete
 
+- Show Laravel Logs
+
 - Custom Domains + HTTPS
 
 - Docker Container Health Checks
+
+- Bugs
+  - When first adding a service, the modal closes before confirmation
+  - Make Docker logs more stable when displayed
 
 - Instance settings
   - Disable registrations

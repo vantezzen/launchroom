@@ -10,7 +10,7 @@ import { useInitials } from '@/hooks/use-initials';
 import { cn } from '@/lib/utils';
 import { type BreadcrumbItem, type NavItem, type SharedData } from '@/types';
 import { Link, usePage } from '@inertiajs/react';
-import { BookOpen, Folder, Telescope } from 'lucide-react';
+import { BookOpen, Folder, Telescope, Waypoints } from 'lucide-react';
 import AppHeaderProjectSelect from './app-header-project-select';
 import AppLogo from './app-logo';
 
@@ -37,6 +37,11 @@ const rightNavItems: NavItem[] = [
         title: 'Telescope',
         url: '/telescope',
         icon: Telescope,
+    },
+    {
+        title: 'Traefik',
+        url: `${window.location.protocol}//${window.location.hostname}:8090`,
+        icon: Waypoints,
     },
 ];
 

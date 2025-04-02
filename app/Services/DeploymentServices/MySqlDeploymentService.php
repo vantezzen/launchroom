@@ -34,6 +34,11 @@ class MySqlDeploymentService extends DeploymentService
         ];
     }
 
+    public function getCriticalServiceNames(): array
+    {
+        return ['mysql'];
+    }
+
     public static function createServiceInEnvironment(Environment $environment, array $settings): Service
     {
         $password = Str::random(32);

@@ -2,9 +2,11 @@
 
 namespace App\Models;
 
+use App\Events\DeploymentUpdated;
 use App\Traits\HasHashIds;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Cache;
 use Staudenmeir\EloquentHasManyDeep\HasRelationships;
 
 class Deployment extends Model
@@ -19,9 +21,20 @@ class Deployment extends Model
 
     protected $hashPrefix = 'depl_';
 
-    protected $dispatchesEvents = [
-        'updated' => \App\Events\DeploymentUpdated::class,
-    ];
+    protected static function boot()
+    {
+        parent::boot();
+
+        // Debounce DeploymentUpdated event to prevent sending hundreds of events per deployment
+        static::updated(function ($deployment) {
+            $cacheKey = 'deployment-updated-'.$deployment->id;
+
+            if (! Cache::has($cacheKey) || $deployment->wasChanged('status')) {
+                Cache::put($cacheKey, true, 5);
+                event(new DeploymentUpdated($deployment));
+            }
+        });
+    }
 
     public function environment()
     {

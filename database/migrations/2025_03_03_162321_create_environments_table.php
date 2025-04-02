@@ -15,7 +15,7 @@ return new class extends Migration
         Schema::create('environments', function (Blueprint $table) {
             $table->string('id')->primary();
 
-            $table->foreignIdFor(Project::class)->index();
+            $table->foreignIdFor(Project::class)->index()->constrained()->cascadeOnDelete();
             $table->string('name');
             $table->string('branch')->default('main');
             $table->enum('type', ['production', 'staging', 'testing', 'development']);

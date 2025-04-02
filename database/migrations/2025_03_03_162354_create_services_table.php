@@ -16,7 +16,7 @@ return new class extends Migration
             $table->string('id')->primary();
 
             $table->string('name');
-            $table->foreignIdFor(Environment::class)->index();
+            $table->foreignIdFor(Environment::class)->index()->constrained()->cascadeOnDelete();
             $table->string('category')->description('The category of service (e.g. database, cache, etc.)');
             $table->string('service_type')->description('The service type (e.g. MySQL, Redis, etc.)');
             $table->jsonb('environment_variables');

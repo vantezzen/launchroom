@@ -7,6 +7,7 @@ use App\Http\Requests\UpdateProjectRequest;
 use App\Models\Project;
 use App\Models\Team;
 use App\Services\GitHub;
+use Illuminate\Encryption\Encrypter;
 use Inertia\Inertia;
 
 class ProjectController extends Controller
@@ -48,13 +49,18 @@ class ProjectController extends Controller
             'repository' => $request->repository,
         ]);
 
+        $appKey = 'base64:'.base64_encode(
+            Encrypter::generateKey('AES-256-CBC')
+        );
         $project->environments()->create([
             'name' => 'Production',
             'type' => 'production',
             'domains' => [
                 getCloudDomain($slug, 'production'),
             ],
-            'environment_variables' => [],
+            'environment_variables' => [
+                'APP_KEY' => $appKey,
+            ],
         ]);
 
         return redirect()->to(frontendRoute('teams.projects.show', $project));

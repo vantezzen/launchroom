@@ -71,7 +71,10 @@
         ],
         "dev": [
             "Composer\\Config::disableProcessTimeout",
-            "npx concurrently -c \"#93c5fd,#c4b5fd,#fb7185,#fdba74\" \"php artisan serve\" \"php artisan queue:listen --tries=1\" \"php artisan pail --timeout=0\" \"npm run dev\" \"php artisan reverb:start\" \"php artisan schedule:work\" --names=server,queue,logs,vite,reverb,schedule"
+            "npx concurrently -c \"#93c5fd,#c4b5fd,#fb7185,#fdba74\" \"php artisan serve\" \"composer run queue\" \"php artisan pail --timeout=0\" \"npm run dev\" \"php artisan reverb:start\" \"php artisan schedule:work\" --names=server,queue,logs,vite,reverb,schedule"
+        ],
+        "queue": [
+            "npx concurrently -c \"#93c5fd,#c4b5fd,#fb7185,#fdba74\" \"php artisan queue:listen --tries=1\" \"php artisan queue:listen --tries=1\" \"php artisan queue:listen --tries=1\" --names=queue-1,queue-2,queue-3"
         ],
         "lint": [
             "pint && npm run lint"

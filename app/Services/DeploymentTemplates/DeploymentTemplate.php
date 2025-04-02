@@ -136,6 +136,7 @@ abstract class DeploymentTemplate
     protected function addExternalServicesToCompose($compose)
     {
         $externalServices = $this->deployment->environment->services;
+        $baseServices = array_keys($compose['services']);
 
         foreach ($externalServices as $serviceDetails) {
             $serviceName = $serviceDetails->service_type;
@@ -148,7 +149,7 @@ abstract class DeploymentTemplate
             $serviceClass = DeploymentManager::SERVICES[$serviceName];
             $service = new $serviceClass($serviceDetails);
 
-            $compose = $service->addToDockerCompose($compose);
+            $compose = $service->addToDockerCompose($compose, $baseServices);
         }
 
         return $compose;

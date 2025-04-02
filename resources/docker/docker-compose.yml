@@ -12,18 +12,20 @@ services:
     networks:
       - launchroom_net
 
-  # errors:
-  #   image: caddy
-  #   volumes:
-  #     - ./errors:/usr/share/caddy
-  #     - ./caddy:/etc/caddy
-  #   labels:
-  #     - 'traefik.enable=true'
-  #     - 'traefik.http.routers.errors.entrypoints=web'
-  #     - 'traefik.http.routers.errors.rule=PathPrefix(`/`)'
-  #     - 'traefik.http.routers.errors.priority=1'
-  #     - 'traefik.http.routers.errors.service=errors-service'
-  #     - 'traefik.http.services.errors-service.loadbalancer.server.port=80'
+  errors:
+    image: nginx:latest
+    volumes:
+      - ./errors:/usr/share/nginx/error-pages
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf
+    networks:
+      - launchroom_net
+    labels:
+      traefik.enable: true
+
+      traefik.docker.network: launchroom_net
+
+      traefik.http.routers.catchall.rule: HostRegexp(`.+`)
+      traefik.http.routers.catchall.priority: 1
 
   prometheus:
     image: prom/prometheus

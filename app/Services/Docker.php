@@ -18,7 +18,7 @@ class Docker
     public function start()
     {
         $this->deployment->addLogSection('Start', "Starting Docker images...\n\n");
-        $this->runCommand('docker compose up -d --remove-orphans --build');
+        $this->runCommand('docker compose up -d --remove-orphans --build --force-recreate');
     }
 
     public function stop()

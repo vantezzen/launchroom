@@ -18,9 +18,18 @@ abstract class DeploymentService
     abstract public function getDockerComposeContents(): array;
 
     /**
+     * Get the names of critical services that should be started before the main app.
+     * This is used to ensure that the main app can connect to these services.
+     */
+    public function getCriticalServiceNames(): array
+    {
+        return [];
+    }
+
+    /**
      * Update the docker-compose.yml file with the new service.
      */
-    public function addToDockerCompose(array $compose)
+    public function addToDockerCompose(array $compose, array $baseServices)
     {
         $ownContent = $this->getDockerComposeContents();
         if (isset($ownContent['services'])) {
@@ -30,6 +39,15 @@ abstract class DeploymentService
         if (isset($ownContent['volumes'])) {
             $compose['volumes'] ??= [];
             $compose['volumes'] = array_merge($compose['volumes'], $ownContent['volumes']);
+        }
+
+        $criticalServices = $this->getCriticalServiceNames();
+        foreach ($baseServices as $baseService) {
+            $compose['services'][$baseService]['depends_on'] ??= [];
+            $compose['services'][$baseService]['depends_on'] = array_merge(
+                $compose['services'][$baseService]['depends_on'],
+                $criticalServices
+            );
         }
 
         return $compose;

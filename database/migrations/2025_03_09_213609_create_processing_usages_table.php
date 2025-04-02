@@ -16,6 +16,7 @@ return new class extends Migration
             $table->string('id')->primary();
 
             $table->foreignIdFor(Environment::class)
+                ->index()
                 ->constrained()
                 ->cascadeOnDelete();
             $table->float('cpu');

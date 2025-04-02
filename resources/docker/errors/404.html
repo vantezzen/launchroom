@@ -18,7 +18,7 @@
             }
             .card {
                 background: white;
-                padding: 30px;
+                padding: 50px;
                 border-radius: 12px;
                 box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
                 text-align: center;
@@ -34,16 +34,27 @@
                 font-size: 16px;
                 color: #777;
                 line-height: 1.5;
+                text-align: left;
+            }
+            a {
+                color: #000000;
             }
         </style>
     </head>
     <body>
         <div class="card">
-            <h1>404 - No Deployment Found</h1>
+            <img src="/icon.png" alt="Launchroom Icon" style="width: 50px; height: 50px; margin-bottom: 20px" />
+
+            <h1>No Deployment Found</h1>
             <p>
-                You are trying to access an app on a launchroom server, but no deployment has been found behind this domain. If you are the owner of
-                this server, make sure to add this domain to your project and create a successful re-deployment to activate.
+                You are trying to access an app on a
+                <a href="https://github.com/vantezzen/launchroom" target="_blank">launchroom</a>
+                server, but no deployment has been found behind this domain.
             </p>
+            <p>
+                If you are the owner of this server, make sure to add this domain to your project and create a successful re-deployment to activate.
+            </p>
+            <p>If you deployed this app newly just now, it may take a few seconds for the proxy to update.</p>
         </div>
     </body>
 </html>

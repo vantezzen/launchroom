@@ -14,9 +14,6 @@ class RedisDeploymentService extends DeploymentService
             'services' => [
                 'redis' => [
                     'image' => 'redis:alpine',
-                    'environment' => [
-                        'REDIS_PASSWORD' => $this->service->environment_variables['REDIS_PASSWORD'],
-                    ],
                     'volumes' => [
                         'redis_data:/data',
                     ],
@@ -31,6 +28,11 @@ class RedisDeploymentService extends DeploymentService
         ];
     }
 
+    public function getCriticalServiceNames(): array
+    {
+        return ['redis'];
+    }
+
     public static function createServiceInEnvironment(Environment $environment, array $settings): Service
     {
         $password = Str::random(32);
@@ -42,7 +44,6 @@ class RedisDeploymentService extends DeploymentService
             'environment_variables' => [
                 'REDIS_HOST' => 'redis',
                 'REDIS_PORT' => 6379,
-                'REDIS_PASSWORD' => $password,
                 'CACHE_STORE' => 'redis',
                 'QUEUE_CONNECTION' => 'redis',
             ],

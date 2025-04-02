@@ -7,6 +7,7 @@ import { Deployment, SharedData } from '@/types';
 import { timeAgo } from '@/utils/time';
 import { usePage } from '@inertiajs/react';
 import { Clock, ExternalLink } from 'lucide-react';
+import { useInterval, useUpdate } from 'react-use';
 import { BuildLogs } from './BuildLog';
 
 const calculateBuildTime = (deployment: Deployment) => {
@@ -54,6 +55,8 @@ export default function DeploymentShow({ deployment }: { deployment: Deployment 
     } = usePage<SharedData>();
 
     useReloadOnChannel(`App.Models.Deployment.${deployment.id}`);
+    const update = useUpdate();
+    useInterval(update, 1000);
 
     return (
         <EnvironmentLayout
