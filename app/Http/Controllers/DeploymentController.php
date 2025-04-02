@@ -6,7 +6,7 @@ use App\Http\Requests\StoreDeploymentRequest;
 use App\Http\Requests\UpdateDeploymentRequest;
 use App\Jobs\DeployJob;
 use App\Models\Deployment;
-use App\Models\ProjectEnvironment;
+use App\Models\Environment;
 use App\Services\GitHub;
 
 class DeploymentController extends Controller
@@ -24,14 +24,14 @@ class DeploymentController extends Controller
      */
     public function store(StoreDeploymentRequest $request)
     {
-        $environment = ProjectEnvironment::find($request->project_environment_id);
+        $environment = Environment::find($request->environment_id);
         $project = $environment->project;
         $team = $project->team;
 
         $github = new GitHub($team);
 
         $deployment = Deployment::create([
-            'project_environment_id' => $environment->id,
+            'environment_id' => $environment->id,
             'commit_hash' => $github->getLatestCommitHashInRepository($environment->project->repository),
             'status' => 'pending',
             'output' => '',

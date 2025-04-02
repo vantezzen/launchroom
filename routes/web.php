@@ -1,9 +1,9 @@
 <?php
 
 use App\Http\Controllers\DeploymentController;
+use App\Http\Controllers\EnvironmentController;
 use App\Http\Controllers\MetricsController;
 use App\Http\Controllers\ProjectController;
-use App\Http\Controllers\ProjectEnvironmentController;
 use App\Http\Controllers\ServiceController;
 use App\Http\Controllers\TeamController;
 use Illuminate\Support\Facades\Route;
@@ -21,12 +21,12 @@ Route::middleware(['auth', 'verified'])->group(function () {
         'projects' => 'project:slug',
         'teams' => 'team:slug',
     ]);
-    Route::resource('teams.projects.environments', ProjectEnvironmentController::class)->parameters([
+    Route::resource('teams.projects.environments', EnvironmentController::class)->parameters([
         'projects' => 'project:slug',
         'teams' => 'team:slug',
     ]);
-    Route::get('teams/{team:slug}/projects/{project:slug}/environments/{environment}/metrics', [ProjectEnvironmentController::class, 'metrics']);
-    Route::get('teams/{team:slug}/projects/{project:slug}/environments/{environment}/logs', [ProjectEnvironmentController::class, 'logs']);
+    Route::get('teams/{team:slug}/projects/{project:slug}/environments/{environment}/metrics', [EnvironmentController::class, 'metrics']);
+    Route::get('teams/{team:slug}/projects/{project:slug}/environments/{environment}/logs', [EnvironmentController::class, 'logs']);
 
     Route::resource('teams.projects.environments.deployments', DeploymentController::class)->parameters([
         'projects' => 'project:slug',
@@ -40,7 +40,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     // API
     Route::resource('projects', ProjectController::class);
     Route::resource('services', ServiceController::class);
-    Route::resource('environments', ProjectEnvironmentController::class);
+    Route::resource('environments', EnvironmentController::class);
     Route::resource('deployments', DeploymentController::class);
 
     Route::get('metrics', [MetricsController::class, 'index'])->name('metrics.index');

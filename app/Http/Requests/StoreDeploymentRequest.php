@@ -22,7 +22,7 @@ class StoreDeploymentRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'project_environment_id' => ['required', 'exists:project_environments,id'],
+            'environment_id' => ['required', 'exists:environments,id'],
         ];
     }
 }

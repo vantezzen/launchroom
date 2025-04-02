@@ -73,7 +73,7 @@ export interface Deployment {
 export interface Service {
     id: string;
     name: string;
-    project_environment_id: string;
+    environment_id: string;
 
     category: string;
     service_type: string;
@@ -101,7 +101,7 @@ export interface Environment {
 
 export interface ProcessingUsage {
     id: string;
-    project_environment_id: string;
+    environment_id: string;
 
     cpu: number; // in %
     mem_usage: number; // in bytes

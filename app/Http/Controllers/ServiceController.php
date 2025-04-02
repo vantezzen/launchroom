@@ -4,7 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\StoreServiceRequest;
 use App\Http\Requests\UpdateServiceRequest;
-use App\Models\ProjectEnvironment;
+use App\Models\Environment;
 use App\Models\Service;
 use App\Services\DeploymentManager;
 
@@ -36,7 +36,7 @@ class ServiceController extends Controller
             abort(400, 'Invalid service type');
         }
 
-        $env = ProjectEnvironment::findOrFail($environment);
+        $env = Environment::findOrFail($environment);
         $service = $class::createServiceInEnvironment($env, $request->validated());
 
         return redirect()->to(frontendRoute('teams.projects.environments.show', $env));
@@ -71,7 +71,7 @@ class ServiceController extends Controller
      */
     public function destroy(Service $service)
     {
-        $environment = $service->project_environment;
+        $environment = $service->environment;
         $service->delete();
 
         return redirect()->to(frontendRoute('teams.projects.environments.show', $environment));

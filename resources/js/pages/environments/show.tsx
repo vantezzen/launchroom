@@ -9,7 +9,7 @@ import DeploymentDiagram from './components/DeploymentDiagram';
 
 export default function ProjectShow() {
     const { data, setData, post, errors, processing, recentlySuccessful } = useForm({
-        project_environment_id: '',
+        environment_id: '',
     });
     const {
         props: { currentTeam, currentProject, currentEnvironment },
@@ -17,7 +17,7 @@ export default function ProjectShow() {
 
     useEffect(() => {
         if (!currentProject) return;
-        setData('project_environment_id', currentProject.environments[0].id);
+        setData('environment_id', currentProject.environments[0].id);
     }, [currentProject]);
 
     const submit: FormEventHandler = (e) => {

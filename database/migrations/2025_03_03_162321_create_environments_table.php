@@ -12,7 +12,7 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('project_environments', function (Blueprint $table) {
+        Schema::create('environments', function (Blueprint $table) {
             $table->string('id')->primary();
 
             $table->foreignIdFor(Project::class)->index();
@@ -31,6 +31,6 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('project_environments');
+        Schema::dropIfExists('environments');
     }
 };

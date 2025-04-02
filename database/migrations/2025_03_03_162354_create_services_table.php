@@ -1,6 +1,6 @@
 <?php
 
-use App\Models\ProjectEnvironment;
+use App\Models\Environment;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
@@ -16,7 +16,7 @@ return new class extends Migration
             $table->string('id')->primary();
 
             $table->string('name');
-            $table->foreignIdFor(ProjectEnvironment::class)->index();
+            $table->foreignIdFor(Environment::class)->index();
             $table->string('category')->description('The category of service (e.g. database, cache, etc.)');
             $table->string('service_type')->description('The service type (e.g. MySQL, Redis, etc.)');
             $table->jsonb('environment_variables');

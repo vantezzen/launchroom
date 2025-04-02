@@ -13,7 +13,6 @@ class Team extends Model
     use HasFactory;
 
     use HasHashIds;
-
     use HasRelationships;
 
     protected $fillable = ['name', 'slug', 'github_token', 'github_username'];
@@ -43,18 +42,21 @@ class Team extends Model
 
     public function deployments()
     {
-        return $this->hasManyDeep(Deployment::class, [Project::class, ProjectEnvironment::class]);
+        return $this->hasManyDeep(Deployment::class, [Project::class, Environment::class]);
     }
+
     public function services()
     {
-        return $this->hasManyDeep(Service::class, [Project::class, ProjectEnvironment::class]);
+        return $this->hasManyDeep(Service::class, [Project::class, Environment::class]);
     }
+
     public function processingUsages()
     {
-        return $this->hasManyDeep(ProcessingUsage::class, [Project::class, ProjectEnvironment::class]);
+        return $this->hasManyDeep(ProcessingUsage::class, [Project::class, Environment::class]);
     }
+
     public function environments()
     {
-        return $this->hasManyDeep(ProjectEnvironment::class, [Project::class]);
+        return $this->hasManyDeep(Environment::class, [Project::class]);
     }
 }

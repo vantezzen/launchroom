@@ -2,7 +2,7 @@
 
 namespace App\Jobs;
 
-use App\Models\ProjectEnvironment;
+use App\Models\Environment;
 use App\Services\DeploymentManager;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -15,7 +15,7 @@ class GetProcessingUsageJob implements ShouldQueue
      * Create a new job instance.
      */
     public function __construct(
-        public ProjectEnvironment $environment,
+        public Environment $environment,
     ) {
         //
     }

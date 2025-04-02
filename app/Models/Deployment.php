@@ -13,10 +13,9 @@ class Deployment extends Model
     use HasFactory;
 
     use HasHashIds;
-
     use HasRelationships;
 
-    protected $fillable = ['project_environment_id', 'commit_hash', 'status', 'output', 'is_latest', 'started_at', 'finished_at'];
+    protected $fillable = ['environment_id', 'commit_hash', 'status', 'output', 'is_latest', 'started_at', 'finished_at'];
 
     protected $hashPrefix = 'depl_';
 
@@ -26,20 +25,20 @@ class Deployment extends Model
 
     public function environment()
     {
-        return $this->belongsTo(ProjectEnvironment::class, 'project_environment_id');
+        return $this->belongsTo(Environment::class, 'environment_id');
     }
 
     public function team()
     {
         return $this->hasOneDeepFromReverse(
-            (new Team())->deployments()
+            (new Team)->deployments()
         );
     }
 
     public function project()
     {
         return $this->hasOneDeepFromReverse(
-            (new Project())->deployments()
+            (new Project)->deployments()
         );
     }
 

@@ -2,13 +2,13 @@
 
 namespace App\Http\Controllers;
 
-use App\Http\Requests\StoreProjectEnvironmentRequest;
-use App\Http\Requests\UpdateProjectEnvironmentRequest;
-use App\Models\ProjectEnvironment;
+use App\Http\Requests\StoreEnvironmentRequest;
+use App\Http\Requests\UpdateEnvironmentRequest;
+use App\Models\Environment;
 use App\Services\DeploymentManager;
 use Inertia\Inertia;
 
-class ProjectEnvironmentController extends Controller
+class EnvironmentController extends Controller
 {
     /**
      * Display a listing of the resource.
@@ -29,7 +29,7 @@ class ProjectEnvironmentController extends Controller
     /**
      * Store a newly created resource in storage.
      */
-    public function store(StoreProjectEnvironmentRequest $request, string $teamSlug, string $projectSlug)
+    public function store(StoreEnvironmentRequest $request, string $teamSlug, string $projectSlug)
     {
         $team = auth()->user()->teams()->where('slug', $teamSlug)->firstOrFail();
         $project = $team->projects()->where('slug', $projectSlug)->firstOrFail();
@@ -41,7 +41,7 @@ class ProjectEnvironmentController extends Controller
     /**
      * Display the specified resource.
      */
-    public function show(ProjectEnvironment $projectEnvironment)
+    public function show(Environment $projectEnvironment)
     {
         return Inertia::render('environments/show');
     }
@@ -49,7 +49,7 @@ class ProjectEnvironmentController extends Controller
     /**
      * Show the form for editing the specified resource.
      */
-    public function edit(ProjectEnvironment $projectEnvironment)
+    public function edit(Environment $projectEnvironment)
     {
         //
     }
@@ -57,7 +57,7 @@ class ProjectEnvironmentController extends Controller
     /**
      * Update the specified resource in storage.
      */
-    public function update(UpdateProjectEnvironmentRequest $request, ProjectEnvironment $projectEnvironment)
+    public function update(UpdateEnvironmentRequest $request, Environment $projectEnvironment)
     {
         $projectEnvironment = $projectEnvironment->first();
         $projectEnvironment->update($request->validated());
@@ -68,12 +68,12 @@ class ProjectEnvironmentController extends Controller
     /**
      * Remove the specified resource from storage.
      */
-    public function destroy(ProjectEnvironment $projectEnvironment)
+    public function destroy(Environment $projectEnvironment)
     {
         //
     }
 
-    public function metrics(ProjectEnvironment $projectEnvironment)
+    public function metrics(Environment $projectEnvironment)
     {
         $projectEnvironment = $projectEnvironment->first();
 
@@ -82,7 +82,7 @@ class ProjectEnvironmentController extends Controller
         return Inertia::render('environments/metrics', compact('usage'));
     }
 
-    public function logs(ProjectEnvironment $projectEnvironment)
+    public function logs(Environment $projectEnvironment)
     {
         $projectEnvironment = $projectEnvironment->first();
         if (! $projectEnvironment->deployments()->exists()) {

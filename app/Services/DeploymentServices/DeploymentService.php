@@ -2,7 +2,7 @@
 
 namespace App\Services\DeploymentServices;
 
-use App\Models\ProjectEnvironment;
+use App\Models\Environment;
 use App\Models\Service;
 
 abstract class DeploymentService
@@ -35,5 +35,5 @@ abstract class DeploymentService
         return $compose;
     }
 
-    abstract public static function createServiceInEnvironment(ProjectEnvironment $environment, array $settings): Service;
+    abstract public static function createServiceInEnvironment(Environment $environment, array $settings): Service;
 }

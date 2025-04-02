@@ -13,7 +13,6 @@ class Project extends Model
     use HasFactory;
 
     use HasHashIds;
-
     use HasRelationships;
 
     protected $fillable = ['name', 'description', 'team_id', 'slug', 'repository', 'branch', 'build_settings', 'deployment_template'];
@@ -27,16 +26,16 @@ class Project extends Model
 
     public function environments()
     {
-        return $this->hasMany(ProjectEnvironment::class);
+        return $this->hasMany(Environment::class);
     }
 
     public function deployments()
     {
-        return $this->hasManyDeep(Deployment::class, [ProjectEnvironment::class]);
+        return $this->hasManyDeep(Deployment::class, [Environment::class]);
     }
 
     public function services()
     {
-        return $this->hasManyDeep(Service::class, [ProjectEnvironment::class]);
+        return $this->hasManyDeep(Service::class, [Environment::class]);
     }
 }

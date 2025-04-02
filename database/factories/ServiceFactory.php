@@ -18,7 +18,7 @@ class ServiceFactory extends Factory
     {
         return [
             'name' => $this->faker->word,
-            'project_environment_id' => ProjectEnvironmentFactory::new(),
+            'environment_id' => EnvironmentFactory::new(),
             'category' => 'database',
             'service_type' => 'mysql',
             'environment_variables' => [

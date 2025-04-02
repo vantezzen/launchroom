@@ -4,8 +4,8 @@ namespace Database\Seeders;
 
 use App\Models\Deployment;
 use App\Models\EncryptionKey;
+use App\Models\Environment;
 use App\Models\Project;
-use App\Models\ProjectEnvironment;
 use App\Models\Service;
 use App\Models\Team;
 use App\Models\User;
@@ -43,7 +43,7 @@ class DatabaseSeeder extends Seeder
             'deployment_template' => 'laravel',
         ]);
 
-        $prodEnvironment = ProjectEnvironment::factory()->create([
+        $prodEnvironment = Environment::factory()->create([
             'project_id' => $project->id,
             'domains' => [
                 'laravel-demo-production.127.0.0.1.sslip.io',
@@ -56,7 +56,7 @@ class DatabaseSeeder extends Seeder
         ]);
 
         Service::factory()->create([
-            'project_environment_id' => $prodEnvironment->id,
+            'environment_id' => $prodEnvironment->id,
             'name' => 'MySQL',
             'category' => 'database',
             'service_type' => 'mysql',
@@ -71,7 +71,7 @@ class DatabaseSeeder extends Seeder
         ]);
 
         Service::factory()->create([
-            'project_environment_id' => $prodEnvironment->id,
+            'environment_id' => $prodEnvironment->id,
             'name' => 'Redis',
             'category' => 'cache',
             'service_type' => 'redis',
@@ -83,7 +83,7 @@ class DatabaseSeeder extends Seeder
         ]);
 
         Deployment::factory()->create([
-            'project_environment_id' => $prodEnvironment->id,
+            'environment_id' => $prodEnvironment->id,
         ]);
     }
 }

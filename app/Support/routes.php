@@ -1,8 +1,8 @@
 <?php
 
 use App\Models\Deployment;
+use App\Models\Environment;
 use App\Models\Project;
-use App\Models\ProjectEnvironment;
 use App\Models\Service;
 use App\Models\Team;
 
@@ -17,12 +17,12 @@ function frontendRoute(string $route, $model)
         $parameters = ['team' => $model->slug];
     } elseif ($model instanceof Project) {
         $parameters = ['team' => $model->team->slug, 'project' => $model->slug];
-    } elseif ($model instanceof ProjectEnvironment) {
+    } elseif ($model instanceof Environment) {
         $parameters = ['team' => $model->team->slug, 'project' => $model->project->slug, 'environment' => $model->id];
     } elseif ($model instanceof Deployment) {
-        $parameters = ['team' => $model->team->slug, 'project' => $model->project->slug, 'environment' => $model->project_environment_id, 'deployment' => $model->id];
+        $parameters = ['team' => $model->team->slug, 'project' => $model->project->slug, 'environment' => $model->environment_id, 'deployment' => $model->id];
     } elseif ($model instanceof Service) {
-        $parameters = ['team' => $model->team->slug, 'project' => $model->project->slug, 'environment' => $model->project_environment_id, 'service' => $model->id];
+        $parameters = ['team' => $model->team->slug, 'project' => $model->project->slug, 'environment' => $model->environment_id, 'service' => $model->id];
     }
 
     return route($route, $parameters);

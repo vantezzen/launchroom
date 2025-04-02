@@ -13,7 +13,6 @@ class Service extends Model
     use HasFactory;
 
     use HasHashIds;
-
     use HasRelationships;
 
     protected $fillable = ['name', 'description', 'project_id', 'service_type', 'environment_variables', 'environment_types', 'category'];
@@ -25,22 +24,22 @@ class Service extends Model
 
     protected $hashPrefix = 'serv_';
 
-    public function project_environment()
+    public function environment()
     {
-        return $this->belongsTo(ProjectEnvironment::class);
+        return $this->belongsTo(Environment::class);
     }
 
     public function team()
     {
         return $this->hasOneDeepFromReverse(
-            (new Team())->deployments()
+            (new Team)->deployments()
         );
     }
 
     public function project()
     {
         return $this->hasOneDeepFromReverse(
-            (new Project())->deployments()
+            (new Project)->deployments()
         );
     }
 }

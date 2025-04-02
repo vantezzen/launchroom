@@ -3,7 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Jobs\GetProcessingUsageJob;
-use App\Models\ProjectEnvironment;
+use App\Models\Environment;
 use Illuminate\Console\Command;
 
 class GetProcessingUsages extends Command
@@ -27,9 +27,9 @@ class GetProcessingUsages extends Command
      */
     public function handle()
     {
-        $environments = ProjectEnvironment::all();
+        $environments = Environment::all();
 
-        $environments->each(function (ProjectEnvironment $environment) {
+        $environments->each(function (Environment $environment) {
             GetProcessingUsageJob::dispatch($environment);
         });
     }

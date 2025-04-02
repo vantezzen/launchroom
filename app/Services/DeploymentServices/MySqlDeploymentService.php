@@ -2,7 +2,7 @@
 
 namespace App\Services\DeploymentServices;
 
-use App\Models\ProjectEnvironment;
+use App\Models\Environment;
 use App\Models\Service;
 use Illuminate\Support\Str;
 
@@ -34,7 +34,7 @@ class MySqlDeploymentService extends DeploymentService
         ];
     }
 
-    public static function createServiceInEnvironment(ProjectEnvironment $environment, array $settings): Service
+    public static function createServiceInEnvironment(Environment $environment, array $settings): Service
     {
         $password = Str::random(32);
 

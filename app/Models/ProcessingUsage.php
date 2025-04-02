@@ -13,7 +13,6 @@ class ProcessingUsage extends Model
     use HasFactory;
 
     use HasHashIds;
-
     use HasRelationships;
 
     protected $hashPrefix = 'usg_';
@@ -31,16 +30,16 @@ class ProcessingUsage extends Model
 
     public function environment()
     {
-        return $this->belongsTo(ProjectEnvironment::class);
+        return $this->belongsTo(Environment::class);
     }
 
     public function team()
     {
-        return $this->hasOneDeep(Team::class, [ProjectEnvironment::class, Project::class]);
+        return $this->hasOneDeep(Team::class, [Environment::class, Project::class]);
     }
 
     public function project()
     {
-        return $this->hasOneDeep(Project::class, [ProjectEnvironment::class]);
+        return $this->hasOneDeep(Project::class, [Environment::class]);
     }
 }

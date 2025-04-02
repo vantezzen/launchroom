@@ -17,7 +17,7 @@ class DeploymentFactory extends Factory
     public function definition(): array
     {
         return [
-            'project_environment_id' => ProjectEnvironmentFactory::new(),
+            'environment_id' => EnvironmentFactory::new(),
             'commit_hash' => fake()->sha256(),
             'status' => 'succeeded',
             'output' => fake()->sentence(),
