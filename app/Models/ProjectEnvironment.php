@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Traits\HasHashIds;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Staudenmeir\EloquentHasManyDeep\HasRelationships;
 
 class ProjectEnvironment extends Model
 {
@@ -12,6 +13,8 @@ class ProjectEnvironment extends Model
     use HasFactory;
 
     use HasHashIds;
+
+    use HasRelationships;
 
     protected $fillable = ['project_id', 'name', 'type', 'domains', 'environment_variables', 'branch'];
 
@@ -40,5 +43,11 @@ class ProjectEnvironment extends Model
     public function processingUsages()
     {
         return $this->hasMany(ProcessingUsage::class);
+    }
+
+    public function team() {
+        return $this->hasOneDeepFromReverse(
+            (new Team())->environments()
+        );
     }
 }

@@ -1,9 +1,9 @@
 - Prometheus Analytics
   - Validate requests
 
-- Deployment
-  - Change branch
-  - Add auth
+- CD trigger
+  - Webhook for public servers
+  - schedule for private servers
 
 - Application/Environment Settings
   - Change name

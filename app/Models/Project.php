@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Traits\HasHashIds;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Staudenmeir\EloquentHasManyDeep\HasRelationships;
 
 class Project extends Model
 {
@@ -12,6 +13,8 @@ class Project extends Model
     use HasFactory;
 
     use HasHashIds;
+
+    use HasRelationships;
 
     protected $fillable = ['name', 'description', 'team_id', 'slug', 'repository', 'branch', 'build_settings', 'deployment_template'];
 
@@ -29,6 +32,11 @@ class Project extends Model
 
     public function deployments()
     {
-        return $this->hasManyThrough(Deployment::class, ProjectEnvironment::class);
+        return $this->hasManyDeep(Deployment::class, [ProjectEnvironment::class]);
+    }
+
+    public function services()
+    {
+        return $this->hasManyDeep(Service::class, [ProjectEnvironment::class]);
     }
 }

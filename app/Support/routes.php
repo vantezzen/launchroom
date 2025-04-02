@@ -18,11 +18,11 @@ function frontendRoute(string $route, $model)
     } elseif ($model instanceof Project) {
         $parameters = ['team' => $model->team->slug, 'project' => $model->slug];
     } elseif ($model instanceof ProjectEnvironment) {
-        $parameters = ['team' => $model->project->team->slug, 'project' => $model->project->slug, 'environment' => $model->id];
+        $parameters = ['team' => $model->team->slug, 'project' => $model->project->slug, 'environment' => $model->id];
     } elseif ($model instanceof Deployment) {
-        $parameters = ['team' => $model->project->team->slug, 'project' => $model->project->slug, 'environment' => $model->project_environment_id, 'deployment' => $model->id];
+        $parameters = ['team' => $model->team->slug, 'project' => $model->project->slug, 'environment' => $model->project_environment_id, 'deployment' => $model->id];
     } elseif ($model instanceof Service) {
-        $parameters = ['team' => $model->project->team->slug, 'project' => $model->project->slug, 'environment' => $model->project_environment_id, 'service' => $model->id];
+        $parameters = ['team' => $model->team->slug, 'project' => $model->project->slug, 'environment' => $model->project_environment_id, 'service' => $model->id];
     }
 
     return route($route, $parameters);

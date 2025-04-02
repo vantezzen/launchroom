@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Traits\HasHashIds;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Staudenmeir\EloquentHasManyDeep\HasRelationships;
 
 class Deployment extends Model
 {
@@ -12,6 +13,8 @@ class Deployment extends Model
     use HasFactory;
 
     use HasHashIds;
+
+    use HasRelationships;
 
     protected $fillable = ['project_environment_id', 'commit_hash', 'status', 'output', 'is_latest', 'started_at', 'finished_at'];
 
@@ -28,12 +31,16 @@ class Deployment extends Model
 
     public function team()
     {
-        return $this->hasOneDeep(Team::class, [ProjectEnvironment::class, Project::class]);
+        return $this->hasOneDeepFromReverse(
+            (new Team())->deployments()
+        );
     }
 
     public function project()
     {
-        return $this->hasOneDeep(Project::class, [ProjectEnvironment::class]);
+        return $this->hasOneDeepFromReverse(
+            (new Project())->deployments()
+        );
     }
 
     public function addLogSection($title, $content, $prefix = 'log')

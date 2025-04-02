@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Traits\HasHashIds;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Staudenmeir\EloquentHasManyDeep\HasRelationships;
 
 class Team extends Model
 {
@@ -12,6 +13,8 @@ class Team extends Model
     use HasFactory;
 
     use HasHashIds;
+
+    use HasRelationships;
 
     protected $fillable = ['name', 'slug', 'github_token', 'github_username'];
 
@@ -36,5 +39,22 @@ class Team extends Model
     public function encryptionKey()
     {
         return $this->hasOne(EncryptionKey::class);
+    }
+
+    public function deployments()
+    {
+        return $this->hasManyDeep(Deployment::class, [Project::class, ProjectEnvironment::class]);
+    }
+    public function services()
+    {
+        return $this->hasManyDeep(Service::class, [Project::class, ProjectEnvironment::class]);
+    }
+    public function processingUsages()
+    {
+        return $this->hasManyDeep(ProcessingUsage::class, [Project::class, ProjectEnvironment::class]);
+    }
+    public function environments()
+    {
+        return $this->hasManyDeep(ProjectEnvironment::class, [Project::class]);
     }
 }

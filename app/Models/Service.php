@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Traits\HasHashIds;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Staudenmeir\EloquentHasManyDeep\HasRelationships;
 
 class Service extends Model
 {
@@ -12,6 +13,8 @@ class Service extends Model
     use HasFactory;
 
     use HasHashIds;
+
+    use HasRelationships;
 
     protected $fillable = ['name', 'description', 'project_id', 'service_type', 'environment_variables', 'environment_types', 'category'];
 
@@ -29,11 +32,15 @@ class Service extends Model
 
     public function team()
     {
-        return $this->hasOneDeep(Team::class, [ProjectEnvironment::class, Project::class]);
+        return $this->hasOneDeepFromReverse(
+            (new Team())->deployments()
+        );
     }
 
     public function project()
     {
-        return $this->hasOneDeep(Project::class, [ProjectEnvironment::class]);
+        return $this->hasOneDeepFromReverse(
+            (new Project())->deployments()
+        );
     }
 }
