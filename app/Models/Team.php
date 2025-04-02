@@ -17,6 +17,10 @@ class Team extends Model
 
     protected $hidden = ['github_token'];
 
+    protected $casts = [
+        'github_token' => 'encrypted',
+    ];
+
     protected $hashPrefix = 'team_';
 
     public function users()
@@ -27,5 +31,10 @@ class Team extends Model
     public function projects()
     {
         return $this->hasMany(Project::class);
+    }
+
+    public function encryptionKey()
+    {
+        return $this->hasOne(EncryptionKey::class);
     }
 }

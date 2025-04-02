@@ -9,7 +9,7 @@ class GithubController extends Controller
 {
     public function repositories(Team $team)
     {
-        $github = new GitHub($team->github_token);
+        $github = new GitHub($team);
 
         return response()->json($github->getRepositories());
     }

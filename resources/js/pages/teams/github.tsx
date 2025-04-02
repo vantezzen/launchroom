@@ -21,7 +21,7 @@ function GithubConnection() {
     const submit: FormEventHandler = (e) => {
         e.preventDefault();
 
-        patch(route('teams.update', { team: currentTeam.slug }));
+        patch(route('teams.update', { team: currentTeam?.slug }));
     };
 
     return (
@@ -34,7 +34,7 @@ function GithubConnection() {
             >
                 <div className="space-y-6">
                     <a
-                        href="https://github.com/settings/tokens/new?description=launchroom&scopes=repo,admin:repo_hook&default_expires_at=none"
+                        href="https://github.com/settings/tokens/new?description=launchroom&scopes=repo,admin:repo_hook,admin:gpg_key,admin:ssh_signing_key&default_expires_at=none"
                         target="_blank"
                         rel="noreferrer"
                     >

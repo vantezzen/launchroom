@@ -93,6 +93,7 @@ export interface Environment {
     domains: string[];
     environment_variables: Record<string, string>;
     services: Service[];
+    branch: string;
 
     created_at: string;
     updated_at: string;

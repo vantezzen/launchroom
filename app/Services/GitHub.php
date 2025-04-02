@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\Team;
 use Github\AuthMethod;
 use Github\Client;
 use Github\ResultPager;
@@ -13,10 +14,10 @@ class GitHub
 
     protected $paginator;
 
-    public function __construct(string $token)
+    public function __construct(protected Team $team)
     {
         $this->client = new Client;
-        $this->authenticate($token);
+        $this->authenticate($team->github_token);
 
         $this->paginator = new ResultPager($this->client);
     }
@@ -68,5 +69,38 @@ class GitHub
             'owner' => $repository[0],
             'name' => $repository[1],
         ];
+    }
+
+    public function getCliAuthParameter()
+    {
+        $path = $this->team->encryptionKey->storeInFilesystem();
+
+        return "-c \"core.sshCommand=ssh -i {$path}\"";
+    }
+
+    public function addSshConfigToRepository($repositoryPath)
+    {
+        $path = $this->team->encryptionKey->storeInFilesystem();
+        $configCommand = "cd {$repositoryPath} && git config core.sshCommand \"ssh -i {$path}\" 2>&1";
+        $output = shell_exec($configCommand);
+
+        return $output;
+    }
+
+    public function addSshKey($publicKey, $keyName)
+    {
+        $existingKey = $this->client->currentUser()->keys()->all();
+        foreach ($existingKey as $key) {
+            if ($key['title'] === $keyName) {
+                dump('Key already exists');
+
+                return;
+            }
+        }
+
+        $this->client->currentUser()->keys()->create([
+            'title' => $keyName,
+            'key' => $publicKey,
+        ]);
     }
 }

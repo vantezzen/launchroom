@@ -19,6 +19,7 @@
         "laravel/telescope": "^5.5",
         "laravel/tinker": "^2.10.1",
         "lorisleiva/laravel-actions": "^2.9",
+        "phpseclib/phpseclib": "~3.0",
         "spatie/laravel-data": "^4.13",
         "spatie/laravel-settings": "^3.4",
         "symfony/yaml": "^7.2",

@@ -3,7 +3,7 @@ import { useForm, usePage } from '@inertiajs/react';
 import { Button } from '@/components/ui/button';
 import EnvironmentLayout from '@/layouts/environment-layout';
 import { SharedData } from '@/types';
-import { ExternalLink, Hammer } from 'lucide-react';
+import { ExternalLink, Github, Hammer } from 'lucide-react';
 import { FormEventHandler, useEffect } from 'react';
 import DeploymentDiagram from './components/DeploymentDiagram';
 
@@ -35,6 +35,12 @@ export default function ProjectShow() {
                         <Button variant="secondary">
                             <ExternalLink className="mr-2 h-4 w-4" />
                             Visit
+                        </Button>
+                    </a>
+                    <a href={`${currentProject?.repository}/tree/${currentEnvironment?.branch}`} target="_blank" rel="noreferrer">
+                        <Button variant="secondary">
+                            <Github className="mr-2 h-4 w-4" />
+                            Show repository
                         </Button>
                     </a>
                     <Button disabled={processing} onClick={submit}>

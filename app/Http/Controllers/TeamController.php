@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\StoreTeamRequest;
 use App\Http\Requests\UpdateTeamRequest;
+use App\Models\EncryptionKey;
 use App\Models\Team;
 use App\Services\GitHub;
 use Inertia\Inertia;
@@ -24,6 +25,7 @@ class TeamController extends Controller
     public function store(StoreTeamRequest $request)
     {
         $team = auth()->user->teams()->create($request->validated());
+        EncryptionKey::newForTeam($team);
 
         return to_route('teams.show', $team);
     }
@@ -52,12 +54,14 @@ class TeamController extends Controller
         $team->update($request->validated());
 
         if ($request->has('github_token')) {
-            $github = new GitHub($request->github_token);
+            $github = new GitHub($request);
 
             $team->update([
-                'github_token' => encrypt($request->github_token),
+                'github_token' => $request->github_token,
                 'github_username' => $github->getUsername(),
             ]);
+
+            $team->encryptionKey->addToGitHub();
         }
 
         return to_route('teams.show', $team);

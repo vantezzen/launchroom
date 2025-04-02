@@ -28,7 +28,7 @@ class ProjectController extends Controller
             return Inertia::render('teams/github');
         }
 
-        $github = new GitHub(decrypt($team->github_token));
+        $github = new GitHub($team);
 
         return Inertia::render('projects/create', [
             'repositories' => $github->getRepositories(),

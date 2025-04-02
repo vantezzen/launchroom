@@ -26,6 +26,16 @@ class Deployment extends Model
         return $this->belongsTo(ProjectEnvironment::class, 'project_environment_id');
     }
 
+    public function team()
+    {
+        return $this->hasOneDeep(Team::class, [ProjectEnvironment::class, Project::class]);
+    }
+
+    public function project()
+    {
+        return $this->hasOneDeep(Project::class, [ProjectEnvironment::class]);
+    }
+
     public function addLogSection($title, $content, $prefix = 'log')
     {
         $this->refresh();

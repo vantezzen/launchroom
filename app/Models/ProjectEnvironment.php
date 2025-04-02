@@ -13,7 +13,7 @@ class ProjectEnvironment extends Model
 
     use HasHashIds;
 
-    protected $fillable = ['project_id', 'name', 'type', 'domains', 'environment_variables'];
+    protected $fillable = ['project_id', 'name', 'type', 'domains', 'environment_variables', 'branch'];
 
     protected $casts = [
         'domains' => 'array',

@@ -24,15 +24,18 @@ class DeploymentManager
 
     protected $activeTemplate;
 
+    protected $github;
+
     public function __construct(protected Deployment $deployment)
     {
         $baseDirectory = $this->getBaseDirectory();
         $this->templates = collect(self::TEMPLATES)->map(fn ($template) => new $template($baseDirectory, $deployment));
+        $this->github = new GitHub($deployment->environment->project->team);
     }
 
     protected function getBaseDirectory()
     {
-        $folderName = $this->deployment->environment->project->slug.'-'.$this->deployment->environment->name;
+        $folderName = $this->deployment->environment->project->slug.'-'.str_replace('/', '-', $this->deployment->environment->name);
 
         return storage_path('app/private/deployments/'.$folderName);
     }
@@ -82,23 +85,28 @@ class DeploymentManager
 
     protected function pullLatestCode()
     {
-        // TODO: Handle auth for private repos
-        // TODO: Switch branch
-        // TODO: Ignore overriding local changes
-
         if (! file_exists($this->getBaseDirectory())) {
             // Download codebase for the first time
-            $cloneCode = "git clone {$this->deployment->environment->project->repository} {$this->getBaseDirectory()} 2>&1";
+            $cloneCode = "git clone {$this->github->getCliAuthParameter()} {$this->deployment->environment->project->repository} {$this->getBaseDirectory()} 2>&1";
             $output = shell_exec($cloneCode);
 
             $this->deployment->addLogSection('Clone Code', $output);
         } else {
             // Pull latest code
-            $updateCode = "cd {$this->getBaseDirectory()} && git stash drop && git pull 2>&1";
+            $configInfo = $this->github->addSshConfigToRepository($this->getBaseDirectory());
+            $this->deployment->addLogSection('Add SSH Config', $configInfo);
+
+            $updateCode = "cd {$this->getBaseDirectory()} && git stash drop && git pull {$this->github->getCliAuthParameter()} 2>&1";
             $output = shell_exec($updateCode);
 
             $this->deployment->addLogSection('Update Code', $output);
         }
+
+        $branch = escapeshellarg($this->deployment->environment->branch);
+        $cloneCode = "cd {$this->getBaseDirectory()} && git switch {$branch} 2>&1";
+        $output = shell_exec($cloneCode);
+
+        $this->deployment->addLogSection('Switch branch', $output);
     }
 
     public function getLogs()

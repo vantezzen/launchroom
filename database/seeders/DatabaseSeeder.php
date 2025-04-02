@@ -3,6 +3,7 @@
 namespace Database\Seeders;
 
 use App\Models\Deployment;
+use App\Models\EncryptionKey;
 use App\Models\Project;
 use App\Models\ProjectEnvironment;
 use App\Models\Service;
@@ -28,10 +29,11 @@ class DatabaseSeeder extends Seeder
         $team = Team::factory()->create([
             'name' => 'Launchroom HQ',
             'slug' => 'launchroom-hq',
-            'github_token' => encrypt(env('SEED_GITHUB_TOKEN')),
+            'github_token' => env('SEED_GITHUB_TOKEN'),
             'github_username' => env('SEED_GITHUB_USERNAME'),
         ]);
         $team->users()->attach($user);
+        EncryptionKey::newForTeam($team);
 
         $project = Project::factory()->create([
             'name' => 'Laravel Demo',

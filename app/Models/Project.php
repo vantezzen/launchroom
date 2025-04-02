@@ -26,4 +26,9 @@ class Project extends Model
     {
         return $this->hasMany(ProjectEnvironment::class);
     }
+
+    public function deployments()
+    {
+        return $this->hasManyThrough(Deployment::class, ProjectEnvironment::class);
+    }
 }

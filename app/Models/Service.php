@@ -26,4 +26,14 @@ class Service extends Model
     {
         return $this->belongsTo(ProjectEnvironment::class);
     }
+
+    public function team()
+    {
+        return $this->hasOneDeep(Team::class, [ProjectEnvironment::class, Project::class]);
+    }
+
+    public function project()
+    {
+        return $this->hasOneDeep(Project::class, [ProjectEnvironment::class]);
+    }
 }

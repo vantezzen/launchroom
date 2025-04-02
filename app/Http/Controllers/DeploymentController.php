@@ -28,7 +28,7 @@ class DeploymentController extends Controller
         $project = $environment->project;
         $team = $project->team;
 
-        $github = new GitHub(decrypt($team->github_token));
+        $github = new GitHub($team);
 
         $deployment = Deployment::create([
             'project_environment_id' => $environment->id,
