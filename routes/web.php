@@ -5,14 +5,18 @@ use App\Http\Controllers\EnvironmentController;
 use App\Http\Controllers\MetricsController;
 use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\ServiceController;
+use App\Http\Controllers\SetupController;
 use App\Http\Controllers\TeamController;
+use App\Http\Middleware\RequireSetupDone;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
 require __DIR__.'/settings.php';
 require __DIR__.'/auth.php';
 
-Route::middleware(['auth', 'verified'])->group(function () {
+Route::resource('setup', SetupController::class)->only(['index', 'store']);
+
+Route::middleware(['auth', 'verified', RequireSetupDone::class])->group(function () {
     // Views
     Route::resource('teams', TeamController::class)->parameters([
         'teams' => 'team:slug',
@@ -36,7 +40,6 @@ Route::middleware(['auth', 'verified'])->group(function () {
         'projects' => 'project:slug',
         'teams' => 'team:slug',
     ]);
-
     // API
     Route::resource('projects', ProjectController::class);
     Route::resource('services', ServiceController::class);

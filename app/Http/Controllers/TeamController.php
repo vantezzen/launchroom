@@ -54,12 +54,10 @@ class TeamController extends Controller
         $team->update($request->validated());
 
         if ($request->has('github_token')) {
-            $github = new GitHub($request);
-
-            $team->update([
-                'github_token' => $request->github_token,
-                'github_username' => $github->getUsername(),
-            ]);
+            $team->github_token = $request->github_token;
+            $github = new GitHub($team);
+            $team->github_username = $github->getUsername();
+            $team->save();
 
             $team->encryptionKey->addToGitHub();
         }

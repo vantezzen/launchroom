@@ -59,4 +59,18 @@ class Team extends Model
     {
         return $this->hasManyDeep(Environment::class, [Project::class]);
     }
+
+    public static function newForUser(User $user): static
+    {
+        $team = static::create([
+            'name' => $user->name."'s Team",
+            'slug' => getUniqueSlug($user->name, 'teams'),
+        ]);
+        $team->users()->attach($user);
+
+        EncryptionKey::newForTeam($team);
+        $team->encryptionKey->addToGitHub();
+
+        return $team;
+    }
 }

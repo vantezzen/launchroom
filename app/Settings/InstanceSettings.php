@@ -10,11 +10,13 @@ class InstanceSettings extends Settings
 
     public ?string $domain = null;
 
+    public bool $publicly_accessible = true;
+
     public string $ipv4 = '';
 
-    public string $ipv6 = '';
+    public ?string $ipv6 = '';
 
-    public bool $registration_enabled = true;
+    public bool $setup_done = false;
 
     public static function group(): string
     {

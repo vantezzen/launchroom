@@ -8,11 +8,9 @@
 
 > Framework-first, zero fuss self-hosted deployments
 
-launchroom brings Vercel's `Framework-defined infrastructure` to self-hosting.
+launchroom is an open-source, self-hosted deployment platform built for modern web frameworks. Designed with developers in mind, it automates environment setup, service configuration, and multi-environment management—so you can go from git push to live app without the usual hassle. With native support for Next.js and Laravel (and more on the way), launchroom empowers you to deploy smarter and iterate faster.
 
-As opposed to other self-hosting dashboards like Coolify, launchroom is not just a dashboard around Docker Compose\* but instead tries to abstract away the details of deploying a web application, while still giving you the flexibility to customize your deployment. Think Vercel or Laravel Cloud but on your own server - focused on specific frameworks to provide a seamless experience.
-
-(\*: well, in the end it is a dashboard around Docker Compose, but you don't really have to interact with it)
+![launchroom dashboard](resources/js/assets/dashboard.png)
 
 ## Installation
 
