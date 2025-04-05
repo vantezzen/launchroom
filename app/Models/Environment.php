@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Jobs\DeployJob;
+use App\Services\GitHub;
 use App\Traits\HasHashIds;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -49,5 +51,26 @@ class Environment extends Model
         return $this->hasOneDeepFromReverse(
             (new Team)->environments()
         );
+    }
+
+    public function startDeployment($commitHash = null)
+    {
+        $project = $this->project;
+        $team = $project->team;
+        $github = new GitHub($team);
+        $commitHash = $commitHash ?? $github->getLatestCommitHashInRepository($project->repository);
+
+        $deployment = Deployment::create([
+            'environment_id' => $this->id,
+            'commit_hash' => $commitHash,
+            'status' => 'pending',
+            'output' => '',
+            'is_latest' => true,
+        ]);
+
+        $deployment->addLogSection('Deployment started', 'The deployment process has started.');
+        DeployJob::dispatch($deployment);
+
+        return $deployment;
     }
 }

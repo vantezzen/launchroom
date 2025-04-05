@@ -1,5 +1,7 @@
 <?php
 
+use App\Settings\InstanceSettings;
+
 function getCloudDomain(string $slug, string $environment): string
 {
     $baseIp = baseIp();
@@ -13,5 +15,7 @@ function baseIp()
         return '127.0.0.1';
     }
 
-    return explode(':', $_SERVER['HTTP_HOST'])[0];
+    $settings = app(InstanceSettings::class);
+
+    return $settings->ipv4;
 }

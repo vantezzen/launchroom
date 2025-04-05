@@ -7,8 +7,11 @@ use App\Http\Requests\UpdateProjectRequest;
 use App\Models\Project;
 use App\Models\Team;
 use App\Services\GitHub;
+use App\Settings\InstanceSettings;
 use Illuminate\Encryption\Encrypter;
 use Inertia\Inertia;
+
+use function Illuminate\Log\log;
 
 class ProjectController extends Controller
 {
@@ -39,7 +42,7 @@ class ProjectController extends Controller
     /**
      * Store a newly created resource in storage.
      */
-    public function store(StoreProjectRequest $request, Team $team)
+    public function store(StoreProjectRequest $request, Team $team, InstanceSettings $settings)
     {
         $slug = getUniqueSlug($request->name, 'projects');
 
@@ -62,6 +65,12 @@ class ProjectController extends Controller
                 'APP_KEY' => $appKey,
             ],
         ]);
+
+        if ($settings->publicly_accessible || config('app.env') === 'local') {
+            log('Setting up GitHub webhook for project: '.$project->name);
+            $github = new GitHub($team);
+            $github->setupWebhook($project->repository);
+        }
 
         return redirect()->to(frontendRoute('teams.projects.show', $project));
     }

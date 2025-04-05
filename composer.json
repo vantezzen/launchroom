@@ -21,6 +21,7 @@
         "lorisleiva/laravel-actions": "^2.9",
         "phpseclib/phpseclib": "~3.0",
         "spatie/laravel-data": "^4.13",
+        "spatie/laravel-github-webhooks": "^1.2",
         "spatie/laravel-settings": "^3.4",
         "staudenmeir/eloquent-has-many-deep": "^1.7",
         "symfony/yaml": "^7.2",
@@ -71,9 +72,10 @@
         ],
         "dev": [
             "Composer\\Config::disableProcessTimeout",
-            "npx concurrently -c \"#93c5fd,#c4b5fd,#fb7185,#fdba74\" \"php artisan serve\" \"composer run queue\" \"php artisan pail --timeout=0\" \"npm run dev\" \"php artisan reverb:start\" \"php artisan schedule:work\" --names=server,queue,logs,vite,reverb,schedule"
+            "npx concurrently -c \"#93c5fd,#c4b5fd,#fb7185,#fdba74\" \"php artisan serve\" \"composer run queue\" \"php artisan pail --timeout=0\" \"npm run dev\" \"php artisan reverb:start\" \"php artisan schedule:work\" \"npm run smee\" --names=server,queue,logs,vite,reverb,schedule"
         ],
         "queue": [
+            "Composer\\Config::disableProcessTimeout",
             "npx concurrently -c \"#93c5fd,#c4b5fd,#fb7185,#fdba74\" \"php artisan queue:listen --tries=1\" \"php artisan queue:listen --tries=1\" \"php artisan queue:listen --tries=1\" --names=queue-1,queue-2,queue-3"
         ],
         "lint": [

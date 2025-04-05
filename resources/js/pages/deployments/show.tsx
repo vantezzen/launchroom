@@ -11,10 +11,10 @@ import { useInterval, useUpdate } from 'react-use';
 import { BuildLogs } from './BuildLog';
 
 const calculateBuildTime = (deployment: Deployment) => {
-    if (!deployment.started_at) return 'N/A';
+    if (!deployment.started_at || !deployment.finished_at) return 'In progress';
 
     const start = new Date(deployment.started_at).getTime();
-    const end = new Date(deployment.finished_at || new Date()).getTime();
+    const end = new Date(deployment.finished_at).getTime();
     const diffInSeconds = Math.floor((end - start) / 1000);
 
     return `${diffInSeconds}s`;

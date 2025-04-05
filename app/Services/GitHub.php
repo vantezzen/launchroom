@@ -63,6 +63,7 @@ class GitHub
 
     public function getRepositoryNamesFromUrl($repositoryUrl)
     {
+        $repositoryUrl = str_replace('https://github.com/', '', $repositoryUrl);
         $repository = explode('/', $repositoryUrl);
 
         return [
@@ -101,6 +102,33 @@ class GitHub
         $this->client->currentUser()->keys()->create([
             'title' => $keyName,
             'key' => $publicKey,
+        ]);
+    }
+
+    private function getWebhookUrl()
+    {
+        $isDev = config('app.env') === 'local';
+        if ($isDev) {
+            return config('services.smee.url');
+        }
+
+        return config('app.url').'/api/hooks/github';
+    }
+
+    public function setupWebhook($repositoryUrl)
+    {
+        $repository = $this->getRepositoryNamesFromUrl($repositoryUrl);
+
+        $this->client->repo()->hooks()->create($repository['owner'], $repository['name'], [
+            'name' => 'web',
+            'config' => [
+                'url' => $this->getWebhookUrl(),
+                'content_type' => 'json',
+                'secret' => config('app.key'),
+                'insecure_ssl' => 1,
+            ],
+            'events' => ['push'],
+            'active' => true,
         ]);
     }
 }

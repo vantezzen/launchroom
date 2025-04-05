@@ -39,4 +39,8 @@ return [
         'url' => env('PROMETHEUS_URL'),
     ],
 
+    'smee' => [
+        'url' => env('SMEE_URL'),
+    ],
+
 ];

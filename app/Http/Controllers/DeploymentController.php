@@ -4,10 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\StoreDeploymentRequest;
 use App\Http\Requests\UpdateDeploymentRequest;
-use App\Jobs\DeployJob;
 use App\Models\Deployment;
 use App\Models\Environment;
-use App\Services\GitHub;
 
 class DeploymentController extends Controller
 {
@@ -25,22 +23,7 @@ class DeploymentController extends Controller
     public function store(StoreDeploymentRequest $request)
     {
         $environment = Environment::find($request->environment_id);
-        $project = $environment->project;
-        $team = $project->team;
-
-        $github = new GitHub($team);
-
-        $deployment = Deployment::create([
-            'environment_id' => $environment->id,
-            'commit_hash' => $github->getLatestCommitHashInRepository($environment->project->repository),
-            'status' => 'pending',
-            'output' => '',
-            'is_latest' => true,
-        ]);
-
-        $deployment->addLogSection('Deployment started', 'The deployment process has started.');
-
-        DeployJob::dispatch($deployment);
+        $deployment = $environment->startDeployment();
 
         return redirect()->to(frontendRoute('teams.projects.environments.deployments.show', $deployment));
     }

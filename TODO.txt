@@ -17,7 +17,6 @@
   - Make Docker logs more stable when displayed
 
 - Instance settings
-  - Disable registrations
 
 - Installation
   - Check that docker is installed and working

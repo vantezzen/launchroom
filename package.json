@@ -9,7 +9,8 @@
         "format:check": "prettier --check resources/",
         "lint": "eslint . --fix",
         "types": "tsc --noEmit",
-        "generate-traffic": "node ./scripts/generateTraffic.js"
+        "generate-traffic": "node ./scripts/generateTraffic.js",
+        "smee": "node ./scripts/smee.js"
     },
     "devDependencies": {
         "@eslint/js": "^9.19.0",
@@ -51,6 +52,7 @@
         "cmdk": "^1.0.0",
         "concurrently": "^9.0.1",
         "date-fns": "^4.1.0",
+        "dotenv": "^16.4.7",
         "globals": "^15.14.0",
         "laravel-echo": "^2.0.2",
         "laravel-vite-plugin": "^1.0",
@@ -61,6 +63,7 @@
         "react-dom": "^19.0.0",
         "react-use": "^17.6.0",
         "recharts": "^2.15.1",
+        "smee-client": "^3.1.1",
         "tailwind-merge": "^3.0.1",
         "tailwindcss": "^4.0.0",
         "tailwindcss-animate": "^1.0.7",

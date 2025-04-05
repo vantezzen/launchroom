@@ -4,10 +4,10 @@ import useBaseUrl from '@/hooks/use-base-url';
 import EnvironmentLayout from '@/layouts/environment-layout';
 import { Deployment, SharedData } from '@/types';
 import { timeAgo } from '@/utils/time';
-import { Link, usePage } from '@inertiajs/react';
+import { Link, usePage, usePoll } from '@inertiajs/react';
 
 const calculateBuildTime = (deployment: Deployment) => {
-    if (!deployment.started_at) return 'N/A';
+    if (!deployment.started_at || !deployment.finished_at) return 'In progress';
 
     const start = new Date(deployment.started_at).getTime();
     const end = new Date(deployment.finished_at || new Date()).getTime();
@@ -49,6 +49,7 @@ export default function DeploymentsIndex() {
         props: { currentEnvironment },
     } = usePage<SharedData>();
     const baseUrl = useBaseUrl();
+    usePoll(5000);
 
     return (
         <EnvironmentLayout title={'Deployments'}>
