@@ -35,7 +35,7 @@ class Docker
 
     public function getLogs()
     {
-        $command = "cd {$this->baseDirectory} && docker compose logs --tail=1000";
+        $command = "cd {$this->baseDirectory} && docker compose logs --tail=1000 -t";
 
         return shell_exec($command);
     }

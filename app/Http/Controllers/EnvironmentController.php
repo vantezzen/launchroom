@@ -88,6 +88,7 @@ class EnvironmentController extends Controller
         if (! $projectEnvironment->deployments()->exists()) {
             return Inertia::render('environments/logs', ['logs' => '', 'error' => 'no_deployments']);
         }
+
         $deploymentManager = new DeploymentManager($projectEnvironment->deployments()->latest()->first());
         $logs = $deploymentManager->getLogs();
 

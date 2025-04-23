@@ -113,7 +113,23 @@ class DeploymentManager
     {
         $docker = new Docker($this->getBaseDirectory(), $this->deployment);
 
-        return $docker->getLogs();
+        $dockerLogsRaw = $docker->getLogs();
+        $dockerLines = explode("\n", $dockerLogsRaw);
+        $lines = [];
+        foreach ($dockerLines as $line) {
+            [$service, $entry] = explode('|', $line, 1);
+            [$timestamp, $text] = explode(' ', $entry, 1);
+
+            $lines[] = [
+                'service' => $service,
+                'timestamp' => strtotime($timestamp),
+                'text' => $text,
+            ];
+        }
+
+        $sortedLines = collect($lines)->sortBy('timestamp')->values()->join("\n");
+
+        return $sortedLines;
     }
 
     public function getStats()

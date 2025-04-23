@@ -27,21 +27,21 @@ function AddServiceModal() {
         setConfirmService(false);
     };
 
-    if (confirmService || processing) {
-        return (
-            <Dialog>
-                <DialogTrigger className="w-full">
-                    <Button className="w-full">
-                        <Plus />
-                        Add Service
-                    </Button>
-                </DialogTrigger>
+    return (
+        <Dialog open={show} onOpenChange={setShow}>
+            <DialogTrigger className="w-full">
+                <Button className="w-full">
+                    <Plus />
+                    Add Service
+                </Button>
+            </DialogTrigger>
 
-                <DialogContent>
-                    <DialogHeader>
-                        <DialogTitle>Confirm service</DialogTitle>
-                    </DialogHeader>
+            <DialogContent>
+                <DialogHeader>
+                    <DialogTitle>Add service</DialogTitle>
+                </DialogHeader>
 
+                {confirmService || processing ? (
                     <div className="space-y-6">
                         <p className="text-zinc-500">
                             Are you sure you want to add the service <span className="font-semibold">{data.type}</span>?
@@ -57,31 +57,14 @@ function AddServiceModal() {
                             </Button>
                         </div>
                     </div>
-                </DialogContent>
-            </Dialog>
-        );
-    }
-
-    return (
-        <Dialog open={show} onOpenChange={setShow}>
-            <DialogTrigger className="w-full">
-                <Button className="w-full">
-                    <Plus />
-                    Add Service
-                </Button>
-            </DialogTrigger>
-
-            <DialogContent>
-                <DialogHeader>
-                    <DialogTitle>Add service</DialogTitle>
-                </DialogHeader>
-
-                <ScrollArea className="relative h-[400px] w-full">
-                    <SectionTitle icon={<Database className="h-3 w-3 text-gray-500" />} title="Database" />
-                    <ServiceSection category="database" allowMultiple={false} onAddService={handleAddService} />
-                    <SectionTitle icon={<Clock className="h-3 w-3 text-gray-500" />} title="Cache" />
-                    <ServiceSection category="cache" allowMultiple={false} onAddService={handleAddService} />
-                </ScrollArea>
+                ) : (
+                    <ScrollArea className="relative h-[400px] w-full">
+                        <SectionTitle icon={<Database className="h-3 w-3 text-gray-500" />} title="Database" />
+                        <ServiceSection category="database" allowMultiple={false} onAddService={handleAddService} />
+                        <SectionTitle icon={<Clock className="h-3 w-3 text-gray-500" />} title="Cache" />
+                        <ServiceSection category="cache" allowMultiple={false} onAddService={handleAddService} />
+                    </ScrollArea>
+                )}
             </DialogContent>
         </Dialog>
     );

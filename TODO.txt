@@ -13,7 +13,6 @@
 - Docker Container Health Checks
 
 - Bugs
-  - When first adding a service, the modal closes before confirmation
   - Make Docker logs more stable when displayed
 
 - Instance settings
