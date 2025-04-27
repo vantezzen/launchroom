@@ -6,6 +6,7 @@ use App\Http\Requests\StoreEnvironmentRequest;
 use App\Http\Requests\UpdateEnvironmentRequest;
 use App\Models\Environment;
 use App\Services\DeploymentManager;
+use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
 
 class EnvironmentController extends Controller
@@ -31,7 +32,7 @@ class EnvironmentController extends Controller
      */
     public function store(StoreEnvironmentRequest $request, string $teamSlug, string $projectSlug)
     {
-        $team = auth()->user()->teams()->where('slug', $teamSlug)->firstOrFail();
+        $team = Auth::user()->teams()->where('slug', $teamSlug)->firstOrFail();
         $project = $team->projects()->where('slug', $projectSlug)->firstOrFail();
         $projectEnvironment = $project->environments()->create($request->validated());
 
@@ -86,12 +87,21 @@ class EnvironmentController extends Controller
     {
         $projectEnvironment = $projectEnvironment->first();
         if (! $projectEnvironment->deployments()->exists()) {
-            return Inertia::render('environments/logs', ['logs' => '', 'error' => 'no_deployments']);
+            return Inertia::render('environments/logs', ['logs' => [], 'error' => 'no_deployments']);
         }
 
         $deploymentManager = new DeploymentManager($projectEnvironment->deployments()->latest()->first());
         $logs = $deploymentManager->getLogs();
 
-        return Inertia::render('environments/logs', compact('logs'));
+        // Count logs by level
+        $logCounts = [
+            'total' => count($logs),
+            'error' => count(array_filter($logs, fn ($log) => $log['level'] === 'error')),
+            'warning' => count(array_filter($logs, fn ($log) => $log['level'] === 'warning')),
+            'info' => count(array_filter($logs, fn ($log) => $log['level'] === 'info')),
+            'debug' => count(array_filter($logs, fn ($log) => $log['level'] === 'debug')),
+        ];
+
+        return Inertia::render('environments/logs', compact('logs', 'logCounts'));
     }
 }

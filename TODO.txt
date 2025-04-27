@@ -2,12 +2,6 @@
   - Webhook for public servers
   - schedule for private servers
 
-- Application/Environment Settings
-  - Change name
-  - Delete
-
-- Show Laravel Logs
-
 - Custom Domains + HTTPS
 
 - Docker Container Health Checks
