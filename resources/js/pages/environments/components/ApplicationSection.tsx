@@ -25,25 +25,25 @@ export default function ApplicationSection({
     const [isEditing, setIsEditing] = useState(false);
     return (
         <div className="z-10 space-y-4">
-            <SectionHeader icon={<Server className="h-4 w-4 text-gray-500" />} title="Application" />
+            <SectionHeader icon={<Server className="h-4 w-4 text-zinc-500" />} title="Application" />
 
             <Card ref={appRef}>
                 <CardTitle className="flex items-center justify-between">
                     <span>App</span>
                     <div className="flex items-center space-x-2">
-                        <Badge variant="outline" className="bg-white">
+                        <Badge variant="outline" className="bg-white dark:bg-zinc-800">
                             Web
                         </Badge>
                     </div>
                 </CardTitle>
                 <CardContent className="space-y-4">
                     <AppDetailItem
-                        icon={<Layers className="h-4 w-4 text-gray-500" />}
+                        icon={<Layers className="h-4 w-4 text-zinc-500" />}
                         label="Environment variables"
                         value={`${Object.keys(environment.environment_variables).length}`}
                         action={
                             <Button size="xs" variant="secondary" onClick={() => setIsEditing(!isEditing)}>
-                                <ChevronRight className="h-2 w-2 text-gray-700" />
+                                <ChevronRight className="h-2 w-2 text-zinc-700 dark:text-zinc-400" />
                             </Button>
                         }
                     />

@@ -15,7 +15,7 @@ export default function DeploymentDiagram({ environment }: { environment: Enviro
     console.log('DeploymentDiagram', servicesRef);
 
     return (
-        <div className="bg-grid-pattern w-full rounded-lg border bg-zinc-50">
+        <div className="bg-grid-pattern w-full rounded-lg border bg-zinc-50 dark:bg-zinc-900/50">
             <div className="relative container mx-auto p-6" ref={containerRef}>
                 <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
                     {/* Network Section */}

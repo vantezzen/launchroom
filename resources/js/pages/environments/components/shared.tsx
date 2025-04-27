@@ -9,9 +9,9 @@ export function StatusIndicator({ status, label }: { status: 'active' | 'inactiv
 
 export function SectionHeader({ icon, title }: { icon: React.ReactNode; title: string }) {
     return (
-        <div className="flex items-center space-x-2 rounded-lg border bg-white px-4 py-2">
+        <div className="flex items-center space-x-2 rounded-lg border bg-white px-4 py-2 dark:bg-zinc-900">
             {icon}
-            <h2 className="text-sm font-medium text-gray-700">{title}</h2>
+            <h2 className="text-sm font-medium text-gray-700 dark:text-zinc-400">{title}</h2>
         </div>
     );
 }
@@ -33,7 +33,7 @@ export function AppDetailItem({
         <div className="flex items-center justify-between">
             <div className="flex flex-1 items-center space-x-2">
                 {icon}
-                <span className="text-sm text-gray-600">{label}</span>
+                <span className="text-sm text-gray-600 dark:text-gray-400">{label}</span>
             </div>
             <div className="flex items-center space-x-2 text-right">
                 {isEnabled !== undefined && <StatusIndicator status={isEnabled ? 'active' : 'inactive'} />}

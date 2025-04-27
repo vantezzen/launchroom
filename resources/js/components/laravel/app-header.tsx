@@ -103,7 +103,7 @@ export function AppHeader({ breadcrumbs = [] }: AppHeaderProps) {
                         </Sheet>
                     </div> */}
 
-                    <Link href={currentTeam ? `/teams/${currentTeam.slug}` : '/dashboard'} prefetch className="flex items-center space-x-2">
+                    <Link href={currentTeam ? `/teams/${currentTeam.slug}` : '/'} prefetch className="flex items-center space-x-2">
                         <AppLogo />
                     </Link>
 

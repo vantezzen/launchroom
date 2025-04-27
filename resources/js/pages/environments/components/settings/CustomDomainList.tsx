@@ -28,7 +28,7 @@ export default function CustomDomainList({
 
     return (
         <div className="space-y-2">
-            <h3 className="text-sm font-medium text-gray-700">Custom Domains</h3>
+            <h3 className="text-sm font-medium text-zinc-700 dark:text-zinc-500">Custom Domains</h3>
             <div className="space-y-2">
                 {domains.slice(1).map((domain, index) => {
                     const realIndex = index + 1;

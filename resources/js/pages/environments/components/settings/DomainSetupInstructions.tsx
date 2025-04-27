@@ -17,7 +17,7 @@ export default function DomainSetupInstructions({ domain, serverIp }: DomainSetu
                     After you have created the A record, <strong>redeploy</strong> your application to activate the new domain
                 </li>
             </ol>
-            <div className="mt-2 rounded border bg-white p-2">
+            <div className="mt-2 rounded border bg-white p-2 dark:bg-zinc-800">
                 <div className="grid grid-cols-2 gap-2">
                     <div className="font-medium">Host/Name:</div>
                     <div>{domain.includes('.') ? domain.split('.')[0] : '@'}</div>

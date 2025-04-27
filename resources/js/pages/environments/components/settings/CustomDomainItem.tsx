@@ -30,7 +30,7 @@ export default function CustomDomainItem({
     const isSslipDomain = domain.endsWith('sslip.io');
 
     return (
-        <Collapsible open={isOpen} onOpenChange={onToggleOpen} className="rounded-md border border-gray-200">
+        <Collapsible open={isOpen} onOpenChange={onToggleOpen} className="rounded-md border border-zinc-200 dark:border-zinc-700">
             <div className="flex items-center gap-2 px-3 py-2">
                 <Input value={domain} onChange={(e) => onChangeDomain(e.target.value)} className="flex-1" />
                 <Button variant="ghost" size="icon" onClick={onRemoveDomain} type="button">
@@ -38,13 +38,13 @@ export default function CustomDomainItem({
                 </Button>
             </div>
 
-            <div className="flex items-center justify-between border-t border-gray-100 bg-gray-50 px-3 py-2">
+            <div className="flex items-center justify-between border-t border-zinc-100 bg-zinc-50 px-3 py-2 dark:border-zinc-700 dark:bg-zinc-800">
                 <div className="flex items-center gap-2">
                     <a
                         href={domain.startsWith('http://') || domain.startsWith('https://') ? domain : `http://${domain}`}
                         target="_blank"
                         rel="noreferrer"
-                        className="flex items-center space-x-2 text-xs text-blue-600 hover:underline"
+                        className="flex items-center space-x-2 text-xs text-blue-600 hover:underline dark:text-blue-500"
                     >
                         <ExternalLink className="h-3 w-3" />
                         <span>Visit</span>
@@ -60,7 +60,7 @@ export default function CustomDomainItem({
                 )}
             </div>
 
-            <CollapsibleContent className="border-t border-gray-100 bg-white">
+            <CollapsibleContent className="border-t border-zinc-100 bg-white dark:border-zinc-700 dark:bg-zinc-800">
                 <DomainSetupInstructions domain={domain} serverIp={serverIp} />
             </CollapsibleContent>
         </Collapsible>

@@ -27,7 +27,7 @@ export default function ServicesSection({ services, servicesRef }: { services: S
 
     return (
         <div className="z-10 space-y-4">
-            <SectionHeader icon={<Database className="h-4 w-4 text-gray-500" />} title="Services" />
+            <SectionHeader icon={<Database className="h-4 w-4 text-zinc-500" />} title="Services" />
 
             {/* Database Services */}
             {servicesByType.database.map((service, index) => (
@@ -97,7 +97,7 @@ const ServiceCard = forwardRef(function ServiceCard({ service }: { service: Serv
             case 'disk':
                 return 'bg-indigo-50 text-indigo-700 border-indigo-200';
             default:
-                return 'bg-gray-50 text-gray-700 border-gray-200';
+                return 'bg-zinc-50 text-zinc-700 border-zinc-200';
         }
     };
 
@@ -111,7 +111,7 @@ const ServiceCard = forwardRef(function ServiceCard({ service }: { service: Serv
                     <DropdownMenu>
                         <DropdownMenuTrigger>
                             <Button size="xs" variant="ghost">
-                                <Menu className="h-2 w-2 text-gray-700" />
+                                <Menu className="h-2 w-2 text-zinc-700" />
                             </Button>
                         </DropdownMenuTrigger>
 
@@ -141,14 +141,14 @@ const ServiceCard = forwardRef(function ServiceCard({ service }: { service: Serv
                 </div>
             </CardTitle>
             <CardContent className="space-y-4">
-                <AppDetailItem icon={<FileText className="h-4 w-4 text-gray-500" />} label="Name" value={service.name} />
+                <AppDetailItem icon={<FileText className="h-4 w-4 text-zinc-500" />} label="Name" value={service.name} />
                 <AppDetailItem
-                    icon={<Layers className="h-4 w-4 text-gray-500" />}
+                    icon={<Layers className="h-4 w-4 text-zinc-500" />}
                     label="Environment variables"
                     value={`${Object.keys(service.environment_variables).length}`}
                     action={
                         <Button size="xs" variant="secondary" onClick={() => setIsEditingEnvVars(!isEditingEnvVars)}>
-                            <ChevronRight className="h-2 w-2 text-gray-700" />
+                            <ChevronRight className="h-2 w-2 text-zinc-700" />
                         </Button>
                     }
                 />

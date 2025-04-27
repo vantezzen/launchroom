@@ -118,7 +118,7 @@ export function BuildLogs({ output }: BuildLogsProps) {
                     <div key={groupIndex}>
                         {group.entries.slice(0, undefined).map((entry, entryIndex) => (
                             <div key={entryIndex} className={`flex gap-4 ${getLogBackground(entry.prefix)}`}>
-                                <div className="bg-zinc-50 p-2 whitespace-nowrap text-zinc-400 select-none">{entry.timestamp}</div>
+                                <div className="bg-zinc-50 p-2 whitespace-nowrap text-zinc-400 select-none dark:bg-zinc-800">{entry.timestamp}</div>
                                 <div className={`${entry.isSection ? 'font-bold' : ''} p-2 break-all whitespace-pre-wrap`}>{entry.content}</div>
                             </div>
                         ))}

@@ -18,7 +18,7 @@ export default function AddDomainForm({ value, onChange, onAdd }: AddDomainFormP
 
     return (
         <div className="space-y-2">
-            <h3 className="text-sm font-medium text-gray-700">Add New Domain</h3>
+            <h3 className="text-sm font-medium text-zinc-700 dark:text-zinc-500">Add New Domain</h3>
             <div className="flex items-center gap-2">
                 <Input
                     value={value}

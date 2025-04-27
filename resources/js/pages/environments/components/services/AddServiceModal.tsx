@@ -111,8 +111,8 @@ function ServiceSection({
             ))}
 
             {!allowAdding && (
-                <div className="absolute inset-0 z-20 flex items-center justify-center rounded-lg bg-white/50">
-                    <span className="text-gray-500">You can only add one service of this type</span>
+                <div className="absolute inset-0 z-20 flex items-center justify-center rounded-lg bg-white/50 dark:bg-zinc-900/50">
+                    <span className="text-zinc-500">You can only add one service of this type</span>
                 </div>
             )}
         </div>
@@ -129,7 +129,7 @@ function ServiceCard({ service, onSelect, className }: { service: AvailableServi
                 onSelect();
             }}
             className={cn(
-                'z-10 flex cursor-pointer flex-col items-center justify-between gap-4 rounded-lg border bg-white p-4 duration-100 hover:bg-zinc-50',
+                'z-10 flex cursor-pointer flex-col items-center justify-between gap-4 rounded-lg border bg-white p-4 duration-100 hover:bg-zinc-50 dark:bg-zinc-800 dark:hover:bg-zinc-700',
                 className,
             )}
         >

@@ -20,13 +20,13 @@ export default function NetworkSection({ domains, networkRef }: { domains: strin
 
     return (
         <div className="z-10 space-y-4">
-            <SectionHeader icon={<Globe className="h-4 w-4 text-gray-500" />} title="Network" />
+            <SectionHeader icon={<Globe className="h-4 w-4 text-zinc-500" />} title="Network" />
 
             <Card ref={networkRef}>
                 <CardTitle>Proxy</CardTitle>
                 <CardContent className="space-y-4">
-                    <EdgeNetworkItem icon={<Shield className="h-4 w-4 text-gray-500" />} label="Proxy Network" status="active" />
-                    <EdgeNetworkItem icon={<Globe className="h-4 w-4 text-gray-500" />} label="Analytics" status="active" />
+                    <EdgeNetworkItem icon={<Shield className="h-4 w-4 text-zinc-500" />} label="Proxy Network" status="active" />
+                    <EdgeNetworkItem icon={<Globe className="h-4 w-4 text-zinc-500" />} label="Analytics" status="active" />
                 </CardContent>
             </Card>
 
@@ -40,15 +40,18 @@ export default function NetworkSection({ domains, networkRef }: { domains: strin
                 <CardContent>
                     <div className="space-y-2">
                         {domains.map((domain, index) => (
-                            <div key={index} className="flex items-center justify-between border-b border-gray-100 py-2 last:border-b-0">
+                            <div
+                                key={index}
+                                className="flex items-center justify-between border-b border-zinc-100 py-2 last:border-b-0 dark:border-zinc-800"
+                            >
                                 <a
                                     href={domain.startsWith('http://') || domain.startsWith('https://') ? domain : `http://${domain}`}
                                     target="_blank"
                                     rel="noreferrer"
                                     className="flex items-center space-x-3"
                                 >
-                                    <ExternalLink className="h-4 w-4 text-gray-400" />
-                                    <span className="flex-1 text-sm font-medium break-all text-gray-700">{domain}</span>
+                                    <ExternalLink className="h-4 w-4 text-zinc-400" />
+                                    <span className="flex-1 text-sm font-medium break-all text-zinc-700 dark:text-zinc-400">{domain}</span>
                                 </a>
                             </div>
                         ))}
@@ -64,7 +67,7 @@ function EdgeNetworkItem({ icon, label, status }: { icon: React.ReactNode; label
         <div className="flex items-center justify-between">
             <div className="flex items-center space-x-2">
                 {icon}
-                <span className="text-sm text-gray-600">{label}</span>
+                <span className="text-sm text-zinc-600 dark:text-zinc-400">{label}</span>
             </div>
             <StatusIndicator status={status} label="Active" />
         </div>

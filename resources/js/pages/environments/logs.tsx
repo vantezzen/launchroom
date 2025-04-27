@@ -170,7 +170,7 @@ export default function LogsShow({
             case 'docker':
                 return 'bg-blue-500/20 text-blue-700 hover:bg-blue-500/30';
             default:
-                return 'bg-gray-500/20 text-gray-700 hover:bg-gray-500/30';
+                return 'bg-zinc-500/20 text-zinc-700 hover:bg-zinc-500/30';
         }
     };
 
@@ -211,7 +211,7 @@ export default function LogsShow({
                 </Alert>
             )}
 
-            <div className="bg-background mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-gray-200 p-3">
+            <div className="bg-background mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
                 {/* Level filter dropdown */}
                 <Select value={levelFilter || ''} onValueChange={(value) => setLevelFilter(value || null)}>
                     <SelectTrigger className="w-[180px]">
@@ -269,10 +269,10 @@ export default function LogsShow({
                 </div>
             </div>
 
-            <div className="bg-background w-full rounded-lg border border-gray-200">
+            <div className="bg-background w-full rounded-lg border border-zinc-200 dark:border-zinc-800">
                 <div ref={logContainerRef} className="max-h-[80vh] overflow-auto p-0" onScroll={handleScroll}>
                     {filteredLogs.length === 0 ? (
-                        <div className="p-4 text-center text-gray-500">No logs found</div>
+                        <div className="p-4 text-center text-zinc-500">No logs found</div>
                     ) : (
                         <div className="font-mono text-sm">
                             {filteredLogs.map((log, index) => {
@@ -295,9 +295,9 @@ export default function LogsShow({
                                 }
 
                                 return (
-                                    <div key={index} className={`border-b border-gray-100 ${getLogBackground(log.level)}`}>
+                                    <div key={index} className={`border-b border-zinc-100 ${getLogBackground(log.level)}`}>
                                         <div
-                                            className="flex cursor-pointer items-start p-2 hover:bg-gray-50"
+                                            className="flex cursor-pointer items-start p-2 hover:bg-zinc-50"
                                             onClick={() => hasLongMessage && toggleExpand(index)}
                                         >
                                             {hasLongMessage && (
@@ -336,7 +336,7 @@ export default function LogsShow({
                                                         </span>
                                                     )}
                                                     {isExpanded && restOfMessage && (
-                                                        <div className="mt-2 border-l-2 border-gray-200 pl-2 whitespace-pre-wrap">
+                                                        <div className="border-gzinc280 mt-2 border-l-2 pl-2 whitespace-pre-wrap dark:border-zinc-700">
                                                             {restOfMessage}
                                                         </div>
                                                     )}
@@ -350,7 +350,7 @@ export default function LogsShow({
                     )}
                 </div>
 
-                <div className="text-muted-foreground border-t border-gray-200 p-2 text-xs">
+                <div className="text-muted-foreground border-t border-zinc-200 p-2 text-xs dark:border-zinc-800">
                     Last updated: {new Date().toLocaleTimeString()}
                     {autoScroll && <span className="ml-2">(Auto-scrolling enabled)</span>}
                 </div>

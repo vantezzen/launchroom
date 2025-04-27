@@ -1,4 +1,5 @@
-import { Card } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Separator } from '@/components/ui/separator';
 import EnvironmentLayout from '@/layouts/environment-layout';
 import { cn } from '@/lib/utils';
 import { SharedData } from '@/types';
@@ -36,29 +37,32 @@ export default function SettingsLayout({ children, title, subtitle }: SettingsLa
 
     return (
         <EnvironmentLayout title={title} subtitle={subtitle}>
-            <div className="grid grid-cols-12 gap-6">
-                {/* Sidebar */}
-                <div className="col-span-12 md:col-span-3">
-                    <Card className="overflow-hidden">
-                        <div className="divide-y divide-gray-200">
-                            {routes.map((item) => (
-                                <Link
-                                    key={item.name}
-                                    href={item.route}
-                                    className={cn(
-                                        'block px-4 py-3 text-sm hover:bg-gray-50',
-                                        item.isActive ? 'text-primary bg-gray-50 font-medium' : 'text-gray-700',
-                                    )}
-                                >
+            <div className="flex flex-col space-y-8 lg:flex-row lg:space-y-0 lg:space-x-12">
+                <aside className="w-full max-w-xl lg:w-48">
+                    <nav className="flex flex-col space-y-1 space-x-0">
+                        {routes.map((item) => (
+                            <Button
+                                key={item.route}
+                                size="sm"
+                                variant="ghost"
+                                asChild
+                                className={cn('w-full justify-start', {
+                                    'bg-muted': item.isActive,
+                                })}
+                            >
+                                <Link href={item.route} prefetch>
                                     {item.name}
                                 </Link>
-                            ))}
-                        </div>
-                    </Card>
-                </div>
+                            </Button>
+                        ))}
+                    </nav>
+                </aside>
 
-                {/* Main content */}
-                <div className="col-span-12 md:col-span-9">{children}</div>
+                <Separator className="my-6 md:hidden" />
+
+                <div className="flex-1 md:max-w-2xl">
+                    <section className="max-w-xl space-y-12">{children}</section>
+                </div>
             </div>
         </EnvironmentLayout>
     );
