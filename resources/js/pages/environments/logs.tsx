@@ -50,6 +50,32 @@ export default function LogsShow({
     // Auto-refresh logs
     usePoll(5000);
 
+    // Initialize enabled sources when logs change
+    useEffect(() => {
+        const sources = new Set(logs.map((log) => log.source));
+        const initialSources: Record<string, boolean> = {};
+
+        // Enable all sources by default
+        sources.forEach((source) => {
+            // If source already exists in state, keep its value, otherwise set to true (enabled)
+            initialSources[source] = enabledSources[source] !== undefined ? enabledSources[source] : true;
+        });
+
+        setEnabledSources(initialSources);
+    }, [logs]);
+
+    // Reset expanded logs when logs change
+    useEffect(() => {
+        // Initially expand error logs
+        const initialExpanded: Record<string, boolean> = {};
+        logs.forEach((log, index) => {
+            if (log.level === 'error') {
+                initialExpanded[index] = true;
+            }
+        });
+        setExpandedLogs(initialExpanded);
+    }, [logs]);
+
     // Filter logs based on search query, level filter, and enabled sources
     const filteredLogs = useMemo(() => {
         const filtered = logs.filter((log) => {
@@ -87,32 +113,6 @@ export default function LogsShow({
             return a.source.localeCompare(b.source);
         });
     }, [logs, searchQuery, levelFilter, enabledSources]);
-
-    // Initialize enabled sources when logs change
-    useEffect(() => {
-        const sources = new Set(logs.map((log) => log.source));
-        const initialSources: Record<string, boolean> = {};
-
-        // Enable all sources by default
-        sources.forEach((source) => {
-            // If source already exists in state, keep its value, otherwise set to true (enabled)
-            initialSources[source] = enabledSources[source] !== undefined ? enabledSources[source] : true;
-        });
-
-        setEnabledSources(initialSources);
-    }, [logs]);
-
-    // Reset expanded logs when logs change
-    useEffect(() => {
-        // Initially expand error logs
-        const initialExpanded: Record<string, boolean> = {};
-        logs.forEach((log, index) => {
-            if (log.level === 'error') {
-                initialExpanded[index] = true;
-            }
-        });
-        setExpandedLogs(initialExpanded);
-    }, [logs]);
 
     // Auto-scroll to bottom when logs change if auto-scroll is enabled
     useEffect(() => {

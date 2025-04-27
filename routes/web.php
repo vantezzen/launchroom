@@ -37,9 +37,16 @@ Route::middleware(['auth', 'verified', RequireSetupDone::class])->group(function
     // Environment Settings Routes
     Route::get('teams/{team:slug}/projects/{project:slug}/environments/{environment}/settings', [EnvironmentSettingsController::class, 'show'])->name('teams.projects.environments.settings');
     Route::patch('teams/{team:slug}/projects/{project:slug}/environments/{environment}/settings', [EnvironmentSettingsController::class, 'update'])->name('teams.projects.environments.settings.update');
+    Route::get('teams/{team:slug}/projects/{project:slug}/environments/{environment}/settings/domains', [EnvironmentSettingsController::class, 'showDomains'])->name('teams.projects.environments.settings.domains');
+    Route::patch('teams/{team:slug}/projects/{project:slug}/environments/{environment}/settings/domains', [EnvironmentSettingsController::class, 'updateDomains'])->name('teams.projects.environments.settings.domains.update');
+    Route::get('teams/{team:slug}/projects/{project:slug}/environments/{environment}/settings/domains/validate', [EnvironmentSettingsController::class, 'validateDomains'])->name('teams.projects.environments.settings.domains.validate');
     Route::patch('teams/{team:slug}/projects/{project:slug}', [ProjectController::class, 'update'])->name('teams.projects.update');
     Route::post('teams/{team:slug}/projects/{project:slug}/transfer', [EnvironmentSettingsController::class, 'transferProject'])->name('teams.projects.transfer');
     Route::delete('teams/{team:slug}/projects/{project:slug}', [EnvironmentSettingsController::class, 'destroy'])->name('teams.projects.delete');
+
+    // Domain Management
+    Route::patch('teams/{team:slug}/projects/{project:slug}/environments/{environment}/domains', [EnvironmentController::class, 'updateDomains'])->name('teams.projects.environments.domains.update');
+    Route::get('teams/{team:slug}/projects/{project:slug}/environments/{environment}/domains/validate', [EnvironmentController::class, 'validateDomains'])->name('teams.projects.environments.domains.validate');
 
     Route::resource('teams.projects.environments.deployments', DeploymentController::class)->parameters([
         'projects' => 'project:slug',

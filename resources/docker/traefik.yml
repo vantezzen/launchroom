@@ -23,6 +23,15 @@ metrics:
       xforwardedhost: 'X-Forwarded-Host'
       xrequestpath: 'X-Replaced-Path'
 
+# Let's Encrypt certificate resolver configuration
+certificatesResolvers:
+  letsencrypt:
+    acme:
+      email: 'launchroom@example.com'
+      storage: '/etc/traefik/acme/acme.json'
+      httpChallenge:
+        entryPoint: web
+
 http:
   middlewares:
     addPathToMetrics:

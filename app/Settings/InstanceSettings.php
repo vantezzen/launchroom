@@ -18,6 +18,8 @@ class InstanceSettings extends Settings
 
     public bool $setup_done = false;
 
+    public ?string $admin_email = null;
+
     public static function group(): string
     {
         return 'default';

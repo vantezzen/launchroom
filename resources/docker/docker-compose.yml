@@ -5,6 +5,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./traefik.yml:/etc/traefik/traefik.yml
+      - acme_data:/etc/traefik/acme
     ports:
       - '80:80'
       - '443:443'
@@ -61,6 +62,7 @@ services:
 volumes:
   prometheus_data:
   grafana_data:
+  acme_data:
 
 networks:
   launchroom_net:

@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
-import EnvironmentLayout from '@/layouts/environment-layout';
+import SettingsLayout from '@/layouts/settings-layout';
 import { SharedData, Team } from '@/types';
 import { Head, useForm, usePage } from '@inertiajs/react';
 import { useState } from 'react';
@@ -132,7 +132,7 @@ export default function EnvironmentSettings() {
     };
 
     return (
-        <EnvironmentLayout title="Settings" subtitle="Manage your environment and project settings">
+        <SettingsLayout title="Settings" subtitle="Manage your environment and project settings">
             <Head title={`Settings - ${currentProject.name}`} />
 
             <div className="space-y-10">
@@ -337,6 +337,6 @@ export default function EnvironmentSettings() {
                     </CardContent>
                 </Card>
             </div>
-        </EnvironmentLayout>
+        </SettingsLayout>
     );
 }

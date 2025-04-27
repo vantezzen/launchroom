@@ -29,6 +29,7 @@ class SetupRequest extends FormRequest
             'publicly_accessible' => 'nullable|boolean',
             'ipv4' => 'required|string|max:255',
             'ipv6' => 'nullable|string|max:255',
+            'admin_email' => 'nullable|email|max:255',
         ];
     }
 }

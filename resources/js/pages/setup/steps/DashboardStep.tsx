@@ -36,6 +36,8 @@ function DashboardStep({ form: { data, setData } }: { form: SetupForm }) {
                     onChange={(e) => setData('email', e.target.value)}
                     placeholder="email@example.com"
                 />
+
+                <p className="text-sm text-zinc-500">This email will be used to log in to the dashboard but also for SSL certificate provisioning.</p>
             </div>
 
             <div className="grid gap-2">

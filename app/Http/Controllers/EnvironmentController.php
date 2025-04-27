@@ -6,6 +6,9 @@ use App\Http\Requests\StoreEnvironmentRequest;
 use App\Http\Requests\UpdateEnvironmentRequest;
 use App\Models\Environment;
 use App\Services\DeploymentManager;
+use App\Services\DomainValidator;
+use App\Settings\InstanceSettings;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
 
@@ -103,5 +106,54 @@ class EnvironmentController extends Controller
         ];
 
         return Inertia::render('environments/logs', compact('logs', 'logCounts'));
+    }
+
+    /**
+     * Update environment domains
+     */
+    public function updateDomains(Request $request, string $teamSlug, string $projectSlug, Environment $environment)
+    {
+        $request->validate([
+            'domains' => ['required', 'array'],
+            'domains.*' => ['required', 'string', 'max:255'],
+        ]);
+
+        // Get current domains
+        $currentDomains = $environment->domains;
+
+        // Ensure the first domain (default) is preserved
+        $newDomains = $request->domains;
+        if (! empty($currentDomains)) {
+            $newDomains[0] = $currentDomains[0];
+        }
+
+        $environment->update([
+            'domains' => $newDomains,
+        ]);
+
+        // Validate the domains after update
+        $validator = app(DomainValidator::class);
+        $validation = $validator->validateEnvironmentDomains($environment);
+
+        return response()->json([
+            'domains' => $environment->domains,
+            'validation' => $validation,
+        ]);
+    }
+
+    /**
+     * Validate environment domains
+     */
+    public function validateDomains(string $teamSlug, string $projectSlug, Environment $environment, InstanceSettings $settings)
+    {
+        $validator = app(DomainValidator::class);
+        $validation = $validator->validateEnvironmentDomains($environment);
+
+        return response()->json([
+            'domains' => $environment->domains,
+            'validation' => $validation,
+            'server_ip' => baseIp(),
+            'is_public' => $settings->publicly_accessible || config('app.env') === 'local',
+        ]);
     }
 }

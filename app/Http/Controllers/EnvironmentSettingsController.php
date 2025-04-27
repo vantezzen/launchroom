@@ -6,6 +6,8 @@ use App\Http\Requests\UpdateEnvironmentSettingsRequest;
 use App\Models\Environment;
 use App\Models\Project;
 use App\Models\Team;
+use App\Services\DomainValidator;
+use App\Settings\InstanceSettings;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\ValidationException;
@@ -100,5 +102,75 @@ class EnvironmentSettingsController extends Controller
 
         return redirect()->route('teams.show', $team->slug)
             ->with('success', 'Project deleted successfully.');
+    }
+
+    /**
+     * Show the domain settings page.
+     */
+    public function showDomains(Team $team, Project $project, Environment $environment)
+    {
+        // Load relationships
+        $project->load('team');
+        $environment->load('project');
+
+        // Prepare domain validation
+        $validator = app(DomainValidator::class);
+        $validation = $validator->validateEnvironmentDomains($environment);
+        $settings = app(InstanceSettings::class);
+
+        // Set shared data
+        $sharedProps = [
+            'currentTeam' => $team,
+            'currentProject' => $project,
+            'currentEnvironment' => $environment,
+            'validation' => $validation,
+            'server_ip' => baseIp(),
+            'is_public' => $settings->publicly_accessible || config('app.env') === 'local',
+        ];
+
+        return Inertia::render('environments/settings-domains', $sharedProps);
+    }
+
+    /**
+     * Update the environment domains.
+     */
+    public function updateDomains(Request $request, Team $team, Project $project, Environment $environment)
+    {
+        $request->validate([
+            'domains' => ['required', 'array'],
+            'domains.*' => ['required', 'string', 'max:255'],
+        ]);
+
+        // Get current domains
+        $currentDomains = $environment->domains;
+
+        // Ensure the first domain (default) is preserved
+        $newDomains = $request->domains;
+        if (! empty($currentDomains)) {
+            $newDomains[0] = $currentDomains[0];
+        }
+
+        $environment->update([
+            'domains' => $newDomains,
+        ]);
+
+        return back()->with('success', 'Domains updated successfully.');
+    }
+
+    /**
+     * Validate environment domains.
+     */
+    public function validateDomains(Team $team, Project $project, Environment $environment)
+    {
+        $validator = app(DomainValidator::class);
+        $validation = $validator->validateEnvironmentDomains($environment);
+        $settings = app(InstanceSettings::class);
+
+        return response()->json([
+            'domains' => $environment->domains,
+            'validation' => $validation,
+            'server_ip' => baseIp(),
+            'is_public' => $settings->publicly_accessible || config('app.env') === 'local',
+        ]);
     }
 }

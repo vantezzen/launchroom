@@ -62,23 +62,65 @@ abstract class DeploymentTemplate
 
     protected function addProxyDataToCompose($compose)
     {
-        $hostRules = collect($this->deployment->environment->domains)->map(fn ($domain) => "Host(`{$domain}`)")->join(' || ');
         $routerName = $this->deployment->environment->project->slug.'-'.$this->deployment->environment->name;
 
+        // Separate sslip.io domains and custom domains
+        $allDomains = collect($this->deployment->environment->domains);
+        $sslipIoDomains = $allDomains->filter(fn ($domain) => str_ends_with($domain, 'sslip.io'))->values()->all();
+        $customDomains = $allDomains->filter(fn ($domain) => ! str_ends_with($domain, 'sslip.io'))->values()->all();
+
+        // Base Traefik labels that apply to all services
         $compose['services']['app']['labels'] = [
             'traefik.enable=true',
             'traefik.docker.network=launchroom_net',
-            'traefik.http.routers.'.$routerName.'.rule='.$hostRules,
 
-            // Add path info to metrics
-            // https://community.traefik.io/t/is-it-possible-to-have-requestpath-as-a-label-in-the-prometheus-metrics/19204/4
+            // Define metrics middleware
             'traefik.http.middlewares.addPathToMetrics.replacepathregex.regex=^/(.*)',
             'traefik.http.middlewares.addPathToMetrics.replacepathregex.replacement=/$1',
-            'traefik.http.routers.'.$routerName.'.middlewares=addPathToMetrics@docker',
-            // 'traefik.http.routers.' . $routerName . '.service=' . $routerName,
-            // 'traefik.http.middlewares.gzip.compress=true',
-            // 'traefik.http.services.' . $routerName . '.loadbalancer.server.port=3000', // TODO: Make customizable
+
+            // Define https redirect middleware
+            'traefik.http.middlewares.'.$routerName.'-https-redirect.redirectscheme.scheme=https',
+            'traefik.http.middlewares.'.$routerName.'-https-redirect.redirectscheme.permanent=true',
         ];
+
+        // Add router for sslip.io domains (no HTTPS redirect)
+        if (! empty($sslipIoDomains)) {
+            $sslipHostRules = collect($sslipIoDomains)->map(fn ($domain) => "Host(`{$domain}`)")->join(' || ');
+            $compose['services']['app']['labels'] = [
+                ...$compose['services']['app']['labels'],
+                // HTTP Router for sslip.io domains
+                'traefik.http.routers.'.$routerName.'-sslip.rule='.$sslipHostRules,
+                'traefik.http.routers.'.$routerName.'-sslip.entrypoints=web',
+                'traefik.http.routers.'.$routerName.'-sslip.middlewares=addPathToMetrics@docker',
+            ];
+        }
+
+        // Add router for custom domains with HTTPS
+        if (! empty($customDomains)) {
+            $customHostRules = collect($customDomains)->map(fn ($domain) => "Host(`{$domain}`)")->join(' || ');
+
+            $compose['services']['app']['labels'] = [
+                ...$compose['services']['app']['labels'],
+
+                // HTTP Router for custom domains (with redirect to HTTPS)
+                'traefik.http.routers.'.$routerName.'-custom.rule='.$customHostRules,
+                'traefik.http.routers.'.$routerName.'-custom.entrypoints=web',
+                'traefik.http.routers.'.$routerName.'-custom.middlewares='.$routerName.'-https-redirect@docker',
+
+                // HTTPS Router for custom domains
+                'traefik.http.routers.'.$routerName.'-secure.rule='.$customHostRules,
+                'traefik.http.routers.'.$routerName.'-secure.entrypoints=websecure',
+                'traefik.http.routers.'.$routerName.'-secure.tls=true',
+                'traefik.http.routers.'.$routerName.'-secure.tls.certresolver=letsencrypt',
+                'traefik.http.routers.'.$routerName.'-secure.middlewares=addPathToMetrics@docker',
+
+                // Domain list for certificate
+                'traefik.http.routers.'.$routerName.'-secure.tls.domains[0].main='.($customDomains[0] ?? ''),
+                // Add SANs for additional domains
+                ...collect($customDomains)->skip(1)->map(fn ($domain) => 'traefik.http.routers.'.$routerName.'-secure.tls.domains[0].sans[]='.$domain
+                )->all(),
+            ];
+        }
 
         foreach ($compose['services'] as $service => $config) {
             $compose['services'][$service]['networks'] = [
@@ -123,6 +165,8 @@ abstract class DeploymentTemplate
             ...$this->getStaticEnvironmentVariables(),
             ...$this->deployment->environment->environment_variables,
         ];
+
+        // Add environment variables from services
         foreach ($this->deployment->environment->services as $service) {
             $environment = [
                 ...$environment,

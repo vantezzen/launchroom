@@ -34,6 +34,7 @@ class SetupController extends Controller
         $settings->publicly_accessible = $request->publicly_accessible;
         $settings->ipv4 = $request->ipv4;
         $settings->ipv6 = $request->ipv6;
+        $settings->admin_email = $request->admin_email ?? $request->email;
         $settings->setup_done = true;
         $settings->save();
 
