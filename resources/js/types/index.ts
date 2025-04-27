@@ -31,6 +31,13 @@ export interface SharedData {
     currentProject?: Project;
     currentEnvironment?: Environment;
 
+    flash?: {
+        success?: string;
+        error?: string;
+        warning?: string;
+        info?: string;
+    };
+
     [key: string]: unknown;
 }
 

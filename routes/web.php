@@ -2,12 +2,14 @@
 
 use App\Http\Controllers\DeploymentController;
 use App\Http\Controllers\EnvironmentController;
+use App\Http\Controllers\EnvironmentSettingsController;
 use App\Http\Controllers\MetricsController;
 use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\ServiceController;
 use App\Http\Controllers\SetupController;
 use App\Http\Controllers\TeamController;
 use App\Http\Middleware\RequireSetupDone;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
@@ -32,6 +34,13 @@ Route::middleware(['auth', 'verified', RequireSetupDone::class])->group(function
     Route::get('teams/{team:slug}/projects/{project:slug}/environments/{environment}/metrics', [EnvironmentController::class, 'metrics']);
     Route::get('teams/{team:slug}/projects/{project:slug}/environments/{environment}/logs', [EnvironmentController::class, 'logs']);
 
+    // Environment Settings Routes
+    Route::get('teams/{team:slug}/projects/{project:slug}/environments/{environment}/settings', [EnvironmentSettingsController::class, 'show'])->name('teams.projects.environments.settings');
+    Route::patch('teams/{team:slug}/projects/{project:slug}/environments/{environment}/settings', [EnvironmentSettingsController::class, 'update'])->name('teams.projects.environments.settings.update');
+    Route::patch('teams/{team:slug}/projects/{project:slug}', [ProjectController::class, 'update'])->name('teams.projects.update');
+    Route::post('teams/{team:slug}/projects/{project:slug}/transfer', [EnvironmentSettingsController::class, 'transferProject'])->name('teams.projects.transfer');
+    Route::delete('teams/{team:slug}/projects/{project:slug}', [EnvironmentSettingsController::class, 'destroy'])->name('teams.projects.delete');
+
     Route::resource('teams.projects.environments.deployments', DeploymentController::class)->parameters([
         'projects' => 'project:slug',
         'teams' => 'team:slug',
@@ -49,8 +58,8 @@ Route::middleware(['auth', 'verified', RequireSetupDone::class])->group(function
     Route::get('metrics', [MetricsController::class, 'index'])->name('metrics.index');
 
     Route::get('/', function () {
-        if (auth()->user()->teams->count() > 0) {
-            return redirect()->route('teams.show', auth()->user()->teams->first());
+        if (Auth::user()->teams->count() > 0) {
+            return redirect()->route('teams.show', Auth::user()->teams->first());
         }
 
         return Inertia::render('dashboard');
