@@ -6,11 +6,6 @@
 
 - Docker Container Health Checks
 
-- Bugs
-  - Make Docker logs more stable when displayed
-
-- Instance settings
-
 - Installation
   - Check that docker is installed and working
   - Add Attributes table
