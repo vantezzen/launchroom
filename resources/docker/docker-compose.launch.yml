@@ -1,0 +1,91 @@
+x-laravel-env: &laravel-env
+  APP_ENV: production
+  APP_KEY: ${APP_KEY}
+  APP_DEBUG: false
+  APP_URL: ${APP_URL}
+
+  DB_CONNECTION: pgsql
+  DB_HOST: launchroom-db
+  DB_PORT: 5432
+  DB_DATABASE: ${DB_DATABASE}
+  DB_USERNAME: ${DB_USERNAME}
+  DB_PASSWORD: ${DB_PASSWORD}
+
+  REDIS_HOST: launchroom-redis
+  REDIS_PORT: 6379
+
+  CACHE_STORE: redis
+  SESSION_DRIVER: redis
+  QUEUE_CONNECTION: redis
+  LOG_CHANNEL: stderr
+  DOCKER_HOST: unix:///var/run/docker.sock
+
+services:
+  launchroom:
+    build:
+      context: ../..
+    restart: unless-stopped
+    ports:
+      - '8080:8080'
+    volumes:
+      - ./storage/app/private:/var/www/html/storage/app/private
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - launchroom_net
+      - launchroom_internal
+    environment:
+      <<: *laravel-env
+    depends_on:
+      - launchroom-db
+      - launchroom-redis
+
+  # launchroom-queue:
+  #   deploy:
+  #     mode: replicated
+  #     replicas: 3
+  #   build:
+  #     context: ../..
+  #   restart: unless-stopped
+  #   command: php artisan queue:work --sleep=3 --tries=3 --timeout=90
+  #   volumes:
+  #     - ./storage/app/private:/var/www/html/storage/app/private
+  #     - /var/run/docker.sock:/var/run/docker.sock
+  #   networks:
+  #     - launchroom_net
+  #     - launchroom_internal
+  #   environment:
+  #     <<: *laravel-env
+  #   depends_on:
+  #     - launchroom-db
+  #     - launchroom-redis
+
+  launchroom-db:
+    image: postgres:15
+    restart: always
+    environment:
+      POSTGRES_USER: ${DB_USERNAME}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_DATABASE}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    networks:
+      - launchroom_internal
+    ports:
+      - '5432:5432'
+
+  launchroom-redis:
+    image: redis:alpine
+    restart: always
+    volumes:
+      - redis_data:/data
+    networks:
+      - launchroom_internal
+
+volumes:
+  db_data:
+  redis_data:
+
+networks:
+  launchroom_net:
+    external: true # docker network create launchroom_net
+  launchroom_internal:

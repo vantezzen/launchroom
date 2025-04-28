@@ -36,41 +36,27 @@ MIGRATE;
         file_put_contents($this->baseDirectory.'/_migrate.sh', $migrateFile);
 
         // Add Dockerfile
-        $dockerfile = <<<DOCKERFILE
+        $dockerfile = <<<'DOCKERFILE'
 # syntax=docker.io/docker/dockerfile:1
-FROM serversideup/php:8.3-fpm-nginx
+FROM serversideup/php:8.4-fpm-nginx-alpine
 
 ENV PHP_OPCACHE_ENABLE=1
 
 WORKDIR /var/www/html
 
 USER root
+RUN apk add --no-cache coreutils grep sed curl git bash docker-cli nodejs-current npm
 
-RUN apt-get update && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
-
-ENV NODE_VERSION 22.13.1
-RUN apt install -y curl
-RUN curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash
-ENV NVM_DIR=/root/.nvm
-RUN . "\$NVM_DIR/nvm.sh" && nvm install \${NODE_VERSION}
-RUN . "\$NVM_DIR/nvm.sh" && nvm use v\${NODE_VERSION}
-RUN . "\$NVM_DIR/nvm.sh" && nvm alias default v\${NODE_VERSION}
-ENV PATH="/root/.nvm/versions/node/v\${NODE_VERSION}/bin/:\${PATH}"
-
-COPY --chmod=755 ./_migrate.sh /etc/entrypoint.d/99-migrate.sh
+COPY --chmod=755 ./resources/docker/migrate.sh /etc/entrypoint.d/99-migrate.sh
 COPY . .
 
-RUN mkdir -p /var/www/html/storage/framework/{sessions,views,cache} && chmod -R 777 /var/www/html/storage
-RUN mkdir -p /var/www/html/bootstrap/cache && chmod -R 777 /var/www/html/bootstrap/cache
+RUN composer install --no-interaction --prefer-dist --optimize-autoloader
+RUN mkdir -p /var/www/html/storage/framework/{sessions,views,cache} && chown -R www-data:www-data /var/www/html/storage
+RUN mkdir -p /var/www/html/bootstrap/cache && chown -R www-data:www-data /var/www/html/bootstrap/cache
 RUN npm install
 RUN npm run build
 
 USER www-data
-
-RUN composer install --optimize-autoloader
-
 EXPOSE 8080
 DOCKERFILE;
 

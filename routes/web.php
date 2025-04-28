@@ -26,7 +26,7 @@ Route::middleware(['auth', 'verified', RequireSetupDone::class])->group(function
     Route::resource('teams.projects', ProjectController::class)->parameters([
         'projects' => 'project:slug',
         'teams' => 'team:slug',
-    ]);
+    ])->except(['update', 'delete']);
     Route::resource('teams.projects.environments', EnvironmentController::class)->parameters([
         'projects' => 'project:slug',
         'teams' => 'team:slug',

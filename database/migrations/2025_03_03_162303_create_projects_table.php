@@ -13,11 +13,11 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('projects', function (Blueprint $table) {
-            $table->string('id')->primary();
+            $table->uuid('id')->primary();
 
             $table->string('name');
             $table->string('slug')->unique();
-            $table->foreignIdFor(Team::class)->index();
+            $table->foreignIdFor(Team::class)->constrained()->index();
 
             $table->string('repository');
             $table->jsonb('build_settings')->default('{}');

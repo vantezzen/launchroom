@@ -13,7 +13,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('processing_usages', function (Blueprint $table) {
-            $table->string('id')->primary();
+            $table->uuid('id')->primary();
 
             $table->foreignIdFor(Environment::class)
                 ->index()

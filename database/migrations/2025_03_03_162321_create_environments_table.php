@@ -13,7 +13,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('environments', function (Blueprint $table) {
-            $table->string('id')->primary();
+            $table->uuid('id')->primary();
 
             $table->foreignIdFor(Project::class)->index()->constrained()->cascadeOnDelete();
             $table->string('name');
