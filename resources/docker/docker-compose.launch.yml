@@ -11,6 +11,14 @@ x-laravel-env: &laravel-env
   DB_USERNAME: ${DB_USERNAME}
   DB_PASSWORD: ${DB_PASSWORD}
 
+  BROADCAST_CONNECTION: reverb
+  REVERB_APP_ID: ${REVERB_APP_ID}
+  REVERB_APP_KEY: ${REVERB_APP_KEY}
+  REVERB_APP_SECRET: ${REVERB_APP_SECRET}
+  REVERB_HOST: ${REVERB_HOST}
+  REVERB_PORT: 8000
+  REVERB_SCHEME: http
+
   REDIS_HOST: launchroom-redis
   REDIS_PORT: 6379
 
@@ -39,29 +47,48 @@ services:
       - launchroom-db
       - launchroom-redis
 
-  # launchroom-queue:
-  #   deploy:
-  #     mode: replicated
-  #     replicas: 3
-  #   build:
-  #     context: ../..
-  #   restart: unless-stopped
-  #   command: php artisan queue:work --sleep=3 --tries=3 --timeout=90
-  #   volumes:
-  #     - ./storage/app/private:/var/www/html/storage/app/private
-  #     - /var/run/docker.sock:/var/run/docker.sock
-  #   networks:
-  #     - launchroom_net
-  #     - launchroom_internal
-  #   environment:
-  #     <<: *laravel-env
-  #   depends_on:
-  #     - launchroom-db
-  #     - launchroom-redis
+  launchroom-reverb:
+    build:
+      context: ../..
+    restart: unless-stopped
+    command: php artisan --port=8000 reverb:start
+    ports:
+      - '8000:8000'
+    volumes:
+      - ./storage/app/private:/var/www/html/storage/app/private
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - launchroom_net
+      - launchroom_internal
+    environment:
+      <<: *laravel-env
+    depends_on:
+      - launchroom-db
+      - launchroom-redis
+
+  launchroom-queue:
+    deploy:
+      mode: replicated
+      replicas: 3
+    build:
+      context: ../..
+    restart: unless-stopped
+    command: php artisan queue:work --sleep=3 --tries=3 --timeout=90
+    volumes:
+      - ./storage/app/private:/var/www/html/storage/app/private
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - launchroom_net
+      - launchroom_internal
+    environment:
+      <<: *laravel-env
+    depends_on:
+      - launchroom-db
+      - launchroom-redis
 
   launchroom-db:
     image: postgres:15
-    restart: always
+    restart: unless-stopped
     environment:
       POSTGRES_USER: ${DB_USERNAME}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
@@ -75,7 +102,7 @@ services:
 
   launchroom-redis:
     image: redis:alpine
-    restart: always
+    restart: unless-stopped
     volumes:
       - redis_data:/data
     networks:

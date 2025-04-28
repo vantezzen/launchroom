@@ -12,7 +12,7 @@ COPY --chmod=755 ./resources/docker/migrate.sh /etc/entrypoint.d/99-migrate.sh
 COPY . .
 
 RUN composer install --no-interaction --prefer-dist --optimize-autoloader
-RUN mkdir -p /var/www/html/storage/framework/{sessions,views,cache} && chown -R www-data:www-data /var/www/html/storage
+RUN mkdir -p /var/www/html/storage/framework && cd /var/www/html/storage/framework && mkdir sessions views cache && chown -R www-data:www-data /var/www/html/storage
 RUN mkdir -p /var/www/html/bootstrap/cache && chown -R www-data:www-data /var/www/html/bootstrap/cache
 RUN npm install
 RUN npm run build
