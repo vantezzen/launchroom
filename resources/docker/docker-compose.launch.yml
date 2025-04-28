@@ -1,8 +1,12 @@
 x-laravel-env: &laravel-env
+  APP_NAME: launchroom
+  VITE_APP_NAME: launchroom
+  PROMETHEUS_URL: http://prometheus.docker.localhost
   APP_ENV: production
   APP_KEY: ${APP_KEY}
   APP_DEBUG: false
   APP_URL: ${APP_URL}
+  APP_LOCALE: en
 
   DB_CONNECTION: pgsql
   DB_HOST: launchroom-db
@@ -19,6 +23,11 @@ x-laravel-env: &laravel-env
   REVERB_PORT: 8000
   REVERB_SCHEME: http
 
+  VITE_REVERB_APP_KEY: ${REVERB_APP_KEY}
+  VITE_REVERB_HOST: ${REVERB_HOST}
+  VITE_REVERB_PORT: 8000
+  VITE_REVERB_SCHEME: http
+
   REDIS_HOST: launchroom-redis
   REDIS_PORT: 6379
 
@@ -28,10 +37,19 @@ x-laravel-env: &laravel-env
   LOG_CHANNEL: stderr
   DOCKER_HOST: unix:///var/run/docker.sock
 
+x-build-config: &build-config
+  context: ../..
+  dockerfile: Dockerfile
+  args:
+    VITE_REVERB_APP_ID: ${REVERB_APP_ID}
+    VITE_REVERB_HOST: ${REVERB_HOST}
+    VITE_REVERB_PORT: 8000
+    VITE_REVERB_SCHEME: http
+
 services:
   launchroom:
     build:
-      context: ../..
+      <<: *build-config
     restart: unless-stopped
     ports:
       - '8080:8080'
@@ -49,7 +67,7 @@ services:
 
   launchroom-reverb:
     build:
-      context: ../..
+      <<: *build-config
     restart: unless-stopped
     command: php artisan --port=8000 reverb:start
     ports:
@@ -71,7 +89,7 @@ services:
       mode: replicated
       replicas: 3
     build:
-      context: ../..
+      <<: *build-config
     restart: unless-stopped
     command: php artisan queue:work --sleep=3 --tries=3 --timeout=90
     volumes:

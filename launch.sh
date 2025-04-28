@@ -8,7 +8,7 @@ echo "
 
 "
 
-echo "🚀 Starting Launchroom..."
+echo "🚀 Starting launchroom..."
 
 PUBLIC_IP=$(curl -s ifconfig.me)
 ENV_FILE="./resources/docker/.env"
@@ -49,7 +49,7 @@ echo "Starting Docker containers..."
 docker network create launchroom_net || echo "Network launchroom_net already exists."
 docker compose -f resources/docker/docker-compose.yml -f resources/docker/docker-compose.launch.yml --env-file $ENV_FILE up -d --remove-orphans --build
 
-echo "🚀 Launchroom is now ready!"
+echo "🚀 launchroom is now ready!"
 echo "You can access it at:"
 echo "Local: http://localhost:8080"
 echo "Public: http://$PUBLIC_IP:8080"
