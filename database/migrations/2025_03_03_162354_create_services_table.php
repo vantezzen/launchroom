@@ -13,10 +13,10 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('services', function (Blueprint $table) {
-            $table->uuid('id')->primary();
+            $table->string('id')->primary();
 
             $table->string('name');
-            $table->foreignIdFor(Environment::class)->index()->constrained()->cascadeOnDelete();
+            $table->foreignHashIdFor(Environment::class)->index()->constrained()->cascadeOnDelete();
             $table->string('category')->description('The category of service (e.g. database, cache, etc.)');
             $table->string('service_type')->description('The service type (e.g. MySQL, Redis, etc.)');
             $table->jsonb('environment_variables');

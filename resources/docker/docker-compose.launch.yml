@@ -42,6 +42,7 @@ x-build-config: &build-config
   dockerfile: Dockerfile
   args:
     VITE_REVERB_APP_ID: ${REVERB_APP_ID}
+    VITE_REVERB_APP_KEY: ${REVERB_APP_KEY}
     VITE_REVERB_HOST: ${REVERB_HOST}
     VITE_REVERB_PORT: 8000
     VITE_REVERB_SCHEME: http

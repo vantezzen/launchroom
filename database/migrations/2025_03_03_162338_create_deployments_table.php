@@ -13,9 +13,9 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('deployments', function (Blueprint $table) {
-            $table->uuid('id')->primary();
+            $table->string('id')->primary();
 
-            $table->foreignIdFor(Environment::class)->index()->constrained()->cascadeOnDelete();
+            $table->foreignHashIdFor(Environment::class)->index()->constrained()->cascadeOnDelete();
             $table->string('commit_hash');
             $table->enum('status', ['pending', 'deploying', 'failed', 'succeeded']);
             $table->text('output')->nullable();

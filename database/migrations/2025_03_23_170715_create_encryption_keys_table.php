@@ -13,13 +13,13 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('encryption_keys', function (Blueprint $table) {
-            $table->uuid('id')->primary();
+            $table->string('id')->primary();
 
-            $table->foreignIdFor(Team::class)
+            $table->foreignHashIdFor(Team::class)
                 ->constrained()
                 ->cascadeOnDelete();
-            $table->string('public_key');
-            $table->string('private_key');
+            $table->text('public_key');
+            $table->text('private_key');
 
             $table->timestamps();
         });

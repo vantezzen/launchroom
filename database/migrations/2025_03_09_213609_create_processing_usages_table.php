@@ -13,9 +13,9 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('processing_usages', function (Blueprint $table) {
-            $table->uuid('id')->primary();
+            $table->string('id')->primary();
 
-            $table->foreignIdFor(Environment::class)
+            $table->foreignHashIdFor(Environment::class)
                 ->index()
                 ->constrained()
                 ->cascadeOnDelete();

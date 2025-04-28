@@ -69,7 +69,9 @@ class Team extends Model
         $team->users()->attach($user);
 
         EncryptionKey::newForTeam($team);
-        $team->encryptionKey->addToGitHub();
+        if ($team->github_token) {
+            $team->encryptionKey->addToGitHub();
+        }
 
         return $team;
     }
