@@ -18,7 +18,7 @@ ENV VITE_REVERB_SCHEME=$VITE_REVERB_SCHEME
 WORKDIR /var/www/html
 
 USER root
-RUN apk add --no-cache coreutils grep sed curl git bash docker-cli nodejs-current npm
+RUN apk add --no-cache coreutils grep sed openssh curl git bash docker-cli nodejs-current npm
 
 COPY --chmod=755 ./resources/docker/migrate.sh /etc/entrypoint.d/99-migrate.sh
 COPY . .

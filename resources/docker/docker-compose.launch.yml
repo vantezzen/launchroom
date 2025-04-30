@@ -55,7 +55,7 @@ services:
     ports:
       - '8080:8080'
     volumes:
-      - ./storage/app/private:/var/www/html/storage/app/private
+      - ../../storage/app/private:/var/www/html/storage/app/private
       - /var/run/docker.sock:/var/run/docker.sock
     networks:
       - launchroom_net
@@ -74,7 +74,7 @@ services:
     ports:
       - '8000:8000'
     volumes:
-      - ./storage/app/private:/var/www/html/storage/app/private
+      - ../../storage/app/private:/var/www/html/storage/app/private
       - /var/run/docker.sock:/var/run/docker.sock
     networks:
       - launchroom_net
@@ -94,7 +94,24 @@ services:
     restart: unless-stopped
     command: php artisan queue:work --sleep=3 --tries=3 --timeout=90
     volumes:
-      - ./storage/app/private:/var/www/html/storage/app/private
+      - ../../storage/app/private:/var/www/html/storage/app/private
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - launchroom_net
+      - launchroom_internal
+    environment:
+      <<: *laravel-env
+    depends_on:
+      - launchroom-db
+      - launchroom-redis
+
+  launchroom-scheduler:
+    build:
+      <<: *build-config
+    restart: unless-stopped
+    command: php artisan schedule:work
+    volumes:
+      - ../../storage/app/private:/var/www/html/storage/app/private
       - /var/run/docker.sock:/var/run/docker.sock
     networks:
       - launchroom_net

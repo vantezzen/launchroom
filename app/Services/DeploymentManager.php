@@ -87,7 +87,10 @@ class DeploymentManager
     {
         if (! file_exists($this->getBaseDirectory())) {
             // Download codebase for the first time
-            $cloneCode = "git clone {$this->github->getCliAuthParameter()} {$this->deployment->environment->project->repository} {$this->getBaseDirectory()} 2>&1";
+            $repoUrl = $this->deployment->environment->project->repository;
+            $repoUrl = str_replace('https://github.com/', 'git@github.com:', $repoUrl); // Convert to SSH URL
+
+            $cloneCode = "git clone {$this->github->getCliAuthParameter()} {$repoUrl} {$this->getBaseDirectory()} 2>&1";
             $output = shell_exec($cloneCode);
 
             $this->deployment->addLogSection('Clone Code', $output);

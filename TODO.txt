@@ -6,6 +6,18 @@
 
 - Docker Container Health Checks
 
+- GitHub SSH keys
+
+- Improve loading of Github repos taking long time
+  - Automatically fetch current repos in cron?
+- Fix settings github token?
+
+- Laravel template
+  - Schedule runner
+  - Show info in application overview section
+- When not internet public => Set IPs to 127.0.0.1
+- Launchroom behind traefik
+
 - Installation
   - Check that docker is installed and working
   - Add Attributes table
