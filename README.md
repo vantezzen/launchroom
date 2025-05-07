@@ -14,7 +14,23 @@ launchroom is an open-source, self-hosted deployment platform built for modern w
 
 ## Installation
 
-TBD
+Installation will be improved in the future, but for now, you can install launchroom using the launch script:
+
+1. Install Docker and Git on your server
+2. Clone the repository
+
+```bash
+git clone https://github.com/vantezzen/launchroom.git
+```
+
+3. Run the launch script
+
+```bash
+cd launchroom
+bash launch.sh
+```
+
+4. Follow the instructions in the script to set up your server
 
 ## Development
 

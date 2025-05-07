@@ -29,6 +29,18 @@ echo "
 "
 echo "🚀 Starting launchroom..."
 
+if ! command -v docker &> /dev/null
+then
+    echo "Docker could not be found. Please install Docker to continue."
+    exit 1
+fi
+
+if ! command -v git &> /dev/null
+then
+    echo "Git could not be found. Please install Git to continue."
+    exit 1
+fi
+
 PUBLIC_IP=$(curl -s ifconfig.me)
 ENV_FILE="./resources/docker/.env"
 if [ ! -f "$ENV_FILE" ]; then

@@ -65,6 +65,11 @@ services:
     depends_on:
       - launchroom-db
       - launchroom-redis
+    labels:
+      - 'traefik.enable=true'
+      - 'traefik.docker.network=launchroom_net'
+      - 'traefik.http.routers.launchroom.rule=Host(`launchroom.docker.localhost`)'
+      - 'traefik.http.routers.launchroom.entrypoints=web'
 
   launchroom-reverb:
     build:
