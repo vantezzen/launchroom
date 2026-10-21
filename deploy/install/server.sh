@@ -251,6 +251,9 @@ fetch_bundle() {
 	if download "$base/launchroom-deploy.tar.gz.sigstore.json" "$tmp/bundle.tar.gz.sigstore.json" 2>/dev/null; then
 		bundle_version="$(tar -xzOf "$tmp/bundle.tar.gz" VERSION 2>/dev/null | tr -d ' \r\n' || true)"
 		[ "$bundle_version" = "$LR_RELEASE_VERSION" ] || die "the bundle is version '$bundle_version', not $LR_RELEASE_VERSION. Not installing."
+		# umask 077 makes the downloads 0600 root; the cosign image runs as a
+		# non-root user. The bundle and its signature are public release files.
+		chmod 0755 "$tmp" && chmod 0644 "$tmp"/bundle.tar.gz "$tmp"/bundle.tar.gz.sigstore.json
 		had_image="$(docker image ls -q "$COSIGN_IMAGE" 2>/dev/null)"
 		cosign_out="$(docker run --rm --network bridge -v "$(cd "$tmp" && pwd):/work:ro" "$COSIGN_IMAGE" verify-blob \
 			--bundle /work/bundle.tar.gz.sigstore.json \

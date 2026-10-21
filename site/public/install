@@ -194,6 +194,9 @@ verify_signature() { # verify_signature DIR (with bundle.tar.gz + bundle.tar.gz.
 	if [ "$VERSION" != "latest" ] && [ "$bundle_version" != "$VERSION" ]; then
 		die "asked for version $VERSION but the bundle is version $bundle_version. Not installing."
 	fi
+	# umask 077 makes the downloads 0600 root; the cosign image runs as a
+	# non-root user. The bundle and its signature are public release files.
+	chmod 0755 "$1" && chmod 0644 "$1"/bundle.tar.gz "$1"/bundle.tar.gz.sigstore.json
 	had_image="$(docker image ls -q "$COSIGN_IMAGE" 2>/dev/null)"
 	# Network: cosign fetches Sigstore's trusted root through TUF.
 	cosign_out="$(docker run --rm --network bridge -v "$(cd "$1" && pwd):/work:ro" "$COSIGN_IMAGE" verify-blob \
