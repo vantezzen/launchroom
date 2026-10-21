@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -123,5 +124,63 @@ func TestRootConfinedReads(t *testing.T) {
 	facts := presets.Gather(r.FS(), nil)
 	if facts.PackageJSON != nil && facts.PackageJSON.Name == "stolen" {
 		t.Fatal("preset scan read a file outside the checkout")
+	}
+}
+
+// TestPruneOutsideApp: unsafe links elsewhere in a monorepo (fixtures that
+// mimic /proc) are removed so the app still builds; unsafe links inside the
+// app folder are left for checkTree to refuse.
+func TestPruneOutsideApp(t *testing.T) {
+	root, _ := repo(t, map[string]string{
+		"daemon/testdata/proc/1/root/etc/localtime": "/usr/share/zoneinfo/UTC",
+		"daemon/testdata/up":                        "../../../secret.key",
+		"daemon/testdata/ok":                        "../go.mod",
+		"site/via-outside":                          "../daemon/testdata/up",
+	}, map[string]string{
+		"daemon/go.mod":     "module x",
+		"site/package.json": `{"name":"site"}`,
+	})
+	dir, err := appDir(root, "site")
+	if err != nil {
+		t.Fatal(err)
+	}
+	removed, err := pruneOutsideApp(root, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	slices.Sort(removed)
+	want := []string{"daemon/testdata/proc/1/root/etc/localtime", "daemon/testdata/up"}
+	if !slices.Equal(removed, want) {
+		t.Fatalf("removed %v, want %v", removed, want)
+	}
+	if _, err := os.Lstat(filepath.Join(root, "daemon", "testdata", "ok")); err != nil {
+		t.Fatalf("a safe link outside the app was removed: %v", err)
+	}
+	// The app's link to a removed escaping link now dangles inside the repo.
+	if err := checkTree(root); err != nil {
+		t.Fatalf("checkTree after pruning: %v", err)
+	}
+	if msg := prunedMessage(removed); !strings.Contains(msg, "Removed 2 ") {
+		t.Fatalf("message: %q", msg)
+	}
+
+	// Inside the app folder nothing is pruned and checkTree still refuses.
+	root2, _ := repo(t, map[string]string{"site/bad": "/etc/passwd"}, map[string]string{"site/package.json": "{}"})
+	dir2, err := appDir(root2, "site")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if removed, err := pruneOutsideApp(root2, dir2); err != nil || len(removed) != 0 {
+		t.Fatalf("pruned inside the app: %v %v", removed, err)
+	}
+	if err := checkTree(root2); !errors.Is(err, errUnsafeRepo) {
+		t.Fatalf("checkTree accepted an absolute link inside the app: %v", err)
+	}
+
+	// The app is the whole checkout: nothing is pruned.
+	root3, _ := repo(t, map[string]string{"x/abs": "/etc/passwd"}, map[string]string{"package.json": "{}"})
+	dir3, _ := appDir(root3, "")
+	if removed, err := pruneOutsideApp(root3, dir3); err != nil || len(removed) != 0 {
+		t.Fatalf("pruned with the app at the root: %v %v", removed, err)
 	}
 }

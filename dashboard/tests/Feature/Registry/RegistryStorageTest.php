@@ -137,7 +137,8 @@ test('blank credentials keep the stored ones; new ones are required the first ti
 });
 
 test('local storage renders the installer template', function (): void {
-    $template = '/var/www/install/zot-config.json';
+    // Mounted (dev) or copied (CI) next to the daemon installer.
+    $template = config()->string('launchroom.install.scripts_path').'/zot-config.json';
 
     if (! is_file($template)) {
         $this->markTestSkipped('deploy/images/zot/config.json is not mounted.');

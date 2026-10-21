@@ -190,11 +190,20 @@ func (b *Builder) Run(ctx context.Context, job Job) (out *Outcome, err error) {
 		}
 		return nil, fail(class, "clone", err)
 	}
-	if err := checkTree(src); err != nil {
-		return nil, fail(state.FailureConfig, "clone", err)
-	}
 	dir, err := appDir(src, job.Inputs.RootDir)
 	if err != nil {
+		return nil, fail(state.FailureConfig, "clone", err)
+	}
+	// Unsafe links outside the app folder (test fixtures elsewhere in a
+	// monorepo) are removed, then the whole checkout is checked strictly.
+	removed, err := pruneOutsideApp(src, dir)
+	if err != nil {
+		return nil, fail(state.FailureConfig, "clone", err)
+	}
+	if len(removed) > 0 {
+		sink.Line("clone", state.StreamStdout, prunedMessage(removed))
+	}
+	if err := checkTree(src); err != nil {
 		return nil, fail(state.FailureConfig, "clone", err)
 	}
 
@@ -219,6 +228,9 @@ func (b *Builder) Run(ctx context.Context, job Job) (out *Outcome, err error) {
 	res, err := b.resolve(dir, work, &job, envNames, sink)
 	if err != nil {
 		return nil, err
+	}
+	if len(removed) > 0 {
+		res.summary.Warnings = append(res.summary.Warnings, state.BuildWarning{Code: "unsafe-links-removed", Message: clipText(prunedMessage(removed), 1024)})
 	}
 	out = &Outcome{Summary: res.summary, Inspection: inspection}
 	if job.Image == "" {

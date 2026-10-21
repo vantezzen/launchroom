@@ -376,6 +376,82 @@ func checkTree(root string) error {
 	})
 }
 
+// pruneOutsideApp removes, outside the app folder dir, every symlink whose
+// resolved target leaves the checkout and every special file, and returns
+// their checkout-relative paths. They are not part of the build, but a
+// monorepo may carry them (e.g. test fixtures that mimic /proc). Nothing
+// inside dir is touched: checkTree still refuses unsafe entries there, and it
+// runs over the whole checkout afterwards, so a link inside the app that
+// pointed at a removed one now dangles instead of escaping. Links are removed
+// themselves (os.Remove never follows them).
+func pruneOutsideApp(root, dir string) ([]string, error) {
+	root, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return nil, err
+	}
+	app, err := filepath.Rel(root, dir)
+	if err != nil {
+		return nil, err
+	}
+	if app == "." {
+		return nil, nil // the app is the whole checkout: checkTree decides
+	}
+	app = filepath.ToSlash(app)
+	// Removals go through os.Root: a path can't be redirected out of the
+	// checkout between the walk and the remove.
+	r, err := os.OpenRoot(root)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = r.Close() }()
+	var removed []string
+	err = filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, _ := filepath.Rel(root, p)
+		rel = filepath.ToSlash(rel)
+		if d.IsDir() {
+			if (d.Name() == ".git" && filepath.Dir(p) == root) || rel == app {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if rel == app || strings.HasPrefix(rel, app+"/") {
+			return nil
+		}
+		unsafe := false
+		switch t := d.Type(); {
+		case t&fs.ModeSymlink != 0:
+			unsafe = resolveInRoot(root, rel) != nil
+		case t&(fs.ModeDevice|fs.ModeNamedPipe|fs.ModeSocket|fs.ModeCharDevice) != 0:
+			unsafe = true
+		}
+		if !unsafe {
+			return nil
+		}
+		if err := r.Remove(filepath.FromSlash(rel)); err != nil {
+			return err
+		}
+		removed = append(removed, rel)
+		return nil
+	})
+	return removed, err
+}
+
+// prunedMessage names the entries pruneOutsideApp removed (at most five).
+func prunedMessage(removed []string) string {
+	shown := removed
+	if len(shown) > 5 {
+		shown = shown[:5]
+	}
+	msg := fmt.Sprintf("Removed %d symlink(s) or special file(s) outside the app folder that point outside the repository (not part of this build): %s", len(removed), strings.Join(shown, ", "))
+	if len(removed) > len(shown) {
+		msg += fmt.Sprintf(" and %d more", len(removed)-len(shown))
+	}
+	return msg
+}
+
 // resolveInRoot resolves the slash-separated path rel inside root, following
 // every symlink on the way (including chains through other symlinks), and
 // reports an error if resolution would leave root. Missing components are

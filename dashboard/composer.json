@@ -89,15 +89,19 @@
         ],
         "test": [
             "@php artisan config:clear --ansi",
-            "pest"
+            "pest --parallel --processes=${LR_TEST_PROCESSES:-4}"
         ],
-        "ci:check": [
+        "ci:static": [
             "Composer\\Config::disableProcessTimeout",
             "@lint:check",
             "@rector:check",
             "@types:check",
             "npm run check",
-            "npm run types:check",
+            "npm run types:check"
+        ],
+        "ci:check": [
+            "Composer\\Config::disableProcessTimeout",
+            "@ci:static",
             "@test"
         ],
         "post-autoload-dump": [
@@ -135,6 +139,12 @@
         },
         "platform": {
             "php": "8.4.1"
+        },
+        "//": "composer audit reports abandoned packages without failing: symplify/rule-doc-generator-contracts (no replacement) is a dev-only transitive dependency of driftingly/rector-laravel. Security advisories still fail the audit.",
+        "policy": {
+            "abandoned": {
+                "audit": "report"
+            }
         }
     },
     "minimum-stability": "stable",
@@ -146,7 +156,8 @@
         "rector:check": "Check that Rector has nothing to change",
         "types:check": "Run PHPStan (Larastan, level max, disallowed calls)",
         "types:generate": "Generate resources/js/types/generated.d.ts from Data classes and enums",
-        "test": "Run the Pest suite (needs Postgres, see phpunit.xml)",
-        "ci:check": "Run every CI check: Pint, Rector, PHPStan, vp check, tsc, Pest"
+        "test": "Run the Pest suite in parallel (LR_TEST_PROCESSES workers, default 4; each gets its own <database>_test_<n> Postgres database)",
+        "ci:static": "Run the static CI checks: Pint, Rector, PHPStan, vp check, tsc",
+        "ci:check": "Run every CI check: the static checks, then Pest"
     }
 }
