@@ -73,8 +73,11 @@ If you don't want the installer to contact IP echo services, add `--no-public-ip
 ## The signature or checksum doesn't verify
 
 ```text
-launchroom: error: the bundle's cosign signature does NOT verify for https://github.com/vantezzen/launchroom/.github/workflows/release.yml@refs/tags/v1.2.0. Not installing.
+launchroom:   cosign: Error: ...
+launchroom: error: the bundle's cosign signature could not be verified for https://github.com/vantezzen/launchroom/.github/workflows/release.yml@refs/tags/v1.2.0 (cosign's output above). Not installing.
 ```
+
+The `cosign:` lines above the error say what went wrong.
 
 **Cause.** Every release bundle is signed by launchroom's release workflow on GitHub, and the installer checks that signature with cosign before it unpacks anything. The check runs in a pinned cosign container and fetches Sigstore's trust data, so it also fails when:
 
@@ -82,6 +85,15 @@ launchroom: error: the bundle's cosign signature does NOT verify for https://git
 - The server's clock is far off (certificates look not yet valid or expired).
 
 "the bundle checksum does not match" means the download was corrupted or altered on the way.
+
+**Check it by hand.** This runs the same check and prints everything:
+
+```sh
+docker run --rm -v "$PWD/launchroom/.tmp:/work:ro" ghcr.io/sigstore/cosign/cosign:v3.0.2 verify-blob \
+  --bundle /work/bundle.tar.gz.sigstore.json \
+  --certificate-identity https://github.com/vantezzen/launchroom/.github/workflows/release.yml@refs/tags/v1.2.0 \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com /work/bundle.tar.gz
+```
 
 **Fix.** Check outbound HTTPS to `github.com`, `ghcr.io` and `sigstore.dev`, and the clock (`timedatectl status`), then run the installer again. If it still fails on a working network, don't work around it. Open an issue with the exact message. `--allow-unsigned` only accepts releases that have no signature (development builds). A signature that is present but wrong is always refused.
 

@@ -122,8 +122,8 @@ if fetch "$base/$sums.sigstore.json" "$tmp/$sums.sigstore.json" 2>/dev/null; the
 			--bundle "$tmp/$sums.sigstore.json" \
 			--certificate-identity "$SIGNER_IDENTITY$version" \
 			--certificate-oidc-issuer "$SIGNER_ISSUER" \
-			"$tmp/$sums" >/dev/null 2>&1 \
-			|| die "the checksum file's signature does NOT verify for $SIGNER_IDENTITY$version. Not installing."
+			"$tmp/$sums" >"$tmp/cosign.log" 2>&1 \
+			|| { tail -n 8 "$tmp/cosign.log" | sed 's/^/  cosign: /' >&2; die "the checksum file's signature could not be verified for $SIGNER_IDENTITY$version (cosign's output above). Not installing."; }
 		say "Signature verified: $SIGNER_IDENTITY$version"
 	else
 		say "note: cosign is not installed, so only the checksum was verified (install cosign to verify the release signature too)."

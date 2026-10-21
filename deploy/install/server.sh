@@ -252,13 +252,17 @@ fetch_bundle() {
 		bundle_version="$(tar -xzOf "$tmp/bundle.tar.gz" VERSION 2>/dev/null | tr -d ' \r\n' || true)"
 		[ "$bundle_version" = "$LR_RELEASE_VERSION" ] || die "the bundle is version '$bundle_version', not $LR_RELEASE_VERSION. Not installing."
 		had_image="$(docker image ls -q "$COSIGN_IMAGE" 2>/dev/null)"
-		docker run --rm --network bridge -v "$(cd "$tmp" && pwd):/work:ro" "$COSIGN_IMAGE" verify-blob \
+		cosign_out="$(docker run --rm --network bridge -v "$(cd "$tmp" && pwd):/work:ro" "$COSIGN_IMAGE" verify-blob \
 			--bundle /work/bundle.tar.gz.sigstore.json \
 			--certificate-identity "$SIGNER_IDENTITY$LR_RELEASE_VERSION" \
 			--certificate-oidc-issuer "$SIGNER_ISSUER" \
-			/work/bundle.tar.gz >/dev/null 2>&1 || status=$?
+			/work/bundle.tar.gz 2>&1)" || status=$?
 		[ -n "$had_image" ] || docker image rm "$COSIGN_IMAGE" >/dev/null 2>&1 || true
-		[ "${status:-0}" = 0 ] || die "the bundle's cosign signature does NOT verify for $SIGNER_IDENTITY$LR_RELEASE_VERSION. Not installing."
+		if [ "${status:-0}" != 0 ]; then
+			# cosign's own words: a bad signature, no network to Sigstore (TUF), or a pull failure.
+			printf '%s\n' "$cosign_out" | tail -n 8 | sed 's/^/launchroom:   cosign: /' >&2
+			die "the bundle's cosign signature could not be verified for $SIGNER_IDENTITY$LR_RELEASE_VERSION (cosign's output above). Not installing."
+		fi
 		say "bundle signature verified: $SIGNER_IDENTITY$LR_RELEASE_VERSION"
 	elif [ "${LR_ALLOW_UNSIGNED:-}" = 1 ]; then
 		warn "release v$LR_RELEASE_VERSION has no signature; continuing because of LR_ALLOW_UNSIGNED=1 (checksum only)."

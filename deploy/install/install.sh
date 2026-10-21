@@ -196,13 +196,18 @@ verify_signature() { # verify_signature DIR (with bundle.tar.gz + bundle.tar.gz.
 	fi
 	had_image="$(docker image ls -q "$COSIGN_IMAGE" 2>/dev/null)"
 	# Network: cosign fetches Sigstore's trusted root through TUF.
-	docker run --rm --network bridge -v "$(cd "$1" && pwd):/work:ro" "$COSIGN_IMAGE" verify-blob \
+	cosign_out="$(docker run --rm --network bridge -v "$(cd "$1" && pwd):/work:ro" "$COSIGN_IMAGE" verify-blob \
 		--bundle /work/bundle.tar.gz.sigstore.json \
 		--certificate-identity "$SIGNER_IDENTITY$bundle_version" \
 		--certificate-oidc-issuer "$SIGNER_ISSUER" \
-		/work/bundle.tar.gz >/dev/null 2>&1 || status=$?
+		/work/bundle.tar.gz 2>&1)" || status=$?
 	[ -n "$had_image" ] || docker image rm "$COSIGN_IMAGE" >/dev/null 2>&1 || true
-	[ "${status:-0}" = 0 ] || die "the bundle's cosign signature does NOT verify for $SIGNER_IDENTITY$bundle_version. Not installing."
+	if [ "${status:-0}" != 0 ]; then
+		# cosign's own words: a bad signature, or no network to Sigstore
+		# (it fetches the trusted root through TUF), or a pull failure.
+		printf '%s\n' "$cosign_out" | tail -n 8 | sed 's/^/launchroom:   cosign: /' >&2
+		die "the bundle's cosign signature could not be verified for $SIGNER_IDENTITY$bundle_version (cosign's output above). Not installing."
+	fi
 }
 
 fetch_bundle() {
