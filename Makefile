@@ -222,6 +222,8 @@ test: test-dashboard test-daemon ## Run all tests and checks
 
 # TEST_DB lets parallel workstreams use separate databases, e.g.
 # `make test-dashboard TEST_DB=launchroom_test_ui`. Must start with launchroom_test.
+# Full Pest runs are parallel (LR_TOOL_CPUS workers): Laravel gives every
+# worker its own copy, $(TEST_DB)_test_<n>, created on first use.
 TEST_DB ?= launchroom_test
 
 test-db: dev/.env
@@ -231,13 +233,13 @@ test-db: dev/.env
 		|| $(COMPOSE) exec -T postgres createdb -U launchroom -O launchroom "$(TEST_DB)"
 
 test-dashboard: dev/.env test-db ## Dashboard: FULL gate (vp check, tsc, pint, rector, phpstan, all tests). Heavy: run once at integration, not per change
-	$(HEAVY) test-dashboard $(COMPOSE) run --rm -e LR_TEST_DATABASE=$(TEST_DB) test composer ci:check
+	$(HEAVY) test-dashboard $(COMPOSE) run --rm -e LR_TEST_DATABASE=$(TEST_DB) -e LR_TEST_PROCESSES=$(LR_TOOL_CPUS) test composer ci:check
 
 check-dashboard: dev/.env test-db ## Dashboard: targeted checks on FILES="app/X.php tests/Feature/XTest.php ..." (paths relative to dashboard/; default: everything changed since the last checkpoint). Pint/rector/phpstan on them, tsc, Pest on the test files + ARGS="--filter=..."
 	$(COMPOSE) run --rm -e LR_TEST_DATABASE=$(TEST_DB) -e FILES="$(strip $(if $(FILES),$(FILES),$(CHANGED_DASHBOARD)))" -e ARGS="$(ARGS)" test sh /opt/launchroom-dev/check-changed.sh
 
-test-dashboard-pest: dev/.env test-db ## Dashboard: only Pest (ARGS="--filter=Deploy" etc.; TEST_DB as above)
-	$(if $(strip $(ARGS)),,$(HEAVY) test-dashboard-pest )$(COMPOSE) run --rm -e LR_TEST_DATABASE=$(TEST_DB) test php vendor/bin/pest $(ARGS)
+test-dashboard-pest: dev/.env test-db ## Dashboard: only Pest (ARGS="--filter=Deploy" etc.; TEST_DB as above). Without ARGS: the full suite, in parallel (heavy)
+	$(if $(strip $(ARGS)),,$(HEAVY) test-dashboard-pest )$(COMPOSE) run --rm -e LR_TEST_DATABASE=$(TEST_DB) test php vendor/bin/pest $(if $(strip $(ARGS)),$(ARGS),--parallel --processes=$(LR_TOOL_CPUS))
 
 lint: lint-dashboard lint-daemon lint-deploy lint-workflows ## Run all linters
 

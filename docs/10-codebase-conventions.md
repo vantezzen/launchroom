@@ -30,7 +30,7 @@ launchroom/
 ├── dev/                       Local development environment (compose, dind "fake servers", git fixture server, failover test)
 │   └── fixtures/              Sample apps deployed into the fake servers
 ├── docs/                      This folder
-├── .github/workflows/         ci.yml (dashboard, daemon, cli, protocol, deploy, next-adapter, workflows, audit), release.yml (signed)
+├── .github/workflows/         ci.yml (dashboard, daemon, cli, protocol, deploy, next-adapter, site, workflows, audit; `ci-ok` sums them up), release.yml (signed)
 └── Makefile                   Task runner entry points (`make help`)
 ```
 
@@ -237,18 +237,23 @@ Rules:
 
 ## 6. CI gates
 
-`.github/workflows/ci.yml` runs on every push and pull request:
+`.github/workflows/ci.yml` runs on every push and pull request. A `changes` job decides which areas changed; jobs of untouched areas are skipped, and `ci-ok` (the check to require) passes when every job passed or was skipped. A newer push cancels the running check of the same branch or pull request.
 
-| Job | Checks |
-|---|---|
-| dashboard | `composer ci:check`: Pint, Rector (dry-run), PHPStan max + disallowed calls, `vp check`, `tsc`, Pest (unit, feature, arch, route coverage); generated TS types up to date; asset build |
-| daemon | `go test -race`, golangci-lint (incl. forbidigo), govulncheck |
-| cli | `go test`, cross-compiled release targets, golangci-lint, govulncheck |
-| protocol | schema generation is up to date (no drift in `protocol/`) |
-| deploy | shellcheck, `sh -n`, base images pinned by digest, bundle builds with digest pins |
-| next-adapter | build, typecheck and test; vendored copy in the daemon matches the build; package contents |
-| workflows | actionlint |
-| audit | `composer audit`, `npm audit` |
+| Job | Runs when | Checks |
+|---|---|---|
+| dashboard-static | `dashboard/`, `protocol/`, the daemon installer files change | `composer ci:static`: Pint, Rector (dry-run), PHPStan max + disallowed calls, `vp check`, `tsc`; generated TS types up to date; asset build. Pint/Rector/PHPStan result caches are kept between runs |
+| dashboard-tests | as dashboard-static | `composer test`: Pest (unit, feature, arch, route coverage) in parallel, one Postgres database per worker |
+| daemon | `daemon/`, `protocol/` change | `go test -race` |
+| daemon-lint | as daemon | golangci-lint (incl. forbidigo), govulncheck of the shipped binaries (`./cmd/...`) |
+| cli | `cli/` changes | `go test`, cross-compiled release targets, golangci-lint, govulncheck |
+| protocol | as daemon | schema generation is up to date (no drift in `protocol/`) |
+| deploy | always | shellcheck, `sh -n`, base images pinned by digest, bundle builds with digest pins |
+| next-adapter | the package or its vendored copy changes | build, typecheck and test; vendored copy in the daemon matches the build; package contents |
+| site | `site/` or the files it copies change | typecheck, lint, format, build; committed installer and schema copies are current |
+| workflows | always | actionlint |
+| audit | always | `composer audit` (advisories fail; abandoned packages are reported), `npm audit` |
+
+Every workflow change runs everything.
 
 `.github/workflows/release.yml` (tags `v*`) builds signed images and bundles (cosign), SBOM, provenance and the CLI binaries ([09](09-security.md) R30). The integration suite (dind) and the install/update end-to-end tests run locally through `make` ([11](11-installation-and-dev.md)).
 

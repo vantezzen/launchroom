@@ -375,7 +375,7 @@ dev/
 **Containment**:
 - Everything is in Docker, nothing is installed on the host. All containers, networks, volumes and built images are prefixed `launchroom-dev` and labelled `launchroom.dev=true`. Host ports bind to **127.0.0.1 only**. Only the dind fake servers are privileged.
 - Deployed test apps live **inside `server-1`'s nested Docker** (state in its named volume). The laptop's own `docker ps` shows only the dev stack, and `make nuke` deletes everything launchroom-dev (selected by label and project, never a global prune).
-- Dashboard tooling (composer, artisan, npm, tests) runs inside the dev containers. Tests use the stack's Postgres (`launchroom_test` or `launchroom_test_<name>`), never the dev database.
+- Dashboard tooling (composer, artisan, npm, tests) runs inside the dev containers. Tests use the stack's Postgres (`launchroom_test` or `launchroom_test_<name>`), never the dev database; full runs are parallel and give each worker its own `<database>_test_<n>` copy.
 - Ports are configurable via `dev/.env` to avoid clashes with the developer's own services.
 
 **First run**: `make up`, `make dev-setup-token`, open the printed `/setup?token=…` URL, create the owner (two-factor is recommended from Get started, not required: D33), then `make dev-enroll`. `dev-enroll`:

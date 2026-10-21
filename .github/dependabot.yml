@@ -53,6 +53,14 @@ updates:
     groups:
       npm:
         patterns: ['*']
+    # Vite+ needs `vite` to be an alias of its core at the exact same version
+    # (package.json: vite-plus, the `vite` alias and its override). Dependabot
+    # bumps vite-plus alone, which breaks every vp command; bump all three by
+    # hand and regenerate the lock (make npm ARGS=install).
+    ignore:
+      - dependency-name: vite
+      - dependency-name: vite-plus
+      - dependency-name: '@voidzero-dev/vite-plus-core'
 
   - package-ecosystem: npm
     directory: /packages/next-adapter

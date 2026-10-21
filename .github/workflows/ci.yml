@@ -5,6 +5,10 @@ name: ci
 # scripts, the Next.js adapter, the website, the workflows themselves and
 # dependency audits.
 # Releases: release.yml (tag v<VERSION>).
+#
+# The expensive jobs only run when their inputs changed (job `changes`);
+# `ci-ok` is the single check to require in branch protection: it passes when
+# every job passed or was skipped for lack of changes.
 
 on:
   push:
@@ -15,12 +19,175 @@ on:
 permissions:
   contents: read
 
+# A newer push to the same pull request or branch supersedes a running check.
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
 jobs:
-  dashboard:
+  changes:
+    runs-on: ubuntu-latest
+
+    outputs:
+      dashboard: ${{ steps.filter.outputs.dashboard }}
+      daemon: ${{ steps.filter.outputs.daemon }}
+      cli: ${{ steps.filter.outputs.cli }}
+      next-adapter: ${{ steps.filter.outputs.next-adapter }}
+      site: ${{ steps.filter.outputs.site }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      # Pull requests: the merge commit against its base (first parent).
+      # Pushes: the pushed range. Anything unclear (new branch, force push)
+      # runs everything. Every filter includes this workflow.
+      - name: Changed areas
+        id: filter
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          set -eu
+          all=0
+          files=""
+          if [ "$EVENT" = "pull_request" ]; then
+            files=$(git diff --name-only HEAD^1 HEAD)
+          elif [ -n "$BEFORE" ] && git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+            files=$(git diff --name-only "$BEFORE" HEAD)
+          else
+            all=1
+          fi
+          area() {
+            if [ "$all" = "1" ] || printf '%s\n' "$files" | grep -Eq "^(\.github/workflows/ci\.yml$|$2)"; then
+              echo "$1=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "$1=false" >> "$GITHUB_OUTPUT"
+            fi
+          }
+          # The dashboard tests read the protocol schemas/fixtures and the
+          # daemon installer, its compose file and the Zot config template.
+          area dashboard 'dashboard/|protocol/|deploy/install/server\.sh$|deploy/daemon/|deploy/images/zot/'
+          area daemon 'daemon/|protocol/'
+          area cli 'cli/'
+          area next-adapter 'packages/next-adapter/|daemon/internal/build/nextadapter/'
+          # prebuild copies the installer and the JSON Schemas into site/public.
+          area site 'site/|deploy/install/install\.sh$|protocol/schema/|dashboard/resources/schema/'
+          cat "$GITHUB_OUTPUT"
+
+  # Pint, Rector, PHPStan, vp check, tsc, generated TS types and the asset
+  # build (`composer ci:static` + build locally).
+  dashboard-static:
+    needs: changes
+    if: needs.changes.outputs.dashboard == 'true'
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: dashboard
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        with:
+          php-version: '8.4'
+          extensions: pdo_pgsql, sodium, redis, pcntl
+          tools: composer:v2
+          coverage: none
+
+      - name: Setup Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: dashboard/package-lock.json
+
+      - name: Composer cache directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Composer downloads
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: composer-${{ runner.os }}-${{ hashFiles('dashboard/composer.lock') }}
+          restore-keys: composer-${{ runner.os }}-
+
+      - name: Install PHP dependencies
+        run: composer install --no-interaction --no-progress --prefer-dist
+
+      - name: Prepare environment
+        run: |
+          cp .env.example .env
+          php artisan key:generate --no-interaction
+
+      - name: Install JS dependencies
+        id: deps
+        run: npm ci --no-audit --no-fund
+
+      # Result caches of Pint, Rector and PHPStan (paths set in pint.json,
+      # rector.php and phpstan.neon). They re-check every file whose content
+      # changed, so the newest cache for the same tool versions and configs is
+      # a safe start; a composer.lock or config change starts cold.
+      - name: Cache Pint, Rector and PHPStan results
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            dashboard/storage/framework/cache/pint.cache
+            dashboard/storage/framework/cache/rector
+            dashboard/storage/framework/cache/phpstan
+          key: dashboard-static-${{ runner.os }}-${{ hashFiles('dashboard/composer.lock', 'dashboard/pint.json', 'dashboard/rector.php', 'dashboard/phpstan.neon') }}-${{ github.sha }}
+          restore-keys: dashboard-static-${{ runner.os }}-${{ hashFiles('dashboard/composer.lock', 'dashboard/pint.json', 'dashboard/rector.php', 'dashboard/phpstan.neon') }}-
+
+      # The checks below all run once the dependencies are in, so one failure
+      # doesn't hide the others.
+      - name: Generated TypeScript types are up to date
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
+        run: |
+          composer types:generate
+          git diff --exit-code -- resources/js/types/generated.d.ts
+
+      - name: Build assets
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
+        run: npm run build
+
+      - name: Pint
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
+        run: composer lint:check
+
+      - name: Rector
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
+        run: composer rector:check
+
+      - name: PHPStan
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
+        run: composer types:check
+
+      - name: vp check
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
+        run: npm run check
+
+      # tsc needs the Wayfinder route/action files (the build generates them
+      # too; this keeps tsc independent of it).
+      - name: tsc
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
+        run: |
+          php artisan wayfinder:generate --with-form
+          npm run types:check
+
+  # Pest (`composer test`): parallel workers, each on its own Postgres
+  # database (launchroom_test_test_<n>, created by Laravel's parallel testing).
+  dashboard-tests:
+    needs: changes
+    if: needs.changes.outputs.dashboard == 'true'
     runs-on: ubuntu-latest
 
     defaults:
@@ -65,37 +232,75 @@ jobs:
           tools: composer:v2
           coverage: none
 
-      - name: Setup Node
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      - name: Composer cache directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Composer downloads
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          node-version: '24'
-          cache: npm
-          cache-dependency-path: dashboard/package-lock.json
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: composer-${{ runner.os }}-${{ hashFiles('dashboard/composer.lock') }}
+          restore-keys: composer-${{ runner.os }}-
 
       - name: Install PHP dependencies
         run: composer install --no-interaction --no-progress --prefer-dist
 
+      # The daemon installer files sit where the production image puts them
+      # (/var/www/install; the dev stack mounts them).
       - name: Prepare environment
         run: |
           cp .env.example .env
           php artisan key:generate --no-interaction
+          install_dir="$RUNNER_TEMP/install"
+          mkdir -p "$install_dir"
+          cp ../deploy/install/server.sh "$install_dir/server.sh"
+          cp ../deploy/daemon/compose.yml "$install_dir/daemon-compose.yml"
+          cp ../deploy/images/zot/config.json "$install_dir/zot-config.json"
+          echo "LAUNCHROOM_INSTALL_SCRIPTS_PATH=$install_dir" >> "$GITHUB_ENV"
 
-      - name: Install JS dependencies
-        run: npm ci --no-audit --no-fund
-
-      # Also generates the Wayfinder route/action files that `tsc` needs.
-      - name: Build assets
-        run: npm run build
-
-      - name: Generated TypeScript types are up to date
-        run: |
-          composer types:generate
-          git diff --exit-code -- resources/js/types/generated.d.ts
-
-      - name: Run CI checks
-        run: composer ci:check
+      - name: Pest
+        run: LR_TEST_PROCESSES="$(nproc)" composer test
 
   daemon:
+    needs: changes
+    if: needs.changes.outputs.daemon == 'true'
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: daemon
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # setup-go's own cache is keyed on go.sum alone and saved by whichever
+      # job finishes first; this job owns a separate cache of modules and the
+      # -race build cache.
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: daemon/go.mod
+          cache: false
+
+      - name: Cache Go modules and -race builds
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-race-daemon-${{ runner.os }}-${{ hashFiles('daemon/go.mod', 'daemon/go.sum') }}
+          restore-keys: go-race-daemon-${{ runner.os }}-
+
+      - name: Test
+        run: go test -race ./...
+
+  daemon-lint:
+    needs: changes
+    if: needs.changes.outputs.daemon == 'true'
     runs-on: ubuntu-latest
 
     defaults:
@@ -112,10 +317,7 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: daemon/go.mod
-          cache-dependency-path: daemon/go.sum
-
-      - name: Test
-        run: go test -race ./...
+          cache: false
 
       - name: Lint
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
@@ -132,6 +334,8 @@ jobs:
 
   # The launchroom CLI (cli/, docs/16-api-and-cli.md): its own Go module.
   cli:
+    needs: changes
+    if: needs.changes.outputs.cli == 'true'
     runs-on: ubuntu-latest
 
     defaults:
@@ -172,6 +376,8 @@ jobs:
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
 
   protocol:
+    needs: changes
+    if: needs.changes.outputs.daemon == 'true'
     runs-on: ubuntu-latest
 
     steps:
@@ -180,11 +386,13 @@ jobs:
         with:
           persist-credentials: false
 
+      # No setup-go cache: it shares its key (daemon/go.sum) with nothing
+      # useful here and would only race the other Go jobs for it.
       - name: Setup Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: daemon/go.mod
-          cache-dependency-path: daemon/go.sum
+          cache: false
 
       - name: Schemas are generated from the Go types
         working-directory: daemon
@@ -233,6 +441,8 @@ jobs:
           grep -qx "LR_CADDY_IMAGE=ghcr.io/vantezzen/launchroom-caddy@sha256:$zero" "$RUNNER_TEMP/bundle/images.env"
 
   next-adapter:
+    needs: changes
+    if: needs.changes.outputs.next-adapter == 'true'
     runs-on: ubuntu-latest
 
     # Builds and tests @vantezzen/launchroom-next-adapter and checks that the
@@ -277,6 +487,8 @@ jobs:
         run: npm pack --dry-run
 
   site:
+    needs: changes
+    if: needs.changes.outputs.site == 'true'
     runs-on: ubuntu-latest
 
     # The website and user docs (site/, docs/21): the same checks as
@@ -355,8 +567,38 @@ jobs:
           tools: composer:v2
           coverage: none
 
+      # Abandoned packages are reported without failing (config.policy in
+      # composer.json: symplify/rule-doc-generator-contracts is a dev-only
+      # transitive dependency of rector-laravel); advisories fail.
       - name: composer audit
         run: composer audit --locked --no-interaction
 
       - name: npm audit
         run: npm audit --audit-level=high
+
+  # The one check to require: every job passed, or was skipped because its
+  # area didn't change.
+  ci-ok:
+    if: always()
+    needs:
+      - changes
+      - dashboard-static
+      - dashboard-tests
+      - daemon
+      - daemon-lint
+      - cli
+      - protocol
+      - deploy
+      - next-adapter
+      - site
+      - workflows
+      - audit
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: All jobs passed or were skipped
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          echo "$NEEDS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          echo "$NEEDS" | jq -e 'all(.[]; .result == "success" or .result == "skipped")' >/dev/null

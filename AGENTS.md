@@ -50,7 +50,7 @@ launchroom is a self-hosted PaaS (Vercel/Railway UX on your own servers). **The 
   - dashboard: `make check-dashboard FILES="app/Foo/Bar.php tests/Feature/Foo/BarTest.php" TEST_DB=launchroom_test_<name>` (Pint, Rector, PHPStan on those files, tsc, Pest on the listed tests; add `ARGS="--filter=..."` for more). Without `FILES` it checks everything changed since the last staged checkpoint. `make test-dashboard-pest ARGS="--filter=..."` runs Pest alone.
   - launchroomd: `make test-daemon PKG=./internal/foo/...`, `make lint-daemon PKG=./internal/foo/...`, integration with `ARGS='-test.run TestFoo'`.
   - Full gates (`make test-dashboard`, `make test-daemon` without `PKG`, `make lint-daemon` without `PKG`, the full integration suite, `test-install`, `test-update`) share one machine-wide lock (`dev/bin/heavy-lock.sh`): parallel runs queue instead of competing. Run them only when asked to, or once at the very end of a workstream.
-  - Tool containers are capped at `LR_TOOL_CPUS` (default 4) CPUs.
+  - Tool containers are capped at `LR_TOOL_CPUS` (default 4) CPUs. Full Pest runs (`make test-dashboard`, `make test-dashboard-pest` without `ARGS`) use that many parallel workers, each on its own `<TEST_DB>_test_<n>` database.
 - When several workstreams run in parallel, each uses its own test DB (`TEST_DB=launchroom_test_<name>`) and integration project (`ITEST=<name>`). Never run `migrate:fresh` against the dev DB.
 - Never restart OrbStack/Docker yourself (`orbctl` included); if Docker hangs, stop and report. Don't start MongoDB 8.x/9.x in dev (it froze the engine on the dev VM's kernel); use 7.0.
 - Naming: always lowercase `launchroom`. Brand namespace `vantezzen` (`ghcr.io/vantezzen/launchroom-*`, `@vantezzen/launchroom-*`, `launchroom.vantezzen.io`).
