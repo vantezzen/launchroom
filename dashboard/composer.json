@@ -22,7 +22,7 @@
         "laravel/wayfinder": "^0.1.14",
         "lcobucci/jwt": "^5.6",
         "opis/json-schema": "^2.4",
-        "phpseclib/phpseclib": "^3.0",
+        "phpseclib/phpseclib": "^4.0",
         "spatie/laravel-data": "^4.23",
         "spatie/laravel-typescript-transformer": "^3.3",
         "symfony/yaml": "^8.1"
