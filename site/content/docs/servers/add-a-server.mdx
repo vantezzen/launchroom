@@ -12,7 +12,8 @@ take work. You don't open ports between servers, exchange SSH keys or configure 
 
 - **Linux**, x86_64 or arm64. Debian and Ubuntu are first-class. Or **macOS** with OrbStack, Docker Desktop or Colima:
   see [Mac servers](/docs/servers/macos).
-- **Docker Engine 24 or newer** with the compose plugin. Docker installed from snap is not supported.
+- **Docker Engine 24 or newer** with the compose plugin. On Linux the command installs it with Docker's official script
+  (get.docker.com) when it's missing; set `LR_NO_INSTALL_DOCKER=1` to stop instead. Docker installed from snap is not supported.
 - Run the command as **root or a user in the `docker` group**. For Docker in rootless mode, see
   [Rootless Docker](/docs/servers/rootless-docker).
 - **Outbound HTTPS** to your dashboard's address, and to GitHub and the container registries for the release and

@@ -27,8 +27,9 @@ Every install follows two rules:
 | Ports | 80 and 443 (TCP) free and reachable from the internet, plus 443/UDP for HTTP/3. UDP 3478 helps other servers connect directly once you add them. |
 | Outbound | HTTPS to GitHub (the release bundle) and to the container registries the images come from. |
 
-If Docker is missing, the installer prints the link to Docker's official install instructions and stops. It never
-installs Docker for you. If the server has less than 2 GB of RAM, it warns and continues.
+If Docker is missing, the installer installs it with Docker's official script ([get.docker.com](https://get.docker.com)),
+which adds Docker Engine and the compose plugin from Docker's package repository. Pass `--no-install-docker` to stop with
+instructions instead. If the server has less than 2 GB of RAM, it warns and continues.
 
 ## Run the installer
 
@@ -174,6 +175,7 @@ Run these from inside the install folder.
 | `--unstable` | Install the newest release, including pre-releases, and offer pre-releases as updates. |
 | `--bundle DIR` | Use an unpacked bundle instead of downloading one. Not signature-verified: for air-gapped installs and testing. |
 | `--no-public-ip-detect` | Never contact IP echo services. Needs `--domain`. |
+| `--no-install-docker` | Stop when Docker is missing instead of installing it with Docker's official script. |
 | `--skip-port-check` | Install even though 80 or 443 are taken. The dashboard is then only reachable on `127.0.0.1:8000`, for example through an SSH tunnel. |
 | `--allow-unsigned` | Accept a downloaded bundle without a signature (development builds only). A signature that is present but does not verify is always refused. |
 | `--restore` | Rebuild the control plane from a backup. See [Restore and disaster recovery](/docs/databases/restore-and-disaster-recovery). |

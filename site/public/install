@@ -15,6 +15,8 @@
 #                          of downloading one. Not signature-verified: for testing,
 #                          air-gapped installs and development.
 #   --no-public-ip-detect  never contact IP echo services (needs --domain)
+#   --no-install-docker    stop when Docker is missing instead of installing it
+#                          with Docker's official script (get.docker.com)
 #   --skip-port-check      install even though 80/443 are taken (the dashboard is
 #                          then only reachable on 127.0.0.1:8000)
 #   --allow-unsigned       accept a downloaded bundle without a cosign signature
@@ -73,6 +75,8 @@ KIT=""
 MOVE=0
 MOVE_URL=""
 UNSTABLE=0
+INSTALL_DOCKER=1
+[ "${LR_NO_INSTALL_DOCKER:-}" != 1 ] || INSTALL_DOCKER=0
 
 # A terminal we can prompt on (also when the script itself comes from a pipe).
 has_tty() { (: </dev/tty) 2>/dev/null; }
@@ -89,6 +93,7 @@ parse_args() {
 		--domain) DOMAIN="${2:?--domain needs a value}"; shift ;;
 		--version) VERSION="${2:?--version needs a value}"; shift ;;
 		--unstable) UNSTABLE=1 ;;
+		--no-install-docker) INSTALL_DOCKER=0 ;;
 		--bundle) BUNDLE="${2:?--bundle needs a value}"; shift ;;
 		--no-public-ip-detect) DETECT_IP=0 ;;
 		--skip-port-check) PORT_CHECK=0 ;;
@@ -117,13 +122,41 @@ port_in_use() {
 		/proc/net/tcp /proc/net/tcp6 2>/dev/null
 }
 
+# install_docker: Docker Engine with the compose plugin through Docker's
+# official convenience script (https://get.docker.com), when Docker is
+# missing on Linux. The script picks the distribution's packages, uses sudo
+# itself when we are not root, and installs docker-compose-plugin.
+# --no-install-docker (or LR_NO_INSTALL_DOCKER=1) stops with instructions instead.
+install_docker() {
+	if [ "$INSTALL_DOCKER" != 1 ]; then
+		die "Docker is not installed. Install Docker Engine >= 24 with the compose plugin (https://docs.docker.com/engine/install/), then run this again."
+	fi
+	if [ "$(id -u)" != 0 ] && ! command -v sudo >/dev/null 2>&1; then
+		die "Docker is not installed, and installing it needs root. Run this as root, or install Docker first (https://docs.docker.com/engine/install/)."
+	fi
+	say "Docker is not installed: installing Docker Engine with Docker's official script (https://get.docker.com)"
+	script="$(mktemp)"
+	download https://get.docker.com "$script" || { rm -f "$script"; die "could not download https://get.docker.com"; }
+	# The usual umask: install.sh runs with 077, and apt's sandbox user must read
+	# the keyring and sources file the script writes.
+	(umask 022 && sh "$script") || { rm -f "$script"; die "Docker's install script failed (see its output above)."; }
+	rm -f "$script"
+	if command -v systemctl >/dev/null 2>&1; then
+		if [ "$(id -u)" = 0 ]; then systemctl enable --now docker >/dev/null 2>&1 || true; else sudo systemctl enable --now docker >/dev/null 2>&1 || true; fi
+	fi
+	command -v docker >/dev/null 2>&1 || die "Docker's install script finished, but docker is still not on PATH."
+	if [ "$(id -u)" != 0 ] && ! docker version >/dev/null 2>&1; then
+		die "Docker is installed. Your user can't use it yet: run 'sudo usermod -aG docker $(id -un)', log out and back in, then run this again."
+	fi
+	say "Docker installed: $(docker version --format '{{.Server.Version}}' 2>/dev/null || echo 'version unknown')"
+}
+
 check_prerequisites() {
 	[ "$(uname -s)" = "Linux" ] || die "the control plane runs on Linux (found $(uname -s)). Docker Desktop is only supported for build servers and development."
 	for tool in awk sed tr head base64 grep; do
 		command -v "$tool" >/dev/null 2>&1 || die "missing required tool: $tool"
 	done
-	command -v docker >/dev/null 2>&1 ||
-		die "Docker is not installed. Install Docker Engine >= 24 with the compose plugin (https://docs.docker.com/engine/install/), then run this again."
+	command -v docker >/dev/null 2>&1 || install_docker
 	case "$(command -v docker)" in
 	/snap/*) die "Docker from snap is not supported (it cannot see files outside your home folder). Install Docker Engine from docs.docker.com." ;;
 	esac

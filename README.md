@@ -22,8 +22,8 @@
 Everything a cloud host does for your apps, on your own server. Pick a repository, a domain and a database, and launchroom wires up the rest: it builds the app, gets the certificate, hands the app its database credentials and deploys every push without downtime. launchroom is free and open source under the MIT license, with every feature included and no account with us.
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="site/public/screenshots/canvas-dark-1600.webp">
-  <img src="site/public/screenshots/canvas-light-1600.webp" alt="A project canvas in the launchroom dashboard">
+  <source media="(prefers-color-scheme: dark)" srcset="site/public/screenshots/canvas-dark.webp">
+  <img src="site/public/screenshots/canvas-light.webp" alt="A project canvas in the launchroom dashboard">
 </picture>
 
 ## Highlights
@@ -41,7 +41,7 @@ Also included: HTTPS on every domain, encrypted variables, logs, metrics and ale
 
 ## Install
 
-On a Linux server with Docker Engine 24 or newer and the compose plugin (the installer can install Docker for you):
+On a Linux server with Docker Engine 24 or newer and the compose plugin (the installer installs Docker with Docker's official script if it's missing):
 
 ```bash
 curl -fsSL https://launchroom.vantezzen.io/install | sh -s -- --domain dash.example.com

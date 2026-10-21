@@ -49,7 +49,9 @@ Other ports the control plane binds: `127.0.0.1:8000` (dashboard), `127.0.0.1:50
 
 | Message | Fix |
 |---|---|
-| "Docker is not installed. Install Docker Engine >= 24 with the compose plugin" | Install Docker Engine from docs.docker.com for your distribution, then run the installer again. |
+| "Docker is not installed. Install Docker Engine >= 24 with the compose plugin" | You ran with `--no-install-docker`. Install Docker Engine from docs.docker.com for your distribution, or run the installer without that option. |
+| "Docker's install script failed" | Docker's official script doesn't support this distribution or couldn't reach Docker's package repository. Its output above says which. Install Docker Engine by hand from docs.docker.com, then run the installer again. |
+| "Docker is installed. Your user can't use it yet" | Run the command it prints to add your user to the `docker` group, log out and back in, then run the installer again. |
 | "Docker Engine >= 24 is required (found 20.10.24)" | Distribution packages are often old. Install Docker Engine from Docker's own repository. |
 | "the Docker compose plugin is missing" | Install the `docker-compose-plugin` package. The old standalone `docker-compose` doesn't count. |
 | "cannot talk to the Docker daemon. Is it running, and may this user use it (root or the docker group)?" | Start Docker (`sudo systemctl enable --now docker`) and run the installer as root or as a user in the `docker` group. |

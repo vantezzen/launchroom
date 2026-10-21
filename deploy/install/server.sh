@@ -21,6 +21,9 @@
 # launchroomd image filled in (and the launchroomd compose file embedded). Environment variables
 # override those defaults:
 #
+#   LR_NO_INSTALL_DOCKER   1 = stop when Docker is missing (Linux) instead of
+#                          installing it with Docker's official script
+#                          (get.docker.com); also --no-install-docker
 #   LR_JOIN_TOKEN          single-use join token from "Add server" (required;
 #                          from the environment or typed at the prompt, never
 #                          as an argument, so it does not show up in `ps`)
@@ -60,6 +63,8 @@ else
 	DIR="./launchroomd"
 fi
 ROOTLESS=0
+INSTALL_DOCKER=1
+[ "${LR_NO_INSTALL_DOCKER:-}" != 1 ] || INSTALL_DOCKER=0
 # macOS engine (docker-desktop, orbstack, colima), set by check_macos.
 MAC_ENGINE=""
 RELEASE_BASE="${LAUNCHROOM_RELEASE_BASE:-https://github.com/vantezzen/launchroom/releases}"
@@ -81,10 +86,43 @@ unfilled() { case "$1" in *__LAUNCHROOM_*) return 0 ;; *) return 1 ;; esac; }
 
 MAC_ENGINES="OrbStack (orbstack.dev), Docker Desktop (docker.com/products/docker-desktop) or Colima (brew install colima docker docker-compose, then colima start)"
 
+# install_docker: Docker Engine with the compose plugin through Docker's
+# official convenience script (https://get.docker.com), when Docker is
+# missing on Linux. The script picks the distribution's packages, uses sudo
+# itself when we are not root, and installs docker-compose-plugin.
+# --no-install-docker (or LR_NO_INSTALL_DOCKER=1) stops with instructions instead.
+install_docker() {
+	if [ "$INSTALL_DOCKER" != 1 ]; then
+		die "Docker is not installed. Install Docker Engine >= 24 with the compose plugin (https://docs.docker.com/engine/install/), then run this again."
+	fi
+	if [ "$(id -u)" != 0 ] && ! command -v sudo >/dev/null 2>&1; then
+		die "Docker is not installed, and installing it needs root. Run this as root, or install Docker first (https://docs.docker.com/engine/install/)."
+	fi
+	say "Docker is not installed: installing Docker Engine with Docker's official script (https://get.docker.com)"
+	script="$(mktemp)"
+	download https://get.docker.com "$script" || { rm -f "$script"; die "could not download https://get.docker.com"; }
+	# The usual umask: install.sh runs with 077, and apt's sandbox user must read
+	# the keyring and sources file the script writes.
+	(umask 022 && sh "$script") || { rm -f "$script"; die "Docker's install script failed (see its output above)."; }
+	rm -f "$script"
+	if command -v systemctl >/dev/null 2>&1; then
+		if [ "$(id -u)" = 0 ]; then systemctl enable --now docker >/dev/null 2>&1 || true; else sudo systemctl enable --now docker >/dev/null 2>&1 || true; fi
+	fi
+	command -v docker >/dev/null 2>&1 || die "Docker's install script finished, but docker is still not on PATH."
+	if [ "$(id -u)" != 0 ] && ! docker version >/dev/null 2>&1; then
+		die "Docker is installed. Your user can't use it yet: run 'sudo usermod -aG docker $(id -un)', log out and back in, then run this again."
+	fi
+	say "Docker installed: $(docker version --format '{{.Server.Version}}' 2>/dev/null || echo 'version unknown')"
+}
+
 check_prerequisites() {
 	case "$OS" in
 	Linux)
-		command -v docker >/dev/null 2>&1 || die "Docker is not installed. See https://docs.docker.com/engine/install/ (Docker Engine >= 24 with the compose plugin)."
+		# Rootless Docker is set up per user: never install the system daemon for it.
+		if ! command -v docker >/dev/null 2>&1; then
+			[ "$ROOTLESS" = 0 ] || die "Docker is not installed. Set up rootless Docker first (https://docs.docker.com/engine/security/rootless/)."
+			install_docker
+		fi
 		case "$(command -v docker)" in
 		/snap/*) die "Docker from snap is not supported (it cannot see files outside your home folder). Install Docker Engine from docs.docker.com." ;;
 		esac
@@ -345,6 +383,7 @@ parse_args() {
 	while [ $# -gt 0 ]; do
 		case "$1" in
 		--rootless) ROOTLESS=1 ;;
+		--no-install-docker) INSTALL_DOCKER=0 ;;
 		-h | --help) sed -n '2,/^set -eu$/p' "$0" 2>/dev/null | sed -e '$d' -e 's/^# \{0,1\}//'; exit 0 ;;
 		*) die "unknown option $1 (see --help)" ;;
 		esac
