@@ -30,6 +30,18 @@ Background: [docs/09-security.md](docs/09-security.md) R30–R31 and [docs/11-in
 
 ## Cutting a release
 
+`./release.sh <version>` runs steps 2 and 3 for you. It refuses to run if:
+- you're not on `main`;
+- the working tree isn't clean;
+- the version isn't a semantic version;
+- the tag already exists.
+
+```bash
+./release.sh 0.1.0-rc.1
+```
+
+By hand:
+
 1. Make sure CI is green on `main`.
 2. Set the version. The root `VERSION` file is the single source of truth for the dashboard image, the launchroomd build and the tag. It must be a semantic version, and a version with a hyphen (`0.2.0-rc.1`) is published as a pre-release.
 

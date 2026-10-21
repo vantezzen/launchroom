@@ -342,6 +342,7 @@ BUSYBOX_IMAGE ?= busybox@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532
 lint-deploy: ## Install bundle: shellcheck (POSIX sh) of the install scripts and helper CLI
 	docker run --rm --label launchroom.dev=true -v "$(CURDIR)/deploy:/mnt:ro" -w /mnt $(SHELLCHECK_IMAGE) \
 		-s sh -x install/install.sh install/server.sh install/cli.sh control-plane/launchroom test/e2e-install.sh test/e2e-update.sh test/e2e-move.sh test/server-sh-test.sh release/build-bundle.sh release/check-pinned-images.sh
+	docker run --rm --label launchroom.dev=true -v "$(CURDIR)/release.sh:/mnt/release.sh:ro" -w /mnt $(SHELLCHECK_IMAGE) -s sh release.sh
 	@# Release Dockerfiles: base images and frontends by digest only (docs/09 R31).
 	docker run --rm --label launchroom.dev=true -v "$(CURDIR):/repo:ro" -w /repo $(BUSYBOX_IMAGE) sh deploy/release/check-pinned-images.sh
 
