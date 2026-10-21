@@ -1,0 +1,30 @@
+services:
+  api:
+    image: node:22-alpine
+    command: ["node", "server.js"]
+    ports: ["3000:3000"]
+    environment:
+      MONGO_URL: mongodb://root:example@mongo:27017/shop
+      MONGO_PASSWORD: example
+      CLICKHOUSE_URL: http://analytics:8123/events
+      CLICKHOUSE_NATIVE: clickhouse://default:chpass@analytics:9000/events
+      CLICKHOUSE_HOST: analytics
+    depends_on: [mongo, analytics]
+  mongo:
+    image: mongo:7.0
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: example
+      MONGO_INITDB_DATABASE: shop
+    volumes:
+      - mongo-data:/data/db
+  analytics:
+    image: clickhouse/clickhouse-server:24.8-alpine
+    environment:
+      CLICKHOUSE_PASSWORD: chpass
+      CLICKHOUSE_DB: events
+    volumes:
+      - ch-data:/var/lib/clickhouse
+volumes:
+  mongo-data:
+  ch-data:

@@ -1,0 +1,180 @@
+---
+title: launchroomd
+description: The small program on every server. It dials out, applies a signed desired state with Docker and refuses anything outside its local policy.
+---
+
+**launchroomd** is the program launchroom runs on each server. One copy runs on every server, including the
+dashboard's own, as a container next to your apps. It connects out to your dashboard, receives a signed description of
+everything its server should run, and makes Docker match it. It is the only part of launchroom that touches Docker on a
+server.
+
+Because of this design, launchroom needs:
+
+- **No SSH.** The dashboard never logs into a server.
+- **No shell.** launchroomd accepts typed, signed desired state and a fixed set of typed tasks. It never accepts
+  commands to run on the host.
+- **No SSH keys** to create, copy or rotate.
+- **No registry to set up by hand.** Images move between the built-in registry and your servers through launchroomd,
+  with short-lived credentials it fetches per pull.
+
+## It dials out
+
+launchroomd always opens the connection. It listens on no public port, so a server needs nothing inbound unless it
+serves traffic.
+
+- It fetches its **desired state** over HTTPS, checks for **tasks** to run, and sends **reports** (status, health,
+  metrics) and **logs**.
+- It keeps a WebSocket open for "check now" nudges, so a deploy reaches it in about a second. The nudges carry no
+  content. launchroomd always fetches through the signed channel. Without nudges it polls: state every 30 seconds, tasks
+  every 10 seconds.
+
+Both directions are authenticated:
+
+- Every response from the dashboard is signed with the control plane's key. launchroomd pinned that key when it was
+  installed (the install command carries it).
+- Every request launchroomd sends is signed with its own key. The key is generated on the server at enrollment and
+  never leaves it.
+
+Instance owners can also require client certificates for every server under **Settings → Security**. See
+[Client certificates](/docs/teams-and-security/client-certificates).
+
+## It reconciles
+
+The desired state is a complete, versioned document: the containers, networks, volumes, routes, firewall rules and
+system containers this server should have. launchroomd stores the latest one on disk and compares it with what's
+running. Then it fixes the difference:
+
+- It creates what's missing.
+- It updates what changed: new replicas start first and are health-checked, then get traffic, then the old ones drain.
+- It removes what's no longer wanted.
+
+It repeats this continuously. A crashed container or a reboot recovers without the dashboard.
+
+launchroomd **only touches Docker objects labelled `launchroom.managed=true`**. It ignores your other containers,
+images, volumes and networks on the same machine.
+
+It also:
+
+- **health-checks** your services from outside their containers, over HTTP or TCP, before they get traffic.
+- **detects the port** your app listens on and tells you when it differs from the configured one.
+- decides from its local route table whether Caddy may get a certificate for a custom domain. Custom domains work while
+  the dashboard is down.
+- runs a local **registry forwarder** on `127.0.0.1:5000`. Docker pulls from the built-in registry without any change
+  to Docker's configuration.
+- runs **tasks**: builds, one-off commands such as migrations, backups and restores, log fetches, and console or data
+  sessions you open in the dashboard.
+
+## System containers
+
+Next to your apps, launchroomd runs a few containers of its own, depending on the server's roles. Their definitions are
+built into launchroomd, not sent by the dashboard, and their images are only accepted by pinned digest.
+
+| Container | When | What it does |
+|---|---|---|
+| `lr-system-caddy` | **Serve traffic** | Public HTTPS on ports 80 and 443, certificates, load balancing. Configured only by launchroomd through an admin API on `127.0.0.1`. |
+| `lr-system-buildkit` | **Build** | Builds images, on its own isolated network. |
+| `lr-system-tailscale` | Once the private network is on | The WireGuard client that connects this server to your others. |
+| `lr-system-ambassador` | When services here use services on other servers | Forwards addresses such as `postgres:5432` to the right server over the private network. |
+
+When you change a server's roles in the dashboard, launchroomd adds or removes these containers itself.
+
+## dockerd-guard and the local policy floor
+
+Access to the Docker socket amounts to root on the host, so launchroomd doesn't get it. A second small container,
+**dockerd-guard**, holds the socket. It has no network and no capabilities. It checks every request and passes on only
+the part of Docker's API launchroomd needs.
+
+Both launchroomd and the guard enforce a **local policy floor** that the dashboard cannot override. A compromised
+dashboard can't use a server as a way into the host:
+
+- Images only by digest, from launchroom's registry.
+- No privileged containers, no host network, PID or IPC namespaces, no devices.
+- Capabilities dropped. A small allow-list is available: change file owners, listen on ports below 1024, switch user
+  and group, and file permission overrides.
+- No bind mounts of host paths, only launchroom's own named volumes. A service can only mount its own volumes.
+- CPU, memory and process limits, `no-new-privileges` and rotated logs on every container.
+- The firewall rules are in place before any app, build or one-off container starts. Otherwise nothing starts.
+- Caddy may only proxy to your containers, to other servers over the private network and to the dashboard.
+
+To relax any of this, for example for a GPU, change the server's own install folder. That needs access to the
+machine.
+
+### The firewall
+
+launchroomd keeps its own nftables table, `inet launchroom`, separate from Docker's rules and your own.
+
+App containers can't reach:
+
+- the host
+- your hosting provider's metadata service
+- private networks
+- other environments
+- the private network between servers
+
+They can still reach each other inside their environment, DNS and the internet. launchroomd checks the rules for drift
+on every pass and repairs them. The table lives only in the kernel. It is gone after a reboot until launchroomd starts
+again, and uninstalling removes it.
+
+## Updates
+
+launchroomd updates itself when you update from **Settings → Updates**:
+
+1. It downloads the release.
+2. It verifies the signature against the release identity pinned at install.
+3. It refuses to move to an older version.
+4. It rolls back if the new version doesn't come up. See [Updates](/docs/operations/updates).
+
+## On a server's disk
+
+Servers you added have a folder `launchroomd/` where you ran the install command:
+
+```text
+launchroomd/
+├── compose.yml      launchroomd and dockerd-guard (managed: replaced on update)
+├── .env             your dashboard's address, its pinned signing key, the launchroomd image
+├── guard/           trust.json: the pinned release identity the guard checks updates against
+└── data/
+    ├── keys/        launchroomd's own signing and encryption keys (0600)
+    ├── enrollment.json, state.json   its identity and the last desired state
+    ├── trust.json   the pinned release identity
+    └── caddy/       the last proxy config and a copy of certificates (edges)
+```
+
+On the dashboard's server the same files live in `launchroom/data/daemon/`. Everything else launchroomd creates is a
+Docker object labelled `launchroom.managed=true`.
+
+To follow its logs, run this in `launchroomd/` (on the dashboard's server: `./launchroom logs launchroomd`):
+
+```sh title="On the server"
+docker compose logs -f launchroomd
+```
+
+## Uninstalling a server
+
+First revoke or replace the server in the dashboard, so its key stops working and its services move. Then, on the
+machine:
+
+```sh title="On the server"
+cd launchroomd
+docker compose down
+docker compose run --rm launchroomd firewall remove
+docker rm -f $(docker ps -aq --filter label=launchroom.managed=true)
+cd .. && rm -rf launchroomd
+```
+
+1. `docker compose down` stops launchroomd and the guard. Your apps keep running until the next step.
+2. `firewall remove` deletes launchroomd's nftables table (a reboot does that too).
+3. The `docker rm` removes the containers launchroomd started: apps, Caddy, BuildKit, the private network client.
+4. Deleting the folder removes keys and cached state.
+
+Volumes with your data are kept. List them with `docker volume ls --filter label=launchroom.managed=true` and remove
+them when you're sure. On the dashboard's server, `./launchroom uninstall` does all of this. See
+[Install](/docs/getting-started/install#uninstall).
+
+## Next steps
+
+<Cards>
+  <Card title="The private network" href="/docs/how-it-works/mesh" description="How servers reach each other, and why joining grants nothing." />
+  <Card title="Security model" href="/docs/teams-and-security/security-model" description="Signed state, secrets and the rules launchroom enforces." />
+  <Card title="Server troubleshooting" href="/docs/troubleshooting/servers" description="What to check when a server is unreachable." />
+</Cards>

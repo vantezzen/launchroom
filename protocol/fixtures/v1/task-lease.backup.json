@@ -1,0 +1,96 @@
+{
+  "apiVersion": "launchroom.vantezzen.io/v1",
+  "kind": "TaskLease",
+  "tasks": [
+    {
+      "id": "tsk_01J9Z8X7W6V5T4S3R2Q1P0N9Q1",
+      "type": "backup",
+      "leaseExpiresAt": "2026-10-17T03:01:00Z",
+      "attempt": 1,
+      "deadline": "2026-10-17T05:00:00Z",
+      "spec": {
+        "kind": "database",
+        "target": {
+          "engine": "postgres",
+          "workload": "wl_01J9Z8X7W6V5T4S3R2Q1P0N9N7"
+        },
+        "destination": {
+          "kind": "s3",
+          "endpoint": "https://abc123.r2.cloudflarestorage.com",
+          "bucket": "launchroom-backups",
+          "region": "auto",
+          "prefix": "launchroom/team_01j9z8x7w6v5t4s3r2q1p0n9m0",
+          "credentials": { "sealed": "qbzMnvHxfZlIkASN+YWti1p59V6GK80ssZ2hGerDQuwfkoyX1SabEjn4JboJt+qfd5FL7cn8ndnYwTww3vnN8bXWHciaNdLJJLKMl2B2XalAOelBhMUPh93lRTLxJrSs" }
+        },
+        "tags": [
+          "instance:launchroom",
+          "kind:database",
+          "team:team_01J9Z8X7W6V5T4S3R2Q1P0N9M0",
+          "project:prj_01J9Z8X7W6V5T4S3R2Q1P0N9N1",
+          "environment:env_01J9Z8X7W6V5T4S3R2Q1P0N9N4",
+          "service:svc_01J9Z8X7W6V5T4S3R2Q1P0N9N3",
+          "server:srv_01J9Z8X7W6V5T4S3R2Q1P0N9M1",
+          "engine:postgres",
+          "reason:scheduled"
+        ]
+      }
+    },
+    {
+      "id": "tsk_01J9Z8X7W6V5T4S3R2Q1P0N9Q2",
+      "type": "restore",
+      "leaseExpiresAt": "2026-10-17T03:01:00Z",
+      "attempt": 1,
+      "deadline": "2026-10-17T05:00:00Z",
+      "spec": {
+        "kind": "database",
+        "snapshot": "4a1f0c2e9b8d7f6a5e4d3c2b1a0f9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a2f",
+        "target": {
+          "engine": "postgres",
+          "workload": "wl_01J9Z8X7W6V5T4S3R2Q1P0N9N8"
+        },
+        "destination": {
+          "kind": "s3",
+          "endpoint": "https://fsn1.your-objectstorage.com",
+          "bucket": "launchroom-backups",
+          "region": "fsn1",
+          "credentials": { "sealed": "qbzMnvHxfZlIkASN+YWti1p59V6GK80ssZ2hGerDQuwfkoyX1SabEjn4JboJt+qfd5FL7cn8ndnYwTww3vnN8bXWHciaNdLJJLKMl2B2XalAOelBhMUPh93lRTLxJrSs" }
+        },
+        "mode": "new_service"
+      }
+    },
+    {
+      "id": "tsk_01J9Z8X7W6V5T4S3R2Q1P0N9Q3",
+      "type": "backup_snapshots",
+      "leaseExpiresAt": "2026-10-17T03:01:00Z",
+      "attempt": 1,
+      "deadline": "2026-10-17T03:10:00Z",
+      "spec": {
+        "destination": {
+          "kind": "s3",
+          "endpoint": "http://minio:9000",
+          "bucket": "launchroom-dev",
+          "credentials": { "sealed": "qbzMnvHxfZlIkASN+YWti1p59V6GK80ssZ2hGerDQuwfkoyX1SabEjn4JboJt+qfd5FL7cn8ndnYwTww3vnN8bXWHciaNdLJJLKMl2B2XalAOelBhMUPh93lRTLxJrSs" }
+        },
+        "tags": ["kind:database", "service:svc_01J9Z8X7W6V5T4S3R2Q1P0N9N3"]
+      }
+    },
+    {
+      "id": "tsk_01J9Z8X7W6V5T4S3R2Q1P0N9Q4",
+      "type": "backup_maintenance",
+      "leaseExpiresAt": "2026-10-17T03:01:00Z",
+      "attempt": 1,
+      "deadline": "2026-10-17T04:00:00Z",
+      "spec": {
+        "operation": "forget",
+        "destination": {
+          "kind": "s3",
+          "endpoint": "https://abc123.r2.cloudflarestorage.com",
+          "bucket": "launchroom-backups",
+          "credentials": { "sealed": "qbzMnvHxfZlIkASN+YWti1p59V6GK80ssZ2hGerDQuwfkoyX1SabEjn4JboJt+qfd5FL7cn8ndnYwTww3vnN8bXWHciaNdLJJLKMl2B2XalAOelBhMUPh93lRTLxJrSs" }
+        },
+        "retention": { "keepDaily": 7, "keepWeekly": 4, "keepMonthly": 3 },
+        "tags": ["service:svc_01J9Z8X7W6V5T4S3R2Q1P0N9N3"]
+      }
+    }
+  ]
+}

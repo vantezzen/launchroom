@@ -1,0 +1,72 @@
+# Headscale for the launchroom control plane (docs/05 §2). Managed: the
+# installer writes it to data/headscale/config.yaml with the dashboard URL.
+#
+# Headscale listens on plain http on the lr-system network only; servers
+# reach it through the dashboard's public HTTPS origin: launchroomd's Caddy
+# terminates TLS and the dashboard's FrankenPHP forwards the Tailscale
+# control and DERP paths (/ts2021, /key, /machine/*, /derp*, /bootstrap-dns)
+# to headscale:8080. The REST API (/api/v1) is never routed publicly; the
+# dashboard calls it on the lr-system network with its own API key.
+server_url: __LAUNCHROOM_URL__
+listen_addr: 0.0.0.0:8080
+metrics_listen_addr: 127.0.0.1:9090
+
+noise:
+  private_key_path: /var/lib/headscale/noise_private.key
+
+prefixes:
+  v4: 100.64.0.0/10
+  v6: fd7a:115c:a1e0::/48
+  allocation: sequential
+
+# Embedded DERP relay (over the dashboard's HTTPS port) + STUN on udp/3478:
+# servers behind NAT always connect, directly when hole punching works.
+derp:
+  server:
+    enabled: true
+    region_id: 999
+    region_code: lr
+    region_name: launchroom
+    verify_clients: true
+    stun_listen_addr: 0.0.0.0:3478
+    private_key_path: /var/lib/headscale/derp_server_private.key
+    automatically_add_embedded_derp_region: true
+  # Only our own relay: no traffic to third-party DERP servers.
+  urls: []
+  paths: []
+  auto_update_enabled: false
+
+disable_check_updates: true
+
+node:
+  # Servers are tagged nodes; tagged nodes never expire.
+  expiry: 0
+
+database:
+  type: sqlite
+  sqlite:
+    path: /var/lib/headscale/db.sqlite
+    write_ahead_log: true
+
+log:
+  level: info
+  format: text
+
+# Default-deny ACL managed by the dashboard through the API.
+policy:
+  mode: database
+
+# launchroom never uses MagicDNS; clients run with --accept-dns=false.
+dns:
+  magic_dns: false
+  override_local_dns: false
+  nameservers:
+    global: []
+
+unix_socket: /var/run/headscale/headscale.sock
+unix_socket_permission: "0770"
+
+logtail:
+  enabled: false
+taildrop:
+  enabled: false

@@ -1,0 +1,8 @@
+processor	: 0
+vendor_id	: AuthenticAMD
+model name	: AMD EPYC-Rome Processor
+flags		: fpu vme sse2 hypervisor lahf_lm
+
+processor	: 1
+vendor_id	: AuthenticAMD
+model name	: AMD EPYC-Rome Processor

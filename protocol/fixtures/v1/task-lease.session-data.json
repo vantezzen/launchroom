@@ -1,0 +1,22 @@
+{
+  "apiVersion": "launchroom.vantezzen.io/v1",
+  "kind": "TaskLease",
+  "tasks": [
+    {
+      "id": "tsk_01J9Z8X7W6V5T4S3R2Q1P0N9S3",
+      "type": "session",
+      "leaseExpiresAt": "2026-10-17T12:01:00Z",
+      "attempt": 1,
+      "deadline": "2026-10-17T13:00:00Z",
+      "spec": {
+        "session": "ses_01J9Z8X7W6V5T4S3R2Q1P0N9S4",
+        "kind": "data",
+        "workload": "wl_01J9Z8X7W6V5T4S3R2Q1P0N9N8",
+        "channel": "private-session.ses_01J9Z8X7W6V5T4S3R2Q1P0N9S4",
+        "key": { "sealed": "aEd1s08pS3O5azgHS/RIgRCwcTKob0z7+re83Fwam/F7JsEo6tehDt5Quxs/Zll9EZCIqVTnFNjlnPH6mnUoanih+Nj89h6MkawEMi6Zjgdkni3v1t+6Q9wVzRNRkfpO" },
+        "idleTimeout": "15m",
+        "engine": "postgres"
+      }
+    }
+  ]
+}

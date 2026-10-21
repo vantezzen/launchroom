@@ -1,0 +1,87 @@
+# Dependency updates (docs/09 R31). Weekly, one grouped PR per ecosystem and
+# directory. GitHub Actions stay pinned by commit SHA; Dependabot bumps the
+# SHA together with its version comment.
+version: 2
+
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 5
+    groups:
+      actions:
+        patterns: ['*']
+
+  - package-ecosystem: gomod
+    directory: /daemon
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 5
+    groups:
+      go:
+        patterns: ['*']
+
+  - package-ecosystem: gomod
+    directory: /cli
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 5
+    groups:
+      go:
+        patterns: ['*']
+
+  - package-ecosystem: composer
+    directory: /dashboard
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 5
+    groups:
+      composer:
+        patterns: ['*']
+
+  - package-ecosystem: npm
+    directory: /dashboard
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 5
+    groups:
+      npm:
+        patterns: ['*']
+
+  - package-ecosystem: npm
+    directory: /packages/next-adapter
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 5
+    groups:
+      next-adapter:
+        patterns: ['*']
+
+  - package-ecosystem: npm
+    directory: /site
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 5
+    groups:
+      site:
+        patterns: ['*']
+
+  - package-ecosystem: docker
+    directories:
+      - /daemon
+      - /deploy/images/dashboard
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 5
+    groups:
+      docker:
+        patterns: ['*']

@@ -1,0 +1,115 @@
+{
+  "apiVersion": "launchroom.vantezzen.io/v1",
+  "kind": "NodeState",
+  "serverId": "srv_01J9Z8X7W6V5T4S3R2Q1P0N9MK",
+  "version": 1901,
+  "issuedAt": "2026-10-18T12:00:00Z",
+  "system": {
+    "caddy": {
+      "enabled": true,
+      "image": "ghcr.io/vantezzen/launchroom-caddy@sha256:1111111111111111111111111111111111111111111111111111111111111111"
+    },
+    "buildkit": {
+      "enabled": false
+    },
+    "tailscale": {
+      "enabled": false
+    },
+    "registry": {}
+  },
+  "networks": [
+    {
+      "id": "net_01J9Z8X7W6V5T4S3R2Q1P0N9N0",
+      "name": "lr-e_7f3c2a91b0d4e5f6",
+      "subnet": "10.231.4.0/24"
+    }
+  ],
+  "volumes": [],
+  "workloads": [
+    {
+      "id": "wl_01J9Z8X7W6V5T4S3R2Q1P0N9N7",
+      "service": "svc_01J9Z8X7W6V5T4S3R2Q1P0N9N2",
+      "environment": "env_01J9Z8X7W6V5T4S3R2Q1P0N9N4",
+      "deployment": "dpl_01J9Z8X7W6V5T4S3R2Q1P0N9N5",
+      "image": "127.0.0.1:5000/apps/svc_01j9z8x7w6v5t4s3r2q1p0n9n2@sha256:4b5e57f6eb2f42b9039b3d1e13929295f231749c510cbe341cd68036d9af97e2",
+      "env": {
+        "sealed": "wvoQqYaNVNQFY3EFjdyt9ezKvhEje5JmmjhQ8jR+kRkL7DhDOP3Gtk1LGmveW0laJdVjGxHOI8dlhza021FiSIopc/QTpS1pwCNoMO6OeeUPMbntIaX5+f7ipJZ4paAS"
+      },
+      "port": 3000,
+      "resources": {
+        "cpus": 1.0,
+        "memoryMb": 512,
+        "pids": 512
+      },
+      "networks": [
+        {
+          "network": "net_01J9Z8X7W6V5T4S3R2Q1P0N9N0",
+          "aliases": [
+            "web"
+          ]
+        }
+      ],
+      "restart": "unless-stopped",
+      "role": "serving"
+    }
+  ],
+  "ambassadors": [],
+  "routes": [
+    {
+      "id": "rt_01J9Z8X7W6V5T4S3R2Q1P0N9R1",
+      "hosts": [
+        "web-production.shop.apps.example.com"
+      ],
+      "tls": "wildcard",
+      "upstreams": [
+        {
+          "workload": "wl_01J9Z8X7W6V5T4S3R2Q1P0N9N7",
+          "port": 3000
+        },
+        {
+          "address": "100.64.0.7:31001"
+        }
+      ],
+      "loadBalancing": "prefer_local"
+    },
+    {
+      "id": "rt_01J9Z8X7W6V5T4S3R2Q1P0N9R2",
+      "hosts": [
+        "shop.example.org",
+        "www.shop.example.org"
+      ],
+      "tls": "on_demand",
+      "redirectWwwTo": "shop.example.org",
+      "upstreams": [
+        {
+          "workload": "wl_01J9Z8X7W6V5T4S3R2Q1P0N9N7",
+          "port": 3000
+        }
+      ],
+      "headers": {
+        "Strict-Transport-Security": "max-age=31536000"
+      }
+    }
+  ],
+  "ingress": {
+    "storage": {
+      "address": "100.64.0.1:6379",
+      "keyPrefix": "lr-caddy",
+      "credentials": {
+        "sealed": "wvoQqYaNVNQFY3EFjdyt9ezKvhEje5JmmjhQ8jR+kRkL7DhDOP3Gtk1LGmveW0laJdVjGxHOI8dlhza021FiSIopc/QTpS1pwCNoMO6OeeUPMbntIaX5+f7ipJZ4paAS"
+      }
+    },
+    "dns": {
+      "provider": "cloudflare",
+      "domains": [
+        "apps.example.com"
+      ],
+      "credentials": {
+        "sealed": "wvoQqYaNVNQFY3EFjdyt9ezKvhEje5JmmjhQ8jR+kRkL7DhDOP3Gtk1LGmveW0laJdVjGxHOI8dlhza021FiSIopc/QTpS1pwCNoMO6OeeUPMbntIaX5+f7ipJZ4paAS"
+      }
+    }
+  },
+  "firewall": {
+    "meshAllow": []
+  }
+}

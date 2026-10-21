@@ -1,0 +1,18 @@
+{
+  "apiVersion": "launchroom.vantezzen.io/v1",
+  "kind": "TaskLease",
+  "tasks": [
+    {
+      "id": "tsk_01J9Z8X7W6V5T4S3R2Q1P0N9P7",
+      "type": "self_update",
+      "leaseExpiresAt": "2026-10-17T12:01:00Z",
+      "attempt": 1,
+      "deadline": "2026-10-17T12:45:00Z",
+      "spec": {
+        "version": "0.2.0",
+        "image": "ghcr.io/vantezzen/launchroomd@sha256:863294e97f3d613949dbcb8bac8bc2f34d40fb4773c50c12679d99fdc95c2272",
+        "scope": "control_plane"
+      }
+    }
+  ]
+}

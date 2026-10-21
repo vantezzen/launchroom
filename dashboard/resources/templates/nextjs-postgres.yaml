@@ -1,0 +1,27 @@
+schema: launchroom.template/v1
+id: nextjs-postgres
+name: Next.js + Postgres
+tagline: Your Next.js app with a managed Postgres, connected.
+description: >-
+    Builds your repository with the Next.js preset and gives it DATABASE_URL
+    for a managed Postgres with backups. Previews get their own database.
+category: stacks
+logo: nextjs
+inputs:
+    - id: repository
+      label: Repository
+      type: repository
+services:
+    web:
+        ports: ['3000']
+        environment:
+            DATABASE_URL: ${service.db.url}
+        depends_on: [db]
+        x-launchroom:
+            name: web
+            logo: nextjs
+            source: repository
+    db:
+        x-launchroom:
+            name: Postgres
+            database: { engine: postgres, version: '18' }

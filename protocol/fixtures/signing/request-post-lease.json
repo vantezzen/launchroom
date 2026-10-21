@@ -1,0 +1,23 @@
+{
+  "description": "POST with JSON body, signed by an enrolled daemon.",
+  "privateKeySeed": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+  "publicKey": "ed25519:A6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg=",
+  "keyId": "srv_01J9Z8X7W6V5T4S3R2Q1P0N9MK",
+  "created": 1792238400,
+  "nonceBytes": "bGF1bmNocm9vbS1ub25jZQ==",
+  "request": {
+    "method": "POST",
+    "url": "https://cp.example.test/daemon/v1/tasks/lease",
+    "body": "{\"apiVersion\":\"launchroom.vantezzen.io/v1\",\"kind\":\"LeaseRequest\",\"max\":1}"
+  },
+  "expected": {
+    "contentDigest": "sha-256=:bRFyl8l89ixkOs//HuGPaVjogTDcUL0z+XdTzRQhF7E=:",
+    "date": "Sat, 17 Oct 2026 12:00:00 GMT",
+    "nonce": "bGF1bmNocm9vbS1ub25jZQ",
+    "signatureInput": "sig1=(\"@method\" \"@path\" \"@query\" \"content-digest\" \"date\" \"x-lr-nonce\");created=1792238400;keyid=\"srv_01J9Z8X7W6V5T4S3R2Q1P0N9MK\";alg=\"ed25519\";tag=\"launchroomd-v1\"",
+    "signature": "sig1=:O5ZIa8KBkSG5sUV9PRi5cC/D8zf8s0yV/eqox6jJDNnRazaoHXKxTCW2rD7XzS9Ez2lX9nQs6eejSb7gzuozBA==:",
+    "signatureBase": "\"@method\": POST\n\"@path\": /daemon/v1/tasks/lease\n\"@query\": ?\n\"content-digest\": sha-256=:bRFyl8l89ixkOs//HuGPaVjogTDcUL0z+XdTzRQhF7E=:\n\"date\": Sat, 17 Oct 2026 12:00:00 GMT\n\"x-lr-nonce\": bGF1bmNocm9vbS1ub25jZQ\n\"@signature-params\": (\"@method\" \"@path\" \"@query\" \"content-digest\" \"date\" \"x-lr-nonce\");created=1792238400;keyid=\"srv_01J9Z8X7W6V5T4S3R2Q1P0N9MK\";alg=\"ed25519\";tag=\"launchroomd-v1\""
+  },
+  "verifyAt": 1792238400,
+  "maxSkewSeconds": 60
+}

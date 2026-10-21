@@ -1,0 +1,122 @@
+---
+title: Import and export
+description: Import a dump or a live database into a managed database, import files into a volume, and download a backup or the current data in its own format.
+---
+
+Data moves in and out of launchroom in the formats its engines already use. Import a `pg_dump` from your old server, copy a database straight from a connection URL, unpack a `.tar.gz` of uploads into a volume, or download a decrypted backup to keep somewhere else. Everything lives in the **Backups** tab of a database or a service with volumes, under **Move data**.
+
+Importing and exporting need the **Owner** or **Admin** role: an import writes a whole database, and an export takes decrypted data off your servers.
+
+## What you can import and export
+
+| Engine | Import a file | Import from a URL | Download (backup or now) |
+|---|---|---|---|
+| PostgreSQL | `pg_dump -Fc`, plain SQL (`.sql`, `.sql.gz`) | `postgres://`, `postgresql://` | `pg_dump -Fc` (`.dump`) |
+| MySQL | `mysqldump` or `mariadb-dump` SQL (`.sql`, `.sql.gz`) | `mysql://`, `mariadb://` | SQL, gzipped (`.sql.gz`) |
+| MongoDB | `mongodump --archive`, gzipped or not | `mongodb://`, `mongodb+srv://` with a database in the path | `mongodump --archive --gzip` (`.archive`) |
+| ClickHouse | Not supported | Not supported | Native backup (`.zip`) |
+| Redis, Valkey | Not supported | Not supported | RDB file (`.rdb`) |
+| Volumes | `.tar`, `.tar.gz`, `.zip` | | `.tar.gz` |
+
+## Import into a database
+
+Open the database's **Backups** tab and choose **Import data…**. The dialog walks through three steps.
+
+<Steps>
+<Step>
+### Source
+
+- **From a dump file** (the default): drop the file in. It uploads right away in 8 MB parts with a progress bar. If the connection drops or you reload the page, choosing the same file again continues where it stopped. When the upload is done, launchroom shows what it found, for example "PostgreSQL custom dump · from PostgreSQL 15.8 · 220 MB".
+- **From a connection URL**: paste the old database's URL, such as `postgres://user:password@db.example.com:5432/shop`, and choose **Check connection**. launchroomd connects from the database's server and dumps straight into the new database. Use this when the old database is reachable from the internet.
+</Step>
+<Step>
+### Target
+
+launchroom checks the database first: "postgres is empty", or "postgres has 14 tables (48 MB)". An empty database imports right away. A database with tables needs **Replace everything**: launchroom takes a safety snapshot, then drops and recreates the database before importing. Templates often create their tables on the first start, so replacing is the normal case when you move an app.
+
+The apps connected to the database are listed. **Stop them while importing** is on by default, so they don't write half-imported data; they start again when the import ends, whether it worked or not.
+</Step>
+<Step>
+### Review
+
+**What will happen** lists the steps in order: safety snapshot, stop the apps, drop and recreate, import, start the apps. Replacing asks you to type the database's name.
+</Step>
+</Steps>
+
+The run shows its steps live (uploaded, safety snapshot, stopping apps, fetching on the server, importing) and ends with what the database holds now, for example "Imported 14 tables · 48 MB · in 1m 13s". If launchroom had to adjust something in the dump, it says so under the result. Without a backup destination there is no safety snapshot, and the confirmation says so.
+
+### Versions
+
+A dump from the same or an older major version imports. A dump from a newer version stops before anything changes, naming both versions:
+
+> This dump comes from PostgreSQL 18.1, but postgres runs PostgreSQL 17.
+
+Pick the newer version for the database, or make the dump with an older client. launchroom reads the versions from the file itself: for PostgreSQL both the server that was dumped and the `pg_dump` that made the dump count. A MariaDB dump imports into MySQL with a note, since their versions can't be compared.
+
+### What launchroom adjusts
+
+Dumps from another server carry details that only made sense there. launchroom leaves them out, and lists what it did:
+
+- **PostgreSQL**: ownership and privileges (`ALTER … OWNER TO`, `GRANT`, `REVOKE`), because the old roles don't exist here. Everything belongs to the database's own user.
+- **MySQL**: `DEFINER=` clauses on views, triggers and routines (they then belong to the database's own user), GTID and binary log settings (they only matter to replication), and `CREATE DATABASE` and `USE` statements, so everything lands in this database. A dump of several databases is refused: dump one with `mysqldump <database>`.
+- **MongoDB**: every collection lands in this database. The `admin`, `config` and `local` databases are skipped, and an archive with several other databases is refused.
+
+### How it runs
+
+The restore runs in a throwaway container made from the database's own image, so the client tools match the server. It sits on the database's environment network with the same firewall as your apps: it can reach the internet and its own environment, never your private network, the mesh or other environments. Credentials go to the tools through environment variables, never on a command line, and the container is removed afterwards.
+
+A connection URL is sealed for the one server and the one import that uses it. launchroom doesn't store it in a readable form and keeps it out of logs and errors. The run shows only the host, port and database.
+
+## Import files into a volume
+
+On a service with volumes, choose **Import files…** next to a volume and upload a `.tar`, `.tar.gz` or `.zip`. The service stops while the files go in and starts again afterwards.
+
+- **Replace contents** empties the volume first. **Merge** adds the files to what is there and overwrites files with the same name. If the volume isn't empty, a safety snapshot is taken first in both cases.
+- **Strip the top folder**: archives made with `tar -czf uploads.tar.gz uploads/` keep everything under `uploads/`. launchroom offers to drop that folder when the whole archive sits in one.
+- **Owners**: tar archives keep their numeric owners and modes. Many images run as a non-root user, so you can set one owner (UID and GID) for every file instead; the default is the current owner of the volume's folder. Zip files carry no owners, so their files get the volume folder's owner. The volume's own folder keeps its owner and mode.
+
+launchroom refuses archives that try to write outside the volume: absolute paths, `..`, links pointing outside the archive, device files, and archives that would unpack to more than 100 times their size. setuid bits and extended attributes are dropped.
+
+## Download
+
+Two ways to get your data out, each in the engine's own format:
+
+- **Download** on a backup in the snapshot list: the decrypted backup.
+- **Download now**: a fresh dump of the database, or a `.tar.gz` of the volume, without making a backup first.
+
+launchroom asks for your password if you haven't confirmed it in the last 15 minutes. It then prepares the file ("Preparing download · 120 MB so far") and shows **Download postgres-20261021-1000.dump (412 MB)**. Each click makes a new link that works once and for 5 minutes, only for you. The prepared file is deleted an hour after it's ready. Every download is in the [audit log](/docs/teams-and-security/audit-log).
+
+To restore a download elsewhere:
+
+```sh
+pg_restore --no-owner -d shop postgres-20261021-1000.dump
+gunzip -c mysql-20261021-1000.sql.gz | mysql shop
+mongorestore --archive=mongodb-20261021-1000.archive --gzip
+tar -xzpf uploads-20261021-1000.tar.gz -C ./uploads
+```
+
+## From the terminal
+
+With a token that has the `data:transfer` ability (see [API tokens](/docs/reference/api#abilities)):
+
+```sh
+launchroom db import postgres umami.dump --replace
+launchroom db export postgres -o backup.dump
+launchroom db export postgres --backup 4a1f0c2e
+launchroom volume export web /app/uploads -o uploads.tar.gz
+```
+
+See the [CLI reference](/docs/reference/cli#import-and-export).
+
+## Limits
+
+- The file is held on the server that runs your dashboard while it is imported, and read once more on the database's server, so both need room for it.
+- An import from a URL needs the source to be reachable from your server. Private and mesh addresses are blocked like for apps: use a dump file, or allow the range on that server with `LR_FIREWALL_ALLOW_PRIVATE`.
+- MariaDB-only features (system-versioned tables, `uca1400` collations) fail in MySQL with MySQL's own error.
+- Point-in-time downloads and imports into Redis, Valkey and ClickHouse aren't supported.
+
+<Cards>
+  <Card title="Move apps from another platform" href="/docs/migrate/from-another-platform" description="Umami as a worked example, start to finish." />
+  <Card title="Backups" href="/docs/databases/backups" description="What launchroom backs up, where and how often." />
+  <Card title="Troubleshooting" href="/docs/troubleshooting/backups" description="Import errors and what to do about them." />
+</Cards>

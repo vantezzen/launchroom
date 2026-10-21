@@ -1,0 +1,42 @@
+{
+  "apiVersion": "launchroom.vantezzen.io/v1",
+  "kind": "Report",
+  "serverId": "srv_01J9Z8X7W6V5T4S3R2Q1P0N9MK",
+  "observedAt": "2026-10-18T12:00:05Z",
+  "seq": 19,
+  "full": true,
+  "appliedVersion": 1901,
+  "workloads": [],
+  "ingress": {
+    "state": "applied",
+    "routes": 2,
+    "appliedAt": "2026-10-18T12:00:01Z",
+    "certificates": [
+      {
+        "host": "shop.example.org",
+        "state": "issued",
+        "issuer": "Let's Encrypt R12",
+        "notBefore": "2026-10-01T08:00:00Z",
+        "notAfter": "2026-12-30T08:00:00Z"
+      },
+      {
+        "host": "web-production.shop.apps.example.com",
+        "state": "issued",
+        "wildcard": true,
+        "issuer": "Let's Encrypt E7",
+        "notBefore": "2026-10-10T08:00:00Z",
+        "notAfter": "2027-01-08T08:00:00Z",
+        "lastError": "[*.shop.apps.example.com] solving challenges: presenting for challenge: adding temporary record for zone \"example.com.\": Invalid access token (HTTP 403)",
+        "lastErrorAt": "2026-10-18T11:59:00Z"
+      },
+      {
+        "host": "www.shop.example.org",
+        "state": "pending"
+      }
+    ],
+    "storage": {
+      "state": "shared",
+      "mirrored": 2
+    }
+  }
+}

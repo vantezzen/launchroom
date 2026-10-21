@@ -1,0 +1,7 @@
+# MDX content is hand-wrapped prose; Prettier would rewrap components.
+content/
+package-lock.json
+lib/screenshots.json
+public/
+.next/
+.source/

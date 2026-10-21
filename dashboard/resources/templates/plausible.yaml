@@ -1,0 +1,53 @@
+schema: launchroom.template/v1
+id: plausible
+name: Plausible
+tagline: Lightweight, cookie-free web analytics.
+description: >-
+    Simple traffic dashboards without personal data. Events are stored in a
+    managed ClickHouse, accounts in a managed Postgres, both backed up.
+    Registration is open for the first account, then invite-only.
+category: analytics
+logo: plausible
+website: https://plausible.io
+license: AGPL-3.0
+inputs:
+    - id: domain
+      label: Domain
+      type: domain
+      optional: true
+      description: Your sites send events here. Leave empty to use the generated address.
+services:
+    plausible:
+        image: ghcr.io/plausible/community-edition:v3.2.1@sha256:33e60bfb40f2df5da00f8753b76fad04f67dba3abe6d73eb516e440e3fb62985
+        command:
+            [
+                'sh',
+                '-c',
+                '/entrypoint.sh db createdb && /entrypoint.sh db migrate && /entrypoint.sh run',
+            ]
+        ports: ['8000']
+        environment:
+            BASE_URL: ${self.public_url}
+            SECRET_KEY_BASE: ${generate:base64:48}
+            TOTP_VAULT_KEY: ${generate:base64:32}
+            DATABASE_URL: ${service.db.url}
+            CLICKHOUSE_DATABASE_URL: ${service.events.url}
+            DISABLE_REGISTRATION: invite_only
+        volumes:
+            - data:/var/lib/plausible
+        depends_on: [db, events]
+        healthcheck:
+            test: ['CMD', 'wget', '-qO-', 'http://localhost:8000/api/health']
+            start_period: 90s
+        x-launchroom:
+            name: Plausible
+            logo: plausible
+            domain: ${input.domain}
+    events:
+        x-launchroom:
+            name: ClickHouse
+            database: { engine: clickhouse, version: '26.8' }
+    db:
+        x-launchroom:
+            name: Postgres
+            database: { engine: postgres, version: '17' }

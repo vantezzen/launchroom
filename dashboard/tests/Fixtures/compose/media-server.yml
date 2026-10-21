@@ -1,0 +1,27 @@
+# A home media server: needs the host's network and GPU.
+services:
+  jellyfin:
+    image: jellyfin/jellyfin:10.11
+    container_name: jellyfin
+    network_mode: host
+    user: "1000:1000"
+    devices:
+      - /dev/dri:/dev/dri
+    group_add:
+      - "109"
+    volumes:
+      - /srv/media:/media:ro
+      - ./config:/config
+      - cache:/cache
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  transmission:
+    image: lscr.io/linuxserver/transmission:latest
+    ports:
+      - 9091:9091
+      - 51413:51413/udp
+
+volumes:
+  cache:

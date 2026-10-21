@@ -1,0 +1,65 @@
+schema: launchroom.template/v1
+id: laravel-mysql-redis
+name: Laravel + MySQL + Redis
+tagline: 'The full Laravel setup: web, queue worker, scheduler, MySQL and Redis.'
+description: >-
+    Builds your repository once and runs it three ways: the web app, a queue
+    worker and the scheduler. MySQL and Redis are managed and connected with
+    Laravel's variable names; APP_KEY is generated.
+category: stacks
+logo: laravel
+inputs:
+    - id: repository
+      label: Repository
+      type: repository
+services:
+    web:
+        environment:
+            APP_ENV: production
+            APP_KEY: base64:${generate:base64:32}
+            APP_URL: ${self.public_url}
+            CACHE_STORE: redis
+            QUEUE_CONNECTION: redis
+            SESSION_DRIVER: redis
+        depends_on: [db, redis]
+        x-launchroom:
+            name: web
+            logo: laravel
+            source: repository
+            public: true
+            connect: { db: laravel, redis: laravel }
+    queue:
+        command:
+            ['php', 'artisan', 'queue:work', '--tries=3', '--max-time=3600']
+        environment:
+            APP_ENV: production
+            APP_KEY: ${service.web.env.APP_KEY}
+            APP_URL: ${service.web.public_url}
+            CACHE_STORE: redis
+            QUEUE_CONNECTION: redis
+        depends_on: [db, redis]
+        x-launchroom:
+            name: queue
+            parent: web
+            connect: { db: laravel, redis: laravel }
+    scheduler:
+        command: ['php', 'artisan', 'schedule:work']
+        environment:
+            APP_ENV: production
+            APP_KEY: ${service.web.env.APP_KEY}
+            APP_URL: ${service.web.public_url}
+            CACHE_STORE: redis
+            QUEUE_CONNECTION: redis
+        depends_on: [db, redis]
+        x-launchroom:
+            name: scheduler
+            parent: web
+            connect: { db: laravel, redis: laravel }
+    db:
+        x-launchroom:
+            name: MySQL
+            database: { engine: mysql, version: '8.4' }
+    redis:
+        x-launchroom:
+            name: Redis
+            database: { engine: redis, version: '7' }

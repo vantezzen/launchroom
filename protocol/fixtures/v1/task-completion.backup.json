@@ -1,0 +1,12 @@
+{
+  "apiVersion": "launchroom.vantezzen.io/v1",
+  "kind": "TaskCompletion",
+  "attempt": 1,
+  "outcome": "succeeded",
+  "backup": {
+    "snapshotId": "4a1f0c2e9b8d7f6a5e4d3c2b1a0f9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a2f",
+    "sizeBytes": 1048576,
+    "addedBytes": 20480,
+    "durationMs": 5120
+  }
+}

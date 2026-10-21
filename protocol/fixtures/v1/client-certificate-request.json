@@ -1,0 +1,5 @@
+{
+  "apiVersion": "launchroom.vantezzen.io/v1",
+  "kind": "ClientCertificateRequest",
+  "publicKey": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE9gchufJAhSarq34TyNECVmbxJU8a8mZUFwDSi7oLlAhrYfsvokvfeyhW/J7sWqDwePfuzYLuIPQMnNBdwo+Z9w=="
+}

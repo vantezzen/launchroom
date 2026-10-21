@@ -1,0 +1,50 @@
+{
+  "description": "crypto_box_seal of a WorkloadEnv JSON document to the daemon X25519 key. Open with sodium_crypto_box_seal_open(base64_decode(sealed), sodium_crypto_box_keypair_from_secretkey_and_publickey(sk, pk)). Only the case with valid=true opens to plaintext AND binds serverId/workloadId. Public test key: never use elsewhere.",
+  "recipientPrivateKey": "QEFCQ0RFRkdISUpLTE1OT1BRUlNUVVZXWFlaW1xdXl8=",
+  "recipientPublicKey": "x25519:eaYx7t4b+cmPEgMs3q3Q56B5OY/HhriMyEbsia+FpRo=",
+  "serverId": "srv_01J9Z8X7W6V5T4S3R2Q1P0N9MK",
+  "workloadId": "wl_01J9Z8X7W6V5T4S3R2Q1P0N9N7",
+  "plaintext": "{\"serverId\":\"srv_01J9Z8X7W6V5T4S3R2Q1P0N9MK\",\"workloadId\":\"wl_01J9Z8X7W6V5T4S3R2Q1P0N9N7\",\"env\":{\"DATABASE_URL\":\"postgres://app:s3cret@postgres:5432/app\",\"EMPTY\":\"\",\"GREETING\":\"hällo \\\"world\\\"\\n\"}}",
+  "env": {
+    "DATABASE_URL": "postgres://app:s3cret@postgres:5432/app",
+    "EMPTY": "",
+    "GREETING": "hällo \"world\"\n"
+  },
+  "cases": [
+    {
+      "description": "valid: opens to plaintext, bound to serverId/workloadId",
+      "ephemeralSeed": "YGFiY2RlZmdoaWprbG1ub3BxcnN0dXZ3eHl6e3x9fn8=",
+      "sealed": "Z13VdO13iTELPS52gfN5C0ZsdzsVIf7PNld5WDcepS+4j9xXJPbXDDH5vZ5LOlKvr/pJosKNj2qdg93pHB2WG7pdnQXEzJ2E7iNfng2oiHTZV0iLpfxbJCGQFV1Hoz3o8qoByh2sjIP0c0zNTigCZcBwo+WsjDdCWmeRITKFOIgys4aXwJfnT3kSkvJMEGnN+CLoHKkknpCg9+PHIzsYPferI8amEho0RPUW94T0JcEG0ThhZLPvVSG5MoAS2ZRGA1kWpm9wvqWl/dzS8fDHNbhGAWx+i4yuuDfbmNnLUw2WMDJsxq5vGpYlCYrBv71b/s+RwzI7",
+      "valid": true
+    },
+    {
+      "description": "invalid: sealed for another workload (re-targeting)",
+      "ephemeralSeed": "YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXp7fH1+f4A=",
+      "sealed": "JE/juWPomd0pW6/84kjTUw86mnR5ugYwAmgOv+etrUmss3sTeMfpZfdyJ63FQwriD/G4NKOAzyN2MmiwvZv0oF36GPONCpHjXo5n5EWShLyCa44Thzm3U2Lq08V9QXLNA+V9e2kTlaz0WVD0nHvA2PH8N4obGY/1YBm7J2ixjomOQLWgEIUXQ0wUfRmt1Ul3C76/Vf4RUHonSCf3ZD0wgXoD8nlcDlPu33YI4OLJIB0u4XGPb1CtgsMVlbr9nFu2V1YtmgPjrJ8hL8Zz0l/M7uqLsUDXWFSfTDuDJ7jLWodukqZULo7rurBT/7tec5O0AB1pYAqf",
+      "valid": false
+    },
+    {
+      "description": "invalid: sealed for another server",
+      "ephemeralSeed": "YmNkZWZnaGlqa2xtbm9wcXJzdHV2d3h5ent8fX5/gIE=",
+      "sealed": "k9GcTNmRVpu4Um0fxnYWGPmGXWH0wnvDAt1u9QmjOTJrnw6U+cEMl+6NuyIN4ZwjlopR3GCPxVEHgMpfz+r5jixS9FDc8kjw/+DO9cut2JgMRchMkD4dMGV7SBjYwTMo9mFlsSEAlgYCUwUJeuTZhw+LJdsx8ZEGzGn/ytAcoaa7zzMumxyx/aDuuUkCOyT2xd6Bb9uDxXrCo5lYlskCGylS8e6mY8aCh2RcB4xVFeQ00VFF3ZuuKmIs2Y/Tj4s1RJ/l+O7Xy22PKoQXvAploOYZuhOblVdMut3OoXEFDjN+g7ZASnnpao3SMZgebJb2MEBu+yiM",
+      "valid": false
+    },
+    {
+      "description": "invalid: unknown member",
+      "ephemeralSeed": "Y2RlZmdoaWprbG1ub3BxcnN0dXZ3eHl6e3x9fn+AgYI=",
+      "sealed": "ldK1fJ9JsBEG+Vsd1ZPUrBHJp2I77dBvMtXgC9oX6Q6IETcDRS1DI7JhuvFtyAfzvUk5LsGBl+RDjHEuIVUiPG9W0pwThrw8EHnyDwxQE4Or1IPzM/Nmik53R6u+e6lW+CAJgKxxmJSTrd/FzlmzHATHMZfVIc9mamhWq5xW4/SWwg83zuQ2I4IWsF1YRjhGHoCXx3p+1QKPLhocF1cMjpMLoiYAlA3yKfjOTpNPBIPDgrwi7HtVaBl0jkbs0HAWLKFHrMGL0WYmG7uQ1SUCaWBVLgFDmnWxCWyh/A3OqOdDbd1APjIuhNXNCdrVLCC0q+F6pwxlgIedIrg0M54yRw==",
+      "valid": false
+    },
+    {
+      "description": "invalid: bad variable name",
+      "ephemeralSeed": "ZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXp7fH1+f4CBgoM=",
+      "sealed": "fZwkMWU5glwYluV/KBl3Rnk85gy+461H2p0HuF+lXiohO5Ugq06ruMLU+NiCdZVGqdqqKpRRzeCBlyjmFAMwldjW8YnLVsI868XjurrgNPstPnQCn7IBuVyZJgeCMZNXTgd5VfR+XE+Tch/DZAIDwKf0k8ii4V3xdW3wL7ueaiA1IafOL8gDIyvQwBf+sH9CeKcSpaav8+EP1qxLrUp+teII72i9WxMSxh9Ugc/+8P1mDX3WMnQiCX3h9lYDxVvrWkdEtZTfRxWa22IuGC/ausXQ7uA1oHe2v6Ij4F3wcUOv1i6utR9zRT8po/IrmgDvRZITbWXoSQ==",
+      "valid": false
+    },
+    {
+      "description": "invalid: tampered ciphertext",
+      "sealed": "Z13VdO13iTELPS52gfN5C0ZsdzsVIf7PNld5WDcepS+4j9xXJPbXDDH5vZ5LOlKvr/pJosKNj2qdg93pHB2WG7pdnQXEzJ2E7iNfng2oiHTZV0iLpfxbJCGQFV1Hoz3o8qoByh2sjIP0c0zNTigCZcBwo+WsjDdCWmeRITKFOIgys4aXwJfnT3kSkvJMEGnN+CLoHKkknpCg9+PHIzsYPferI8amEho0RPUW94T0JcEG0ThhZLPvVSG5MoAS2ZRGA1kWpm9wvqWl/dzS8fDHNbhGAWx+i4yuuDfbmNnLUw2WMDJsxq5vGpYlCYrBv71b/s+RwzI6",
+      "valid": false
+    }
+  ]
+}

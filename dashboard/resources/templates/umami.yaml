@@ -1,0 +1,36 @@
+schema: launchroom.template/v1
+id: umami
+name: Umami
+tagline: Simple, privacy-friendly website analytics.
+description: >-
+    See visitors, pages and referrers without cookies or tracking banners. Sign
+    in with admin / umami the first time, then change the password.
+category: analytics
+logo: umami
+website: https://umami.is
+license: MIT
+inputs:
+    - id: domain
+      label: Domain
+      type: domain
+      optional: true
+      description: Leave empty to use the generated address; you can add one later.
+services:
+    umami:
+        image: ghcr.io/umami-software/umami:3.4.0@sha256:85909afc45bdcda1917394594a087421fdbb05610fded0fa9f6fb861abb2f367
+        ports: ['3000']
+        environment:
+            DATABASE_URL: ${service.db.url}
+            APP_SECRET: ${generate:password:48}
+        depends_on: [db]
+        healthcheck:
+            test: ['CMD', 'curl', '-f', 'http://localhost:3000/api/heartbeat']
+            start_period: 60s
+        x-launchroom:
+            name: Umami
+            logo: umami
+            domain: ${input.domain}
+    db:
+        x-launchroom:
+            name: Postgres
+            database: { engine: postgres, version: '17' }

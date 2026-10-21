@@ -1,0 +1,36 @@
+{
+  "apiVersion": "launchroom.vantezzen.io/v1",
+  "kind": "TaskCompletion",
+  "attempt": 1,
+  "outcome": "succeeded",
+  "plan": {
+    "durationMs": 4210,
+    "summary": {
+      "builder": "railpack",
+      "builderReason": "preset",
+      "railpackVersion": "0.42.0",
+      "provider": "php",
+      "framework": "laravel",
+      "packageManager": "composer",
+      "port": 8080,
+      "presets": [
+        {
+          "name": "laravel",
+          "version": 1,
+          "decisions": [
+            { "id": "release-migrations", "title": "Run migrations once per deploy" },
+            { "id": "horizon", "title": "Horizon worker process", "detail": "php artisan horizon" }
+          ]
+        }
+      ],
+      "runtimeEnv": { "RAILPACK_SKIP_MIGRATIONS": "true" },
+      "processes": [
+        { "name": "horizon", "args": ["php", "artisan", "horizon"] },
+        { "name": "scheduler", "args": ["php", "artisan", "schedule:work"] }
+      ],
+      "releaseCommand": ["php", "artisan", "migrate", "--force"],
+      "healthPath": "/up",
+      "warnings": [{ "code": "app-key", "message": "Laravel needs APP_KEY at runtime. Generate one in the service variables if it is not set." }]
+    }
+  }
+}

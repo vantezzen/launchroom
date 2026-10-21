@@ -1,0 +1,34 @@
+schema: launchroom.template/v1
+id: versitygw
+name: versitygw
+tagline: S3-compatible object storage on a volume.
+description: >-
+    An S3 gateway in front of a plain folder: buckets for uploads, backups and
+    static files. The access key and secret are generated; find them in the
+    service's variables.
+category: storage
+logo: s3
+website: https://www.versity.com/products/versitygw/
+license: Apache-2.0
+inputs:
+    - id: domain
+      label: Domain
+      type: domain
+      optional: true
+      description: The S3 endpoint. Leave empty to use the generated address.
+services:
+    storage:
+        image: docker.io/versity/versitygw:v1.9.0@sha256:eb7f786fcd91e72194e48fcf1ac16302d686bf8e3a71434bdbc067a6efd3fdc7
+        command: ['posix', '/data']
+        ports: ['7070']
+        environment:
+            ROOT_ACCESS_KEY: ${generate:password:20}
+            ROOT_SECRET_KEY: ${generate:password:40}
+        volumes:
+            - data:/data
+        healthcheck:
+            test: ['CMD', 'versitygw', '--version']
+        x-launchroom:
+            name: versitygw
+            logo: s3
+            domain: ${input.domain}

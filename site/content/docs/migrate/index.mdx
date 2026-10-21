@@ -1,0 +1,36 @@
+---
+title: Moving to launchroom
+description: Move your apps from your old platform onto a launchroom server one at a time, later move launchroom to another machine, and add a home machine for builds.
+---
+
+Moving to launchroom happens in steps. Each step stands on its own, and your apps keep serving throughout.
+
+<Steps>
+<Step>
+### Move your apps from your old platform
+
+Install launchroom on a server and move one app at a time: deploy it, copy its variables, import its data, check it, then switch its DNS. Your old platform keeps serving each app until its DNS switches, so nothing goes offline.
+
+[Move apps from another platform](/docs/migrate/from-another-platform)
+</Step>
+<Step>
+### Move launchroom to another machine
+
+Once your apps run on launchroom, move launchroom itself with every app, database, volume and domain to another server, also to another CPU architecture. Nothing is lost and no backup storage is needed: apps switch without downtime, each database stops briefly while it is copied.
+
+[Move launchroom to a new server](/docs/migrate/move-to-a-new-server)
+</Step>
+<Step>
+### Add a home machine for builds
+
+A machine at home, including a Mac, can join as a build server. It needs no port forwarding and builds for your other servers.
+
+- [Home machines](/docs/servers/home-machines)
+- [Mac servers](/docs/servers/macos)
+</Step>
+</Steps>
+
+<Cards>
+  <Card title="Install launchroom" href="/docs/getting-started/install" description="Set up the first server." />
+  <Card title="Import and export" href="/docs/databases/import-and-export" description="Formats, versions and downloads for databases and volumes." />
+</Cards>

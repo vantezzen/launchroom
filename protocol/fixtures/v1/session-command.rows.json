@@ -1,0 +1,11 @@
+{
+  "apiVersion": "launchroom.vantezzen.io/v1",
+  "kind": "SessionCommand",
+  "session": "ses_01J9Z8X7W6V5T4S3R2Q1P0N9S4",
+  "op": "op_01J9Z8X7W6V5T4S3R2Q1P0N9T4",
+  "issuedAt": "2026-10-17T12:00:06Z",
+  "command": "rows",
+  "table": { "schema": "public", "name": "users" },
+  "page": 1,
+  "pageSize": 50
+}

@@ -1,0 +1,26 @@
+{
+  "apiVersion": "launchroom.vantezzen.io/v1",
+  "kind": "TaskLease",
+  "tasks": [
+    {
+      "id": "tsk_01J9Z8X7W6V5T4S3R2Q1P0N9P1",
+      "type": "run_once",
+      "leaseExpiresAt": "2026-10-17T12:01:00Z",
+      "attempt": 1,
+      "deadline": "2026-10-17T12:15:00Z",
+      "spec": {
+        "service": "svc_01J9Z8X7W6V5T4S3R2Q1P0N9N2",
+        "environment": "env_01J9Z8X7W6V5T4S3R2Q1P0N9N4",
+        "deployment": "dpl_01J9Z8X7W6V5T4S3R2Q1P0N9N5",
+        "image": "127.0.0.1:5000/apps/svc_01j9z8x7w6v5t4s3r2q1p0n9n2@sha256:863294e97f3d613949dbcb8bac8bc2f34d40fb4773c50c12679d99fdc95c2272",
+        "args": ["php", "artisan", "migrate", "--force"],
+        "env": {
+          "sealed": "aEd1s08pS3O5azgHS/RIgRCwcTKob0z7+re83Fwam/F7JsEo6tehDt5Quxs/Zll9EZCIqVTnFNjlnPH6mnUoanih+Nj89h6MkawEMi6Zjgdkni3v1t+6Q9wVzRNRkfpO"
+        },
+        "network": { "id": "net_01J9Z8X7W6V5T4S3R2Q1P0N9N4", "name": "lr-e_6d1f0c3a9b2e4f57", "subnet": "10.231.4.0/24" },
+        "timeout": "10m",
+        "resources": { "cpus": 1, "memoryMb": 512, "pids": 512 }
+      }
+    }
+  ]
+}

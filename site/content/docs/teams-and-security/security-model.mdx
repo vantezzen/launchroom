@@ -1,0 +1,92 @@
+---
+title: Security model
+description: No SSH, no host shell, signed desired state, a local policy floor on every server and secrets that are encrypted, sealed and never logged.
+---
+
+launchroom holds the keys to your servers and your app secrets. It is designed so that no single mistake or compromised component hands over everything. This page explains the boundaries you need to know to run it.
+
+The trust boundary: **commands you configure run inside your own containers. Anything that lets a project member reach root on a server, another team's data or another server is a vulnerability.**
+
+## No SSH, no shell on the host
+
+launchroom never logs into your servers and has no feature that runs a command on the server.
+
+- The dashboard sends each server a **desired state**: which containers, networks, volumes and routes should exist. launchroomd compares it with what is running and applies the difference through Docker's API.
+- One-off work (builds, release commands, backups, restores) is sent as **typed tasks** with fixed fields, not as command lines.
+- Start commands, release commands and cron jobs you configure run **inside your service's container** as an argument list, never through a shell on the host.
+- The [Console](/docs/observability/console-and-data) is a shell inside one of your containers as that container's user, not on the server.
+
+## Signed in both directions
+
+- **Desired state and tasks are signed** by the control plane. launchroomd verifies every document against the signing key it pinned when it joined, and rejects anything unsigned or tampered with.
+- **Every request a server sends is signed** with its own key, with a nonce and a timestamp, so it can't be replayed or forged by another server.
+- Optionally, servers also present a short-lived [client certificate](/docs/teams-and-security/client-certificates) on every connection.
+- Servers never listen for commands. launchroomd only connects out to the dashboard.
+
+Revoking a server denies its key at once, removes it from the private network and stops it from pulling images.
+
+## The local policy floor
+
+Even if the control plane were fully compromised, it must not be able to turn a normal-looking deploy into root on your servers. launchroomd enforces a floor that the dashboard can't override:
+
+- Images only by digest, from launchroom's registry.
+- No privileged containers, no host network or other host namespaces, no devices.
+- No bind mounts of server paths, and never the Docker socket. Only named, launchroom-labelled volumes.
+- Capabilities from a small allow-list only, on top of dropping all others: `NET_BIND_SERVICE`, `CHOWN`, `SETUID`, `SETGID`, `DAC_OVERRIDE`, `FOWNER`.
+- Hardened defaults on every container: no new privileges, CPU, memory and process limits, an init process, log rotation.
+- Network isolation is applied before any container starts. If it can't be applied, nothing starts.
+
+Relaxing any of this (for example to allow a GPU) is only possible in a local file on the server itself, which needs host access to edit.
+
+### dockerd-guard
+
+launchroomd doesn't hold the Docker socket either. A separate process on each server, **dockerd-guard**, owns the socket and forwards only an allow-list of Docker API calls, after checking every request body against the same policy floor. It has no network access, drops all capabilities and runs with a read-only filesystem. The floor is enforced twice: by launchroomd, and again by the guard. A compromised launchroomd can't reconfigure the guard.
+
+On a [rootless Docker](/docs/servers/rootless-docker) server, everything runs inside an unprivileged user's namespaces, which narrows the impact further.
+
+## Network isolation
+
+- **One network per environment.** Services of production, staging and every preview live on separate Docker networks. A container can't reach another project or environment, the server's other Docker networks, cloud metadata endpoints or private ranges you haven't allowed.
+- **Across servers**, service ports are published only on the private mesh address and only to the servers that need them: servers running the same environment, plus the ones serving its traffic.
+- **The mesh is transport, not trust.** A server on the private WireGuard network can reach a few allowed ports and nothing else. Every instruction is still signed and checked, and database passwords still apply. See [Mesh](/docs/how-it-works/mesh).
+- Databases, the registry and launchroomd are never reachable from the internet unless an admin makes a database public.
+
+## Secrets
+
+- **Encrypted at rest with envelope encryption.** Each project has its own data key, wrapped by a key-encryption key that lives in a file on the control plane, not in the database. Git provider tokens, DNS tokens, backup credentials and webhook secrets use the same scheme.
+- **Sealed per server.** A secret reaches a server only encrypted to that server's own key, and only if a workload that needs it runs there.
+- **Never in logs.** Secret values are masked in build, deploy and runtime logs (also base64 and URL-encoded forms), redacted from application logs, and never written to the audit log.
+- **Revealing is deliberate.** Showing a secret value needs the reveal permission (owners and admins) and a fresh password. Every reveal is audited.
+- **Builds get secrets as build secrets**, never as build arguments, so they don't end up in image layers.
+- Browser-inlined variables like `NEXT_PUBLIC_*` or `VITE_*` may not reference a secret, so a secret can't leak into client-side code by accident.
+
+## Previews and fork pull requests
+
+- **Previews are protected by default**: visitors need a team member's sign-in or a share link (revocable, at most 30 days). Previews are marked `noindex`.
+- **Fork pull requests** get no preview by default. When you turn them on, a maintainer approves each commit, and the preview gets **no secrets**, no access to the base environment's network and never a copy of its databases. New commits wait for approval again.
+- A pull request's `launchroom.json` can't add domains, raise limits beyond preview caps or, from a fork, add services.
+
+## Webhooks and outgoing requests
+
+- Incoming Git webhooks are verified with a signature over the raw body and **fail closed**: a missing secret or header is refused.
+- Every outgoing request to an address a user can influence (Git servers, alert webhooks, S3 endpoints, health URLs) goes through a guarded client: only allowed schemes, the address is resolved once and pinned, private, loopback and metadata addresses are refused, and redirects aren't followed. Private destinations for backups or self-hosted Git need an instance owner's permission, which is audited.
+
+## Sign-in and access
+
+- Accounts by invitation only, [two-factor and passkeys](/docs/teams-and-security/two-factor), password confirmation for sensitive actions, rate limits on sign-in.
+- [Roles](/docs/teams-and-security/teams-and-roles) per team, checked on every request. Resources of another team return not found.
+- [API tokens](/docs/reference/api) are bound to one team, expire within a year, and can never do more than their owner.
+- A tamper-evident [audit log](/docs/teams-and-security/audit-log) that you can forward elsewhere.
+
+## Signed releases
+
+Release bundles, images and the CLI's checksum file are signed with Sigstore's cosign from launchroom's GitHub release workflow. The installers verify signatures before running anything, and launchroomd updates only to newer versions signed by the release identity it pinned at install. See [Updates](/docs/operations/updates#signed-releases).
+
+## Report a vulnerability
+
+Report security issues privately through GitHub's security advisories for [vantezzen/launchroom](https://github.com/vantezzen/launchroom/security/advisories/new), not in public issues. Include what you found, how to reproduce it and the version you tested. Reports of any path from a project member, an app container or a build to host root, another team's data or another server are in scope.
+
+<Cards>
+  <Card title="Architecture" href="/docs/how-it-works/architecture" description="How the dashboard and servers fit together." />
+  <Card title="launchroomd" href="/docs/how-it-works/launchroomd" description="What runs on every server." />
+</Cards>

@@ -1,0 +1,795 @@
+{
+  "activity": {
+    "alt": "Activity page with filters for deploys, promotions, changes, team and alerts, an 'Audit log verified' badge, and entries such as a project created, an image deploying and resolved server-busy alerts.",
+    "caption": "Every deploy, change and alert in one verified timeline.",
+    "light": {
+      "width": 1440,
+      "height": 900,
+      "blur": "data:image/webp;base64,UklGRiwAAABXRUJQVlA4ICAAAABwAQCdASoQAAoAAsBMJaWVuAGIAAD+9y57h5yjFoAAAA=="
+    },
+    "dark": {
+      "width": 1440,
+      "height": 900,
+      "blur": "data:image/webp;base64,UklGRi4AAABXRUJQVlA4ICIAAACQAQCdASoQAAoAAsBMJaQAAudYugAA/vpmHK8VrNg4AAAA"
+    }
+  },
+  "add-database": {
+    "alt": "Add database sheet with engine choices PostgreSQL, MySQL, Redis, Valkey, MongoDB and ClickHouse, a version picker and a service name.",
+    "caption": "Six database engines, credentials generated per environment.",
+    "light": {
+      "width": 1440,
+      "height": 1000,
+      "blur": "data:image/webp;base64,UklGRjYAAABXRUJQVlA4ICoAAADQAQCdASoQAAsAAsBMJaQAAud+VyKCgAD+7f2R84n2/0nwgSCgGCz6gAA="
+    },
+    "dark": {
+      "width": 1440,
+      "height": 1000,
+      "blur": "data:image/webp;base64,UklGRi4AAABXRUJQVlA4ICIAAAAwAQCdASoQAAsAAsBMJaQAA3AA/vcb6XKofboagRcJXQAA"
+    }
+  },
+  "add-server": {
+    "alt": "Add a server, step Connect: a one-line install command with OS tabs and a Copy button, and a mini PC illustration waiting for the server to connect.",
+    "caption": "One command on any Linux machine. It connects out, so there is nothing to open.",
+    "light": {
+      "width": 1440,
+      "height": 998,
+      "blur": "data:image/webp;base64,UklGRkQAAABXRUJQVlA4IDgAAACwAQCdASoQAAsAAsBMJaQAAud9E+AAAP75neKmbSuMi//xIkPFFJLCk1A57/fgIEUnkpauM4AAAA=="
+    },
+    "dark": {
+      "width": 1440,
+      "height": 998,
+      "blur": "data:image/webp;base64,UklGRkAAAABXRUJQVlA4IDQAAACwAQCdASoQAAsAAsBMJaQAAud+JsvgAP76f1D3qB/bX2M/4F//GUTxcdVKNjv/4vFSgAAA"
+    }
+  },
+  "add-server-roles": {
+    "alt": "Add a server, step What it does: cards for Run apps, Serve traffic and Build, with Build selected for a machine at home, and an optional name.",
+    "caption": "Tell launchroom what a server is for: running apps, serving traffic or building.",
+    "light": {
+      "width": 1440,
+      "height": 900,
+      "blur": "data:image/webp;base64,UklGRjQAAABXRUJQVlA4ICgAAABwAQCdASoQAAoAAsBMJaV2AAGIAAD+9yxeGyXdTURNp/sAMVVS3MAA"
+    },
+    "dark": {
+      "width": 1440,
+      "height": 900,
+      "blur": "data:image/webp;base64,UklGRjQAAABXRUJQVlA4ICgAAAAwAQCdASoQAAoAAsBMJaQAA3AA/vbybccy1wDMm7+tD4Y5Qip1QAAA"
+    }
+  },
+  "ai-dockerfile": {
+    "alt": "Sheet 'Your Dockerfile is ready': the app builds and starts on port 8080 in 3.8 seconds on the first try, an explanation of what it does, a five-line Dockerfile with a pinned base image, and what launchroom sent to the model.",
+    "caption": "No Dockerfile? launchroom drafts one, builds it and checks your app answers before you use it.",
+    "light": {
+      "width": 1440,
+      "height": 900,
+      "blur": "data:image/webp;base64,UklGRi4AAABXRUJQVlA4ICIAAAAwAQCdASoQAAoAAsBMJaQAA3AA/vJd//owuWwCLy7VYhwA"
+    },
+    "dark": {
+      "width": 1440,
+      "height": 900,
+      "blur": "data:image/webp;base64,UklGRioAAABXRUJQVlA4IB4AAAAwAQCdASoQAAoAAsBMJaQAA3AA/vak85JNgjQAAAA="
+    }
+  },
+  "alerts": {
+    "alt": "Notifications settings: two open problems, email and Slack destinations with Send test, and alert rules for failed deploys, crashing services, request errors, offline servers, high CPU and memory, full disks, expiring certificates and failed backups.",
+    "caption": "Alerts arrive once, and again when resolved, wherever your team already looks.",
+    "light": {
+      "width": 1440,
+      "height": 1694,
+      "blur": "data:image/webp;base64,UklGRjYAAABXRUJQVlA4ICoAAACwAgCdASoQABMAPtFWo0uoJKMhsAgBABoJaQAAeyAA/vIR79Ge3HY6AAA="
+    },
+    "dark": {
+      "width": 1440,
+      "height": 1623,
+      "blur": "data:image/webp;base64,UklGRkAAAABXRUJQVlA4IDQAAABQAwCdASoQABIAPtFUpEuoJKOhsAgBABoJaWHgADc40GqYgAD+8a13nlvYXGaqnRJgAAAA"
+    }
+  },
+  "api-tokens": {
+    "alt": "API tokens page: CLI install command and launchroom login, and a GitHub Actions token with read, deploy, env:read and env:write scopes and a Revoke button.",
+    "caption": "Install the CLI, sign in without copying a token, and create scoped tokens for CI.",
+    "light": {
+      "width": 1440,
+      "height": 1000,
+      "blur": "data:image/webp;base64,UklGRigAAABXRUJQVlA4IBwAAAAwAQCdASoQAAsAAsBMJaQAA3AA/vcsewrsMpQA"
+    },
+    "dark": {
+      "width": 1440,
+      "height": 1000,
+      "blur": "data:image/webp;base64,UklGRjAAAABXRUJQVlA4ICQAAADQAQCdASoQAAsAAsBMJaQAAueJ8JWbgAD++vCBbE3Z7oZEAAA="
+    }
+  },
+  "backup-settings": {
+    "alt": "Backups settings: two S3 destinations, a list of protected databases with schedules, and a Recovery kit section with passphrase set, kit file downloaded and stored safely.",
+    "caption": "One place for backup destinations, what they protect and the kit that brings it all back.",
+    "light": {
+      "width": 1440,
+      "height": 1694,
+      "blur": "data:image/webp;base64,UklGRjgAAABXRUJQVlA4ICwAAACwAgCdASoQABMAPtFUo0uoJKMhsAgBABoJaQAAeyAA/vICdu2zOjZcDLgAAA=="
+    },
+    "dark": {
+      "width": 1440,
+      "height": 1694,
+      "blur": "data:image/webp;base64,UklGRkIAAABXRUJQVlA4IDYAAABQAwCdASoQABMAPtFUo0uoJKMhsAgBABoJaWHgADc5BWfhEAD+8a13k+FqOCThA3wtbkAAAAA="
+    }
+  },
+  "canvas": {
+    "alt": "Project canvas for the shop project in production: web and api in a Public group, a worker in an App group and a PostgreSQL 18 database in a Data group, connected by DATABASE_URL. Every service shows Live or Running.",
+    "caption": "Every service in a project on one canvas, grouped by what it does and wired by the variables it shares.",
+    "light": {
+      "width": 2880,
+      "height": 1800,
+      "blur": "data:image/webp;base64,UklGRioAAABXRUJQVlA4IB4AAACQAQCdASoQAAoAAsBMJaQAAud7WCAA/vpBCYXtQAA="
+    },
+    "dark": {
+      "width": 2880,
+      "height": 1800,
+      "blur": "data:image/webp;base64,UklGRi4AAABXRUJQVlA4ICIAAADQAQCdASoQAAoAAsBMJaQAAueF7n/+AAD++vB1yYO4AAAA"
+    }
+  },
+  "canvas-alt": {
+    "alt": "Canvas for acme-store in production with api and web marked Changed, a new mailer service marked New, and PostgreSQL 18. The bottom toolbar shows 4 changes and a Review and deploy button.",
+    "caption": "Edits stage on the canvas first. Nothing goes live until you review and deploy.",
+    "light": {
+      "width": 1440,
+      "height": 900,
+      "blur": "data:image/webp;base64,UklGRjIAAABXRUJQVlA4ICYAAADQAQCdASoQAAoAAsBMJaQAAud7ZyEEAAD++kEJiU4Ax8DFRVAAAA=="
+    },
+    "dark": {
+      "width": 1440,
+      "height": 900,
+      "blur": "data:image/webp;base64,UklGRjYAAABXRUJQVlA4ICoAAABwAQCdASoQAAoAAsBMJaWDrAGIAAD+9svvYJxBAwjondB+X9tSPxSUAAA="
+    }
+  },
+  "capabilities": {
+    "alt": "Advanced settings for an nginx service: entrypoint arguments and a Capabilities list where Change file owners (CHOWN) and Listen on ports below 1024 (NET_BIND_SERVICE) are on and others are off.",
+    "caption": "Containers start with no Linux capabilities. Grant only what an image needs.",
+    "light": {
+      "width": 1440,
+      "height": 900,
+      "blur": "data:image/webp;base64,UklGRj4AAABXRUJQVlA4IDIAAADQAQCdASoQAAoAAsBMJaQAAueBh5WmwAD++kJO0OTI4bIt7UAgjVaUfoaHGUrXjAAAAA=="
+    },
+    "dark": {
+      "width": 1440,
+      "height": 900,
+      "blur": "data:image/webp;base64,UklGRjoAAABXRUJQVlA4IC4AAADQAQCdASoQAAoAAsBMJaQAAudfJZlSAAD++mYCVrioemu/VpwSP6Scg2r7LgAA"
+    }
+  },
+  "cli-sign-in": {
+    "alt": "Sign in to the launchroom CLI: a device code WBXH-NDSZ from bennett-mbp, a team picker, permission checkboxes, a session length and Deny and Approve buttons.",
+    "caption": "Approve the CLI in your browser and choose exactly what it may do.",
+    "light": {
+      "width": 1440,
+      "height": 1010,
+      "blur": "data:image/webp;base64,UklGRjAAAABXRUJQVlA4ICQAAAAwAQCdASoQAAsAAsBMJaQAA3AA/vdMUdnm0Ie3AVju0pAAAAA="
+    },
+    "dark": {
+      "width": 1440,
+      "height": 1010,
+      "blur": "data:image/webp;base64,UklGRjAAAABXRUJQVlA4ICQAAAAwAQCdASoQAAsAAsBMJaQAA3AA/vbC5uc4RdyodZPXefgAAAA="
+    }
+  },
+  "command-palette": {
+    "alt": "Command palette over the canvas with a search field, an action to switch to staging, navigation shortcuts like g p for Projects, and a list of projects.",
+    "caption": "Press ⌘K to jump anywhere or run an action.",
+    "light": {
+      "width": 1440,
+      "height": 900,
+      "blur": "data:image/webp;base64,UklGRkAAAABXRUJQVlA4IDQAAADQAQCdASoQAAoAAsBMJaQAAqH2CplTMAD+w/99ZKXNNp3jHg29RqMMthx32roYBjmAgAAA"
+    },
+    "dark": {
+      "width": 1440,
+      "height": 900,
+      "blur": "data:image/webp;base64,UklGRiwAAABXRUJQVlA4ICAAAAAwAQCdASoQAAoAAsBMJaQAA3AA/veJGyNzE6eh45SgAA=="
+    }
+  },
+  "compose-import": {
+    "alt": "Import a Compose file: a pasted compose.yml for Umami and Postgres, a preview of the resulting project, and a line-by-line explanation of what launchroom does with each part, with Postgres turned into a managed database.",
+    "caption": "Paste a Compose file and see what it becomes, line by line, before anything is created.",
+    "light": {
+      "width": 1440,
+      "height": 2046,
+      "blur": "data:image/webp;base64,UklGRkAAAABXRUJQVlA4IDQAAAAQAwCdASoQABcAPtFUo0uoJKMhsAgBABoJaQAAesIGFkAA/vISmHikBfS+ZjtMtu1gAAAA"
+    }
+  },
+  "config-managed": {
+    "alt": "Deploy settings of web with a banner 'Managed by launchroom.json' listing the fields the file controls, an Edit in launchroom.json link, and start command, port and health check settings.",
+    "caption": "Keep service settings in a launchroom.json next to your code. The dashboard shows what the file manages.",
+    "light": {
+      "width": 1440,
+      "height": 900,
+      "blur": "data:image/webp;base64,UklGRjwAAABXRUJQVlA4IDAAAACwAQCdASoQAAoAAsBMJaQAAudGLuwAAP76Qk8GdUsXNVKwICh+7iKcKRCOQWAAAAA="
+    },
+    "dark": {
+      "width": 1440,
+      "height": 900,
+      "blur": "data:image/webp;base64,UklGRjoAAABXRUJQVlA4IC4AAACwAQCdASoQAAoAAsBMJaQAAudQDTgAAP76ZgJWoMwwYA1yp7/bCFmhVIfoAAAA"
+    }
+  },
+  "config-problems": {
+    "alt": "Failed deployment 'Scale web and move the health check': launchroom.json has 3 problems, each with the file line highlighted, a caret at the error and a fix such as 'Remove the quotes: 3000' or 'Did you mean replicas?'.",
+    "caption": "A broken launchroom.json never deploys. You get each problem with its line and the fix.",
+    "light": {
+      "width": 1440,
+      "height": 1739,
+      "blur": "data:image/webp;base64,UklGRjoAAABXRUJQVlA4IC4AAACwAgCdASoQABMAPtFUo0uoJKMhsAgBABoJaQAAeyAA/vHOfgXPA2WjLb+46TAA"
+    },
+    "dark": {
+      "width": 1440,
+      "height": 1739,
+      "blur": "data:image/webp;base64,UklGRkQAAABXRUJQVlA4IDgAAAAwAwCdASoQABMAPtFWo0uoJKMhsAgBABoJaWM+ADctEVmAAP7xYzgxp4ayg2R+FQWjETg8iAAAAA=="
+    }
+  },
+  "config-settings": {
+    "alt": "Project General settings with a Config file section: Read launchroom.json on, path launchroom.json, a schema line for editor autocompletion, and the last read showing changes staged.",
+    "caption": "Turn on the config file per project and get autocompletion in your editor.",
+    "light": {
+      "width": 1440,
+      "height": 1142,
+      "blur": "data:image/webp;base64,UklGRi4AAABXRUJQVlA4ICIAAABwAQCdASoQAA0AAsBMJaWM+AGIAAD+9yY3HzME0qfwAAAA"
+    },
+    "dark": {
+      "width": 1440,
+      "height": 1142,
+      "blur": "data:image/webp;base64,UklGRjAAAABXRUJQVlA4ICQAAACwAQCdASoQAA0AAsBMJaQAAug1U5pAAP768HZImTW3xoAAAAA="
+    }
+  },
+  "console": {
+    "alt": "Console tab of node-hello: a live shell on replica 1 on control plane after running echo, id and ls, with session status and a list of recent sessions.",
+    "caption": "Open a shell in any replica from the browser. Every session is recorded.",
+    "light": {
+      "width": 1440,
+      "height": 1000,
+      "blur": "data:image/webp;base64,UklGRi4AAABXRUJQVlA4ICIAAABwAQCdASoQAAsAAsBMJaVuWAGIAAD+9tqZEF/L7NhvWQAA"
+    },
+    "dark": {
+      "width": 1440,
+      "height": 1000,
+      "blur": "data:image/webp;base64,UklGRjIAAABXRUJQVlA4ICYAAABwAQCdASoQAAsAAsBMJaWHgAGIAAD+9qR/qFsWUqAxGFqxgAAAAA=="
+    }
+  },
+  "cron": {
+    "alt": "Schedule settings for a Nightly report job: runs on a schedule, every weekday at 03:30 America/New York, preset chips, the cron expression 30 3 * * 1-5 broken into fields, and a time zone picker.",
+    "caption": "Schedules in plain words, with the cron expression and time zone beside them.",
+    "light": {
+      "width": 1440,
+      "height": 900,
+      "blur": "data:image/webp;base64,UklGRj4AAABXRUJQVlA4IDIAAADwAQCdASoQAAoAAsBMJaQAAueBiZGvUAAA/vpCTtDk3xut9upbszGx6VnuptBxguXwAA=="
+    },
+    "dark": {
+      "width": 1440,
+      "height": 900,
+      "blur": "data:image/webp;base64,UklGRjAAAABXRUJQVlA4ICQAAAAwAQCdASoQAAoAAsBMJaQAA3AA/vZ4jzRD+0GeUtePF9FAAAA="
+    }
+  },
+  "dashboard-domain": {
+    "alt": "Dashboard domain settings moving from localhost to dash.acme.dev: DNS points at the server, certificate issued and HTTPS tested, with what changes on switch and a Switch button.",
+    "caption": "Move the dashboard to its own domain once DNS, certificate and HTTPS check out.",
+    "light": {
+      "width": 1440,
+      "height": 1246,
+      "blur": "data:image/webp;base64,UklGRjgAAABXRUJQVlA4ICwAAAAwAQCdASoQAA4AAsBMJaQAA3AA/vcFGKOyhW6b8vp/oB+gl38zxpps6AAAAA=="
+    },
+    "dark": {
+      "width": 1440,
+      "height": 1246,
+      "blur": "data:image/webp;base64,UklGRj4AAABXRUJQVlA4IDIAAADQAQCdASoQAA4AAsBMJaQAAud7gGEQAAD++mYkC8Ufn95rvryFtTxNA4ZJ4ABC0yeAAA=="
+    }
+  },
+  "database-backups": {
+    "alt": "Backups tab of orders-db: backed up 7 minutes ago, daily schedule, retention 7 daily, 4 weekly, 3 monthly, last verified 19 minutes ago, point-in-time recovery on with a 7-day window, and a snapshot list.",
+    "caption": "Scheduled, verified backups with point-in-time recovery, right on the database.",
+    "light": {
+      "width": 2880,
+      "height": 2000,
+      "blur": "data:image/webp;base64,UklGRioAAABXRUJQVlA4IB4AAABwAQCdASoQAAsAAsBMJaWZAAGIAAD+9t/SBsZqgAA="
+    },
+    "dark": {
+      "width": 2880,
+      "height": 2000,
+      "blur": "data:image/webp;base64,UklGRi4AAABXRUJQVlA4ICIAAAAwAQCdASoQAAsAAsBMJaQAA3AA/vZ3yeu6ak3f95QsTEAA"
+    }
+  },
+  "database-browse": {
+    "alt": "Data tab of a ClickHouse database browsing the pageviews table: rows with timestamp, path, country and duration.",
+    "caption": "Browse tables without installing a database client.",
+    "light": {
+      "width": 1440,
+      "height": 1000,
+      "blur": "data:image/webp;base64,UklGRi4AAABXRUJQVlA4ICIAAABwAQCdASoQAAsAAsBMJaV2AAGIAAD+9traiBmJI8p5SAAA"
+    },
+    "dark": {
+      "width": 1440,
+      "height": 1000,
+      "blur": "data:image/webp;base64,UklGRjYAAABXRUJQVlA4ICoAAADQAQCdASoQAAsAAsBMJaQAAujfWKkIAAD++vB5rNBDTiG+JKFnUuAAAAA="
+    }
+  },
+  "database-data": {
+    "alt": "Data tab of a ClickHouse database: a read-only query grouping pageviews by path, and a result table with four rows of paths, view counts and average milliseconds.",
+    "caption": "Query your database from the dashboard. Read-only unless you allow writes.",
+    "light": {
+      "width": 1440,
+      "height": 1000,
+      "blur": "data:image/webp;base64,UklGRjAAAABXRUJQVlA4ICQAAABwAQCdASoQAAsAAsBMJaWHgAGIAAD+9v/OhcMsKy5ysOUiAAA="
+    },
+    "dark": {
+      "width": 1440,
+      "height": 1000,
+      "blur": "data:image/webp;base64,UklGRjQAAABXRUJQVlA4ICgAAABwAQCdASoQAAsAAsBMJaVsKAGIAAD+9qSNM5JFzx+5gaTbkpGwAAAA"
+    }
+  },
+  "deployment": {
+    "alt": "Deployment 'fix: order totals with discounts' of the web service in production: Live, 1m 51s, built on vps-fra-1, with the steps Plan, Build, Roll out, Health check and Switch traffic all finished.",
+    "caption": "Every step of a deployment, with its duration and logs.",
+    "light": {
+      "width": 2880,
+      "height": 1800,
+      "blur": "data:image/webp;base64,UklGRi4AAABXRUJQVlA4ICIAAABwAQCdASoQAAoAAsBMJaWR5AGIAAD+9t3+TKbZujTyjAAA"
+    },
+    "dark": {
+      "width": 2880,
+      "height": 1800,
+      "blur": "data:image/webp;base64,UklGRjIAAABXRUJQVlA4ICYAAACwAQCdASoQAAoAAsBMJaQAAu0dViYAAP768IhhNbxtPB6Q+MYYAA=="
+    }
+  },
+  "deployment-failed": {
+    "alt": "Failed deployment 'chore: bump next to 16.1': a card explains the build failed because pnpm-lock.yaml is out of date, the site still serves the previous commit, and the build step shows the log excerpt with the ERR_PNPM_OUTDATED_LOCKFILE line highlighted.",
+    "caption": "When a build fails, you get the cause, the fix and the exact log line. Your site keeps serving the last good version.",
+    "light": {
+      "width": 1440,
+      "height": 1472,
+      "blur": "data:image/webp;base64,UklGRjQAAABXRUJQVlA4ICgAAABwAQCdASoQABAAAsBMJaWDrAGIAAD+9t950Ez6E9w2u49Jfo0QAAAA"
+    },
+    "dark": {
+      "width": 1440,
+      "height": 1472,
+      "blur": "data:image/webp;base64,UklGRjYAAABXRUJQVlA4ICoAAAAwAQCdASoQABAAAsBMJaQAA3AA/vZ3ydGqK0mOOSn+oxHAOPFsd40gAAA="
+    }
+  },
+  "domains": {
+    "alt": "Domains settings for web: blog.acme.test waiting for DNS with the A records to add and a Check now button, HTTPS issued on first visit, served by two servers, plus HSTS and redirect toggles.",
+    "caption": "Add a domain, copy the records, and launchroom checks DNS and issues the certificate by itself.",
+    "light": {
+      "width": 1440,
+      "height": 960,
+      "blur": "data:image/webp;base64,UklGRjAAAABXRUJQVlA4ICQAAABwAQCdASoQAAsAAsBMJaVsKAGIAAD+9tXc9gRWXYdH3r+eUAA="
+    },
+    "dark": {
+      "width": 1440,
+      "height": 960,
+      "blur": "data:image/webp;base64,UklGRjQAAABXRUJQVlA4ICgAAACQAQCdASoQAAsAAsBMJaQAAu18LYAA/vpmFuCowBOs0UhL7Zz6qAAA"
+    }
+  },
+  "domains-edges": {
+    "alt": "Domain settings scrolled to the generated domain, Live, with DNS managed, a local certificate and traffic served by 5 servers, and edge server cards for control plane, server-2, home-nas, pi-edge and office-tower.",
+    "caption": "Every edge server answers for your domains, so traffic keeps flowing if one is down.",
+    "light": {
+      "width": 1440,
+      "height": 960,
+      "blur": "data:image/webp;base64,UklGRiwAAABXRUJQVlA4ICAAAABwAQCdASoQAAsAAsBMJaWZAAGIAAD+9wR5jExZJAAAAA=="
+    },
+    "dark": {
+      "width": 1440,
+      "height": 960,
+      "blur": "data:image/webp;base64,UklGRjAAAABXRUJQVlA4ICQAAADQAQCdASoQAAsAAsBMJaQAAu0dihqLUAD++mYLAezgZhIAAAA="
+    }
+  },
+  "env-switcher": {
+    "alt": "The environment menu open in the project top bar: production (branch main) selected, staging, Compare & promote and Manage environments.",
+    "caption": "Switch environments from the top bar; the whole canvas follows.",
+    "light": {
+      "width": 2880,
+      "height": 1800,
+      "blur": "data:image/webp;base64,UklGRiwAAABXRUJQVlA4ICAAAAAwAQCdASoQAAoAAsBMJaQAA3AA/vcE/0MtrcSzvAAAAA=="
+    },
+    "dark": {
+      "width": 2880,
+      "height": 1800,
+      "blur": "data:image/webp;base64,UklGRiwAAABXRUJQVlA4ICAAAAAwAQCdASoQAAoAAsBMJaQAA3AA/vbxSDzCBJM+E5ZIAA=="
+    }
+  },
+  "git-providers": {
+    "alt": "Git settings: connected Forgejo, GitLab and a second Forgejo, plus two plain git servers, and a Connect another place section for GitHub, GitLab, Gitea or Forgejo, and any git server.",
+    "caption": "Connect GitHub, GitLab, Gitea, Forgejo or any git server.",
+    "light": {
+      "width": 1440,
+      "height": 1845,
+      "blur": "data:image/webp;base64,UklGRkQAAABXRUJQVlA4IDgAAACwAgCdASoQABQAPtFWo0uoJKMhsAgBABoJaQAAeyAA/vIF4HEnumqE3wIbHAZYPzHQzZPE0UIAAA=="
+    },
+    "dark": {
+      "width": 1440,
+      "height": 1845,
+      "blur": "data:image/webp;base64,UklGRkgAAABXRUJQVlA4IDwAAACQAwCdASoQABQAPtFUo0uoJKMhsAgBABoJaQAAW/Cqi+qKcpZQAP71fU9Dsnk1I/pKGbz0z0/o9heAAAA="
+    }
+  },
+  "git-source": {
+    "alt": "Source settings of a web service built from GitLab repository acme/platform/web on branch main with root directory apps/web.",
+    "caption": "Each service builds from a repository, a branch and a folder.",
+    "light": {
+      "width": 1440,
+      "height": 1000,
+      "blur": "data:image/webp;base64,UklGRj4AAABXRUJQVlA4IDIAAACwAQCdASoQAAsAAsBMJaQAAudJ4TAAAP76Qk9SagomOcXTxFLMgDrBg9ZHUqls2oAAAA=="
+    },
+    "dark": {
+      "width": 1440,
+      "height": 1000,
+      "blur": "data:image/webp;base64,UklGRjwAAABXRUJQVlA4IDAAAACwAQCdASoQAAsAAsBMJaQAAudF8w8AAP76ZhWQ65DUjPbZIdFgdsbRSqT0u0HAAAA="
+    }
+  },
+  "logs": {
+    "alt": "Logs for the shop project searching 'timeout' across all environments: a red error histogram over the last hour, facets for level, environment, service, deployment and server, and matching error lines with the term highlighted.",
+    "caption": "Search logs across services and environments, with a histogram that shows when it started.",
+    "light": {
+      "width": 1440,
+      "height": 1000,
+      "blur": "data:image/webp;base64,UklGRjIAAABXRUJQVlA4ICYAAABwAQCdASoQAAsAAsBMJaV2AAGIAAD+9l54He4VMpocKcSINOAAAA=="
+    },
+    "dark": {
+      "width": 1440,
+      "height": 1000,
+      "blur": "data:image/webp;base64,UklGRjQAAABXRUJQVlA4ICgAAADQAQCdASoQAAsAAsBMJaQAAujc3ERewAD++vCIYSejz7LMuUpYAAAA"
+    }
+  },
+  "metrics": {
+    "alt": "Metrics for shop production over 24 hours: requests, error rate, p95 latency and bandwidth tiles with per-service sparklines, CPU and memory by service, a requests chart with deploy markers, and a services list.",
+    "caption": "Requests, errors, latency and resources for every service, with deploys marked on the chart.",
+    "light": {
+      "width": 1440,
+      "height": 1408,
+      "blur": "data:image/webp;base64,UklGRiwAAABXRUJQVlA4ICAAAABwAQCdASoQABAAAsBMJaWVuAGIAAD+9wXR9iem3yAAAA=="
+    },
+    "dark": {
+      "width": 1440,
+      "height": 1408,
+      "blur": "data:image/webp;base64,UklGRjIAAABXRUJQVlA4ICYAAADQAQCdASoQABAAAsBMJaQAAudH0oAAAAD++o3XhXMgz6zq3GgAAA=="
+    }
+  },
+  "mtls": {
+    "alt": "Team security settings: server certificates set to Check, readiness for control plane, server-2 and server-3, an audit log verified with 614 chained entries and its signing key, and destinations for copies outside launchroom.",
+    "caption": "Servers prove who they are with certificates, and the audit log is chained and signed.",
+    "light": {
+      "width": 1440,
+      "height": 1401,
+      "blur": "data:image/webp;base64,UklGRioAAABXRUJQVlA4IB4AAABwAQCdASoQABAAAsBMJaWR5AGIAAD+9vtmBRSAAAA="
+    },
+    "dark": {
+      "width": 1440,
+      "height": 1401,
+      "blur": "data:image/webp;base64,UklGRjIAAABXRUJQVlA4ICYAAACwAQCdASoQABAAAsBMJaQAAujfnjyAAP76ZgQ12Q9oPxnFNtwAAA=="
+    }
+  },
+  "onboarding": {
+    "alt": "Get started page: 'Your launchroom is up', 3 of 5 steps done, with Connect GitHub as the current step and steps for server, address, first app and backups.",
+    "caption": "A short checklist from first server to first backup. Nothing here is urgent.",
+    "light": {
+      "width": 1440,
+      "height": 900,
+      "blur": "data:image/webp;base64,UklGRjQAAABXRUJQVlA4ICgAAAAwAQCdASoQAAoAAsBMJaQAA3AA/vcHklRjzFd8MSVEm6BHmPI6aoAA"
+    },
+    "dark": {
+      "width": 1440,
+      "height": 900,
+      "blur": "data:image/webp;base64,UklGRjYAAABXRUJQVlA4ICoAAAAwAQCdASoQAAoAAsBMJaQAA3AA/vbElpTQ3pDkCOqwMixCxYZq/ucTAAA="
+    }
+  },
+  "pitr": {
+    "alt": "Snapshot list with 'Any point in time' selected and a date-time picker set to a second inside the recovery window, above the restore options.",
+    "caption": "Restore to any second inside the retention window.",
+    "light": {
+      "width": 2880,
+      "height": 2000,
+      "blur": "data:image/webp;base64,UklGRi4AAABXRUJQVlA4ICIAAABwAQCdASoQAAsAAsBMJaV/2AGIAAD+9t2R+hYDzt/OAAAA"
+    },
+    "dark": {
+      "width": 2880,
+      "height": 2000,
+      "blur": "data:image/webp;base64,UklGRjAAAABXRUJQVlA4ICQAAAAwAQCdASoQAAsAAsBMJaQAA3AA/vZ3yerH9+THFmjSjyuIEAA="
+    }
+  },
+  "previews": {
+    "alt": "Previews page: a fork pull request #128 waiting for approval, and cards for PR #124 (Live, new empty database) and PR #119 (Deploying, database cloned from staging) with their preview URLs and expiry.",
+    "caption": "Every pull request gets its own environment. Fork previews wait for your approval.",
+    "light": {
+      "width": 1440,
+      "height": 900,
+      "blur": "data:image/webp;base64,UklGRi4AAABXRUJQVlA4ICIAAACQAQCdASoQAAoAAsBMJaQAAud7XZAA/vmiSNDTzcJDuYAA"
+    },
+    "dark": {
+      "width": 1440,
+      "height": 900,
+      "blur": "data:image/webp;base64,UklGRjIAAABXRUJQVlA4ICYAAABwAQCdASoQAAoAAsBMJaWR5AGIAAD+9vKHACjT5tKyXdkKndgAAA=="
+    }
+  },
+  "private-network": {
+    "alt": "Network settings: built-in private network selected over your own Tailscale, three connected servers with private addresses, edge servers receiving public traffic, and certificate options.",
+    "caption": "A private network between your servers is built in, even behind NAT.",
+    "light": {
+      "width": 1440,
+      "height": 1186,
+      "blur": "data:image/webp;base64,UklGRioAAABXRUJQVlA4IB4AAAAwAQCdASoQAA0AAsBMJaQAA3AA/vcsStPovZgAAAA="
+    },
+    "dark": {
+      "width": 1440,
+      "height": 1186,
+      "blur": "data:image/webp;base64,UklGRjQAAABXRUJQVlA4ICgAAABwAQCdASoQAA0AAsBMJaWDrAGIAAD+9svSXIUS4o95ttT6q/n0AAAA"
+    }
+  },
+  "projects": {
+    "alt": "Projects page with six project cards, each with a small service diagram, its domain, latest commit and a deploy sparkline, plus a New project card.",
+    "caption": "All your projects at a glance, with what changed last and what needs attention.",
+    "light": {
+      "width": 1440,
+      "height": 1211,
+      "blur": "data:image/webp;base64,UklGRi4AAABXRUJQVlA4ICIAAAAwAQCdASoQAA0AAsBMJaQAA3AA/vcARIyZ7mzbhn9pAAAA"
+    },
+    "dark": {
+      "width": 1440,
+      "height": 1211,
+      "blur": "data:image/webp;base64,UklGRjYAAABXRUJQVlA4ICoAAACwAQCdASoQAA0AAsBMJaQAAudJ6R4AAP76bXO+MvhmUkYUTGQZ46LQAAA="
+    }
+  },
+  "promote": {
+    "alt": "Compare and promote page from staging to production with three variable changes to api and web, a secret that needs a production value, and Promote and deploy and Stage only buttons.",
+    "caption": "See what staging has that production doesn't, then promote it in one step.",
+    "light": {
+      "width": 1440,
+      "height": 900,
+      "blur": "data:image/webp;base64,UklGRjQAAABXRUJQVlA4ICgAAABwAQCdASoQAAoAAsBMJaV/2AGIAAD+9wXSTwgm3DLwqCGvTfbmgAAA"
+    },
+    "dark": {
+      "width": 1440,
+      "height": 900,
+      "blur": "data:image/webp;base64,UklGRjoAAABXRUJQVlA4IC4AAABwAQCdASoQAAoAAsBMJaWDrAGIAAD+9sqHk1QfhXuS2Ge1YWwJC9A9c4wcAAAA"
+    }
+  },
+  "restore-dialog": {
+    "alt": "Confirmation dialog 'Restore as a new service?' explaining that a new database is added next to orders-db and nothing existing changes, with Cancel and Restore as new service buttons.",
+    "caption": "Restores land next to your database first, so you can check before swapping in.",
+    "light": {
+      "width": 2880,
+      "height": 2000,
+      "blur": "data:image/webp;base64,UklGRjQAAABXRUJQVlA4ICgAAACQAQCdASoQAAsAAsBMJaQAAudPn4AA/sNB9ilZZ2jr8RPb2sWVgAAA"
+    },
+    "dark": {
+      "width": 2880,
+      "height": 2000,
+      "blur": "data:image/webp;base64,UklGRi4AAABXRUJQVlA4ICIAAAAwAQCdASoQAAsAAsBMJaQAA3AA/veC54JzknF2Ns/f6cAA"
+    }
+  },
+  "scaling": {
+    "alt": "Scaling settings for web after an unsaved change: 3 replicas spread over control plane (1) and server-2 (2), server cards with CPU and memory headroom, a replica counter at 3 and a Save for next deploy bar.",
+    "caption": "Pick how many replicas run and where. launchroom checks they fit first.",
+    "light": {
+      "width": 1440,
+      "height": 960,
+      "blur": "data:image/webp;base64,UklGRj4AAABXRUJQVlA4IDIAAACwAQCdASoQAAsAAsBMJaQAAudF8w8AAP76Qk8Gk642wtbglWgSO1YstMAw3MAPnJQAAA=="
+    },
+    "dark": {
+      "width": 1440,
+      "height": 960,
+      "blur": "data:image/webp;base64,UklGRkAAAABXRUJQVlA4IDQAAADwAQCdASoQAAsAAsBMJaQAAudlBX+zhwAA/vpmFcu/m1u2/ptsD8FLAS+HFOtYnmUtKiAA"
+    }
+  },
+  "server-detail": {
+    "alt": "Server detail for control plane: online virtual machine in Berlin with Edge and Runtime roles, CPU, memory and disk usage charts, the services running there, a health checklist that is all good, and an at-a-glance summary.",
+    "caption": "Each server shows its load, what runs on it and whether it is healthy.",
+    "light": {
+      "width": 1440,
+      "height": 1380,
+      "blur": "data:image/webp;base64,UklGRjAAAABXRUJQVlA4ICQAAAAwAQCdASoQAA8AAsBMJaQAA3AA/vcF82x7/s/uDCvB9IoCwAA="
+    },
+    "dark": {
+      "width": 1440,
+      "height": 1380,
+      "blur": "data:image/webp;base64,UklGRjYAAABXRUJQVlA4ICoAAAAwAQCdASoQAA8AAsBMJaQAA3AA/vahMO0hnEjoCe97Qn/OlvArlrgZIAA="
+    }
+  },
+  "server-network": {
+    "alt": "Network tab of control plane: public address and routes, private network links to server-2 and server-3 with round-trip times and measured bandwidth, and connection details.",
+    "caption": "See every private link between servers, with latency and speed measured.",
+    "light": {
+      "width": 1440,
+      "height": 1200,
+      "blur": "data:image/webp;base64,UklGRjAAAABXRUJQVlA4ICQAAAAwAQCdASoQAA0AAsBMJaQAA3AA/vcHdi1PlvZ/cGFd4sAAAAA="
+    },
+    "dark": {
+      "width": 1440,
+      "height": 1200,
+      "blur": "data:image/webp;base64,UklGRjYAAABXRUJQVlA4ICoAAADQAQCdASoQAA0AAsBMJaQAAu18dviaAAD++mdMd6woJuQZhknART0YIAA="
+    }
+  },
+  "server-topology": {
+    "alt": "Servers overview with system load chart, a world map connecting Berlin, Helsinki and New York, and a diagram showing traffic from the Internet to control plane and server-2 and builds on server-3, with link latency and bandwidth.",
+    "caption": "How traffic, apps and builds flow across your servers.",
+    "light": {
+      "width": 1440,
+      "height": 1000,
+      "blur": "data:image/webp;base64,UklGRioAAABXRUJQVlA4IB4AAAAwAQCdASoQAAsAAsBMJaQAA3AA/vcEtjzoqocAAAA="
+    },
+    "dark": {
+      "width": 1440,
+      "height": 1000,
+      "blur": "data:image/webp;base64,UklGRjIAAABXRUJQVlA4ICYAAACQAQCdASoQAAsAAsBMJaQAAudFw0AA/vpnSaJgEFE6dmSGbAAAAA=="
+    }
+  },
+  "servers": {
+    "alt": "Servers page: three server cards in Berlin, Helsinki and New York with roles, CPU and memory sparklines, then system load, a world map of locations, a 'How it fits together' diagram from Internet to edge and build servers, and an at-a-glance summary.",
+    "caption": "Your servers, where they are, what they do and how they connect.",
+    "light": {
+      "width": 1440,
+      "height": 1645,
+      "blur": "data:image/webp;base64,UklGRjwAAABXRUJQVlA4IDAAAACwAgCdASoQABIAPtFUo0uoJKMhsAgBABoJaQAAeyAA/vHEFMwtqvDIZU14n7jgAAA="
+    },
+    "dark": {
+      "width": 1440,
+      "height": 1645,
+      "blur": "data:image/webp;base64,UklGRkgAAABXRUJQVlA4IDwAAABwAwCdASoQABIAPtFUo0uoJKMhsAgBABoJaQAAW+i2dPJmyAAA/vV9MUnQVLA0sL1y4WncOj2rZWwAAAA="
+    }
+  },
+  "service-panel": {
+    "alt": "Service panel for api open beside the canvas, Deployments tab: the live deployment 'fix: order totals with discounts' with View logs and Redeploy, and four earlier deployments that can be rolled back.",
+    "caption": "Click a service to see what is live and roll back in seconds, without a rebuild.",
+    "light": {
+      "width": 1440,
+      "height": 900,
+      "blur": "data:image/webp;base64,UklGRiwAAABXRUJQVlA4ICAAAABwAQCdASoQAAoAAsBMJaWM+AGIAAD+9wTXo/S9SEhIAA=="
+    },
+    "dark": {
+      "width": 1440,
+      "height": 900,
+      "blur": "data:image/webp;base64,UklGRjAAAABXRUJQVlA4ICQAAABwAQCdASoQAAoAAsBMJaWDrAGIAAD+9qSNM8FfhqUe5eBAAAA="
+    }
+  },
+  "service-settings": {
+    "alt": "Expanded settings for the node-hello service: a General page with summary cards for domains, build (Node 22, port 3000), scaling (3 replicas on control plane and server-2) and private network address, plus name and slug fields.",
+    "caption": "Service settings start with a summary of what matters, one click from the details.",
+    "light": {
+      "width": 1440,
+      "height": 960,
+      "blur": "data:image/webp;base64,UklGRioAAABXRUJQVlA4IB4AAAAwAQCdASoQAAsAAsBMJaQAA3AA/vcFJgRv15DgAAA="
+    },
+    "dark": {
+      "width": 1440,
+      "height": 960,
+      "blur": "data:image/webp;base64,UklGRi4AAABXRUJQVlA4ICIAAAAwAQCdASoQAAsAAsBMJaQAA3AA/vZ4jzREgnpN3/eUKcAA"
+    }
+  },
+  "settings-search": {
+    "alt": "Scaling settings of the web service scrolled to the Replicas section, highlighted after a settings search, with server cards and CPU and memory sliders below.",
+    "caption": "Search settings and land right on the one you need.",
+    "light": {
+      "width": 1440,
+      "height": 960,
+      "blur": "data:image/webp;base64,UklGRjIAAABXRUJQVlA4ICYAAABwAQCdASoQAAsAAsBMJaWDrAGIAAD+9t2Sw3eEjCeSaAn8FaAAAA=="
+    },
+    "dark": {
+      "width": 1440,
+      "height": 960,
+      "blur": "data:image/webp;base64,UklGRjYAAABXRUJQVlA4ICoAAAAwAQCdASoQAAsAAsBMJaQAA3AA/vZM/brTiJN686F7nJ5l0eYsPrhwAAA="
+    }
+  },
+  "setup": {
+    "alt": "First-run screen: 'Your launchroom is installed' on fra-1, Hetzner Cloud, with a server illustration, beside a Create the owner account form.",
+    "caption": "Install, open the address, create the owner account.",
+    "light": {
+      "width": 1440,
+      "height": 900,
+      "blur": "data:image/webp;base64,UklGRj4AAABXRUJQVlA4IDIAAAAwAQCdASoQAAoAAsBMJaQAA3AA/vbejGUwFMV7DNxSpkDIR7JJ8L3UbcE3G9uAoMAAAA=="
+    },
+    "dark": {
+      "width": 1440,
+      "height": 900,
+      "blur": "data:image/webp;base64,UklGRjwAAABXRUJQVlA4IDAAAACwAQCdASoQAAoAAsBMJaQAAudF+OAgAP76XV7YcrO40O3AKKaDSZfdRpSoBzAAAAA="
+    }
+  },
+  "staged-changes": {
+    "alt": "Staged changes sheet listing 11 changes across api, cache and web: a start command and healthcheck changed from launchroom.json, a new DATABASE_URL connection and a new cache database, with a message field, a stage-without-traffic option and a Deploy button.",
+    "caption": "Review every change, field by field, before anything deploys.",
+    "light": {
+      "width": 1440,
+      "height": 900,
+      "blur": "data:image/webp;base64,UklGRjgAAABXRUJQVlA4ICwAAADQAQCdASoQAAoAAsBMJaQAAud9FsoYKAD+7gcLAhWZeHA/RHuBkO2t+AAAAA=="
+    },
+    "dark": {
+      "width": 1440,
+      "height": 900,
+      "blur": "data:image/webp;base64,UklGRjQAAABXRUJQVlA4ICgAAADQAQCdASoQAAoAAsBMJZwAAudcDpPLAAD++2tBr9qZYNU2XgOowAAA"
+    }
+  },
+  "staged-changes-blocked": {
+    "alt": "Staged changes sheet with 4 changes and a warning that a broken reference blocks the deploy: web.ANALYTICS_URL refers to a service that does not exist in this environment. Deploy is disabled.",
+    "caption": "A reference to a service that doesn't exist blocks the deploy before it can break production.",
+    "light": {
+      "width": 1440,
+      "height": 900,
+      "blur": "data:image/webp;base64,UklGRjQAAABXRUJQVlA4ICgAAADQAQCdASoQAAoAAsBMJaQAAud9G4AtAAD+7f2RoQW+U0ksV9Q5ggAA"
+    },
+    "dark": {
+      "width": 1440,
+      "height": 900,
+      "blur": "data:image/webp;base64,UklGRi4AAABXRUJQVlA4ICIAAAAwAQCdASoQAAoAAsBMJaQAA3AA/vb08zHSXBKEydVUuwAA"
+    }
+  },
+  "team-invite": {
+    "alt": "Members page with the Invite people sheet open: email addresses and role cards Owner, Admin, Developer and Viewer, Developer selected.",
+    "caption": "Invite people with the role they need: owner, admin, developer or viewer.",
+    "light": {
+      "width": 1440,
+      "height": 900,
+      "blur": "data:image/webp;base64,UklGRjQAAABXRUJQVlA4ICgAAACwAQCdASoQAAoAAsBMJaQAAud9GKSAAP7uBvwsHR5dZtqm+skqIAAA"
+    },
+    "dark": {
+      "width": 1440,
+      "height": 900,
+      "blur": "data:image/webp;base64,UklGRjAAAABXRUJQVlA4ICQAAACwAQCdASoQAAoAAsBMJaQAAudickzQAP766lkoLg6YE+AAAAA="
+    }
+  },
+  "template-detail": {
+    "alt": "Laravel, MySQL and Redis template sheet: a diagram of web, queue and scheduler connected to MySQL and Redis, resource totals, and project name and repository fields.",
+    "caption": "See exactly which services a template creates before you deploy it.",
+    "light": {
+      "width": 1440,
+      "height": 960,
+      "blur": "data:image/webp;base64,UklGRjAAAABXRUJQVlA4ICQAAABwAQCdASoQAAsAAsBMJaV/2AGIAAD+8qD/+mO+yFrj493wAAA="
+    },
+    "dark": {
+      "width": 1440,
+      "height": 960,
+      "blur": "data:image/webp;base64,UklGRioAAABXRUJQVlA4IB4AAAAwAQCdASoQAAsAAsBMJaQAA3AA/vbM6TpI4sIAAAA="
+    }
+  },
+  "templates": {
+    "alt": "Start from a template: a searchable gallery with category filters and cards for Django, Laravel, Next.js and Rails stacks, Plausible, Umami, n8n, Ghost and Gitea, each with service count and resources.",
+    "caption": "Apps and stacks ready to run. Secrets are generated and the first deploy starts right away.",
+    "light": {
+      "width": 1440,
+      "height": 960,
+      "blur": "data:image/webp;base64,UklGRi4AAABXRUJQVlA4ICIAAABwAQCdASoQAAsAAsBMJaWHgAGIAAD+9t4xkraRGH2E0AAA"
+    },
+    "dark": {
+      "width": 1440,
+      "height": 960,
+      "blur": "data:image/webp;base64,UklGRjIAAABXRUJQVlA4ICYAAACwAQCdASoQAAsAAsBMJaQAAu19ySDAAP76bWeyLMDjJKfM+3dAAA=="
+    }
+  },
+  "two-factor": {
+    "alt": "Account security settings: change password, two-factor authentication on with an authenticator app and recovery codes, and a Passkeys section with Add passkey.",
+    "caption": "Two-factor sign-in and passkeys for every account.",
+    "light": {
+      "width": 1440,
+      "height": 1063,
+      "blur": "data:image/webp;base64,UklGRjAAAABXRUJQVlA4ICQAAAAwAQCdASoQAAwAAsBMJaQAA3AA/vct+tFqU7N/Z/a5logAAAA="
+    },
+    "dark": {
+      "width": 1440,
+      "height": 1063,
+      "blur": "data:image/webp;base64,UklGRjQAAABXRUJQVlA4ICgAAADQAQCdASoQAAwAAsBMJaQAAueG84dcAAD++mYd3FTs3L42TJZKAAAA"
+    }
+  },
+  "updates": {
+    "alt": "Updates settings: launchroom 0.2.0 is ready with what's new and the three steps it takes, server versions for control plane, server-2 and server-3, channel and automatic update settings, and earlier updates.",
+    "caption": "Updates back up first, then roll through your servers one at a time.",
+    "light": {
+      "width": 1440,
+      "height": 1399,
+      "blur": "data:image/webp;base64,UklGRjQAAABXRUJQVlA4ICgAAABwAQCdASoQABAAAsBMJaV/2AGIAAD+9wARQs8T19hjW14Wnf38MWAA"
+    },
+    "dark": {
+      "width": 1440,
+      "height": 1399,
+      "blur": "data:image/webp;base64,UklGRjYAAABXRUJQVlA4ICoAAADQAQCdASoQABAAAsBMJaQAAueKqacgAAD++mYENvlPZk3O85rxVSz4AAA="
+    }
+  },
+  "variables": {
+    "alt": "Variables tab of the web service: eight variables including references like ${{api.PRIVATE_URL}} resolved to their values, masked secrets with a lock icon, per-environment badges and a broken reference flagged in red.",
+    "caption": "Reference other services instead of copying values. Secrets stay masked.",
+    "light": {
+      "width": 1440,
+      "height": 900,
+      "blur": "data:image/webp;base64,UklGRkIAAABXRUJQVlA4IDYAAADQAQCdASoQAAoAAsBMJaQAAud7Z9/ZwAD++Z2XNasyX/4L0T/Ztzq2sGfhGJldbnH9DqgAAAA="
+    },
+    "dark": {
+      "width": 1440,
+      "height": 900,
+      "blur": "data:image/webp;base64,UklGRkgAAABXRUJQVlA4IDwAAADQAQCdASoQAAoAAsBMJaQAAueJH4KIgAD++mYe50XuRTcgYvpV0Rzh6Aoz4Pe79x72bTYl6D8yyWfAAAA="
+    }
+  }
+}

@@ -1,0 +1,122 @@
+---
+title: Mac servers
+description: A Mac at home joins with the same command. It builds for your other servers, x86 included, and with OrbStack or Colima runs apps too.
+---
+
+A Mac mini under your desk or a MacBook you leave open makes a fast build server next to your VPS. It joins with the
+same command as a Linux server, connects out, so it works behind your router, and builds images for your other servers,
+including x86 ones. With OrbStack or Colima it can also run apps. It never serves public traffic.
+
+## Before you start
+
+- A Mac with Apple Silicon or Intel.
+- One of these Docker engines, installed and running:
+  - **OrbStack** ([orbstack.dev](https://orbstack.dev)): builds and runs apps.
+  - **Colima** (`brew install colima docker docker-compose`, then `colima start`): builds and runs apps.
+  - **Docker Desktop** ([docker.com](https://www.docker.com/products/docker-desktop/)): builds only. See
+    [Why Docker Desktop only builds](#why-docker-desktop-only-builds).
+- The `docker` command talks to that engine on this Mac (`docker info` answers). Rancher Desktop, Podman and engines
+  on other machines are not supported.
+
+On a Mac, Docker runs inside a small Linux VM that the engine manages. launchroomd runs in that VM like any other
+container, so everything launchroom does stays inside the engine.
+
+## Install
+
+<Steps>
+<Step>
+### Add it in the dashboard
+
+Open **Servers → Add server** and choose **Mac**. **Build** is preselected. **Serve traffic** is not available on a Mac.
+Add **Run apps** if the Mac uses OrbStack or Colima.
+</Step>
+<Step>
+### Run the command in Terminal
+
+Pick the **macOS** tab, copy the command and run it in Terminal on the Mac, as your user (no `sudo`):
+
+```sh title="On the Mac"
+curl -fsSL https://dash.example.com/install/server.sh | LR_JOIN_TOKEN=lr_jt_… sh
+```
+
+The script finds the engine, checks that it runs Docker 24 or newer with compose, and installs into `~/launchroom`.
+</Step>
+<Step>
+### Keep it running
+
+The containers restart by themselves whenever the engine runs. So that the engine starts after a restart of the Mac,
+turn on its start at login:
+
+- **OrbStack**: Settings → **Start at login**.
+- **Docker Desktop**: Settings → General → **Start Docker Desktop when you sign in**.
+- **Colima**: `brew services start colima`.
+
+A sleeping Mac is unreachable. For a Mac mini, turn on **Prevent automatic sleeping** in System Settings → Energy. When
+the Mac sleeps anyway, builds waiting for it go to another build server, and it catches up when it wakes.
+</Step>
+</Steps>
+
+The script refuses setups that can't work and says why:
+
+- no engine running, or an engine it doesn't support
+- a `docker` command that points at another machine (`DOCKER_HOST=tcp://…` or a remote context)
+- `--rootless`, which is for Linux servers
+- with Colima, an install folder outside your home folder (Colima shares only your home folder with its VM)
+
+## What it writes
+
+Everything lives in `~/launchroom`: the compose file, its settings and launchroomd's keys and state. The home folder is
+the one place every engine shares with its VM by default, and it needs no administrator rights. The script installs no
+launch agents or other system services. Uninstalling is the same as on Linux, in `~/launchroom`. See
+[Uninstalling a server](/docs/how-it-works/launchroomd#uninstalling-a-server).
+
+The script also records two facts the VM can't see: that the machine is a Mac, and its model name ("Mac mini",
+"MacBook Pro"). The model only picks the picture on the server's card; serial numbers are never read.
+
+## Building for your x86 servers
+
+Images are built for the platform of the servers that run them. An Apple Silicon Mac is an ARM machine, but OrbStack
+and Docker Desktop also run x86 programs, through Rosetta or QEMU. launchroom detects this, so the Mac takes builds for
+your x86 VPS too. Colima does when its VM is set up for it, for example `colima start --vm-type vz --vz-rosetta`.
+
+The server's **Network** tab lists the platforms it builds for under **Capabilities**. Building for another
+architecture works, but it's slower than building natively. When a native build server for the platform is online,
+launchroom prefers it. To make the Mac your builder, remove **Build** from the VPS.
+
+## What works on a Mac
+
+Open the server's **Network** tab. **Capabilities** shows the engine and what it allows:
+
+| Capability | OrbStack, Colima | Docker Desktop |
+|---|---|---|
+| Docker access through launchroom's guard | Full | Full |
+| Public ports 80/443 | Unavailable | Unavailable |
+| Visitor addresses | Limited | Limited |
+| Network isolation | Full | Full |
+| Private network | Limited: usually relayed | Limited: usually relayed |
+| Port detection | Full | Full |
+| Apps | Full | Unavailable |
+
+- **No public traffic.** Ports 80 and 443 open inside the engine's VM, not on your network, and a Mac at home usually
+  has no public address. Let a public server serve traffic. It reaches apps on the Mac over the private network.
+- **Isolation applies inside the VM**, where every app container runs. It also keeps apps away from your Mac: they can't
+  reach services running on the Mac itself. Your Mac's own firewall stays as it is.
+- **The private network** runs inside the VM, behind its network translation and your router. Servers usually reach
+  the Mac through the relay on your dashboard. That's fine for builds.
+- **Limits** for CPU and memory apply inside the VM, and the server's capacity is what the engine gives its VM. Raise
+  the VM's memory in the engine's settings for bigger builds.
+
+### Why Docker Desktop only builds
+
+Apps on a server are reached from your other servers through ports bound to its private network address. That address
+exists only inside the engine's VM. Docker Desktop also opens every published port on the Mac itself, where the address
+doesn't exist, so those apps can't start. Builds don't need published ports and work normally. To run apps on the Mac,
+switch it to OrbStack or Colima and run the install command again.
+
+## Next steps
+
+<Cards>
+  <Card title="Home machines" href="/docs/servers/home-machines" description="Good roles for machines behind NAT, and laptops." />
+  <Card title="Roles and placement" href="/docs/servers/roles-and-placement" description="Which server runs what, and how builds pick a server." />
+  <Card title="The private network" href="/docs/how-it-works/mesh" description="How servers reach each other behind NAT." />
+</Cards>

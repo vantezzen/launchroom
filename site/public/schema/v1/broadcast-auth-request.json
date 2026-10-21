@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://launchroom.vantezzen.io/schema/v1/broadcast-auth-request.json",
+  "properties": {
+    "apiVersion": {
+      "type": "string",
+      "const": "launchroom.vantezzen.io/v1"
+    },
+    "kind": {
+      "type": "string",
+      "const": "BroadcastAuthRequest"
+    },
+    "socketId": {
+      "type": "string",
+      "maxLength": 41,
+      "pattern": "^[0-9]{1,20}\\.[0-9]{1,20}$"
+    },
+    "channel": {
+      "type": "string",
+      "pattern": "^private-(?:daemon\\.srv_|session\\.ses_)[0-9A-HJKMNP-TV-Z]{26}$"
+    }
+  },
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "apiVersion",
+    "kind",
+    "socketId",
+    "channel"
+  ],
+  "title": "BroadcastAuthRequest: POST /daemon/v1/broadcasting/auth body",
+  "description": "BroadcastAuthRequest is POST /daemon/v1/broadcasting/auth: the daemon asks to subscribe its connection to its own private channel."
+}

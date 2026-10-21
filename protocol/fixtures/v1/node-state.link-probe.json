@@ -1,0 +1,50 @@
+{
+  "apiVersion": "launchroom.vantezzen.io/v1",
+  "kind": "NodeState",
+  "serverId": "srv_01J9Z8X7W6V5T4S3R2Q1P0N9MK",
+  "version": 7,
+  "issuedAt": "2026-10-20T12:00:00Z",
+  "system": {
+    "caddy": {
+      "enabled": false
+    },
+    "buildkit": {
+      "enabled": true,
+      "image": "docker.io/moby/buildkit@sha256:65eca3c01cd1180c8f64565c4e3c5983af5145818b0e6fa863385d099eb73855"
+    },
+    "tailscale": {
+      "enabled": true,
+      "image": "docker.io/tailscale/tailscale@sha256:87c55d6be56ad85b3d8bceca5f87f73de288c609131460dd1be1874c250cc41d",
+      "loginServer": "https://dash.example.com",
+      "authKey": {
+        "sealed": "0Yq8V8hhxF3A9s/Gzzzlzl7TbheUt+aHhudCDSzDc0fuXPVczyCAnh2fz/9jCPQhFx1LJNtrrdCbPjBUpabxZ5w/o86l9P2CgkQB6WgRa/5qOuPiMxV1dXoiQC+umJG5wHJniP2RUV816xSt/6FVYj3LxTHZq4PN"
+      }
+    },
+    "registry": {
+      "forwardTo": "100.64.0.1:5000"
+    },
+    "linkProbe": {
+      "enabled": true,
+      "peers": [
+        {
+          "serverId": "srv_01J9Z8X7W6V5T4S3R2Q1P0N9MA",
+          "ipv4": "100.64.0.1",
+          "signingKey": "ed25519:yGLcmFhMeB8tbmbA48Sf6aNZddTO5SGRxdSecCHau5s="
+        },
+        {
+          "serverId": "srv_01J9Z8X7W6V5T4S3R2Q1P0N9MC",
+          "ipv4": "100.64.0.3",
+          "signingKey": "ed25519:11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURo="
+        }
+      ]
+    }
+  },
+  "networks": [],
+  "volumes": [],
+  "workloads": [],
+  "ambassadors": [],
+  "routes": [],
+  "firewall": {
+    "meshAllow": []
+  }
+}

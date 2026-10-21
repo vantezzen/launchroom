@@ -1,0 +1,13 @@
+{
+  "apiVersion": "launchroom.vantezzen.io/v1",
+  "kind": "TaskCompletion",
+  "attempt": 1,
+  "outcome": "failed",
+  "error": "rolled back to 0.1.0: the new version did not become healthy within 3m0s",
+  "selfUpdate": {
+    "scope": "daemon",
+    "fromVersion": "0.1.0",
+    "toVersion": "0.2.0",
+    "rolledBack": true
+  }
+}

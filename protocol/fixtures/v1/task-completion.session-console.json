@@ -1,0 +1,13 @@
+{
+  "apiVersion": "launchroom.vantezzen.io/v1",
+  "kind": "TaskCompletion",
+  "attempt": 1,
+  "outcome": "succeeded",
+  "session": {
+    "startedAt": "2026-10-17T12:00:02Z",
+    "endReason": "exited",
+    "exitCode": 0,
+    "bytesIn": 812,
+    "bytesOut": 20480
+  }
+}

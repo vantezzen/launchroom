@@ -1,0 +1,19 @@
+{
+  "apiVersion": "launchroom.vantezzen.io/v1",
+  "kind": "Report",
+  "serverId": "srv_01J9Z8X7W6V5T4S3R2Q1P0N9MK",
+  "observedAt": "2026-10-17T12:00:05Z",
+  "seq": 18,
+  "full": true,
+  "appliedVersion": 1842,
+  "workloads": [],
+  "stateRejected": {
+    "version": 1843,
+    "error": "invalid document: networks.name[1]: duplicate value lr-e_7f3c2a91b0d4e5f6",
+    "rejectedAt": "2026-10-17T12:00:04Z"
+  },
+  "volumeDeletions": [
+    { "id": "vol_01J9Z8X7W6V5T4S3R2Q1P0N9N2", "name": "lr-v_0a1b2c3d4e5f6a7b", "outcome": "deleted", "at": "2026-10-17T12:00:03Z" },
+    { "id": "vol_01J9Z8X7W6V5T4S3R2Q1P0N9N3", "name": "lr-v_1a1b2c3d4e5f6a7b", "outcome": "refused", "message": "the volume is in use by lr-wl_01j9z8x7w6v5t4s3r2q1p0n9n9", "at": "2026-10-17T12:00:03Z" }
+  ]
+}

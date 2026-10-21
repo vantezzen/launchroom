@@ -1,0 +1,1838 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://launchroom.vantezzen.io/schema/v1/task-lease.json",
+  "$defs": {
+    "BackupDestination": {
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "s3",
+            "local"
+          ]
+        },
+        "endpoint": {
+          "type": "string",
+          "maxLength": 512,
+          "pattern": "^https?://[a-z0-9.-]+(?::[0-9]{1,5})?$",
+          "description": "Endpoint and Bucket are required for s3; Region is optional (default us-east-1)."
+        },
+        "bucket": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$"
+        },
+        "region": {
+          "type": "string",
+          "pattern": "^[a-z0-9-]{1,32}$"
+        },
+        "prefix": {
+          "type": "string",
+          "maxLength": 256,
+          "pattern": "^(?:[A-Za-z0-9._-]+/)*[A-Za-z0-9._-]*$",
+          "description": "Prefix is the key prefix (s3) or the subdirectory of data/backups (local)."
+        },
+        "credentials": {
+          "$ref": "#/$defs/Sealed",
+          "description": "Credentials is a sealed TaskEnv bound to this server and task whose env\nholds exactly AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY and RESTIC_PASSWORD\n(only RESTIC_PASSWORD for local destinations). The daemon passes them to\nrestic through its environment, never argv."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "kind",
+        "credentials"
+      ],
+      "description": "BackupDestination is a restic repository location."
+    },
+    "BackupMaintenanceSpec": {
+      "properties": {
+        "operation": {
+          "type": "string",
+          "enum": [
+            "forget",
+            "prune",
+            "check"
+          ]
+        },
+        "destination": {
+          "$ref": "#/$defs/BackupDestination"
+        },
+        "retention": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Retention",
+              "description": "Retention is required for forget."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tags": {
+          "oneOf": [
+            {
+              "items": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_-]{0,31}:[A-Za-z0-9_.-]{1,128}$"
+              },
+              "type": "array",
+              "description": "Tags restrict forget to snapshots with all of these tags."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "readDataSubsetPercent": {
+          "type": "integer",
+          "maximum": 100,
+          "minimum": 0,
+          "description": "ReadDataSubsetPercent makes check read this percentage of pack data (0 = metadata only)."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "operation",
+        "destination"
+      ],
+      "description": "BackupMaintenanceSpec runs forget/prune/check on a repository."
+    },
+    "BackupSnapshotsSpec": {
+      "properties": {
+        "destination": {
+          "$ref": "#/$defs/BackupDestination"
+        },
+        "tags": {
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_-]{0,31}:[A-Za-z0-9_.-]{1,128}$"
+          },
+          "type": "array",
+          "description": "Tags restrict the listing to snapshots with all of these tags."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "destination",
+        "tags"
+      ],
+      "description": "BackupSnapshotsSpec lists the snapshots of a repository that carry all of Tags (restic snapshots --json --tag …)."
+    },
+    "BackupSpec": {
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "database",
+            "volume",
+            "control_plane",
+            "base_backup"
+          ]
+        },
+        "target": {
+          "$ref": "#/$defs/BackupTarget"
+        },
+        "destination": {
+          "$ref": "#/$defs/BackupDestination"
+        },
+        "tags": {
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_-]{0,31}:[A-Za-z0-9_.-]{1,128}$"
+          },
+          "type": "array",
+          "description": "Tags are restic snapshot tags (\"key:value\")."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "kind",
+        "target",
+        "destination",
+        "tags"
+      ],
+      "description": "BackupSpec takes one restic snapshot (docs/14 §2)."
+    },
+    "BackupTarget": {
+      "properties": {
+        "engine": {
+          "type": "string",
+          "enum": [
+            "postgres",
+            "mysql",
+            "mariadb",
+            "redis",
+            "mongodb",
+            "valkey",
+            "clickhouse"
+          ]
+        },
+        "workload": {
+          "type": "string",
+          "pattern": "^wl_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "volume": {
+          "type": "string",
+          "pattern": "^vol_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "consistency": {
+          "type": "string",
+          "enum": [
+            "live",
+            "pause"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "BackupTarget names what to back up or restore into."
+    },
+    "BuildSpec": {
+      "properties": {
+        "service": {
+          "type": "string",
+          "pattern": "^svc_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "environment": {
+          "type": "string",
+          "pattern": "^env_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "deployment": {
+          "type": "string",
+          "pattern": "^dpl_[0-9A-HJKMNP-TV-Z]{26}$",
+          "description": "Deployment is required for build tasks (it tags the image); plan tasks\nrun outside a deployment (service created, build settings changed) and may omit it."
+        },
+        "repo": {
+          "$ref": "#/$defs/RepoSpec"
+        },
+        "cloneToken": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Sealed",
+              "description": "CloneToken is a short-lived, repo-scoped credential sealed to the daemon\n(plaintext: TaskToken with purpose \"clone\"). Omitted for public\nrepositories; only valid with http(s) clone URLs."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sshKey": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Sealed",
+              "description": "SSHKey is the repository's ed25519 deploy key for ssh:// clone URLs,\nsealed to the daemon (plaintext: TaskToken with purpose \"ssh_key\",\ntoken = standard base64 of the 32-byte seed). Only valid with ssh URLs."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rootDir": {
+          "type": "string",
+          "maxLength": 1024,
+          "pattern": "^[A-Za-z0-9._@+=,-]+(?:/[A-Za-z0-9._@+=,-]+)*$",
+          "description": "RootDir is the repo-relative app directory. Omitted: repo root."
+        },
+        "builder": {
+          "$ref": "#/$defs/BuilderSpec"
+        },
+        "env": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Sealed",
+              "description": "Env holds build-scoped variables (passed as BuildKit secrets), sealed\n(plaintext: TaskEnv bound to this task)."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "buildArgs": {
+          "oneOf": [
+            {
+              "items": {
+                "type": "string",
+                "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,255}$"
+              },
+              "type": "array",
+              "maxItems": 256,
+              "description": "BuildArgs names non-secret build-scoped variables that may also be passed\nas Dockerfile build args when the Dockerfile declares a matching ARG.\nSecret-flagged variables must never be listed (docs/09 R15)."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "platform": {
+          "type": "string",
+          "enum": [
+            "linux/amd64",
+            "linux/arm64"
+          ]
+        },
+        "cacheKey": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9_.-]{0,127}$",
+          "description": "CacheKey namespaces BuildKit mount caches (usually the service id, lowercased)."
+        },
+        "image": {
+          "type": "string",
+          "maxLength": 256,
+          "pattern": "^(?:localhost|[a-z0-9-]+(?:\\.[a-z0-9-]+)+|[a-z0-9-]+(?:\\.[a-z0-9-]+)*:[0-9]{1,5})(?:/[a-z0-9]+(?:(?:\\.|_|__|-+)[a-z0-9]+)*)+$",
+          "description": "Image is the repository to push to: \"\u003cregistry\u003e/apps/\u003cservice id\nlowercased\u003e\". The daemon tags the image with the deployment id\n(lowercased) and reports the digest."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "service",
+        "environment",
+        "repo",
+        "builder",
+        "platform",
+        "cacheKey",
+        "image"
+      ],
+      "description": "BuildSpec builds and pushes one immutable image."
+    },
+    "BuilderSpec": {
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "dockerfile",
+            "railpack"
+          ],
+          "description": "Kind is auto (the daemon resolves Dockerfile → preset + Railpack → Railpack\nafter cloning), dockerfile or railpack."
+        },
+        "dockerfilePath": {
+          "type": "string",
+          "maxLength": 1024,
+          "pattern": "^[A-Za-z0-9._@+=,-]+(?:/[A-Za-z0-9._@+=,-]+)*$",
+          "description": "DockerfilePath is repo-relative to rootDir (default \"Dockerfile\", then \"Containerfile\")."
+        },
+        "dockerfile": {
+          "type": "string",
+          "maxLength": 65536,
+          "description": "Dockerfile is an inline Dockerfile stored in launchroom (a verified,\ngenerated Dockerfile, docs/20): only with kind dockerfile, never with\ndockerfilePath. launchroomd writes it outside the checkout and builds\nrootDir with it."
+        },
+        "preset": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+          "description": "Preset forces a launchroom preset by name, or disables presets with \"none\".\nOmitted: the daemon detects the preset (kinds auto and railpack)."
+        },
+        "railpackVersion": {
+          "type": "string",
+          "maxLength": 64,
+          "pattern": "^v?[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$",
+          "description": "RailpackVersion pins Railpack (required for kinds auto and railpack). An\ndaemon only builds with the Railpack version it links; others fail with config_error."
+        },
+        "disabledDecisions": {
+          "oneOf": [
+            {
+              "items": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9-]{0,62}$"
+              },
+              "type": "array",
+              "maxItems": 64,
+              "description": "DisabledDecisions are preset decision ids the user removed (UI chips)."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "installCommand": {
+          "type": "string",
+          "maxLength": 4096,
+          "description": "InstallCommand, BuildCommand and StartCommand override Railpack's commands\n(RAILPACK_INSTALL_CMD/…). They run inside the build/app container, never on the host."
+        },
+        "buildCommand": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "startCommand": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "railpackEnv": {
+          "oneOf": [
+            {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object",
+              "description": "RailpackEnv are non-secret Railpack settings (RAILPACK_SPA_OUTPUT_DIR, RAILPACK_NODE_VERSION, …)."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "kind"
+      ],
+      "description": "BuilderSpec is the builder decision made by the dashboard (docs/04 §2, §3)."
+    },
+    "DbExportSpec": {
+      "properties": {
+        "engine": {
+          "type": "string",
+          "enum": [
+            "postgres",
+            "mysql",
+            "mariadb",
+            "redis",
+            "mongodb",
+            "valkey",
+            "clickhouse"
+          ]
+        },
+        "workload": {
+          "type": "string",
+          "pattern": "^wl_[0-9A-HJKMNP-TV-Z]{26}$",
+          "description": "Workload: dump the running database (live)."
+        },
+        "snapshot": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{8,64}$",
+          "description": "Snapshot and Destination: a stored backup of this engine."
+        },
+        "destination": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/BackupDestination"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "transfer": {
+          "$ref": "#/$defs/TransferTarget"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "engine",
+        "transfer"
+      ],
+      "description": "DbExportSpec writes a database's data in the engine's native format to the dashboard (Transfer): either a fresh dump of the running database (Workload, the same argv as backups) or a stored backup (Snapshot + Destination, decrypted by restic)."
+    },
+    "DbImportSource": {
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "file",
+            "url"
+          ]
+        },
+        "file": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/TransferRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "url": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Sealed",
+              "description": "URL is a sealed TaskEnv bound to this server and task holding exactly\nSOURCE_URL (postgres://, postgresql://, mysql://, mariadb://,\nmongodb://, mongodb+srv://). It is used once and never logged."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "kind"
+      ],
+      "description": "DbImportSource is where a database import reads from: exactly one of File (kind file) and URL (kind url)."
+    },
+    "DbImportSpec": {
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "inspect",
+            "import"
+          ]
+        },
+        "engine": {
+          "type": "string",
+          "enum": [
+            "postgres",
+            "mysql",
+            "mariadb",
+            "redis",
+            "mongodb",
+            "valkey",
+            "clickhouse"
+          ],
+          "description": "Engine is the target's engine: postgres, mysql, mariadb or mongodb."
+        },
+        "workload": {
+          "type": "string",
+          "pattern": "^wl_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "source": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/DbImportSource",
+              "description": "Source is required to import; an inspection may carry a url source\n(checks it can be reached), never a file."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "replace": {
+          "type": "boolean",
+          "description": "Replace drops and recreates the database before importing. Without\nit, a database that is not empty refuses the import."
+        },
+        "resources": {
+          "$ref": "#/$defs/Resources",
+          "description": "Resources cap the throwaway container."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "mode",
+        "engine",
+        "workload",
+        "resources"
+      ],
+      "description": "DbImportSpec imports a dump into a managed database (docs/14 §12)."
+    },
+    "FileOwner": {
+      "properties": {
+        "uid": {
+          "type": "integer",
+          "maximum": 2147483647,
+          "minimum": 0
+        },
+        "gid": {
+          "type": "integer",
+          "maximum": 2147483647,
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "uid",
+        "gid"
+      ],
+      "description": "FileOwner is a numeric owner for imported files."
+    },
+    "HostKey": {
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "ssh-ed25519",
+            "ecdsa-sha2-nistp256",
+            "ecdsa-sha2-nistp384",
+            "ecdsa-sha2-nistp521",
+            "ssh-rsa"
+          ]
+        },
+        "key": {
+          "type": "string",
+          "maxLength": 4096,
+          "minLength": 16,
+          "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "type",
+        "key"
+      ],
+      "description": "HostKey is one pinned SSH host key."
+    },
+    "LogsSpec": {
+      "properties": {
+        "workload": {
+          "type": "string",
+          "pattern": "^wl_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "since": {
+          "oneOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tail": {
+          "type": "integer",
+          "maximum": 10000,
+          "minimum": 0,
+          "description": "Tail limits the number of past lines (0 = none, only with follow)."
+        },
+        "follow": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "workload",
+        "tail",
+        "follow"
+      ],
+      "description": "LogsSpec fetches (or follows) a workload's runtime logs."
+    },
+    "NetworkSpec": {
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^net_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "name": {
+          "type": "string",
+          "pattern": "^lr-[a-z0-9][a-z0-9_-]{0,59}$"
+        },
+        "subnet": {
+          "type": "string",
+          "pattern": "^[0-9]{1,3}(?:\\.[0-9]{1,3}){3}/[0-9]{1,2}$"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "id",
+        "name",
+        "subnet"
+      ],
+      "description": "NetworkSpec is a Docker bridge network with a dashboard-allocated subnet."
+    },
+    "PlanSpec": {
+      "properties": {
+        "service": {
+          "type": "string",
+          "pattern": "^svc_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "environment": {
+          "type": "string",
+          "pattern": "^env_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "deployment": {
+          "type": "string",
+          "pattern": "^dpl_[0-9A-HJKMNP-TV-Z]{26}$",
+          "description": "Deployment is required for build tasks (it tags the image); plan tasks\nrun outside a deployment (service created, build settings changed) and may omit it."
+        },
+        "repo": {
+          "$ref": "#/$defs/RepoSpec"
+        },
+        "cloneToken": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Sealed",
+              "description": "CloneToken is a short-lived, repo-scoped credential sealed to the daemon\n(plaintext: TaskToken with purpose \"clone\"). Omitted for public\nrepositories; only valid with http(s) clone URLs."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sshKey": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Sealed",
+              "description": "SSHKey is the repository's ed25519 deploy key for ssh:// clone URLs,\nsealed to the daemon (plaintext: TaskToken with purpose \"ssh_key\",\ntoken = standard base64 of the 32-byte seed). Only valid with ssh URLs."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rootDir": {
+          "type": "string",
+          "maxLength": 1024,
+          "pattern": "^[A-Za-z0-9._@+=,-]+(?:/[A-Za-z0-9._@+=,-]+)*$",
+          "description": "RootDir is the repo-relative app directory. Omitted: repo root."
+        },
+        "builder": {
+          "$ref": "#/$defs/BuilderSpec"
+        },
+        "env": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Sealed",
+              "description": "Env holds build-scoped variables (passed as BuildKit secrets), sealed\n(plaintext: TaskEnv bound to this task)."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "buildArgs": {
+          "oneOf": [
+            {
+              "items": {
+                "type": "string",
+                "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,255}$"
+              },
+              "type": "array",
+              "maxItems": 256,
+              "description": "BuildArgs names non-secret build-scoped variables that may also be passed\nas Dockerfile build args when the Dockerfile declares a matching ARG.\nSecret-flagged variables must never be listed (docs/09 R15)."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "platform": {
+          "type": "string",
+          "enum": [
+            "linux/amd64",
+            "linux/arm64"
+          ]
+        },
+        "cacheKey": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9_.-]{0,127}$",
+          "description": "CacheKey namespaces BuildKit mount caches (usually the service id, lowercased)."
+        },
+        "inspect": {
+          "type": "boolean",
+          "description": "Inspect asks launchroomd to report a RepoInspection (file listing and\nselected manifest/entry files, docs/20 §2) in TaskCompletion.inspection,\nwhether planning succeeds or fails."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "service",
+        "environment",
+        "repo",
+        "builder",
+        "platform",
+        "cacheKey"
+      ],
+      "description": "PlanSpec is a dry-run build plan (\"we detected…\"); nothing is built or pushed."
+    },
+    "RepoSpec": {
+      "properties": {
+        "provider": {
+          "type": "string",
+          "enum": [
+            "github",
+            "gitlab",
+            "gitea",
+            "git"
+          ]
+        },
+        "cloneUrl": {
+          "type": "string",
+          "maxLength": 2048,
+          "pattern": "^(?:https?://[a-z0-9.-]+(?::[0-9]{1,5})?(?:/[A-Za-z0-9._~!$\u0026'()*+,;=:@%/-]*)?|ssh://(?:[a-z_][a-z0-9_.-]{0,31}@)?[a-z0-9.-]+(?::[0-9]{1,5})?/[A-Za-z0-9._~/-]+)$"
+        },
+        "sha": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}(?:[0-9a-f]{24})?$"
+        },
+        "ref": {
+          "type": "string",
+          "maxLength": 255,
+          "pattern": "^refs/(?:heads|tags)/[A-Za-z0-9._/+-]{1,240}$",
+          "description": "Ref is the branch or tag the commit was resolved from. Servers that\nrefuse to send an unadvertised commit (plain git servers) are fetched\nat this ref instead and the commit is checked out from its history."
+        },
+        "knownHosts": {
+          "oneOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/HostKey"
+              },
+              "type": "array",
+              "maxItems": 8,
+              "description": "KnownHosts pins the host keys of an ssh:// remote (required for ssh,\nrefused for http(s)). launchroomd accepts only a host key equal to one\nof them and offers only their key types (docs/19 §6)."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "provider",
+        "cloneUrl",
+        "sha"
+      ],
+      "description": "RepoSpec identifies the commit to build."
+    },
+    "Resources": {
+      "properties": {
+        "cpus": {
+          "type": "number",
+          "maximum": 1024,
+          "exclusiveMinimum": 0
+        },
+        "memoryMb": {
+          "type": "integer",
+          "maximum": 1048576,
+          "minimum": 16
+        },
+        "pids": {
+          "type": "integer",
+          "maximum": 1048576,
+          "minimum": 16
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "cpus",
+        "memoryMb",
+        "pids"
+      ],
+      "description": "Resources are container limits."
+    },
+    "RestoreRuntime": {
+      "properties": {
+        "image": {
+          "type": "string",
+          "maxLength": 512,
+          "pattern": "^(?:localhost|[a-z0-9-]+(?:\\.[a-z0-9-]+)+|[a-z0-9-]+(?:\\.[a-z0-9-]+)*:[0-9]{1,5})(?:/[a-z0-9]+(?:(?:\\.|_|__|-+)[a-z0-9]+)*)+@sha256:[a-f0-9]{64}$"
+        },
+        "mountPath": {
+          "type": "string",
+          "maxLength": 1024,
+          "pattern": "^/[A-Za-z0-9._@+=,-]+(?:/[A-Za-z0-9._@+=,-]+)*$",
+          "description": "MountPath is where the database's volume is mounted."
+        },
+        "dataDirectory": {
+          "type": "string",
+          "maxLength": 1024,
+          "pattern": "^/[A-Za-z0-9._@+=,-]+(?:/[A-Za-z0-9._@+=,-]+)*$",
+          "description": "DataDirectory is PGDATA; equal to or inside MountPath."
+        },
+        "archiveDirectory": {
+          "type": "string",
+          "maxLength": 1024,
+          "pattern": "^/[A-Za-z0-9._@+=,-]+(?:/[A-Za-z0-9._@+=,-]+)*$",
+          "description": "ArchiveDirectory, when set, keeps archiving during the replay (into the\nworkload's WAL archive directory, inside MountPath), so the new\ntimeline's history file is shipped once the workload runs again."
+        },
+        "env": {
+          "$ref": "#/$defs/Sealed",
+          "description": "Env is a sealed TaskEnv bound to this server and task holding exactly\nPOSTGRES_USER, POSTGRES_PASSWORD and POSTGRES_DB of the target: after\nthe replay the role's password is set to the target's (a copy has its\nown credentials)."
+        },
+        "resources": {
+          "$ref": "#/$defs/Resources"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "image",
+        "mountPath",
+        "dataDirectory",
+        "env",
+        "resources"
+      ],
+      "description": "RestoreRuntime is how launchroomd runs Postgres to replay a base backup: a throwaway container from Image (digest-pinned, policy floor) with the target volume at MountPath, no network, cap-drop ALL plus the engine's capabilities and these resource limits."
+    },
+    "RestoreSpec": {
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "database",
+            "volume",
+            "control_plane",
+            "base_backup"
+          ]
+        },
+        "snapshot": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{8,64}$"
+        },
+        "target": {
+          "$ref": "#/$defs/BackupTarget"
+        },
+        "destination": {
+          "$ref": "#/$defs/BackupDestination"
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "new_service",
+            "in_place"
+          ]
+        },
+        "pointInTime": {
+          "oneOf": [
+            {
+              "type": "string",
+              "format": "date-time",
+              "description": "PointInTime is where a base_backup restore stops replaying WAL\n(omitted: as far as the archive goes). Only for base_backup."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "walTags": {
+          "oneOf": [
+            {
+              "items": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_-]{0,31}:[A-Za-z0-9_.-]{1,128}$"
+              },
+              "type": "array",
+              "description": "WalTags select the WAL snapshots to replay after the base backup (base_backup only)."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "runtime": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/RestoreRuntime",
+              "description": "Runtime is how Postgres runs for the replay (required for base_backup)."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "kind",
+        "snapshot",
+        "target",
+        "destination",
+        "mode"
+      ],
+      "description": "RestoreSpec restores a snapshot into a target (docs/14 §5)."
+    },
+    "Retention": {
+      "properties": {
+        "keepLast": {
+          "type": "integer",
+          "maximum": 1000,
+          "minimum": 0
+        },
+        "keepHourly": {
+          "type": "integer",
+          "maximum": 1000,
+          "minimum": 0
+        },
+        "keepDaily": {
+          "type": "integer",
+          "maximum": 1000,
+          "minimum": 0
+        },
+        "keepWeekly": {
+          "type": "integer",
+          "maximum": 1000,
+          "minimum": 0
+        },
+        "keepMonthly": {
+          "type": "integer",
+          "maximum": 1000,
+          "minimum": 0
+        },
+        "keepWithinHours": {
+          "type": "integer",
+          "maximum": 87600,
+          "minimum": 0,
+          "description": "KeepWithinHours keeps every snapshot taken within this many hours of\nthe group's newest one (restic --keep-within; WAL and base backups of\npoint-in-time recovery, docs/14 §10.3)."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "Retention is a restic forget policy."
+    },
+    "RunOnceProbe": {
+      "properties": {
+        "port": {
+          "type": "integer",
+          "maximum": 65535,
+          "minimum": 1
+        },
+        "path": {
+          "type": "string",
+          "maxLength": 1024,
+          "pattern": "^/[A-Za-z0-9._~!$\u0026'()*+,;=:@%/?-]*$",
+          "description": "Path, when set, is also requested over HTTP; any status below 500 passes."
+        },
+        "within": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]{0,5}(?:ms|s|m|h)$"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "port",
+        "within"
+      ],
+      "description": "RunOnceProbe is the start check of a run_once task."
+    },
+    "RunOnceSpec": {
+      "properties": {
+        "service": {
+          "type": "string",
+          "pattern": "^svc_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "environment": {
+          "type": "string",
+          "pattern": "^env_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "deployment": {
+          "type": "string",
+          "pattern": "^dpl_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "image": {
+          "type": "string",
+          "maxLength": 512,
+          "pattern": "^(?:localhost|[a-z0-9-]+(?:\\.[a-z0-9-]+)+|[a-z0-9-]+(?:\\.[a-z0-9-]+)*:[0-9]{1,5})(?:/[a-z0-9]+(?:(?:\\.|_|__|-+)[a-z0-9]+)*)+@sha256:[a-f0-9]{64}$"
+        },
+        "command": {
+          "oneOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array",
+              "maxItems": 256,
+              "minItems": 1,
+              "description": "Command overrides the image ENTRYPOINT as argv. Omitted: image default.\nImages whose ENTRYPOINT is a shell wrapper (Railpack runs bash with -c)\nget the whole argv here and no args, so it runs exactly as given."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "args": {
+          "oneOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array",
+              "maxItems": 256,
+              "minItems": 1,
+              "description": "Args is the argv passed to the ENTRYPOINT (never a shell string). At least\none of command and args is required."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "env": {
+          "$ref": "#/$defs/Sealed",
+          "description": "Env is the runtime environment, sealed (plaintext: TaskEnv bound to this task)."
+        },
+        "maskEnv": {
+          "oneOf": [
+            {
+              "items": {
+                "type": "string",
+                "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,255}$"
+              },
+              "type": "array",
+              "maxItems": 1024,
+              "description": "MaskEnv names the variables of Env whose values (and their encodings,\nand the password of a URL value) are replaced by \"***\" in the shipped\nlogs: secrets and config values that embed one (docs/09 R16).\nNames missing from Env are ignored."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "network": {
+          "$ref": "#/$defs/NetworkSpec"
+        },
+        "timeout": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]{0,5}(?:ms|s|m|h)$"
+        },
+        "resources": {
+          "$ref": "#/$defs/Resources"
+        },
+        "probe": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/RunOnceProbe",
+              "description": "Probe makes this a start check (docs/20 §5): launchroomd checks from\noutside that the container accepts connections on probe.port within\nprobe.within, then stops it. With a probe, command and args may both be\nomitted (the image's own CMD runs)."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "service",
+        "environment",
+        "deployment",
+        "image",
+        "env",
+        "network",
+        "timeout",
+        "resources"
+      ],
+      "description": "RunOnceSpec runs a one-off container (release/seed commands) in an environment network."
+    },
+    "Sealed": {
+      "properties": {
+        "sealed": {
+          "type": "string",
+          "maxLength": 1048576,
+          "minLength": 64,
+          "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "sealed"
+      ],
+      "description": "Sealed wraps a sealed payload: {\"sealed\": \"\u003cbase64\u003e\"}."
+    },
+    "SelfUpdateSpec": {
+      "properties": {
+        "version": {
+          "type": "string",
+          "maxLength": 64,
+          "pattern": "^v?[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$"
+        },
+        "image": {
+          "type": "string",
+          "maxLength": 512,
+          "pattern": "^(?:localhost|[a-z0-9-]+(?:\\.[a-z0-9-]+)+|[a-z0-9-]+(?:\\.[a-z0-9-]+)*:[0-9]{1,5})(?:/[a-z0-9]+(?:(?:\\.|_|__|-+)[a-z0-9]+)*)+@sha256:[a-f0-9]{64}$"
+        },
+        "scope": {
+          "type": "string",
+          "enum": [
+            "daemon",
+            "control_plane"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "version",
+        "image"
+      ],
+      "description": "SelfUpdateSpec asks the daemon to update itself (scope \"daemon\", the default) or, on the control-plane host only, the whole control plane (scope \"control_plane\", docs/11 §4)."
+    },
+    "SessionSpec": {
+      "properties": {
+        "session": {
+          "type": "string",
+          "pattern": "^ses_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "console",
+            "data"
+          ]
+        },
+        "workload": {
+          "type": "string",
+          "pattern": "^wl_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "channel": {
+          "type": "string",
+          "pattern": "^private-(?:daemon\\.srv_|session\\.ses_)[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "key": {
+          "$ref": "#/$defs/Sealed",
+          "description": "Key is the sealed TaskToken (purpose \"session\") holding the 32-byte\nsession key (base64url without padding)."
+        },
+        "idleTimeout": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]{0,5}(?:ms|s|m|h)$",
+          "description": "IdleTimeout ends the session without input (console) or commands (data)."
+        },
+        "shell": {
+          "type": "string",
+          "enum": [
+            "/bin/sh",
+            "/bin/bash",
+            "/bin/ash",
+            "/bin/zsh"
+          ],
+          "description": "Shell is the console shell; empty picks one automatically."
+        },
+        "cols": {
+          "type": "integer",
+          "maximum": 500,
+          "minimum": 2,
+          "description": "Cols and Rows are the initial terminal size (console)."
+        },
+        "rows": {
+          "type": "integer",
+          "maximum": 200,
+          "minimum": 2
+        },
+        "record": {
+          "type": "boolean",
+          "description": "Record ships the (masked) output as the task's log (console, opt-in)."
+        },
+        "engine": {
+          "type": "string",
+          "enum": [
+            "postgres",
+            "mysql",
+            "mariadb",
+            "redis",
+            "mongodb",
+            "valkey",
+            "clickhouse"
+          ],
+          "description": "Engine is the database engine (data sessions only)."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "session",
+        "kind",
+        "workload",
+        "channel",
+        "key",
+        "idleTimeout"
+      ],
+      "description": "SessionSpec is the spec of a \"session\" task (docs/03 §11.1)."
+    },
+    "Task": {
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "backup"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "spec": {
+                "$ref": "#/$defs/BackupSpec"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "backup_maintenance"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "spec": {
+                "$ref": "#/$defs/BackupMaintenanceSpec"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "backup_snapshots"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "spec": {
+                "$ref": "#/$defs/BackupSnapshotsSpec"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "build"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "spec": {
+                "$ref": "#/$defs/BuildSpec"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "db_export"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "spec": {
+                "$ref": "#/$defs/DbExportSpec"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "db_import"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "spec": {
+                "$ref": "#/$defs/DbImportSpec"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "logs"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "spec": {
+                "$ref": "#/$defs/LogsSpec"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "plan"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "spec": {
+                "$ref": "#/$defs/PlanSpec"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "restore"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "spec": {
+                "$ref": "#/$defs/RestoreSpec"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "run_once"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "spec": {
+                "$ref": "#/$defs/RunOnceSpec"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "self_update"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "spec": {
+                "$ref": "#/$defs/SelfUpdateSpec"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "session"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "spec": {
+                "$ref": "#/$defs/SessionSpec"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "verify_restore"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "spec": {
+                "$ref": "#/$defs/VerifyRestoreSpec"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "volume_export"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "spec": {
+                "$ref": "#/$defs/VolumeExportSpec"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "volume_import"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "spec": {
+                "$ref": "#/$defs/VolumeImportSpec"
+              }
+            }
+          }
+        }
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^tsk_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "build",
+            "plan",
+            "run_once",
+            "backup",
+            "restore",
+            "backup_maintenance",
+            "logs",
+            "self_update",
+            "backup_snapshots",
+            "verify_restore",
+            "session",
+            "db_import",
+            "volume_import",
+            "db_export",
+            "volume_export"
+          ]
+        },
+        "leaseExpiresAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "attempt": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "deadline": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Deadline is the hard deadline after which the daemon abandons the task."
+        },
+        "spec": {
+          "type": "object",
+          "description": "Typed spec selected by type (see allOf)."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "id",
+        "type",
+        "leaseExpiresAt",
+        "attempt",
+        "deadline",
+        "spec"
+      ],
+      "description": "Task is a leased unit of imperative work (docs/03 §7)."
+    },
+    "TransferRef": {
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^dtr_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "sizeBytes": {
+          "type": "integer",
+          "maximum": 1099511627776,
+          "minimum": 1
+        },
+        "chunkBytes": {
+          "type": "integer",
+          "maximum": 33554432,
+          "minimum": 1048576
+        },
+        "chunks": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "id",
+        "sizeBytes",
+        "chunkBytes",
+        "chunks",
+        "sha256"
+      ],
+      "description": "TransferRef is an uploaded file launchroomd fetches from the dashboard in chunks of ChunkBytes (the last one shorter)."
+    },
+    "TransferTarget": {
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^dtr_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "chunkBytes": {
+          "type": "integer",
+          "maximum": 33554432,
+          "minimum": 1048576
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "id",
+        "chunkBytes"
+      ],
+      "description": "TransferTarget is where launchroomd uploads an export: chunks of ChunkBytes (the last one shorter) to PUT /daemon/v1/transfers/{id}/chunks/{n}."
+    },
+    "VerifyRestoreSpec": {
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "database",
+            "volume",
+            "control_plane",
+            "base_backup"
+          ],
+          "description": "Kind is database (a dump), base_backup (a physical Postgres backup,\nreplayed with the archived WAL) or volume (a volume tar)."
+        },
+        "snapshot": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{8,64}$"
+        },
+        "destination": {
+          "$ref": "#/$defs/BackupDestination"
+        },
+        "engine": {
+          "type": "string",
+          "enum": [
+            "postgres",
+            "mysql",
+            "mariadb",
+            "redis",
+            "mongodb",
+            "valkey",
+            "clickhouse"
+          ],
+          "description": "Engine, Image and DataPath (where the engine image keeps its data, the\nmount path of the database's volume) are required for database and base_backup."
+        },
+        "image": {
+          "type": "string",
+          "maxLength": 512,
+          "pattern": "^(?:localhost|[a-z0-9-]+(?:\\.[a-z0-9-]+)+|[a-z0-9-]+(?:\\.[a-z0-9-]+)*:[0-9]{1,5})(?:/[a-z0-9]+(?:(?:\\.|_|__|-+)[a-z0-9]+)*)+@sha256:[a-f0-9]{64}$"
+        },
+        "dataPath": {
+          "type": "string",
+          "maxLength": 1024,
+          "pattern": "^/[A-Za-z0-9._@+=,-]+(?:/[A-Za-z0-9._@+=,-]+)*$"
+        },
+        "dataDirectory": {
+          "type": "string",
+          "maxLength": 1024,
+          "pattern": "^/[A-Za-z0-9._@+=,-]+(?:/[A-Za-z0-9._@+=,-]+)*$",
+          "description": "DataDirectory is PGDATA (base_backup only; inside DataPath)."
+        },
+        "walTags": {
+          "oneOf": [
+            {
+              "items": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_-]{0,31}:[A-Za-z0-9_.-]{1,128}$"
+              },
+              "type": "array",
+              "description": "WalTags select the WAL snapshots replayed after the base backup (base_backup only)."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "databaseUser": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_]{1,63}$",
+          "description": "DatabaseUser and DatabaseName are the source's POSTGRES_USER and\nPOSTGRES_DB (base_backup only): the restored data's own role and\ndatabase, checked over the local socket."
+        },
+        "databaseName": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_]{1,63}$"
+        },
+        "resources": {
+          "$ref": "#/$defs/Resources",
+          "description": "Resources cap the throwaway container."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "kind",
+        "snapshot",
+        "destination",
+        "resources"
+      ],
+      "description": "VerifyRestoreSpec restores a snapshot into a throwaway container (or, for volumes, reads it completely) and checks the result (docs/14 §10.4)."
+    },
+    "VolumeExportSpec": {
+      "properties": {
+        "volume": {
+          "type": "string",
+          "pattern": "^vol_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "consistency": {
+          "type": "string",
+          "enum": [
+            "live",
+            "pause"
+          ]
+        },
+        "snapshot": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{8,64}$"
+        },
+        "destination": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/BackupDestination"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "transfer": {
+          "$ref": "#/$defs/TransferTarget"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "transfer"
+      ],
+      "description": "VolumeExportSpec writes a volume's files as a .tar.gz (names relative to the volume, numeric owners and modes kept) to the dashboard: either the live volume (Volume, read through a never-started helper; Consistency pause freezes its users while it is read) or a stored volume backup (Snapshot + Destination)."
+    },
+    "VolumeImportSpec": {
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "inspect",
+            "import"
+          ]
+        },
+        "volume": {
+          "type": "string",
+          "pattern": "^vol_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "file": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/TransferRef",
+              "description": "File is required to import."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "replace": {
+          "type": "boolean",
+          "description": "Replace empties the volume first; without it the files are merged in\n(existing files with the same name are overwritten)."
+        },
+        "stripComponents": {
+          "type": "integer",
+          "maximum": 8,
+          "minimum": 0,
+          "description": "StripComponents drops this many leading path components (like tar\n--strip-components); entries with fewer are skipped."
+        },
+        "owner": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/FileOwner",
+              "description": "Owner sets every extracted entry's owner (nil: keep the archive's\nnumeric owners; zip entries, which carry none, get the volume root's)."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "mode",
+        "volume"
+      ],
+      "description": "VolumeImportSpec extracts an uploaded .tar, .tar.gz or .zip into a service volume through a never-started volume helper (docs/14 §12)."
+    }
+  },
+  "properties": {
+    "apiVersion": {
+      "type": "string",
+      "const": "launchroom.vantezzen.io/v1"
+    },
+    "kind": {
+      "type": "string",
+      "const": "TaskLease"
+    },
+    "tasks": {
+      "items": {
+        "$ref": "#/$defs/Task"
+      },
+      "type": "array"
+    }
+  },
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "apiVersion",
+    "kind",
+    "tasks"
+  ],
+  "title": "TaskLease: signed response to a lease request",
+  "description": "TaskLease is the signed response to a lease request (0..n tasks)."
+}

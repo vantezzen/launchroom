@@ -1,0 +1,24 @@
+{
+  "apiVersion": "launchroom.vantezzen.io/v1",
+  "kind": "EnrollRequest",
+  "token": "lr_jt_Zm9vYmFyYmF6cXV4cXV1eA",
+  "signingKey": "ed25519:A6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg=",
+  "sealingKey": "x25519:LXEWQrcmsEQBYnyp+6wy9chTD7GQPMTbAiWHF5IaSIE=",
+  "daemonVersion": "0.5.0",
+  "protocolVersions": ["v1"],
+  "host": {
+    "hostname": "pi-garage",
+    "os": "linux",
+    "arch": "arm64",
+    "cpus": 4,
+    "memoryMb": 8064,
+    "hardware": {
+      "cpuModel": "Cortex-A76",
+      "cpuVendor": "ARM",
+      "deviceTreeModel": "Raspberry Pi 5 Model B Rev 1.0",
+      "osName": "Debian GNU/Linux 12 (bookworm)",
+      "kernel": "6.6.51+rpt-rpi-2712",
+      "timezone": "Europe/Berlin"
+    }
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://launchroom.vantezzen.io/schema/v1/task-heartbeat.json",
+  "properties": {
+    "apiVersion": {
+      "type": "string",
+      "const": "launchroom.vantezzen.io/v1"
+    },
+    "kind": {
+      "type": "string",
+      "const": "TaskHeartbeat"
+    },
+    "attempt": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "progress": {
+      "type": "string",
+      "maxLength": 256,
+      "description": "Progress is an optional short status line for the UI."
+    }
+  },
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "apiVersion",
+    "kind",
+    "attempt"
+  ],
+  "title": "TaskHeartbeat: POST /daemon/v1/tasks/{id}/heartbeat body",
+  "description": "TaskHeartbeat extends a lease."
+}

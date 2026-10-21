@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://launchroom.vantezzen.io/schema/v1/lease-request.json",
+  "properties": {
+    "apiVersion": {
+      "type": "string",
+      "const": "launchroom.vantezzen.io/v1"
+    },
+    "kind": {
+      "type": "string",
+      "const": "LeaseRequest"
+    },
+    "max": {
+      "type": "integer",
+      "maximum": 16,
+      "minimum": 1
+    },
+    "types": {
+      "items": {
+        "type": "string",
+        "enum": [
+          "build",
+          "plan",
+          "run_once",
+          "backup",
+          "restore",
+          "backup_maintenance",
+          "logs",
+          "self_update",
+          "backup_snapshots",
+          "verify_restore",
+          "session",
+          "db_import",
+          "volume_import",
+          "db_export",
+          "volume_export"
+        ]
+      },
+      "type": "array",
+      "minItems": 1
+    }
+  },
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "apiVersion",
+    "kind",
+    "max",
+    "types"
+  ],
+  "title": "LeaseRequest: POST /daemon/v1/tasks/lease body",
+  "description": "LeaseRequest asks for up to Max tasks of the given types."
+}

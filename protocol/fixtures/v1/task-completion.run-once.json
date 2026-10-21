@@ -1,0 +1,7 @@
+{
+  "apiVersion": "launchroom.vantezzen.io/v1",
+  "kind": "TaskCompletion",
+  "attempt": 1,
+  "outcome": "succeeded",
+  "runOnce": { "exitCode": 1, "durationMs": 5321 }
+}

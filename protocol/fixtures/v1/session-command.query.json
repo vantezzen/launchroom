@@ -1,0 +1,10 @@
+{
+  "apiVersion": "launchroom.vantezzen.io/v1",
+  "kind": "SessionCommand",
+  "session": "ses_01J9Z8X7W6V5T4S3R2Q1P0N9S4",
+  "op": "op_01J9Z8X7W6V5T4S3R2Q1P0N9T1",
+  "issuedAt": "2026-10-17T12:00:05Z",
+  "command": "query",
+  "statement": "SELECT id, email FROM users ORDER BY id",
+  "allowWrites": false
+}

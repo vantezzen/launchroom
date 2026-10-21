@@ -1,0 +1,70 @@
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  default: standard # errcheck, govet, ineffassign, staticcheck, unused
+  enable:
+    - bodyclose
+    - contextcheck
+    - errorlint
+    - forbidigo
+    - gosec
+    - misspell
+    - noctx
+    - revive
+  settings:
+    forbidigo:
+      analyze-types: true
+      forbid:
+        # docs/09-security.md R1: no shell strings. The CLI starts processes only
+        # for `run` (the user's own command) and the browser opener, as argv
+        # with a reviewed //nolint:forbidigo and the reason.
+        - pattern: ^exec\.Command(Context)?$
+          msg: "no process spawning without review; never `sh -c`/`bash -c` (docs/09 R1). Prefer API clients."
+        - pattern: ^syscall\.(Exec|ForkExec)$
+          msg: "no raw exec (docs/09 R1)"
+        - pattern: ^os\.StartProcess$
+          msg: "no raw process spawning (docs/09 R1)"
+        # Structured logging only (docs/10 §4).
+        - pattern: ^fmt\.Print(f|ln)?$
+          msg: "write through the output.Printer (stdout stays machine-readable with --json)"
+        - pattern: ^log\.(Print|Fatal|Panic)(f|ln)?$
+          msg: "use log/slog"
+    gosec:
+      excludes:
+        - G104 # duplicate of errcheck
+    revive:
+      rules:
+        - name: exported
+        - name: package-comments
+        - name: var-naming
+        - name: indent-error-flow
+        - name: error-strings
+        - name: error-naming
+        - name: errorf
+        - name: context-as-argument
+        - name: unused-parameter
+          disabled: true
+  exclusions:
+    generated: lax
+    rules:
+      # Command entry points may print to the terminal.
+      - path: ^cmd/
+        linters: [forbidigo]
+        text: "fmt.Print"
+      # Tests may use fixed keys, temp paths and loose permissions on purpose.
+      - path: _test\.go
+        linters: [gosec]
+        text: "G(101|301|302|304|306|404|703)"
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/vantezzen/launchroom/cli

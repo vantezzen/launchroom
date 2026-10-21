@@ -1,0 +1,35 @@
+services:
+  api:
+    image: node:22-alpine
+    working_dir: /app
+    command: sh -c "npm ci && npm run migrate && node server.js"
+    entrypoint: ["/usr/local/bin/docker-entrypoint.sh"]
+    ports: ["3000"]
+    environment:
+      API_URL: http://backend_api:4000
+      CACHE: memcached:11211
+    healthcheck:
+      test: ["CMD", "node", "healthcheck.js"]
+      interval: 1m30s
+      timeout: 10s
+
+  backend_api:
+    image: ghcr.io/example-org/backend:2.0@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+    container_name: backend
+    command: ["./server", "--port", "4000"]
+    expose: ["4000"]
+    stop_grace_period: 30s
+    secrets: [api_key]
+    configs: [app_config]
+    deploy:
+      replicas: 3
+      mode: replicated
+      placement:
+        constraints: [node.role == worker]
+
+secrets:
+  api_key:
+    file: ./api_key.txt
+configs:
+  app_config:
+    file: ./config.json

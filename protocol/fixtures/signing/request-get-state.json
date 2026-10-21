@@ -1,0 +1,23 @@
+{
+  "description": "GET with a query string and empty body (Content-Digest is the digest of zero bytes).",
+  "privateKeySeed": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+  "publicKey": "ed25519:A6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg=",
+  "keyId": "srv_01J9Z8X7W6V5T4S3R2Q1P0N9MK",
+  "created": 1792238400,
+  "nonceBytes": "bGF1bmNocm9vbS1ub25jZQ==",
+  "request": {
+    "method": "GET",
+    "url": "https://cp.example.test/daemon/v1/state?have=1842",
+    "body": ""
+  },
+  "expected": {
+    "contentDigest": "sha-256=:47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=:",
+    "date": "Sat, 17 Oct 2026 12:00:00 GMT",
+    "nonce": "bGF1bmNocm9vbS1ub25jZQ",
+    "signatureInput": "sig1=(\"@method\" \"@path\" \"@query\" \"content-digest\" \"date\" \"x-lr-nonce\");created=1792238400;keyid=\"srv_01J9Z8X7W6V5T4S3R2Q1P0N9MK\";alg=\"ed25519\";tag=\"launchroomd-v1\"",
+    "signature": "sig1=:lrFmgrJzKKo3WBru3+kbjvwjTfTqSbVa9W9nfCdYDmL/UsHpbXWuKyajS2nmUttwfOiWzQ5no1uLcjANhZooCA==:",
+    "signatureBase": "\"@method\": GET\n\"@path\": /daemon/v1/state\n\"@query\": ?have=1842\n\"content-digest\": sha-256=:47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=:\n\"date\": Sat, 17 Oct 2026 12:00:00 GMT\n\"x-lr-nonce\": bGF1bmNocm9vbS1ub25jZQ\n\"@signature-params\": (\"@method\" \"@path\" \"@query\" \"content-digest\" \"date\" \"x-lr-nonce\");created=1792238400;keyid=\"srv_01J9Z8X7W6V5T4S3R2Q1P0N9MK\";alg=\"ed25519\";tag=\"launchroomd-v1\""
+  },
+  "verifyAt": 1792238400,
+  "maxSkewSeconds": 60
+}

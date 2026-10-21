@@ -1,0 +1,58 @@
+{
+  "apiVersion": "launchroom.vantezzen.io/v1",
+  "kind": "TaskLease",
+  "tasks": [
+    {
+      "id": "tsk_01J9Z8X7W6V5T4S3R2Q1P0N9P2",
+      "type": "build",
+      "leaseExpiresAt": "2026-10-17T12:01:00Z",
+      "attempt": 1,
+      "deadline": "2026-10-17T12:30:00Z",
+      "spec": {
+        "service": "svc_01J9Z8X7W6V5T4S3R2Q1P0N9N2",
+        "environment": "env_01J9Z8X7W6V5T4S3R2Q1P0N9N4",
+        "deployment": "dpl_01J9Z8X7W6V5T4S3R2Q1P0N9N5",
+        "repo": {
+          "provider": "git",
+          "cloneUrl": "ssh://git@git.example.com:2222/srv/shop.git",
+          "sha": "4015b57a143aec5156fd1444a017a32137a3fd0f",
+          "ref": "refs/heads/main",
+          "knownHosts": [
+            {
+              "type": "ssh-ed25519",
+              "key": "AAAAC3NzaC1lZDI1NTE5AAAAIFS/CYhuFo6TY5gPRwRjQ9fMfMyY9LJzZS3RRtUMDGFC"
+            },
+            {
+              "type": "ecdsa-sha2-nistp256",
+              "key": "AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBE9is/0eyIdyu5s3WDwYDL2BIqfcv1zYfAEsxk2R8hbZ70L/kijZKhBEZV3WGHUDbNWpmEiMXusuz75mgSEG9Uo="
+            }
+          ]
+        },
+        "sshKey": {
+          "sealed": "qbzMnvHxfZlIkASN+YWti1p59V6GK80ssZ2hGerDQuwfkoyX1SabEjn4JboJt+qfd5FL7cn8ndnYwTww3vnN8bXWHciaNdLJJLKMl2B2XalAOelBhMUPh93lRTLxJrSs"
+        },
+        "rootDir": "apps/web",
+        "builder": {
+          "kind": "auto",
+          "preset": "nextjs",
+          "railpackVersion": "0.42.0",
+          "disabledDecisions": [
+            "isr-cache-warning"
+          ],
+          "railpackEnv": {
+            "RAILPACK_NODE_VERSION": "22"
+          }
+        },
+        "env": {
+          "sealed": "aEd1s08pS3O5azgHS/RIgRCwcTKob0z7+re83Fwam/F7JsEo6tehDt5Quxs/Zll9EZCIqVTnFNjlnPH6mnUoanih+Nj89h6MkawEMi6Zjgdkni3v1t+6Q9wVzRNRkfpO"
+        },
+        "buildArgs": [
+          "NEXT_PUBLIC_API_URL"
+        ],
+        "platform": "linux/amd64",
+        "cacheKey": "svc-web-main",
+        "image": "127.0.0.1:5000/apps/svc_01j9z8x7w6v5t4s3r2q1p0n9n2"
+      }
+    }
+  ]
+}

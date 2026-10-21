@@ -1,0 +1,119 @@
+---
+title: Replace a server
+description: When a server is gone for good, move its roles to another one, restore its databases and volumes from backups and re-place everything else.
+---
+
+A disk can die, a provider can delete a machine, or a home machine may not come back. Use **Replace server** for all
+of these cases. You pick a server that takes over, and launchroom:
+
+1. gives it the dead server's roles and labels,
+2. restores the dead server's databases and volumes from their latest backups,
+3. starts the remaining services after them,
+4. locks the old server out permanently.
+
+
+<Callout title="Replace or move?">
+Replace a server that is gone: its data comes from the latest backups, so writes after them are lost. If the server still runs, [move it](/docs/migrate/move-to-a-new-server#move-a-server-without-the-dashboard) instead (**Move to another server** on its page): each database and volume is copied live, nothing is lost, and no backup storage is needed.
+</Callout>
+
+## What launchroom already did by itself
+
+By the time you open the flow, part of the work is usually done. About 90 seconds after a server stops checking in,
+launchroom moves its stateless replicas (apps, workers, crons) to healthy servers. Databases and other services with a
+volume are never moved automatically, because their data is on the dead server's disk. They show **Server down** on
+the canvas, with a link to this flow. See
+[Roles and placement](/docs/servers/roles-and-placement#when-a-server-dies).
+
+If you expect the server back, for example after a reboot or a network outage, wait. When it returns, everything
+continues where it stopped.
+
+## Replace a dead server
+
+Open **Servers**, pick the unreachable or offline server and click **Replace server**. Owners and admins can do this
+after confirming their password. The page lists everything that lived on that server.
+
+<Steps>
+<Step>
+### 1. Which server takes over?
+
+Pick an online server, or **Add a new server** and wait until it shows up. The replacement gets:
+
+- the dead server's roles, added to its own
+- the dead server's labels. Where both have the same label, the replacement's value wins.
+
+Placement rules that named the dead server, its zone or its labels keep working.
+</Step>
+<Step>
+### 2. Data
+
+Every database and volume that lived there is listed with its latest backup and the backup's age. Each one is restored
+from that backup on the replacement. A service without a backup is marked **No backup: it starts empty**.
+
+Anything written after the latest backup is lost, so keep backup schedules short for busy databases. See
+[Backups](/docs/databases/backups).
+</Step>
+<Step>
+### 3. Everything else
+
+Apps and other stateless services that ran there are re-placed after the data is back, so they don't start against an
+empty database. Services that already moved to another server stay where they are.
+</Step>
+</Steps>
+
+Click the **Replace** button (it names the server) to start. The page then:
+
+- follows each service through **Starting on the replacement**, **Restoring from backup** and done
+- marks services that are **Already running elsewhere** or were **Removed meanwhile**
+- lists at the end any service that **Needs attention**
+
+## What happens to the old server
+
+As part of the replacement the old server is revoked:
+
+- Its key is rejected for everything except fetching one last, empty desired state.
+- It leaves the private network.
+- It gets no more apps, builds or tasks.
+
+If the old machine comes back online, launchroomd fetches that empty state and stops every app, Caddy and BuildKit
+within seconds. Two copies of your database never run side by side. Its volumes are **not deleted**. The old data stays
+on its disk until you remove it. To clean up the machine, see
+[Uninstalling a server](/docs/how-it-works/launchroomd#uninstalling-a-server).
+
+## What moves and what is restored
+
+| What | Where it ends up |
+|---|---|
+| Roles and labels | On the replacement, combined with its own |
+| Databases (all engines) | Restored on the replacement from their latest backup, or started empty without one |
+| Volumes of other services | Restored on the replacement from their latest snapshot, or created empty |
+| Apps, workers, crons | Re-placed by the scheduler after the data is back, unless they already run elsewhere |
+| Images | Pulled from launchroom's registry; nothing is rebuilt |
+| Domains and DNS | Unchanged. If the dead server was an edge, check that DNS doesn't still point at it |
+| The old server | Revoked; keeps its files until you uninstall |
+
+## Revoke without replacing
+
+If the server is gone and ran nothing you need, or you moved everything off it yourself, revoke it instead. Open the
+server, then **Settings → Danger zone → Revoke**. Its key is rejected immediately and it leaves the private network.
+Revoking can't be undone. To use the machine again, add it with a new install command. See
+[Add a server](/docs/servers/add-a-server#removing-a-server).
+
+## When the dashboard's server died
+
+The dashboard's own server can't be replaced from the dashboard, because the dashboard ran on it. Instead, install
+launchroom on a new server with `--restore` and your recovery kit. The dashboard comes back in recovery mode with a
+checklist:
+
+1. this same replacement
+2. DNS checks
+3. rebuilding images the registry lost
+
+Your other servers keep running their apps the whole time. See
+[Restore and disaster recovery](/docs/databases/restore-and-disaster-recovery).
+
+## Next steps
+
+<Cards>
+  <Card title="Backups" href="/docs/databases/backups" description="Schedules, retention and verification, so a replacement has something to restore." />
+  <Card title="Server troubleshooting" href="/docs/troubleshooting/servers" description="Unreachable servers and what to check first." />
+</Cards>

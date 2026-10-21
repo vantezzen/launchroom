@@ -1,0 +1,5 @@
+{
+  "serverId": "srv_01J9Z8X7W6V5T4S3R2Q1P0N9MK",
+  "taskId": "tsk_01J9Z8X7W6V5T4S3R2Q1P0N9P0",
+  "env": { "NEXT_PUBLIC_API_URL": "https://api.example.com", "NPM_TOKEN": "npm_example" }
+}

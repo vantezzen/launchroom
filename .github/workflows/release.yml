@@ -1,0 +1,556 @@
+name: release
+
+# Builds, signs and publishes a launchroom release (docs/09 R30, docs/11 §2).
+#
+# Trigger: pushing a tag v<VERSION> (root VERSION file). Nothing else: the
+# cosign keyless signatures carry this workflow's identity, which installers
+# and launchroomd pin (docs/09 R30):
+#
+#   SAN     https://github.com/vantezzen/launchroom/.github/workflows/release.yml@refs/tags/v<version>
+#   issuer  https://token.actions.githubusercontent.com
+#
+# Every signing step must therefore stay in THIS file (a reusable workflow
+# would sign with its own path) and run on a tag ref. No workflow_dispatch.
+#
+# Who may produce a valid signature (2026-10 review L7): the SAN names the
+# tag, not the branch, so a v* tag on any commit would sign. Three layers:
+#   1. repository tag ruleset: only maintainers may create, move or delete
+#      v* tags (Settings → Rules; docs/11 §2);
+#   2. the signing jobs run in the protected environment `release`
+#      (deployment rule: tags v* only, required reviewer);
+#   3. the verify job refuses a tag whose commit is not on the default branch.
+#
+# Outputs:
+#   images  ghcr.io/vantezzen/launchroom-caddy, then ghcr.io/vantezzen/launchroom-dashboard
+#           and ghcr.io/vantezzen/launchroomd: linux/amd64+arm64, SBOM + SLSA
+#           provenance attestations, cosign signatures, tags <version> (+ latest
+#           for stable releases). launchroom-caddy is built first: its index
+#           digest is compiled into launchroomd (CADDY_DIGEST, the system-image
+#           allow-list in daemon/internal/policy), so the signed binary itself
+#           pins the edge Caddy of its release (docs/05 §4, docs/09 R31)
+#   release launchroom-deploy.tar.gz (+ .sha256, .sigstore.json, provenance),
+#           images.env (digests of this release), install.sh
+#   cli     launchroom_<version>_<os>_<arch>.tar.gz|.zip (linux/darwin amd64+arm64,
+#           windows amd64), launchroom_<version>_SHA256SUMS (+ .sigstore.json),
+#           provenance, cli.sh (docs/16-api-and-cli.md §5)
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions: {}
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAMESPACE: ghcr.io/vantezzen
+  SIGNER_IDENTITY: https://github.com/${{ github.repository }}/.github/workflows/release.yml@${{ github.ref }}
+  SIGNER_ISSUER: https://token.actions.githubusercontent.com
+  COSIGN_VERSION: v3.1.3
+
+jobs:
+  verify:
+    name: Verify tag
+    # Forks never sign or publish.
+    if: github.repository == 'vantezzen/launchroom' && github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Tag commit is on the default branch
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -eu
+          [ -n "$DEFAULT_BRANCH" ] || { echo "::error::unknown default branch"; exit 1; }
+          git merge-base --is-ancestor "$GITHUB_SHA" "refs/remotes/origin/$DEFAULT_BRANCH" \
+            || { echo "::error::the tagged commit $GITHUB_SHA is not on $DEFAULT_BRANCH; releases are only signed from the default branch"; exit 1; }
+
+      - name: Tag matches VERSION
+        id: version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -eu
+          version="$(tr -d ' \n' < VERSION)"
+          echo "$version" | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$' \
+            || { echo "::error::VERSION ($version) is not a semantic version"; exit 1; }
+          [ "$TAG" = "v$version" ] || { echo "::error::tag $TAG does not match VERSION $version (expected v$version)"; exit 1; }
+          case "$version" in *-*) prerelease=true ;; *) prerelease=false ;; esac
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
+
+  # launchroom-caddy first: launchroomd is built with its digest (below).
+  caddy:
+    name: Image launchroom-caddy
+    needs: verify
+    runs-on: ubuntu-latest
+    environment: release # protected: v* tags only, required reviewer (L7)
+    permissions:
+      contents: read
+      packages: write # push to GHCR
+      id-token: write # cosign keyless signing (Fulcio OIDC)
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Tags
+        id: tags
+        env:
+          IMAGE: ${{ env.IMAGE_NAMESPACE }}/launchroom-caddy
+          VERSION: ${{ needs.verify.outputs.version }}
+          PRERELEASE: ${{ needs.verify.outputs.prerelease }}
+        run: |
+          set -eu
+          {
+            echo 'list<<EOF'
+            echo "$IMAGE:$VERSION"
+            [ "$PRERELEASE" = true ] || echo "$IMAGE:latest"
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      # No build cache: release images are built from scratch.
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: deploy/images/caddy
+          file: deploy/images/caddy/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.tags.outputs.list }}
+          build-args: |
+            VERSION=${{ needs.verify.outputs.version }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ needs.verify.outputs.version }}
+            org.opencontainers.image.licenses=Apache-2.0
+          provenance: mode=max
+          sbom: true
+          no-cache: true
+          pull: true
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: ${{ env.COSIGN_VERSION }}
+
+      - name: Sign image (keyless)
+        env:
+          REF: ${{ env.IMAGE_NAMESPACE }}/launchroom-caddy@${{ steps.build.outputs.digest }}
+        run: cosign sign --yes "$REF"
+
+      - name: Verify signature against the pinned identity
+        env:
+          REF: ${{ env.IMAGE_NAMESPACE }}/launchroom-caddy@${{ steps.build.outputs.digest }}
+        run: |
+          cosign verify "$REF" \
+            --certificate-identity "$SIGNER_IDENTITY" \
+            --certificate-oidc-issuer "$SIGNER_ISSUER" > /dev/null
+
+      - name: Record digest
+        env:
+          REF: ${{ env.IMAGE_NAMESPACE }}/launchroom-caddy@${{ steps.build.outputs.digest }}
+          KEY: caddy
+        run: |
+          set -eu
+          mkdir -p digests
+          printf '%s\n' "$REF" > "digests/$KEY"
+
+      - name: Upload digest
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: digest-caddy
+          path: digests/caddy
+          if-no-files-found: error
+          retention-days: 1
+
+  images:
+    name: Image ${{ matrix.image.name }}
+    needs: [verify, caddy]
+    runs-on: ubuntu-latest
+    environment: release # protected: v* tags only, required reviewer (L7)
+    permissions:
+      contents: read
+      packages: write # push to GHCR
+      id-token: write # cosign keyless signing (Fulcio OIDC)
+    strategy:
+      fail-fast: true
+      matrix:
+        image:
+          - { name: launchroom-dashboard, key: dashboard, context: ., file: deploy/images/dashboard/Dockerfile, target: production }
+          - { name: launchroomd, key: daemon, context: daemon, file: daemon/Dockerfile, target: '' }
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Tags
+        id: tags
+        env:
+          IMAGE: ${{ env.IMAGE_NAMESPACE }}/${{ matrix.image.name }}
+          VERSION: ${{ needs.verify.outputs.version }}
+          PRERELEASE: ${{ needs.verify.outputs.prerelease }}
+        run: |
+          set -eu
+          {
+            echo 'list<<EOF'
+            echo "$IMAGE:$VERSION"
+            [ "$PRERELEASE" = true ] || echo "$IMAGE:latest"
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      # No build cache: release images are built from scratch.
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: ${{ matrix.image.context }}
+          file: ${{ matrix.image.file }}
+          target: ${{ matrix.image.target }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.tags.outputs.list }}
+          build-args: |
+            VERSION=${{ needs.verify.outputs.version }}
+            CADDY_DIGEST=${{ needs.caddy.outputs.digest }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ needs.verify.outputs.version }}
+            org.opencontainers.image.licenses=MIT
+          provenance: mode=max
+          sbom: true
+          no-cache: true
+          pull: true
+
+      # A launchroomd without its release's launchroom-caddy pin would refuse
+      # the edge Caddy the dashboard sends: never sign one.
+      - name: launchroomd pins this release's launchroom-caddy
+        if: matrix.image.key == 'daemon'
+        env:
+          REF: ${{ env.IMAGE_NAMESPACE }}/${{ matrix.image.name }}@${{ steps.build.outputs.digest }}
+          CADDY_DIGEST: ${{ needs.caddy.outputs.digest }}
+        run: |
+          set -eu
+          echo "$CADDY_DIGEST" | grep -Eq '^sha256:[0-9a-f]{64}$' || { echo "::error::no launchroom-caddy digest ($CADDY_DIGEST)"; exit 1; }
+          for platform in linux/amd64 linux/arm64; do
+            pins="$(docker run --rm --pull always --platform "$platform" "$REF" system-images)"
+            printf '%s\n' "$pins"
+            printf '%s\n' "$pins" | grep -qx "caddy=$CADDY_DIGEST" \
+              || { echo "::error::launchroomd ($platform) does not pin launchroom-caddy $CADDY_DIGEST"; exit 1; }
+          done
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: ${{ env.COSIGN_VERSION }}
+
+      - name: Sign image (keyless)
+        env:
+          REF: ${{ env.IMAGE_NAMESPACE }}/${{ matrix.image.name }}@${{ steps.build.outputs.digest }}
+        run: cosign sign --yes "$REF"
+
+      - name: Verify signature against the pinned identity
+        env:
+          REF: ${{ env.IMAGE_NAMESPACE }}/${{ matrix.image.name }}@${{ steps.build.outputs.digest }}
+        run: |
+          cosign verify "$REF" \
+            --certificate-identity "$SIGNER_IDENTITY" \
+            --certificate-oidc-issuer "$SIGNER_ISSUER" > /dev/null
+
+      - name: Record digest
+        env:
+          REF: ${{ env.IMAGE_NAMESPACE }}/${{ matrix.image.name }}@${{ steps.build.outputs.digest }}
+          KEY: ${{ matrix.image.key }}
+        run: |
+          set -eu
+          mkdir -p digests
+          printf '%s\n' "$REF" > "digests/$KEY"
+
+      - name: Upload digest
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: digest-${{ matrix.image.key }}
+          path: digests/${{ matrix.image.key }}
+          if-no-files-found: error
+          retention-days: 1
+
+  bundle:
+    name: Deploy bundle
+    needs: [verify, caddy, images]
+    runs-on: ubuntu-latest
+    environment: release # protected: v* tags only, required reviewer (L7)
+    permissions:
+      contents: read
+      id-token: write # cosign keyless signing, build provenance
+      attestations: write # actions/attest-build-provenance
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Download digests
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: digest-*
+          merge-multiple: true
+          path: digests
+
+      - name: Build bundle
+        env:
+          VERSION: ${{ needs.verify.outputs.version }}
+        run: |
+          set -eu
+          SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
+          export SOURCE_DATE_EPOCH
+          sh deploy/release/build-bundle.sh --version "$VERSION" \
+            --dashboard-image "$(cat digests/dashboard)" \
+            --daemon-image "$(cat digests/daemon)" \
+            --caddy-image "$(cat digests/caddy)" \
+            --out dist
+          cp deploy/install/install.sh dist/install.sh
+          cat dist/images.env
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: ${{ env.COSIGN_VERSION }}
+
+      - name: Sign bundle (keyless)
+        working-directory: dist
+        run: |
+          cosign sign-blob --yes \
+            --bundle launchroom-deploy.tar.gz.sigstore.json \
+            launchroom-deploy.tar.gz > /dev/null
+
+      # The same check install.sh and launchroomd run (exact identity).
+      - name: Verify bundle signature against the pinned identity
+        working-directory: dist
+        run: |
+          set -eu
+          sha256sum -c launchroom-deploy.tar.gz.sha256
+          cosign verify-blob \
+            --bundle launchroom-deploy.tar.gz.sigstore.json \
+            --certificate-identity "$SIGNER_IDENTITY" \
+            --certificate-oidc-issuer "$SIGNER_ISSUER" \
+            launchroom-deploy.tar.gz
+
+      - name: Build provenance for the bundle
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/launchroom-deploy.tar.gz
+
+      - name: Upload release files
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-files
+          path: dist/
+          include-hidden-files: false
+          if-no-files-found: error
+          retention-days: 7
+
+  # The launchroom CLI (docs/16-api-and-cli.md §5.1): static binaries for
+  # five platforms, one checksum file signed keyless with the same pinned
+  # identity as the bundle, build provenance for every archive.
+  cli:
+    name: CLI binaries
+    needs: verify
+    runs-on: ubuntu-latest
+    environment: release # protected: v* tags only, required reviewer (L7)
+    permissions:
+      contents: read
+      id-token: write # cosign keyless signing, build provenance
+      attestations: write # actions/attest-build-provenance
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: cli/go.mod
+          cache: false # release binaries are built from scratch
+
+      - name: Build archives
+        env:
+          VERSION: ${{ needs.verify.outputs.version }}
+          CGO_ENABLED: '0'
+        run: |
+          set -eu
+          SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
+          out="$PWD/cli-dist"
+          mkdir -p "$out"
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64; do
+            os="${target%/*}"; arch="${target#*/}"
+            name="launchroom_${VERSION}_${os}_${arch}"
+            work="$(mktemp -d)"
+            bin=launchroom; [ "$os" = windows ] && bin=launchroom.exe
+            (cd cli && GOOS="$os" GOARCH="$arch" go build -trimpath -buildvcs=false \
+              -ldflags "-s -w -buildid= -X main.version=$VERSION" -o "$work/$bin" ./cmd/launchroom)
+            cp LICENSE "$work/LICENSE"
+            touch -d "@$SOURCE_DATE_EPOCH" "$work/$bin" "$work/LICENSE"
+            if [ "$os" = windows ]; then
+              (cd "$work" && zip -q -X "$out/$name.zip" "$bin" LICENSE)
+            else
+              tar --sort=name --owner=0 --group=0 --numeric-owner --mtime="@$SOURCE_DATE_EPOCH" \
+                -C "$work" -cf - "$bin" LICENSE | gzip -n > "$out/$name.tar.gz"
+            fi
+          done
+          cd "$out"
+          sha256sum launchroom_*.tar.gz launchroom_*.zip > "launchroom_${VERSION}_SHA256SUMS"
+          cp "$GITHUB_WORKSPACE/deploy/install/cli.sh" cli.sh
+          cat "launchroom_${VERSION}_SHA256SUMS"
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: ${{ env.COSIGN_VERSION }}
+
+      - name: Sign checksums (keyless)
+        working-directory: cli-dist
+        env:
+          VERSION: ${{ needs.verify.outputs.version }}
+        run: |
+          cosign sign-blob --yes \
+            --bundle "launchroom_${VERSION}_SHA256SUMS.sigstore.json" \
+            "launchroom_${VERSION}_SHA256SUMS" > /dev/null
+
+      # The same check deploy/install/cli.sh runs (exact identity).
+      - name: Verify checksums and signature against the pinned identity
+        working-directory: cli-dist
+        env:
+          VERSION: ${{ needs.verify.outputs.version }}
+        run: |
+          set -eu
+          sha256sum -c "launchroom_${VERSION}_SHA256SUMS"
+          cosign verify-blob \
+            --bundle "launchroom_${VERSION}_SHA256SUMS.sigstore.json" \
+            --certificate-identity "$SIGNER_IDENTITY" \
+            --certificate-oidc-issuer "$SIGNER_ISSUER" \
+            "launchroom_${VERSION}_SHA256SUMS"
+
+      - name: Build provenance for the archives
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            cli-dist/launchroom_*.tar.gz
+            cli-dist/launchroom_*.zip
+
+      - name: Upload CLI files
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: cli-files
+          path: cli-dist/
+          include-hidden-files: false
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    name: GitHub release
+    needs: [verify, bundle, cli]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the release and upload assets
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Download release files
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-files
+          path: dist
+
+      - name: Download CLI files
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: cli-files
+          path: cli-dist
+
+      - name: Changelog
+        id: notes
+        env:
+          VERSION: ${{ needs.verify.outputs.version }}
+        run: |
+          set -eu
+          # The "## <version>" / "## v<version>" / "## [<version>]" section of CHANGELOG.md, if any.
+          if [ -f CHANGELOG.md ]; then
+            awk -v v="$VERSION" '
+              /^## / { if (found) exit; h = $2; gsub(/[][]/, "", h); sub(/^v/, "", h); if (h == v) { found = 1; next } }
+              found { print }
+            ' CHANGELOG.md > notes.md
+          fi
+          if [ -s notes.md ]; then echo "file=notes.md" >> "$GITHUB_OUTPUT"; else echo "file=" >> "$GITHUB_OUTPUT"; fi
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+          PRERELEASE: ${{ needs.verify.outputs.prerelease }}
+          NOTES: ${{ steps.notes.outputs.file }}
+        run: |
+          set -eu
+          set -- "$TAG" --verify-tag --title "launchroom $TAG"
+          if [ -n "$NOTES" ]; then set -- "$@" --notes-file "$NOTES"; else set -- "$@" --generate-notes; fi
+          if [ "$PRERELEASE" = true ]; then set -- "$@" --prerelease; else set -- "$@" --latest; fi
+          gh release create "$@" \
+            dist/launchroom-deploy.tar.gz \
+            dist/launchroom-deploy.tar.gz.sha256 \
+            dist/launchroom-deploy.tar.gz.sigstore.json \
+            dist/images.env \
+            dist/install.sh \
+            cli-dist/launchroom_* \
+            cli-dist/cli.sh \
+            dashboard/resources/schema/launchroom.v1.json

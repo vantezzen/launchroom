@@ -1,0 +1,1350 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://launchroom.vantezzen.io/schema/v1/node-state.json",
+  "$defs": {
+    "AmbassadorSpec": {
+      "properties": {
+        "network": {
+          "type": "string",
+          "pattern": "^net_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "alias": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]{0,62}$"
+        },
+        "port": {
+          "type": "integer",
+          "maximum": 65535,
+          "minimum": 1
+        },
+        "upstreams": {
+          "items": {
+            "type": "string",
+            "pattern": "^(?:[0-9]{1,3}(?:\\.[0-9]{1,3}){3}|\\[[0-9a-f:.]{2,45}\\]):[0-9]{1,5}$"
+          },
+          "type": "array",
+          "minItems": 1
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "network",
+        "alias",
+        "port",
+        "upstreams"
+      ],
+      "description": "AmbassadorSpec is one listener of the lr-ambassador container (docs/05 §3)."
+    },
+    "BackupDestination": {
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "s3",
+            "local"
+          ]
+        },
+        "endpoint": {
+          "type": "string",
+          "maxLength": 512,
+          "pattern": "^https?://[a-z0-9.-]+(?::[0-9]{1,5})?$",
+          "description": "Endpoint and Bucket are required for s3; Region is optional (default us-east-1)."
+        },
+        "bucket": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$"
+        },
+        "region": {
+          "type": "string",
+          "pattern": "^[a-z0-9-]{1,32}$"
+        },
+        "prefix": {
+          "type": "string",
+          "maxLength": 256,
+          "pattern": "^(?:[A-Za-z0-9._-]+/)*[A-Za-z0-9._-]*$",
+          "description": "Prefix is the key prefix (s3) or the subdirectory of data/backups (local)."
+        },
+        "credentials": {
+          "$ref": "#/$defs/Sealed",
+          "description": "Credentials is a sealed TaskEnv bound to this server and task whose env\nholds exactly AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY and RESTIC_PASSWORD\n(only RESTIC_PASSWORD for local destinations). The daemon passes them to\nrestic through its environment, never argv."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "kind",
+        "credentials"
+      ],
+      "description": "BackupDestination is a restic repository location."
+    },
+    "CertStorageMeshSpec": {
+      "properties": {
+        "serveOnMesh": {
+          "type": "boolean"
+        },
+        "allowFrom": {
+          "oneOf": [
+            {
+              "items": {
+                "type": "string",
+                "pattern": "^(?:[0-9]{1,3}(?:\\.[0-9]{1,3}){3}|[0-9a-f:.]{2,45})$"
+              },
+              "type": "array",
+              "maxItems": 256,
+              "uniqueItems": true,
+              "description": "AllowFrom are the mesh IPs that may connect (requires serveOnMesh)."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "CertStorageMeshSpec makes launchroomd serve \u003cmesh IP\u003e:6379 → the local Valkey (launchroomd's local LR_CERT_STORAGE_UPSTREAM) and allow that port in nftables only from AllowFrom (the edges' mesh IPs)."
+    },
+    "CertStorageSpec": {
+      "properties": {
+        "address": {
+          "type": "string",
+          "pattern": "^(?:[0-9]{1,3}(?:\\.[0-9]{1,3}){3}|\\[[0-9a-f:.]{2,45}\\]):[0-9]{1,5}$",
+          "description": "Address of the Redis-protocol server. Local policy: the mesh range or\nan address in the daemon's LR_ALLOWED_LOCAL_UPSTREAMS."
+        },
+        "keyPrefix": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9_-]{0,62}$",
+          "description": "KeyPrefix namespaces Caddy's keys (e.g. \"lr-caddy\")."
+        },
+        "credentials": {
+          "$ref": "#/$defs/Sealed",
+          "description": "Credentials is a sealed IngressSecret (purpose \"cert_storage\") with\n\"password\", \"encryptionKey\" (≥ 32 bytes; values are AES-256-GCM\nencrypted in the storage) and optionally \"username\"."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "address",
+        "keyPrefix",
+        "credentials"
+      ],
+      "description": "CertStorageSpec is shared certificate storage (docs/05 §5)."
+    },
+    "ControlPlaneSpec": {
+      "properties": {
+        "url": {
+          "type": "string",
+          "maxLength": 267,
+          "pattern": "^https://[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+(?::[1-9][0-9]{0,4})?$"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "url"
+      ],
+      "description": "ControlPlaneSpec is NodeState.system.controlPlane: the dashboard's canonical public origin."
+    },
+    "DNSChallengeSpec": {
+      "properties": {
+        "provider": {
+          "type": "string",
+          "enum": [
+            "cloudflare",
+            "hetzner",
+            "route53",
+            "digitalocean",
+            "porkbun",
+            "desec",
+            "gandi",
+            "ovh",
+            "netcup"
+          ]
+        },
+        "domains": {
+          "items": {
+            "type": "string",
+            "maxLength": 253,
+            "pattern": "^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+          },
+          "type": "array",
+          "maxItems": 16,
+          "minItems": 1,
+          "description": "Domains are the platform domains in the provider's zone(s). Wildcard\ncertificates are only requested for names at or below one of them."
+        },
+        "credentials": {
+          "$ref": "#/$defs/Sealed",
+          "description": "Credentials is a sealed IngressSecret (purpose \"dns\") with the\nprovider's values (DNSCredentialKeys): \"token\" for Cloudflare (Zone.DNS\nedit, scoped to the zone), Hetzner (Cloud API token), DigitalOcean,\ndeSEC and Gandi (personal access token); \"accessKeyId\" +\n\"secretAccessKey\" for Route 53; \"apiKey\" + \"secretKey\" for Porkbun;\n\"endpoint\" + \"applicationKey\" + \"applicationSecret\" + \"consumerKey\" for\nOVHcloud; \"customerNumber\" + \"apiKey\" + \"apiPassword\" for netcup."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "provider",
+        "domains",
+        "credentials"
+      ],
+      "description": "DNSChallengeSpec is a DNS provider for DNS-01 challenges."
+    },
+    "FirewallSpec": {
+      "properties": {
+        "meshAllow": {
+          "items": {
+            "$ref": "#/$defs/MeshAllowRule"
+          },
+          "type": "array"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "meshAllow"
+      ],
+      "description": "FirewallSpec holds nftables allow-lists."
+    },
+    "ForwardAuth": {
+      "properties": {
+        "url": {
+          "type": "string",
+          "maxLength": 512,
+          "pattern": "^https?://[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*(?::[1-9][0-9]{0,4})?/auth/preview$",
+          "description": "URL of the dashboard's preview auth endpoint: http(s)://host[:port]/auth/preview."
+        },
+        "stripHeaders": {
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9-]{1,64}$"
+          },
+          "type": "array",
+          "maxItems": 8,
+          "uniqueItems": true,
+          "description": "StripHeaders are request headers removed after a successful check, before\nthe request reaches the app (e.g. the CI bypass header X-Launchroom-Bypass)."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "url"
+      ],
+      "description": "ForwardAuth is Caddy forward auth to the dashboard."
+    },
+    "HealthSpec": {
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "http",
+            "tcp"
+          ]
+        },
+        "path": {
+          "type": "string",
+          "maxLength": 1024,
+          "pattern": "^/[A-Za-z0-9._~!$\u0026'()*+,;=:@%/?-]*$",
+          "description": "Path is required for http probes and forbidden for tcp."
+        },
+        "expectStatus": {
+          "type": "string",
+          "pattern": "^[1-5](?:xx|[0-9]{2})(?:-[1-5](?:xx|[0-9]{2}))?$",
+          "description": "ExpectStatus defaults to \"2xx-3xx\" for http probes."
+        },
+        "startPeriod": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]{0,5}(?:ms|s|m|h)$"
+        },
+        "interval": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]{0,5}(?:ms|s|m|h)$"
+        },
+        "timeout": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]{0,5}(?:ms|s|m|h)$"
+        },
+        "failureThreshold": {
+          "type": "integer",
+          "maximum": 100,
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "type",
+        "startPeriod",
+        "interval",
+        "timeout",
+        "failureThreshold"
+      ],
+      "description": "HealthSpec configures an external HTTP or TCP probe against container IP:port."
+    },
+    "IngressSpec": {
+      "properties": {
+        "storage": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/CertStorageSpec",
+              "description": "Storage is certificate storage shared by every edge (Redis protocol,\nValkey on the control plane), so several edges coordinate ACME as one\nclient. Omitted: Caddy's local file storage (single edge)."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "dns": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/DNSChallengeSpec",
+              "description": "DNS enables DNS-01 wildcard certificates for routes with tls \"wildcard\".\nOmitted: such routes get per-host certificates (HTTP-01)."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "IngressSpec configures how the edge's Caddy stores and obtains certificates."
+    },
+    "LinkProbePeer": {
+      "properties": {
+        "serverId": {
+          "type": "string",
+          "pattern": "^srv_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "ipv4": {
+          "type": "string",
+          "pattern": "^(?:[0-9]{1,3}(?:\\.[0-9]{1,3}){3}|[0-9a-f:.]{2,45})$",
+          "description": "IPv4 is the peer's mesh address (local policy: inside 100.64.0.0/10)."
+        },
+        "signingKey": {
+          "type": "string",
+          "pattern": "^ed25519:[A-Za-z0-9+/]{43}=$",
+          "description": "SigningKey is the peer launchroomd's Ed25519 request-signing key."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "serverId",
+        "ipv4",
+        "signingKey"
+      ],
+      "description": "LinkProbePeer is one server to measure and to accept probes from."
+    },
+    "LinkProbeSpec": {
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "peers": {
+          "oneOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/LinkProbePeer"
+              },
+              "type": "array",
+              "maxItems": 256
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "LinkProbeSpec is NodeState.system.linkProbe: measure latency and throughput to these peers over the mesh and answer their probes."
+    },
+    "MeshAllowRule": {
+      "properties": {
+        "port": {
+          "type": "integer",
+          "maximum": 32999,
+          "minimum": 31000
+        },
+        "from": {
+          "items": {
+            "type": "string",
+            "pattern": "^(?:[0-9]{1,3}(?:\\.[0-9]{1,3}){3}|[0-9a-f:.]{2,45})$"
+          },
+          "type": "array",
+          "minItems": 1
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "port",
+        "from"
+      ],
+      "description": "MeshAllowRule allows a mesh-published port from specific peer mesh IPs."
+    },
+    "MeshPublish": {
+      "properties": {
+        "port": {
+          "type": "integer",
+          "maximum": 32999,
+          "minimum": 31000
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "port"
+      ],
+      "description": "MeshPublish publishes the workload port on the mesh IP."
+    },
+    "Mount": {
+      "properties": {
+        "volume": {
+          "type": "string",
+          "pattern": "^vol_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "target": {
+          "type": "string",
+          "maxLength": 1024,
+          "pattern": "^/[A-Za-z0-9._@+=,-]+(?:/[A-Za-z0-9._@+=,-]+)*$"
+        },
+        "readOnly": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "volume",
+        "target"
+      ],
+      "description": "Mount mounts a named volume declared in NodeState.volumes."
+    },
+    "NetworkAttachment": {
+      "properties": {
+        "network": {
+          "type": "string",
+          "pattern": "^net_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "aliases": {
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]{0,62}$"
+          },
+          "type": "array"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "network",
+        "aliases"
+      ],
+      "description": "NetworkAttachment attaches a workload to a network with DNS aliases."
+    },
+    "NetworkSpec": {
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^net_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "name": {
+          "type": "string",
+          "pattern": "^lr-[a-z0-9][a-z0-9_-]{0,59}$"
+        },
+        "subnet": {
+          "type": "string",
+          "pattern": "^[0-9]{1,3}(?:\\.[0-9]{1,3}){3}/[0-9]{1,2}$"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "id",
+        "name",
+        "subnet"
+      ],
+      "description": "NetworkSpec is a Docker bridge network with a dashboard-allocated subnet."
+    },
+    "RegistrySpec": {
+      "properties": {
+        "forwardTo": {
+          "type": "string",
+          "pattern": "^(?:[0-9]{1,3}(?:\\.[0-9]{1,3}){3}|\\[[0-9a-f:.]{2,45}\\]):[0-9]{1,5}$",
+          "description": "ForwardTo is the mesh address of Zot. Empty on the control-plane host, where Zot itself listens."
+        },
+        "serveOnMesh": {
+          "type": "boolean",
+          "description": "ServeOnMesh (control-plane host only) makes launchroomd listen on its\nmesh IP, port 5000, and forward to the local registry, so other servers\nreach Zot over the mesh (docs/05 §6)."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "RegistrySpec configures the 127.0.0.1:5000 registry forwarder (docs/05 §6)."
+    },
+    "Resources": {
+      "properties": {
+        "cpus": {
+          "type": "number",
+          "maximum": 1024,
+          "exclusiveMinimum": 0
+        },
+        "memoryMb": {
+          "type": "integer",
+          "maximum": 1048576,
+          "minimum": 16
+        },
+        "pids": {
+          "type": "integer",
+          "maximum": 1048576,
+          "minimum": 16
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "cpus",
+        "memoryMb",
+        "pids"
+      ],
+      "description": "Resources are container limits."
+    },
+    "RouteClientAuth": {
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "verify",
+            "require"
+          ]
+        },
+        "caCertificates": {
+          "items": {
+            "type": "string",
+            "maxLength": 8192,
+            "minLength": 4,
+            "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$"
+          },
+          "type": "array",
+          "maxItems": 4,
+          "minItems": 1,
+          "description": "CACertificates are the trusted CA certificates (base64 DER)."
+        },
+        "edgeSecret": {
+          "$ref": "#/$defs/Sealed",
+          "description": "EdgeSecret is a sealed IngressSecret (purpose \"client_auth\") with\n\"secret\": sent to the dashboard in X-Lr-Edge with every proxied request."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "mode",
+        "caCertificates",
+        "edgeSecret"
+      ],
+      "description": "RouteClientAuth asks the edge to verify daemon client certificates on a route (the dashboard's system routes on the control-plane server only; local policy: every upstream must be an LR_ALLOWED_LOCAL_UPSTREAMS address)."
+    },
+    "RouteProtection": {
+      "properties": {
+        "forwardAuth": {
+          "$ref": "#/$defs/ForwardAuth",
+          "description": "ForwardAuth asks the dashboard about every request before proxying it."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "forwardAuth"
+      ],
+      "description": "RouteProtection guards a route."
+    },
+    "RouteSpec": {
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^rt_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "hosts": {
+          "items": {
+            "type": "string",
+            "maxLength": 253,
+            "pattern": "^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+          },
+          "type": "array",
+          "minItems": 1
+        },
+        "tls": {
+          "type": "string",
+          "enum": [
+            "acme",
+            "on_demand",
+            "internal",
+            "wildcard"
+          ]
+        },
+        "redirectWwwTo": {
+          "type": "string",
+          "maxLength": 253,
+          "pattern": "^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$",
+          "description": "RedirectWWWTo redirects every other host of the route to this one (www ↔ apex); must be one of Hosts."
+        },
+        "upstreams": {
+          "items": {
+            "$ref": "#/$defs/RouteUpstream"
+          },
+          "type": "array",
+          "minItems": 1,
+          "description": "Upstreams reference workloads on this server ({\"workload\", \"port\"}; the\ndaemon resolves the container IP) or mesh-published replicas on other\nservers ({\"address\": \"100.64.0.9:31002\"}). The daemon only routes to\nserving workloads that are running and pass their health probe."
+        },
+        "headers": {
+          "oneOf": [
+            {
+              "additionalProperties": {
+                "type": "string",
+                "pattern": "^[^{}]*$"
+              },
+              "propertyNames": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9-]{1,64}$"
+              },
+              "type": "object",
+              "description": "Headers are response headers to set (e.g. X-Robots-Tag on non-production).\nAn empty value removes the header. Values must not contain { or }."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "protection": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/RouteProtection",
+              "description": "Protection guards the route (preview protection, docs/06 §5): every request is\nchecked by the dashboard (forward auth) before it is proxied."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "loadBalancing": {
+          "type": "string",
+          "enum": [
+            "round_robin",
+            "prefer_local"
+          ],
+          "description": "LoadBalancing selects upstreams. Omitted: round_robin."
+        },
+        "clientAuth": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/RouteClientAuth",
+              "description": "ClientAuth verifies daemon client certificates (mTLS, D50, docs/03\n§4.3; daemon feature clientCertificates). Only the dashboard's system\nroutes on the control-plane server carry it."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "id",
+        "hosts",
+        "tls",
+        "upstreams"
+      ],
+      "description": "RouteSpec is an ingress route rendered into Caddy config (docs/05 §4)."
+    },
+    "RouteUpstream": {
+      "oneOf": [
+        {
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "address"
+                ]
+              }
+            ]
+          },
+          "required": [
+            "workload",
+            "port"
+          ]
+        },
+        {
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "workload"
+                ]
+              },
+              {
+                "required": [
+                  "port"
+                ]
+              }
+            ]
+          },
+          "required": [
+            "address"
+          ]
+        }
+      ],
+      "properties": {
+        "workload": {
+          "type": "string",
+          "pattern": "^wl_[0-9A-HJKMNP-TV-Z]{26}$",
+          "description": "Workload is a workload id from this NodeState (same-server upstream)."
+        },
+        "port": {
+          "type": "integer",
+          "maximum": 65535,
+          "minimum": 1,
+          "description": "Port is the container port to proxy to; required with workload."
+        },
+        "address": {
+          "type": "string",
+          "pattern": "^(?:[0-9]{1,3}(?:\\.[0-9]{1,3}){3}|\\[[0-9a-f:.]{2,45}\\]):[0-9]{1,5}$",
+          "description": "Address is a mesh ip:port (cross-server upstream)."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "RouteUpstream is one upstream of a route."
+    },
+    "ScheduleSpec": {
+      "properties": {
+        "cron": {
+          "type": "string",
+          "maxLength": 100,
+          "pattern": "^[0-9*,/-]+( [0-9*,/-]+){4}$",
+          "description": "Cron is a 5-field expression (minute hour day month weekday; numbers,\n\"*\", ranges, lists and steps only)."
+        },
+        "timeZone": {
+          "type": "string",
+          "maxLength": 64,
+          "pattern": "^[A-Za-z][A-Za-z0-9_+-]{0,31}(/[A-Za-z0-9_+-]{1,32}){0,2}$",
+          "description": "TimeZone is the IANA zone the expression is read in (e.g. \"UTC\",\n\"Europe/Berlin\")."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "cron",
+        "timeZone"
+      ],
+      "description": "ScheduleSpec is when a scheduled workload runs."
+    },
+    "Sealed": {
+      "properties": {
+        "sealed": {
+          "type": "string",
+          "maxLength": 1048576,
+          "minLength": 64,
+          "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "sealed"
+      ],
+      "description": "Sealed wraps a sealed payload: {\"sealed\": \"\u003cbase64\u003e\"}."
+    },
+    "StopSpec": {
+      "properties": {
+        "signal": {
+          "type": "string",
+          "enum": [
+            "SIGTERM",
+            "SIGINT"
+          ],
+          "description": "Signal is sent to the container's PID 1 on stop."
+        },
+        "timeout": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]{0,5}(?:ms|s|m|h)$",
+          "description": "Timeout is how long the workload may take to exit before it is\nkilled (1s to 5m)."
+        },
+        "noInit": {
+          "type": "boolean",
+          "description": "NoInit runs no init process: the image's entrypoint must exec the\nserver as PID 1 (it receives Signal from the kernel and reaps its own\nchildren). Needed by servers that drop to their own user: the init\nruns as root without CAP_KILL and cannot forward signals to them."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "signal",
+        "timeout"
+      ],
+      "description": "StopSpec is how a workload's container is stopped (redeploys, removals, drains, Docker restarts)."
+    },
+    "SystemContainer": {
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "image": {
+          "type": "string",
+          "maxLength": 512,
+          "pattern": "^(?:localhost|[a-z0-9-]+(?:\\.[a-z0-9-]+)+|[a-z0-9-]+(?:\\.[a-z0-9-]+)*:[0-9]{1,5})(?:/[a-z0-9]+(?:(?:\\.|_|__|-+)[a-z0-9]+)*)+@sha256:[a-f0-9]{64}$",
+          "description": "Image is required when enabled."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "enabled"
+      ],
+      "description": "SystemContainer enables one system container at a digest-pinned image."
+    },
+    "SystemSpec": {
+      "properties": {
+        "caddy": {
+          "$ref": "#/$defs/SystemContainer"
+        },
+        "buildkit": {
+          "$ref": "#/$defs/SystemContainer"
+        },
+        "tailscale": {
+          "$ref": "#/$defs/TailscaleSpec"
+        },
+        "registry": {
+          "$ref": "#/$defs/RegistrySpec"
+        },
+        "certStorage": {
+          "$ref": "#/$defs/CertStorageMeshSpec",
+          "description": "CertStorage (control-plane host only) serves the control plane's\nValkey on the mesh for the edges' shared certificate storage (docs/05 §5).\nOmitted when off."
+        },
+        "linkProbe": {
+          "$ref": "#/$defs/LinkProbeSpec",
+          "description": "LinkProbe measures the private-network links to the listed peers and\nanswers their probes on \u003cmesh IP\u003e:7400 (docs/05 §2.1). Omitted when off."
+        },
+        "controlPlane": {
+          "$ref": "#/$defs/ControlPlaneSpec",
+          "description": "ControlPlane is the dashboard's canonical public origin (docs/03 §4.2);\nomitted on the control-plane host and for daemons without the\ncontrolPlaneUrl feature."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "caddy",
+        "buildkit",
+        "tailscale",
+        "registry"
+      ],
+      "description": "SystemSpec configures launchroom's system containers."
+    },
+    "TailscaleSpec": {
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "image": {
+          "type": "string",
+          "maxLength": 512,
+          "pattern": "^(?:localhost|[a-z0-9-]+(?:\\.[a-z0-9-]+)+|[a-z0-9-]+(?:\\.[a-z0-9-]+)*:[0-9]{1,5})(?:/[a-z0-9]+(?:(?:\\.|_|__|-+)[a-z0-9]+)*)+@sha256:[a-f0-9]{64}$",
+          "description": "Image is required when enabled."
+        },
+        "loginServer": {
+          "type": "string",
+          "maxLength": 512,
+          "pattern": "^https?://[a-z0-9.-]+(?::[0-9]{1,5})?$",
+          "description": "LoginServer is the coordination server (the embedded Headscale, or the\ntailnet's for \"bring your own Tailscale\"); required when enabled. Plain\nhttp is refused by launchroomd's local policy unless allowed locally (dev)."
+        },
+        "tags": {
+          "items": {
+            "type": "string",
+            "pattern": "^tag:[a-z0-9-]{1,63}$"
+          },
+          "type": "array",
+          "description": "Tags are ACL tags to advertise (--advertise-tags) such as \"tag:lr-edge\".\nOmitted with the embedded Headscale, whose pre-auth keys carry the tags."
+        },
+        "authKey": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Sealed",
+              "description": "AuthKey is a pre-auth key sealed to this daemon (plaintext: MeshAuthKey,\nbound to this server). Only present until the server has joined the\nmesh; launchroomd uses it when the client needs to log in and never\nwrites it anywhere but the client's stdin."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "enabled"
+      ],
+      "description": "TailscaleSpec configures the mesh client container (docs/05 §2)."
+    },
+    "VolumeDeletion": {
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^vol_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "name": {
+          "type": "string",
+          "pattern": "^lr-[a-z0-9][a-z0-9_-]{0,59}$"
+        },
+        "service": {
+          "type": "string",
+          "pattern": "^svc_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "environment": {
+          "type": "string",
+          "pattern": "^env_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "requestedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "RequestedAt is when the dashboard decided to delete it (retention elapsed, final backup taken or confirmed)."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "id",
+        "name",
+        "service",
+        "environment",
+        "requestedAt"
+      ],
+      "description": "VolumeDeletion is one explicit volume deletion request."
+    },
+    "VolumeSpec": {
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^vol_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "name": {
+          "type": "string",
+          "pattern": "^lr-[a-z0-9][a-z0-9_-]{0,59}$"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "id",
+        "name"
+      ],
+      "description": "VolumeSpec is a named Docker volume."
+    },
+    "WalArchiveSpec": {
+      "properties": {
+        "directory": {
+          "type": "string",
+          "maxLength": 1024,
+          "pattern": "^/[A-Za-z0-9._@+=,-]+(?:/[A-Za-z0-9._@+=,-]+)*$",
+          "description": "Directory is basic_archive.archive_directory inside the container. It\nmust lie inside one of the workload's mounts, so segments not shipped\nyet survive a container replacement."
+        },
+        "destination": {
+          "$ref": "#/$defs/BackupDestination",
+          "description": "Destination is the restic repository. Unlike task destinations, its\ncredentials are a sealed WorkloadEnv bound to this server and workload\n(the same document as workloads[].env) holding exactly\nAWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY and RESTIC_PASSWORD."
+        },
+        "tags": {
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_-]{0,31}:[A-Za-z0-9_.-]{1,128}$"
+          },
+          "type": "array",
+          "maxItems": 32,
+          "minItems": 1,
+          "description": "Tags are put on every WAL snapshot (\"kind:wal\", \"service:…\", …)."
+        },
+        "interval": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]{0,5}(?:ms|s|m|h)$",
+          "description": "Interval between shipping cycles (10s–1h)."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "directory",
+        "destination",
+        "tags",
+        "interval"
+      ],
+      "description": "WalArchiveSpec turns on continuous WAL shipping for a Postgres workload (NodeState workloads[].walArchive)."
+    },
+    "WorkloadSpec": {
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^wl_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "service": {
+          "type": "string",
+          "pattern": "^svc_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "environment": {
+          "type": "string",
+          "pattern": "^env_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "deployment": {
+          "type": "string",
+          "pattern": "^dpl_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "image": {
+          "type": "string",
+          "maxLength": 512,
+          "pattern": "^(?:localhost|[a-z0-9-]+(?:\\.[a-z0-9-]+)+|[a-z0-9-]+(?:\\.[a-z0-9-]+)*:[0-9]{1,5})(?:/[a-z0-9]+(?:(?:\\.|_|__|-+)[a-z0-9]+)*)+@sha256:[a-f0-9]{64}$",
+          "description": "Image is digest-pinned and must come from the allowed registry (policy floor)."
+        },
+        "command": {
+          "oneOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array",
+              "maxItems": 256,
+              "minItems": 1,
+              "description": "Command overrides the image ENTRYPOINT as argv. Omitted: image default."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "args": {
+          "oneOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array",
+              "maxItems": 256,
+              "minItems": 1,
+              "description": "Args overrides the image CMD as argv (never a shell string). Omitted: image default."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "env": {
+          "$ref": "#/$defs/Sealed",
+          "description": "Env is the runtime environment sealed to this daemon's X25519 key. The\nplaintext is a JSON object {\"serverId\", \"workloadId\", \"env\": {KEY: value}}."
+        },
+        "port": {
+          "oneOf": [
+            {
+              "type": "integer",
+              "maximum": 65535,
+              "minimum": 1,
+              "description": "Port the app listens on inside the container. Omitted for workers."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "health": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/HealthSpec",
+              "description": "Health configures the external probe. Omitted: \"running without exiting\" counts as healthy."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "resources": {
+          "$ref": "#/$defs/Resources",
+          "description": "Resources are mandatory limits (policy floor)."
+        },
+        "capabilities": {
+          "oneOf": [
+            {
+              "items": {
+                "type": "string",
+                "enum": [
+                  "AUDIT_CONTROL",
+                  "AUDIT_READ",
+                  "AUDIT_WRITE",
+                  "BLOCK_SUSPEND",
+                  "BPF",
+                  "CHECKPOINT_RESTORE",
+                  "CHOWN",
+                  "DAC_OVERRIDE",
+                  "DAC_READ_SEARCH",
+                  "FOWNER",
+                  "FSETID",
+                  "IPC_LOCK",
+                  "IPC_OWNER",
+                  "KILL",
+                  "LEASE",
+                  "LINUX_IMMUTABLE",
+                  "MAC_ADMIN",
+                  "MAC_OVERRIDE",
+                  "MKNOD",
+                  "NET_ADMIN",
+                  "NET_BIND_SERVICE",
+                  "NET_BROADCAST",
+                  "NET_RAW",
+                  "PERFMON",
+                  "SETFCAP",
+                  "SETGID",
+                  "SETPCAP",
+                  "SETUID",
+                  "SYSLOG",
+                  "SYS_ADMIN",
+                  "SYS_BOOT",
+                  "SYS_CHROOT",
+                  "SYS_MODULE",
+                  "SYS_NICE",
+                  "SYS_PACCT",
+                  "SYS_PTRACE",
+                  "SYS_RAWIO",
+                  "SYS_RESOURCE",
+                  "SYS_TIME",
+                  "SYS_TTY_CONFIG",
+                  "WAKE_ALARM"
+                ]
+              },
+              "type": "array",
+              "description": "Capabilities to add on top of cap-drop ALL; must be in the local allow-list."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "networks": {
+          "items": {
+            "$ref": "#/$defs/NetworkAttachment"
+          },
+          "type": "array",
+          "minItems": 1,
+          "description": "Networks to attach, with DNS aliases (service slugs). The first is the primary network."
+        },
+        "mounts": {
+          "oneOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/Mount"
+              },
+              "type": "array",
+              "description": "Mounts of named volumes. Bind mounts do not exist in the protocol."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "publishOnMesh": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/MeshPublish",
+              "description": "PublishOnMesh publishes Port on the server's mesh IP when consumed from other servers."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "restart": {
+          "type": "string",
+          "enum": [
+            "no",
+            "always",
+            "unless-stopped",
+            "on-failure"
+          ],
+          "description": "Restart is the Docker restart policy."
+        },
+        "role": {
+          "type": "string",
+          "enum": [
+            "serving",
+            "draining"
+          ],
+          "description": "Role is serving or draining."
+        },
+        "drainUntil": {
+          "oneOf": [
+            {
+              "type": "string",
+              "format": "date-time",
+              "description": "DrainUntil is when a draining workload is stopped; required iff role is draining."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "shipLogs": {
+          "type": "boolean",
+          "description": "ShipLogs makes launchroomd follow the workload's container logs and\nship them continuously as workload chunks (runtime log retention,\nopt-in per environment). It never changes the container."
+        },
+        "walArchive": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/WalArchiveSpec",
+              "description": "WalArchive makes launchroomd ship the WAL segments Postgres archives\ninto a directory of the workload's volume (point-in-time recovery,\ndocs/14 §10). It never changes the container."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "stop": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/StopSpec",
+              "description": "Stop is how the container is stopped (daemon feature \"stopSpec\";\ndatabase engines, docs/03 §8). Omitted: the image's stop signal\nthrough the init process and launchroomd's default grace period."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "schedule": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ScheduleSpec",
+              "description": "Schedule makes the workload a scheduled job (daemon feature\n\"cronSchedule\", cron services): launchroomd creates the container\nwithout starting it and starts it at every due minute of the cron\nexpression in the time zone, unless the previous run still runs.\nRequires restart \"no\" and no port, health or mesh publication."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "id",
+        "service",
+        "environment",
+        "deployment",
+        "image",
+        "env",
+        "resources",
+        "networks",
+        "restart",
+        "role"
+      ],
+      "description": "WorkloadSpec is one app container (one replica of one service in one deployment)."
+    }
+  },
+  "properties": {
+    "apiVersion": {
+      "type": "string",
+      "const": "launchroom.vantezzen.io/v1"
+    },
+    "kind": {
+      "type": "string",
+      "const": "NodeState"
+    },
+    "serverId": {
+      "type": "string",
+      "pattern": "^srv_[0-9A-HJKMNP-TV-Z]{26}$",
+      "description": "ServerID is the server this state is for; the daemon rejects any other."
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Version is monotonic per server; the daemon rejects versions \u003c= its current one."
+    },
+    "issuedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "IssuedAt is when the dashboard rendered this state (informational)."
+    },
+    "system": {
+      "$ref": "#/$defs/SystemSpec",
+      "description": "System lists launchroom's own sibling containers for this server's roles."
+    },
+    "networks": {
+      "items": {
+        "$ref": "#/$defs/NetworkSpec"
+      },
+      "type": "array",
+      "description": "Networks are the per-(project, environment) bridge networks on this server."
+    },
+    "volumes": {
+      "items": {
+        "$ref": "#/$defs/VolumeSpec"
+      },
+      "type": "array",
+      "description": "Volumes are named, launchroom-labelled volumes on this server."
+    },
+    "workloads": {
+      "items": {
+        "$ref": "#/$defs/WorkloadSpec"
+      },
+      "type": "array",
+      "description": "Workloads are the app containers to run."
+    },
+    "ambassadors": {
+      "items": {
+        "$ref": "#/$defs/AmbassadorSpec"
+      },
+      "type": "array",
+      "description": "Ambassadors forward network-local aliases to services on other servers (docs/05 §3)."
+    },
+    "routes": {
+      "items": {
+        "$ref": "#/$defs/RouteSpec"
+      },
+      "type": "array",
+      "description": "Routes is the ingress route table (edge servers only; empty elsewhere)."
+    },
+    "ingress": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/IngressSpec",
+          "description": "Ingress configures certificate storage and DNS-01 for the edge's Caddy\n(edge servers only; omitted when Caddy's defaults suffice)."
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "firewall": {
+      "$ref": "#/$defs/FirewallSpec",
+      "description": "Firewall holds the mesh allow-list for mesh-published ports."
+    },
+    "deleteVolumes": {
+      "oneOf": [
+        {
+          "items": {
+            "$ref": "#/$defs/VolumeDeletion"
+          },
+          "type": "array",
+          "description": "DeleteVolumes explicitly asks launchroomd to delete volumes of deleted\nenvironments, services or previews (docs/05 §1.1). Volumes are never\ndeleted just because they left `volumes`. Omitted when empty."
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "apiVersion",
+    "kind",
+    "serverId",
+    "version",
+    "issuedAt",
+    "system",
+    "networks",
+    "volumes",
+    "workloads",
+    "ambassadors",
+    "routes",
+    "firewall"
+  ],
+  "title": "NodeState: signed desired state of one server",
+  "description": "NodeState is the signed desired state of one server (docs/03 §5)."
+}

@@ -1,0 +1,6 @@
+{
+  "apiVersion": "launchroom.vantezzen.io/v1",
+  "kind": "BroadcastAuthRequest",
+  "socketId": "123.456",
+  "channel": "private-session.ses_01J9Z8X7W6V5T4S3R2Q1P0N9S2"
+}

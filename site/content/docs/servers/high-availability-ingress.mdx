@@ -1,0 +1,117 @@
+---
+title: High-availability ingress
+description: Remove the single point of failure in front of your apps with two or three edge servers and DNS that only sends visitors to edges that are up.
+---
+
+All public traffic to your apps enters through servers with the **Serve traffic** role, the *edges*. With one edge,
+that machine is a single point of failure. If it goes down, your apps are unreachable even while other servers still
+run them. To remove the single point of failure:
+
+1. Add more edge servers.
+2. Use DNS that only sends visitors to edges that are up.
+
+## The single point of failure badge
+
+When exactly one edge exists and other servers could also take traffic, a **Single point of failure** badge appears
+on:
+
+- the **Servers** page
+- every project
+- **Settings → Network → Public traffic**
+
+With one server in total there is nothing to fix. launchroom suggests adding a second server instead.
+
+## 1. Give the edge role to two or three public servers
+
+An edge needs a public IP with ports 80 and 443 reachable from the internet. Turn on **Serve traffic** on the server's
+**Settings** tab, or pick it when you [add a server](/docs/servers/add-a-server).
+
+Every edge then routes every service of the team. It serves replicas that run on it directly and forwards to replicas on
+other servers over the private network. Visitors get the same result on any edge. Per-deployment URLs also work on
+every edge.
+
+<Screenshot id="domains-edges" />
+
+### Share certificates between edges
+
+Each edge needs valid certificates for every domain. Edges can share them and act as one ACME client: any edge can
+answer a Let's Encrypt challenge, and a certificate obtained by one edge is used by all of them.
+
+1. Open **Settings → Network → Public traffic** (instance owners).
+2. For each edge other than the dashboard's server, turn on **Share certificates**. The dashboard's server always
+   shares.
+
+With two or more sharing edges and the private network on, launchroom sets up the shared certificate storage on the
+dashboard's server automatically. You don't configure anything by hand. Each edge keeps a local copy of the
+certificates, so it restarts with valid certificates even when the shared storage is unreachable.
+
+Share certificates only with edges you trust with every team's certificates and your DNS provider token. Edges are
+infrastructure of the whole install. An edge that doesn't share still serves its team's apps, with its own
+certificates.
+
+Without shared storage each edge obtains its own certificates, and an HTTP challenge only succeeds on the edge that DNS
+sent Let's Encrypt to.
+
+Shared certificates and wildcard certificates need launchroom's own Caddy image on the edges, which is the default. If
+the page says **Not available with the current edge image**, your edges run a plain Caddy image.
+
+### Wildcard certificates
+
+With a DNS provider set under **Settings → Network → Certificates**, launchroom gets one wildcard certificate per
+project from Let's Encrypt over DNS. It covers every service, preview and deployment URL under your platform domain.
+New addresses get HTTPS immediately, regardless of which edge a validation lands on. Custom domains keep
+their own certificates. See [Domains and TLS](/docs/projects/domains-and-tls).
+
+### Run replicas on the edges
+
+Give important services a replica on each edge (**Scaling → Replicas**, see [Scaling](/docs/projects/scaling)). When
+every edge runs a replica of a service, each edge serves from its own replica first. It crosses the private network only
+when its own replica isn't ready.
+
+## 2. Point DNS at all edges, with health checks
+
+Plain round-robin DNS (several A records) spreads the load, but it keeps sending some visitors to a dead edge until
+their browser retries. Use one of these options instead.
+
+<Tabs items={['Health-checked DNS', 'Floating IP', 'Load balancer']}>
+<Tab value="Health-checked DNS">
+Examples: Cloudflare Load Balancing, Amazon Route 53 health checks, Bunny DNS monitoring, NS1.
+
+Create one record (or the platform wildcard `*.apps.example.com`) with a pool of edge IPs. The provider probes
+`https://<edge-ip>/` and removes failed edges within its check interval. Any HTTP answer means the edge is up,
+including launchroom's 404 for unknown host names. Keep the TTL short: 30 to 60 seconds.
+</Tab>
+<Tab value="Floating IP">
+Examples: Hetzner Floating IPs, DigitalOcean Reserved IPs, Vultr Reserved IPs, or keepalived/VRRP on your own network.
+
+DNS points at one address that moves to a healthy edge. How it moves depends on the provider, for example an API call
+from a watchdog or keepalived on the edges. launchroom doesn't manage it.
+
+Bind the floating IP on every edge host. Caddy listens on the host network on ports 80 and 443, so it then accepts
+traffic for the IP after a move.
+</Tab>
+<Tab value="Load balancer">
+A provider load balancer (Hetzner Load Balancer, DigitalOcean Load Balancer and similar) in **TCP mode** in front of the
+edges. TLS still ends at Caddy on the edges, so certificates and on-demand HTTPS for custom domains keep working.
+</Tab>
+</Tabs>
+
+Custom domains need the same setup. Use A/AAAA records to all edges (the domain list shows the addresses), or a CNAME
+to the service's generated hostname. A CNAME follows whatever the platform wildcard does.
+
+## What it does not cover
+
+- **The dashboard stays on one server.** While it is down, apps keep running and serving, but you can't deploy and
+  new servers can't join. The dashboard's own domain points only at its own server. To be ready for losing it, set up
+  [backups and a recovery kit](/docs/databases/restore-and-disaster-recovery).
+- **Certificate renewals need the shared storage.** While it is unreachable, edges serve their local copies and renew
+  when it is back. Certificates are renewed a third of their lifetime before they expire. That leaves weeks of headroom.
+- **Databases** run on one server each. An edge going down doesn't affect them, but the server that holds a database is
+  a single point of failure for that database. See [Roles and placement](/docs/servers/roles-and-placement#when-a-server-dies).
+
+## Next steps
+
+<Cards>
+  <Card title="Domains and TLS" href="/docs/projects/domains-and-tls" description="Platform domain, custom domains and certificates." />
+  <Card title="Roles and placement" href="/docs/servers/roles-and-placement" description="Labels, failure domains and what moves when a server dies." />
+</Cards>

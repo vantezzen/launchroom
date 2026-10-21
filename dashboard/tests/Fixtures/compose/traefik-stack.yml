@@ -1,0 +1,33 @@
+# A self-hosted app behind Traefik, with labels doing the routing.
+services:
+  traefik:
+    image: traefik:v3.5
+    command:
+      - --providers.docker=true
+      - --entrypoints.web.address=:80
+      - --entrypoints.websecure.address=:443
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./letsencrypt:/letsencrypt
+
+  app:
+    image: ghcr.io/example-org/notes:1.4.2
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.app.rule=Host(`notes.example.com`)
+      - traefik.http.services.app.loadbalancer.server.port=3000
+    expose:
+      - "3000"
+    environment:
+      - NODE_ENV=production
+      - SECRET_KEY_BASE=please-change-me-0123456789abcdef
+      - API_TOKEN
+    networks:
+      - proxy
+
+networks:
+  proxy:
+    external: true

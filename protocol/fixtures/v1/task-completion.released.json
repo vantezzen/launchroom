@@ -1,0 +1,7 @@
+{
+  "apiVersion": "launchroom.vantezzen.io/v1",
+  "kind": "TaskCompletion",
+  "attempt": 1,
+  "outcome": "released",
+  "error": "launchroomd stopped before the task finished: context canceled"
+}

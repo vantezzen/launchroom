@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
+         bootstrap="vendor/autoload.php"
+         colors="true"
+>
+    <testsuites>
+        <testsuite name="Arch">
+            <directory>tests/Arch</directory>
+        </testsuite>
+        <testsuite name="Unit">
+            <directory>tests/Unit</directory>
+        </testsuite>
+        <testsuite name="Feature">
+            <directory>tests/Feature</directory>
+        </testsuite>
+    </testsuites>
+    <source>
+        <include>
+            <directory>app</directory>
+        </include>
+    </source>
+    <php>
+        <!-- The full suite outgrew PHP's default 256M in one process; the arch
+             tests alone keep ~800M of symbol data. -->
+        <ini name="memory_limit" value="2048M"/>
+        <!--
+            force="true" pins values that must never leak in from a dev shell
+            (e.g. running Pest inside the dev dashboard container, which sets
+            APP_ENV=local, DB_DATABASE=launchroom and Redis drivers): tests
+            always use the testing env, in-memory drivers and the
+            launchroom_test database, so they can't wipe dev data.
+        -->
+        <env name="APP_ENV" value="testing" force="true"/>
+        <env name="APP_MAINTENANCE_DRIVER" value="file"/>
+        <env name="BCRYPT_ROUNDS" value="4"/>
+        <env name="BROADCAST_CONNECTION" value="null" force="true"/>
+        <env name="CACHE_STORE" value="array" force="true"/>
+        <!--
+            Tests run against Postgres (never SQLite): the dev stack's
+            `launchroom_test` database (dev/compose.yml). `make test-dashboard`
+            runs inside the stack and overrides DB_HOST/DB_PORT via real
+            environment variables, which win over these (PHPUnit doesn't force
+            them). The defaults below reach the same database from the host
+            through the stack's published port (LR_DEV_POSTGRES_PORT, 54320).
+        -->
+        <env name="DB_CONNECTION" value="pgsql"/>
+        <env name="DB_HOST" value="127.0.0.1"/>
+        <env name="DB_PORT" value="54320"/>
+        <env name="DB_DATABASE" value="launchroom_test" force="true"/>
+        <env name="DB_USERNAME" value="launchroom"/>
+        <env name="DB_PASSWORD" value="launchroom"/>
+        <env name="DB_URL" value=""/>
+        <env name="MAIL_MAILER" value="array" force="true"/>
+        <env name="QUEUE_CONNECTION" value="sync" force="true"/>
+        <env name="SESSION_DRIVER" value="array" force="true"/>
+        <env name="PULSE_ENABLED" value="false"/>
+        <env name="TELESCOPE_ENABLED" value="false"/>
+        <env name="NIGHTWATCH_ENABLED" value="false"/>
+        <!-- Laravel reads $_SERVER before $_ENV, and container env vars live in both. -->
+        <server name="APP_ENV" value="testing" force="true"/>
+        <server name="BROADCAST_CONNECTION" value="null" force="true"/>
+        <server name="CACHE_STORE" value="array" force="true"/>
+        <server name="DB_DATABASE" value="launchroom_test" force="true"/>
+        <server name="MAIL_MAILER" value="array" force="true"/>
+        <server name="QUEUE_CONNECTION" value="sync" force="true"/>
+        <server name="SESSION_DRIVER" value="array" force="true"/>
+    </php>
+</phpunit>

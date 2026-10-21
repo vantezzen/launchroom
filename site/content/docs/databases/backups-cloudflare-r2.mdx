@@ -1,0 +1,65 @@
+---
+title: Backups to Cloudflare R2
+description: Store launchroom's encrypted backups in a Cloudflare R2 bucket. R2 has no egress fees, so restores cost nothing.
+---
+
+Cloudflare R2 is S3-compatible and has no egress fees, so restores cost nothing. launchroom encrypts everything with restic on your servers before upload, so R2 stores only encrypted data. This guide takes about five minutes.
+
+## Set up the bucket
+
+<Steps>
+<Step>
+### Create a bucket
+
+In the Cloudflare dashboard, open **R2 Object Storage** → **Create bucket**. Name it, for example, `launchroom-backups`, and leave the location on automatic.
+</Step>
+<Step>
+### Create an API token
+
+Open **R2 → Manage API tokens → Create API token**:
+
+- Permissions: **Object Read & Write**
+- Specify bucket: only `launchroom-backups`
+
+Copy the **Access Key ID** and the **Secret Access Key**. The secret is shown once.
+</Step>
+<Step>
+### Note your account ID
+
+Your **account ID** is on the R2 overview page. Your endpoint is:
+
+```text
+https://<account id>.r2.cloudflarestorage.com
+```
+</Step>
+<Step>
+### Add the destination in launchroom
+
+Open **Settings → Backups → Add destination**, choose **Cloudflare R2** as the storage provider, and fill in:
+
+| Field | Value |
+|---|---|
+| Name | `Cloudflare R2` |
+| Endpoint | `https://<account id>.r2.cloudflarestorage.com` |
+| Bucket | `launchroom-backups` |
+| Region | `auto` |
+| Folder (optional) | for example `team-acme`. One folder per team keeps repositories apart. |
+| Access key ID, Secret access key | From step 2 |
+
+Save. launchroom tests the destination right away and shows "Connected". Daily database backups start at a staggered time between 01:00 and 07:00 UTC.
+</Step>
+</Steps>
+
+## Back up launchroom itself
+
+If you are an instance owner, use a separate bucket or folder in the same page's **Back up launchroom itself** section for the control plane, for example the `launchroom-backups` bucket with the folder `control-plane`. Then set the recovery passphrase and download the recovery kit. See [backing up launchroom itself](/docs/databases/backups#backing-up-launchroom-itself).
+
+## Tips
+
+- R2 lifecycle rules aren't needed. launchroom's retention deletes old data itself.
+- Don't enable object lock on this bucket. Pruning needs to delete old data.
+
+<Cards>
+  <Card title="Backups" href="/docs/databases/backups" description="Schedules, retention, verification and the recovery kit." />
+  <Card title="Backup troubleshooting" href="/docs/troubleshooting/backups" description="When a destination doesn't connect." />
+</Cards>

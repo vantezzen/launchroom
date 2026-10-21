@@ -1,0 +1,7 @@
+{
+  "apiVersion": "launchroom.vantezzen.io/v1",
+  "kind": "TaskCompletion",
+  "attempt": 1,
+  "outcome": "succeeded",
+  "restore": { "sizeBytes": 1048576, "durationMs": 9000 }
+}

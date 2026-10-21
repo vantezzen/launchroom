@@ -1,0 +1,8 @@
+{
+  "apiVersion": "launchroom.vantezzen.io/v1",
+  "kind": "DaemonConfig",
+  "nudge": {
+    "key": "launchroom-dev-key",
+    "url": "ws://reverb:6001"
+  }
+}

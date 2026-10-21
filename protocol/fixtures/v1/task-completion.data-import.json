@@ -1,0 +1,18 @@
+{
+  "apiVersion": "launchroom.vantezzen.io/v1",
+  "kind": "TaskCompletion",
+  "attempt": 1,
+  "outcome": "succeeded",
+  "dataImport": {
+    "mode": "import",
+    "empty": false,
+    "tables": 14,
+    "sizeBytes": 48234496,
+    "serverVersion": "17.6",
+    "format": "postgres_custom",
+    "sourceVersion": "PostgreSQL 15.8",
+    "readBytes": 230686720,
+    "warnings": ["Ownership and privileges were left out: everything belongs to the database's own user"],
+    "durationMs": 73000
+  }
+}

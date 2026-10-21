@@ -1,0 +1,47 @@
+schema: launchroom.template/v1
+id: metabase
+name: Metabase
+tagline: Dashboards and questions over your data, without SQL.
+description: >-
+    Connect your databases and ask questions in a few clicks, then share
+    dashboards with your team. Its own settings live in a managed Postgres.
+category: data
+logo: metabase
+website: https://www.metabase.com
+license: AGPL-3.0
+inputs:
+    - id: domain
+      label: Domain
+      type: domain
+      optional: true
+      description: Leave empty to use the generated address.
+services:
+    metabase:
+        image: docker.io/metabase/metabase:v0.64.2.8@sha256:3b968d64944840ec0ed452a94fb58301a0a8d8e4fe6d632a5956014a91a2b635
+        ports: ['3000']
+        environment:
+            MB_DB_TYPE: postgres
+            MB_DB_HOST: ${service.db.host}
+            MB_DB_PORT: ${service.db.port}
+            MB_DB_DBNAME: ${service.db.database}
+            MB_DB_USER: ${service.db.user}
+            MB_DB_PASS: ${service.db.password}
+            MB_SITE_URL: ${self.public_url}
+        cap_add: [CHOWN, SETUID, SETGID]
+        depends_on: [db]
+        healthcheck:
+            test: ['CMD', 'curl', '-f', 'http://localhost:3000/api/health']
+            start_period: 180s
+        deploy:
+            resources:
+                limits:
+                    cpus: '2'
+                    memory: 2g
+        x-launchroom:
+            name: Metabase
+            logo: metabase
+            domain: ${input.domain}
+    db:
+        x-launchroom:
+            name: Postgres
+            database: { engine: postgres, version: '17' }

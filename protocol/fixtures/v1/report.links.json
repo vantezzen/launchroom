@@ -1,0 +1,66 @@
+{
+  "apiVersion": "launchroom.vantezzen.io/v1",
+  "kind": "Report",
+  "serverId": "srv_01J9Z8X7W6V5T4S3R2Q1P0N9MK",
+  "observedAt": "2026-10-20T12:00:05Z",
+  "seq": 19,
+  "full": true,
+  "appliedVersion": 7,
+  "workloads": [],
+  "host": {
+    "cpus": 4,
+    "memoryMb": 7940,
+    "diskTotalMb": 76800,
+    "diskFreeMb": 51200,
+    "daemonVersion": "0.4.0",
+    "mesh": {
+      "state": "connected",
+      "ipv4": "100.64.0.2",
+      "ipv6": "fd7a:115c:a1e0::2",
+      "checkedAt": "2026-10-20T12:00:04Z",
+      "peers": [
+        {
+          "ipv4": "100.64.0.1",
+          "online": true,
+          "connection": "direct",
+          "relay": "lr",
+          "lastHandshake": "2026-10-20T12:00:01Z"
+        },
+        {
+          "ipv4": "100.64.0.3",
+          "online": true,
+          "connection": "relay",
+          "relay": "lr"
+        },
+        {
+          "ipv4": "100.64.0.4",
+          "online": false,
+          "connection": "idle"
+        }
+      ]
+    },
+    "links": [
+      {
+        "peer": "srv_01J9Z8X7W6V5T4S3R2Q1P0N9MA",
+        "measuredAt": "2026-10-20T12:00:03.214Z",
+        "rttMs": 11.8,
+        "throughputMbps": 482.6,
+        "throughputAt": "2026-10-20T09:41:12.008Z"
+      },
+      {
+        "peer": "srv_01J9Z8X7W6V5T4S3R2Q1P0N9MC",
+        "measuredAt": "2026-10-20T12:00:03.902Z",
+        "rttMs": 38.4
+      },
+      {
+        "peer": "srv_01J9Z8X7W6V5T4S3R2Q1P0N9MD",
+        "measuredAt": "2026-10-20T12:00:08.910Z",
+        "error": "timed out"
+      }
+    ],
+    "features": [
+      "linkProbe",
+      "shipLogs"
+    ]
+  }
+}

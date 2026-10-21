@@ -1,0 +1,24 @@
+{
+  "title": "Docs",
+  "pages": [
+    "index",
+    "---Start---",
+    "getting-started",
+    "migrate",
+    "servers",
+    "---Build and ship---",
+    "projects",
+    "builds",
+    "config-as-code",
+    "---Data---",
+    "databases",
+    "---Operate---",
+    "observability",
+    "teams-and-security",
+    "operations",
+    "reference",
+    "---Understand---",
+    "how-it-works",
+    "troubleshooting"
+  ]
+}

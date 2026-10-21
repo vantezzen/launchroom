@@ -1,0 +1,22 @@
+{
+  "apiVersion": "launchroom.vantezzen.io/v1",
+  "kind": "TaskCompletion",
+  "attempt": 1,
+  "outcome": "failed",
+  "error": "build_error (install): process \"npm ci\" did not complete successfully: exit code: 1",
+  "failure": {
+    "class": "build_error",
+    "step": "install",
+    "retryable": false,
+    "hints": [
+      { "code": "npm-ci-lockfile", "message": "package-lock.json is out of sync with package.json. Run `npm install` locally and commit the lockfile." }
+    ],
+    "summary": {
+      "builder": "railpack",
+      "builderReason": "railpack",
+      "railpackVersion": "0.42.0",
+      "provider": "node",
+      "port": 3000
+    }
+  }
+}

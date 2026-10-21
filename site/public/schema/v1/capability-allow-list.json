@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://launchroom.vantezzen.io/schema/v1/capability-allow-list.json",
+  "type": "string",
+  "enum": [
+    "CHOWN",
+    "DAC_OVERRIDE",
+    "FOWNER",
+    "NET_BIND_SERVICE",
+    "SETGID",
+    "SETUID"
+  ],
+  "title": "Capability: one Linux capability launchroomd's default policy floor lets a workload add (docs/03 §8)",
+  "description": "WorkloadSpec.capabilities outside this list are refused unless the server's local policy.yaml allows them."
+}

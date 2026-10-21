@@ -1,0 +1,120 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://launchroom.vantezzen.io/schema/v1/session-command.json",
+  "$defs": {
+    "TableRef": {
+      "properties": {
+        "schema": {
+          "type": "string",
+          "maxLength": 63,
+          "pattern": "^[^\\x00-\\x1f\\x7f\"`]{1,63}$"
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 63,
+          "pattern": "^[^\\x00-\\x1f\\x7f\"`]{1,63}$"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "description": "TableRef names a table (schema optional: MySQL has none, Postgres defaults to \"public\")."
+    }
+  },
+  "properties": {
+    "apiVersion": {
+      "type": "string",
+      "const": "launchroom.vantezzen.io/v1"
+    },
+    "kind": {
+      "type": "string",
+      "const": "SessionCommand"
+    },
+    "session": {
+      "type": "string",
+      "pattern": "^ses_[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "op": {
+      "type": "string",
+      "pattern": "^op_[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "issuedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "command": {
+      "type": "string",
+      "enum": [
+        "end",
+        "schema",
+        "rows",
+        "keys",
+        "key",
+        "query"
+      ]
+    },
+    "table": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/TableRef",
+          "description": "Table, Page and PageSize select rows to browse (\"rows\")."
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "page": {
+      "type": "integer",
+      "maximum": 100000,
+      "minimum": 0
+    },
+    "pageSize": {
+      "type": "integer",
+      "maximum": 100,
+      "minimum": 1
+    },
+    "pattern": {
+      "type": "string",
+      "maxLength": 256,
+      "description": "Pattern and Cursor scan keys (\"keys\")."
+    },
+    "cursor": {
+      "type": "string",
+      "maxLength": 20,
+      "pattern": "^[0-9]{1,20}$"
+    },
+    "key": {
+      "type": "string",
+      "maxLength": 1024,
+      "description": "Key is the key to read (\"key\")."
+    },
+    "statement": {
+      "type": "string",
+      "maxLength": 16384,
+      "description": "Statement is the SQL (or Redis command line) to run (\"query\")."
+    },
+    "allowWrites": {
+      "type": "boolean"
+    },
+    "reason": {
+      "type": "string",
+      "maxLength": 200,
+      "description": "Reason is shown when the session ends (\"end\")."
+    }
+  },
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "apiVersion",
+    "kind",
+    "session",
+    "op",
+    "issuedAt",
+    "command"
+  ],
+  "title": "SessionCommand: signed dashboard command on a session channel (Pusher server event payload)",
+  "description": "SessionCommand is a dashboard → daemon command on a session channel, delivered as the payload of a signed Pusher server event (docs/03 §11.2)."
+}

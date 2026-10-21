@@ -1,0 +1,99 @@
+# launchroomd for servers that join an existing control plane
+# (docs/11 §3, docs/03 §2). MANAGED FILE: replaced on upgrade, do not edit;
+# put local overrides in compose.override.yml next to it.
+#
+# Written by install/server.sh into ./launchroomd/ together with .env and data/.
+# Two containers: dockerd-guard owns the Docker socket and offers launchroomd
+# a narrow, allow-listed Engine API on its own socket (docs/09 §6, D49), and
+# launchroomd starts the system containers its roles need (Caddy for edge,
+# BuildKit for build, Tailscale for the mesh) through it, from the signed
+# NodeState. launchroomd itself never sees the Docker socket.
+
+name: launchroomd
+
+services:
+  dockerd-guard:
+    image: ${LR_DAEMON_IMAGE:?set LR_DAEMON_IMAGE in .env}
+    entrypoint: ["/usr/local/bin/dockerd-guard"]
+    restart: always
+    # Talks only to the two unix sockets: no network, no capabilities.
+    network_mode: none
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    read_only: true
+    labels:
+      launchroom.managed: "true"
+      launchroom.role: dockerd-guard
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+    environment:
+      LR_LOG_LEVEL: ${LR_LOG_LEVEL:-info}
+      # The guard enforces the same session policy as launchroomd (docs/03 §11.3).
+      LR_INTERACTIVE_SESSIONS: ${LR_INTERACTIVE_SESSIONS:-on}
+      # Local relaxations, only from this file's .env (never from launchroomd).
+      LR_SYSTEM_IMAGE_DIGESTS: ${LR_SYSTEM_IMAGE_DIGESTS:-}
+      LR_GUARD_ALLOWED_REGISTRIES: ${LR_GUARD_ALLOWED_REGISTRIES:-}
+    volumes:
+      - ${LR_DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock
+      - guard-socket:/run/launchroom
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/dockerd-guard", "healthcheck"]
+      interval: 5s
+      timeout: 5s
+      start_period: 30s
+      retries: 12
+
+  launchroomd:
+    image: ${LR_DAEMON_IMAGE:?set LR_DAEMON_IMAGE in .env}
+    restart: always
+    # launchroomd lets running tasks finish for up to 20 s on SIGTERM, then
+    # hands them back to the dashboard for another attempt (docs/03 §7).
+    stop_grace_period: 30s
+    # Host network: nftables, the mesh IP, the 127.0.0.1:5000 registry
+    # forwarder, probes against container IPs and Caddy's on-demand TLS "ask".
+    network_mode: host
+    # Port discovery reads /proc/<pid>/net/tcp* of container processes.
+    pid: host
+    cap_add: [NET_ADMIN]
+    labels:
+      launchroom.managed: "true"
+      launchroom.role: launchroomd
+    depends_on:
+      dockerd-guard:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+    environment:
+      LR_CONTROL_PLANE_URL: ${LR_CONTROL_PLANE_URL:?set LR_CONTROL_PLANE_URL in .env}
+      # Pinned control-plane signing key (ed25519:<base64>, public).
+      LR_CP_KEY: ${LR_CP_KEY:?set LR_CP_KEY in .env}
+      # Only set until launchroomd has enrolled; install/server.sh then removes the
+      # token file and this setting. Empty = not configured.
+      LR_JOIN_TOKEN_FILE: ${LR_JOIN_TOKEN_FILE:-}
+      LR_LOG_LEVEL: ${LR_LOG_LEVEL:-info}
+      # Host time zone, recorded by the installer (suggests the server location).
+      LR_HOST_TIMEZONE: ${LR_HOST_TIMEZONE:-}
+      # On a Mac (D53), what the installer saw outside the engine's Linux VM:
+      # LR_HOST_OS=darwin and the model (system_profiler). Display and roles only.
+      LR_HOST_OS: ${LR_HOST_OS:-}
+      LR_HOST_MODEL: ${LR_HOST_MODEL:-}
+      # Local policy (docs/03 §11.3): Console/Data sessions into this server's
+      # containers: on | console | data | off.
+      LR_INTERACTIVE_SESSIONS: ${LR_INTERACTIVE_SESSIONS:-on}
+      # Local policy (docs/14 §12.2): data imports and exports on this
+      # server: on | off.
+      LR_DATA_TRANSFERS: ${LR_DATA_TRANSFERS:-on}
+      # Docker through dockerd-guard (D49).
+      DOCKER_HOST: unix:///run/launchroom/docker.sock
+    volumes:
+      - guard-socket:/run/launchroom
+      # launchroomd keys, enrollment.json, state.json, policy.yaml, caddy cache.
+      - ./data:/data
+
+volumes:
+  # dockerd-guard's socket for launchroomd.
+  guard-socket:
+    labels:
+      launchroom.managed: "true"

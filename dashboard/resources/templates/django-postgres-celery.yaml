@@ -1,0 +1,54 @@
+schema: launchroom.template/v1
+id: django-postgres-celery
+name: Django + Postgres + Celery
+tagline: Django with a Celery worker, a managed Postgres and a Redis broker.
+description: >-
+    Builds your repository once for the web app and a Celery worker.
+    DATABASE_URL works with dj-database-url, CELERY_BROKER_URL points at a
+    managed Redis, and SECRET_KEY is generated.
+category: stacks
+logo: django
+inputs:
+    - id: repository
+      label: Repository
+      type: repository
+    - id: module
+      label: Celery app module
+      type: text
+      placeholder: config
+      description: What you pass to celery -A, usually your project package.
+services:
+    web:
+        environment:
+            DATABASE_URL: ${service.db.url}
+            CELERY_BROKER_URL: ${service.redis.url}
+            SECRET_KEY: ${generate:password:50}
+            ALLOWED_HOSTS: ${self.domain}
+            DEBUG: 'false'
+        depends_on: [db, redis]
+        x-launchroom:
+            name: web
+            logo: django
+            source: repository
+            public: true
+    worker:
+        command:
+            ['celery', '-A', '${input.module}', 'worker', '--loglevel=info']
+        environment:
+            DATABASE_URL: ${service.db.url}
+            CELERY_BROKER_URL: ${service.redis.url}
+            SECRET_KEY: ${service.web.env.SECRET_KEY}
+            DEBUG: 'false'
+        depends_on: [db, redis]
+        x-launchroom:
+            name: worker
+            logo: celery
+            parent: web
+    db:
+        x-launchroom:
+            name: Postgres
+            database: { engine: postgres, version: '18' }
+    redis:
+        x-launchroom:
+            name: Redis
+            database: { engine: redis, version: '7' }

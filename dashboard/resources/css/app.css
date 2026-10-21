@@ -1,0 +1,517 @@
+@import 'tailwindcss';
+/* Geist, self-hosted (docs/design-system.md §2): no font CDN calls. */
+@import '@fontsource-variable/geist';
+@import '@fontsource-variable/geist-mono';
+
+@import 'tw-animate-css';
+
+@source '../views';
+@source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * Design tokens v2 (docs/design-system.md §3–§5, §8). Every value lives in
+ * the :root / .dark blocks below; @theme only maps them to utilities
+ * (bg-card, text-faint, border-strong, bg-signal-soft, shadow-float,
+ * rounded-card, ease-enter, …).
+ */
+@theme {
+    --font-sans:
+        'Geist Variable', ui-sans-serif, system-ui, sans-serif,
+        'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol';
+    --font-mono:
+        'Geist Mono Variable', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+    /* Surfaces and neutrals (§3.1). */
+    --color-frame: var(--frame);
+    --color-recessed: var(--recessed);
+    --color-faint: var(--faint);
+    --color-border-strong: var(--border-strong);
+    --color-hover: var(--hover);
+    --color-map-land: var(--map-land);
+
+    /* Functional colours (§3.2): signal blue and status, each with a soft
+       background. Only with a non-colour cue. */
+    --color-signal: var(--signal);
+    --color-signal-soft: var(--signal-soft);
+    --color-status-ok: var(--status-ok);
+    --color-status-ok-soft: var(--status-ok-soft);
+    --color-status-progress: var(--status-progress);
+    --color-status-progress-soft: var(--status-progress-soft);
+    --color-status-error: var(--status-error);
+    --color-status-error-soft: var(--status-error-soft);
+    --color-status-idle: var(--status-idle);
+    /* v1 names, kept so existing pages keep working. */
+    --color-status-success: var(--status-ok);
+    --color-status-staged: var(--signal);
+
+    /* Diffs (very low intensity, always with +/− gutters) and log ANSI colours toned to the palette. */
+    --color-diff-add: var(--diff-add);
+    --color-diff-remove: var(--diff-remove);
+    --color-diff-edit: var(--signal-soft);
+    --color-ansi-red: var(--ansi-red);
+    --color-ansi-green: var(--ansi-green);
+    --color-ansi-yellow: var(--ansi-yellow);
+    --color-ansi-blue: var(--ansi-blue);
+    --color-ansi-magenta: var(--ansi-magenta);
+    --color-ansi-cyan: var(--ansi-cyan);
+    --color-ansi-gray: var(--ansi-gray);
+
+    /* Data palette (§3.4): fixed order, never cycled. */
+    --color-chart-1: var(--chart-1);
+    --color-chart-2: var(--chart-2);
+    --color-chart-3: var(--chart-3);
+    --color-chart-4: var(--chart-4);
+    --color-chart-5: var(--chart-5);
+    --color-chart-6: var(--chart-6);
+    --color-chart-7: var(--chart-7);
+    --color-chart-8: var(--chart-8);
+    --color-chart-other: var(--chart-other);
+
+    /* Radius (§5): 8 controls/chips, 14 cards/tiles/nodes, 16 sheets/panels/dialogs, 18 canvas groups. */
+    --radius-sm: 6px;
+    --radius-md: 8px;
+    --radius-lg: 10px;
+    --radius-xl: 14px;
+    --radius-2xl: 16px;
+    --radius-3xl: 18px;
+    --radius-control: 8px;
+    --radius-card: 14px;
+    --radius-sheet: 16px;
+    --radius-group: 18px;
+
+    /* Elevation (§5). */
+    --shadow-card: var(--elevation-card);
+    --shadow-float: var(--elevation-float);
+
+    /* Motion (§8). Durations as utilities: duration-fast/base/slow. */
+    --ease-enter: cubic-bezier(0.2, 0.8, 0.2, 1);
+    --ease-exit: cubic-bezier(0.4, 0, 1, 1);
+
+    --color-background: var(--background);
+    --color-foreground: var(--foreground);
+
+    --color-card: var(--card);
+    --color-card-foreground: var(--card-foreground);
+
+    --color-popover: var(--popover);
+    --color-popover-foreground: var(--popover-foreground);
+
+    --color-primary: var(--primary);
+    --color-primary-foreground: var(--primary-foreground);
+
+    --color-secondary: var(--secondary);
+    --color-secondary-foreground: var(--secondary-foreground);
+
+    --color-muted: var(--muted);
+    --color-muted-foreground: var(--muted-foreground);
+
+    --color-accent: var(--accent);
+    --color-accent-foreground: var(--accent-foreground);
+
+    --color-destructive: var(--destructive);
+    --color-destructive-foreground: var(--destructive-foreground);
+
+    --color-border: var(--border);
+    --color-input: var(--input);
+    --color-ring: var(--ring);
+
+    --color-sidebar: var(--sidebar);
+    --color-sidebar-foreground: var(--sidebar-foreground);
+    --color-sidebar-primary: var(--sidebar-primary);
+    --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+    --color-sidebar-accent: var(--sidebar-accent);
+    --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+    --color-sidebar-border: var(--sidebar-border);
+    --color-sidebar-ring: var(--sidebar-ring);
+}
+
+:root {
+    --radius: 8px;
+
+    /* Neutrals and surfaces, light (§3.1). */
+    --frame: #fafafa;
+    --background: #ffffff;
+    --card: #ffffff;
+    --card-foreground: #171717;
+    --recessed: #fafafa;
+    --foreground: #171717;
+    --muted-foreground: #4d4d4d;
+    --faint: #8f8f8f;
+    --border: #ebebeb;
+    --border-strong: #e0e0e0;
+    --hover: #f5f5f5;
+    --popover: #ffffff;
+    --popover-foreground: #171717;
+    --primary: #171717;
+    --primary-foreground: #ffffff;
+    --secondary: #f5f5f5;
+    --secondary-foreground: #171717;
+    --muted: #f5f5f5;
+    --accent: #f5f5f5;
+    --accent-foreground: #171717;
+    --destructive: #c4211b;
+    --destructive-foreground: #c4211b;
+    --input: #e0e0e0;
+    --ring: #0062d1;
+
+    /* Functional (§3.2). */
+    --signal: #0062d1;
+    --signal-soft: #e9f2fe;
+    --status-ok: #107d32;
+    --status-ok-soft: #e8f6ec;
+    --status-progress: #a35200;
+    --status-progress-soft: #fff4e0;
+    --status-error: #c4211b;
+    --status-error-soft: #fdecec;
+    --status-idle: #666666;
+
+    /* Device illustrations only (§3.2, §7). */
+    --device-led-ok: #22c55e;
+    --device-led-busy: #f59e0b;
+    --device-led-error: #ef4444;
+    --device-led-off: #9ca3af;
+    --device-highlight: 1;
+
+    /* Land dots of the server map (§13.8): clearly visible, quieter than text. */
+    --map-land: #b3b3b3;
+
+    /* Data palette, light (§3.4). */
+    --chart-1: #2a78d6;
+    --chart-2: #eb6834;
+    --chart-3: #1baf7a;
+    --chart-4: #eda100;
+    --chart-5: #e87ba4;
+    --chart-6: #008300;
+    --chart-7: #4a3aa7;
+    --chart-8: #e34948;
+    --chart-other: #c7c7c7;
+
+    /* Elevation (§5). */
+    --elevation-card: 0 1px 2px rgb(0 0 0 / 0.04);
+    --elevation-float: 0 8px 30px rgb(0 0 0 / 0.1), 0 1px 3px rgb(0 0 0 / 0.06);
+
+    /* Motion (§8). */
+    --motion-fast: 120ms;
+    --motion-base: 180ms;
+    --motion-slow: 240ms;
+
+    --sidebar: #fafafa;
+    --sidebar-foreground: #171717;
+    --sidebar-primary: #171717;
+    --sidebar-primary-foreground: #ffffff;
+    --sidebar-accent: #ededed;
+    --sidebar-accent-foreground: #171717;
+    --sidebar-border: #ebebeb;
+    --sidebar-ring: #0062d1;
+
+    --diff-add: #f0f8f2;
+    --diff-remove: #fcf1f1;
+    --ansi-red: #c4211b;
+    --ansi-green: #107d32;
+    --ansi-yellow: #a35200;
+    --ansi-blue: #0062d1;
+    --ansi-magenta: #8e4ec6;
+    --ansi-cyan: #0b7b84;
+    --ansi-gray: #666666;
+}
+
+.dark {
+    --frame: #000000;
+    --background: #0a0a0a;
+    --card: #111111;
+    --card-foreground: #ededed;
+    --recessed: #0d0d0d;
+    --foreground: #ededed;
+    --muted-foreground: #a1a1a1;
+    --faint: #707070;
+    --border: #1f1f1f;
+    --border-strong: #2e2e2e;
+    --hover: #1a1a1a;
+    --popover: #111111;
+    --popover-foreground: #ededed;
+    --primary: #ededed;
+    --primary-foreground: #0a0a0a;
+    --secondary: #1a1a1a;
+    --secondary-foreground: #ededed;
+    --muted: #1a1a1a;
+    --accent: #1a1a1a;
+    --accent-foreground: #ededed;
+    --destructive: #ff6166;
+    --destructive-foreground: #ff6166;
+    --input: #2e2e2e;
+    --ring: #47a8ff;
+
+    --signal: #47a8ff;
+    --signal-soft: #0d2440;
+    --status-ok: #62c073;
+    --status-ok-soft: #0f2a17;
+    --status-progress: #ffb224;
+    --status-progress-soft: #2e1f05;
+    --status-error: #ff6166;
+    --status-error-soft: #331314;
+    --status-idle: #8f8f8f;
+
+    --device-highlight: 0.55;
+
+    --map-land: #4d4d4d;
+
+    --chart-1: #3987e5;
+    --chart-2: #d95926;
+    --chart-3: #199e70;
+    --chart-4: #c98500;
+    --chart-5: #d55181;
+    --chart-6: #008300;
+    --chart-7: #9085e9;
+    --chart-8: #e66767;
+    --chart-other: #454545;
+
+    --elevation-card: 0 0 #0000;
+    --elevation-float: 0 8px 30px rgb(0 0 0 / 0.6), 0 0 0 1px #2e2e2e;
+
+    --sidebar: #000000;
+    --sidebar-foreground: #ededed;
+    --sidebar-primary: #ededed;
+    --sidebar-primary-foreground: #0a0a0a;
+    --sidebar-accent: #1a1a1a;
+    --sidebar-accent-foreground: #ededed;
+    --sidebar-border: #1f1f1f;
+    --sidebar-ring: #47a8ff;
+
+    --diff-add: #0c1a10;
+    --diff-remove: #1f1011;
+    --ansi-red: #ff6166;
+    --ansi-green: #62c073;
+    --ansi-yellow: #ffb224;
+    --ansi-blue: #47a8ff;
+    --ansi-magenta: #bf7af0;
+    --ansi-cyan: #4ccce6;
+    --ansi-gray: #8f8f8f;
+}
+
+/* Type roles (design-system §2): use these, don't invent sizes per page. */
+@utility type-display {
+    font-size: 2rem;
+    line-height: 2.375rem;
+    font-weight: 600;
+    letter-spacing: -0.03em;
+}
+
+@utility type-title {
+    font-size: 1.75rem;
+    line-height: 2.125rem;
+    font-weight: 600;
+    letter-spacing: -0.025em;
+}
+
+@utility type-stat {
+    font-size: 1.5rem;
+    line-height: 1.875rem;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
+}
+
+@utility type-heading {
+    font-size: 1rem;
+    line-height: 1.5rem;
+    font-weight: 600;
+}
+
+@utility type-body {
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+    font-weight: 400;
+}
+
+@utility type-label {
+    font-size: 0.8125rem;
+    line-height: 1.125rem;
+    font-weight: 500;
+}
+
+@utility type-small {
+    font-size: 0.75rem;
+    line-height: 1rem;
+    font-weight: 400;
+}
+
+@utility type-mono {
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+    line-height: 1.25rem;
+    font-weight: 400;
+}
+
+@utility type-mono-small {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    line-height: 1rem;
+    font-weight: 400;
+}
+
+/* Motion durations (§8). */
+@utility duration-fast {
+    --tw-duration: var(--motion-fast);
+    transition-duration: var(--motion-fast);
+}
+
+@utility duration-base {
+    --tw-duration: var(--motion-base);
+    transition-duration: var(--motion-base);
+}
+
+@utility duration-slow {
+    --tw-duration: var(--motion-slow);
+    transition-duration: var(--motion-slow);
+}
+
+/* New card / node / tile entering: fade + 8 px scale-in (§8). */
+@utility animate-enter {
+    animation: lr-enter var(--motion-base) cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+/* Skeletons fade in after 300 ms of waiting, no shimmer (§8). */
+@utility animate-skeleton-in {
+    animation: lr-fade var(--motion-base) cubic-bezier(0.2, 0.8, 0.2, 1) 300ms
+        both;
+}
+
+@keyframes lr-enter {
+    from {
+        opacity: 0;
+        transform: scale(0.97);
+    }
+}
+
+@keyframes lr-fade {
+    from {
+        opacity: 0;
+    }
+}
+
+@keyframes lr-settle {
+    from {
+        opacity: 0;
+        transform: translateY(4px);
+    }
+}
+
+@keyframes lr-leave {
+    to {
+        opacity: 0;
+    }
+}
+
+@layer base {
+    * {
+        @apply border-border;
+    }
+
+    body {
+        @apply bg-background text-foreground;
+        font-feature-settings: 'ss01' off;
+        -webkit-font-smoothing: antialiased;
+    }
+
+    svg.lucide {
+        stroke-width: 1.75;
+    }
+}
+
+/*
+ * Page transitions (§8): Inertia visits run inside the View Transitions API
+ * (app.tsx). The sidebar and the top bar keep their place; only the page
+ * content cross-fades with a 4 px settle.
+ */
+::view-transition-old(root),
+::view-transition-new(root) {
+    animation: none;
+}
+
+::view-transition-group(lr-sidebar),
+::view-transition-group(lr-top-bar) {
+    animation: none;
+}
+
+::view-transition-old(lr-sidebar),
+::view-transition-old(lr-top-bar) {
+    display: none;
+}
+
+::view-transition-new(lr-sidebar),
+::view-transition-new(lr-top-bar) {
+    animation: none;
+}
+
+::view-transition-group(lr-page) {
+    animation-duration: var(--motion-base);
+}
+
+::view-transition-old(lr-page) {
+    animation: lr-leave var(--motion-fast) cubic-bezier(0.4, 0, 1, 1) both;
+}
+
+::view-transition-new(lr-page) {
+    animation: lr-settle var(--motion-base) cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+/* Browsers without View Transitions: a plain fade-in of the page body. */
+@supports not (view-transition-name: none) {
+    [data-slot='page'] {
+        animation: lr-fade var(--motion-base) cubic-bezier(0.2, 0.8, 0.2, 1);
+    }
+}
+
+/*
+ * Service settings search (docs/08 §16): the setting a result opened gets a
+ * soft signal tint and a 2 px signal edge (rows) or a soft tinted halo
+ * (cards, sections), fading out over 700 ms. Reduced motion: shown, then gone.
+ */
+[data-setting]:not(button) {
+    transition:
+        background-color 700ms cubic-bezier(0.2, 0.8, 0.2, 1),
+        box-shadow 700ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+[data-setting][data-setting-flash] {
+    background-color: color-mix(in oklab, var(--signal-soft) 70%, transparent);
+    box-shadow: inset 2px 0 0 var(--signal);
+    transition-duration: 0ms;
+}
+
+[data-setting][data-slot='section'][data-setting-flash],
+section[data-setting][data-setting-flash],
+ul[data-setting][data-setting-flash],
+[data-setting].rounded-xl[data-setting-flash],
+[data-setting].rounded-lg[data-setting-flash] {
+    box-shadow: 0 0 0 10px
+        color-mix(in oklab, var(--signal-soft) 70%, transparent);
+    border-radius: 14px;
+}
+
+button[data-setting][data-setting-flash] {
+    background-color: revert-layer;
+    box-shadow: 0 0 0 4px color-mix(in oklab, var(--signal) 22%, transparent);
+    border-radius: revert-layer;
+}
+
+/* Reduced motion: everything becomes instant (§8, §11). */
+@media (prefers-reduced-motion: reduce) {
+    *,
+    ::before,
+    ::after {
+        animation-duration: 0.01ms !important;
+        animation-delay: 0ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
+
+    ::view-transition-group(*),
+    ::view-transition-old(*),
+    ::view-transition-new(*) {
+        animation: none !important;
+    }
+}

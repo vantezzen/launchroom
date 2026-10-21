@@ -1,0 +1,229 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://launchroom.vantezzen.io/schema/v1/enroll-request.json",
+  "$defs": {
+    "DMIFacts": {
+      "properties": {
+        "sysVendor": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[^\\x00-\\x1f\\x7f]{1,128}$"
+        },
+        "productName": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[^\\x00-\\x1f\\x7f]{1,128}$"
+        },
+        "productFamily": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[^\\x00-\\x1f\\x7f]{1,128}$"
+        },
+        "boardVendor": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[^\\x00-\\x1f\\x7f]{1,128}$"
+        },
+        "boardName": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[^\\x00-\\x1f\\x7f]{1,128}$"
+        },
+        "biosVendor": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[^\\x00-\\x1f\\x7f]{1,128}$"
+        },
+        "chassisType": {
+          "type": "integer",
+          "maximum": 255,
+          "minimum": 0,
+          "description": "ChassisType is the SMBIOS chassis type (3 desktop, 10 notebook, 17 server, 23 rack mount, 35 mini PC, …)."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "DMIFacts are SMBIOS fields from /sys/class/dmi/id."
+    },
+    "HardwareFacts": {
+      "properties": {
+        "cpuModel": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[^\\x00-\\x1f\\x7f]{1,128}$",
+          "description": "CPUModel is /proc/cpuinfo \"model name\" (ARM: \"Hardware\"/\"Model\")."
+        },
+        "cpuVendor": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[^\\x00-\\x1f\\x7f]{1,128}$",
+          "description": "CPUVendor is /proc/cpuinfo \"vendor_id\" (ARM: the CPU implementer, e.g. \"ARM\", \"Apple\")."
+        },
+        "dmi": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/DMIFacts",
+              "description": "DMI are the world-readable fields of /sys/class/dmi/id (no serials, no UUIDs)."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "deviceTreeModel": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[^\\x00-\\x1f\\x7f]{1,128}$",
+          "description": "DeviceTreeModel is the device-tree model (single-board computers, Apple Silicon under Asahi)."
+        },
+        "virtualization": {
+          "type": "string",
+          "enum": [
+            "kvm",
+            "qemu",
+            "vmware",
+            "virtualbox",
+            "xen",
+            "hyperv",
+            "parallels",
+            "apple",
+            "bhyve",
+            "container",
+            "other"
+          ],
+          "description": "Virtualization is omitted when no hypervisor was detected."
+        },
+        "osName": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[^\\x00-\\x1f\\x7f]{1,128}$",
+          "description": "OSName is the host operating system as Docker reports it (e.g. \"Ubuntu 24.04.1 LTS\", \"Docker Desktop\")."
+        },
+        "kernel": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[^\\x00-\\x1f\\x7f]{1,128}$",
+          "description": "Kernel is the kernel release (uname)."
+        },
+        "timezone": {
+          "type": "string",
+          "maxLength": 64,
+          "pattern": "^[A-Za-z][A-Za-z0-9_+-]{0,31}(/[A-Za-z0-9_+-]{1,32}){0,2}$",
+          "description": "Timezone is the host's IANA time zone; omitted when unknown or UTC."
+        },
+        "battery": {
+          "type": "boolean",
+          "description": "Battery is true when the machine has a system battery (a power supply\nof type Battery whose scope is not Device, so a wireless mouse\ndoesn't count): laptops. Omitted when there is none."
+        },
+        "hostModel": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[^\\x00-\\x1f\\x7f]{1,128}$",
+          "description": "HostModel is the machine model the installer read on the host where\nlaunchroomd's VM hides it (macOS: system_profiler's \"Model Name\",\ne.g. \"Mac mini\", \"MacBook Pro\"; LR_HOST_MODEL, D53). Display only."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "HardwareFacts describe the machine launchroomd runs on."
+    },
+    "HostFacts": {
+      "properties": {
+        "hostname": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._-]{1,128}$"
+        },
+        "os": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._-]{1,128}$"
+        },
+        "arch": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._-]{1,128}$"
+        },
+        "cpus": {
+          "type": "integer",
+          "maximum": 4096,
+          "minimum": 1
+        },
+        "memoryMb": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "MemoryMB is total host memory if known."
+        },
+        "hardware": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/HardwareFacts",
+              "description": "Hardware describes the machine (device and provider detection); omitted by older daemons."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "hostname",
+        "os",
+        "arch",
+        "cpus"
+      ],
+      "description": "HostFacts describe the enrolling host (informational, shown in the UI)."
+    }
+  },
+  "properties": {
+    "apiVersion": {
+      "type": "string",
+      "const": "launchroom.vantezzen.io/v1"
+    },
+    "kind": {
+      "type": "string",
+      "const": "EnrollRequest"
+    },
+    "token": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.-]{16,256}$",
+      "description": "Token is the single-use join token. It is serialized only by MarshalJSON\nvia Reveal; it is never logged."
+    },
+    "signingKey": {
+      "type": "string",
+      "pattern": "^ed25519:[A-Za-z0-9+/]{43}=$"
+    },
+    "sealingKey": {
+      "type": "string",
+      "pattern": "^x25519:[A-Za-z0-9+/]{43}=$"
+    },
+    "daemonVersion": {
+      "type": "string",
+      "maxLength": 64,
+      "pattern": "^v?[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$"
+    },
+    "protocolVersions": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array",
+      "maxItems": 8,
+      "minItems": 1
+    },
+    "host": {
+      "$ref": "#/$defs/HostFacts"
+    }
+  },
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "apiVersion",
+    "kind",
+    "token",
+    "signingKey",
+    "sealingKey",
+    "daemonVersion",
+    "protocolVersions",
+    "host"
+  ],
+  "title": "EnrollRequest: POST /daemon/v1/enroll body",
+  "description": "EnrollRequest is sent once with the join token."
+}

@@ -1,0 +1,67 @@
+{
+  "apiVersion": "launchroom.vantezzen.io/v1",
+  "kind": "Report",
+  "serverId": "srv_01J9Z8X7W6V5T4S3R2Q1P0N9MK",
+  "observedAt": "2026-10-17T12:02:05Z",
+  "seq": 19,
+  "full": true,
+  "appliedVersion": 1842,
+  "workloads": [],
+  "host": {
+    "cpus": 4,
+    "memoryMb": 7940,
+    "diskTotalMb": 76800,
+    "diskFreeMb": 51200,
+    "dockerVersion": "29.0.1",
+    "daemonVersion": "0.5.0",
+    "hardware": {
+      "cpuModel": "AMD EPYC-Rome Processor",
+      "cpuVendor": "AuthenticAMD",
+      "dmi": {
+        "sysVendor": "Hetzner",
+        "productName": "vServer",
+        "productFamily": "Hetzner_vServer",
+        "boardVendor": "Hetzner",
+        "biosVendor": "Hetzner",
+        "chassisType": 1
+      },
+      "virtualization": "kvm",
+      "osName": "Ubuntu 24.04.1 LTS",
+      "kernel": "6.8.0-45-generic",
+      "timezone": "Europe/Berlin"
+    }
+  },
+  "metrics": {
+    "host": [
+      {
+        "at": "2026-10-17T12:00:00Z",
+        "samples": 4,
+        "cpuPct": 12.5,
+        "memUsedMb": 2820,
+        "memTotalMb": 7940,
+        "diskUsedMb": 25600,
+        "diskTotalMb": 76800,
+        "netRxBps": 18432,
+        "netTxBps": 9216,
+        "load1": 0.42
+      },
+      {
+        "at": "2026-10-17T12:01:00Z",
+        "samples": 4,
+        "cpuPct": 31.25,
+        "memUsedMb": 2944,
+        "memTotalMb": 7940,
+        "diskUsedMb": 25601,
+        "diskTotalMb": 76800,
+        "netRxBps": 40960,
+        "netTxBps": 20480,
+        "load1": 0.61
+      }
+    ],
+    "workloads": [
+      { "workload": "wl_01J9Z8X7W6V5T4S3R2Q1P0N9MA", "at": "2026-10-17T12:00:00Z", "cpuCores": 0.125, "memMb": 212 },
+      { "workload": "wl_01J9Z8X7W6V5T4S3R2Q1P0N9MA", "at": "2026-10-17T12:01:00Z", "cpuCores": 0.31, "memMb": 230 },
+      { "workload": "wl_01J9Z8X7W6V5T4S3R2Q1P0N9MB", "at": "2026-10-17T12:01:00Z", "memMb": 96 }
+    ]
+  }
+}

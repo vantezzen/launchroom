@@ -1,0 +1,4 @@
+# Only launchroomd module is needed to build the git-fixtures server.
+*
+!daemon/
+daemon/bin/

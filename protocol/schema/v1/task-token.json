@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://launchroom.vantezzen.io/schema/v1/task-token.json",
+  "properties": {
+    "serverId": {
+      "type": "string",
+      "pattern": "^srv_[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "taskId": {
+      "type": "string",
+      "pattern": "^tsk_[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "purpose": {
+      "type": "string",
+      "enum": [
+        "clone",
+        "ssh_key",
+        "session"
+      ]
+    },
+    "token": {
+      "type": "string",
+      "maxLength": 4096,
+      "minLength": 1,
+      "description": "Token is the credential (a GitHub App installation token for clones)."
+    }
+  },
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "serverId",
+    "taskId",
+    "purpose",
+    "token"
+  ],
+  "title": "TaskToken: plaintext sealed into task credentials such as build cloneToken (crypto_box_seal)",
+  "description": "TaskToken is the plaintext of a sealed task credential, e.g."
+}

@@ -1,0 +1,150 @@
+{
+  "apiVersion": "launchroom.vantezzen.io/v1",
+  "kind": "NodeState",
+  "serverId": "srv_01J9Z8X7W6V5T4S3R2Q1P0N9MK",
+  "version": 1843,
+  "issuedAt": "2026-10-17T12:00:00Z",
+  "system": {
+    "caddy": {
+      "enabled": true,
+      "image": "127.0.0.1:5000/mirror/caddy@sha256:685ae3d7c34d9b5f8caeddc5d14051db7bbd88ff1f5a2fa0c16bd8ca328fb7af"
+    },
+    "buildkit": {
+      "enabled": false
+    },
+    "tailscale": {
+      "enabled": false
+    },
+    "registry": {}
+  },
+  "networks": [
+    {
+      "id": "net_01J9Z8X7W6V5T4S3R2Q1P0N9N0",
+      "name": "lr-e_7f3c2a91b0d4e5f6",
+      "subnet": "10.231.4.0/24"
+    }
+  ],
+  "volumes": [
+    {
+      "id": "vol_01J9Z8X7W6V5T4S3R2Q1P0N9N1",
+      "name": "lr-v_91ab5c7d3e2f1a0b"
+    }
+  ],
+  "workloads": [
+    {
+      "id": "wl_01J9Z8X7W6V5T4S3R2Q1P0N9N7",
+      "service": "svc_01J9Z8X7W6V5T4S3R2Q1P0N9N2",
+      "environment": "env_01J9Z8X7W6V5T4S3R2Q1P0N9N4",
+      "deployment": "dpl_01J9Z8X7W6V5T4S3R2Q1P0N9N5",
+      "image": "127.0.0.1:5000/apps/svc_01j9z8x7w6v5t4s3r2q1p0n9n2@sha256:4b5e57f6eb2f42b9039b3d1e13929295f231749c510cbe341cd68036d9af97e2",
+      "args": [
+        "node",
+        "server.js"
+      ],
+      "env": {
+        "sealed": "wvoQqYaNVNQFY3EFjdyt9ezKvhEje5JmmjhQ8jR+kRkL7DhDOP3Gtk1LGmveW0laJdVjGxHOI8dlhza021FiSIopc/QTpS1pwCNoMO6OeeUPMbntIaX5+f7ipJZ4paAS"
+      },
+      "port": 3000,
+      "health": {
+        "type": "http",
+        "path": "/",
+        "expectStatus": "2xx-3xx",
+        "startPeriod": "30s",
+        "interval": "5s",
+        "timeout": "3s",
+        "failureThreshold": 3
+      },
+      "resources": {
+        "cpus": 1.0,
+        "memoryMb": 512,
+        "pids": 512
+      },
+      "networks": [
+        {
+          "network": "net_01J9Z8X7W6V5T4S3R2Q1P0N9N0",
+          "aliases": [
+            "web"
+          ]
+        }
+      ],
+      "restart": "unless-stopped",
+      "role": "serving"
+    },
+    {
+      "id": "wl_01J9Z8X7W6V5T4S3R2Q1P0N9N8",
+      "service": "svc_01J9Z8X7W6V5T4S3R2Q1P0N9N3",
+      "environment": "env_01J9Z8X7W6V5T4S3R2Q1P0N9N4",
+      "deployment": "dpl_01J9Z8X7W6V5T4S3R2Q1P0N9N6",
+      "image": "127.0.0.1:5000/mirror/postgres@sha256:a942b37ccfaf5a813b1432caa209a43b9d144e47ad0de1549c289c253e556cd5",
+      "env": {
+        "sealed": "0w4lnfx6p5JNoIhi5nHexlpfUg9Xo9B8IMs0TQu6f5sk6bHDQvwuy+6ATf19oCD20CVkjLFjkWjC2BzSRRLOtdPyU+XjnCayC8njE/f201A6/GTivMR0DN3WcYaZScc/"
+      },
+      "port": 5432,
+      "health": {
+        "type": "tcp",
+        "startPeriod": "60s",
+        "interval": "10s",
+        "timeout": "3s",
+        "failureThreshold": 5
+      },
+      "resources": {
+        "cpus": 2,
+        "memoryMb": 2048,
+        "pids": 1024
+      },
+      "capabilities": [
+        "CHOWN",
+        "SETUID",
+        "SETGID",
+        "DAC_OVERRIDE",
+        "FOWNER"
+      ],
+      "networks": [
+        {
+          "network": "net_01J9Z8X7W6V5T4S3R2Q1P0N9N0",
+          "aliases": [
+            "postgres"
+          ]
+        }
+      ],
+      "mounts": [
+        {
+          "volume": "vol_01J9Z8X7W6V5T4S3R2Q1P0N9N1",
+          "target": "/var/lib/postgresql/data"
+        }
+      ],
+      "restart": "unless-stopped",
+      "role": "serving"
+    }
+  ],
+  "ambassadors": [],
+  "routes": [
+    {
+      "id": "rt_01J9Z8X7W6V5T4S3R2Q1P0N9NC",
+      "hosts": [
+        "pr-42-shop.preview.example.com"
+      ],
+      "tls": "acme",
+      "upstreams": [
+        {
+          "workload": "wl_01J9Z8X7W6V5T4S3R2Q1P0N9N7",
+          "port": 3000
+        }
+      ],
+      "headers": {
+        "X-Robots-Tag": "noindex"
+      },
+      "protection": {
+        "forwardAuth": {
+          "url": "https://dash.example.com/auth/preview",
+          "stripHeaders": [
+            "X-Launchroom-Bypass"
+          ]
+        }
+      }
+    }
+  ],
+  "firewall": {
+    "meshAllow": []
+  }
+}

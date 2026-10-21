@@ -1,0 +1,37 @@
+{
+  "apiVersion": "launchroom.vantezzen.io/v1",
+  "kind": "Report",
+  "serverId": "srv_01J9Z8X7W6V5T4S3R2Q1P0N9MK",
+  "observedAt": "2026-10-17T12:00:05Z",
+  "seq": 18,
+  "full": true,
+  "appliedVersion": 1842,
+  "workloads": [],
+  "host": {
+    "cpus": 4,
+    "memoryMb": 7940,
+    "diskTotalMb": 76800,
+    "diskFreeMb": 51200,
+    "dockerVersion": "29.0.1",
+    "daemonVersion": "0.4.0",
+    "health": {
+      "collectedAt": "2026-10-17T12:00:00Z",
+      "dataDisk": { "totalMb": 76800, "freeMb": 51200 },
+      "dockerDisk": { "totalMb": 76800, "freeMb": 51200 },
+      "memory": { "totalMb": 7940, "availableMb": 5120 },
+      "load": { "load1": 0.42, "load5": 0.3, "load15": 0.25 },
+      "inotify": { "maxUserWatches": 524288, "maxUserInstances": 128, "maxQueuedEvents": 16384 },
+      "networks": { "total": 6, "managed": 3 },
+      "docker": { "imagesMb": 2048, "imagesReclaimableMb": 512, "containersMb": 40 },
+      "buildCacheMb": 3072,
+      "clockSkewMs": -120,
+      "cleanup": {
+        "at": "2026-10-17T03:12:00Z",
+        "trigger": "schedule",
+        "removedImages": 4,
+        "removedContainers": 1,
+        "reclaimedMb": 830
+      }
+    }
+  }
+}

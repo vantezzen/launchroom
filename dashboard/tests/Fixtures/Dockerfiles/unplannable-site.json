@@ -1,0 +1,7 @@
+{
+    "dockerfile": "FROM busybox:1.37\nWORKDIR /www\nCOPY www/ /www/\nEXPOSE 8080\nCMD [\"httpd\", \"-f\", \"-v\", \"-p\", \"8080\", \"-h\", \"/www\"]\n",
+    "port": 8080,
+    "startCommand": "httpd -f -v -p 8080 -h /www",
+    "explanation": "This site is plain HTML in www/, so the Dockerfile copies it into a small busybox image and serves it with busybox's built-in httpd on port 8080. Nothing is built; check that every page lives under www/.",
+    "confidence": "high"
+}

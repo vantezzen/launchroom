@@ -1,0 +1,14 @@
+{
+  "name": "node-hello",
+  "version": "1.0.0",
+  "private": true,
+  "description": "launchroom dev fixture: dependency-free Node HTTP server (Railpack detection test)",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

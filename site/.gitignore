@@ -1,0 +1,11 @@
+# deps
+/node_modules
+
+# generated
+.source
+next-env.d.ts
+*.tsbuildinfo
+# build output
+/.next/
+
+.DS_Store

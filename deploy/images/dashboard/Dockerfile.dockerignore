@@ -1,0 +1,30 @@
+# Build context is the repo root (docker build -f deploy/images/dashboard/Dockerfile .).
+# BuildKit picks up this file because it sits next to the Dockerfile.
+# Allow-list: only what the dashboard image needs.
+*
+!deploy/images/dashboard/
+!deploy/install/server.sh
+!deploy/daemon/compose.yml
+!protocol/schema/
+!dashboard/
+
+dashboard/.env
+dashboard/.env.*
+!dashboard/.env.example
+dashboard/node_modules/
+dashboard/vendor/
+dashboard/public/build/
+dashboard/public/hot
+dashboard/public/storage
+dashboard/bootstrap/cache/*.php
+dashboard/storage/logs/*
+dashboard/storage/framework/cache/data/*
+dashboard/storage/framework/sessions/*
+dashboard/storage/framework/views/*
+dashboard/storage/app/*
+dashboard/storage/*.key
+dashboard/database/*.sqlite*
+dashboard/.phpunit.cache
+dashboard/.phpunit.result.cache
+dashboard/tests/
+**/.DS_Store

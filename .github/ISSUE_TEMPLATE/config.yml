@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/vantezzen/launchroom/security/advisories/new
+    about: Report security issues privately, not in public issues.
+  - name: Questions and ideas
+    url: https://github.com/vantezzen/launchroom/discussions
+    about: Ask questions and discuss ideas in GitHub Discussions.
+  - name: Documentation
+    url: https://launchroom.vantezzen.io/docs
+    about: Installation, guides and troubleshooting.

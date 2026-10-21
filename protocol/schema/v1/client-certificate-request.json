@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://launchroom.vantezzen.io/schema/v1/client-certificate-request.json",
+  "properties": {
+    "apiVersion": {
+      "type": "string",
+      "const": "launchroom.vantezzen.io/v1"
+    },
+    "kind": {
+      "type": "string",
+      "const": "ClientCertificateRequest"
+    },
+    "publicKey": {
+      "type": "string",
+      "maxLength": 8192,
+      "minLength": 4,
+      "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$",
+      "description": "PublicKey is the DER SubjectPublicKeyInfo of an ECDSA P-256 key, base64."
+    }
+  },
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "apiVersion",
+    "kind",
+    "publicKey"
+  ],
+  "title": "ClientCertificateRequest: POST /daemon/v1/client-certificate body (mTLS, D50)",
+  "description": "ClientCertificateRequest is POST /daemon/v1/client-certificate: the daemon asks for a client certificate for a key it generated itself."
+}

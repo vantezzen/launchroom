@@ -1,0 +1,471 @@
+{
+  "admin": {
+    "listen": "127.0.0.1:2019"
+  },
+  "apps": {
+    "http": {
+      "http_port": 80,
+      "https_port": 443,
+      "servers": {
+        "lr-http": {
+          "listen": [
+            ":80"
+          ],
+          "routes": [
+            {
+              "handle": [
+                {
+                  "handler": "static_response",
+                  "headers": {
+                    "Location": [
+                      "https://{http.request.host}{http.request.uri}"
+                    ]
+                  },
+                  "status_code": 308
+                }
+              ],
+              "match": [
+                {
+                  "host": [
+                    "web-production.shop.apps.example.com",
+                    "web-pr-4.shop.apps.example.com"
+                  ]
+                }
+              ],
+              "terminal": true
+            },
+            {
+              "handle": [
+                {
+                  "handler": "static_response",
+                  "headers": {
+                    "Location": [
+                      "https://{http.request.host}{http.request.uri}"
+                    ]
+                  },
+                  "status_code": 308
+                }
+              ],
+              "match": [
+                {
+                  "host": [
+                    "api-production.blog.apps.example.com"
+                  ]
+                }
+              ],
+              "terminal": true
+            },
+            {
+              "handle": [
+                {
+                  "handler": "static_response",
+                  "headers": {
+                    "Location": [
+                      "https://{http.request.host}{http.request.uri}"
+                    ]
+                  },
+                  "status_code": 308
+                }
+              ],
+              "match": [
+                {
+                  "host": [
+                    "web.other.example.net"
+                  ]
+                }
+              ],
+              "terminal": true
+            },
+            {
+              "handle": [
+                {
+                  "handler": "static_response",
+                  "headers": {
+                    "Location": [
+                      "https://{http.request.host}{http.request.uri}"
+                    ]
+                  },
+                  "status_code": 308
+                }
+              ],
+              "match": [
+                {
+                  "host": [
+                    "shop.example.org"
+                  ]
+                }
+              ],
+              "terminal": true
+            },
+            {
+              "handle": [
+                {
+                  "body": "launchroom: there is no app at this address.\n",
+                  "handler": "static_response",
+                  "headers": {
+                    "Content-Type": [
+                      "text/plain; charset=utf-8"
+                    ]
+                  },
+                  "status_code": 404
+                }
+              ],
+              "terminal": true
+            }
+          ]
+        },
+        "lr-https": {
+          "automatic_https": {
+            "disable_redirects": true
+          },
+          "listen": [
+            ":443"
+          ],
+          "routes": [
+            {
+              "@id": "lr-route-rt_01J9Z8X7W6V5T4S3R2Q1P0N9R1",
+              "handle": [
+                {
+                  "handler": "subroute",
+                  "routes": [
+                    {
+                      "handle": [
+                        {
+                          "encodings": {
+                            "gzip": {},
+                            "zstd": {}
+                          },
+                          "handler": "encode",
+                          "prefer": [
+                            "zstd",
+                            "gzip"
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "handle": [
+                        {
+                          "flush_interval": -1,
+                          "handler": "reverse_proxy",
+                          "health_checks": {
+                            "passive": {
+                              "fail_duration": "10s",
+                              "max_fails": 1,
+                              "unhealthy_status": [
+                                502,
+                                503,
+                                504
+                              ]
+                            }
+                          },
+                          "load_balancing": {
+                            "selection_policy": {
+                              "policy": "round_robin"
+                            },
+                            "try_duration": "5s",
+                            "try_interval": "250ms"
+                          },
+                          "upstreams": [
+                            {
+                              "dial": "10.231.4.5:3000"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ],
+              "match": [
+                {
+                  "host": [
+                    "web-production.shop.apps.example.com",
+                    "web-pr-4.shop.apps.example.com"
+                  ]
+                }
+              ],
+              "terminal": true
+            },
+            {
+              "@id": "lr-route-rt_01J9Z8X7W6V5T4S3R2Q1P0N9R2",
+              "handle": [
+                {
+                  "handler": "subroute",
+                  "routes": [
+                    {
+                      "handle": [
+                        {
+                          "encodings": {
+                            "gzip": {},
+                            "zstd": {}
+                          },
+                          "handler": "encode",
+                          "prefer": [
+                            "zstd",
+                            "gzip"
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "handle": [
+                        {
+                          "flush_interval": -1,
+                          "handler": "reverse_proxy",
+                          "health_checks": {
+                            "passive": {
+                              "fail_duration": "10s",
+                              "max_fails": 1,
+                              "unhealthy_status": [
+                                502,
+                                503,
+                                504
+                              ]
+                            }
+                          },
+                          "load_balancing": {
+                            "selection_policy": {
+                              "policy": "round_robin"
+                            },
+                            "try_duration": "5s",
+                            "try_interval": "250ms"
+                          },
+                          "upstreams": [
+                            {
+                              "dial": "100.64.0.8:31002"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ],
+              "match": [
+                {
+                  "host": [
+                    "api-production.blog.apps.example.com"
+                  ]
+                }
+              ],
+              "terminal": true
+            },
+            {
+              "@id": "lr-route-rt_01J9Z8X7W6V5T4S3R2Q1P0N9R3",
+              "handle": [
+                {
+                  "handler": "subroute",
+                  "routes": [
+                    {
+                      "handle": [
+                        {
+                          "encodings": {
+                            "gzip": {},
+                            "zstd": {}
+                          },
+                          "handler": "encode",
+                          "prefer": [
+                            "zstd",
+                            "gzip"
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "handle": [
+                        {
+                          "flush_interval": -1,
+                          "handler": "reverse_proxy",
+                          "health_checks": {
+                            "passive": {
+                              "fail_duration": "10s",
+                              "max_fails": 1,
+                              "unhealthy_status": [
+                                502,
+                                503,
+                                504
+                              ]
+                            }
+                          },
+                          "load_balancing": {
+                            "selection_policy": {
+                              "policy": "round_robin"
+                            },
+                            "try_duration": "5s",
+                            "try_interval": "250ms"
+                          },
+                          "upstreams": [
+                            {
+                              "dial": "10.231.4.5:3000"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ],
+              "match": [
+                {
+                  "host": [
+                    "web.other.example.net"
+                  ]
+                }
+              ],
+              "terminal": true
+            },
+            {
+              "@id": "lr-route-rt_01J9Z8X7W6V5T4S3R2Q1P0N9R4",
+              "handle": [
+                {
+                  "handler": "subroute",
+                  "routes": [
+                    {
+                      "handle": [
+                        {
+                          "handler": "headers",
+                          "response": {
+                            "set": {
+                              "Strict-Transport-Security": [
+                                "max-age=31536000"
+                              ]
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "handle": [
+                        {
+                          "encodings": {
+                            "gzip": {},
+                            "zstd": {}
+                          },
+                          "handler": "encode",
+                          "prefer": [
+                            "zstd",
+                            "gzip"
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "handle": [
+                        {
+                          "flush_interval": -1,
+                          "handler": "reverse_proxy",
+                          "health_checks": {
+                            "passive": {
+                              "fail_duration": "10s",
+                              "max_fails": 1,
+                              "unhealthy_status": [
+                                502,
+                                503,
+                                504
+                              ]
+                            }
+                          },
+                          "load_balancing": {
+                            "selection_policy": {
+                              "policy": "round_robin"
+                            },
+                            "try_duration": "5s",
+                            "try_interval": "250ms"
+                          },
+                          "upstreams": [
+                            {
+                              "dial": "10.231.4.5:3000"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ],
+              "match": [
+                {
+                  "host": [
+                    "shop.example.org"
+                  ]
+                }
+              ],
+              "terminal": true
+            },
+            {
+              "handle": [
+                {
+                  "body": "launchroom: there is no app at this address.\n",
+                  "handler": "static_response",
+                  "headers": {
+                    "Content-Type": [
+                      "text/plain; charset=utf-8"
+                    ]
+                  },
+                  "status_code": 404
+                }
+              ],
+              "terminal": true
+            }
+          ]
+        }
+      }
+    },
+    "tls": {
+      "automation": {
+        "on_demand": {
+          "permission": {
+            "endpoint": "http://127.0.0.1:2021/caddy/ask",
+            "module": "http"
+          }
+        },
+        "policies": [
+          {
+            "issuers": [
+              {
+                "challenges": {
+                  "dns": {
+                    "provider": {
+                      "api_token": "{file./data/launchroom/secrets/dns-token}",
+                      "name": "cloudflare"
+                    }
+                  }
+                },
+                "module": "acme"
+              }
+            ],
+            "subjects": [
+              "*.blog.apps.example.com"
+            ]
+          },
+          {
+            "on_demand": true,
+            "subjects": [
+              "shop.example.org"
+            ]
+          },
+          {
+            "subjects": [
+              "web.other.example.net"
+            ]
+          }
+        ]
+      },
+      "certificates": {
+        "automate": [
+          "*.blog.apps.example.com"
+        ],
+        "load_files": [
+          {
+            "certificate": "/data/launchroom/mirror/wildcard_.shop.apps.example.com.crt",
+            "key": "/data/launchroom/mirror/wildcard_.shop.apps.example.com.key",
+            "tags": [
+              "launchroom-mirror"
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

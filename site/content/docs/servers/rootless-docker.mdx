@@ -1,0 +1,88 @@
+---
+title: Rootless Docker
+description: Servers running Docker in rootless mode join with --rootless. What you prepare once, what works fully and what is limited.
+---
+
+A server whose Docker runs in rootless mode (the Docker daemon runs as your user, not as root) can join launchroom with
+every role: **Run apps**, **Serve traffic** and **Build**. Add one flag to the install command and run it as the user
+that owns the rootless Docker daemon. Some capabilities are limited, and the server page shows which.
+
+## Before you start
+
+- Docker's rootless mode is set up and running for your user. Follow
+  [Docker's rootless mode guide](https://docs.docker.com/engine/security/rootless/).
+- Docker Engine 24 or newer with the compose plugin, as for every server.
+- For ports 80 and 443 (needed by **Serve traffic**): unprivileged users must be allowed to bind them. Run this once as
+  root, and add the same setting to a file in `/etc/sysctl.d/` so it survives a reboot:
+
+  ```sh title="Once, as root"
+  sysctl -w net.ipv4.ip_unprivileged_port_start=80
+  ```
+
+- For the private network to other servers: `/dev/net/tun` must exist.
+- For CPU, memory and process limits of your apps to take effect: cgroup v2 with systemd delegation for your user.
+  Docker's rootless guide covers this under limiting resources.
+
+The installer checks all of this. When the port setting is missing, it stops and prints the `sysctl` command. When
+`/dev/net/tun` or cgroups are missing, it warns.
+
+## Install
+
+Add the server in the dashboard as usual (**Servers → Add server**) and copy the command. Then run it as the user that
+owns the rootless Docker daemon, with `--rootless` added:
+
+```sh title="On the server, as your user"
+curl -fsSL https://dash.example.com/install/server.sh | LR_JOIN_TOKEN=lr_jt_… sh -s -- --rootless
+```
+
+The script detects rootless Docker itself:
+
+- On a rootless daemon without `--rootless`, it refuses to install and tells you to add the flag.
+- On a regular daemon with `--rootless`, it also refuses.
+
+It finds your Docker socket from `DOCKER_HOST` or `$XDG_RUNTIME_DIR/docker.sock`, and RootlessKit's API socket in
+`$XDG_RUNTIME_DIR/dockerd-rootless/` (override with `LR_ROOTLESSKIT_API`). It writes nothing outside its folder.
+
+## How it runs
+
+With rootless Docker, the host network that containers see is a network namespace owned by your user, not the
+server's own network. launchroomd, Caddy and the private network client all run in that namespace, so the connections
+between them work as on any other server.
+
+To receive traffic from the internet, launchroom asks RootlessKit (the component that runs rootless Docker) to expose
+three ports from the server into that namespace: 80/TCP, 443/TCP and 443/UDP. It repeats the request every 30 seconds,
+because RootlessKit forgets the ports when the rootless Docker daemon restarts.
+
+## What the server page shows
+
+Open the server and its **Network** tab. Under **Capabilities** the server reports whether it runs Docker or Rootless
+Docker, and one row per capability with **Full**, **Limited** or **Unavailable** and the reason.
+
+| Capability | Regular Docker | Rootless Docker |
+|---|---|---|
+| Docker access | Full | Full. Docker access still goes through launchroom's guard; a container escape lands as your unprivileged user. |
+| Public ports 80/443 | Full | Full once RootlessKit exposed them. Unavailable, with the reason, when the port setting or RootlessKit's API socket is missing. |
+| Visitor addresses | Full | **Limited.** Connections are forwarded, so apps and access logs see an internal address instead of the visitor's. |
+| Network isolation | Full | **Limited.** launchroom's firewall rules apply inside the namespace, where all container traffic flows, so containers stay isolated. The server's own interfaces are outside its reach. |
+| Private network | Full | **Limited.** The client works and mesh addresses and ports behave normally, but its UDP traffic is translated, so other servers usually connect through the relay instead of directly. |
+| Port detection | Full | Full. launchroom still tells you which port your app listens on. |
+
+When anything isn't full, a note under the list explains what it means for this server.
+
+## Limits
+
+- **Visitor IPs**: apps behind a rootless edge can't see the client address. If you need it (rate limiting, geo, audit
+  logs), let a server with regular Docker serve traffic.
+- **Speed between servers**: relayed private network paths are slower than direct ones. This is enough for builds and
+  most apps. Check the measured numbers on the **Network** tab.
+- **Resource limits** need cgroup v2 with delegation. Without it, rootless Docker silently drops CPU, memory and process
+  limits, and the installer warns.
+- **Podman is not supported**, including its Docker-compatible API. launchroom is not tested against it, and several
+  things it relies on behave differently there. The installer does not treat Podman as rootless Docker.
+
+## Next steps
+
+<Cards>
+  <Card title="Add a server" href="/docs/servers/add-a-server" description="The full flow, requirements and firewall expectations." />
+  <Card title="launchroomd" href="/docs/how-it-works/launchroomd" description="What the guard allows and why launchroomd never holds the Docker socket." />
+</Cards>

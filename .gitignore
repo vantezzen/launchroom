@@ -1,0 +1,34 @@
+# Local reference material (other projects' source code)
+/references/
+
+# OS / editors
+.DS_Store
+/.idea
+/.vscode
+/.zed
+/.fleet
+
+# Local dev environment state
+/dev/.env
+/dev/data/
+/dev/.locks/
+# Failover-test evidence (make test-failover)
+/dev/failover-test/out/
+
+# Daemon build output
+/daemon/bin/
+
+# CLI build output (make cli)
+/cli/bin/
+
+# Local UI screenshots (headless browser checks)
+/dev/screenshots/
+
+# npm package build output (packages/*)
+/packages/*/node_modules/
+/packages/*/dist/
+/packages/*/*.tgz
+
+# Others
+/branding
+/.claude

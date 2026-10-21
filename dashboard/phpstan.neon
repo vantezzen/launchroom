@@ -1,0 +1,103 @@
+includes:
+    - vendor/larastan/larastan/extension.neon
+    - vendor/nesbot/carbon/extension.neon
+    - vendor/spaze/phpstan-disallowed-calls/extension.neon
+    - vendor/spaze/phpstan-disallowed-calls/disallowed-execution-calls.neon
+    - vendor/spaze/phpstan-disallowed-calls/disallowed-dangerous-calls.neon
+
+parameters:
+    paths:
+        - app/
+        - bootstrap/app.php
+        - bootstrap/providers.php
+        - config/
+        - database/
+        - routes/
+        # Test fixtures that use not-yet-adopted traits (HasPublicId,
+        # HasTransitions), so the traits are analysed too.
+        - tests/Fixtures/
+
+    level: max
+
+    # Bounded workers: many parallel workers each boot Laravel, and the dev
+    # stack's bind mount (Docker Desktop/OrbStack file sharing) then fails
+    # file opens with "Cannot allocate memory".
+    parallel:
+        maximumNumberOfProcesses: 4
+
+    # docs/10 §2.2 rule 2: PHPStan max, no baseline growth. There is no baseline.
+
+    filesRootDir: %currentWorkingDirectory%
+
+    # Result cache on the bind mount: `make` runs PHPStan in throwaway containers,
+    # and the default tmpDir (/tmp) would make every run a cold full analysis.
+    tmpDir: storage/framework/cache/phpstan
+
+    # docs/09-security.md R1: no shell strings. The bundled execution-calls set
+    # bans exec, shell_exec (and backticks), system, passthru, proc_open,
+    # pcntl_exec and popen.
+    disallowedStaticCalls:
+        -
+            method: 'Symfony\Component\Process\Process::fromShellCommandline()'
+            message: 'shell strings are forbidden (docs/09 R1); use argv arrays'
+        -
+            method: 'Illuminate\Support\Facades\Process::run()'
+            message: 'string commands go through a shell (docs/09 R1); pass an argv array'
+            allowParamsAnywhere:
+                -
+                    position: 1
+                    name: 'command'
+                    typeString: 'array<int, string>|null'
+        -
+            method: 'Illuminate\Support\Facades\Process::start()'
+            message: 'string commands go through a shell (docs/09 R1); pass an argv array'
+            allowParamsAnywhere:
+                -
+                    position: 1
+                    name: 'command'
+                    typeString: 'array<int, string>|null'
+
+    disallowedMethodCalls:
+        -
+            method: 'Illuminate\Process\PendingProcess::run()'
+            message: 'string commands go through a shell (docs/09 R1); pass an argv array'
+            allowParamsAnywhere:
+                -
+                    position: 1
+                    name: 'command'
+                    typeString: 'array<int, string>|null'
+        -
+            method: 'Illuminate\Process\PendingProcess::start()'
+            message: 'string commands go through a shell (docs/09 R1); pass an argv array'
+            allowParamsAnywhere:
+                -
+                    position: 1
+                    name: 'command'
+                    typeString: 'array<int, string>|null'
+
+    disallowedFunctionCalls:
+        -
+            function: 'env()'
+            message: 'read configuration via config(); env() only works in config/ (docs/10 §2.2 rule 7)'
+            allowIn:
+                - config/*
+        -
+            function: 'getenv()'
+            message: 'read configuration via config() (docs/10 §2.2 rule 7)'
+            allowIn:
+                - config/*
+        -
+            function:
+                - 'dd()'
+                - 'dump()'
+                - 'ddd()'
+                - 'ray()'
+                - 'var_dump()'
+                - 'print_r()'
+                - 'var_export()'
+            message: 'no debug output in committed code'
+            allowParamsAnywhere:
+                -
+                    position: 2
+                    name: 'return'
+                    value: true

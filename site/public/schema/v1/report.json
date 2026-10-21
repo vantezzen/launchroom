@@ -1,0 +1,1762 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://launchroom.vantezzen.io/schema/v1/report.json",
+  "$defs": {
+    "CertStorageStatus": {
+      "properties": {
+        "state": {
+          "type": "string",
+          "enum": [
+            "local",
+            "shared",
+            "degraded"
+          ]
+        },
+        "mirrored": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Mirrored is the number of certificates in the local mirror."
+        },
+        "message": {
+          "type": "string",
+          "maxLength": 1024,
+          "description": "Message is a short, secret-free explanation (e.g. why storage is degraded)."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "state",
+        "mirrored"
+      ],
+      "description": "CertStorageStatus reports the certificate storage of an edge."
+    },
+    "CertificateStatus": {
+      "properties": {
+        "host": {
+          "type": "string",
+          "maxLength": 253,
+          "pattern": "^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "issued",
+            "pending",
+            "failed"
+          ]
+        },
+        "wildcard": {
+          "type": "boolean",
+          "description": "Wildcard is true when the host is served by a \"*.\u003cparent\u003e\" certificate."
+        },
+        "issuer": {
+          "type": "string",
+          "maxLength": 256,
+          "description": "Issuer is the certificate's issuer (organization and common name), e.g. \"Let's Encrypt R12\"."
+        },
+        "notBefore": {
+          "oneOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "notAfter": {
+          "oneOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastError": {
+          "type": "string",
+          "maxLength": 1024,
+          "description": "LastError is Caddy's last issuance or renewal error for the host\n(kept while a newer success has not been seen)."
+        },
+        "lastErrorAt": {
+          "oneOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "host",
+        "state"
+      ],
+      "description": "CertificateStatus is what the edge knows about one routed host's certificate."
+    },
+    "CleanupResult": {
+      "properties": {
+        "at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "trigger": {
+          "type": "string",
+          "enum": [
+            "schedule",
+            "disk_pressure"
+          ]
+        },
+        "removedImages": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "RemovedImages and RemovedContainers count what was deleted."
+        },
+        "removedContainers": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "reclaimedMb": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "ReclaimedMB is the space freed by image removals plus the BuildKit prune."
+        },
+        "error": {
+          "type": "string",
+          "maxLength": 1024,
+          "description": "Error is a short, secret-free description of a partial failure."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "at",
+        "trigger",
+        "removedImages",
+        "removedContainers",
+        "reclaimedMb"
+      ],
+      "description": "CleanupResult summarises one cleanup run (docs/04 §8): unused launchroom images beyond retention, BuildKit cache by age, leftover one-off containers."
+    },
+    "ControlPlaneStatus": {
+      "properties": {
+        "configured": {
+          "type": "string",
+          "maxLength": 512,
+          "pattern": "^https?://(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*|\\[[0-9a-f:.]+\\])(?::[0-9]{1,5})?(?:/[A-Za-z0-9._~%/-]*)?$",
+          "description": "Configured is LR_CONTROL_PLANE_URL, the permanent fallback."
+        },
+        "adopted": {
+          "type": "string",
+          "maxLength": 267,
+          "pattern": "^https://[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+(?::[1-9][0-9]{0,4})?$",
+          "description": "Adopted is the verified system.controlPlane.url requests prefer."
+        },
+        "active": {
+          "type": "string",
+          "maxLength": 512,
+          "pattern": "^https?://(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*|\\[[0-9a-f:.]+\\])(?::[0-9]{1,5})?(?:/[A-Za-z0-9._~%/-]*)?$",
+          "description": "Active is the base URL of the last successful request."
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "configured",
+            "adopted",
+            "fallback",
+            "pending",
+            "refused"
+          ]
+        },
+        "message": {
+          "type": "string",
+          "maxLength": 512,
+          "description": "Message is a short, secret-free reason for pending, refused or fallback."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "state"
+      ],
+      "description": "ControlPlaneStatus is Report.host.controlPlane: which dashboard URL this launchroomd uses (docs/03 §4.2)."
+    },
+    "DMIFacts": {
+      "properties": {
+        "sysVendor": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[^\\x00-\\x1f\\x7f]{1,128}$"
+        },
+        "productName": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[^\\x00-\\x1f\\x7f]{1,128}$"
+        },
+        "productFamily": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[^\\x00-\\x1f\\x7f]{1,128}$"
+        },
+        "boardVendor": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[^\\x00-\\x1f\\x7f]{1,128}$"
+        },
+        "boardName": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[^\\x00-\\x1f\\x7f]{1,128}$"
+        },
+        "biosVendor": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[^\\x00-\\x1f\\x7f]{1,128}$"
+        },
+        "chassisType": {
+          "type": "integer",
+          "maximum": 255,
+          "minimum": 0,
+          "description": "ChassisType is the SMBIOS chassis type (3 desktop, 10 notebook, 17 server, 23 rack mount, 35 mini PC, …)."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "DMIFacts are SMBIOS fields from /sys/class/dmi/id."
+    },
+    "DockerUsage": {
+      "properties": {
+        "imagesMb": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "imagesReclaimableMb": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "ImagesReclaimableMB is what images not used by any container take."
+        },
+        "containersMb": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "imagesMb",
+        "imagesReclaimableMb",
+        "containersMb"
+      ],
+      "description": "DockerUsage is Docker's disk accounting."
+    },
+    "FilesystemUsage": {
+      "properties": {
+        "totalMb": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "freeMb": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "totalMb",
+        "freeMb"
+      ],
+      "description": "FilesystemUsage is the size and free space of one filesystem."
+    },
+    "FirewallStatus": {
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "enforced",
+            "disabled",
+            "error"
+          ]
+        },
+        "checkedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "CheckedAt is the last time the live rules were compared with the expected ones."
+        },
+        "networks": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Networks is the number of launchroom networks (bridges) covered."
+        },
+        "repairs": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Repairs counts drift repairs since the daemon started (rules changed or\nremoved by something else and re-applied)."
+        },
+        "error": {
+          "type": "string",
+          "maxLength": 1024,
+          "description": "Error is a short description of the last failure."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "mode",
+        "checkedAt",
+        "networks",
+        "repairs"
+      ],
+      "description": "FirewallStatus reports the daemon's network isolation."
+    },
+    "HardwareFacts": {
+      "properties": {
+        "cpuModel": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[^\\x00-\\x1f\\x7f]{1,128}$",
+          "description": "CPUModel is /proc/cpuinfo \"model name\" (ARM: \"Hardware\"/\"Model\")."
+        },
+        "cpuVendor": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[^\\x00-\\x1f\\x7f]{1,128}$",
+          "description": "CPUVendor is /proc/cpuinfo \"vendor_id\" (ARM: the CPU implementer, e.g. \"ARM\", \"Apple\")."
+        },
+        "dmi": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/DMIFacts",
+              "description": "DMI are the world-readable fields of /sys/class/dmi/id (no serials, no UUIDs)."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "deviceTreeModel": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[^\\x00-\\x1f\\x7f]{1,128}$",
+          "description": "DeviceTreeModel is the device-tree model (single-board computers, Apple Silicon under Asahi)."
+        },
+        "virtualization": {
+          "type": "string",
+          "enum": [
+            "kvm",
+            "qemu",
+            "vmware",
+            "virtualbox",
+            "xen",
+            "hyperv",
+            "parallels",
+            "apple",
+            "bhyve",
+            "container",
+            "other"
+          ],
+          "description": "Virtualization is omitted when no hypervisor was detected."
+        },
+        "osName": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[^\\x00-\\x1f\\x7f]{1,128}$",
+          "description": "OSName is the host operating system as Docker reports it (e.g. \"Ubuntu 24.04.1 LTS\", \"Docker Desktop\")."
+        },
+        "kernel": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[^\\x00-\\x1f\\x7f]{1,128}$",
+          "description": "Kernel is the kernel release (uname)."
+        },
+        "timezone": {
+          "type": "string",
+          "maxLength": 64,
+          "pattern": "^[A-Za-z][A-Za-z0-9_+-]{0,31}(/[A-Za-z0-9_+-]{1,32}){0,2}$",
+          "description": "Timezone is the host's IANA time zone; omitted when unknown or UTC."
+        },
+        "battery": {
+          "type": "boolean",
+          "description": "Battery is true when the machine has a system battery (a power supply\nof type Battery whose scope is not Device, so a wireless mouse\ndoesn't count): laptops. Omitted when there is none."
+        },
+        "hostModel": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[^\\x00-\\x1f\\x7f]{1,128}$",
+          "description": "HostModel is the machine model the installer read on the host where\nlaunchroomd's VM hides it (macOS: system_profiler's \"Model Name\",\ne.g. \"Mac mini\", \"MacBook Pro\"; LR_HOST_MODEL, D53). Display only."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "HardwareFacts describe the machine launchroomd runs on."
+    },
+    "HostCapability": {
+      "properties": {
+        "name": {
+          "type": "string",
+          "enum": [
+            "dockerAccess",
+            "edgePorts",
+            "clientAddresses",
+            "firewall",
+            "mesh",
+            "portDiscovery",
+            "workloads"
+          ]
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "full",
+            "degraded",
+            "unavailable"
+          ]
+        },
+        "message": {
+          "type": "string",
+          "maxLength": 512,
+          "description": "Message explains a degraded or unavailable capability (secret-free)."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "name",
+        "state"
+      ],
+      "description": "HostCapability is one row of the capability matrix."
+    },
+    "HostHealth": {
+      "properties": {
+        "collectedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "CollectedAt is when the snapshot was taken (daemon clock)."
+        },
+        "dataDisk": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/FilesystemUsage",
+              "description": "DataDisk is the filesystem holding the daemon data dir."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "dockerDisk": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/FilesystemUsage",
+              "description": "DockerDisk is the filesystem holding Docker's root dir (omitted when\nthe daemon cannot see it, e.g. when it runs in a container without it)."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "memory": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/MemoryUsage"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "load": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/LoadAverage"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "inotify": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/InotifyLimits",
+              "description": "Inotify are the kernel's inotify limits (/proc/sys/fs/inotify)."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "networks": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/NetworkUsage",
+              "description": "Networks counts Docker networks on the host."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "docker": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/DockerUsage",
+              "description": "Docker is Docker's own disk accounting (system df)."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "buildCacheMb": {
+          "oneOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "description": "BuildCacheMB is the size of the daemon's BuildKit cache (build role only)."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "clockSkewMs": {
+          "oneOf": [
+            {
+              "type": "integer",
+              "description": "ClockSkewMs is the dashboard's clock minus the daemon's, from the Date\nheader of the last dashboard response (±1 s resolution)."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cleanup": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/CleanupResult",
+              "description": "Cleanup is the result of the last disk cleanup run."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "firewall": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/FirewallStatus",
+              "description": "Firewall is the state of the daemon's network isolation (docs/05 §1)."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "collectedAt"
+      ],
+      "description": "HostHealth is the latest host health snapshot."
+    },
+    "HostMetricSample": {
+      "properties": {
+        "at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "At is the start of the minute (UTC, whole minute)."
+        },
+        "samples": {
+          "type": "integer",
+          "maximum": 60,
+          "minimum": 1,
+          "description": "Samples is the number of 15 s samples aggregated."
+        },
+        "cpuPct": {
+          "oneOf": [
+            {
+              "type": "number",
+              "maximum": 100,
+              "minimum": 0,
+              "description": "CPUPct is busy time of all CPUs from /proc/stat, 0–100."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "memUsedMb": {
+          "oneOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "description": "MemUsedMB is MemTotal − MemAvailable from /proc/meminfo."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "memTotalMb": {
+          "oneOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "diskUsedMb": {
+          "oneOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "description": "DiskUsedMB and DiskTotalMB describe Docker's filesystem (else the data dir's)."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "diskTotalMb": {
+          "oneOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "netRxBps": {
+          "oneOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "description": "NetRxBps and NetTxBps are bytes per second over the physical interfaces\n(/proc/net/dev without lo, Docker bridges, veths and the mesh interface)."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "netTxBps": {
+          "oneOf": [
+            {
+              "type": "integer",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "load1": {
+          "oneOf": [
+            {
+              "type": "number",
+              "maximum": 1000000,
+              "minimum": 0,
+              "description": "Load1 is the 1-minute load average."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "at",
+        "samples"
+      ],
+      "description": "HostMetricSample is one minute of host usage (averages over the samples of that minute)."
+    },
+    "HostRuntime": {
+      "properties": {
+        "docker": {
+          "type": "string",
+          "enum": [
+            "rootful",
+            "rootless"
+          ]
+        },
+        "guard": {
+          "type": "boolean",
+          "description": "Guard is true when launchroomd talks to Docker through dockerd-guard."
+        },
+        "hostOs": {
+          "type": "string",
+          "enum": [
+            "linux",
+            "darwin"
+          ],
+          "description": "HostOS is the operating system of the machine (darwin: a Mac, whose\nDocker runs in a Linux VM; D53). Omitted by older daemons."
+        },
+        "engine": {
+          "type": "string",
+          "enum": [
+            "docker-engine",
+            "docker-desktop",
+            "orbstack",
+            "colima"
+          ],
+          "description": "Engine is the Docker distribution launchroomd runs on (D53)."
+        },
+        "buildPlatforms": {
+          "items": {
+            "type": "string",
+            "enum": [
+              "linux/amd64",
+              "linux/arm64"
+            ]
+          },
+          "type": "array",
+          "maxItems": 8,
+          "description": "BuildPlatforms are the platforms this server's BuildKit can build\nfor: its own and the ones the engine emulates (binfmt handlers such\nas Docker Desktop's QEMU or OrbStack's Rosetta; launchroom never\ninstalls any). Omitted while buildkitd is not running (D53)."
+        },
+        "capabilities": {
+          "items": {
+            "$ref": "#/$defs/HostCapability"
+          },
+          "type": "array",
+          "maxItems": 16,
+          "description": "Capabilities are the server's capabilities, each with its state."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "docker",
+        "guard",
+        "capabilities"
+      ],
+      "description": "HostRuntime describes how launchroomd runs on the server: rootful or rootless Docker, whether it reaches Docker through dockerd-guard, and what the server can do as a result (docs/09 §6, docs/11 §3.2, D49)."
+    },
+    "HostStatus": {
+      "properties": {
+        "cpus": {
+          "type": "integer",
+          "maximum": 4096,
+          "minimum": 1
+        },
+        "memoryMb": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "MemoryMB is total host memory as seen by Docker (0 if unknown)."
+        },
+        "diskTotalMb": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "DiskTotalMB and DiskFreeMB describe the filesystem of the daemon data dir (0 if unknown)."
+        },
+        "diskFreeMb": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "dockerVersion": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._-]{1,128}$",
+          "description": "DockerVersion is the Docker Engine version; empty if Docker is unreachable."
+        },
+        "daemonVersion": {
+          "type": "string",
+          "maxLength": 64,
+          "pattern": "^v?[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$"
+        },
+        "health": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/HostHealth",
+              "description": "Health is the latest periodic host health snapshot (collected every few\nminutes, repeated in every report until the next one)."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "mesh": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/MeshStatus",
+              "description": "Mesh is the mesh client's state (docs/05 §2); omitted when the mesh is off."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "hardware": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/HardwareFacts",
+              "description": "Hardware describes the machine; sent when it changed or was not\nacknowledged yet, and at least hourly (omitted otherwise)."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "links": {
+          "oneOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/LinkMeasurement"
+              },
+              "type": "array",
+              "maxItems": 256,
+              "description": "Links are the latest private-network measurements to the peers of\nsystem.linkProbe (docs/05 §2.1); omitted when there are none."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "features": {
+          "oneOf": [
+            {
+              "items": {
+                "type": "string",
+                "pattern": "^[a-z][A-Za-z0-9]{0,31}$"
+              },
+              "type": "array",
+              "maxItems": 64,
+              "uniqueItems": true,
+              "description": "Features are the optional protocol features this launchroomd\nunderstands (SupportedFeatures); the dashboard sends optional\nNodeState fields only to servers that listed them."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "controlPlane": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ControlPlaneStatus",
+              "description": "ControlPlane says which dashboard URL launchroomd uses: its configured\nfallback or the adopted canonical origin (docs/03 §4.2)."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "runtime": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/HostRuntime",
+              "description": "Runtime is how launchroomd runs here (rootless Docker, dockerd-guard)\nand the resulting capability matrix (D49); omitted until known."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "cpus",
+        "memoryMb",
+        "diskTotalMb",
+        "diskFreeMb",
+        "daemonVersion"
+      ],
+      "description": "HostStatus describes the server at report time."
+    },
+    "IngressStatus": {
+      "properties": {
+        "state": {
+          "type": "string",
+          "enum": [
+            "pending",
+            "applied",
+            "failed"
+          ]
+        },
+        "routes": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Routes is the number of routes in the applied config."
+        },
+        "appliedAt": {
+          "oneOf": [
+            {
+              "type": "string",
+              "format": "date-time",
+              "description": "AppliedAt is when the current config was loaded into Caddy."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "message": {
+          "type": "string",
+          "maxLength": 4096,
+          "description": "Message is a short, secret-free explanation when state is not applied."
+        },
+        "certificates": {
+          "oneOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/CertificateStatus"
+              },
+              "type": "array",
+              "maxItems": 4096,
+              "description": "Certificates is the certificate state of every routed host (docs/05 §5)."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "storage": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/CertStorageStatus",
+              "description": "Storage reports where certificates are kept (shared storage, local, degraded)."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "state",
+        "routes"
+      ],
+      "description": "IngressStatus reports whether the rendered route table is live in Caddy."
+    },
+    "InotifyLimits": {
+      "properties": {
+        "maxUserWatches": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "maxUserInstances": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "maxQueuedEvents": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "maxUserWatches",
+        "maxUserInstances",
+        "maxQueuedEvents"
+      ],
+      "description": "InotifyLimits are the kernel's per-user inotify limits."
+    },
+    "LinkMeasurement": {
+      "properties": {
+        "peer": {
+          "type": "string",
+          "pattern": "^srv_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "measuredAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "MeasuredAt is when the latency probe ran (daemon clock)."
+        },
+        "rttMs": {
+          "oneOf": [
+            {
+              "type": "number",
+              "maximum": 60000,
+              "minimum": 0,
+              "description": "RTTMs is the median round trip of a few small messages over one\nconnection, in milliseconds; omitted when the probe failed."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "error": {
+          "type": "string",
+          "maxLength": 256,
+          "description": "Error says why the latest probe failed (secret-free); omitted on success."
+        },
+        "throughputMbps": {
+          "oneOf": [
+            {
+              "type": "number",
+              "maximum": 400000,
+              "minimum": 0,
+              "description": "ThroughputMbps is the latest download rate from the peer (a short,\nsize-capped transfer, measured rarely); omitted until one succeeded."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "throughputAt": {
+          "oneOf": [
+            {
+              "type": "string",
+              "format": "date-time",
+              "description": "ThroughputAt is when that transfer ran."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "peer",
+        "measuredAt"
+      ],
+      "description": "LinkMeasurement is one entry of Report.host.links: the latest measurement from this server to a peer."
+    },
+    "LoadAverage": {
+      "properties": {
+        "load1": {
+          "type": "number",
+          "maximum": 1000000,
+          "minimum": 0
+        },
+        "load5": {
+          "type": "number",
+          "maximum": 1000000,
+          "minimum": 0
+        },
+        "load15": {
+          "type": "number",
+          "maximum": 1000000,
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "load1",
+        "load5",
+        "load15"
+      ],
+      "description": "LoadAverage is /proc/loadavg."
+    },
+    "MemoryUsage": {
+      "properties": {
+        "totalMb": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "availableMb": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "totalMb",
+        "availableMb"
+      ],
+      "description": "MemoryUsage is host memory from /proc/meminfo."
+    },
+    "MeshPeer": {
+      "properties": {
+        "ipv4": {
+          "type": "string",
+          "pattern": "^(?:[0-9]{1,3}(?:\\.[0-9]{1,3}){3}|[0-9a-f:.]{2,45})$"
+        },
+        "online": {
+          "type": "boolean"
+        },
+        "connection": {
+          "type": "string",
+          "enum": [
+            "direct",
+            "relay",
+            "idle"
+          ],
+          "description": "Connection is direct, relay (via DERP) or idle."
+        },
+        "relay": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._-]{1,128}$",
+          "description": "Relay is the DERP region code in use (relay) or the peer's home region."
+        },
+        "lastHandshake": {
+          "oneOf": [
+            {
+              "type": "string",
+              "format": "date-time",
+              "description": "LastHandshake is the last WireGuard handshake with the peer."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "ipv4",
+        "online",
+        "connection"
+      ],
+      "description": "MeshPeer is one peer in the mesh status."
+    },
+    "MeshStatus": {
+      "properties": {
+        "state": {
+          "type": "string",
+          "enum": [
+            "starting",
+            "needs_login",
+            "connected",
+            "error"
+          ]
+        },
+        "ipv4": {
+          "type": "string",
+          "pattern": "^(?:[0-9]{1,3}(?:\\.[0-9]{1,3}){3}|[0-9a-f:.]{2,45})$",
+          "description": "IPv4 and IPv6 are this server's mesh addresses once connected."
+        },
+        "ipv6": {
+          "type": "string",
+          "pattern": "^(?:[0-9]{1,3}(?:\\.[0-9]{1,3}){3}|[0-9a-f:.]{2,45})$"
+        },
+        "message": {
+          "type": "string",
+          "maxLength": 1024,
+          "description": "Message explains starting, needs_login and error states (secret-free)."
+        },
+        "peers": {
+          "oneOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/MeshPeer"
+              },
+              "type": "array",
+              "description": "Peers are the other servers this client knows (at most 256)."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "checkedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "CheckedAt is when the client was last asked (daemon clock)."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "state",
+        "checkedAt"
+      ],
+      "description": "MeshStatus is Report.host.mesh: the mesh client's view (omitted when the mesh is off)."
+    },
+    "NetworkUsage": {
+      "properties": {
+        "total": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "managed": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "total",
+        "managed"
+      ],
+      "description": "NetworkUsage counts Docker networks: all of them (Docker's default address pools run out at about 30 networks) and those launchroom manages (with subnets from launchroom's own range, docs/05 §1)."
+    },
+    "ProbeStatus": {
+      "properties": {
+        "state": {
+          "type": "string",
+          "enum": [
+            "starting",
+            "passing",
+            "failing"
+          ]
+        },
+        "consecutiveFailures": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "ConsecutiveFailures counts failures after the start period."
+        },
+        "lastCheckedAt": {
+          "oneOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastError": {
+          "type": "string",
+          "maxLength": 1024,
+          "description": "LastError is the last probe failure (e.g. \"connection refused\", \"HTTP 500\")."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "state",
+        "consecutiveFailures"
+      ],
+      "description": "ProbeStatus is the result of the daemon's external health probe."
+    },
+    "PullProgress": {
+      "properties": {
+        "stage": {
+          "type": "string",
+          "enum": [
+            "mirroring",
+            "downloading",
+            "extracting"
+          ]
+        },
+        "downloadedBytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "totalBytes": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "stage",
+        "downloadedBytes",
+        "totalBytes"
+      ],
+      "description": "PullProgress is an in-flight image pull: compressed layer bytes downloaded of the total (0 while the total is not known, e.g."
+    },
+    "Rejection": {
+      "properties": {
+        "version": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Version of the rejected document (0 when it could not be read)."
+        },
+        "error": {
+          "type": "string",
+          "maxLength": 4096,
+          "description": "Error is the validation error (secret-free; documents carry sealed values only)."
+        },
+        "rejectedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "version",
+        "error",
+        "rejectedAt"
+      ],
+      "description": "Rejection describes a NodeState launchroomd refused (Report.stateRejected)."
+    },
+    "ReportMetrics": {
+      "properties": {
+        "host": {
+          "items": {
+            "$ref": "#/$defs/HostMetricSample"
+          },
+          "type": "array",
+          "maxItems": 120,
+          "description": "Host are per-minute host aggregates, oldest first."
+        },
+        "workloads": {
+          "items": {
+            "$ref": "#/$defs/WorkloadMetricSample"
+          },
+          "type": "array",
+          "maxItems": 8192,
+          "description": "Workloads are per-minute aggregates of the managed workload containers, oldest first."
+        },
+        "requests": {
+          "items": {
+            "$ref": "#/$defs/RequestMetricSample"
+          },
+          "type": "array",
+          "maxItems": 8192,
+          "description": "Requests are per-minute traffic aggregates of the routes this edge\nserves, from Caddy's access log (docs/15 §1); omitted when there are none."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "host",
+        "workloads"
+      ],
+      "description": "ReportMetrics carries per-minute usage aggregates."
+    },
+    "RequestMetricSample": {
+      "properties": {
+        "route": {
+          "type": "string",
+          "pattern": "^rt_[0-9A-HJKMNP-TV-Z]{26}$",
+          "description": "Route is the NodeState route the request's host belongs to."
+        },
+        "at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "At is the start of the minute (UTC, whole minute)."
+        },
+        "requests": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Requests is the number of requests (all status codes)."
+        },
+        "status2xx": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "status3xx": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "status4xx": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "status5xx": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "bytesIn": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "BytesIn are request body bytes read; BytesOut response bytes written."
+        },
+        "bytesOut": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "latencyMs": {
+          "items": {
+            "type": "integer"
+          },
+          "type": "array",
+          "maxItems": 15,
+          "minItems": 15,
+          "description": "LatencyMs counts non-1xx requests per duration bucket (LatencyBoundsMs\nplus overflow, 15 entries); omitted when there was no such request."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "route",
+        "at",
+        "requests"
+      ],
+      "description": "RequestMetricSample is one minute of one route's traffic at this edge."
+    },
+    "VolumeDeletionResult": {
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^vol_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "name": {
+          "type": "string",
+          "pattern": "^lr-[a-z0-9][a-z0-9_-]{0,59}$"
+        },
+        "outcome": {
+          "type": "string",
+          "enum": [
+            "deleted",
+            "absent",
+            "refused",
+            "failed"
+          ]
+        },
+        "message": {
+          "type": "string",
+          "maxLength": 1024,
+          "description": "Message explains refused and failed outcomes."
+        },
+        "at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "id",
+        "name",
+        "outcome",
+        "at"
+      ],
+      "description": "VolumeDeletionResult is the outcome of one NodeState.deleteVolumes entry."
+    },
+    "WalArchiveStatus": {
+      "properties": {
+        "workload": {
+          "type": "string",
+          "pattern": "^wl_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "active",
+            "waiting",
+            "failing"
+          ]
+        },
+        "checkedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "CheckedAt is when the archive directory was last looked at."
+        },
+        "lastArchivedAt": {
+          "oneOf": [
+            {
+              "type": "string",
+              "format": "date-time",
+              "description": "LastArchivedAt is when segments were last stored in the repository."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lastSegment": {
+          "type": "string",
+          "pattern": "^[0-9A-F]{24}$",
+          "description": "LastSegment is the newest segment stored so far (by name)."
+        },
+        "pendingSegments": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "PendingSegments are completed segments in the directory not stored yet."
+        },
+        "message": {
+          "type": "string",
+          "maxLength": 1024,
+          "description": "Message is a short, secret-free explanation of a failing state."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "workload",
+        "state",
+        "checkedAt",
+        "pendingSegments"
+      ],
+      "description": "WalArchiveStatus is the WAL shipping state of one workload (Report.walArchives)."
+    },
+    "WorkloadMetricSample": {
+      "properties": {
+        "workload": {
+          "type": "string",
+          "pattern": "^wl_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "At is the start of the minute (UTC, whole minute)."
+        },
+        "cpuCores": {
+          "oneOf": [
+            {
+              "type": "number",
+              "maximum": 4096,
+              "minimum": 0,
+              "description": "CPUCores is the average CPU used, in cores (0.5 = half a core)."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "memMb": {
+          "oneOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "description": "MemMB is the average memory used (Docker's usage minus inactive file cache)."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "workload",
+        "at"
+      ],
+      "description": "WorkloadMetricSample is one minute of one workload container's usage."
+    },
+    "WorkloadStatus": {
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^wl_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "phase": {
+          "type": "string",
+          "enum": [
+            "pending",
+            "pulling",
+            "starting",
+            "running",
+            "healthy",
+            "unhealthy",
+            "draining",
+            "exited",
+            "failed",
+            "removed"
+          ]
+        },
+        "observedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "containerId": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$",
+          "description": "ContainerID is the Docker container id (64 hex) if one exists."
+        },
+        "startedAt": {
+          "oneOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "exitCode": {
+          "oneOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "restartCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "message": {
+          "type": "string",
+          "maxLength": 4096,
+          "description": "Message is a short, secret-free explanation (e.g. probe failure)."
+        },
+        "detectedPorts": {
+          "oneOf": [
+            {
+              "items": {
+                "type": "integer",
+                "maximum": 65535,
+                "minimum": 1
+              },
+              "type": "array",
+              "description": "DetectedPorts are TCP ports the container listens on (port discovery).\nOmitted when discovery is not possible."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "health": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ProbeStatus",
+              "description": "Health is the external probe result; omitted for workloads without a probe."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pull": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/PullProgress",
+              "description": "Pull is the progress of the image pull while the phase is pulling."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "id",
+        "phase",
+        "observedAt",
+        "restartCount"
+      ],
+      "description": "WorkloadStatus is the observed state of one workload."
+    }
+  },
+  "properties": {
+    "apiVersion": {
+      "type": "string",
+      "const": "launchroom.vantezzen.io/v1"
+    },
+    "kind": {
+      "type": "string",
+      "const": "Report"
+    },
+    "serverId": {
+      "type": "string",
+      "pattern": "^srv_[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "observedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "seq": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "full": {
+      "type": "boolean",
+      "description": "Full is true for a complete snapshot (always after reconnecting), false for deltas."
+    },
+    "appliedVersion": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "AppliedVersion is the NodeState version the daemon is converging to (0 = none yet)."
+    },
+    "workloads": {
+      "items": {
+        "$ref": "#/$defs/WorkloadStatus"
+      },
+      "type": "array"
+    },
+    "host": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/HostStatus",
+          "description": "Host carries current host facts (resources, Docker version)."
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "ingress": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/IngressStatus",
+          "description": "Ingress is the state of the local Caddy (edge servers; omitted when Caddy is disabled)."
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "stateRejected": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/Rejection",
+          "description": "StateRejected is set while the newest NodeState the dashboard served was\nrejected (it did not decode or validate); launchroomd keeps converging to\nits last good state (appliedVersion). Omitted otherwise."
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "volumeDeletions": {
+      "oneOf": [
+        {
+          "items": {
+            "$ref": "#/$defs/VolumeDeletionResult"
+          },
+          "type": "array",
+          "description": "VolumeDeletions are the outcomes of the current NodeState's deleteVolumes. Omitted when none were requested."
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "metrics": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/ReportMetrics",
+          "description": "Metrics are per-minute usage aggregates not delivered yet; omitted when there are none."
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "walArchives": {
+      "oneOf": [
+        {
+          "items": {
+            "$ref": "#/$defs/WalArchiveStatus"
+          },
+          "type": "array",
+          "maxItems": 256,
+          "description": "WalArchives is the WAL shipping state of every workload with a\nwalArchive (point-in-time recovery); omitted when there is none."
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "apiVersion",
+    "kind",
+    "serverId",
+    "observedAt",
+    "seq",
+    "full",
+    "appliedVersion",
+    "workloads"
+  ],
+  "title": "Report: POST /daemon/v1/reports body",
+  "description": "Report is the daemon's observed state."
+}

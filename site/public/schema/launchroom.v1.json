@@ -1,0 +1,688 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://launchroom.vantezzen.io/schema/launchroom.v1.json",
+    "title": "launchroom.json",
+    "description": "Service configuration of a launchroom project, kept next to its code. The file manages exactly the settings it names; everything else stays in the dashboard. Docs: https://launchroom.vantezzen.io/docs/config-as-code",
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["version", "services"],
+    "properties": {
+        "$schema": {
+            "description": "The JSON Schema of this file, for editor autocompletion.",
+            "type": "string",
+            "maxLength": 2048
+        },
+        "version": {
+            "description": "Version of the launchroom.json format. Always 1 for now.",
+            "const": 1
+        },
+        "services": {
+            "description": "Services of the project, keyed by their name on the private network (the slug: lowercase letters, digits and dashes). Services the file doesn't list stay as they are.",
+            "type": "object",
+            "maxProperties": 100,
+            "propertyNames": { "$ref": "#/$defs/slug" },
+            "additionalProperties": { "$ref": "#/$defs/service" }
+        },
+        "environments": {
+            "description": "Per-environment overrides, keyed by environment slug (\"staging\"). \"previews\" applies to every preview environment. Objects merge key by key, other values replace, null removes a setting from the file in that environment.",
+            "type": "object",
+            "maxProperties": 50,
+            "propertyNames": { "$ref": "#/$defs/environmentSlug" },
+            "additionalProperties": { "$ref": "#/$defs/environment" }
+        }
+    },
+    "$defs": {
+        "slug": {
+            "type": "string",
+            "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$",
+            "not": { "enum": ["shared", "launchroom", "localhost"] }
+        },
+        "environmentSlug": {
+            "type": "string",
+            "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+        },
+        "environment": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "services": {
+                    "description": "Overrides for services listed under the top-level services.",
+                    "type": "object",
+                    "maxProperties": 100,
+                    "propertyNames": { "$ref": "#/$defs/slug" },
+                    "additionalProperties": {
+                        "$ref": "#/$defs/serviceOverride"
+                    }
+                }
+            }
+        },
+        "service": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind"],
+            "properties": {
+                "kind": {
+                    "description": "app: built from this repository. image: a prebuilt image. database: a managed engine. worker/cron: a process that runs the image of an app (\"of\"). Can't change once the service exists.",
+                    "enum": ["app", "image", "database", "worker", "cron"]
+                },
+                "name": {
+                    "description": "Display name. Shared by every environment; only production's file changes it.",
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 63
+                },
+                "rootDirectory": {
+                    "description": "app: the directory of the app in this repository (\"apps/web\"); empty for the repository root.",
+                    "type": "string",
+                    "maxLength": 1024,
+                    "pattern": "^(?:[A-Za-z0-9_.@+=,-]+(?:/[A-Za-z0-9_.@+=,-]+)*)?$"
+                },
+                "image": {
+                    "description": "image: the image to run, e.g. ghcr.io/org/app:1.2 or postgres@sha256:…",
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 512
+                },
+                "engine": {
+                    "description": "database: the engine. Must match the existing database.",
+                    "enum": [
+                        "postgres",
+                        "mysql",
+                        "redis",
+                        "valkey",
+                        "mongodb",
+                        "clickhouse"
+                    ]
+                },
+                "version": {
+                    "description": "database: the engine's major version (\"18\"). Upgrades happen in the dashboard.",
+                    "type": "string",
+                    "pattern": "^[0-9]{1,3}(?:\\.[0-9]{1,3})?$"
+                },
+                "of": {
+                    "description": "worker/cron: the app service whose image this process runs.",
+                    "$ref": "#/$defs/slug"
+                },
+                "branch": { "$ref": "#/$defs/branch" },
+                "enabled": { "$ref": "#/$defs/enabled" },
+                "build": { "$ref": "#/$defs/build" },
+                "deploy": { "$ref": "#/$defs/deploy" },
+                "scaling": { "$ref": "#/$defs/scaling" },
+                "variables": { "$ref": "#/$defs/variables" },
+                "domains": { "$ref": "#/$defs/domains" },
+                "volumes": { "$ref": "#/$defs/volumes" },
+                "connections": {
+                    "description": "Services this one connects to, like an edge on the canvas: launchroom injects their address variables (DATABASE_URL, REDIS_URL, API_URL…). Project-wide; never removed by the file.",
+                    "type": "array",
+                    "maxItems": 20,
+                    "items": { "$ref": "#/$defs/connection" }
+                }
+            }
+        },
+        "serviceOverride": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "branch": {
+                    "anyOf": [{ "$ref": "#/$defs/branch" }, { "type": "null" }]
+                },
+                "enabled": {
+                    "anyOf": [{ "$ref": "#/$defs/enabled" }, { "type": "null" }]
+                },
+                "build": {
+                    "anyOf": [
+                        { "$ref": "#/$defs/buildOverride" },
+                        { "type": "null" }
+                    ]
+                },
+                "deploy": {
+                    "anyOf": [
+                        { "$ref": "#/$defs/deployOverride" },
+                        { "type": "null" }
+                    ]
+                },
+                "scaling": {
+                    "anyOf": [
+                        { "$ref": "#/$defs/scalingOverride" },
+                        { "type": "null" }
+                    ]
+                },
+                "variables": {
+                    "anyOf": [
+                        { "$ref": "#/$defs/variablesOverride" },
+                        { "type": "null" }
+                    ]
+                },
+                "domains": {
+                    "anyOf": [{ "$ref": "#/$defs/domains" }, { "type": "null" }]
+                },
+                "volumes": {
+                    "anyOf": [{ "$ref": "#/$defs/volumes" }, { "type": "null" }]
+                }
+            }
+        },
+        "branch": {
+            "description": "Deploy this service from another branch than the environment's (a branch override).",
+            "type": "string",
+            "maxLength": 255,
+            "pattern": "^[A-Za-z0-9._/*?-]{1,255}$"
+        },
+        "enabled": {
+            "description": "false keeps the service out of this environment (it isn't deployed here).",
+            "type": "boolean"
+        },
+        "command": {
+            "description": "A command as a list of arguments, e.g. [\"npm\", \"start\"]. launchroom never runs it through a shell.",
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 256,
+            "items": { "type": "string", "maxLength": 4096 }
+        },
+        "nullableCommand": {
+            "anyOf": [{ "$ref": "#/$defs/command" }, { "type": "null" }]
+        },
+        "build": {
+            "description": "How the app is built. A change rebuilds it.",
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "builder": {
+                    "description": "auto: your Dockerfile if there is one, else launchroom's presets with Railpack. dockerfile, railpack or static force one.",
+                    "enum": ["auto", "dockerfile", "railpack", "static"]
+                },
+                "dockerfilePath": {
+                    "description": "Path of the Dockerfile, relative to the root directory.",
+                    "type": "string",
+                    "maxLength": 1024
+                },
+                "installCommand": {
+                    "description": "Replaces the detected install command (e.g. \"pnpm install --frozen-lockfile\").",
+                    "type": "string",
+                    "maxLength": 4096
+                },
+                "buildCommand": {
+                    "description": "Replaces the detected build command (e.g. \"npm run build\").",
+                    "type": "string",
+                    "maxLength": 4096
+                },
+                "railpackVersion": {
+                    "description": "Pin the Railpack version used to plan the build.",
+                    "type": "string",
+                    "maxLength": 64
+                },
+                "watchPaths": {
+                    "description": "Repository paths or globs; a push touching none of them doesn't deploy this service.",
+                    "type": "array",
+                    "maxItems": 64,
+                    "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 1024
+                    }
+                }
+            }
+        },
+        "buildOverride": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "builder": {
+                    "anyOf": [
+                        { "$ref": "#/$defs/build/properties/builder" },
+                        { "type": "null" }
+                    ]
+                },
+                "dockerfilePath": {
+                    "anyOf": [
+                        { "$ref": "#/$defs/build/properties/dockerfilePath" },
+                        { "type": "null" }
+                    ]
+                },
+                "installCommand": {
+                    "anyOf": [
+                        { "$ref": "#/$defs/build/properties/installCommand" },
+                        { "type": "null" }
+                    ]
+                },
+                "buildCommand": {
+                    "anyOf": [
+                        { "$ref": "#/$defs/build/properties/buildCommand" },
+                        { "type": "null" }
+                    ]
+                },
+                "railpackVersion": {
+                    "anyOf": [
+                        { "$ref": "#/$defs/build/properties/railpackVersion" },
+                        { "type": "null" }
+                    ]
+                },
+                "watchPaths": {
+                    "anyOf": [
+                        { "$ref": "#/$defs/build/properties/watchPaths" },
+                        { "type": "null" }
+                    ]
+                }
+            }
+        },
+        "deploy": {
+            "description": "How the service starts and when it counts as ready. A change restarts it (no rebuild).",
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "port": {
+                    "description": "The port the process listens on.",
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 65535
+                },
+                "startCommand": {
+                    "$ref": "#/$defs/nullableCommand",
+                    "description": "Replaces the image's start command. null: use the detected one."
+                },
+                "releaseCommand": {
+                    "$ref": "#/$defs/nullableCommand",
+                    "description": "Runs once before a new version takes traffic (e.g. migrations)."
+                },
+                "seedCommand": {
+                    "$ref": "#/$defs/nullableCommand",
+                    "description": "Runs once after the first deploy of a preview with a new empty database."
+                },
+                "drainSeconds": {
+                    "description": "Seconds an old replica keeps serving open requests before it stops.",
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 3600
+                },
+                "entrypoint": {
+                    "$ref": "#/$defs/nullableCommand",
+                    "description": "Replaces the image's ENTRYPOINT; the start command becomes its arguments. null: the image's own."
+                },
+                "capabilities": {
+                    "description": "Linux capabilities added on top of none, from launchroomd's allow-list only, e.g. [\"NET_BIND_SERVICE\"].",
+                    "type": "array",
+                    "maxItems": 6,
+                    "uniqueItems": true,
+                    "items": {
+                        "enum": [
+                            "CHOWN",
+                            "DAC_OVERRIDE",
+                            "FOWNER",
+                            "NET_BIND_SERVICE",
+                            "SETGID",
+                            "SETUID"
+                        ]
+                    }
+                },
+                "schedule": {
+                    "description": "Cron services: when the command runs. null: it runs continuously.",
+                    "anyOf": [
+                        { "$ref": "#/$defs/schedule" },
+                        { "type": "null" }
+                    ]
+                },
+                "healthcheck": { "$ref": "#/$defs/healthcheck" }
+            }
+        },
+        "deployOverride": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "port": {
+                    "anyOf": [
+                        { "$ref": "#/$defs/deploy/properties/port" },
+                        { "type": "null" }
+                    ]
+                },
+                "startCommand": { "$ref": "#/$defs/nullableCommand" },
+                "releaseCommand": { "$ref": "#/$defs/nullableCommand" },
+                "seedCommand": { "$ref": "#/$defs/nullableCommand" },
+                "drainSeconds": {
+                    "anyOf": [
+                        { "$ref": "#/$defs/deploy/properties/drainSeconds" },
+                        { "type": "null" }
+                    ]
+                },
+                "entrypoint": { "$ref": "#/$defs/nullableCommand" },
+                "capabilities": {
+                    "anyOf": [
+                        { "$ref": "#/$defs/deploy/properties/capabilities" },
+                        { "type": "null" }
+                    ]
+                },
+                "schedule": {
+                    "anyOf": [
+                        { "$ref": "#/$defs/schedule" },
+                        { "type": "null" }
+                    ]
+                },
+                "healthcheck": {
+                    "anyOf": [
+                        { "$ref": "#/$defs/healthcheckOverride" },
+                        { "type": "null" }
+                    ]
+                }
+            }
+        },
+        "schedule": {
+            "description": "When a cron service runs: launchroomd starts its command at every matching minute, also while the dashboard is unreachable.",
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["cron"],
+            "properties": {
+                "cron": {
+                    "description": "A 5-field cron expression (minute hour day month weekday), e.g. \"*/5 * * * *\" or \"0 3 * * 1-5\". Numbers, *, ranges, lists and steps; no names.",
+                    "type": "string",
+                    "maxLength": 100,
+                    "pattern": "^[0-9*,/-]+( [0-9*,/-]+){4}$"
+                },
+                "timeZone": {
+                    "description": "The IANA time zone the expression is read in, e.g. \"Europe/Berlin\". Default: UTC.",
+                    "type": "string",
+                    "maxLength": 64
+                }
+            }
+        },
+        "healthcheck": {
+            "description": "launchroom's check from outside the container before a new version takes traffic.",
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "type": {
+                    "description": "http: a request to path. tcp: the port accepts connections. none: running counts as healthy.",
+                    "enum": ["http", "tcp", "none"]
+                },
+                "path": {
+                    "description": "Path of the HTTP check, e.g. /health.",
+                    "type": "string",
+                    "maxLength": 1024,
+                    "pattern": "^/[A-Za-z0-9._~!$&'()*+,;=:@%/?-]*$"
+                },
+                "expectStatus": {
+                    "description": "Status codes that count as healthy: 2xx, 200, 2xx-3xx.",
+                    "type": "string",
+                    "pattern": "^[1-5](?:xx|[0-9]{2})(?:-[1-5](?:xx|[0-9]{2}))?$"
+                },
+                "startPeriodSeconds": {
+                    "description": "Time to start before checks count.",
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 3600
+                },
+                "intervalSeconds": {
+                    "description": "Seconds between checks.",
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 3600
+                },
+                "timeoutSeconds": {
+                    "description": "Seconds one check may take.",
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 600
+                },
+                "failureThreshold": {
+                    "description": "Failed checks in a row before the replica is unhealthy.",
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 100
+                }
+            }
+        },
+        "healthcheckOverride": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "type": {
+                    "anyOf": [
+                        { "$ref": "#/$defs/healthcheck/properties/type" },
+                        { "type": "null" }
+                    ]
+                },
+                "path": {
+                    "anyOf": [
+                        { "$ref": "#/$defs/healthcheck/properties/path" },
+                        { "type": "null" }
+                    ]
+                },
+                "expectStatus": {
+                    "anyOf": [
+                        {
+                            "$ref": "#/$defs/healthcheck/properties/expectStatus"
+                        },
+                        { "type": "null" }
+                    ]
+                },
+                "startPeriodSeconds": {
+                    "anyOf": [
+                        {
+                            "$ref": "#/$defs/healthcheck/properties/startPeriodSeconds"
+                        },
+                        { "type": "null" }
+                    ]
+                },
+                "intervalSeconds": {
+                    "anyOf": [
+                        {
+                            "$ref": "#/$defs/healthcheck/properties/intervalSeconds"
+                        },
+                        { "type": "null" }
+                    ]
+                },
+                "timeoutSeconds": {
+                    "anyOf": [
+                        {
+                            "$ref": "#/$defs/healthcheck/properties/timeoutSeconds"
+                        },
+                        { "type": "null" }
+                    ]
+                },
+                "failureThreshold": {
+                    "anyOf": [
+                        {
+                            "$ref": "#/$defs/healthcheck/properties/failureThreshold"
+                        },
+                        { "type": "null" }
+                    ]
+                }
+            }
+        },
+        "scaling": {
+            "description": "Replicas and resources per replica. Previews are capped at 1 replica and 0.5 CPU.",
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "replicas": {
+                    "description": "How many copies run. Databases run one.",
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 64
+                },
+                "cpus": {
+                    "description": "CPU cores per replica (0.5 = half a core).",
+                    "type": "number",
+                    "minimum": 0.05,
+                    "maximum": 1024
+                },
+                "memoryMb": {
+                    "description": "Memory per replica in MB.",
+                    "type": "integer",
+                    "minimum": 16,
+                    "maximum": 1048576
+                },
+                "placement": { "$ref": "#/$defs/placement" }
+            }
+        },
+        "scalingOverride": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "replicas": {
+                    "anyOf": [
+                        { "$ref": "#/$defs/scaling/properties/replicas" },
+                        { "type": "null" }
+                    ]
+                },
+                "cpus": {
+                    "anyOf": [
+                        { "$ref": "#/$defs/scaling/properties/cpus" },
+                        { "type": "null" }
+                    ]
+                },
+                "memoryMb": {
+                    "anyOf": [
+                        { "$ref": "#/$defs/scaling/properties/memoryMb" },
+                        { "type": "null" }
+                    ]
+                },
+                "placement": {
+                    "anyOf": [
+                        { "$ref": "#/$defs/placementOverride" },
+                        { "type": "null" }
+                    ]
+                }
+            }
+        },
+        "placement": {
+            "description": "Which servers may run the service.",
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "labels": {
+                    "description": "Server labels a server must carry, e.g. { \"region\": \"eu\" }.",
+                    "type": "object",
+                    "maxProperties": 32,
+                    "propertyNames": {
+                        "pattern": "^[a-z0-9](?:[a-z0-9._-]{0,61}[a-z0-9])?$"
+                    },
+                    "additionalProperties": {
+                        "type": "string",
+                        "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,61}[A-Za-z0-9])?$"
+                    }
+                },
+                "strategy": {
+                    "description": "spread: replicas on different servers. pack: as few servers as possible.",
+                    "enum": ["spread", "pack"]
+                }
+            }
+        },
+        "placementOverride": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "labels": {
+                    "anyOf": [
+                        { "$ref": "#/$defs/placement/properties/labels" },
+                        { "type": "null" }
+                    ]
+                },
+                "strategy": {
+                    "anyOf": [
+                        { "$ref": "#/$defs/placement/properties/strategy" },
+                        { "type": "null" }
+                    ]
+                }
+            }
+        },
+        "variableKey": {
+            "type": "string",
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,255}$"
+        },
+        "variable": {
+            "anyOf": [
+                {
+                    "description": "A config value, stored as written. ${{postgres.DATABASE_URL}} references another service, ${{ secret(32) }} generates a secret once.",
+                    "type": "string",
+                    "maxLength": 65536
+                },
+                {
+                    "description": "A secret this service needs. Its value never goes in this file: set it in the dashboard or with `launchroom env set --secret`.",
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["secret"],
+                    "properties": {
+                        "secret": { "const": true },
+                        "description": {
+                            "description": "What the secret is for (shown when it is missing).",
+                            "type": "string",
+                            "maxLength": 500
+                        }
+                    }
+                }
+            ]
+        },
+        "variables": {
+            "description": "Variables of this service in the environment. Variables the file doesn't list stay as they are.",
+            "type": "object",
+            "maxProperties": 200,
+            "propertyNames": { "$ref": "#/$defs/variableKey" },
+            "additionalProperties": { "$ref": "#/$defs/variable" }
+        },
+        "variablesOverride": {
+            "type": "object",
+            "maxProperties": 200,
+            "propertyNames": { "$ref": "#/$defs/variableKey" },
+            "additionalProperties": {
+                "anyOf": [{ "$ref": "#/$defs/variable" }, { "type": "null" }]
+            }
+        },
+        "domains": {
+            "description": "Custom domains of this service. They apply right away, like in the dashboard; generated addresses are always there.",
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+                "anyOf": [
+                    { "$ref": "#/$defs/hostname" },
+                    {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": ["hostname"],
+                        "properties": {
+                            "hostname": { "$ref": "#/$defs/hostname" },
+                            "redirectTo": {
+                                "description": "Redirect this domain (308) to another one of the service.",
+                                "$ref": "#/$defs/hostname"
+                            }
+                        }
+                    }
+                ]
+            }
+        },
+        "hostname": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 253,
+            "pattern": "^(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\\.)+[A-Za-z][A-Za-z0-9-]{0,61}[A-Za-z0-9]$"
+        },
+        "volumes": {
+            "description": "Mount paths of persistent volumes. New ones start empty; the file never removes a volume.",
+            "type": "array",
+            "maxItems": 10,
+            "items": {
+                "type": "string",
+                "maxLength": 255,
+                "pattern": "^/[A-Za-z0-9._@+=,-]+(?:/[A-Za-z0-9._@+=,-]+)*$"
+            }
+        },
+        "connection": {
+            "anyOf": [
+                { "$ref": "#/$defs/slug" },
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["to"],
+                    "properties": {
+                        "to": { "$ref": "#/$defs/slug" },
+                        "mode": {
+                            "description": "private: over the environment network (default). public: through the service's public URL.",
+                            "enum": ["private", "public"]
+                        },
+                        "style": {
+                            "description": "Names of the injected variables. url: DATABASE_URL / REDIS_URL / API_URL (default). laravel: DB_HOST, DB_PORT, … parts: <NAME>_HOST, _PORT, …",
+                            "enum": ["url", "laravel", "parts"]
+                        }
+                    }
+                }
+            ]
+        }
+    }
+}

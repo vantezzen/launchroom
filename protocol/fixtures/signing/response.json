@@ -1,0 +1,50 @@
+{
+  "description": "X-LR-Signature over the exact response body bytes. Trusted key set: {kid: publicKey}.",
+  "privateKeySeed": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8=",
+  "publicKey": "ed25519:Kay64UG8yvCyLhqU000LxzYeUm0L/hLIl5S8kyKWbdc=",
+  "kid": "cp-2026-10",
+  "cases": [
+    {
+      "name": "valid",
+      "body": "{\"apiVersion\":\"launchroom.vantezzen.io/v1\",\"kind\":\"Example\",\"value\":1}",
+      "header": "kid=cp-2026-10, sig=5+UN8dIy8Qz+zuS9nTiud45RTFjJniYO5W2ZczpKQad/qI7XeMOkhb1USBZv4gC/1n+eL9aYmrZTAYALpB6zBw==",
+      "valid": true
+    },
+    {
+      "name": "body-with-trailing-newline",
+      "body": "{\"apiVersion\":\"launchroom.vantezzen.io/v1\",\"kind\":\"Example\",\"value\":1}\n",
+      "header": "kid=cp-2026-10, sig=5+UN8dIy8Qz+zuS9nTiud45RTFjJniYO5W2ZczpKQad/qI7XeMOkhb1USBZv4gC/1n+eL9aYmrZTAYALpB6zBw==",
+      "valid": false
+    },
+    {
+      "name": "body-reformatted",
+      "body": "{\"apiVersion\":\"launchroom.vantezzen.io/v1\", \"kind\":\"Example\", \"value\":1}",
+      "header": "kid=cp-2026-10, sig=5+UN8dIy8Qz+zuS9nTiud45RTFjJniYO5W2ZczpKQad/qI7XeMOkhb1USBZv4gC/1n+eL9aYmrZTAYALpB6zBw==",
+      "valid": false
+    },
+    {
+      "name": "unknown-kid",
+      "body": "{\"apiVersion\":\"launchroom.vantezzen.io/v1\",\"kind\":\"Example\",\"value\":1}",
+      "header": "kid=cp-other, sig=5+UN8dIy8Qz+zuS9nTiud45RTFjJniYO5W2ZczpKQad/qI7XeMOkhb1USBZv4gC/1n+eL9aYmrZTAYALpB6zBw==",
+      "valid": false
+    },
+    {
+      "name": "wrong-key",
+      "body": "{\"apiVersion\":\"launchroom.vantezzen.io/v1\",\"kind\":\"Example\",\"value\":1}",
+      "header": "kid=cp-2026-10, sig=rmZmUPEd6ZEbGBGw6s5Z5Db+qKivjhndUDtk1d5i8MtS97Lq1TNZDS1OeLEKlg9DyHkJ235xsN2avLtHIkICBg==",
+      "valid": false
+    },
+    {
+      "name": "no-space-after-comma",
+      "body": "{\"apiVersion\":\"launchroom.vantezzen.io/v1\",\"kind\":\"Example\",\"value\":1}",
+      "header": "kid=cp-2026-10,sig=5+UN8dIy8Qz+zuS9nTiud45RTFjJniYO5W2ZczpKQad/qI7XeMOkhb1USBZv4gC/1n+eL9aYmrZTAYALpB6zBw==",
+      "valid": false
+    },
+    {
+      "name": "empty-header",
+      "body": "{\"apiVersion\":\"launchroom.vantezzen.io/v1\",\"kind\":\"Example\",\"value\":1}",
+      "header": "",
+      "valid": false
+    }
+  ]
+}

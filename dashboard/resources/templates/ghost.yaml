@@ -1,0 +1,51 @@
+schema: launchroom.template/v1
+id: ghost
+name: Ghost
+tagline: A publishing platform for blogs, newsletters and members.
+description: >-
+    Write, publish and send newsletters from one editor, with memberships and
+    themes. Open /ghost on your address to create the owner account.
+category: content
+logo: ghost
+website: https://ghost.org
+license: MIT
+inputs:
+    - id: domain
+      label: Domain
+      type: domain
+      optional: true
+      description: Ghost links every page to this address. Leave empty to use the generated one.
+services:
+    ghost:
+        image: docker.io/library/ghost:6.71.0-alpine@sha256:8e07c5ec63d99e46b135998267eadf6f03e35249199fa29f937f015a350204d5
+        ports: ['2368']
+        environment:
+            NODE_ENV: production
+            url: ${self.public_url}
+            database__client: mysql
+            database__connection__host: ${service.db.host}
+            database__connection__port: ${service.db.port}
+            database__connection__user: ${service.db.user}
+            database__connection__password: ${service.db.password}
+            database__connection__database: ${service.db.database}
+        volumes:
+            - content:/var/lib/ghost/content
+        cap_add: [CHOWN, SETUID, SETGID, DAC_OVERRIDE, FOWNER]
+        depends_on: [db]
+        healthcheck:
+            test:
+                [
+                    'CMD',
+                    'wget',
+                    '-qO-',
+                    'http://localhost:2368/ghost/api/admin/site/',
+                ]
+            start_period: 90s
+        x-launchroom:
+            name: Ghost
+            logo: ghost
+            domain: ${input.domain}
+    db:
+        x-launchroom:
+            name: MySQL
+            database: { engine: mysql, version: '8.4' }

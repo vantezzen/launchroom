@@ -1,0 +1,6 @@
+bin/
+Dockerfile
+.dockerignore
+.golangci.yml
+README.md
+**/testdata/fuzz/

@@ -1,0 +1,49 @@
+version: "3.9"
+
+x-app: &app
+  build: .
+  env_file: .env
+  environment: &app-env
+    DATABASE_URL: postgresql+psycopg://django:${DB_PASSWORD:?set DB_PASSWORD}@postgres:5432/django
+    CELERY_BROKER_URL: redis://broker:6379/0
+    DJANGO_SETTINGS_MODULE: config.settings.production
+  depends_on:
+    - postgres
+    - broker
+
+services:
+  web:
+    <<: *app
+    command: gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 3
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: curl --fail http://localhost:8000/health/ || exit 1
+
+  celery:
+    <<: *app
+    command: ["celery", "-A", "config", "worker", "-l", "info"]
+
+  beat:
+    <<: *app
+    command: celery -A config beat -l info
+
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: django
+      POSTGRES_USER: django
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  broker:
+    image: valkey/valkey:8-alpine
+
+  flower:
+    image: mher/flower:2.0
+    profiles: [debug]
+    ports: ["5555:5555"]
+
+volumes:
+  postgres_data:

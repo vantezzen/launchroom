@@ -1,0 +1,51 @@
+services:
+  prometheus:
+    image: prom/prometheus:v3.6.0
+    command: --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.retention.time=15d
+    ports: ["9090:9090"]
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus:/prometheus
+
+  grafana:
+    image: grafana/grafana:12.2.0
+    ports:
+      - target: 3000
+        published: 3001
+        protocol: tcp
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD}
+      GF_SERVER_ROOT_URL: https://grafana.example.com
+    volumes:
+      - grafana:/var/lib/grafana
+      - ./provisioning:/etc/grafana/provisioning
+    depends_on: [prometheus]
+    deploy:
+      resources:
+        limits: {cpus: '0.25', memory: 256M}
+        reservations: {memory: 128M}
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.52.1
+    privileged: true
+    pid: host
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+    cap_add: [SYS_ADMIN]
+    security_opt: [apparmor:unconfined]
+    sysctls:
+      net.core.somaxconn: 1024
+
+  node-exporter:
+    image: prom/node-exporter:v1.9.1
+    command: --path.rootfs=/host
+    network_mode: host
+    pid: host
+    volumes:
+      - /:/host:ro,rslave
+
+volumes:
+  prometheus:
+  grafana:

@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://launchroom.vantezzen.io/schema/v1/registry-token.json",
+  "$defs": {
+    "RegistryScope": {
+      "properties": {
+        "repository": {
+          "type": "string",
+          "maxLength": 255,
+          "pattern": "^[a-z0-9]+(?:(?:\\.|_|__|-+)[a-z0-9]+)*(?:/[a-z0-9]+(?:(?:\\.|_|__|-+)[a-z0-9]+)*)*$"
+        },
+        "actions": {
+          "items": {
+            "type": "string",
+            "enum": [
+              "pull",
+              "push"
+            ]
+          },
+          "type": "array",
+          "maxItems": 2,
+          "minItems": 1
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "repository",
+        "actions"
+      ],
+      "description": "RegistryScope is one repository and the actions requested on it."
+    }
+  },
+  "properties": {
+    "apiVersion": {
+      "type": "string",
+      "const": "launchroom.vantezzen.io/v1"
+    },
+    "kind": {
+      "type": "string",
+      "const": "RegistryToken"
+    },
+    "token": {
+      "type": "string",
+      "maxLength": 8192,
+      "pattern": "^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$",
+      "description": "Token is the bearer JWT. It is never logged."
+    },
+    "expiresAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "scopes": {
+      "items": {
+        "$ref": "#/$defs/RegistryScope"
+      },
+      "type": "array",
+      "maxItems": 16,
+      "minItems": 1
+    }
+  },
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "apiVersion",
+    "kind",
+    "token",
+    "expiresAt",
+    "scopes"
+  ],
+  "title": "RegistryToken: signed response with a short-lived registry bearer token",
+  "description": "RegistryToken is the signed response: a Docker token-spec bearer JWT for the registry, valid for at most 5 minutes."
+}

@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://launchroom.vantezzen.io/schema/v1/mesh-auth-key.json",
+  "properties": {
+    "serverId": {
+      "type": "string",
+      "pattern": "^srv_[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "authKey": {
+      "type": "string",
+      "maxLength": 1024,
+      "minLength": 1,
+      "description": "AuthKey is a Headscale pre-auth key (single-use, tagged, short-lived) or,\nwith \"bring your own Tailscale\", the tailnet's auth key."
+    }
+  },
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "serverId",
+    "authKey"
+  ],
+  "title": "MeshAuthKey: plaintext sealed into NodeState system.tailscale.authKey (crypto_box_seal)",
+  "description": "MeshAuthKey is the plaintext of NodeState.system.tailscale.authKey: libsodium crypto_box_seal of this JSON object to the daemon's X25519 key."
+}

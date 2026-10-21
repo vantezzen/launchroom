@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://launchroom.vantezzen.io/schema/v1/task-env.json",
+  "properties": {
+    "serverId": {
+      "type": "string",
+      "pattern": "^srv_[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "taskId": {
+      "type": "string",
+      "pattern": "^tsk_[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "env": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,255}$"
+      },
+      "type": "object",
+      "description": "Env maps variable names to values ({} when empty). Values must not contain NUL bytes."
+    }
+  },
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "serverId",
+    "taskId",
+    "env"
+  ],
+  "title": "TaskEnv: plaintext sealed into build/plan task env (crypto_box_seal)",
+  "description": "TaskEnv is the plaintext of BuildInputs.env: the build-scoped variables of one task, bound to the server and task."
+}

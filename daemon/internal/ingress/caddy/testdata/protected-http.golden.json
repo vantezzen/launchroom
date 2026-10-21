@@ -1,0 +1,246 @@
+{
+  "admin": {
+    "listen": "127.0.0.1:2019"
+  },
+  "apps": {
+    "http": {
+      "http_port": 80,
+      "https_port": 443,
+      "servers": {
+        "lr-http": {
+          "listen": [
+            ":80"
+          ],
+          "routes": [
+            {
+              "handle": [
+                {
+                  "handler": "static_response",
+                  "headers": {
+                    "Location": [
+                      "https://{http.request.host}{http.request.uri}"
+                    ]
+                  },
+                  "status_code": 308
+                }
+              ],
+              "match": [
+                {
+                  "host": [
+                    "pr-1.preview.localhost"
+                  ]
+                }
+              ],
+              "terminal": true
+            },
+            {
+              "handle": [
+                {
+                  "body": "launchroom: there is no app at this address.\n",
+                  "handler": "static_response",
+                  "headers": {
+                    "Content-Type": [
+                      "text/plain; charset=utf-8"
+                    ]
+                  },
+                  "status_code": 404
+                }
+              ],
+              "terminal": true
+            }
+          ]
+        },
+        "lr-https": {
+          "automatic_https": {
+            "disable_redirects": true
+          },
+          "listen": [
+            ":443"
+          ],
+          "routes": [
+            {
+              "@id": "lr-route-rt_01J9Z8X7W6V5T4S3R2Q1P0N9NC",
+              "handle": [
+                {
+                  "handler": "subroute",
+                  "routes": [
+                    {
+                      "handle": [
+                        {
+                          "handle_response": [
+                            {
+                              "match": {
+                                "status_code": [
+                                  2
+                                ]
+                              },
+                              "routes": [
+                                {
+                                  "handle": [
+                                    {
+                                      "handler": "vars"
+                                    }
+                                  ]
+                                },
+                                {
+                                  "handle": [
+                                    {
+                                      "handler": "headers",
+                                      "request": {
+                                        "replace": {
+                                          "Cookie": [
+                                            {
+                                              "replace": "",
+                                              "search_regexp": "(^|;)\\s*__Host-lr-preview=[^;]*"
+                                            },
+                                            {
+                                              "replace": "",
+                                              "search_regexp": "^;\\s*"
+                                            }
+                                          ]
+                                        }
+                                      }
+                                    }
+                                  ]
+                                }
+                              ]
+                            }
+                          ],
+                          "handler": "reverse_proxy",
+                          "headers": {
+                            "request": {
+                              "set": {
+                                "Host": [
+                                  "{http.reverse_proxy.upstream.hostport}"
+                                ],
+                                "X-Forwarded-Method": [
+                                  "{http.request.method}"
+                                ],
+                                "X-Forwarded-Uri": [
+                                  "{http.request.uri}"
+                                ]
+                              }
+                            }
+                          },
+                          "rewrite": {
+                            "method": "GET",
+                            "uri": "/auth/preview"
+                          },
+                          "upstreams": [
+                            {
+                              "dial": "dashboard:8000"
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "handle": [
+                        {
+                          "handler": "headers",
+                          "response": {
+                            "set": {
+                              "X-Robots-Tag": [
+                                "noindex"
+                              ]
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "handle": [
+                        {
+                          "encodings": {
+                            "gzip": {},
+                            "zstd": {}
+                          },
+                          "handler": "encode",
+                          "prefer": [
+                            "zstd",
+                            "gzip"
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "handle": [
+                        {
+                          "flush_interval": -1,
+                          "handler": "reverse_proxy",
+                          "health_checks": {
+                            "passive": {
+                              "fail_duration": "10s",
+                              "max_fails": 1,
+                              "unhealthy_status": [
+                                502,
+                                503,
+                                504
+                              ]
+                            }
+                          },
+                          "load_balancing": {
+                            "selection_policy": {
+                              "policy": "round_robin"
+                            },
+                            "try_duration": "5s",
+                            "try_interval": "250ms"
+                          },
+                          "upstreams": [
+                            {
+                              "dial": "10.231.4.5:3000"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ],
+              "match": [
+                {
+                  "host": [
+                    "pr-1.preview.localhost"
+                  ]
+                }
+              ],
+              "terminal": true
+            },
+            {
+              "handle": [
+                {
+                  "body": "launchroom: there is no app at this address.\n",
+                  "handler": "static_response",
+                  "headers": {
+                    "Content-Type": [
+                      "text/plain; charset=utf-8"
+                    ]
+                  },
+                  "status_code": 404
+                }
+              ],
+              "terminal": true
+            }
+          ]
+        }
+      }
+    },
+    "tls": {
+      "automation": {
+        "on_demand": {
+          "permission": {
+            "endpoint": "http://127.0.0.1:2021/caddy/ask",
+            "module": "http"
+          }
+        },
+        "policies": [
+          {
+            "subjects": [
+              "pr-1.preview.localhost"
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

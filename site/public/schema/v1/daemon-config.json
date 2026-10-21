@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://launchroom.vantezzen.io/schema/v1/daemon-config.json",
+  "$defs": {
+    "NudgeConfig": {
+      "properties": {
+        "key": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_.-]{1,128}$",
+          "description": "Key is the public Pusher application key."
+        },
+        "url": {
+          "type": "string",
+          "maxLength": 2048,
+          "pattern": "^wss?://[a-z0-9.-]+(?::[0-9]{1,5})?(?:/[A-Za-z0-9._~-]+)*$",
+          "description": "URL is the WebSocket base URL. Omitted: derived from the daemon's\ncontrol-plane URL (http→ws, https→wss, same host and path), where the\ndashboard proxies /app/* to Reverb."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "key"
+      ],
+      "description": "NudgeConfig tells the daemon where to receive nudges."
+    }
+  },
+  "properties": {
+    "apiVersion": {
+      "type": "string",
+      "const": "launchroom.vantezzen.io/v1"
+    },
+    "kind": {
+      "type": "string",
+      "const": "DaemonConfig"
+    },
+    "nudge": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/NudgeConfig",
+          "description": "Nudge is omitted when realtime nudges are off (the daemon only polls)."
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "apiVersion",
+    "kind"
+  ],
+  "title": "DaemonConfig: signed response to GET /daemon/v1/config",
+  "description": "DaemonConfig is the signed response to GET /daemon/v1/config: settings the dashboard may change after enrollment."
+}

@@ -1,0 +1,17 @@
+{
+  "apiVersion": "launchroom.vantezzen.io/v1",
+  "kind": "TaskCompletion",
+  "attempt": 1,
+  "outcome": "succeeded",
+  "session": {
+    "startedAt": "2026-10-17T12:00:02Z",
+    "endReason": "closed",
+    "bytesIn": 1200,
+    "bytesOut": 9100,
+    "commands": [
+      { "op": "op_01J9Z8X7W6V5T4S3R2Q1P0N9T1", "status": "ok", "rows": 12, "durationMs": 4 },
+      { "op": "op_01J9Z8X7W6V5T4S3R2Q1P0N9T2", "status": "ok", "truncated": true, "rows": 500, "durationMs": 180 },
+      { "op": "op_01J9Z8X7W6V5T4S3R2Q1P0N9T3", "status": "refused", "rows": 0, "durationMs": 1 }
+    ]
+  }
+}

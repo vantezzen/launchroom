@@ -1,0 +1,138 @@
+---
+title: Move launchroom to a new server
+description: Move launchroom with every app, database, volume and domain from one machine to another without losing data, also to another CPU architecture. No backup storage needed.
+---
+
+A move takes everything that runs on one server, including the dashboard, to a new machine. A typical case: you started on a temporary cloud VPS and want launchroom on your final server.
+
+- The old server keeps serving while things move.
+- Apps without data switch over without downtime.
+- Each database and volume stops briefly while its latest data is copied. Nothing written before that is lost.
+- The dashboard pauses changes for a few minutes while it hands over.
+- No backup storage (S3) is needed. Data travels directly through launchroom.
+
+The new machine can have another CPU architecture (for example x86 to ARM). See [Another CPU architecture](#another-cpu-architecture).
+
+<Callout title="Replace or move?">
+Move a server that still runs. If a server is gone for good, [replace it](/docs/servers/replace-a-server) instead: its data then comes from the latest backups.
+</Callout>
+
+## Before you start
+
+- **The new machine**: Linux with Docker Engine 24 or later and the compose plugin, ports 80 and 443 free, as for a [new install](/docs/getting-started/install). Give it at least as much disk as your data uses on the old server, plus 1 GB.
+- **Lower your DNS TTLs** a day ahead, to 60 to 300 seconds: the dashboard's domain, your apps' custom domains and the wildcard of your platform domain. The switch to the new address then takes minutes. Raise them again after the move.
+- **Check the pre-flight**: open **Settings → Move launchroom** in your current dashboard. It checks the server, the dashboard's address, disk space and the private network, and says what to expect for app images and your recovery kit.
+- **Dashboard address**: if your dashboard runs at a domain of your own, it keeps that address and you point it at the new server. If it runs at an address that contains the old server's IP (`…sslip.io`), the dashboard gets the new server's address. Other servers then need one change each, the same as after a restore: set `LR_CONTROL_PLANE_URL` in their `launchroomd/.env` and run `docker compose up -d` there.
+- **Generated addresses**: app addresses ending in `<old-ip>.sslip.io` stop working when the old server is deleted. Set a platform domain in **Settings → Network**, or add custom domains, before you delete it.
+
+## Move launchroom
+
+<Steps>
+<Step>
+### Create the move command
+
+In **Settings → Move launchroom**, click **Create move command** and confirm your password. The page shows a command with a one-time token. It is shown only once and works for 24 hours.
+
+```sh
+curl -fsSL https://launchroom.vantezzen.io/install | sh -s -- --move lrmv1.… --version 1.4.0
+```
+</Step>
+<Step>
+### Run it on the new machine
+
+Run the command on the new machine. It installs launchroom, connects to your current dashboard and prints a code:
+
+```
+launchroom: This server’s code is K7QM-3XRT.
+```
+
+The dashboard shows the new machine's name, architecture and address. Type the code from the terminal into the dashboard to confirm. The dashboard never shows the code itself: it only accepts the code of the machine that claimed the move. If the terminal shows an error instead of a code, or the dashboard refuses your code, someone else used the token: cancel the move and start again.
+
+The new machine then joins as a server. Keep the command running: it finishes the move later. If it stops, run the same command again; it continues where it stopped.
+</Step>
+<Step>
+### Move the apps and data
+
+The dashboard shows the plan:
+
+- **Moves without downtime**: apps, workers and crons. Each starts on the new server, then its copy on the old server stops.
+- **Stops briefly**: each database and each service with a volume, with its size, the expected stop and the apps that stop with it. The stop is about 45 seconds plus the time to copy its data twice at about 20 MB/s (out of the old server, into the new one). A 1 GB database stops for about 2.5 minutes.
+- **Back up first**: with a backup destination, each database and volume can be backed up right before it moves.
+
+Click **Move apps and data**. Databases and volumes move one at a time. For each one, launchroom stops the apps that write to it, takes its final data, loads it on the new server and starts everything there. Follow each service on the page. If one fails, it runs on the old server again with its data as it was, and you can **Retry** it.
+</Step>
+<Step>
+### Switch DNS for your apps
+
+Once your apps run on the new server, point their DNS at it: change the A (and AAAA) records of your custom domains and of the platform domain's wildcard from the old server's address to the new one's. The page lists every record with its current state. Until DNS changes, the old server forwards your apps' traffic to the new one.
+
+Certificates for the new server are issued automatically once DNS points at it.
+</Step>
+<Step>
+### Hand over the dashboard
+
+When everything runs on the new server, click **Hand over** and type `hand over`. The new machine's installer must still be running.
+
+- The old dashboard pauses changes. Pages stay readable, apps keep serving, and launchroom doesn't deploy, build or back up during the hand-over. A git push during this time doesn't deploy; push again afterwards.
+- It takes a final copy of its database and keys, encrypted so that only the new machine can open it.
+- The new machine restores it, starts the dashboard, takes over and reports back. For a small instance this takes 1 to 3 minutes.
+
+Afterwards every page of the old dashboard says where launchroom moved.
+</Step>
+<Step>
+### Switch DNS for the dashboard
+
+Point the dashboard's domain at the new server. The installer prints the address to use. Sign in on the new dashboard once DNS has changed.
+</Step>
+<Step>
+### Check everything
+
+The new dashboard opens **Settings → Move launchroom** with a checklist:
+
+- **DNS**: the dashboard, the apps wildcard and every custom domain, checked live.
+- **Images**: app images are not copied to the new server. Running apps keep theirs; each app is built again from its commit on its next deploy. Click **Rebuild now** to do that for all apps at once. With the registry's storage on S3 (**Settings → Registry**, see [Backups](/docs/databases/backups)), the new server has every image already and nothing needs rebuilding.
+- **Other servers**: whether they reconnected.
+- **Recovery kit**: download a new one if the dashboard's address changed.
+
+Open a few apps and check their data, then click **Finish**.
+</Step>
+<Step>
+### Delete the old machine
+
+The old machine still holds all data as it was when each service moved. Keep it until you are sure, then delete it, or run `./launchroom uninstall` in its install folder.
+</Step>
+</Steps>
+
+## Another CPU architecture
+
+Images built from your code run on one CPU architecture. When the new server has another one:
+
+- **Apps without data** are built for the new architecture first and switch over when the build is done, without downtime.
+- **Apps with a volume** are built for the new architecture while they still run, so the build doesn't add to their stop.
+- **Databases and images from a registry** are pulled for the new architecture.
+- **An image that exists for one architecture only** can't run on the new server. That service fails to start there and keeps running on the old server.
+
+Builds take as long as a normal build. A build server for the new architecture is needed: the new server builds by itself when it has the build role, which it gets when it joins for a dashboard move.
+
+## If something goes wrong
+
+| When | What happens | What to do |
+|---|---|---|
+| Before you confirm the code | Nothing changed | Cancel the move in Settings |
+| An app fails to start on the new server | It keeps running on the old server | **Retry** |
+| A database or volume fails | It runs on the old server again, with its data as it was | **Retry** |
+| You want to stop halfway | Services that moved stay on the new server, the rest stay on the old one | **Cancel move** |
+| The hand-over fails | The old dashboard takes changes again | Run the install command again, then hand over again |
+| The installer stopped after the restore | The new dashboard has the data but didn't take over | Run `./launchroom move-takeover` in the new install folder |
+| After the hand-over | The new server runs launchroom | To go back, move again |
+
+**Abort hand-over** in the old dashboard only works until the new dashboard runs. Use it only if the new machine's installer failed.
+
+## Move a server without the dashboard
+
+To move a server that runs apps but not the dashboard, open **Servers**, pick the server and click **Move to another server**. Pick the target (or add a new server first), review the plan and start. The steps are the same as above: apps first without downtime, then each database and volume with a short stop. When everything runs on the target and DNS points there, click **Retire** to lock the old server out; the target takes over its roles and labels.
+
+<Cards>
+  <Card title="Replace a server" href="/docs/servers/replace-a-server" description="When a server is gone: restore its data from backups." />
+  <Card title="Import and export" href="/docs/databases/import-and-export" description="The data transfers a move uses." />
+</Cards>

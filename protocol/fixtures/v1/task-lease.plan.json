@@ -1,0 +1,25 @@
+{
+  "apiVersion": "launchroom.vantezzen.io/v1",
+  "kind": "TaskLease",
+  "tasks": [
+    {
+      "id": "tsk_01J9Z8X7W6V5T4S3R2Q1P0N9P2",
+      "type": "plan",
+      "leaseExpiresAt": "2026-10-17T12:01:00Z",
+      "attempt": 1,
+      "deadline": "2026-10-17T12:05:00Z",
+      "spec": {
+        "service": "svc_01J9Z8X7W6V5T4S3R2Q1P0N9N2",
+        "environment": "env_01J9Z8X7W6V5T4S3R2Q1P0N9N4",
+        "repo": {
+          "provider": "git",
+          "cloneUrl": "http://git-fixtures:8080/node-hello.git",
+          "sha": "4015b57a143aec5156fd1444a017a32137a3fd0f"
+        },
+        "builder": { "kind": "auto", "railpackVersion": "0.42.0" },
+        "platform": "linux/arm64",
+        "cacheKey": "svc_01j9z8x7w6v5t4s3r2q1p0n9n2"
+      }
+    }
+  ]
+}

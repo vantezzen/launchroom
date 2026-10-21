@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://launchroom.vantezzen.io/schema/v1/log-batch.json",
+  "$defs": {
+    "LogChunk": {
+      "properties": {
+        "source": {
+          "$ref": "#/$defs/LogSource"
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "lines": {
+          "items": {
+            "$ref": "#/$defs/LogLine"
+          },
+          "type": "array",
+          "minItems": 1
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "source",
+        "seq",
+        "lines"
+      ],
+      "description": "LogChunk is a run of lines from one source; Seq is monotonic per source."
+    },
+    "LogLine": {
+      "properties": {
+        "time": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "stream": {
+          "type": "string",
+          "enum": [
+            "stdout",
+            "stderr",
+            "system"
+          ]
+        },
+        "text": {
+          "type": "string"
+        },
+        "step": {
+          "type": "string",
+          "maxLength": 128,
+          "description": "Step groups build log lines into collapsible steps (\"clone\", \"plan\",\n\"install\", \"build\", \"push\", …). Omitted for runtime logs."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "time",
+        "stream",
+        "text"
+      ],
+      "description": "LogLine is one line."
+    },
+    "LogSource": {
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "task",
+            "deployment",
+            "workload"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^(?:tsk|dpl|wl)_[0-9A-HJKMNP-TV-Z]{26}$"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "kind",
+        "id"
+      ],
+      "description": "LogSource names what the lines belong to."
+    }
+  },
+  "properties": {
+    "apiVersion": {
+      "type": "string",
+      "const": "launchroom.vantezzen.io/v1"
+    },
+    "kind": {
+      "type": "string",
+      "const": "LogBatch"
+    },
+    "chunks": {
+      "items": {
+        "$ref": "#/$defs/LogChunk"
+      },
+      "type": "array",
+      "minItems": 1
+    }
+  },
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "apiVersion",
+    "kind",
+    "chunks"
+  ],
+  "title": "LogBatch: POST /daemon/v1/logs body",
+  "description": "LogBatch ships log chunks (docs/03 §4)."
+}

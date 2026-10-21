@@ -1,0 +1,5 @@
+{
+  "apiVersion": "launchroom.vantezzen.io/v1",
+  "kind": "BroadcastAuth",
+  "auth": "launchroom-dev-key:5d41402abc4b2a76b9719d911017c5925d41402abc4b2a76b9719d911017c592"
+}

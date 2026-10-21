@@ -1,0 +1,23 @@
+{
+  "description": "Enrollment: keyid is the literal \"enroll\"; the dashboard verifies with the signingKey from the body.",
+  "privateKeySeed": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+  "publicKey": "ed25519:A6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg=",
+  "keyId": "enroll",
+  "created": 1792238400,
+  "nonceBytes": "bGF1bmNocm9vbS1ub25jZQ==",
+  "request": {
+    "method": "POST",
+    "url": "https://cp.example.test/daemon/v1/enroll",
+    "body": "{\"token\":\"example\"}"
+  },
+  "expected": {
+    "contentDigest": "sha-256=:OdmQ0f/w3wJYU+JWAaCQx6EL7eAH7VJjbEe6/okBILI=:",
+    "date": "Sat, 17 Oct 2026 12:00:00 GMT",
+    "nonce": "bGF1bmNocm9vbS1ub25jZQ",
+    "signatureInput": "sig1=(\"@method\" \"@path\" \"@query\" \"content-digest\" \"date\" \"x-lr-nonce\");created=1792238400;keyid=\"enroll\";alg=\"ed25519\";tag=\"launchroomd-v1\"",
+    "signature": "sig1=:sjxXyauJtuiABP7ZPdBS4e+UFd0xyLc+FdvDhrLGuWVn/7fFzavNMPqu4S0puWTkrnJGSM/gdYdpR6V0q0APDw==:",
+    "signatureBase": "\"@method\": POST\n\"@path\": /daemon/v1/enroll\n\"@query\": ?\n\"content-digest\": sha-256=:OdmQ0f/w3wJYU+JWAaCQx6EL7eAH7VJjbEe6/okBILI=:\n\"date\": Sat, 17 Oct 2026 12:00:00 GMT\n\"x-lr-nonce\": bGF1bmNocm9vbS1ub25jZQ\n\"@signature-params\": (\"@method\" \"@path\" \"@query\" \"content-digest\" \"date\" \"x-lr-nonce\");created=1792238400;keyid=\"enroll\";alg=\"ed25519\";tag=\"launchroomd-v1\""
+  },
+  "verifyAt": 1792238400,
+  "maxSkewSeconds": 60
+}

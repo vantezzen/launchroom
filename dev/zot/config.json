@@ -1,0 +1,73 @@
+{
+  "distSpecVersion": "1.1.1",
+  "storage": {
+    "rootDirectory": "/var/lib/registry",
+    "dedupe": true,
+    "gc": true,
+    "gcDelay": "1h",
+    "gcInterval": "6h",
+    "retention": {
+      "dryRun": false,
+      "delay": "24h",
+      "policies": [
+        {
+          "repositories": ["apps/**"],
+          "deleteReferrers": true,
+          "deleteUntagged": true,
+          "keepTags": [{ "mostRecentlyPushedCount": 10 }]
+        },
+        {
+          "repositories": ["cache/**"],
+          "deleteReferrers": true,
+          "deleteUntagged": true,
+          "keepTags": [{ "mostRecentlyPushedCount": 2 }]
+        },
+        {
+          "repositories": ["mirror/**"],
+          "deleteReferrers": false,
+          "deleteUntagged": true,
+          "keepTags": [{ "pulledWithin": "720h" }],
+          "keepUntagged": { "pulledWithin": "720h" }
+        }
+      ]
+    }
+  },
+  "http": {
+    "address": "0.0.0.0",
+    "port": "5000",
+    "compat": ["docker2s2"],
+    "auth": {
+      "bearer": {
+        "realm": "http://dashboard:8000/registry/token",
+        "service": "launchroom-registry",
+        "cert": "/etc/zot/keys/registry-token.pub.pem"
+      }
+    }
+  },
+  "log": {
+    "level": "info"
+  },
+  "extensions": {
+    "sync": {
+      "enable": true,
+      "registries": [
+        {
+          "urls": ["https://registry-1.docker.io"],
+          "onDemand": true,
+          "tlsVerify": true,
+          "maxRetries": 3,
+          "retryDelay": "5s",
+          "content": [{ "prefix": "**", "destination": "/mirror/docker.io" }]
+        },
+        {
+          "urls": ["https://ghcr.io"],
+          "onDemand": true,
+          "tlsVerify": true,
+          "maxRetries": 3,
+          "retryDelay": "5s",
+          "content": [{ "prefix": "**", "destination": "/mirror/ghcr.io" }]
+        }
+      ]
+    }
+  }
+}

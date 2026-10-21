@@ -1,0 +1,41 @@
+{
+  "apiVersion": "launchroom.vantezzen.io/v1",
+  "kind": "Report",
+  "serverId": "srv_01J9Z8X7W6V5T4S3R2Q1P0N9MK",
+  "observedAt": "2026-10-17T12:02:05Z",
+  "seq": 20,
+  "full": true,
+  "appliedVersion": 1842,
+  "workloads": [],
+  "metrics": {
+    "host": [],
+    "workloads": [],
+    "requests": [
+      {
+        "route": "rt_01J9Z8X7W6V5T4S3R2Q1P0N9R1",
+        "at": "2026-10-17T12:00:00Z",
+        "requests": 412,
+        "status2xx": 380,
+        "status3xx": 20,
+        "status4xx": 9,
+        "status5xx": 3,
+        "bytesIn": 52113,
+        "bytesOut": 9934120,
+        "latencyMs": [0, 4, 61, 120, 140, 60, 15, 5, 2, 1, 0, 0, 0, 0, 0]
+      },
+      {
+        "route": "rt_01J9Z8X7W6V5T4S3R2Q1P0N9R1",
+        "at": "2026-10-17T12:01:00Z",
+        "requests": 7,
+        "status2xx": 6,
+        "bytesOut": 14000,
+        "latencyMs": [0, 0, 2, 3, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+      },
+      {
+        "route": "rt_01J9Z8X7W6V5T4S3R2Q1P0N9R2",
+        "at": "2026-10-17T12:01:00Z",
+        "requests": 1
+      }
+    ]
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "apiVersion": "launchroom.vantezzen.io/v1",
+  "kind": "EnrollResponse",
+  "serverId": "srv_01J9Z8X7W6V5T4S3R2Q1P0N9MK",
+  "status": "active",
+  "controlPlaneKeys": {
+    "cp-2026-10": "ed25519:Kay64UG8yvCyLhqU000LxzYeUm0L/hLIl5S8kyKWbdc="
+  },
+  "registry": {
+    "address": "127.0.0.1:5000"
+  },
+  "pollIntervals": {
+    "state": "30s",
+    "tasks": "10s"
+  },
+  "nudge": {
+    "key": "a1b2c3d4e5f6"
+  }
+}

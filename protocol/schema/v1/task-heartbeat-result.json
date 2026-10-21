@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://launchroom.vantezzen.io/schema/v1/task-heartbeat-result.json",
+  "properties": {
+    "apiVersion": {
+      "type": "string",
+      "const": "launchroom.vantezzen.io/v1"
+    },
+    "kind": {
+      "type": "string",
+      "const": "TaskHeartbeatResult"
+    },
+    "leaseExpiresAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "cancel": {
+      "type": "boolean",
+      "description": "Cancel asks the daemon to stop the task and complete it as cancelled."
+    }
+  },
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "apiVersion",
+    "kind",
+    "leaseExpiresAt",
+    "cancel"
+  ],
+  "title": "TaskHeartbeatResult: signed response to a heartbeat",
+  "description": "TaskHeartbeatResult is the signed response to a heartbeat."
+}

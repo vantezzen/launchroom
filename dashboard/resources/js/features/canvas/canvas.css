@@ -1,0 +1,194 @@
+/*
+ * React Flow on the design-system tokens (docs/design-system.md §6
+ * "Canvas"): base.css only, no default theme. The dot grid is the one
+ * functional pattern (infinite surface), kept very low-contrast.
+ */
+@import '@xyflow/react/dist/base.css';
+
+.launchroom-canvas {
+    --xy-background-color: var(--background);
+    --canvas-dot: color-mix(in oklab, var(--foreground) 13%, transparent);
+    --canvas-edge: color-mix(in oklab, var(--foreground) 32%, transparent);
+    --canvas-edge-muted: color-mix(
+        in oklab,
+        var(--foreground) 22%,
+        transparent
+    );
+}
+
+.launchroom-canvas .react-flow__node {
+    border-radius: 14px;
+}
+
+.launchroom-canvas .react-flow__node-group-frame {
+    border-radius: 18px;
+    pointer-events: none;
+}
+
+.launchroom-canvas .react-flow__node:focus-visible {
+    outline: none;
+}
+
+.launchroom-canvas .react-flow__node:focus-visible > .service-node {
+    box-shadow:
+        0 0 0 2px var(--background),
+        0 0 0 4px var(--signal);
+}
+
+/* Dragged nodes lift to the float level. */
+.launchroom-canvas .react-flow__node.dragging > .service-node {
+    box-shadow:
+        0 8px 30px rgb(0 0 0 / 0.1),
+        0 1px 3px rgb(0 0 0 / 0.06);
+}
+
+.dark .launchroom-canvas .react-flow__node.dragging > .service-node {
+    box-shadow:
+        0 8px 30px rgb(0 0 0 / 0.6),
+        0 0 0 1px var(--border-strong);
+}
+
+/* New nodes scale in (8 px), once. */
+.launchroom-canvas .react-flow__node-service > .service-node {
+    animation: canvas-node-enter 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@keyframes canvas-node-enter {
+    from {
+        opacity: 0;
+        transform: scale(0.97);
+    }
+}
+
+/* Connect handles: a visible "+" on the right (flows §4), a dot on the left. */
+.launchroom-canvas .react-flow__handle {
+    width: 18px;
+    height: 18px;
+    border-radius: 9999px;
+    border: 1px solid var(--border-strong);
+    background: var(--card);
+    color: var(--muted-foreground);
+    opacity: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition:
+        opacity 120ms ease-out,
+        color 120ms ease-out,
+        border-color 120ms ease-out;
+}
+
+.launchroom-canvas .react-flow__handle-right::after {
+    content: '+';
+    font-size: 13px;
+    line-height: 1;
+    margin-top: -1px;
+    pointer-events: none;
+}
+
+.launchroom-canvas .react-flow__handle-left {
+    width: 10px;
+    height: 10px;
+}
+
+.launchroom-canvas .react-flow__handle:hover {
+    color: var(--foreground);
+    border-color: var(--foreground);
+}
+
+.launchroom-canvas .react-flow__node:hover .react-flow__handle,
+.launchroom-canvas .react-flow__node:focus-visible .react-flow__handle,
+.launchroom-canvas .react-flow__node.selected .react-flow__handle,
+.launchroom-canvas.connecting .react-flow__handle {
+    opacity: 1;
+}
+
+.launchroom-canvas .react-flow__handle.connectionindicator {
+    cursor: crosshair;
+}
+
+.launchroom-canvas .react-flow__edge-path {
+    stroke: var(--canvas-edge);
+    stroke-width: 1.5;
+}
+
+/* Connections draw on when they appear (300 ms, design-system §8). */
+.launchroom-canvas .react-flow__edge.connection .react-flow__edge-path {
+    stroke-dasharray: 1000;
+    animation: canvas-edge-draw 300ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+@keyframes canvas-edge-draw {
+    from {
+        stroke-dashoffset: 1000;
+    }
+    to {
+        stroke-dashoffset: 0;
+        stroke-dasharray: none;
+    }
+}
+
+.launchroom-canvas .react-flow__edge.process .react-flow__edge-path {
+    stroke: var(--canvas-edge-muted);
+    stroke-dasharray: 2 4;
+}
+
+.launchroom-canvas .react-flow__edge.staged .react-flow__edge-path {
+    stroke: var(--signal);
+    stroke-dasharray: 6 4;
+    animation: none;
+}
+
+/* A preview sharing a base database: red dashed + the chip on the label. */
+.launchroom-canvas .react-flow__edge.shared .react-flow__edge-path {
+    stroke: var(--status-error);
+    stroke-dasharray: 6 4;
+    animation: none;
+}
+
+.launchroom-canvas .react-flow__edge.selected .react-flow__edge-path,
+.launchroom-canvas .react-flow__edge:focus-visible .react-flow__edge-path {
+    stroke: var(--foreground);
+}
+
+.launchroom-canvas .react-flow__connection-path {
+    stroke: var(--signal);
+    stroke-width: 1.5;
+    stroke-dasharray: 6 4;
+}
+
+.launchroom-canvas .react-flow__minimap {
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    background: var(--card);
+    overflow: hidden;
+    box-shadow:
+        0 8px 30px rgb(0 0 0 / 0.1),
+        0 1px 3px rgb(0 0 0 / 0.06);
+}
+
+.dark .launchroom-canvas .react-flow__minimap {
+    border-color: var(--border-strong);
+    box-shadow: 0 8px 30px rgb(0 0 0 / 0.6);
+}
+
+.launchroom-canvas .react-flow__attribution {
+    display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .launchroom-canvas .react-flow__handle {
+        transition: none;
+    }
+
+    .launchroom-canvas .react-flow__node-service > .service-node,
+    .launchroom-canvas .react-flow__edge.connection .react-flow__edge-path {
+        animation: none;
+    }
+}
+
+/* SVG presentation attributes don't resolve CSS variables: colour the dots here. */
+.launchroom-canvas .react-flow__background-pattern.dots,
+.launchroom-canvas .react-flow__background circle {
+    fill: var(--canvas-dot);
+}

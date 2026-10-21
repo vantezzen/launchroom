@@ -1,0 +1,52 @@
+schema: launchroom.template/v1
+id: n8n
+name: n8n
+tagline: Workflow automation you can host and extend.
+description: >-
+    Connect apps and APIs with visual workflows, webhooks and code steps.
+    Workflows and credentials live in a managed Postgres, encrypted with a key
+    generated for you.
+category: automation
+logo: n8n
+website: https://n8n.io
+license: Sustainable Use License
+inputs:
+    - id: domain
+      label: Domain
+      type: domain
+      optional: true
+      description: Webhooks use this address. Leave empty to use the generated one.
+services:
+    n8n:
+        image: docker.io/n8nio/n8n:2.44.4@sha256:c72fa9f1bd9b59626deeb284824c0495625c3f6d894d395d27e241bf192d9900
+        ports: ['5678']
+        environment:
+            N8N_PORT: '5678'
+            N8N_PROXY_HOPS: '1'
+            N8N_ENCRYPTION_KEY: ${generate:password:48}
+            WEBHOOK_URL: ${self.public_url}
+            N8N_EDITOR_BASE_URL: ${self.public_url}
+            DB_TYPE: postgresdb
+            DB_POSTGRESDB_HOST: ${service.db.host}
+            DB_POSTGRESDB_PORT: ${service.db.port}
+            DB_POSTGRESDB_DATABASE: ${service.db.database}
+            DB_POSTGRESDB_USER: ${service.db.user}
+            DB_POSTGRESDB_PASSWORD: ${service.db.password}
+        volumes:
+            - data:/home/node/.n8n
+        depends_on: [db]
+        healthcheck:
+            test: ['CMD', 'wget', '-qO-', 'http://localhost:5678/healthz']
+            start_period: 60s
+        deploy:
+            resources:
+                limits:
+                    memory: 1g
+        x-launchroom:
+            name: n8n
+            logo: n8n
+            domain: ${input.domain}
+    db:
+        x-launchroom:
+            name: Postgres
+            database: { engine: postgres, version: '17' }

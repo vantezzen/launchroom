@@ -1,0 +1,61 @@
+---
+title: Backups to Hetzner Object Storage
+description: Store launchroom's encrypted backups in Hetzner Object Storage, ideally in a different location than your servers.
+---
+
+Hetzner Object Storage is S3-compatible and available in fsn1, nbg1 and hel1, next to Hetzner's servers. launchroom encrypts everything with restic on your servers before upload, so the bucket stores only encrypted data.
+
+## Set up the bucket
+
+<Steps>
+<Step>
+### Create a bucket
+
+In the Hetzner Console, open your project → **Object Storage → Create bucket**. Pick a location and a name, for example `launchroom-backups-acme` (bucket names are global), and set visibility to **private**.
+</Step>
+<Step>
+### Generate S3 credentials
+
+Open **Security → S3 credentials → Generate credentials**. Copy the **access key** and **secret key**. The secret is shown once.
+
+Credentials belong to the Hetzner project and can access all of its buckets. To limit access, use a dedicated Hetzner project for backups.
+</Step>
+<Step>
+### Find your endpoint
+
+The endpoint is `https://<location>.your-objectstorage.com`, for example:
+
+```text
+https://fsn1.your-objectstorage.com
+```
+</Step>
+<Step>
+### Add the destination in launchroom
+
+Open **Settings → Backups → Add destination**, choose **Hetzner** as the storage provider, and fill in:
+
+| Field | Value |
+|---|---|
+| Name | `Hetzner fsn1` |
+| Endpoint | `https://fsn1.your-objectstorage.com` |
+| Bucket | `launchroom-backups-acme` |
+| Region | `fsn1` (the location) |
+| Folder (optional) | for example `team-acme` |
+| Access key ID, Secret access key | From step 2 |
+
+Save. launchroom tests the destination right away and shows "Connected". Daily database backups start at a staggered time between 01:00 and 07:00 UTC.
+</Step>
+</Steps>
+
+<Callout type="info" title="Pick a different location">
+Store backups in a location other than your servers' data center when you can, for example servers in fsn1 and storage in hel1. Then a backup survives the loss of the site it protects.
+</Callout>
+
+## Back up launchroom itself
+
+If you are an instance owner, use a separate bucket or folder for the control plane in the **Back up launchroom itself** section, then set the recovery passphrase and download the recovery kit. See [backing up launchroom itself](/docs/databases/backups#backing-up-launchroom-itself).
+
+<Cards>
+  <Card title="Backups" href="/docs/databases/backups" description="Schedules, retention, verification and the recovery kit." />
+  <Card title="Backup troubleshooting" href="/docs/troubleshooting/backups" description="When a destination doesn't connect." />
+</Cards>

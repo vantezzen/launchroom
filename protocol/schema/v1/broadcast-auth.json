@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://launchroom.vantezzen.io/schema/v1/broadcast-auth.json",
+  "properties": {
+    "apiVersion": {
+      "type": "string",
+      "const": "launchroom.vantezzen.io/v1"
+    },
+    "kind": {
+      "type": "string",
+      "const": "BroadcastAuth"
+    },
+    "auth": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.-]{1,128}:[a-f0-9]{64}$"
+    }
+  },
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "apiVersion",
+    "kind",
+    "auth"
+  ],
+  "title": "BroadcastAuth: signed Pusher channel authorization for the daemon's private channel",
+  "description": "BroadcastAuth is the signed channel authorization for one socket."
+}

@@ -1,0 +1,358 @@
+name: ci
+
+# Every check of the repo in one workflow (replaces tests.yml and
+# next-adapter.yml): dashboard, launchroomd, protocol schemas, install
+# scripts, the Next.js adapter, the website, the workflows themselves and
+# dependency audits.
+# Releases: release.yml (tag v<VERSION>).
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  dashboard:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: dashboard
+
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: launchroom
+          POSTGRES_PASSWORD: launchroom
+          POSTGRES_DB: launchroom_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U launchroom -d launchroom_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+
+    env:
+      # Real env vars win over phpunit.xml's defaults (which target the dev stack).
+      DB_CONNECTION: pgsql
+      DB_HOST: 127.0.0.1
+      DB_PORT: '5432'
+      DB_DATABASE: launchroom_test
+      DB_USERNAME: launchroom
+      DB_PASSWORD: launchroom
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        with:
+          php-version: '8.4'
+          extensions: pdo_pgsql, sodium, redis, pcntl
+          tools: composer:v2
+          coverage: none
+
+      - name: Setup Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: dashboard/package-lock.json
+
+      - name: Install PHP dependencies
+        run: composer install --no-interaction --no-progress --prefer-dist
+
+      - name: Prepare environment
+        run: |
+          cp .env.example .env
+          php artisan key:generate --no-interaction
+
+      - name: Install JS dependencies
+        run: npm ci --no-audit --no-fund
+
+      # Also generates the Wayfinder route/action files that `tsc` needs.
+      - name: Build assets
+        run: npm run build
+
+      - name: Generated TypeScript types are up to date
+        run: |
+          composer types:generate
+          git diff --exit-code -- resources/js/types/generated.d.ts
+
+      - name: Run CI checks
+        run: composer ci:check
+
+  daemon:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: daemon
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: daemon/go.mod
+          cache-dependency-path: daemon/go.sum
+
+      - name: Test
+        run: go test -race ./...
+
+      - name: Lint
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with:
+          version: v2.15.0
+          working-directory: daemon
+
+      - name: govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
+
+  # The launchroom CLI (cli/, docs/16-api-and-cli.md): its own Go module.
+  cli:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: cli
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: cli/go.mod
+          cache-dependency-path: cli/go.sum
+
+      - name: Test
+        run: go test -race ./...
+
+      - name: Cross-compile release targets
+        env:
+          CGO_ENABLED: '0'
+        run: |
+          set -eu
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64; do
+            GOOS="${target%/*}" GOARCH="${target#*/}" go build -trimpath -o /dev/null ./cmd/launchroom
+          done
+
+      - name: Lint
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with:
+          version: v2.15.0
+          working-directory: cli
+
+      - name: govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
+
+  protocol:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: daemon/go.mod
+          cache-dependency-path: daemon/go.sum
+
+      - name: Schemas are generated from the Go types
+        working-directory: daemon
+        run: go generate ./internal/state
+
+      - name: No drift
+        run: git diff --exit-code -- protocol/
+
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Same image and flags as `make lint-deploy`.
+      - name: shellcheck
+        run: |
+          docker run --rm -v "$PWD/deploy:/mnt:ro" -w /mnt \
+            koalaman/shellcheck:v0.11.0@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d \
+            -s sh -x install/install.sh install/server.sh control-plane/launchroom test/e2e-install.sh release/build-bundle.sh release/check-pinned-images.sh
+
+      # docs/09 R31: release Dockerfiles pull base images and the frontend by digest only.
+      - name: Base images pinned by digest
+        run: sh deploy/release/check-pinned-images.sh
+
+      - name: sh -n
+        run: |
+          for f in deploy/install/install.sh deploy/install/server.sh deploy/control-plane/launchroom \
+            deploy/test/e2e-install.sh deploy/release/build-bundle.sh deploy/release/check-pinned-images.sh; do
+            sh -n "$f"
+          done
+
+      - name: Bundle builds with digest pins
+        run: |
+          set -eu
+          zero="$(printf '0%.0s' $(seq 64))"
+          sh deploy/release/build-bundle.sh --version "$(cat VERSION)" \
+            --dashboard-image "ghcr.io/vantezzen/launchroom-dashboard@sha256:$zero" \
+            --daemon-image "ghcr.io/vantezzen/launchroomd@sha256:$zero" \
+            --caddy-image "ghcr.io/vantezzen/launchroom-caddy@sha256:$zero" \
+            --out "$RUNNER_TEMP/bundle"
+          tar -tzf "$RUNNER_TEMP/bundle/launchroom-deploy.tar.gz"
+          grep -qx "LR_CADDY_IMAGE=ghcr.io/vantezzen/launchroom-caddy@sha256:$zero" "$RUNNER_TEMP/bundle/images.env"
+
+  next-adapter:
+    runs-on: ubuntu-latest
+
+    # Builds and tests @vantezzen/launchroom-next-adapter and checks that the
+    # copy vendored into launchroomd matches a fresh build. Publishing stays
+    # disabled until the @vantezzen npm scope and trusted publishing are set
+    # up (packages/next-adapter/RELEASING.md).
+    defaults:
+      run:
+        working-directory: packages/next-adapter
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: packages/next-adapter/package-lock.json
+
+      - run: npm ci --no-audit --no-fund
+
+      - name: Build, typecheck and test
+        run: npm test
+
+      - name: Vendored copy matches the build
+        shell: bash
+        run: |
+          set -euo pipefail
+          vendor=../../daemon/internal/build/nextadapter
+          diff <(cd dist && ls ./*.js) <(cd "$vendor/assets/dist" && ls ./*.js) \
+            || { echo "::error::vendored file list differs from dist/: run make next-adapter"; exit 1; }
+          for f in dist/*.js; do
+            cmp "$f" "$vendor/assets/$f" || { echo "::error::$f differs from the vendored copy: run make next-adapter"; exit 1; }
+          done
+          (cd "$vendor/assets" && sha256sum -c ../SHA256SUMS)
+
+      - name: Package contents
+        run: npm pack --dry-run
+
+  site:
+    runs-on: ubuntu-latest
+
+    # The website and user docs (site/, docs/21): the same checks as
+    # `make lint-site` and `make site-build`.
+    defaults:
+      run:
+        working-directory: site
+
+    env:
+      NEXT_TELEMETRY_DISABLED: '1'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+
+      - run: npm ci --no-audit --no-fund
+
+      - name: Typecheck, lint and format check
+        run: npm run check
+
+      - name: Build
+        run: npm run build
+
+      # prebuild refreshed public/install and public/schema from the repo; the
+      # committed copies (served when only site/ is deployed) must match.
+      - name: Committed installer and schema copies are current
+        run: |
+          stale=$(git status --porcelain -- public/install public/schema)
+          if [ -n "$stale" ]; then
+            echo "$stale"
+            echo "::error::site/public/install or site/public/schema is out of date: run make site-build and commit the copies"
+            exit 1
+          fi
+
+  workflows:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Same image as `make lint-workflows`.
+      - name: actionlint
+        run: |
+          docker run --rm -v "$PWD:/repo:ro" -w /repo \
+            rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 -color
+
+  audit:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: dashboard
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        with:
+          php-version: '8.4'
+          tools: composer:v2
+          coverage: none
+
+      - name: composer audit
+        run: composer audit --locked --no-interaction
+
+      - name: npm audit
+        run: npm audit --audit-level=high

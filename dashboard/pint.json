@@ -1,0 +1,7 @@
+{
+    "preset": "laravel",
+    "cache-file": "storage/framework/cache/pint.cache",
+    "rules": {
+        "declare_strict_types": true
+    }
+}

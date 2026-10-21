@@ -1,0 +1,64 @@
+name: Bug report
+description: Something in launchroom doesn't work as documented.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Report security issues privately through [security advisories](https://github.com/vantezzen/launchroom/security/advisories/new), not here.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you saw, and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Create a project from …
+        2. Deploy …
+        3. …
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: launchroom version
+      description: Settings → Updates in the dashboard.
+      placeholder: 0.1.0
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Server OS
+      description: Distribution and version of the affected servers, plus the Docker Engine version.
+      placeholder: Ubuntu 24.04, Docker 29.0
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: Install type
+      options:
+        - Single server (dashboard and apps on one machine)
+        - Several servers
+        - Rootless Docker
+        - Development stack (make up)
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Relevant build, deployment or server logs. Remove secrets and domain names you don't want to share.
+      render: text
+  - type: textarea
+    id: context
+    attributes:
+      label: Anything else
+      description: Screenshots, configuration, what you already tried.

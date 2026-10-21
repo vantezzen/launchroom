@@ -1,0 +1,30 @@
+schema: launchroom.template/v1
+id: pocketbase
+name: PocketBase
+tagline: 'A backend in one file: database, auth, files and an admin UI.'
+description: >-
+    Realtime SQLite database, users, file storage and a dashboard for small
+    apps and prototypes. Open /_/ on your address to create the superuser.
+    Runs the community image by muchobien.
+category: developer
+logo: pocketbase
+website: https://pocketbase.io
+license: MIT
+inputs:
+    - id: domain
+      label: Domain
+      type: domain
+      optional: true
+      description: Leave empty to use the generated address.
+services:
+    pocketbase:
+        image: ghcr.io/muchobien/pocketbase:0.40.5@sha256:618171d6df039ab3edd74ef9e6b89d43ec836fd55f5437017b7ed3790e627ab0
+        ports: ['8090']
+        volumes:
+            - data:/pb_data
+        healthcheck:
+            test: ['CMD', 'wget', '-qO-', 'http://localhost:8090/api/health']
+        x-launchroom:
+            name: PocketBase
+            logo: pocketbase
+            domain: ${input.domain}

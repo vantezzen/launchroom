@@ -1,0 +1,9 @@
+{
+  "apiVersion": "launchroom.vantezzen.io/v1",
+  "kind": "SessionCommand",
+  "session": "ses_01J9Z8X7W6V5T4S3R2Q1P0N9S2",
+  "op": "op_01J9Z8X7W6V5T4S3R2Q1P0N9T5",
+  "issuedAt": "2026-10-17T12:10:00Z",
+  "command": "end",
+  "reason": "Ended by an admin"
+}

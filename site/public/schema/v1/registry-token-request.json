@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://launchroom.vantezzen.io/schema/v1/registry-token-request.json",
+  "$defs": {
+    "RegistryScope": {
+      "properties": {
+        "repository": {
+          "type": "string",
+          "maxLength": 255,
+          "pattern": "^[a-z0-9]+(?:(?:\\.|_|__|-+)[a-z0-9]+)*(?:/[a-z0-9]+(?:(?:\\.|_|__|-+)[a-z0-9]+)*)*$"
+        },
+        "actions": {
+          "items": {
+            "type": "string",
+            "enum": [
+              "pull",
+              "push"
+            ]
+          },
+          "type": "array",
+          "maxItems": 2,
+          "minItems": 1
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "repository",
+        "actions"
+      ],
+      "description": "RegistryScope is one repository and the actions requested on it."
+    }
+  },
+  "properties": {
+    "apiVersion": {
+      "type": "string",
+      "const": "launchroom.vantezzen.io/v1"
+    },
+    "kind": {
+      "type": "string",
+      "const": "RegistryTokenRequest"
+    },
+    "scopes": {
+      "items": {
+        "$ref": "#/$defs/RegistryScope"
+      },
+      "type": "array",
+      "maxItems": 16,
+      "minItems": 1
+    },
+    "task": {
+      "type": "string",
+      "pattern": "^tsk_[0-9A-HJKMNP-TV-Z]{26}$",
+      "description": "Task is the leased build/plan task the token is for (required for push and cache scopes)."
+    }
+  },
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "apiVersion",
+    "kind",
+    "scopes"
+  ],
+  "title": "RegistryTokenRequest: POST /daemon/v1/registry-token body",
+  "description": "RegistryTokenRequest asks the dashboard for a short-lived registry token: POST /daemon/v1/registry-token."
+}

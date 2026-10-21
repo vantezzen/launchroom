@@ -1,0 +1,72 @@
+# Headscale for the multi-server dev stack (`make up-multi`, docs/11 §6).
+#
+# Dev differs from production (deploy/images/headscale/config.yaml) in one
+# way only: plain http on port 80 of the compose network. The dind fake
+# servers' Tailscale clients can't trust a dev CA (launchroomd never mounts
+# files into its system containers), and Tailscale's control client only
+# speaks plain http on port 80 (other http ports make it force TLS on 443).
+# launchroomd allows http only for hosts in LR_MESH_INSECURE_LOGIN_HOSTS
+# (set to "headscale" on the fake servers). DERP needs TLS, so the embedded
+# DERP region is unusable here; the fake servers share the compose network
+# and always connect directly (the UI shows "Direct").
+server_url: http://headscale
+listen_addr: 0.0.0.0:80
+metrics_listen_addr: 127.0.0.1:9090
+
+noise:
+  private_key_path: /var/lib/headscale/noise_private.key
+
+prefixes:
+  v4: 100.64.0.0/10
+  v6: fd7a:115c:a1e0::/48
+  allocation: sequential
+
+derp:
+  server:
+    # Headscale refuses to start without a DERP map.
+    enabled: true
+    region_id: 999
+    region_code: lr
+    region_name: launchroom
+    verify_clients: true
+    stun_listen_addr: 0.0.0.0:3478
+    private_key_path: /var/lib/headscale/derp_server_private.key
+    automatically_add_embedded_derp_region: true
+  urls: []
+  paths: []
+  auto_update_enabled: false
+
+disable_check_updates: true
+
+node:
+  # Tagged nodes never expire.
+  expiry: 0
+
+database:
+  type: sqlite
+  sqlite:
+    path: /var/lib/headscale/db.sqlite
+    write_ahead_log: true
+
+log:
+  level: info
+  format: text
+
+# The dashboard manages the ACL through the API (default deny, docs/05 §2).
+policy:
+  mode: database
+
+# launchroom never uses MagicDNS (clients run with --accept-dns=false).
+dns:
+  magic_dns: false
+  override_local_dns: false
+  nameservers:
+    global: []
+
+unix_socket: /var/run/headscale/headscale.sock
+unix_socket_permission: "0770"
+
+logtail:
+  enabled: false
+taildrop:
+  enabled: false

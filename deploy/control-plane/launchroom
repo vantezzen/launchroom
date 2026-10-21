@@ -1,0 +1,188 @@
+#!/bin/sh
+# launchroom helper for the control-plane folder (docs/11 §1-§5).
+#
+#   ./launchroom status                  containers, health, local launchroomd
+#   ./launchroom logs [service]          follow logs (default: all)
+#   ./launchroom update                  pull the pinned images, restart, migrate
+#   ./launchroom backup [args]           control-plane backup now (docs/14)
+#   ./launchroom restore [args]          restore the control plane (docs/14)
+#   ./launchroom registry show|apply     registry config (secrets redacted) / write it and restart zot
+#   ./launchroom setup-token             new one-time first-run setup link
+#   ./launchroom reset-owner-2fa EMAIL   remove an instance owner's 2FA (audited)
+#   ./launchroom dashboard-domain-reset  go back to APP_URL when the dashboard's domain locks you out
+#   ./launchroom move-takeover           finish a move here if the installer stopped after the restore
+#   ./launchroom uninstall               remove launchroom from this server
+#
+# Upgrading to a new release (new compose.yml and image pins) means running
+# the installer again with --dir pointing here; this script's `update` only
+# re-pulls the images pinned in .env.
+set -eu
+
+DIR="$(cd "$(dirname "$0")" && pwd)"
+
+say() { printf 'launchroom: %s\n' "$*"; }
+die() { printf 'launchroom: error: %s\n' "$*" >&2; exit 1; }
+
+dc() { (cd "$DIR" && docker compose "$@"); }
+artisan() { dc exec -T dashboard php artisan "$@"; }
+has_command() { artisan list --raw 2>/dev/null | grep -q "^$1 "; }
+env_get() { sed -n "s/^$1=//p" "$DIR/.env" 2>/dev/null | tail -n 1; }
+psql_value() { dc exec -T postgres psql -U launchroom -d launchroom -tAc "$1"; }
+
+# confirm PROMPT WORD: the user must type WORD exactly.
+confirm() {
+	printf '%s\nType "%s" to continue: ' "$1" "$2"
+	IFS= read -r answer || answer=""
+	[ "$answer" = "$2" ]
+}
+
+cmd_status() {
+	url="$(artisan launchroom:dashboard-url 2>/dev/null | tail -n 1)" || url=""
+	case "$url" in http://* | https://*) ;; *) url="$(env_get APP_URL)" ;; esac
+	echo "Dashboard: $url"
+	dc ps --format 'table {{.Service}}\t{{.Status}}'
+	echo
+	daemon_status="$(psql_value "SELECT public_id || ' ' || status FROM servers WHERE is_control_plane AND status <> 'revoked' ORDER BY id DESC LIMIT 1" 2>/dev/null || true)"
+	echo "launchroomd: ${daemon_status:-not enrolled}"
+}
+
+cmd_update() {
+	say "pulling the images pinned in .env"
+	dc pull --quiet --ignore-pull-failures
+	# The dashboard entrypoint migrates on start (migrate --force --isolated).
+	dc up -d --wait --wait-timeout 600 --remove-orphans
+	artisan migrate --force --no-interaction
+	say "updated. To move to a new release, run the installer again with --dir $DIR."
+}
+
+# Delegates to the dashboard's backup/restore commands (docs/14) when this
+# release has them.
+cmd_backup() {
+	has_command launchroom:backups:control-plane || die "this release has no control-plane backup command yet (launchroom:backups:control-plane)."
+	artisan launchroom:backups:control-plane "$@"
+}
+
+# After `install.sh --move` restored the old dashboard here but stopped
+# before taking over (docs/14 §13.4): make this server the control plane
+# and point launchroomd at the local dashboard.
+cmd_move_takeover() {
+	has_command launchroom:move:takeover || die "this release can't take over a move (launchroom:move:takeover)."
+	artisan launchroom:move:takeover
+	rm -f "$DIR/data/daemon/control-plane.json"
+	{ grep -v '^LR_CONTROL_PLANE_URL=' "$DIR/.env" || true; printf 'LR_CONTROL_PLANE_URL=\n'; } >"$DIR/.env.tmp" && mv "$DIR/.env.tmp" "$DIR/.env"
+	dc up -d launchroomd
+	say "this server is the control plane now. Open Settings → Move launchroom for the checklist."
+}
+
+cmd_restore() {
+	has_command launchroom:restore || die "this release has no restore command yet (launchroom:restore)."
+	dc exec dashboard php artisan launchroom:restore "$@"
+}
+
+# Registry storage (docs/14 §9.11): the dashboard renders Zot's config from
+# Settings → Registry (local disk or S3); `apply` writes it and restarts zot
+# when it changed (pushes and pulls pause for a few seconds).
+cmd_registry() {
+	has_command launchroom:registry:config || die "this release has no registry settings yet (launchroom:registry:config)."
+	case "${1:-}" in
+	show) artisan launchroom:registry:config ;;
+	apply)
+		out="$(artisan launchroom:registry:config --write)" || die "could not write the registry config: $out"
+		if [ "$(printf '%s\n' "$out" | tail -n 1)" = changed ]; then
+			say "registry config written; restarting zot"
+			dc restart zot
+		else
+			say "the registry config is already up to date"
+		fi
+		;;
+	*) die "usage: ./launchroom registry show|apply" ;;
+	esac
+}
+
+cmd_reset_owner_2fa() {
+	[ $# -eq 1 ] || die "usage: ./launchroom reset-owner-2fa EMAIL"
+	confirm "This removes two-factor authentication from the instance owner $1. They must set it up again at the next sign-in. The action is recorded in the audit log." "reset" ||
+		die "aborted"
+	artisan launchroom:owner:reset-2fa "$1"
+}
+
+# Settings → Dashboard domain moved the dashboard to a domain that doesn't
+# work (DNS gone, certificate trouble): APP_URL from .env becomes the
+# dashboard's address again (docs/05 §4.1). Audited; everyone signs in again.
+cmd_dashboard_domain_reset() {
+	# stdin is the confirmation: compose exec must not read it.
+	has_command launchroom:dashboard-domain:reset </dev/null || die "this release has no dashboard domains yet."
+	confirm "This makes $(env_get APP_URL) the dashboard's address again. The other domain keeps forwarding there." "reset" ||
+		die "aborted"
+	artisan launchroom:dashboard-domain:reset --force "$@" </dev/null
+}
+
+# Removes only launchroom's own objects: containers and networks labelled
+# launchroom.managed=true (the compose stack and everything launchroomd
+# created: Caddy, BuildKit, app containers). Volumes, images and this folder
+# (databases, keys, registry) only after a second typed confirmation.
+cmd_uninstall() {
+	confirm "This stops and removes every launchroom container and network on this server (the dashboard, launchroomd and all deployed apps)." "uninstall" ||
+		die "aborted"
+
+	# Remember the images in use before their containers are gone.
+	containers="$(docker ps -aq --filter label=launchroom.managed=true)"
+	images=""
+	# shellcheck disable=SC2086 # word-splitting the id list is intended
+	[ -z "$containers" ] || images="$(docker inspect --format '{{.Image}}' $containers | sort -u)"
+	helper="$(env_get LR_DASHBOARD_IMAGE)"
+
+	dc down --remove-orphans --timeout 30 || true
+	# launchroomd's nftables table (network isolation, docs/05 §1) is kernel
+	# state: remove it with a one-off launchroomd container (host network, NET_ADMIN).
+	# stdin from /dev/null: compose run would otherwise read the confirmations.
+	dc run --rm --no-deps -T launchroomd firewall remove </dev/null >/dev/null 2>&1 ||
+		say "note: could not remove the nftables table inet launchroom (it disappears on reboot)."
+	containers="$(docker ps -aq --filter label=launchroom.managed=true)"
+	# shellcheck disable=SC2086 # word-splitting the id list is intended
+	[ -z "$containers" ] || docker rm -f $containers >/dev/null
+	networks="$(docker network ls -q --filter label=launchroom.managed=true)"
+	# shellcheck disable=SC2086
+	[ -z "$networks" ] || docker network rm $networks >/dev/null
+	say "containers and networks removed."
+
+	if ! confirm "Also delete ALL DATA: databases, keys, registry images, app volumes and the folder $DIR? This cannot be undone." "delete"; then
+		say "kept volumes, images and $DIR. Run this again to delete them."
+		return
+	fi
+	volumes="$(docker volume ls -q --filter label=launchroom.managed=true)"
+	# shellcheck disable=SC2086
+	[ -z "$volumes" ] || docker volume rm $volumes >/dev/null
+	# data/ holds files owned by container users (postgres, the dashboard);
+	# delete them as root through a short-lived container of an image we have.
+	if [ -n "$helper" ]; then
+		docker run --rm --user 0 --entrypoint rm --label launchroom.managed=true -v "$DIR:/target" "$helper" -rf /target/data
+	fi
+	# shellcheck disable=SC2086
+	[ -z "$images" ] || docker image rm -f $images >/dev/null 2>&1 || true
+	rm -rf "$DIR"
+	say "launchroom has been removed from this server."
+}
+
+main() {
+	[ $# -gt 0 ] || { sed -n '3,15p' "$0" | sed 's/^# \{0,1\}//'; exit 0; }
+	command="$1"
+	shift
+	case "$command" in
+	status) cmd_status ;;
+	logs) dc logs -f --tail=200 "$@" ;;
+	update) cmd_update ;;
+	backup) cmd_backup "$@" ;;
+	restore) cmd_restore "$@" ;;
+	registry) cmd_registry "$@" ;;
+	setup-token) artisan launchroom:setup-token ;;
+	reset-owner-2fa) cmd_reset_owner_2fa "$@" ;;
+	dashboard-domain-reset) cmd_dashboard_domain_reset "$@" ;;
+	move-takeover) cmd_move_takeover ;;
+	uninstall) cmd_uninstall ;;
+	-h | --help | help) sed -n '3,15p' "$0" | sed 's/^# \{0,1\}//' ;;
+	*) die "unknown command $command (see ./launchroom help)" ;;
+	esac
+}
+
+main "$@"
