@@ -280,6 +280,9 @@ jobs:
           set -eu
           echo "$CADDY_DIGEST" | grep -Eq '^sha256:[0-9a-f]{64}$' || { echo "::error::no launchroom-caddy digest ($CADDY_DIGEST)"; exit 1; }
           for platform in linux/amd64 linux/arm64; do
+            # The runner's image store keeps one platform per digest ("cannot
+            # overwrite digest"): drop the previous platform's copy first.
+            docker image rm -f "$REF" >/dev/null 2>&1 || true
             pins="$(docker run --rm --pull always --platform "$platform" "$REF" system-images)"
             printf '%s\n' "$pins"
             printf '%s\n' "$pins" | grep -qx "caddy=$CADDY_DIGEST" \
