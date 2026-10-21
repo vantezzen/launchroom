@@ -3,11 +3,14 @@
 #
 #   curl -fsSL https://launchroom.vantezzen.io/install | sh
 #   curl -fsSL https://launchroom.vantezzen.io/install | sh -s -- --domain dash.example.com
+#   curl -fsSL https://launchroom.vantezzen.io/install | sh -s -- --unstable
 #
 # Options:
 #   --dir DIR              install folder (default: $LAUNCHROOM_DIR or ./launchroom)
 #   --domain HOST          dashboard host name (default: <public-ip>.sslip.io)
 #   --version V            release to install (default: latest)
+#   --unstable             install the newest release including pre-releases, and
+#                          offer pre-releases in Settings → Updates (beta channel)
 #   --bundle DIR           use an unpacked bundle (the repo's deploy/ folder) instead
 #                          of downloading one. Not signature-verified: for testing,
 #                          air-gapped installs and development.
@@ -42,6 +45,8 @@
 set -eu
 
 RELEASE_BASE="${LAUNCHROOM_RELEASE_BASE:-https://github.com/vantezzen/launchroom/releases}"
+# Release list for --unstable (newest first, pre-releases included, no drafts).
+RELEASES_API="${LAUNCHROOM_RELEASES_API:-https://api.github.com/repos/vantezzen/launchroom/releases?per_page=20}"
 # cosign v3.0.2, multi-arch index digest. Run as a container: nothing to install.
 COSIGN_IMAGE="ghcr.io/sigstore/cosign/cosign:v3.0.2@sha256:b29487e48205d875c324c79583e2806d9d269c0fa299e0861bbec023d8430c8b"
 # Release identity (docs/09 R30, docs/11 §2): keyless cosign signatures made
@@ -67,6 +72,7 @@ RESTORE_HTTP=0
 KIT=""
 MOVE=0
 MOVE_URL=""
+UNSTABLE=0
 
 # A terminal we can prompt on (also when the script itself comes from a pipe).
 has_tty() { (: </dev/tty) 2>/dev/null; }
@@ -82,6 +88,7 @@ parse_args() {
 		--dir) DIR="${2:?--dir needs a value}"; shift ;;
 		--domain) DOMAIN="${2:?--domain needs a value}"; shift ;;
 		--version) VERSION="${2:?--version needs a value}"; shift ;;
+		--unstable) UNSTABLE=1 ;;
 		--bundle) BUNDLE="${2:?--bundle needs a value}"; shift ;;
 		--no-public-ip-detect) DETECT_IP=0 ;;
 		--skip-port-check) PORT_CHECK=0 ;;
@@ -96,6 +103,9 @@ parse_args() {
 		esac
 		shift
 	done
+	if [ "$UNSTABLE" = 1 ] && [ "$VERSION" != "latest" ]; then
+		die "--unstable picks the newest release itself; use either --unstable or --version"
+	fi
 }
 
 # ---- Checks --------------------------------------------------------------------
@@ -154,6 +164,20 @@ sha256_of() {
 	if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | awk '{ print $1 }'; else shasum -a 256 "$1" | awk '{ print $1 }'; fi
 }
 
+# resolve_unstable: VERSION = the newest published release, pre-releases
+# included. GitHub's "latest" skips pre-releases, so read the release list
+# (newest first) and take the first tag that is a semantic version.
+resolve_unstable() {
+	list="$(download "$RELEASES_API" - 2>/dev/null)" || die "could not read the release list from $RELEASES_API"
+	newest="$(printf '%s' "$list" | grep -o '"tag_name"[[:space:]]*:[[:space:]]*"v[^"]*"' |
+		sed 's/.*"v\([^"]*\)"$/\1/' | while IFS= read -r v; do
+		if is_semver "$v"; then printf '%s\n' "$v"; break; fi
+	done)"
+	[ -n "$newest" ] || die "no release found in $RELEASES_API"
+	VERSION="$newest"
+	say "--unstable: installing $VERSION, the newest release including pre-releases"
+}
+
 # is_semver V: V is MAJOR.MINOR.PATCH[-PRERELEASE][+BUILD] without a leading v.
 is_semver() {
 	printf '%s' "$1" | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$'
@@ -195,6 +219,7 @@ fetch_bundle() {
 		return
 	fi
 
+	[ "$UNSTABLE" = 0 ] || resolve_unstable
 	if [ "$VERSION" = "latest" ]; then base="$RELEASE_BASE/latest/download"; else base="$RELEASE_BASE/download/v$VERSION"; fi
 	tmp="$DIR/.tmp"
 	rm -rf "$tmp" && mkdir -p "$tmp/bundle"
@@ -309,6 +334,8 @@ prepare_folder() {
 
 	apply_url "$(dashboard_url)"
 	env_set LR_HOST_TIMEZONE "$(host_timezone)"
+	# --unstable also offers pre-releases as updates (Settings → Updates can change it).
+	[ "$UNSTABLE" = 0 ] || env_set LR_UPDATES_CHANNEL beta
 
 	# Image pins of this bundle, overridable from the environment.
 	grep -E '^LR_[A-Z_]+_IMAGE=' "$BUNDLE/control-plane/images.env" | while IFS= read -r line; do

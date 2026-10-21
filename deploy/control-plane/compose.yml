@@ -92,6 +92,7 @@ x-dashboard-env: &dashboard-env
   LAUNCHROOM_DASHBOARD_PROBE_ADDRESS: host.docker.internal
   # Chunks of data imports and downloads, encrypted at rest (docs/14 §12.1).
   LAUNCHROOM_TRANSFERS_PATH: /data/transfers
+  LAUNCHROOM_UPDATES_CHANNEL: ${LR_UPDATES_CHANNEL:-stable}
 
 x-dashboard: &dashboard
   image: ${LR_DASHBOARD_IMAGE:?}

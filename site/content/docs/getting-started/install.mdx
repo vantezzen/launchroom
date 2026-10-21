@@ -171,6 +171,7 @@ Run these from inside the install folder.
 | `--dir DIR` | Install folder. Default: `$LAUNCHROOM_DIR`, else `./launchroom`. |
 | `--domain HOST` | Dashboard host name. Default: `<public-ip>.sslip.io`. |
 | `--version V` | Release to install. Default: the latest. |
+| `--unstable` | Install the newest release, including pre-releases, and offer pre-releases as updates. |
 | `--bundle DIR` | Use an unpacked bundle instead of downloading one. Not signature-verified: for air-gapped installs and testing. |
 | `--no-public-ip-detect` | Never contact IP echo services. Needs `--domain`. |
 | `--skip-port-check` | Install even though 80 or 443 are taken. The dashboard is then only reachable on `127.0.0.1:8000`, for example through an SSH tunnel. |

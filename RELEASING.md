@@ -98,7 +98,7 @@ curl -fsSL https://github.com/vantezzen/launchroom/releases/download/v0.1.0/inst
   | sh -s -- --version 0.1.0 --domain dash.example.com
 ```
 
-- **Pre-releases:** `latest` skips them, so always pass `--version` when installing one.
+- **Pre-releases:** `latest` skips them. Pass `--version 0.1.0-rc.1`, or `--unstable` for the newest release including pre-releases (it also sets the update channel to beta).
 - **Install URL:** once the website is deployed, `https://launchroom.vantezzen.io/install` serves the same `install.sh`.
 
 ## Testing self-update
