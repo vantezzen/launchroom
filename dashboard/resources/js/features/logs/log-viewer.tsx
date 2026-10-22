@@ -1,7 +1,6 @@
 import { defaultRangeExtractor, useVirtualizer } from '@tanstack/react-virtual';
 import type { Range } from '@tanstack/react-virtual';
 import {
-    ArrowDown,
     ChevronDown,
     ChevronRight,
     ChevronUp,
@@ -19,6 +18,7 @@ import { Input } from '@/components/ui/input';
 import { Toggle } from '@/components/ui/toggle';
 import { cn } from '@/lib/utils';
 import { stripAnsi } from './ansi';
+import { JumpToLatest, useFollowScroll } from './use-follow-scroll';
 import { AnsiText } from './ansi-text';
 import type { LogSection } from './sections';
 import {
@@ -140,8 +140,6 @@ export function LogViewer({
     const searchRef = useRef<HTMLInputElement>(null);
     const [wrap, setWrap] = useState(false);
     const [timestamps, setTimestamps] = useState(false);
-    const [follow, setFollow] = useState(live && following);
-    const [atBottom, setAtBottom] = useState(true);
     const [query, setQuery] = useState('');
     // -1: matches highlighted, none selected yet (Enter jumps to the first).
     const [matchIndex, setMatchIndex] = useState(-1);
@@ -347,6 +345,17 @@ export function LogViewer({
         ),
     });
 
+    // Follow new output; scrolling up pauses, back at the bottom resumes.
+    const { follow, setFollow, atEdge, unseen, onScroll, jumpToLatest } =
+        useFollowScroll({
+            scrollRef,
+            count: rows.length,
+            live,
+            initial: following,
+            scrollToEdge: () =>
+                virtualizer.scrollToIndex(rows.length - 1, { align: 'end' }),
+        });
+
     // Search matches (plain text, case-insensitive) across all lines.
     const needle = query.trim().toLowerCase();
     const matches = useMemo(
@@ -453,13 +462,6 @@ export function LogViewer({
         return () => window.removeEventListener('hashchange', onHash);
     }, [reveal]);
 
-    // Follow new output.
-    useEffect(() => {
-        if (follow && rows.length > 0) {
-            virtualizer.scrollToIndex(rows.length - 1, { align: 'end' });
-        }
-    }, [follow, rows.length, virtualizer]);
-
     // `/` focuses the log search (docs/08 §4).
     useEffect(() => {
         const onKey = (event: KeyboardEvent) => {
@@ -485,23 +487,6 @@ export function LogViewer({
 
         return () => document.removeEventListener('keydown', onKey);
     }, []);
-
-    const onScroll = () => {
-        const element = scrollRef.current;
-
-        if (!element) {
-            return;
-        }
-
-        const bottom =
-            element.scrollTop + element.clientHeight >=
-            element.scrollHeight - 24;
-        setAtBottom(bottom);
-
-        if (!bottom && follow) {
-            setFollow(false);
-        }
-    };
 
     const toggleSection = (section: LogSection) =>
         setExpanded((current) => {
@@ -769,25 +754,12 @@ export function LogViewer({
                     )}
                 </div>
 
-                {!atBottom && rows.length > 0 && (
-                    <Button
-                        size="sm"
-                        variant="secondary"
-                        className="absolute right-4 bottom-4 shadow-sm"
-                        onClick={() => {
-                            virtualizer.scrollToIndex(rows.length - 1, {
-                                align: 'end',
-                            });
-
-                            if (live) {
-                                setFollow(true);
-                            }
-                        }}
-                    >
-                        <ArrowDown aria-hidden="true" />
-                        Jump to bottom
-                    </Button>
-                )}
+                <JumpToLatest
+                    visible={!atEdge && rows.length > 0}
+                    live={live}
+                    unseen={unseen}
+                    onJump={jumpToLatest}
+                />
             </div>
         </div>
     );

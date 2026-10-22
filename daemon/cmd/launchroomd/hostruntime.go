@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/vantezzen/launchroom/daemon/internal/build/buildkitd"
 	"github.com/vantezzen/launchroom/daemon/internal/docker"
 	"github.com/vantezzen/launchroom/daemon/internal/guard/guardapi"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
@@ -24,6 +25,8 @@ type hostRuntime struct {
 	err   string
 	// buildPlatforms are what the running buildkitd can build (nil: not running).
 	buildPlatforms []state.Platform
+	// builds is the "builds" capability (nil: not a build server).
+	builds *state.HostCapability
 }
 
 const edgePortsInterval = 30 * time.Second
@@ -84,7 +87,43 @@ func (rt *daemonRuntime) runtimeStatus(h *state.HostStatus) *state.HostRuntime {
 	}
 	r := runtimeCapabilities(*f, hostOSOf(rt.cfg.HostOS, f.Engine), ports, perr, fw, h.Mesh)
 	r.BuildPlatforms = platforms
+	rt.hostRT.mu.Lock()
+	if b := rt.hostRT.builds; b != nil {
+		r.Capabilities = append(r.Capabilities, *b)
+	}
+	rt.hostRT.mu.Unlock()
 	return r
+}
+
+// setBuilds records the "builds" capability after a buildkitd sync and
+// reports a change.
+func (rt *daemonRuntime) setBuilds(c *state.HostCapability) {
+	rt.hostRT.mu.Lock()
+	old := rt.hostRT.builds
+	changed := (old == nil) != (c == nil) || old != nil && *old != *c
+	rt.hostRT.builds = c
+	rt.hostRT.mu.Unlock()
+	if changed {
+		rt.kickReport()
+	}
+}
+
+// buildsCapability is the "builds" row (pure, tested): nil when BuildKit is
+// off here; unavailable when the host restricts user namespaces, lacks
+// launchroom's AppArmor profile and buildkitd doesn't answer (D58).
+func buildsCapability(enabled bool, userns buildkitd.Userns, answering bool) *state.HostCapability {
+	if !enabled {
+		return nil
+	}
+	c := &state.HostCapability{Name: state.CapBuilds, State: state.CapabilityFull}
+	switch {
+	case userns == buildkitd.UsernsProfile:
+		c.Message = "Ubuntu restricts user namespaces here; launchroom's AppArmor profile " + buildkitd.AppArmorProfile + " allows them for the build container only"
+	case userns == buildkitd.UsernsBlocked && !answering:
+		c.State = state.CapabilityUnavailable
+		c.Message = "Ubuntu's user-namespace restriction blocks BuildKit here. Re-run the launchroom installer on this server, or run: " + buildkitd.ProfileCommand
+	}
+	return c
 }
 
 // setBuildPlatforms records what the running buildkitd can build (nil when

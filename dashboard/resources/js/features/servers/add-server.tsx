@@ -162,7 +162,7 @@ const PLATFORMS: { value: Platform; label: string; hint: string }[] = [
     {
         value: 'debian',
         label: 'Ubuntu / Debian',
-        hint: 'Installs Docker first if it’s missing.',
+        hint: 'Offers to install Docker if it’s missing.',
     },
     {
         value: 'docker',
@@ -193,10 +193,8 @@ export function InstallCommand({
         machine === 'mac' ? 'macos' : 'debian',
     );
     const [copied, copy] = useClipboard();
-    const full =
-        platform === 'debian'
-            ? `command -v docker >/dev/null || curl -fsSL https://get.docker.com | sh; ${command}`
-            : command;
+    // server.sh offers to install Docker itself when it's missing (it asks first).
+    const full = command;
     const current = PLATFORMS.find((p) => p.value === platform)!;
 
     return (

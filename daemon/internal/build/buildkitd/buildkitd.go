@@ -4,7 +4,9 @@
 // Design (docs/04 §5, docs/09 R1/R23):
 //   - moby/buildkit rootless, with seccomp/AppArmor/systempaths unconfined
 //     (what rootless BuildKit needs to create its own user namespace) but
-//     never --privileged and never --oci-worker-no-process-sandbox;
+//     never --privileged and never --oci-worker-no-process-sandbox; on hosts
+//     that restrict unprivileged user namespaces (Ubuntu 23.10+) AppArmor is
+//     the installer's launchroom-buildkit profile instead (D58, apparmor.go);
 //   - its own bridge network (lr-system-build); build steps share the
 //     daemon's network namespace, which therefore has nothing listening but
 //     a unix socket: there is no TCP API that a build step could reach;
@@ -54,6 +56,13 @@ const (
 	// RegistryPort is the forwarder port on the gateway.
 	RegistryPort = 5000
 
+	// AppArmorProfile is the host profile the installers load on hosts with
+	// kernel.apparmor_restrict_unprivileged_userns=1 (D58): unconfined plus
+	// userns, attached to nothing by path.
+	AppArmorProfile = "launchroom-buildkit"
+	// appArmorUnconfined is the AppArmor setting everywhere else.
+	appArmorUnconfined = "unconfined"
+
 	configDir  = "/home/user/.config/buildkit"
 	configPath = configDir + "/buildkitd.toml"
 	stateDir   = "/home/user/.local/share/buildkit"
@@ -98,6 +107,15 @@ type Options struct {
 	Log      *slog.Logger
 	// DialTimeout bounds connecting to buildkitd (default 30 s).
 	DialTimeout time.Duration
+	// ReadyTimeout bounds how long a build waits for buildkitd to start
+	// (WaitClient, default 2 min).
+	ReadyTimeout time.Duration
+	// UsernsSysctl is the AppArmor user-namespace restriction sysctl read to
+	// explain a crash loop (default /proc/sys/kernel/apparmor_restrict_unprivileged_userns).
+	UsernsSysctl string
+	// AppArmorEnabled is the kernel's AppArmor switch (default
+	// /sys/module/apparmor/parameters/enabled, "Y" when on).
+	AppArmorEnabled string
 }
 
 // Manager converges the system BuildKit container.
@@ -109,6 +127,19 @@ type Manager struct {
 	// platforms is what the container platformsOf names can build (D53).
 	platforms   []state.Platform
 	platformsOf string
+	// synced is set after the first Sync (launchroomd just started: builds
+	// wait for it); enabled is what that Sync was told, syncErr its error.
+	synced  bool
+	enabled bool
+	syncErr error
+	// profile is the AppArmor profile of the running container ("" = none
+	// yet); profileMissing is when starting with AppArmorProfile last
+	// failed because the host has not loaded it (zero = not known missing).
+	profile        string
+	profileMissing time.Time
+
+	// connect dials buildkitd in container id (tests replace it).
+	connect func(ctx context.Context, id string) (*bkclient.Client, error)
 }
 
 // New returns a Manager.
@@ -131,7 +162,18 @@ func New(o Options) *Manager {
 	if o.DialTimeout <= 0 {
 		o.DialTimeout = 30 * time.Second
 	}
-	return &Manager{o: o}
+	if o.ReadyTimeout <= 0 {
+		o.ReadyTimeout = 2 * time.Minute
+	}
+	if o.UsernsSysctl == "" {
+		o.UsernsSysctl = "/proc/sys/kernel/apparmor_restrict_unprivileged_userns"
+	}
+	if o.AppArmorEnabled == "" {
+		o.AppArmorEnabled = "/sys/module/apparmor/parameters/enabled"
+	}
+	m := &Manager{o: o}
+	m.connect = m.dial
+	return m
 }
 
 // Gateway is the build network's gateway, where the daemon's build registry
@@ -180,19 +222,25 @@ func (m *Manager) Config() []byte {
 	return []byte(b.String())
 }
 
-// SpecHash identifies the built-in container spec and config for an image.
-func (m *Manager) SpecHash(image state.ImageRef) string {
+// SpecHash identifies the built-in container spec and config for an image
+// and AppArmor profile ("unconfined" or AppArmorProfile). The unconfined
+// hash is the one of earlier releases, so those containers are kept.
+func (m *Manager) SpecHash(image state.ImageRef, appArmor string) string {
 	sum := sha256.New()
 	_, _ = fmt.Fprintf(sum, "%s|%s|%s|%v|%d|", specVer, image, m.o.Subnet, m.o.CPUs, m.o.MemoryMB)
+	if appArmor != appArmorUnconfined {
+		_, _ = fmt.Fprintf(sum, "apparmor=%s|", appArmor)
+	}
 	sum.Write(m.Config())
 	return hex.EncodeToString(sum.Sum(nil)[:16])
 }
 
-// ContainerSpec is the built-in container spec of the system buildkitd.
-func (m *Manager) ContainerSpec(image state.ImageRef) *docker.ContainerCreate {
+// ContainerSpec is the built-in container spec of the system buildkitd
+// with an AppArmor profile ("unconfined" or AppArmorProfile).
+func (m *Manager) ContainerSpec(image state.ImageRef, appArmor string) *docker.ContainerCreate {
 	labels := docker.ManagedLabels(m.o.ServerID)
 	labels[docker.LabelSystem] = policy.SystemBuildkit
-	labels[docker.LabelSpecHash] = m.SpecHash(image)
+	labels[docker.LabelSpecHash] = m.SpecHash(image, appArmor)
 	pids := int64(32768)
 	res := container.Resources{PidsLimit: &pids}
 	if m.o.MemoryMB > 0 {
@@ -214,9 +262,12 @@ func (m *Manager) ContainerSpec(image state.ImageRef) *docker.ContainerCreate {
 			NetworkMode:   NetworkName,
 			RestartPolicy: container.RestartPolicy{Name: container.RestartPolicyUnlessStopped},
 			// Rootless BuildKit needs to set up its own user namespace; these
-			// options relax only the filters that prevent that (docs/04 §5).
-			// No --privileged, no added capabilities, no host namespaces.
-			SecurityOpt: []string{"seccomp=unconfined", "apparmor=unconfined"},
+			// options relax only the filters that prevent that (docs/04 §5):
+			// AppArmor is unconfined, or the launchroom-buildkit profile
+			// (unconfined plus userns) where the host restricts user
+			// namespaces (D58). No --privileged, no added capabilities, no
+			// host namespaces.
+			SecurityOpt: []string{"seccomp=unconfined", "apparmor=" + appArmor},
 			// systempaths=unconfined: no masked or read-only /proc and /sys paths
 			// (the Engine API form of the CLI option), so it can mount its own /proc.
 			MaskedPaths:   []string{},
@@ -237,21 +288,26 @@ func (m *Manager) ContainerSpec(image state.ImageRef) *docker.ContainerCreate {
 func (m *Manager) Sync(ctx context.Context, sys state.SystemContainer) error {
 	if !sys.Enabled {
 		m.mu.Lock()
-		m.running = ""
+		m.running, m.synced, m.enabled, m.syncErr, m.profile = "", true, false, nil, ""
 		m.mu.Unlock()
 		return m.remove(ctx)
 	}
-	if err := policy.CheckSystemImage(policy.SystemBuildkit, sys.Image, m.o.Policy); err != nil {
-		return err
-	}
-	if err := m.ensureNetwork(ctx); err != nil {
-		return err
-	}
-	id, err := m.ensureContainer(ctx, sys.Image)
+	id, err := m.sync(ctx, sys.Image)
 	m.mu.Lock()
 	m.running = id
+	m.synced, m.enabled, m.syncErr = true, true, err
 	m.mu.Unlock()
 	return err
+}
+
+func (m *Manager) sync(ctx context.Context, image state.ImageRef) (string, error) {
+	if err := policy.CheckSystemImage(policy.SystemBuildkit, image, m.o.Policy); err != nil {
+		return "", err
+	}
+	if err := m.ensureNetwork(ctx); err != nil {
+		return "", err
+	}
+	return m.ensureProfiled(ctx, image)
 }
 
 // Platforms returns the platforms the running buildkitd can build for: its
@@ -358,8 +414,8 @@ func (m *Manager) ensureNetwork(ctx context.Context) error {
 	return err
 }
 
-func (m *Manager) ensureContainer(ctx context.Context, image state.ImageRef) (string, error) {
-	hash := m.SpecHash(image)
+func (m *Manager) ensureContainer(ctx context.Context, image state.ImageRef, appArmor string) (string, error) {
+	hash := m.SpecHash(image, appArmor)
 	cs, err := m.list(ctx)
 	if err != nil {
 		return "", err
@@ -396,7 +452,7 @@ func (m *Manager) ensureContainer(ctx context.Context, image state.ImageRef) (st
 				return "", err
 			}
 		}
-		id, err := m.o.Docker.CreateContainer(ctx, m.ContainerSpec(image))
+		id, err := m.o.Docker.CreateContainer(ctx, m.ContainerSpec(image, appArmor))
 		if err != nil {
 			return "", err
 		}
@@ -409,6 +465,12 @@ func (m *Manager) ensureContainer(ctx context.Context, image state.ImageRef) (st
 			return "", err
 		}
 		current = &c
+	}
+	if current.Restarting && current.RestartCount >= crashRestarts {
+		// Docker's restart policy keeps it going; builds wait for it and
+		// fail with its diagnosis (WaitClient) when it never comes up.
+		m.o.Log.Warn("system buildkitd keeps restarting", "restarts", current.RestartCount,
+			"exitCode", current.ExitCode, "oomKilled", current.OOMKilled)
 	}
 	if !current.Running {
 		if err := m.o.Docker.StartContainer(ctx, current.ID); err != nil {
@@ -435,8 +497,9 @@ func configArchive(cfg []byte) *bytes.Reader {
 // ErrNotRunning means the server has no running buildkitd (no build role).
 var ErrNotRunning = errors.New("buildkitd is not running on this server (build role disabled or not started yet)")
 
-// Client connects to the running buildkitd and waits until it answers.
-// The caller closes the client.
+// Client connects to the running buildkitd and waits until it answers
+// (DialTimeout). Builds use WaitClient, which also waits for a starting or
+// restarting container. The caller closes the client.
 func (m *Manager) Client(ctx context.Context) (*bkclient.Client, error) {
 	m.mu.Lock()
 	id := m.running
@@ -444,6 +507,12 @@ func (m *Manager) Client(ctx context.Context) (*bkclient.Client, error) {
 	if id == "" {
 		return nil, ErrNotRunning
 	}
+	return m.connect(ctx, id)
+}
+
+// dial connects through `buildctl dial-stdio` and retries until buildkitd
+// lists its workers or DialTimeout passes.
+func (m *Manager) dial(ctx context.Context, id string) (*bkclient.Client, error) {
 	dial := func(ctx context.Context, _ string) (net.Conn, error) {
 		return m.o.Ops.DialExec(ctx, id, []string{"buildctl", "dial-stdio"})
 	}

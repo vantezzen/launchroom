@@ -25,6 +25,7 @@ import { ServerRoles } from '@/features/servers/server-roles';
 import { ServerRuntime } from '@/features/servers/server-runtime';
 import { ServerSettings } from '@/features/servers/server-settings';
 import { ServerUsage, WhatRunsHere } from '@/features/servers/server-usage';
+import { SmallServerHint } from '@/features/servers/small-server-hint';
 import {
     ServerMetricsLiveUpdates,
     useServerMetrics,
@@ -55,6 +56,8 @@ type Props = {
     retiredVolumes?: App.Data.Servers.RetiredVolumeData[];
     placement?: App.Data.Servers.ServerPlacementData;
     roleHints?: App.Data.Servers.RoleHintData[];
+    /** Overview, Settings: "This server is small" (docs/08 §14). */
+    smallServerHint?: App.Data.Servers.SmallServerHintData | null;
     /** Overview, Network (deferred). */
     meshPeers?: App.Data.Servers.MeshPeerData[];
     /** Network. */
@@ -232,6 +235,7 @@ export default function ShowServer({
     canUpdateRoles,
     roleLimits,
     roleHints,
+    smallServerHint = null,
     replace,
     edge,
     teamId,
@@ -306,6 +310,10 @@ export default function ShowServer({
 
                 {tab === 'overview' && (
                     <>
+                        {smallServerHint && !revoked && (
+                            <SmallServerHint hint={smallServerHint} />
+                        )}
+
                         {!revoked && (
                             <ServerUsage
                                 metrics={metrics.data}

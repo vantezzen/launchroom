@@ -265,3 +265,29 @@ func TestLoadDataTransfers(t *testing.T) {
 		t.Fatal("invalid value accepted")
 	}
 }
+
+func TestLoadPublicIP(t *testing.T) {
+	base := map[string]string{EnvControlPlaneURL: "https://dash.example.com"}
+	cfg, err := Load(nil, envOf(base), noFile)
+	if err != nil || cfg.PublicIPDetectOff || cfg.PublicIPs != nil {
+		t.Fatalf("defaults: %+v %v", cfg.PublicIPs, err)
+	}
+	with := func(k, v string) map[string]string {
+		m := map[string]string{EnvControlPlaneURL: "https://dash.example.com"}
+		m[k] = v
+		return m
+	}
+	cfg, err = Load(nil, envOf(with(EnvPublicIPDetect, "OFF")), noFile)
+	if err != nil || !cfg.PublicIPDetectOff {
+		t.Fatalf("off: %v", err)
+	}
+	cfg, err = Load(nil, envOf(with(EnvPublicIPs, "93.184.216.34,2a01:4f8::1")), noFile)
+	if err != nil || cfg.PublicIPs == nil || cfg.PublicIPs.IPv4 != "93.184.216.34" || cfg.PublicIPs.IPv6 != "2a01:4f8::1" {
+		t.Fatalf("configured: %+v %v", cfg.PublicIPs, err)
+	}
+	for k, v := range map[string]string{EnvPublicIPDetect: "maybe", EnvPublicIPs: "172.18.0.1"} {
+		if _, err := Load(nil, envOf(with(k, v)), noFile); err == nil || !strings.Contains(err.Error(), k) {
+			t.Errorf("%s=%s: %v", k, v, err)
+		}
+	}
+}

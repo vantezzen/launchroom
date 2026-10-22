@@ -87,6 +87,44 @@ final class FailureCatalogue
                     params: ['trigger' => 'plan_failed'],
                 ),
             ],
+            // BuildKit on the build server could not be reached (launchroomd's
+            // buildkitd readiness hints, daemon/internal/build/buildkitd/ready.go).
+            [
+                'key' => 'buildkit_userns',
+                'classes' => [DeploymentFailureClass::Transient],
+                'hints' => ['buildkit-userns-restricted'],
+                'patterns' => ['/apparmor_restrict_unprivileged_userns/'],
+                'explain' => static fn (): FailureExplanationData => new FailureExplanationData(
+                    key: 'buildkit_userns',
+                    title: 'This server blocks what builds need',
+                    cause: 'Ubuntu 23.10 and later restrict the user namespaces that launchroom’s rootless BuildKit uses, and this server doesn’t have launchroom’s AppArmor profile that allows them for the build container, so BuildKit stops right after it starts.',
+                    fix: 'Run the launchroom installer on the server again and answer yes when it asks about builds. It loads the AppArmor profile /etc/apparmor.d/launchroom-buildkit, which allows user namespaces for launchroom’s build container only; the restriction stays on for everything else. launchroom switches to the profile within a few minutes. Then redeploy. The exact commands to run by hand are in the build log and in the docs under Troubleshooting → Builds.',
+                ),
+            ],
+            [
+                'key' => 'buildkit_oom',
+                'classes' => [DeploymentFailureClass::Transient],
+                'hints' => ['buildkit-oom'],
+                'patterns' => [],
+                'explain' => static fn (): FailureExplanationData => new FailureExplanationData(
+                    key: 'buildkit_oom',
+                    title: 'The build server ran out of memory',
+                    cause: 'BuildKit was stopped because the server had no memory left. Small servers that also run launchroom itself get tight while they build.',
+                    fix: 'Add swap or memory to the server, or add a bigger build server, then redeploy.',
+                ),
+            ],
+            [
+                'key' => 'buildkit_unavailable',
+                'classes' => [DeploymentFailureClass::Transient],
+                'hints' => ['buildkit-crash-loop', 'buildkit-not-ready'],
+                'patterns' => ['/buildkitd(?:: not ready| keeps restarting| did not become ready| is not running)/i'],
+                'explain' => static fn (): FailureExplanationData => new FailureExplanationData(
+                    key: 'buildkit_unavailable',
+                    title: 'BuildKit did not start on the build server',
+                    cause: 'BuildKit, which builds your image on the server, kept restarting or did not answer in time. launchroom waited and retried once.',
+                    fix: 'Redeploy to try again. If it keeps failing, BuildKit’s last log lines in the build log say why; low free memory or disk on the server is the usual cause.',
+                ),
+            ],
             [
                 'key' => 'no_start_command',
                 'classes' => $build,

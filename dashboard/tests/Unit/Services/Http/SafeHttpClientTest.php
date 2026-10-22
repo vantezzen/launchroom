@@ -51,6 +51,15 @@ test('sends requests to vetted URLs', function (): void {
         && $request->method() === 'GET');
 });
 
+test('keeps the query string of the URL when no query is passed', function (): void {
+    Http::fake(['https://example.com/*' => Http::response('ok')]);
+
+    // Signed storage URLs (GitHub release assets) carry their signature here.
+    safeClient()->get('https://example.com/asset?sig=abc&se=2026');
+
+    Http::assertSent(fn (Request $request): bool => $request->url() === 'https://example.com/asset?sig=abc&se=2026');
+});
+
 test('posts JSON to vetted URLs', function (): void {
     Http::fake(['https://example.com/*' => Http::response(status: 204)]);
 

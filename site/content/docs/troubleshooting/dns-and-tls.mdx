@@ -15,8 +15,16 @@ launchroom asks public resolvers (Cloudflare's `1.1.1.1` and Google's `8.8.8.8`)
 |---|---|
 | **DNS verified** / Points at your servers | Every A and AAAA record points at one of your edge servers. |
 | **No DNS record yet** | The resolvers found no A or AAAA record for the name. |
-| **DNS points elsewhere** | At least one record points at an address that isn't one of your edge servers. |
+| **DNS points elsewhere** | At least one record points at an address that isn't one of your edge servers, and the HTTP check didn't reach your server. |
+| **Reached through a proxy** / **Behind a proxy, not confirmed** | The records point at a proxy such as Cloudflare. See [Behind a proxy](#behind-a-proxy). |
 | **Can't compare yet** | The name resolves, but no edge server has a known public address to compare it with. |
+
+## The DNS record shows the wrong address
+
+The record to create shows your server's public IP as your server sees it. launchroomd asks IP echo services (`api.ipify.org`, `icanhazip.com`, `ifconfig.me`) at start and every 6 hours. Private, CGNAT and Docker addresses such as `172.18.0.1` are never shown. While no public address is known, the step says so instead of showing a record.
+
+- The server's outgoing address differs from the one visitors reach (a NAT gateway, a floating IP): set `LR_PUBLIC_IPS=<ipv4>` (optionally `,<ipv6>`) in the install folder's `.env`, then run `docker compose up -d` in that folder. launchroomd then reports these addresses and contacts no echo service.
+- To keep launchroomd from contacting echo services at all, set `LR_PUBLIC_IP_DETECT=off` the same way, together with `LR_PUBLIC_IPS`.
 | **DNS check failed** / Check didn't answer | No resolver answered. Usually temporary. |
 
 The DNS check is for information only and never changes routing. A domain whose records are right works even while the card still waits for the next check.
@@ -42,20 +50,35 @@ The card's message names the addresses: "shop.example.com points at 203.0.113.9,
 
 - An old A record from a previous host is still there next to the new one. Visitors then land on either server at random.
 - An **AAAA record** still points at an old IPv6 address. Browsers prefer IPv6, so this one breaks the site for many visitors even when the A record is right.
-- The record goes through a proxy or CDN (see the next section).
+- The record goes through a proxy or CDN. See [Behind a proxy](#behind-a-proxy).
 - You moved the edge role to another server and the records still point at the old one.
 
 **Fix.** Make the records match the addresses on the card. Remove the extra records, including AAAA records you didn't mean to keep.
 
-## Proxied DNS (Cloudflare's orange cloud)
+## Behind a proxy
 
-When a DNS record is proxied, public resolvers return the proxy's addresses instead of your server's. launchroom then reports **DNS points elsewhere**, and a few other things change:
+When a DNS record is proxied (Cloudflare's orange cloud), public resolvers return the proxy's addresses instead of your server's. launchroom then checks over HTTP whether requests still arrive at your server: it fetches `http://<name>/.well-known/launchroom/check/<random token>` through public DNS, and your edge server answers with the token signed by its own key. A new token is used for every check, and the request only goes to public addresses.
 
-- **Certificates for custom domains** are issued when the first request reaches your edge server. Through a proxy, that depends on the proxy forwarding HTTPS to your server and passing Let's Encrypt's validation requests through. A proxy rule that forces HTTPS for everything or answers port 80 itself can block the validation.
-- **Generated domains** sit two levels below your platform domain (`web-production.shop.apps.example.com`). A proxy's standard certificate usually covers only one level of subdomain, so visitors get a certificate error from the proxy itself.
-- **Visitor addresses** in your app and logs are the proxy's addresses unless your app reads the proxy's client IP header.
+| What the check says | Meaning |
+|---|---|
+| **Reached through a proxy (Cloudflare)** | The records point at Cloudflare and the signed answer came from one of your servers. |
+| **Reaches your server** | The records point at another address (an unknown proxy, a NAT port forward) and the signed answer came from one of your servers. |
+| **Behind a proxy, not confirmed** | The records point at Cloudflare, but no signed answer came back. The message says why, for example "the proxy could not reach your server (HTTP 522)". |
 
-**Fix.** Use DNS only (grey cloud) for records that point at launchroom, at least until the certificate is issued and the site works. If you want the proxy afterwards, set its SSL mode to full (strict), which works because your edge serves a valid certificate. For the platform wildcard, keep it DNS only.
+**Behind a proxy, not confirmed.** Check these:
+
+- Inbound TCP 80 and 443 are open on the edge server.
+- A proxy rule doesn't answer the request itself, and doesn't redirect it anywhere except to the same address over HTTPS.
+- The edge server runs a current launchroom version. Older versions answer the check with HTTP 404.
+
+**TLS behind Cloudflare.**
+
+- Set **SSL/TLS** to **Full (strict)**. Flexible sends plain HTTP to your server, which redirects to HTTPS, and the browser loops.
+- Your server gets its certificates from Let's Encrypt over HTTP (HTTP-01), which passes through the proxy. If a rule forces HTTPS for every request, set the record to DNS only until the certificate is issued, or add a Cloudflare API token under **Settings → Network** so launchroom uses DNS validation (DNS-01), which doesn't depend on the proxy.
+- **Generated domains** sit two levels below your platform domain (`web-production.shop.apps.example.com`). Cloudflare's free edge certificate covers one level of subdomains only, so visitors get a certificate error from Cloudflare. Keep the platform wildcard **DNS only**, or use a Cloudflare certificate that covers these names.
+- **Visitor addresses** in your app and logs are Cloudflare's unless your app reads the `CF-Connecting-IP` header.
+
+Custom domains (one level, such as `shop.example.com`) and the dashboard domain work behind the proxy with Full (strict).
 
 ## Certificate couldn't be issued
 

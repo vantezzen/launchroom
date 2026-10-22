@@ -59,6 +59,11 @@ type Options struct {
 	// a route's clientAuth (mTLS, docs/03 §4.3) is honoured only when every
 	// upstream is one of them (local policy floor, docs/03 §8).
 	LocalUpstreams []string
+	// ReachabilityDial is the loopback ip:port of launchroomd's ask server:
+	// when set, ReachabilityPath on every host (HTTP and HTTPS, before any
+	// route) is proxied there, so the dashboard can confirm a domain reaches
+	// this server even behind a proxy (docs/05 §5). Empty = no such route.
+	ReachabilityDial string
 }
 
 // AccessLogger is the name of the access logger of the HTTPS server.
@@ -372,6 +377,18 @@ func RenderTLS(routes []Route, t TLS, o Options) ([]byte, error) {
 
 	httpsRoutes := []any{}
 	httpRoutes := []any{}
+	if o.ReachabilityDial != "" {
+		if ap, err := netip.ParseAddrPort(o.ReachabilityDial); err != nil || !ap.Addr().IsLoopback() || ap.Port() == 0 {
+			return nil, errors.New("caddy: the reachability dial must be a loopback ip:port")
+		}
+		check := obj{
+			"match":    []any{obj{"path": []string{ReachabilityPath + "*"}}},
+			"handle":   []any{obj{"handler": "reverse_proxy", "upstreams": []any{obj{"dial": o.ReachabilityDial}}}},
+			"terminal": true,
+		}
+		httpsRoutes = append(httpsRoutes, check)
+		httpRoutes = append(httpRoutes, check)
+	}
 	var acmeHosts, internalHosts, onDemandHosts []string
 	wildcards := map[string]bool{}
 	seen := map[string]bool{}

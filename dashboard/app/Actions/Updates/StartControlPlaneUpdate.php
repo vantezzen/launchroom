@@ -59,7 +59,7 @@ final readonly class StartControlPlaneUpdate
         $release = $this->release($input->version);
 
         if ($release->daemonImage === null) {
-            throw DomainRuleViolation::on('version', 'This release does not publish digest-pinned images (images.env), so it cannot be installed from the dashboard.');
+            throw DomainRuleViolation::on('version', ($release->cannotInstallReason ?? 'This release does not pin its images by digest.')." Install it with the installer instead: {$release->installerCommand}");
         }
 
         $update = DB::transaction(function () use ($user, $input, $release, $current, $automatic): ControlPlaneUpdate {

@@ -107,6 +107,22 @@ func TestPresetTable(t *testing.T) {
 			},
 		},
 		{
+			// The repo's own site/ (D52): a plain Next.js 16 app (fumadocs MDX
+			// wrapper, no output, no custom server) gets the adapter.
+			repo: "launchroom-site", info: Info{Provider: "node", Metadata: map[string]string{"nodeRuntime": "next"}}, preset: "nextjs",
+			check: func(t *testing.T, r *Result) {
+				if !slices.Contains(decisionIDs(r), NextAdapterDecision) || slices.Contains(decisionIDs(r), "standalone") {
+					t.Fatalf("decisions = %v", decisionIDs(r))
+				}
+				if r.Plan.StartCommand != "node .next/standalone/server.js" || !slices.Equal(r.Plan.DeployOnly, []string{".next/standalone"}) {
+					t.Fatalf("plan = %q %v", r.Plan.StartCommand, r.Plan.DeployOnly)
+				}
+				if slices.Contains(warningCodes(r), "own-next-adapter") || slices.Contains(warningCodes(r), "standalone-off") {
+					t.Fatalf("warnings = %v", warningCodes(r))
+				}
+			},
+		},
+		{
 			repo: "nextjs-own-adapter", info: Info{Provider: "node"}, preset: "nextjs",
 			check: func(t *testing.T, r *Result) {
 				if slices.Contains(decisionIDs(r), NextAdapterDecision) || !slices.Contains(decisionIDs(r), "standalone") {

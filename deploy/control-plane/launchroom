@@ -148,6 +148,8 @@ cmd_uninstall() {
 
 	if ! confirm "Also delete ALL DATA: databases, keys, registry images, app volumes and the folder $DIR? This cannot be undone." "delete"; then
 		say "kept volumes, images and $DIR. Run this again to delete them."
+		inotify_note
+		apparmor_note
 		return
 	fi
 	volumes="$(docker volume ls -q --filter label=launchroom.managed=true)"
@@ -162,6 +164,28 @@ cmd_uninstall() {
 	[ -z "$images" ] || docker image rm -f $images >/dev/null 2>&1 || true
 	rm -rf "$DIR"
 	say "launchroom has been removed from this server."
+	inotify_note
+	apparmor_note
+}
+
+# inotify_note: the installer may have raised the kernel's inotify limits
+# (after asking). They stay: deleting the file does not lower the running
+# values, other software may rely on them by now, and higher limits cost
+# nothing while unused. Undoing it is a root step left to the owner.
+inotify_note() {
+	[ -f /etc/sysctl.d/60-launchroom-inotify.conf ] || return 0
+	say "the installer raised this server's inotify limits in /etc/sysctl.d/60-launchroom-inotify.conf."
+	say "they stay; to undo them, delete that file and reboot (the file names the earlier values)."
+}
+
+# apparmor_note: the installer may have loaded the AppArmor profile that
+# lets launchroom's build container create a user namespace (D58). It stays:
+# uninstall doesn't run as root, and the profile is attached to no program,
+# so without launchroom's container nothing uses it.
+apparmor_note() {
+	[ -f /etc/apparmor.d/launchroom-buildkit ] || return 0
+	say "the installer loaded the AppArmor profile /etc/apparmor.d/launchroom-buildkit (only launchroom's build container used it)."
+	say "to remove it, as root: apparmor_parser -R /etc/apparmor.d/launchroom-buildkit && rm /etc/apparmor.d/launchroom-buildkit"
 }
 
 main() {

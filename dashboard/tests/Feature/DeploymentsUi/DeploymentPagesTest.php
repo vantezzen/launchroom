@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\Deployments\RedeployService;
 use App\Data\Audit\AuditActor;
+use App\Enums\DeploymentFailureClass;
 use App\Enums\DeploymentStatus;
 use App\Enums\DeploymentTrigger;
 use App\Enums\TeamRole;
@@ -113,6 +114,36 @@ test('redeploy: developers create a manual deployment of the last revision, view
     expect($created->id)->not->toBe($active->id)
         ->and($created->trigger)->toBe(DeploymentTrigger::Manual)
         ->and($created->revision_id)->toBe($active->revision_id);
+});
+
+test('redeploy of a failed deployment lands on the new deployment with its own logs', function (): void {
+    $world = DeploymentUi::make();
+    $failed = $world->latest($world->web);
+    $failed->forceFill(['status' => DeploymentStatus::Failed, 'failure_class' => DeploymentFailureClass::Transient, 'failure_message' => 'Build failed (setup): buildkitd: not ready'])->save();
+    $world->logs($failed, ['Connecting to BuildKit', 'error: buildkitd: not ready']);
+    $developer = $world->member(TeamRole::Developer);
+
+    $response = $this->actingAs($developer)->post(route('deployments.redeploy', $world->deploymentArgs($failed)));
+    $created = $world->latest($world->web);
+
+    expect($created->id)->not->toBe($failed->id);
+    $response->assertRedirect(route('deployments.show', $world->deploymentArgs($created)));
+
+    // The page Inertia renders after the redirect is the new deployment's:
+    // its detail and its first log page, none of the failed one's lines.
+    $page = $this->actingAs($developer)
+        ->get(route('deployments.show', $world->deploymentArgs($created)))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page): Assert => $page
+            ->component('projects/deployments/show')
+            ->where('detail.deployment.id', $created->public_id));
+
+    $lines = $page->viewData('page')['props']['logs']['lines'];
+    expect(collect($lines)->pluck('text')->all())->not->toContain('error: buildkitd: not ready');
+
+    $world->logs($created, ['Waiting for BuildKit to start…']);
+    $next = $this->actingAs($developer)->getJson(route('deployments.logs', $world->deploymentArgs($created)))->assertOk()->json();
+    expect(array_column($next['lines'], 'text'))->toBe(['Waiting for BuildKit to start…']);
 });
 
 test('redeploy is refused before the environment was ever deployed', function (): void {

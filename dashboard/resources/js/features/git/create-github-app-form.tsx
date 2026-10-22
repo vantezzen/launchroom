@@ -14,8 +14,9 @@ import { store } from '@/routes/git/github/manifest';
 
 /**
  * Starts the GitHub App manifest flow: GitHub creates an app with the
- * permissions launchroom needs and hands its credentials back. One button;
- * the organization and GitHub Enterprise Server are optional details.
+ * permissions launchroom needs and hands its credentials back (step 1 of
+ * GitHubSetupSteps). One button; the organization and GitHub Enterprise
+ * Server are optional details.
  */
 export function CreateGitHubAppForm({ primary }: { primary: boolean }) {
     return (
@@ -84,7 +85,9 @@ export function CreateGitHubAppForm({ primary }: { primary: boolean }) {
                             disabled={processing}
                         >
                             {processing && <Spinner />}
-                            {primary ? 'Connect GitHub' : 'Create another app'}
+                            {primary
+                                ? 'Create the app on GitHub'
+                                : 'Create another app'}
                         </Button>
                     </div>
                 </>

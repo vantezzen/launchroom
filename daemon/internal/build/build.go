@@ -32,8 +32,10 @@ import (
 
 // Options configures a Builder.
 type Options struct {
-	// BuildKit connects to the local buildkitd (buildkitd.Manager.Client).
-	BuildKit func(ctx context.Context) (*bkclient.Client, error)
+	// BuildKit connects to the local buildkitd (buildkitd.Manager.WaitClient):
+	// it waits a bounded time for a starting or restarting buildkitd and
+	// reports progress lines through waiting.
+	BuildKit func(ctx context.Context, waiting func(line string)) (*bkclient.Client, error)
 	// Tokens issues registry tokens for pushes and mirror pulls.
 	Tokens TokenSource
 	// RegistryHost is how buildkitd reaches the launchroom registry
@@ -518,9 +520,9 @@ func (b *Builder) build(ctx context.Context, job *Job, dir, work string, r *reso
 		}
 	}
 	sink.Line("setup", state.StreamStdout, "Connecting to BuildKit")
-	c, err := b.o.BuildKit(ctx)
+	c, err := b.o.BuildKit(ctx, func(line string) { sink.Line("setup", state.StreamStdout, line) })
 	if err != nil {
-		return "", fail(state.FailureInternal, "setup", err)
+		return "", buildkitUnavailable(err, sink)
 	}
 	defer func() { _ = c.Close() }()
 

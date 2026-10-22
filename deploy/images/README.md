@@ -38,6 +38,19 @@ Targets:
   The image healthcheck probes `GET /up` on :8000; worker services should
   disable or replace it in their compose definition.
 
+- Multi-arch: `docker buildx build --platform linux/amd64,linux/arm64 …`. The
+  stages `build-php` (the same FrankenPHP base, extensions and `php.ini`
+  overrides as `base`), `vendor` (composer, `--no-dev`) and `assets` (Vite, with
+  the wayfinder plugin calling `php artisan`) run on the **build** platform, once,
+  because their output is platform-independent. Only `base`/`production` run
+  per target platform (OS packages, PHP extensions, users, copies), so an
+  emulated platform only pays for those. (Releases build each platform on a
+  native runner anyway, because compiling the PHP extensions is the slow part
+  under QEMU: `.github/workflows/release.yml`, jobs `dashboard-platform` and
+  `dashboard`.) Composer runs with the same PHP and
+  extensions as the image, so platform requirements are checked as on the
+  target (no `--ignore-platform-reqs`).
+
 - `dev`: no app code (dev/compose.yml bind-mounts `dashboard/`), development
   `php.ini`, composer and Node 24 included (the Vite wayfinder plugin calls
   `php artisan`). The user matches the host UID/GID (`--build-arg UID=… GID=…`).
@@ -63,7 +76,7 @@ docker buildx build --platform linux/amd64,linux/arm64 -t ghcr.io/vantezzen/laun
 
 Base images (`caddy:2.11.7-builder`, `caddy:2.11.7`) and module versions are pinned in the Dockerfile; the build fails if a module is missing. launchroomd only runs a Caddy image whose digest it knows (docs/09 R31), so **every release pins the multi-arch index digest twice, from the same build** (`.github/workflows/release.yml`, nothing to edit by hand):
 
-1. In launchroomd: the `caddy` job builds and signs launchroom-caddy first; the `images` job builds launchroomd with `--build-arg CADDY_DIGEST=<that digest>`, which `daemon/Dockerfile` compiles into `policy.DefaultSystemImageDigests[caddy]` (`-X …/internal/policy.launchroomCaddyDigest`). A release build accepts only that digest; a dev build (no `CADDY_DIGEST`) only the stock `caddy:2.11.7` digest. `launchroomd system-images` prints the pins; the workflow refuses to sign a launchroomd that doesn't pin the caddy digest. Servers get the pin with launchroomd itself: the control plane from `images.env`, joined servers through `server.sh` (same release's launchroomd), every server again with each self-update. An edge on the previous release keeps its running pinned Caddy until it is updated (docs/05 §4).
+1. In launchroomd: the `caddy` job builds and signs launchroom-caddy first; the `daemon` job then builds launchroomd with `--build-arg CADDY_DIGEST=<that digest>`, which `daemon/Dockerfile` compiles into `policy.DefaultSystemImageDigests[caddy]` (`-X …/internal/policy.launchroomCaddyDigest`). A release build accepts only that digest; a dev build (no `CADDY_DIGEST`) only the stock `caddy:2.11.7` digest. `launchroomd system-images` prints the pins; the workflow refuses to sign a launchroomd that doesn't pin the caddy digest. Servers get the pin with launchroomd itself: the control plane from `images.env`, joined servers through `server.sh` (same release's launchroomd), every server again with each self-update. An edge on the previous release keeps its running pinned Caddy until it is updated (docs/05 §4).
 2. In the bundle: `deploy/release/build-bundle.sh --caddy-image` (required) writes `LR_CADDY_IMAGE=ghcr.io/vantezzen/launchroom-caddy@sha256:…` into `control-plane/images.env`; `deploy/control-plane/compose.yml` passes it to the dashboard as `LAUNCHROOM_CADDY_IMAGE` (with `LAUNCHROOM_CADDY_MODULES` derived from the name, so shared storage and DNS-01 are on; `LAUNCHROOM_CADDY_DNS_PROVIDERS` empty = all of this release's providers), which puts it into edge NodeStates.
 
 Local builds (`make caddy-image`, `make caddy-image-load`) are pinned on the server with `LR_SYSTEM_IMAGE_DIGESTS=caddy=sha256:…` (host config; the dashboard can never widen the allow-list), docs/11 §6.

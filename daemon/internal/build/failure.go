@@ -115,6 +115,40 @@ func classifySolve(err error, step string, logTail string) *Error {
 	return e
 }
 
+// hintCarrier is an error with its own known-error hints (buildkitd.NotReadyError).
+type hintCarrier interface {
+	Hints() []state.FailureHint
+}
+
+// logTailCarrier is an error carrying log lines worth showing (buildkitd's last lines).
+type logTailCarrier interface {
+	Logs() []string
+}
+
+// buildkitUnavailable classifies a failure to reach buildkitd: internal
+// (retried once by the dashboard), with buildkitd's own diagnosis as hints
+// and its last log lines in the build log.
+func buildkitUnavailable(err error, sink LogSink) *Error {
+	e := fail(state.FailureInternal, "setup", err)
+	var hc hintCarrier
+	switch {
+	case errors.As(err, &hc):
+		e.Hints = hc.Hints()
+	case errors.Is(err, context.DeadlineExceeded):
+		e.Class = state.FailureTimeout // the task deadline passed while waiting
+	}
+	var lc logTailCarrier
+	if errors.As(err, &lc) && sink != nil {
+		if lines := lc.Logs(); len(lines) > 0 {
+			sink.Line("setup", state.StreamStderr, "BuildKit's last log lines:")
+			for _, l := range lines {
+				sink.Line("setup", state.StreamStderr, "  "+l)
+			}
+		}
+	}
+	return e
+}
+
 func isNetErr(err error) bool {
 	var ne net.Error
 	var oe *net.OpError

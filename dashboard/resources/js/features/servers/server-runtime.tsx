@@ -16,6 +16,7 @@ const labels: Record<Capability, string> = {
     mesh: 'Private network',
     portDiscovery: 'Port detection',
     workloads: 'Apps',
+    builds: 'Builds',
 };
 
 const order = Object.keys(labels) as Capability[];
@@ -41,6 +42,7 @@ const consequences: Record<Capability, string> = {
         'launchroom can’t detect which port an app listens on. Set the port in the service’s settings.',
     workloads:
         'Apps here can’t be reached from your other servers, so this server only builds.',
+    builds: 'Ubuntu’s user-namespace restriction stops builds here. Run the launchroom installer on this server again and allow launchroom’s build profile, or run the command shown in the Builds row.',
 };
 
 const engines: Record<App.Enums.Servers.DockerEngine, string> = {

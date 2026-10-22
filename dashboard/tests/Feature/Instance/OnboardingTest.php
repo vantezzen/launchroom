@@ -50,10 +50,13 @@ test('steps are derived from real state', function (): void {
     GitHubFake::setUp();
     GitHubFake::installation(GitHubFake::app($this->team));
     Projects::create($this->team);
-    InstanceSettings::current()->forceFill(['apps_domain' => 'apps.example.com'])->save();
+    InstanceSettings::current()->forceFill(['apps_domain' => 'apps.example.com', 'onboarding' => [
+        'domainConfirmed' => ['domain' => 'apps.example.com', 'verified' => true, 'at' => now()->toIso8601ZuluString()],
+    ]])->save();
 
     $this->actingAs($this->owner)->get(route('onboarding.show'))
         ->assertInertia(fn ($page) => $page
+            ->where('onboarding.appsDomainVerified', true)
             ->where('onboarding.server.id', $server->public_id)
             ->where('onboarding.server.status', 'online')
             ->where('onboarding.serverAddress', '203.0.113.7')
@@ -111,6 +114,53 @@ test('the platform domain is validated, audited and used for new generated domai
     $this->actingAs($this->owner)->put(route('onboarding.domain'), ['appsDomain' => null])->assertRedirect();
     expect(InstanceSettings::current()->apps_domain)->toBeNull();
     $this->actingAs($this->owner)->put(route('onboarding.domain'), [])->assertSessionHasErrors('appsDomain');
+});
+
+test('saving the platform domain keeps the address step open until Continue after the DNS check', function (): void {
+    Projects::server($this->team, [ServerRole::Edge, ServerRole::Runtime], ip: '203.0.113.7');
+    $domainStatus = fn (): string => collect($this->actingAs($this->owner)->get(route('onboarding.show'))->viewData('page')['props']['onboarding']['steps'])->firstWhere('id', 'domain')['status'];
+
+    $this->actingAs($this->owner)->put(route('onboarding.domain'), ['appsDomain' => 'apps.example.com'])->assertRedirect();
+    expect($domainStatus())->toBe('pending');
+
+    // Continue needs a passing check...
+    $this->actingAs($this->owner)->post(route('onboarding.domain.confirm'))->assertSessionHasErrors('appsDomain');
+    expect($domainStatus())->toBe('pending');
+
+    // ...once DNS points here, Continue records it as verified.
+    FakeDns::set('*.apps.example.com', ['203.0.113.7']);
+    $this->actingAs($this->owner)->post(route('onboarding.domain.confirm'))->assertSessionHasNoErrors()->assertRedirect();
+    expect($domainStatus())->toBe('done')
+        ->and(InstanceSettings::current()->onboarding['domainConfirmed'])->toMatchArray(['domain' => 'apps.example.com', 'verified' => true]);
+
+    // Another domain reopens the step.
+    $this->actingAs($this->owner)->put(route('onboarding.domain'), ['appsDomain' => 'apps.example.org'])->assertRedirect();
+    expect($domainStatus())->toBe('pending');
+});
+
+test('"Continue anyway" finishes the address step without verified DNS', function (): void {
+    $this->actingAs($this->owner)->post(route('onboarding.domain.confirm'), ['anyway' => true])->assertSessionHasErrors('appsDomain');
+
+    $this->actingAs($this->owner)->put(route('onboarding.domain'), ['appsDomain' => 'apps.example.com'])->assertRedirect();
+    $this->actingAs($this->owner)->post(route('onboarding.domain.confirm'), ['anyway' => true])->assertSessionHasNoErrors();
+
+    $this->actingAs($this->owner)->get(route('onboarding.show'))
+        ->assertInertia(fn ($page) => $page
+            ->where('onboarding.steps', fn ($steps): bool => stepStatuses($steps->all())['domain'] === 'done')
+            ->where('onboarding.appsDomainVerified', false));
+
+    $this->actingAs($this->admin)->post(route('onboarding.domain.confirm'), ['anyway' => true])->assertForbidden();
+});
+
+test('a platform domain set before the DNS check existed keeps its step done', function (): void {
+    InstanceSettings::current()->forceFill(['apps_domain' => 'apps.example.com', 'onboarding' => null])->save();
+    $migration = require database_path('migrations/2026_12_05_100000_confirm_existing_apps_domain.php');
+    $migration->up();
+
+    $this->actingAs($this->owner)->get(route('onboarding.show'))
+        ->assertInertia(fn ($page) => $page
+            ->where('onboarding.steps', fn ($steps): bool => stepStatuses($steps->all())['domain'] === 'done')
+            ->where('onboarding.appsDomainVerified', null));
 });
 
 test('the wildcard DNS check resolves a random name under the domain and compares with the edge', function (): void {

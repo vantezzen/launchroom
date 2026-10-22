@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Instance;
 
+use App\Actions\Instance\ConfirmAppsDomain;
 use App\Actions\Instance\DismissTwoFactorRecommendation;
 use App\Actions\Instance\SetAppsDomain;
 use App\Actions\Instance\UpdateOnboarding;
@@ -96,13 +97,33 @@ final class OnboardingController extends Controller
 
         Inertia::flash('toast', ['type' => 'success', 'message' => $settings->apps_domain === null
             ? 'Platform domain removed. New services get sslip.io addresses.'
-            : "New services get addresses under {$settings->apps_domain}."]);
+            : "Saved {$settings->apps_domain}. Create the DNS record below."]);
 
         return back();
     }
 
     /**
-     * Live DNS check of `*.domain` against the edge servers (JSON; DNS only).
+     * "Continue" / "Continue anyway" on the address step: re-checks DNS and
+     * marks the step done (docs/08 §3.1).
+     */
+    public function confirmDomain(Request $request, ConfirmAppsDomain $confirm): RedirectResponse
+    {
+        Gate::authorize('manageInstance');
+
+        $request->validate(['anyway' => ['sometimes', 'boolean']]);
+
+        $result = $confirm->handle($request->boolean('anyway'));
+
+        Inertia::flash('toast', $result->status === 'ok'
+            ? ['type' => 'success', 'message' => 'DNS verified. Your apps get addresses under this domain.']
+            : ['type' => 'success', 'message' => 'Saved. Apps are reachable once DNS reaches your server.']);
+
+        return back();
+    }
+
+    /**
+     * Live DNS check of `*.domain` against the edge servers (JSON), with an
+     * HTTP reachability check when the records point elsewhere (proxies).
      */
     public function check(Request $request, DnsCheck $check, EdgeAddresses $edges): JsonResponse
     {

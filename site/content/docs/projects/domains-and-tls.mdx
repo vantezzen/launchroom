@@ -20,7 +20,8 @@ Each web service gets a generated domain per environment, shown as **Generated b
 | No platform domain yet | `{service}-{environment}-{project}.{server-ip-with-dashes}.sslip.io` |
 
 You set the platform domain during onboarding. One wildcard DNS record (`*.apps.example.com`) pointing at your edge
-servers covers every generated address, preview and per-deployment URL. Without a platform domain, launchroom falls
+servers covers every generated address, preview and per-deployment URL. Get started shows the record with your
+server's public IP and checks it before you continue. Without a platform domain, launchroom falls
 back to sslip.io, a public DNS service that resolves names containing an IP address to that IP. sslip.io works at once,
 but names under it share Let's Encrypt's rate limits with everyone else who uses it, so use a domain of your own.
 
@@ -64,8 +65,17 @@ to only one service on your launchroom, and names under your platform domain are
 ## The DNS check
 
 The DNS check asks public resolvers (`1.1.1.1` and `8.8.8.8` by default) for the domain's A and AAAA records and
-compares the answer with your edge servers' public addresses. The result is one of **Points at your servers**, **Points
-elsewhere**, **No record yet** or a failed check. launchroom checks:
+compares the answer with your edge servers' public addresses. The address shown is the public IP each server reports
+(as IP echo services see it), never a private or Docker address.
+
+When the records point somewhere else, for example at Cloudflare's proxy, launchroom also checks over HTTP: it requests
+`http://<domain>/.well-known/launchroom/check/<random token>` and your edge server answers with the token signed by
+its own key. A signed answer means requests reach your server, whatever sits in between.
+
+The result is one of **Points at your servers**, **Reached through a proxy (Cloudflare)**, **Reaches your servers**
+(another address forwards to them), **Behind a proxy, not confirmed**, **Points elsewhere**, **No record yet** or a
+failed check. Behind Cloudflare, set SSL/TLS to Full (strict); see
+[Behind a proxy](/docs/troubleshooting/dns-and-tls#behind-a-proxy). launchroom checks:
 
 - when you add the domain, then every 20 seconds for five minutes while the card is open
 - when you press **Check DNS now**

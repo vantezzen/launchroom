@@ -476,8 +476,14 @@ func CheckContainer(cfg *container.Config, hc *container.HostConfig, pc Config) 
 		add("security", "no-new-privileges is required")
 	}
 	for _, o := range hc.SecurityOpt {
-		if slices.Contains(unconfinedSecurityOpts, strings.ToLower(o)) {
+		lo := strings.ToLower(o)
+		switch {
+		case slices.Contains(unconfinedSecurityOpts, lo):
 			add("security", "security option %q is not allowed", o)
+		case strings.HasPrefix(lo, "apparmor"):
+			// Docker's default profile only: a named host profile can be
+			// wider (launchroom-buildkit grants user namespaces, D58).
+			add("security", "security option %q is not allowed: workloads keep Docker's default AppArmor profile", o)
 		}
 	}
 

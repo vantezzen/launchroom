@@ -156,3 +156,16 @@ test('the Network tab shows the runtime to the team and nobody else', function (
     $outsider = memberOf(Team::factory()->create(), TeamRole::Owner);
     $this->actingAs($outsider)->get(route('servers.tab', [$this->server->public_id, 'network']))->assertNotFound();
 });
+
+test('a build server blocked by Ubuntu\'s user-namespace restriction says how to fix it (D58)', function (): void {
+    $message = 'Ubuntu\'s user-namespace restriction blocks BuildKit here. Re-run the launchroom installer on this server, or run: sudo apparmor_parser -r -W /etc/apparmor.d/launchroom-buildkit';
+    $this->daemon->send($this, 'POST', '/daemon/v1/reports', runtimeReport($this->server, 1, [
+        'docker' => 'rootful', 'guard' => true,
+        'capabilities' => [['name' => 'builds', 'state' => 'unavailable', 'message' => $message]],
+    ]))->assertNoContent();
+
+    $runtime = $this->server->refresh()->runtime;
+
+    expect($runtime?->capability(RuntimeCapability::Builds))->toBe(CapabilityState::Unavailable)
+        ->and($runtime?->capabilities[0]->message)->toBe($message);
+});

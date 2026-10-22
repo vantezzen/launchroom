@@ -358,6 +358,8 @@ services:
       LR_DEV_SERVER_NAME: server-1
       # Pretend host time zone (suggests a location for the server map).
       LR_HOST_TIMEZONE: Europe/Berlin
+      # Dev never asks IP echo services (fake servers have no public address).
+      LR_PUBLIC_IP_DETECT: "off"
       LR_CONTROL_PLANE_URL: http://dashboard:8000
       LR_CP_KEY: ${LR_DEV_CP_KEY:-}
       LR_JOIN_TOKEN_FILE: /data/join-token

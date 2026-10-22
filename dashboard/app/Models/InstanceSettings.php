@@ -29,7 +29,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $recovery_mac_key base64 key authenticating key bundles (RecoveryKey::macKey), encrypted with APP_KEY
  * @property Carbon|null $recovery_passphrase_set_at
  * @property Carbon|null $recovery_kit_downloaded_at
- * @property array{dismissedAt?: string, skipped?: list<string>, twoFactorDismissed?: list<int>}|null $onboarding first-run checklist (docs/08 §3.1); twoFactorDismissed: user ids who chose "Not now" on the 2FA recommendation
+ * @property array{dismissedAt?: string, skipped?: list<string>, twoFactorDismissed?: list<int>, smallServerHintDismissed?: list<int>, domainConfirmed?: array{domain: string, verified: bool|null, at: string}}|null $onboarding first-run checklist (docs/08 §3.1); twoFactorDismissed: user ids who chose "Not now" on the 2FA recommendation; smallServerHintDismissed: user ids who dismissed "This server is small"; domainConfirmed: the platform domain the owner continued with and whether its DNS check passed then (null: set before the check existed)
  * @property MeshMode|null $mesh_mode how servers are connected; null = mesh off (docs/05 §2)
  * @property Carbon|null $mesh_enabled_at
  * @property string|null $mesh_login_server "bring your own Tailscale" login server
@@ -43,7 +43,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $registry_config_hash sha256 of the last Zot config written by `launchroom:registry:config --write` (docs/14 §9.11)
  * @property Carbon|null $registry_config_written_at
  * @property array{startedAt: string, previousControlPlaneServerId?: int|null, replacementId?: int|null}|null $recovery_state recovery mode after `install --restore` (docs/14 §5.2)
- * @property string|null $update_channel stable|beta chosen in Settings → Updates; null = config `launchroom.updates.channel`
+ * @property string|null $update_channel stable|beta chosen in Settings → Updates; null = config `launchroom.updates.channel`, else beta on a pre-release version, stable otherwise (ReleaseChecker::channel)
  * @property bool $auto_update install new releases automatically at night (docs/11 §4; off by default)
  * @property int|null $auto_update_by the instance owner who turned automatic updates on (their actor)
  * @property Carbon|null $auto_update_changed_at

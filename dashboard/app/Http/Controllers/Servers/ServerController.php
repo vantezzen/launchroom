@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Servers;
 
 use App\Actions\Servers\ApproveServer;
+use App\Actions\Servers\DismissSmallServerHint;
 use App\Actions\Servers\RevokeServer;
 use App\Actions\Servers\UpdateServerRoles;
 use App\Actions\Servers\UpdateServerSettings;
@@ -29,6 +30,7 @@ use App\Queries\ServerRetiredVolumes;
 use App\Queries\ServerRoleHints;
 use App\Queries\ServerTopology;
 use App\Queries\ServerWorkloads;
+use App\Queries\SmallServerHint;
 use App\Support\Servers\HostRoleLimits;
 use Illuminate\Container\Attributes\CurrentUser;
 use Illuminate\Contracts\Database\Query\Builder;
@@ -40,7 +42,7 @@ use Inertia\Response;
 
 final class ServerController extends Controller
 {
-    public function index(#[CurrentUser] User $user, ServerMesh $mesh, EdgeOverview $edges, ServerTopology $topology): Response
+    public function index(#[CurrentUser] User $user, ServerMesh $mesh, EdgeOverview $edges, ServerTopology $topology, SmallServerHint $smallServer): Response
     {
         $team = TeamSettingsController::currentTeam($user);
         Gate::authorize('viewAny', [Server::class, $team]);
@@ -73,6 +75,8 @@ final class ServerController extends Controller
             'edgeOverview' => $edges->for($team->id),
             'canManageIngress' => Gate::allows('manageInstance'),
             'meshLinks' => $links,
+            // "This server is small" (docs/08 §14).
+            'smallServerHint' => $smallServer->for($user, $team),
             // Realtime metrics channel, waiting enrolments
             // and which unreachable servers can be replaced from their card.
             'teamId' => $team->public_id,
@@ -98,7 +102,7 @@ final class ServerController extends Controller
         ]);
     }
 
-    public function show(Server $server, ServerHealth $health, ServerRetiredVolumes $retiredVolumes, ServerMesh $mesh, ServerWorkloads $workloads, ServerRoleHints $roleHints, ?ServerTab $tab = null): Response
+    public function show(Server $server, #[CurrentUser] User $user, ServerHealth $health, ServerRetiredVolumes $retiredVolumes, ServerMesh $mesh, ServerWorkloads $workloads, ServerRoleHints $roleHints, SmallServerHint $smallServer, ?ServerTab $tab = null): Response
     {
         Gate::authorize('view', $server);
         $tab ??= ServerTab::Overview;
@@ -141,6 +145,9 @@ final class ServerController extends Controller
             $props['placement'] = $workloads->for($server, Gate::allows('update', $server));
             // Contextual notes about the roles (docs/08 §14).
             $props['roleHints'] = $roleHints->forServer($server);
+            // "This server is small" when this is the team's only, small build server (docs/08 §14).
+            $hint = $smallServer->for($user, $server->team);
+            $props['smallServerHint'] = $hint?->serverId === $server->public_id ? $hint : null;
             // Volumes of deleted environments/projects/previews (docs/05 §1.1).
             $props['retiredVolumes'] = $retiredVolumes->for($server);
         }
@@ -166,6 +173,18 @@ final class ServerController extends Controller
         }
 
         return Inertia::render('servers/show', $props);
+    }
+
+    /**
+     * Dismisses "This server is small" for the current user (docs/08 §14).
+     */
+    public function dismissSmallServerHint(#[CurrentUser] User $user, DismissSmallServerHint $dismiss): RedirectResponse
+    {
+        Gate::authorize('create', [Server::class, TeamSettingsController::currentTeam($user)]);
+
+        $dismiss->handle($user);
+
+        return back();
     }
 
     public function updateSettings(Request $request, Server $server, UpdateServerSettingsData $data, #[CurrentUser] User $user, UpdateServerSettings $updateServerSettings): RedirectResponse

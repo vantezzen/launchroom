@@ -11,6 +11,7 @@ import { CreateGitHubAppForm } from '@/features/git/create-github-app-form';
 import { GitConnectionCard } from '@/features/git/git-connection-card';
 import { GitServerSetup } from '@/features/git/git-server-setup';
 import { GitHubAppSection } from '@/features/git/github-app-section';
+import { GitHubSetupSteps } from '@/features/git/github-setup-steps';
 import { ManifestRedirect } from '@/features/git/manifest-redirect';
 import { PROVIDER_CHOICES } from '@/features/git/providers';
 import type { ProviderChoice } from '@/features/git/providers';
@@ -128,7 +129,15 @@ export default function GitSettings({
                             <WebhookReachabilityNote webhookUrl={webhookUrl} />
                         </div>
                     )}
-                    <CreateGitHubAppForm primary={apps.length === 0} />
+                    {apps.length === 0 ? (
+                        <GitHubSetupSteps
+                            appName={null}
+                            installUrl={null}
+                            createAction={<CreateGitHubAppForm primary />}
+                        />
+                    ) : (
+                        <CreateGitHubAppForm primary={false} />
+                    )}
                 </div>
             )}
             {(choice === 'gitlab' || choice === 'gitea') && (
@@ -167,7 +176,13 @@ export default function GitSettings({
             {pendingManifest !== null && (
                 <SettingsCard title="GitHub">
                     <SettingsBody>
-                        <ManifestRedirect manifest={pendingManifest} />
+                        <GitHubSetupSteps
+                            appName={null}
+                            installUrl={null}
+                            createAction={
+                                <ManifestRedirect manifest={pendingManifest} />
+                            }
+                        />
                     </SettingsBody>
                 </SettingsCard>
             )}

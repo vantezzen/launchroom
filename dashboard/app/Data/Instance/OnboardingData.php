@@ -6,6 +6,7 @@ namespace App\Data\Instance;
 
 use App\Data\Backups\RecoveryKitStatusData;
 use App\Data\Servers\ServerData;
+use App\Data\Servers\SmallServerHintData;
 use Spatie\LaravelData\Data;
 
 /**
@@ -45,5 +46,9 @@ final class OnboardingData extends Data
         public bool $canConnectGitHub = false,
         /** Two-factor is off and the user hasn't said "Not now" (D33: recommended, never required). */
         public bool $recommendTwoFactor = false,
+        /** The address step is done: true when DNS was verified then, false for "Continue anyway", null when set before the check existed. */
+        public ?bool $appsDomainVerified = null,
+        /** "This server is small" (docs/08 §14), null when hidden. */
+        public ?SmallServerHintData $smallServerHint = null,
     ) {}
 }

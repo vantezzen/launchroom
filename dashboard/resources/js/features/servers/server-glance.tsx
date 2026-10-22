@@ -167,7 +167,9 @@ export function ServerGlance({
                         <>
                             Enters at{' '}
                             <span className="type-mono">
-                                {edge.publicIpv4 ?? 'an unknown address'}
+                                {edge.publicIpv4 ??
+                                    edge.publicIpv6 ??
+                                    'an unknown address'}
                             </span>
                         </>
                     ) : (

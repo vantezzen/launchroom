@@ -1,6 +1,6 @@
 ---
 title: Install launchroom
-description: One command on a Linux server with Docker. launchroom is Docker containers and one folder, and nothing is written outside that folder.
+description: One command on a Linux server with Docker. launchroom is Docker containers and one folder, and nothing is written outside that folder unless you agree to it.
 ---
 
 launchroom installs with one command on any Linux server that runs Docker. After a few minutes:
@@ -12,24 +12,93 @@ launchroom installs with one command on any Linux server that runs Docker. After
 Every install follows two rules:
 
 - **It's Docker containers and a folder.** Everything launchroom needs lives in one folder, `./launchroom` by default.
-- **Nothing is written outside the folder.** The installer installs no packages, writes nothing to `/etc`, creates no
-  systemd units and never edits Docker's `daemon.json`. Outside the folder, launchroom only creates Docker objects
-  (containers, images, volumes, networks) labelled `launchroom.managed=true`.
+- **Nothing is written outside the folder without asking.** The installer creates no systemd units and never edits
+  Docker's `daemon.json`. Outside the folder, launchroom only creates Docker objects (containers, images, volumes,
+  networks) labelled `launchroom.managed=true`. There are three exceptions, and the installer asks before each:
+  - installing Docker, when it's missing
+  - raising the kernel's inotify limits in `/etc/sysctl.d/60-launchroom-inotify.conf`, when they are too low
+  - loading the AppArmor profile `/etc/apparmor.d/launchroom-buildkit`, on Ubuntu 23.10 and later, so builds can run
 
 ## Requirements
 
 | What | Needed |
 |---|---|
 | Operating system | Linux, x86_64 or arm64. Debian and Ubuntu are first-class; any distribution with a recent Docker Engine should work. |
-| Docker | Docker Engine 24 or newer with the compose plugin. Docker installed from snap is not supported. |
+| Docker | Docker Engine 24 or newer with the compose plugin. Docker installed from snap is not supported. The installer can install it for you. |
 | User | root, or a user in the `docker` group. |
 | Memory | 2 vCPU and 2 GB RAM for the control plane, small apps and builds on the same server. 1 GB works when builds run on a separate build server. |
 | Ports | 80 and 443 (TCP) free and reachable from the internet, plus 443/UDP for HTTP/3. UDP 3478 helps other servers connect directly once you add them. |
+| Kernel | inotify limits of at least 65,536 watches (`fs.inotify.max_user_watches`) and 256 instances (`fs.inotify.max_user_instances`). The installer can raise them for you. On Ubuntu 23.10 and later, builds need launchroom's AppArmor profile; the installer can load it for you. |
 | Outbound | HTTPS to GitHub (the release bundle) and to the container registries the images come from. |
 
-If Docker is missing, the installer installs it with Docker's official script ([get.docker.com](https://get.docker.com)),
-which adds Docker Engine and the compose plugin from Docker's package repository. Pass `--no-install-docker` to stop with
-instructions instead. If the server has less than 2 GB of RAM, it warns and continues.
+If the server has less than 2 GB of RAM, the installer warns and continues.
+
+### Docker
+
+If Docker is missing, the installer asks:
+
+```text
+launchroom: Docker is not installed. Install it now with Docker's official script (get.docker.com)? [Y/n]
+```
+
+Enter or `y` runs Docker's official script ([get.docker.com](https://get.docker.com)), which adds Docker Engine and the
+compose plugin from Docker's package repository. `n` stops with a link to Docker's install instructions.
+
+The question is asked on the terminal, so it works with `curl … | sh`. Without a terminal (cloud-init, CI, other
+automation), the installer stops instead, unless you pass `--install-docker`. `--no-install-docker` never installs
+Docker.
+
+### inotify limits
+
+Containers and file watchers fail with "too many open files" when the kernel's inotify limits are low. Stock Ubuntu
+allows 128 instances. If a limit is below the minimum, the installer asks:
+
+```text
+launchroom: This server's inotify limits are low (max_user_watches 8192, max_user_instances 128). Raise them to max_user_watches 524288, max_user_instances 512 now? [Y/n]
+```
+
+Enter or `y` writes `/etc/sysctl.d/60-launchroom-inotify.conf` and applies the new values right away with `sysctl -w`.
+The file is the only one launchroom writes outside its folder. It contains only the limits that were lower than the new
+values, so a higher value you set yourself stays as it is. `n` keeps the limits and prints the commands to raise them
+later.
+
+Without a terminal, nothing changes unless you pass `--raise-inotify`; the installer prints the commands instead. When
+it doesn't run as root, it prints the same commands with `sudo`.
+
+To undo it, delete the file and reboot. The file names the earlier values, if you want them back without a reboot:
+
+```sh title="On the server"
+sudo rm /etc/sysctl.d/60-launchroom-inotify.conf
+sudo reboot
+```
+
+### User namespaces for builds
+
+launchroom builds with rootless BuildKit, which creates a user namespace. Ubuntu 23.10 and later restrict user
+namespaces through AppArmor (`kernel.apparmor_restrict_unprivileged_userns=1`), so BuildKit can't start there. The
+installer doesn't turn that restriction off. It asks to load one AppArmor profile that allows user namespaces for
+launchroom's build container only:
+
+```text
+launchroom: This server restricts user namespaces (Ubuntu 23.10 and later), and builds need one. Allow it for launchroom's build container only (AppArmor profile /etc/apparmor.d/launchroom-buildkit)? [Y/n]
+```
+
+Enter or `y` writes `/etc/apparmor.d/launchroom-buildkit` and loads it with `apparmor_parser`. AppArmor loads it again
+after every reboot. The profile is attached to no program: only the container launchroom starts with
+`apparmor=launchroom-buildkit` uses it, and the restriction stays on for everything else on the server. `n` prints the
+commands, and builds on this server fail until you run them.
+
+The question only comes up when the restriction is on. Without a terminal, pass `--allow-buildkit-userns` (or set
+`LR_BUILDKIT_APPARMOR=1`). Updates from the dashboard don't change the host, so a server installed before this step
+existed gets the profile when you run the installer again, or with the commands in
+[Build problems](/docs/troubleshooting/builds#this-server-blocks-what-builds-need).
+
+To remove it:
+
+```sh title="On the server"
+sudo apparmor_parser -R /etc/apparmor.d/launchroom-buildkit
+sudo rm /etc/apparmor.d/launchroom-buildkit
+```
 
 ## Run the installer
 
@@ -65,10 +134,12 @@ reinstalling. See [Dashboard domain](/docs/operations/dashboard-domain).
 It checks for:
 
 - Linux
-- Docker Engine 24 or newer, not from snap
+- Docker Engine 24 or newer, not from snap (offers to install it when it's missing)
 - the compose plugin
 - at least 2 GB of RAM (warning only)
 - ports 80 and 443 are free
+- the kernel's inotify limits (offers to raise them when they are low)
+- whether AppArmor restricts user namespaces (offers to load launchroom's build profile)
 </Step>
 <Step>
 ### Downloads and verifies the release
@@ -172,10 +243,13 @@ Run these from inside the install folder.
 | `--dir DIR` | Install folder. Default: `$LAUNCHROOM_DIR`, else `./launchroom`. |
 | `--domain HOST` | Dashboard host name. Default: `<public-ip>.sslip.io`. |
 | `--version V` | Release to install. Default: the latest. |
-| `--unstable` | Install the newest release, including pre-releases, and offer pre-releases as updates. |
+| `--unstable` | Install the newest release, including pre-releases, and offer pre-releases as updates (the beta channel). Re-running the installer without it keeps the channel. |
 | `--bundle DIR` | Use an unpacked bundle instead of downloading one. Not signature-verified: for air-gapped installs and testing. |
-| `--no-public-ip-detect` | Never contact IP echo services. Needs `--domain`. |
-| `--no-install-docker` | Stop when Docker is missing instead of installing it with Docker's official script. |
+| `--no-public-ip-detect` | Never contact IP echo services, neither the installer nor launchroomd (`LR_PUBLIC_IP_DETECT=off` in `.env`). Needs `--domain`. Set `LR_PUBLIC_IPS=203.0.113.10` (IPv4 and IPv6, comma-separated) in `.env` so the DNS instructions in the dashboard name the right address, then run `docker compose up -d` in the folder. |
+| `--install-docker` | When Docker is missing, install it with Docker's official script without asking. For installs without a terminal. Also `LR_INSTALL_DOCKER=1`. |
+| `--no-install-docker` | Never install Docker: stop with instructions when it's missing. Also `LR_NO_INSTALL_DOCKER=1`. |
+| `--raise-inotify` | Raise low inotify limits without asking. For installs without a terminal. Also `LR_RAISE_INOTIFY=1`. |
+| `--allow-buildkit-userns` | On hosts that restrict user namespaces, load launchroom's AppArmor profile for builds without asking. Also `LR_BUILDKIT_APPARMOR=1`. |
 | `--skip-port-check` | Install even though 80 or 443 are taken. The dashboard is then only reachable on `127.0.0.1:8000`, for example through an SSH tunnel. |
 | `--allow-unsigned` | Accept a downloaded bundle without a signature (development builds only). A signature that is present but does not verify is always refused. |
 | `--restore` | Rebuild the control plane from a backup. See [Restore and disaster recovery](/docs/databases/restore-and-disaster-recovery). |
@@ -209,6 +283,14 @@ The command asks twice:
    labelled `launchroom.managed=true`, including your deployed apps, Caddy and BuildKit.
 2. Type `delete` to also remove the labelled volumes (your databases and app data), the images those containers used
    and the folder. Skip this step and your data stays on disk.
+
+If the installer raised the inotify limits, they stay: removing the file doesn't lower the running values, and other
+software on the server may rely on them by now. The uninstall reminds you of the file. To undo it, see
+[inotify limits](#inotify-limits).
+
+The AppArmor profile for builds stays too: the uninstall doesn't run as root, and without launchroom's build container
+nothing uses the profile. The uninstall prints the commands to remove it, see
+[User namespaces for builds](#user-namespaces-for-builds).
 
 Other servers you added have their own small install folder. See
 [Uninstalling a server](/docs/how-it-works/launchroomd#uninstalling-a-server).

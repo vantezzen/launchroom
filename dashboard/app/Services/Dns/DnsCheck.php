@@ -10,12 +10,16 @@ use App\Support\Hostname;
 
 /**
  * Live DNS checks (docs/05 §5, docs/08 §3.1): does a hostname, or a random
- * name under a wildcard, resolve to the edge servers' addresses?
+ * name under a wildcard, resolve to the edge servers' addresses? When it
+ * resolves elsewhere (a proxy such as Cloudflare, a NAT port forward), an
+ * HTTP check ({@see EdgeReachability}) decides whether requests still
+ * arrive at one of our servers.
  */
 final readonly class DnsCheck
 {
     public function __construct(
         private PublicDnsResolver $resolver,
+        private EdgeReachability $reachability,
     ) {}
 
     /**
@@ -53,8 +57,17 @@ final readonly class DnsCheck
         $servers = implode(', ', $expected);
         $matching = implode(', ', $ours);
         $others = implode(', ', $foreign);
+        $proxy = $ours === [] ? ProxyRanges::provider($addresses) : null;
+        // Only when nothing points at us directly: a mix stays a mismatch
+        // (some visitors would land on the other address).
+        $reach = $lookup->status !== 'error' && $addresses !== [] && $ours === []
+            ? $this->reachability->check($hostname, $addresses)
+            : null;
+        $via = $proxy === null ? $resolved : "{$proxy}’s proxy";
 
         [$status, $message] = match (true) {
+            $reach?->reached === true => ['ok', "{$subject} points at {$via}, which forwards to your server {$reach->serverName} (checked over HTTP)."],
+            $proxy !== null => ['proxied', "{$subject} points at {$proxy}’s proxy ({$resolved}). launchroom couldn’t confirm that it forwards to your server: ".($reach->error ?? 'no answer').'.'],
             $lookup->status === 'error' => ['error', 'DNS lookup failed: '.($lookup->error ?? 'no resolver answered').' Try again in a moment.'],
             $addresses === [] => ['missing', $wildcard
                 ? 'No wildcard record yet. DNS changes can take a few minutes (sometimes hours) to show up.'
@@ -73,6 +86,8 @@ final readonly class DnsCheck
             cname: $lookup->cnames[0] ?? null,
             message: $message,
             checkedAt: now()->toIso8601ZuluString(),
+            proxy: $proxy,
+            reachedOverHttp: $reach?->reached === true,
         );
     }
 

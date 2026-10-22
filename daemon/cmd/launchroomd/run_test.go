@@ -213,6 +213,7 @@ func testConfig(t *testing.T, srvURL string, pinned ed25519.PublicKey, token str
 	return config.Config{
 		ControlPlaneURL: u, DataDir: t.TempDir(), PinnedCPKey: pinned, JoinToken: secret.Secret(token), LogLevel: slog.LevelDebug,
 		AskAddr: netip.MustParseAddrPort("127.0.0.1:0"), HTTPSRedirectPort: 443,
+		PublicIPDetectOff: true,
 	}
 }
 

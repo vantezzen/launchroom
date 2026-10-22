@@ -35,7 +35,7 @@ func TestConfig(t *testing.T) {
 
 func TestContainerSpec(t *testing.T) {
 	m := New(Options{ServerID: "srv_01J9Z8X7W6V5T4S3R2Q1P0N9MK", MemoryMB: 2048, CPUs: 2})
-	cc := m.ContainerSpec(image)
+	cc := m.ContainerSpec(image, appArmorUnconfined)
 	hc := cc.HostConfig
 	if hc.Privileged || hc.NetworkMode != NetworkName || hc.PidMode != "" || len(hc.CapAdd) != 0 || len(hc.Binds) != 0 {
 		t.Fatalf("buildkitd must not be privileged or share host namespaces: %+v", hc)
@@ -54,8 +54,16 @@ func TestContainerSpec(t *testing.T) {
 			t.Fatalf("unsafe flag %q", a)
 		}
 	}
-	if m.SpecHash(image) == New(Options{ServerID: "srv_01J9Z8X7W6V5T4S3R2Q1P0N9MK"}).SpecHash(image) {
+	if m.SpecHash(image, appArmorUnconfined) == New(Options{ServerID: "srv_01J9Z8X7W6V5T4S3R2Q1P0N9MK"}).SpecHash(image, appArmorUnconfined) {
 		t.Fatal("spec hash ignores resources")
+	}
+	// The profile changes the spec (a clean recreate), unconfined keeps the
+	// hash of earlier releases.
+	if m.SpecHash(image, AppArmorProfile) == m.SpecHash(image, appArmorUnconfined) {
+		t.Fatal("spec hash ignores the AppArmor profile")
+	}
+	if got := m.ContainerSpec(image, AppArmorProfile).HostConfig.SecurityOpt; strings.Join(got, ",") != "seccomp=unconfined,apparmor=launchroom-buildkit" {
+		t.Fatalf("profile security options %v", got)
 	}
 	if err := policy.CheckSystemImage(policy.SystemBuildkit, image, policy.DefaultConfig()); err != nil {
 		t.Fatalf("pinned digest rejected: %v", err)

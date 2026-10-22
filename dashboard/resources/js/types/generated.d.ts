@@ -1467,6 +1467,8 @@ expected: string[],
 cname: string | null,
 message: string,
 checkedAt: string,
+proxy: string | null,
+reachedOverHttp: boolean,
 };
 }
 namespace Environments {
@@ -1680,6 +1682,7 @@ message: string | null,
 reportedAt: string | null,
 controlPlane: boolean,
 shared: boolean,
+publicIpv6: string | null,
 };
 export type EdgeOverviewData = {
 edges: number,
@@ -1819,6 +1822,8 @@ githubAccount: string | null,
 githubRepositories: number,
 canConnectGitHub: boolean,
 recommendTwoFactor: boolean,
+appsDomainVerified: boolean | null,
+smallServerHint: App.Data.Servers.SmallServerHintData | null,
 };
 export type OnboardingProgressData = {
 done: number,
@@ -2676,6 +2681,7 @@ links?: Record<string, any>[] | null,
 features?: string[] | null,
 controlPlane?: Record<string, any> | null,
 runtime?: Record<string, any> | null,
+publicAddresses?: Record<string, any> | null,
 };
 export type IngressSpec = {
 storage: {
@@ -3458,6 +3464,12 @@ active: boolean,
 memoryMb: number,
 cpus: number,
 };
+export type SmallServerHintData = {
+serverId: string,
+serverName: string,
+cpus: number,
+memoryMb: number,
+};
 export type UpdateServerAppearanceData = {
 device?: App.Enums.DeviceKind | null,
 location?: App.Data.Servers.ServerLocationInputData | null,
@@ -4118,6 +4130,8 @@ publishedAt: string | null,
 prerelease: boolean,
 dashboardImage: string | null,
 daemonImage: string | null,
+cannotInstallReason: string | null,
+installerCommand: string,
 };
 export type StartControlPlaneUpdateInput = {
 version: string,
@@ -4390,7 +4404,7 @@ export type DockerEngine = 'docker-engine' | 'docker-desktop' | 'orbstack' | 'co
 export type DockerMode = 'rootful' | 'rootless';
 export type HostOs = 'linux' | 'darwin';
 export type RoleHintTone = 'info' | 'warning';
-export type RuntimeCapability = 'dockerAccess' | 'edgePorts' | 'clientAddresses' | 'firewall' | 'mesh' | 'portDiscovery' | 'workloads';
+export type RuntimeCapability = 'dockerAccess' | 'edgePorts' | 'clientAddresses' | 'firewall' | 'mesh' | 'portDiscovery' | 'workloads' | 'builds';
 }
 namespace Sessions {
 export type DatabaseQueryStatus = 'sent' | 'ok' | 'error' | 'refused';

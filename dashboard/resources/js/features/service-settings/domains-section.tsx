@@ -74,8 +74,20 @@ function dnsStep(domain: Domain): Step {
         case 'ok':
             return {
                 state: 'active',
-                title: 'Points at your servers',
-                detail: when,
+                title: check.proxy
+                    ? `Reached through a proxy (${check.proxy})`
+                    : check.reachedOverHttp
+                      ? 'Reaches your servers'
+                      : 'Points at your servers',
+                detail: check.proxy
+                    ? `${check.proxy} forwards to your server. Use SSL/TLS Full (strict).`
+                    : when,
+            };
+        case 'proxied':
+            return {
+                state: 'warning',
+                title: `Behind ${check.proxy ?? 'a proxy'}, not confirmed`,
+                detail: 'Couldn’t confirm the proxy forwards to your servers.',
             };
         case 'mismatch':
             return {

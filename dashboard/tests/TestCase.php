@@ -58,6 +58,9 @@ abstract class TestCase extends BaseTestCase
 
         // Public DNS checks never leave the test (empty zone unless a test adds records).
         FakeDns::install();
+        // ...and the HTTP reachability check behind it neither (tests that
+        // cover it turn it on with Http::fake()).
+        config(['launchroom.dns.reachability' => false]);
 
         // Neither do SafeHttpClient's lookups (favicons fetched after a
         // deploy goes live, …): nothing resolves unless a test binds its own.

@@ -41,8 +41,9 @@ return [
     |
     | updates: where Settings → Updates looks for new releases (the GitHub
     | Releases API of the repository) and which channel it offers: stable
-    | (default; Settings → Updates can change it) skips prereleases, beta
-    | includes them. The daemons verify
+    | skips prereleases, beta includes them. Settings → Updates can change
+    | it; without a choice there or here, a pre-release version (0.1.0-rc.3)
+    | is on beta and any other on stable. The daemons verify
     | what they install against the release identity pinned at install, so
     | nothing here is trusted for integrity.
     |
@@ -53,7 +54,9 @@ return [
     'updates' => [
         'repository' => env('LAUNCHROOM_UPDATES_REPOSITORY', 'vantezzen/launchroom'),
         'api_base' => env('LAUNCHROOM_UPDATES_API', 'https://api.github.com'),
-        'channel' => env('LAUNCHROOM_UPDATES_CHANNEL', 'stable'),
+        // stable|beta; unset (or empty) follows the running version: a
+        // pre-release such as 0.1.0-rc.3 is on beta, anything else stable.
+        'channel' => env('LAUNCHROOM_UPDATES_CHANNEL'),
         'check_ttl_seconds' => 3600,
         // Automatic updates (opt-in, Settings → Updates) start only in this
         // window of the control-plane server's time zone (hours, end exclusive).
@@ -199,6 +202,14 @@ return [
         // Daemon clock vs dashboard clock; signatures fail beyond 60 s.
         'clock_skew_warning_seconds' => 5,
         'clock_skew_critical_seconds' => 30,
+        // "This server is small" (docs/08 §14): the only build server has
+        // fewer CPUs or less memory than this. 3500 MB, because a 4 GB
+        // machine reports a little less than 4096 MB.
+        'small_build_server_cpus' => 2,
+        'small_build_server_memory_mb' => 3500,
+        // Private, CGNAT and Docker addresses are never shown as where DNS
+        // points (docs/05 §5); local dev's fake servers only have those.
+        'private_addresses' => (bool) env('LAUNCHROOM_PRIVATE_SERVER_ADDRESSES', env('APP_ENV') === 'local'),
     ],
 
     'control_plane' => [
@@ -629,6 +640,11 @@ return [
         'timeout_seconds' => 2,
         'recheck_pending_minutes' => 5,
         'recheck_verified_hours' => 6,
+        // HTTP check through the proxy/CDN in front of a domain (docs/05 §5);
+        // off: only the A/AAAA comparison.
+        'reachability' => (bool) env('LAUNCHROOM_DNS_HTTP_CHECK', true),
+        'reachability_connect_timeout' => 3,
+        'reachability_timeout' => 5,
     ],
 
     /*

@@ -53,7 +53,14 @@ type Props = ProjectShellProps & {
  * Everything in one `wide` container; the raw id sits in the overview
  * card's footer with a copy button.
  */
-export default function DeploymentShow({
+export default function DeploymentShow(props: Props) {
+    // Inertia keeps this component mounted when it visits another
+    // deployment (Redeploy and Roll back redirect to the new one): a key
+    // per deployment resets the log stream, follow mode and open panels.
+    return <DeploymentPage key={props.detail.deployment.id} {...props} />;
+}
+
+function DeploymentPage({
     detail,
     logs,
     project,

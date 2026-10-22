@@ -1,8 +1,9 @@
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { memo, useCallback, useEffect, useRef } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 import type { KeyboardEvent, ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 import { AnsiText } from '../ansi-text';
+import { JumpToLatest, useFollowScroll } from '../use-follow-scroll';
 import { LevelBadge } from './level-badge';
 import type { LogEntry } from './types';
 
@@ -138,8 +139,12 @@ export type LogTableProps = {
     onSelect?: (entry: LogEntry) => void;
     /** Lowercase text terms to highlight (from the parsed query). */
     highlight?: string;
-    /** Keep the newest line (the last entry) in view while new lines arrive. */
-    follow?: boolean;
+    /**
+     * New lines arrive at the top (entries are newest first): stay on the
+     * newest while the reader is there; scrolled down, keep their place
+     * and offer "Jump to latest".
+     */
+    live?: boolean;
     /** Hide the service column (single-service views such as the panel tab). */
     hideService?: boolean;
     /** Show where each line comes from (project- and team-wide searches). */
@@ -160,7 +165,7 @@ export function LogTable({
     selectedId = null,
     onSelect,
     highlight = '',
-    follow = false,
+    live = false,
     hideService = false,
     context = null,
     empty = null,
@@ -193,11 +198,31 @@ export function LogTable({
         ? entries.findIndex((entry) => entry.id === selectedId)
         : -1;
 
-    useEffect(() => {
-        if (follow && entries.length > 0) {
-            virtualizer.scrollToIndex(entries.length - 1, { align: 'end' });
+    const { follow, atEdge, unseen, onScroll, jumpToLatest } = useFollowScroll({
+        scrollRef,
+        count: entries.length,
+        live,
+        edge: 'start',
+        scrollToEdge: () => virtualizer.scrollToOffset(0),
+    });
+
+    // Paused: lines prepended above keep the reader's rows where they are.
+    const firstId = useRef<string | null>(null);
+    useLayoutEffect(() => {
+        const previous = firstId.current;
+        firstId.current = entries[0]?.id ?? null;
+        const element = scrollRef.current;
+
+        if (!live || follow || previous === null || !element) {
+            return;
         }
-    }, [follow, entries.length, virtualizer]);
+
+        const added = entries.findIndex((entry) => entry.id === previous);
+
+        if (added > 0) {
+            element.scrollTop += added * ROW;
+        }
+    }, [entries, follow, live]);
 
     if (entries.length === 0) {
         return <>{empty}</>;
@@ -242,42 +267,52 @@ export function LogTable({
                 )}
                 <span>Message</span>
             </div>
-            <div
-                ref={scrollRef}
-                role="grid"
-                aria-label="Log lines"
-                aria-rowcount={entries.length}
-                aria-activedescendant={
-                    selectedIndex >= 0
-                        ? `log-row-${entries[selectedIndex].id}`
-                        : undefined
-                }
-                tabIndex={0}
-                onKeyDown={onKeyDown}
-                className="min-h-0 flex-1 overflow-auto outline-none focus-visible:ring-2 focus-visible:ring-(--signal) focus-visible:ring-inset"
-            >
+            <div className="relative flex min-h-0 flex-1 flex-col">
                 <div
-                    className="relative w-full"
-                    style={{ height: virtualizer.getTotalSize() }}
+                    ref={scrollRef}
+                    role="grid"
+                    aria-label="Log lines"
+                    aria-rowcount={entries.length}
+                    aria-activedescendant={
+                        selectedIndex >= 0
+                            ? `log-row-${entries[selectedIndex].id}`
+                            : undefined
+                    }
+                    tabIndex={0}
+                    onKeyDown={onKeyDown}
+                    onScroll={onScroll}
+                    className="min-h-0 flex-1 overflow-auto outline-none focus-visible:ring-2 focus-visible:ring-(--signal) focus-visible:ring-inset"
                 >
-                    {virtualizer.getVirtualItems().map((item) => {
-                        const entry = entries[item.index];
+                    <div
+                        className="relative w-full"
+                        style={{ height: virtualizer.getTotalSize() }}
+                    >
+                        {virtualizer.getVirtualItems().map((item) => {
+                            const entry = entries[item.index];
 
-                        return (
-                            <LogRow
-                                key={entry.id}
-                                entry={entry}
-                                index={item.index}
-                                start={item.start}
-                                selected={entry.id === selectedId}
-                                highlight={highlight}
-                                hideService={hideService}
-                                context={context}
-                                onSelect={select}
-                            />
-                        );
-                    })}
+                            return (
+                                <LogRow
+                                    key={entry.id}
+                                    entry={entry}
+                                    index={item.index}
+                                    start={item.start}
+                                    selected={entry.id === selectedId}
+                                    highlight={highlight}
+                                    hideService={hideService}
+                                    context={context}
+                                    onSelect={select}
+                                />
+                            );
+                        })}
+                    </div>
                 </div>
+                <JumpToLatest
+                    visible={live && !atEdge}
+                    live={live}
+                    unseen={unseen}
+                    edge="start"
+                    onJump={jumpToLatest}
+                />
             </div>
         </div>
     );

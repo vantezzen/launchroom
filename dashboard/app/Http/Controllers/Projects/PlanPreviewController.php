@@ -33,6 +33,7 @@ final class PlanPreviewController extends Controller
                 }
             }],
             'rootDirectory' => ['nullable', 'string', 'max:1024', 'regex:/^(?:[A-Za-z0-9_.@+=,-]+(?:\/[A-Za-z0-9_.@+=,-]+)*)?$/D'],
+            'retry' => ['sometimes', 'boolean'],
         ]);
 
         $team = $project->team;
@@ -41,6 +42,6 @@ final class PlanPreviewController extends Controller
         abort_if(! $repository instanceof SourceRepository, 404);
         Gate::authorize('view', $repository);
 
-        return new JsonResponse($previewer->preview($project, $repository, $request->string('branch')->toString(), $request->string('rootDirectory')->toString()));
+        return new JsonResponse($previewer->preview($project, $repository, $request->string('branch')->toString(), $request->string('rootDirectory')->toString(), $request->boolean('retry')));
     }
 }

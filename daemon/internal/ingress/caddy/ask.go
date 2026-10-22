@@ -17,8 +17,12 @@ const AskPath = "/caddy/ask"
 // table, so certificates are only requested for hosts the daemon actually
 // routes — also while the dashboard is down — and random SNI cannot burn
 // ACME rate limits (docs/05 §5).
+//
+// The same loopback server answers the reachability check (Reach, when set).
 type Ask struct {
 	hosts atomic.Pointer[map[string]bool]
+	// Reach answers ReachabilityPath; nil = 404.
+	Reach http.Handler
 }
 
 // SetHosts replaces the allowed host set.
@@ -38,6 +42,10 @@ func (a *Ask) Allowed(domain string) bool {
 
 // ServeHTTP implements http.Handler: 200 for routed hosts, 404 otherwise.
 func (a *Ask) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if a.Reach != nil && strings.HasPrefix(r.URL.Path, ReachabilityPath) {
+		a.Reach.ServeHTTP(w, r)
+		return
+	}
 	if r.URL.Path != AskPath || r.Method != http.MethodGet {
 		http.NotFound(w, r)
 		return

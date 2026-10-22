@@ -62,7 +62,9 @@ final readonly class SafeHttpClient
      */
     public function get(string $url, array $query = [], array $headers = []): Response
     {
-        return $this->send('GET', $url, $headers, ['query' => $query]);
+        // An empty `query` option would make Guzzle replace the URL's own
+        // query string with nothing (signed storage URLs carry theirs).
+        return $this->send('GET', $url, $headers, $query === [] ? [] : ['query' => $query]);
     }
 
     /**

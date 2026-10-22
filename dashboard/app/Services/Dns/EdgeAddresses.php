@@ -7,6 +7,7 @@ namespace App\Services\Dns;
 use App\Enums\ServerRole;
 use App\Enums\ServerStatus;
 use App\Models\Server;
+use App\Support\Network\ServerAddress;
 
 /**
  * Public addresses of the servers with the edge role: what DNS records of
@@ -30,12 +31,16 @@ final class EdgeAddresses
         $records = [];
 
         foreach ($edges as $edge) {
-            if ($edge->public_ipv4 !== null) {
-                $records[] = ['A', $edge->public_ipv4];
+            // Never a private or Docker address (ServerAddress, docs/05 §5).
+            $ipv4 = ServerAddress::ipv4($edge->public_ipv4);
+            $ipv6 = ServerAddress::ipv6($edge->public_ipv6);
+
+            if ($ipv4 !== null) {
+                $records[] = ['A', $ipv4];
             }
 
-            if ($edge->public_ipv6 !== null) {
-                $records[] = ['AAAA', $edge->public_ipv6];
+            if ($ipv6 !== null) {
+                $records[] = ['AAAA', $ipv6];
             }
         }
 

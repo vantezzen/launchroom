@@ -18,13 +18,14 @@ provider.
 ### GitHub
 
 launchroom uses GitHub's app manifest flow. GitHub creates a GitHub App with the permissions launchroom needs and sends
-its credentials back to your dashboard. You don't copy keys by hand.
+its credentials back to your dashboard. You don't copy keys by hand. Connecting takes two steps, and both are shown
+in Get started and in **Settings → Git**. The step that isn't current is greyed out, and a finished step says **Done**.
 
-1. Click **Connect GitHub**. For an organization, or for GitHub Enterprise Server, open the optional details and fill
-   in the organization or server URL first. Left empty, the app belongs to your personal account.
-2. GitHub asks you to confirm creating the app. Confirm, and you land back in launchroom.
-3. Install the app on your account and pick the repositories launchroom may deploy. You can change that selection on
-   GitHub at any time.
+1. **Create the GitHub App.** Click **Create the app on GitHub**. For an organization, or for GitHub Enterprise
+   Server, open the optional details and fill in the organization or server URL first. Left empty, the app belongs to
+   your personal account. GitHub asks you to confirm, then sends you back to launchroom, where step 1 shows **Done**.
+2. **Install it on your account or organization.** Click **Install on GitHub** and pick the repositories launchroom
+   may deploy. You can change that selection on GitHub at any time.
 
 After that, pushes deploy automatically. Pull requests get a preview, check runs and a comment with the preview URL.
 
@@ -44,9 +45,26 @@ repositories. See [Git providers](/docs/builds/git-providers).
 Every web service gets a generated address. Until you set a domain, the address is built from your server's IP, such
 as `web-production-shop.203-0-113-10.sslip.io`, and works without DNS setup.
 
-For projects you keep, set a platform domain in Get started (**Domain for your apps**). Point one wildcard DNS record
-such as `*.apps.example.com` at your server, and every service gets an address like
-`web-production.shop.apps.example.com`. You can add custom domains per service on top. See [Domains and TLS](/docs/projects/domains-and-tls).
+For projects you keep, set a platform domain in Get started (**Domain for your apps**):
+
+1. Enter the domain, such as `apps.example.com`, and click **Save**. The step stays open and shows the record to
+   create: an A record (and an AAAA record with IPv6) for `*.apps.example.com` pointing at your server's public IP.
+2. Create the record at your DNS provider. launchroom checks it every 10 seconds; **Check now** runs the check at once.
+3. Once the check says **DNS verified** (or **Reached through a proxy** behind Cloudflare), click **Continue**.
+
+**Continue anyway** finishes the step before DNS is ready: new apps get addresses under the domain at once and open
+when DNS reaches your server. **Skip for now** keeps the free sslip.io addresses.
+
+Every service then gets an address like `web-production.shop.apps.example.com`. You can add custom domains per service
+on top. See [Domains and TLS](/docs/projects/domains-and-tls). With Cloudflare's proxy, read
+[Behind a proxy](/docs/troubleshooting/dns-and-tls#behind-a-proxy) first.
+
+<Callout type="info" title="Small servers">
+When your only build server has fewer than 2 CPU cores or less than 4 GB of memory, Get started and the Servers page
+suggest a separate build server. A build next to your running apps can slow them down while it takes the CPU and
+memory. A home server, a Raspberry Pi or a laptop works as a build server. See
+[Home machines](/docs/servers/home-machines).
+</Callout>
 
 ## 3. Import a repository
 

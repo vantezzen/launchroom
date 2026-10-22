@@ -22,6 +22,9 @@ dashboard/storage/framework/cache/data/*
 dashboard/storage/framework/sessions/*
 dashboard/storage/framework/views/*
 dashboard/storage/app/*
+# Dev-only Inertia devtools dumps (git-ignored; only present in a local tree).
+dashboard/storage/inertia-devtools/*
+!dashboard/storage/inertia-devtools/.gitignore
 dashboard/storage/*.key
 dashboard/database/*.sqlite*
 dashboard/.phpunit.cache

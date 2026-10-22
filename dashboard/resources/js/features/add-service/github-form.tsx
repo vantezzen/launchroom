@@ -13,6 +13,7 @@ import {
 import { Spinner } from '@/components/ui/spinner';
 import { requestJson, RequestFailed } from '@/features/projects/http';
 import { DetectedPlan } from '@/features/service-settings/detected-plan';
+import { usePlanPreview } from './use-plan-preview';
 import { cn } from '@/lib/utils';
 import { planPreview } from '@/routes/projects';
 import { edit as gitSettings } from '@/routes/git';
@@ -25,8 +26,6 @@ import type { SubmitService } from './types';
 
 type Repository = App.Data.Git.GitRepositoryData;
 type Branch = App.Data.Git.GitBranchData;
-
-const POLL_MS = 2000;
 
 function RepositoryPicker({
     onPick,
@@ -170,10 +169,26 @@ export function GitHubForm({
     const [branch, setBranch] = useState('');
     const [rootDirectory, setRootDirectory] = useState('');
     const [name, setName] = useState('');
-    const [preview, setPreview] =
-        useState<App.Data.Canvas.PlanPreviewData | null>(null);
-    const [previewError, setPreviewError] = useState<string | null>(null);
-    const [previewing, setPreviewing] = useState(false);
+    // The preview runs for what "Continue" was pressed on.
+    const [requested, setRequested] = useState<string | null>(null);
+    const {
+        preview,
+        error: previewError,
+        retry: retryPreview,
+    } = usePlanPreview(
+        (retry) =>
+            planPreview(project, {
+                query: {
+                    repository: repository?.id ?? '',
+                    branch,
+                    rootDirectory,
+                    ...(retry ? { retry: '1' } : {}),
+                },
+            }).url,
+        requested,
+    );
+    const previewing =
+        requested !== null && preview === null && previewError === null;
 
     useEffect(() => {
         if (!repository) {
@@ -203,47 +218,17 @@ export function GitHubForm({
         return () => controller.abort();
     }, [repository]);
 
-    // Poll while a plan task runs.
-    useEffect(() => {
-        if (preview?.status !== 'pending' || !repository) {
-            return;
-        }
-
-        const timer = window.setTimeout(() => void runPreview(), POLL_MS);
-
-        return () => window.clearTimeout(timer);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [preview]);
-
-    const runPreview = async () => {
+    const runPreview = () => {
         if (!repository) {
             return;
         }
 
-        setPreviewing(true);
-        setPreviewError(null);
+        const next = `${repository.id}\0${branch}\0${rootDirectory}`;
 
-        try {
-            setPreview(
-                await requestJson<App.Data.Canvas.PlanPreviewData>(
-                    'get',
-                    planPreview(project, {
-                        query: {
-                            repository: repository.id,
-                            branch,
-                            rootDirectory,
-                        },
-                    }).url,
-                ),
-            );
-        } catch (failure) {
-            setPreviewError(
-                failure instanceof Error
-                    ? failure.message
-                    : 'Detection failed.',
-            );
-        } finally {
-            setPreviewing(false);
+        if (next === requested) {
+            retryPreview();
+        } else {
+            setRequested(next);
         }
     };
 
@@ -254,7 +239,7 @@ export function GitHubForm({
                     setRepository(picked);
                     setBranch(picked.defaultBranch ?? 'main');
                     setName(suggestName(picked.fullName));
-                    setPreview(null);
+                    setRequested(null);
                 }}
             />
         );
@@ -302,7 +287,7 @@ export function GitHubForm({
                             value={branch}
                             onValueChange={(value) => {
                                 setBranch(value);
-                                setPreview(null);
+                                setRequested(null);
                             }}
                         >
                             <SelectTrigger
@@ -354,7 +339,7 @@ export function GitHubForm({
                             setRootDirectory(
                                 event.target.value.replace(/^\/+|\/+$/g, ''),
                             );
-                            setPreview(null);
+                            setRequested(null);
                         }}
                     />
                 </Field>
@@ -404,8 +389,20 @@ export function GitHubForm({
                     </p>
                 </div>
             )}
-            {previewError && (
-                <p className="type-body text-status-error">{previewError}</p>
+            {(previewError !== null || preview?.status === 'failed') && (
+                <div className="flex items-center gap-2">
+                    {previewError && (
+                        <p
+                            className="max-w-[65ch] type-body text-status-error"
+                            role="alert"
+                        >
+                            {previewError}
+                        </p>
+                    )}
+                    <Button variant="outline" size="sm" onClick={retryPreview}>
+                        Retry
+                    </Button>
+                </div>
             )}
             {errors.repository && (
                 <p className="type-body text-status-error">
@@ -414,7 +411,7 @@ export function GitHubForm({
             )}
 
             <div className="flex justify-end gap-2">
-                {preview?.status === 'pending' && (
+                {(preview?.status === 'pending' || previewError !== null) && (
                     <Button
                         variant="ghost"
                         onClick={confirm}
@@ -432,7 +429,7 @@ export function GitHubForm({
                     </Button>
                 ) : (
                     <Button
-                        onClick={() => void runPreview()}
+                        onClick={runPreview}
                         disabled={
                             previewing ||
                             branch === '' ||

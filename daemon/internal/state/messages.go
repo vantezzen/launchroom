@@ -3,6 +3,7 @@ package state
 import (
 	"encoding/json/v2"
 	"errors"
+	"net/netip"
 	"time"
 
 	"github.com/vantezzen/launchroom/daemon/internal/secret"
@@ -530,6 +531,42 @@ type HostStatus struct {
 	// Runtime is how launchroomd runs here (rootless Docker, dockerd-guard)
 	// and the resulting capability matrix (D49); omitted until known.
 	Runtime *HostRuntime `json:"runtime,omitzero" jsonschema:"nullable"`
+	// PublicAddresses are where the internet reaches this server: what DNS
+	// records must point at (docs/05 §5). Omitted until known.
+	PublicAddresses *PublicAddresses `json:"publicAddresses,omitzero" jsonschema:"nullable"`
+}
+
+// PublicAddresses are the server's public addresses as IP echo services see
+// them, or as LR_PUBLIC_IPS sets them. Private, CGNAT, Docker, loopback,
+// link-local, ULA, documentation and other special ranges are never sent
+// (PublicIP). At least one address is set.
+type PublicAddresses struct {
+	IPv4       IPAddr    `json:"ipv4,omitzero"`
+	IPv6       IPAddr    `json:"ipv6,omitzero"`
+	DetectedAt time.Time `json:"detectedAt"`
+}
+
+func (p *PublicAddresses) validate(e *errs, path string) {
+	if p.IPv4 == "" && p.IPv6 == "" {
+		e.addf(path, "needs an ipv4 or ipv6 address")
+	}
+	if p.IPv4 != "" {
+		if err := p.IPv4.Validate(); err != nil {
+			e.add(path+".ipv4", err)
+		} else if a, _ := netip.ParseAddr(string(p.IPv4)); !a.Is4() || !PublicIP(a) {
+			e.addf(path+".ipv4", "must be a public IPv4 address")
+		}
+	}
+	if p.IPv6 != "" {
+		if err := p.IPv6.Validate(); err != nil {
+			e.add(path+".ipv6", err)
+		} else if a, _ := netip.ParseAddr(string(p.IPv6)); !a.Is6() || a.Is4In6() || !PublicIP(a) {
+			e.addf(path+".ipv6", "must be a public IPv6 address")
+		}
+	}
+	if p.DetectedAt.IsZero() {
+		e.addf(path+".detectedAt", "is required")
+	}
 }
 
 // IngressStatus reports whether the rendered route table is live in Caddy.
@@ -663,6 +700,9 @@ func (r *Report) Validate() error {
 		}
 		if h.Runtime != nil {
 			h.Runtime.validate(&e, "host.runtime")
+		}
+		if h.PublicAddresses != nil {
+			h.PublicAddresses.validate(&e, "host.publicAddresses")
 		}
 	}
 	if m := r.Metrics; m != nil {

@@ -8,6 +8,7 @@ import {
     TriangleAlert,
 } from 'lucide-react';
 import type { ReactNode } from 'react';
+import { CopyValue } from '@/components/copy-value';
 import { Status } from '@/components/status';
 import { StepList } from '@/components/steps/step-list';
 import { TimeAgo } from '@/components/time-ago';
@@ -217,6 +218,39 @@ function Plan({
 }
 
 /**
+ * A release the dashboard can't install itself (its image list couldn't be
+ * read): why, in plain words, and the installer command to run instead.
+ */
+function InstallByHand({ release }: { release: App.Data.Updates.ReleaseData }) {
+    return (
+        <div className="flex flex-col gap-3">
+            <Status
+                state="warning"
+                label="This release can’t be installed from the dashboard"
+            />
+            <p className="type-body text-muted-foreground">
+                {release.cannotInstallReason ??
+                    'The release doesn’t pin its images by digest.'}{' '}
+                Check again in a few minutes, or install it with the installer:
+                on the main server, in the folder that contains{' '}
+                <code className="type-mono">launchroom/</code>, run
+            </p>
+            <CopyValue
+                value={release.installerCommand}
+                label="installer command"
+            />
+            <p className="type-small text-muted-foreground">
+                Installed somewhere else? Add{' '}
+                <code className="type-mono">--dir /path/to/launchroom</code>.
+                Your settings and data are kept. The installer doesn’t take a
+                backup first, so run{' '}
+                <code className="type-mono">./launchroom backup</code> before.
+            </p>
+        </div>
+    );
+}
+
+/**
  * The status hero (docs/08 §11, flows §15): up to date, a release that is
  * ready with what will happen, or the running update as one step list.
  */
@@ -405,10 +439,7 @@ export function UpdateHero(props: UpdatesPageProps) {
                     </div>
                 )}
                 {available.daemonImage === null ? (
-                    <Status
-                        state="warning"
-                        label="This release can’t be installed from here: run the installer again on the main server."
-                    />
+                    <InstallByHand release={available} />
                 ) : (
                     <div className="flex flex-col gap-3">
                         <h3 className="type-label text-muted-foreground">

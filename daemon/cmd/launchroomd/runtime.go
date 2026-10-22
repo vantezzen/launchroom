@@ -38,6 +38,7 @@ import (
 	"github.com/vantezzen/launchroom/daemon/internal/metrics"
 	"github.com/vantezzen/launchroom/daemon/internal/nudge"
 	"github.com/vantezzen/launchroom/daemon/internal/policy"
+	"github.com/vantezzen/launchroom/daemon/internal/publicip"
 	"github.com/vantezzen/launchroom/daemon/internal/reconcile"
 	"github.com/vantezzen/launchroom/daemon/internal/registry"
 	"github.com/vantezzen/launchroom/daemon/internal/sealed"
@@ -138,6 +139,9 @@ type daemonRuntime struct {
 	// NodeState once it verifies (docs/03 §4.2).
 	follow *controlplane.Follower
 
+	// publicIP detects the server's public addresses (Report.host.publicAddresses).
+	publicIP *publicip.Detector
+
 	// rejected is the latest NodeState the daemon refused (Report.stateRejected).
 	rejected atomic.Pointer[state.Rejection]
 	// netHolds keeps environment networks of running one-off tasks from
@@ -210,6 +214,11 @@ func newRuntime(ctx context.Context, cfg config.Config, id *identity.Identity, s
 	}
 	rt.policy = pol
 	priv := id.SealingPrivateKey()
+	rt.ask.Reach = caddy.NewReachability(string(serverID), id.SignMessage, rt.now)
+	rt.publicIP = publicip.New(publicip.Options{
+		Off: cfg.PublicIPDetectOff, Configured: cfg.PublicIPs, OnChange: rt.kickReport, Now: rt.now,
+		Log: log.With("component", "publicip"),
+	})
 	rt.traffic = traffic.New(traffic.Options{OnMinute: rt.kickReport, Now: rt.now, Log: log.With("component", "traffic")})
 	ingress := caddy.NewManager(caddy.ManagerOptions{
 		ServerID: string(serverID), Docker: dc, Admin: admin, Policy: pol, Ask: rt.ask,
@@ -231,6 +240,7 @@ func newRuntime(ctx context.Context, cfg config.Config, id *identity.Identity, s
 			HTTPPort: 80, HTTPSPort: 443, RedirectHTTPSPort: cfg.HTTPSRedirectPort,
 			ForwardAuthOrigins: forwardAuthOrigins(cfg.ControlPlaneURL, nil, cfg.AllowedLocalUpstreams),
 			AccessLogAddress:   cfg.AccessLogAddr.String(),
+			ReachabilityDial:   reachabilityDial(cfg.AskAddr),
 		},
 	})
 	rt.firewall = firewall.New(firewall.Options{
@@ -296,7 +306,7 @@ func (rt *daemonRuntime) setupBuilds(ctx context.Context, dc docker.Client, pol 
 	gw := netip.AddrPortFrom(rt.buildkit.Gateway(), buildkitd.RegistryPort)
 	rt.buildFwd = registry.NewForwarder(gw.String(), "", rt.log.With("component", "registry-build"))
 	rt.builder = build.New(build.Options{
-		BuildKit:         rt.buildkit.Client,
+		BuildKit:         rt.buildkit.WaitClient,
 		Tokens:           rt.tokens,
 		RegistryHost:     buildkitd.RegistryHost(),
 		PublicRegistry:   registry.DefaultAddress,
@@ -352,15 +362,18 @@ func (rt *daemonRuntime) syncSystem(ctx context.Context, ns *state.NodeState) {
 	_ = rt.firewall.Sync(ctx)
 	if !rt.buildkit.Enabled() {
 		rt.setBuildPlatforms(nil)
+		rt.setBuilds(buildsCapability(ns.System.Buildkit.Enabled, rt.buildkit.Userns(), false))
 		return
 	}
 	// What this builder can build, emulated platforms included (D53);
 	// asked once per buildkitd container, retried on the next pass.
 	pctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	if p := rt.buildkit.Platforms(pctx); p != nil {
+	p := rt.buildkit.Platforms(pctx)
+	if p != nil {
 		rt.setBuildPlatforms(p)
 	}
 	cancel()
+	rt.setBuilds(buildsCapability(true, rt.buildkit.Userns(), p != nil))
 	buildUp := upstream
 	if buildUp == "" {
 		buildUp = registry.DefaultAddress // Zot itself listens on 127.0.0.1:5000 (control-plane host)
@@ -425,6 +438,9 @@ func (rt *daemonRuntime) run(ctx context.Context, syncState func(context.Context
 	start := func(f func()) {
 		wg.Add(1)
 		go func() { defer wg.Done(); f() }()
+	}
+	if rt.publicIP != nil {
+		start(func() { rt.publicIP.Run(ctx) })
 	}
 	start(func() {
 		if err := rt.ask.Serve(ctx, rt.cfg.AskAddr.String()); err != nil {
@@ -658,6 +674,9 @@ func (rt *daemonRuntime) hostStatus(ctx context.Context) *state.HostStatus {
 	h.Features = rt.features()
 	h.ControlPlane = rt.follow.Status()
 	h.Runtime = rt.runtimeStatus(h)
+	if rt.publicIP != nil {
+		h.PublicAddresses = rt.publicIP.Snapshot()
+	}
 	return h
 }
 
@@ -919,4 +938,13 @@ func explicitOrigin(u *url.URL) string {
 		}
 	}
 	return u.Scheme + "://" + net.JoinHostPort(strings.ToLower(u.Hostname()), port)
+}
+
+// reachabilityDial is where Caddy proxies the reachability check: the ask
+// server's fixed loopback address (none when it listens on a random port).
+func reachabilityDial(ask netip.AddrPort) string {
+	if ask.Port() == 0 {
+		return ""
+	}
+	return ask.String()
 }

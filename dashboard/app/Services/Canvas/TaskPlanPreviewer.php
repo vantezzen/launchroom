@@ -21,6 +21,7 @@ use App\Models\Project;
 use App\Models\Server;
 use App\Services\Builds\BuildTasks;
 use App\Services\Git\GitHeads;
+use App\Services\Tasks\TaskCancellation;
 use App\Support\PublicId;
 use Closure;
 use Illuminate\Contracts\Cache\Repository as Cache;
@@ -36,39 +37,59 @@ use Illuminate\Contracts\Cache\Repository as Cache;
  * for {@see self::TTL_SECONDS}; afterwards a new head and task are resolved.
  * Without an online build server nothing would ever pick the task up, so the
  * answer is `unavailable` and detection happens with the first build.
+ *
+ * A task never ends up "pending" forever: one nobody leased within
+ * {@see self::LEASE_WAIT_SECONDS} is cancelled and reported as failed, and
+ * one past its deadline is reported as failed before the lease reaper gets
+ * to it. `retry` forgets a failed, cancelled or stale task and starts anew.
  */
 final readonly class TaskPlanPreviewer implements PlanPreviewer
 {
     public const int TTL_SECONDS = 600;
 
+    /** How long a plan task may wait for a build server to lease it. */
+    public const int LEASE_WAIT_SECONDS = 120;
+
     public function __construct(
         private GitHeads $heads,
         private BuildTasks $tasks,
         private Cache $cache,
+        private TaskCancellation $cancellation,
     ) {}
 
-    public function preview(Project $project, SourceRepository $repository, string $branch, string $rootDirectory): PlanPreviewData
+    public function preview(Project $project, SourceRepository $repository, string $branch, string $rootDirectory, bool $retry = false): PlanPreviewData
     {
-        return $this->run($project->team_id, fn (): string => $this->environmentId($project), $repository, $branch, $rootDirectory);
+        return $this->run($project->team_id, fn (): string => $this->environmentId($project), $repository, $branch, $rootDirectory, $retry);
     }
 
     /**
      * Before the project exists (import flow): nothing is deployed into the
      * plan's environment, so a fresh id stands in.
      */
-    public function previewForTeam(int $teamId, SourceRepository $repository, string $branch, string $rootDirectory): PlanPreviewData
+    public function previewForTeam(int $teamId, SourceRepository $repository, string $branch, string $rootDirectory, bool $retry = false): PlanPreviewData
     {
-        return $this->run($teamId, static fn (): string => PublicId::generate('env'), $repository, $branch, $rootDirectory);
+        return $this->run($teamId, static fn (): string => PublicId::generate('env'), $repository, $branch, $rootDirectory, $retry);
     }
 
     /**
      * @param  Closure(): string  $environmentId
      */
-    private function run(int $teamId, Closure $environmentId, SourceRepository $repository, string $branch, string $rootDirectory): PlanPreviewData
+    private function run(int $teamId, Closure $environmentId, SourceRepository $repository, string $branch, string $rootDirectory, bool $retry): PlanPreviewData
     {
         $key = 'plan-preview:'.$teamId.':'.$repository->repositoryRef()->key().':'.hash('sha256', $branch."\0".$rootDirectory);
         $remembered = $this->cache->get($key);
         $task = is_string($remembered) ? DaemonTask::query()->where('team_id', $teamId)->where('public_id', $remembered)->first() : null;
+
+        if ($task instanceof DaemonTask && $this->leaseWaitOver($task)) {
+            // Nobody picked it up: don't let it run minutes later.
+            $this->cancellation->cancel($task);
+            $task->refresh();
+        }
+
+        if ($task instanceof DaemonTask && $retry && (($task->status->isTerminal() && $task->status !== DaemonTaskStatus::Succeeded) || $this->pastDeadline($task))) {
+            $this->cancellation->cancel($task);
+            $task = null;
+        }
 
         if (! $task instanceof DaemonTask) {
             if (! $this->hasBuildServer($teamId)) {
@@ -91,16 +112,47 @@ final readonly class TaskPlanPreviewer implements PlanPreviewer
         $plan = is_array($result['plan'] ?? null) ? $result['plan'] : [];
         $failure = is_array($result['failure'] ?? null) ? $result['failure'] : [];
 
+        if ($this->pastDeadline($task)) {
+            return new PlanPreviewData('failed', null, 'Detection did not finish in time. Retry, or add the service: the first build detects again.');
+        }
+
         return match ($task->status) {
             DaemonTaskStatus::Pending => new PlanPreviewData('pending', null, 'Waiting for a build server'),
-            DaemonTaskStatus::Leased => new PlanPreviewData('pending', null, 'Inspecting the repository on '.($task->loadMissing('server')->server->name ?? 'a build server')),
+            DaemonTaskStatus::Leased => new PlanPreviewData('pending', null, $this->inspecting($task)),
             DaemonTaskStatus::Succeeded => new PlanPreviewData('ready', DetectedPlanData::fromStored($plan['summary'] ?? null), suggestions: PlanSuggestionsData::fromStored($plan['summary'] ?? null, $rootDirectory)),
             DaemonTaskStatus::Failed, DaemonTaskStatus::Cancelled => new PlanPreviewData(
                 'failed',
                 DetectedPlanData::fromStored($failure['summary'] ?? null),
-                $task->status === DaemonTaskStatus::Cancelled ? 'The detection was cancelled.' : 'Detection failed: '.mb_substr($task->error ?? 'the plan task failed', 0, 500),
+                match (true) {
+                    $task->status === DaemonTaskStatus::Failed => 'Detection failed: '.mb_substr($task->error ?? 'the plan task failed', 0, 500),
+                    $task->leased_at === null => 'No build server picked up the detection. Check that your build server is online, then retry.',
+                    default => 'The detection was cancelled.',
+                },
             ),
         };
+    }
+
+    private function inspecting(DaemonTask $task): string
+    {
+        $name = $task->loadMissing('server')->server?->name;
+
+        return $name === null || $name === '' ? 'Inspecting the repository on a build server' : "Inspecting the repository on the server {$name}";
+    }
+
+    /** Still pending after the lease wait (since created or requeued): no build server takes it. */
+    private function leaseWaitOver(DaemonTask $task): bool
+    {
+        $since = $task->updated_at ?? $task->created_at;
+
+        return $task->status === DaemonTaskStatus::Pending
+            && $since !== null
+            && $since->lt(now()->subSeconds(self::LEASE_WAIT_SECONDS));
+    }
+
+    /** Leased but past its deadline: the lease reaper fails it soon. */
+    private function pastDeadline(DaemonTask $task): bool
+    {
+        return $task->status === DaemonTaskStatus::Leased && ($task->deadline_at?->isPast() ?? false);
     }
 
     private function hasBuildServer(int $teamId): bool

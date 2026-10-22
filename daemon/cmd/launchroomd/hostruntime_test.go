@@ -1,9 +1,11 @@
 package main
 
 import (
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/vantezzen/launchroom/daemon/internal/build/buildkitd"
 	"github.com/vantezzen/launchroom/daemon/internal/docker"
 	"github.com/vantezzen/launchroom/daemon/internal/guard/guardapi"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
@@ -118,5 +120,29 @@ func TestHostOSOf(t *testing.T) {
 		if got := hostOSOf(c.configured, c.engine); got != c.want {
 			t.Errorf("hostOSOf(%q, %q) = %q, want %q", c.configured, c.engine, got, c.want)
 		}
+	}
+}
+
+func TestBuildsCapability(t *testing.T) {
+	if c := buildsCapability(false, buildkitd.UsernsBlocked, false); c != nil {
+		t.Fatalf("not a build server: %+v", c)
+	}
+	if c := buildsCapability(true, buildkitd.UsernsOpen, false); c.Name != state.CapBuilds || c.State != state.CapabilityFull || c.Message != "" {
+		t.Fatalf("open: %+v", c)
+	}
+	if c := buildsCapability(true, buildkitd.UsernsProfile, true); c.State != state.CapabilityFull || !strings.Contains(c.Message, "launchroom-buildkit") {
+		t.Fatalf("profile: %+v", c)
+	}
+	c := buildsCapability(true, buildkitd.UsernsBlocked, false)
+	if c.State != state.CapabilityUnavailable || !strings.Contains(c.Message, "apparmor_parser -r -W /etc/apparmor.d/launchroom-buildkit") || len(c.Message) > 512 {
+		t.Fatalf("blocked: %+v", c)
+	}
+	// Restricted without the profile, but BuildKit answers (the owner
+	// allowed rootlesskit another way): builds work.
+	if c := buildsCapability(true, buildkitd.UsernsBlocked, true); c.State != state.CapabilityFull {
+		t.Fatalf("blocked but answering: %+v", c)
+	}
+	if err := state.CapBuilds.Validate(); err != nil {
+		t.Fatal(err)
 	}
 }

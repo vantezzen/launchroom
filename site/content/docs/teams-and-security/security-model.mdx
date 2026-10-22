@@ -34,6 +34,7 @@ Even if the control plane were fully compromised, it must not be able to turn a 
 - No bind mounts of server paths, and never the Docker socket. Only named, launchroom-labelled volumes.
 - Capabilities from a small allow-list only, on top of dropping all others: `NET_BIND_SERVICE`, `CHOWN`, `SETUID`, `SETGID`, `DAC_OVERRIDE`, `FOWNER`.
 - Hardened defaults on every container: no new privileges, CPU, memory and process limits, an init process, log rotation.
+- seccomp and Docker's default AppArmor profile stay on. A container can't pick another AppArmor profile.
 - Network isolation is applied before any container starts. If it can't be applied, nothing starts.
 
 Relaxing any of this (for example to allow a GPU) is only possible in a local file on the server itself, which needs host access to edit.
@@ -43,6 +44,15 @@ Relaxing any of this (for example to allow a GPU) is only possible in a local fi
 launchroomd doesn't hold the Docker socket either. A separate process on each server, **dockerd-guard**, owns the socket and forwards only an allow-list of Docker API calls, after checking every request body against the same policy floor. It has no network access, drops all capabilities and runs with a read-only filesystem. The floor is enforced twice: by launchroomd, and again by the guard. A compromised launchroomd can't reconfigure the guard.
 
 On a [rootless Docker](/docs/servers/rootless-docker) server, everything runs inside an unprivileged user's namespaces, which narrows the impact further.
+
+### The build container
+
+Builds run in rootless BuildKit, launchroom's one system container with relaxed confinement: seccomp and AppArmor are
+unconfined so it can create its own user namespace, and it's never privileged, gets no added capabilities and has its
+own network. On Ubuntu 23.10 and later, which restrict user namespaces, the installer asks to load the AppArmor profile
+`launchroom-buildkit` (unconfined plus user namespaces, attached to no program), and the build container runs with it.
+The restriction stays on for the rest of the server. dockerd-guard allows exactly `apparmor=unconfined` or
+`apparmor=launchroom-buildkit`, and only for the build container.
 
 ## Network isolation
 

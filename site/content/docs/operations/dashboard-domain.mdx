@@ -23,7 +23,9 @@ Open **Settings → Dashboard domain** and enter the domain under **Use your own
 <Step>
 ### Point DNS at this server
 
-Add the A (and AAAA, if you use IPv6) records the page shows. They point to the **control-plane server** only, not to your other servers, because only the control plane runs the dashboard.
+Add the A (and AAAA, if you use IPv6) records the page shows. They point to the **control-plane server's public IP** only, not to your other servers, because only the control plane runs the dashboard. The page never shows a private or Docker address; while the server hasn't reported its public IP yet, it shows none.
+
+Behind Cloudflare's proxy, the records resolve to Cloudflare. launchroom then checks over HTTP that requests still reach the control-plane server, and the HTTPS test goes to the server's own address directly. Set SSL/TLS to Full (strict). See [Behind a proxy](/docs/troubleshooting/dns-and-tls#behind-a-proxy).
 </Step>
 <Step>
 ### Get a certificate

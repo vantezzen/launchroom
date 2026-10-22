@@ -17,7 +17,8 @@ use Illuminate\Support\Facades\DB;
  * change starts, on "Check now" and every minute while it is open:
  *
  * 1. DNS: the name's A/AAAA records point at the control-plane server
- *    (public resolvers, like custom domains).
+ *    (public resolvers, like custom domains), or at a proxy that forwards
+ *    to it (HTTP reachability check, DnsCheck).
  * 2. Once they do, the control-plane Caddy routes the name (it joins the
  *    dashboard's system route) and obtains a certificate (HTTP-01 /
  *    TLS-ALPN-01). Routing only after DNS points here keeps Caddy's first
@@ -69,7 +70,7 @@ final readonly class CheckDashboardDomain
         }
 
         $probe = $dnsOk
-            ? $this->checks->probe($change->hostname, $dns->addresses)
+            ? $this->checks->probe($change->hostname, $dns->reachedOverHttp ? null : $dns->addresses)
             : DashboardProbeData::failed('Waiting for DNS.');
 
         return DB::transaction(function () use ($change, $dns, $dnsOk, $probe): DashboardDomainChange {

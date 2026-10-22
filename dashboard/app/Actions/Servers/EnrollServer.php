@@ -16,6 +16,7 @@ use App\Models\Server;
 use App\Models\ServerEnrollment;
 use App\Models\Team;
 use App\Support\Crypto\OpaqueToken;
+use App\Support\Network\ServerAddress;
 use App\Support\Servers\HostRoleLimits;
 use Illuminate\Support\Facades\DB;
 
@@ -81,8 +82,11 @@ final readonly class EnrollServer
                 'signing_public_key' => $request->signingKey,
                 'sealing_public_key' => $request->sealingKey,
                 'facts' => $facts,
-                'public_ipv4' => $ip !== null && filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false ? $ip : null,
-                'public_ipv6' => $ip !== null && filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) !== false ? $ip : null,
+                // Only a public source address: the control-plane daemon arrives
+                // from Docker's bridge gateway. launchroomd reports what IP echo
+                // services see right after (RecordReport, docs/05 §5).
+                'public_ipv4' => ServerAddress::ipv4($ip),
+                'public_ipv6' => ServerAddress::ipv6($ip),
                 'enrolled_at' => now(),
             ]);
             $server->forceFill(['last_seen_at' => now()])->save();

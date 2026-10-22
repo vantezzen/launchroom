@@ -252,8 +252,9 @@ export function FailureCard({
     );
 }
 
+/** Lowercases a leading ordinary word; names such as BuildKit or GitHub keep their case. */
 function lower(text: string): string {
-    return /^[A-Z][a-z]/.test(text)
+    return /^[A-Z](?![A-Za-z0-9]*[A-Z])[a-z]*\b/.test(text)
         ? text.charAt(0).toLowerCase() + text.slice(1)
         : text;
 }

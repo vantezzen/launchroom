@@ -75,6 +75,10 @@ services:
       LR_LOG_LEVEL: ${LR_LOG_LEVEL:-info}
       # Host time zone, recorded by the installer (suggests the server location).
       LR_HOST_TIMEZONE: ${LR_HOST_TIMEZONE:-}
+      # Public address for DNS instructions (docs/05 §5): detected through IP
+      # echo services unless LR_PUBLIC_IP_DETECT=off; LR_PUBLIC_IPS sets it.
+      LR_PUBLIC_IP_DETECT: ${LR_PUBLIC_IP_DETECT:-on}
+      LR_PUBLIC_IPS: ${LR_PUBLIC_IPS:-}
       # On a Mac (D53), what the installer saw outside the engine's Linux VM:
       # LR_HOST_OS=darwin and the model (system_profiler). Display and roles only.
       LR_HOST_OS: ${LR_HOST_OS:-}

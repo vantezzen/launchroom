@@ -13,7 +13,7 @@ import type { ReactNode } from 'react';
 import { Logo } from '@/components/logo';
 import { Page, PageHeader } from '@/components/patterns/page';
 import { Section } from '@/components/patterns/section';
-import { Status } from '@/components/status';
+import { Status, StatusIcon } from '@/components/status';
 import { Button } from '@/components/ui/button';
 import {
     DropdownMenu,
@@ -36,6 +36,7 @@ import { providerLabel, providerLogo } from '@/features/git/providers';
 import { NewProjectTabs } from '@/features/blueprints/new-project-tabs';
 import { compactAge, plural } from '@/features/canvas/format';
 import { requestJson, RequestFailed } from '@/features/projects/http';
+import { usePlanPreview } from '@/features/add-service/use-plan-preview';
 import { cn } from '@/lib/utils';
 import { edit as gitSettings } from '@/routes/git';
 import {
@@ -75,8 +76,6 @@ type DatabaseChoice = {
     connectTo: string[];
     selected: boolean;
 };
-
-const POLL_MS = 2000;
 
 /** Variables a connection injects, so `.env.example` keys can be marked as covered. */
 const PROVIDED: Record<string, RegExp> = {
@@ -354,69 +353,26 @@ function RepositoryPicker({
 /* Step 2: what we found                                               */
 /* ------------------------------------------------------------------ */
 
-function usePlanPreview(
-    repository: string,
-    branch: string,
-    rootDirectory: string,
-    enabled: boolean,
-): { preview: Preview | null; error: string | null } {
-    const [preview, setPreview] = useState<Preview | null>(null);
-    const [error, setError] = useState<string | null>(null);
-
-    useEffect(() => {
-        if (!enabled) {
-            return;
-        }
-
-        let cancelled = false;
-        let timer = 0;
-        let rounds = 0;
-        const controller = new AbortController();
-
-        const run = () => {
-            requestJson<Preview>(
-                'get',
-                planPreview({
-                    query: { repository, branch, rootDirectory },
-                }).url,
-                undefined,
-                controller.signal,
-            )
-                .then((data) => {
-                    if (cancelled) {
-                        return;
-                    }
-
-                    setPreview(data);
-
-                    // Stop after ~3 minutes: the first build detects anyway.
-                    if (data.status === 'pending' && rounds++ < 90) {
-                        timer = window.setTimeout(run, POLL_MS);
-                    }
-                })
-                .catch((failure: unknown) => {
-                    if (!cancelled) {
-                        setError(
-                            failure instanceof Error
-                                ? failure.message
-                                : 'Detection failed.',
-                        );
-                    }
-                });
-        };
-
-        setPreview(null);
-        setError(null);
-        run();
-
-        return () => {
-            cancelled = true;
-            controller.abort();
-            window.clearTimeout(timer);
-        };
-    }, [repository, branch, rootDirectory, enabled]);
-
-    return { preview, error };
+function DetectionFailed({
+    message,
+    onRetry,
+}: {
+    message: string;
+    onRetry: () => void;
+}) {
+    return (
+        <span className="flex flex-col items-start gap-2" role="alert">
+            <span className="flex items-start gap-1.5 text-status-error">
+                <span className="mt-0.5 shrink-0">
+                    <StatusIcon state="failed" />
+                </span>
+                <span className="max-w-[65ch] break-words">{message}</span>
+            </span>
+            <Button variant="outline" size="sm" onClick={onRetry}>
+                Retry
+            </Button>
+        </span>
+    );
 }
 
 function Checkbox({
@@ -480,11 +436,23 @@ function AppCard({
     onPlan: (root: string, preview: Preview | null) => void;
     onToggleProcess: (name: string, run: boolean) => void;
 }) {
-    const { preview, error: previewError } = usePlanPreview(
-        repository,
-        branch,
-        app.rootDirectory,
-        choice.selected,
+    const {
+        preview,
+        error: previewError,
+        retry: retryPreview,
+    } = usePlanPreview(
+        (retry) =>
+            planPreview({
+                query: {
+                    repository,
+                    branch,
+                    rootDirectory: app.rootDirectory,
+                    ...(retry ? { retry: '1' } : {}),
+                },
+            }).url,
+        choice.selected
+            ? `${repository}\0${branch}\0${app.rootDirectory}`
+            : null,
     );
     const plan = preview?.plan ?? null;
     const processes = preview?.suggestions?.processes ?? [];
@@ -509,7 +477,9 @@ function AppCard({
     if (!choice.selected) {
         detection = <span className="text-muted-foreground">Not imported</span>;
     } else if (previewError) {
-        detection = <span className="text-status-error">{previewError}</span>;
+        detection = (
+            <DetectionFailed message={previewError} onRetry={retryPreview} />
+        );
     } else if (!preview || preview.status === 'pending') {
         detection = (
             <Status
@@ -532,9 +502,13 @@ function AppCard({
         );
     } else {
         detection = (
-            <span className="text-muted-foreground">
-                We couldn’t detect it yet. The first build tries again.
-            </span>
+            <DetectionFailed
+                message={
+                    preview.message ??
+                    'We couldn’t detect it yet. The first build tries again.'
+                }
+                onRetry={retryPreview}
+            />
         );
     }
 

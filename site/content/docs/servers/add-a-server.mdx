@@ -12,8 +12,8 @@ take work. You don't open ports between servers, exchange SSH keys or configure 
 
 - **Linux**, x86_64 or arm64. Debian and Ubuntu are first-class. Or **macOS** with OrbStack, Docker Desktop or Colima:
   see [Mac servers](/docs/servers/macos).
-- **Docker Engine 24 or newer** with the compose plugin. On Linux the command installs it with Docker's official script
-  (get.docker.com) when it's missing; set `LR_NO_INSTALL_DOCKER=1` to stop instead. Docker installed from snap is not supported.
+- **Docker Engine 24 or newer** with the compose plugin. Docker installed from snap is not supported. On Linux, when
+  Docker is missing, the command asks whether to install it with Docker's official script (get.docker.com).
 - Run the command as **root or a user in the `docker` group**. For Docker in rootless mode, see
   [Rootless Docker](/docs/servers/rootless-docker).
 - **Outbound HTTPS** to your dashboard's address, and to GitHub and the container registries for the release and
@@ -21,7 +21,35 @@ take work. You don't open ports between servers, exchange SSH keys or configure 
 - For the **Serve traffic** role only: a public IP with ports 80 and 443 reachable from the internet.
 
 Like the first install, everything the command writes lives in one folder: `./launchroomd`, created where you run it
-(on a Mac, `~/launchroom`).
+(on a Mac, `~/launchroom`). On Linux there are three exceptions, and the command asks before each, as the
+[first install](/docs/getting-started/install#docker) does:
+
+- installing Docker, when it's missing
+- raising the kernel's inotify limits in `/etc/sysctl.d/60-launchroom-inotify.conf`, when they are below 65,536 watches
+  or 256 instances
+- loading the AppArmor profile `/etc/apparmor.d/launchroom-buildkit` on Ubuntu 23.10 and later, which allows user
+  namespaces for launchroom's build container only (see
+  [User namespaces for builds](/docs/getting-started/install#user-namespaces-for-builds)). The command asks on every
+  Linux server, since you can give any server the **Build** role later.
+
+Without a terminal, for example in cloud-init, the command doesn't install or change any of them. It stops when Docker
+is missing and prints the commands for the rest. These environment variables allow them without asking:
+
+| Variable | What it does |
+|---|---|
+| `LR_INSTALL_DOCKER=1` | Install Docker with Docker's official script when it's missing. Also `--install-docker`. |
+| `LR_NO_INSTALL_DOCKER=1` | Never install Docker. Also `--no-install-docker`. |
+| `LR_RAISE_INOTIFY=1` | Raise low inotify limits. Also `--raise-inotify`. |
+| `LR_BUILDKIT_APPARMOR=1` | Load launchroom's AppArmor profile for builds when the server restricts user namespaces. Also `--allow-buildkit-userns`. |
+
+Two more variables are recorded in `.env` when set:
+
+| Variable | What it does |
+|---|---|
+| `LR_PUBLIC_IP_DETECT=off` | launchroomd never asks IP echo services for the server's public IP. |
+| `LR_PUBLIC_IPS=203.0.113.7,2001:db8::7` | The server's public IPs (at most one IPv4 and one IPv6), for DNS instructions without detection. |
+
+With `--rootless`, the command never installs Docker: set up rootless Docker first.
 
 ## Add it in the dashboard
 

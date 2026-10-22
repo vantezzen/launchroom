@@ -677,6 +677,7 @@ export function LogExplorer({
                               : null
                     }
                     empty={empty}
+                    live={live && canLive}
                     className="min-h-[320px]"
                 />
                 {selected && (

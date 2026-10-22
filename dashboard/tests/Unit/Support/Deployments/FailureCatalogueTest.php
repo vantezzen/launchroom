@@ -9,6 +9,10 @@ use App\Support\Deployments\Failures\FailureContext;
 
 dataset('failures', [
     'railpack could not plan' => [new FailureContext(F::PlanError, 'Build failed (plan): railpack could not plan this app (see the plan log)'), 'cannot_plan', FailureFixAction::GenerateDockerfile, ['trigger' => 'plan_failed']],
+    'buildkit userns (hint)' => [new FailureContext(F::Transient, 'Build failed (setup): buildkitd keeps restarting', hintCodes: ['buildkit-userns-restricted', 'buildkit-crash-loop']), 'buildkit_userns', null, []],
+    'buildkit oom (hint)' => [new FailureContext(F::Transient, 'Build failed (setup): buildkitd keeps restarting (restarted 6 times, last exit code 137): it was killed for running out of memory', hintCodes: ['buildkit-oom', 'buildkit-crash-loop']), 'buildkit_oom', null, []],
+    'buildkit crash loop (hint)' => [new FailureContext(F::Transient, 'Build failed (setup): buildkitd keeps restarting', hintCodes: ['buildkit-crash-loop']), 'buildkit_unavailable', null, []],
+    'buildkit not ready (older servers)' => [new FailureContext(F::Transient, 'Build failed (setup): internal_error (setup): buildkitd: not ready: failed to list workers: Unavailable'), 'buildkit_unavailable', null, []],
     'no start command (hint)' => [new FailureContext(F::BuildError, 'Build failed (build): exit code: 1', hintCodes: ['no-start-command']), 'no_start_command', FailureFixAction::GenerateDockerfile, ['trigger' => 'build_failed']],
     'port mismatch' => [new FailureContext(F::HealthTimeout, 'The new version did not become healthy in time: connection refused; the app listens on 5173, not 3000', currentPort: 3000), 'port_mismatch', FailureFixAction::SetPort, ['port' => 5173, 'currentPort' => 3000]],
     'port mismatch, several ports' => [new FailureContext(F::RuntimeError, 'the app listens on 8080, 9000, not 80'), 'port_mismatch', FailureFixAction::SetPort, ['port' => 8080, 'currentPort' => 80]],
@@ -54,7 +58,7 @@ test('unknown failures and code errors are not explained', function (FailureCont
 
 test('every catalogue entry is covered and copy never says agent or daemon', function (): void {
     expect(FailureCatalogue::keys())->toBe([
-        'cannot_plan', 'no_start_command', 'port_mismatch', 'port_loopback', 'no_port', 'out_of_memory_build', 'out_of_memory', 'pnpm_lockfile', 'npm_lockfile',
+        'cannot_plan', 'buildkit_userns', 'buildkit_oom', 'buildkit_unavailable', 'no_start_command', 'port_mismatch', 'port_loopback', 'no_port', 'out_of_memory_build', 'out_of_memory', 'pnpm_lockfile', 'npm_lockfile',
         'yarn_lockfile', 'php_extension', 'native_module', 'missing_variable', 'health_refused', 'health_timeout',
     ]);
 

@@ -39,7 +39,7 @@ export function EdgeTraffic({
             <dl className="grid grid-cols-2 gap-x-6 gap-y-5 rounded-xl border bg-card p-6 shadow-card sm:grid-cols-4">
                 <Fact label="Public address">
                     <span className="type-mono">
-                        {edge.publicIpv4 ?? 'Unknown'}
+                        {edge.publicIpv4 ?? edge.publicIpv6 ?? 'Unknown'}
                     </span>
                 </Fact>
                 <Fact label="Routes">

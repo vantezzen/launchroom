@@ -106,9 +106,13 @@ const (
 	// ports published on the mesh address). Unavailable on Docker Desktop,
 	// which binds published ports on the Mac instead of in its VM (D53).
 	CapWorkloads CapabilityName = "workloads"
+	// CapBuilds: BuildKit can run here (build servers only). Unavailable
+	// when the host restricts user namespaces and launchroom's AppArmor
+	// profile is not loaded (D58).
+	CapBuilds CapabilityName = "builds"
 )
 
-var capabilityNames = []string{string(CapDockerAccess), string(CapEdgePorts), string(CapClientAddresses), string(CapFirewall), string(CapMesh), string(CapPortDiscovery), string(CapWorkloads)}
+var capabilityNames = []string{string(CapDockerAccess), string(CapEdgePorts), string(CapClientAddresses), string(CapFirewall), string(CapMesh), string(CapPortDiscovery), string(CapWorkloads), string(CapBuilds)}
 
 // ProtocolSchema implements SchemaDescriber.
 func (CapabilityName) ProtocolSchema() ScalarSchema { return enumSchema(capabilityNames) }

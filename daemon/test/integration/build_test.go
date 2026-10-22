@@ -303,7 +303,7 @@ func setupBuild(t *testing.T) *buildEnv {
 	be.gitURL = "http://" + gl.Addr().String()
 
 	be.builder = build.New(build.Options{
-		BuildKit: be.bk.Client, Tokens: be.tokens, RegistryHost: buildkitd.RegistryHost(), PublicRegistry: registry.DefaultAddress,
+		BuildKit: be.bk.WaitClient, Tokens: be.tokens, RegistryHost: buildkitd.RegistryHost(), PublicRegistry: registry.DefaultAddress,
 		WorkDir: t.TempDir(), InsecureGitHosts: []string{"127.0.0.1"}, Log: log,
 	})
 	return be

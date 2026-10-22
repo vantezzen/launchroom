@@ -45,6 +45,7 @@ const (
 	buildkitName         = "lr-system-buildkit"
 	buildkitNetwork      = "lr-system-build"
 	buildkitStateVolume  = "lr-system-buildkit-state"
+	buildkitAppArmor     = "launchroom-buildkit"
 	ambassadorName       = "lr-system-ambassador"
 	ambassadorNetwork    = "lr-system-ambassador"
 	ambassadorVolume     = "lr-system-ambassador-config"
@@ -114,8 +115,10 @@ type systemShape struct {
 	capAdd      []string
 	capDropAll  bool
 	securityOpt []string
-	volumes     []string
-	extraHost   []string // extra HostConfig fields
+	// securityOptAlt is the one other exact set allowed (nil = none).
+	securityOptAlt []string
+	volumes        []string
+	extraHost      []string // extra HostConfig fields
 	// putRoots are where archive uploads may write ("" = none).
 	putRoots []string
 	// exec is the allowed argv prefix for execs (nil = no exec at all).
@@ -138,7 +141,10 @@ var shapes = map[class]systemShape{
 	classBuildkit: {
 		component: policy.SystemBuildkit, name: buildkitName, labelKind: policy.SystemBuildkit, network: buildkitNetwork,
 		securityOpt: []string{"seccomp=unconfined", "apparmor=unconfined"},
-		volumes:     []string{buildkitStateVolume}, extraHost: []string{"MaskedPaths", "ReadonlyPaths", "ExtraHosts"},
+		// Hosts that restrict user namespaces: the installers' AppArmor
+		// profile (unconfined plus userns) instead of unconfined (D58).
+		securityOptAlt: []string{"seccomp=unconfined", "apparmor=" + buildkitAppArmor},
+		volumes:        []string{buildkitStateVolume}, extraHost: []string{"MaskedPaths", "ReadonlyPaths", "ExtraHosts"},
 		putRoots: []string{"/home/user/.config"}, exec: []string{"buildctl", "dial-stdio"}, execExact: true,
 	},
 	classAmbassador: {
@@ -279,7 +285,7 @@ func (s *Server) checkSystem(ctx context.Context, cls class, name string, cfg *c
 			return deny("container %s: capability %s is not allowed", name, c)
 		}
 	}
-	if !sameSet(hc.SecurityOpt, sh.securityOpt) {
+	if !sameSet(hc.SecurityOpt, sh.securityOpt) && (sh.securityOptAlt == nil || !sameSet(hc.SecurityOpt, sh.securityOptAlt)) {
 		return deny("container %s: security options %v are not allowed (want %v)", name, hc.SecurityOpt, sh.securityOpt)
 	}
 	if err := checkLogConfig(hc.LogConfig); err != nil {

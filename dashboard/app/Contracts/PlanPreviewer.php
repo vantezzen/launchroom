@@ -19,8 +19,9 @@ use Illuminate\Container\Attributes\Bind;
 #[Bind(TaskPlanPreviewer::class)]
 interface PlanPreviewer
 {
-    public function preview(Project $project, SourceRepository $repository, string $branch, string $rootDirectory): PlanPreviewData;
+    /** `retry` starts a new task when the last one failed, was cancelled or is stuck. */
+    public function preview(Project $project, SourceRepository $repository, string $branch, string $rootDirectory, bool $retry = false): PlanPreviewData;
 
     /** Same, before a project exists (the import flow). */
-    public function previewForTeam(int $teamId, SourceRepository $repository, string $branch, string $rootDirectory): PlanPreviewData;
+    public function previewForTeam(int $teamId, SourceRepository $repository, string $branch, string $rootDirectory, bool $retry = false): PlanPreviewData;
 }

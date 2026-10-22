@@ -166,6 +166,12 @@ func TestCheckContainer(t *testing.T) {
 		{"apparmor unconfined", func(_ *container.Config, h *container.HostConfig) {
 			h.SecurityOpt = append(h.SecurityOpt, "apparmor:unconfined")
 		}, "security"},
+		{"apparmor build profile", func(_ *container.Config, h *container.HostConfig) {
+			h.SecurityOpt = append(h.SecurityOpt, "apparmor=launchroom-buildkit")
+		}, "security"},
+		{"apparmor other host profile", func(_ *container.Config, h *container.HostConfig) {
+			h.SecurityOpt = append(h.SecurityOpt, "AppArmor=unprivileged_userns")
+		}, "security"},
 		{"unmask paths", func(_ *container.Config, h *container.HostConfig) { h.MaskedPaths = []string{} }, "host"},
 		{"sysctls", func(_ *container.Config, h *container.HostConfig) {
 			h.Sysctls = map[string]string{"net.ipv4.ip_forward": "1"}

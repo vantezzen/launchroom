@@ -4,6 +4,14 @@ All changes to launchroomd ↔ dashboard contract. Format: one section per proto
 
 ## v1 (unreleased)
 
+### Builds capability (2026-10-21, D58)
+
+Additive, no daemon feature. `HostCapability.name` gained `builds` (sent only by build servers): `full`, or `unavailable` when the host restricts unprivileged user namespaces (`kernel.apparmor_restrict_unprivileged_userns=1`), launchroom's AppArmor profile `launchroom-buildkit` is not loaded and BuildKit doesn't answer; the message names the fix. Older dashboards drop unknown capability names. Design: docs/04 §5.
+
+### Public addresses and the reachability check (2026-10-21)
+
+Additive, no daemon feature. `Report.host` gained optional `publicAddresses: PublicAddresses {ipv4?, ipv6?, detectedAt}`: the server's public addresses from IP echo services or `LR_PUBLIC_IPS`; at least one address, each canonical and public (no private, CGNAT, Docker, loopback, link-local, ULA, documentation or other special range). Not a schema change of any document the dashboard sends: the edge Caddy serves `GET /.well-known/launchroom/check/<nonce>` on every host, answered by launchroomd with `{"serverId", "signature"}` (Ed25519 over `launchroom-reachability/v1\n<host>\n<nonce>`). Fixture: `report.public-addresses.json`. Design: docs/03 §9.
+
 ### Prepared volumes for server moves (2026-10-21, D56)
 
 Additive, no schema change. New daemon feature `preparedVolumes`: launchroomd creates NodeState `volumes` that no workload mounts, without the `launchroom.service`/`launchroom.environment` labels; the first workload that mounts it claims it under the existing mount checks. The dashboard declares such volumes only for servers announcing the feature (a service moving there is held while its data is imported). Design: docs/14 §13.2.

@@ -7,10 +7,12 @@ namespace App\Data\Domains;
 use Spatie\LaravelData\Data;
 
 /**
- * Outcome of a live DNS check (docs/05 §5): does `hostname` point at the
- * edge servers? `ok`, `mismatch` (points elsewhere, or only partly at us),
- * `missing` (no record yet), `unknown` (no edge address to compare with) or
- * `error` (no resolver answered).
+ * Outcome of a live DNS check (docs/05 §5): does `hostname` reach the edge
+ * servers? `ok` (points at them, or reaches them through a proxy, checked
+ * over HTTP), `proxied` (points at a known proxy such as Cloudflare, but the
+ * HTTP check couldn't confirm it forwards to us), `mismatch` (points
+ * elsewhere, or only partly at us), `missing` (no record yet), `unknown` (no
+ * edge address to compare with) or `error` (no resolver answered).
  */
 final class DnsCheckData extends Data
 {
@@ -26,6 +28,10 @@ final class DnsCheckData extends Data
         public ?string $cname,
         public string $message,
         public string $checkedAt,
+        /** The proxy the records point at ("Cloudflare"), when known. */
+        public ?string $proxy = null,
+        /** The HTTP check reached one of our servers (proxy, NAT port forward). */
+        public bool $reachedOverHttp = false,
     ) {}
 
     /**
@@ -47,6 +53,8 @@ final class DnsCheckData extends Data
             cname: is_string($stored['cname'] ?? null) ? $stored['cname'] : null,
             message: is_string($stored['message'] ?? null) ? $stored['message'] : '',
             checkedAt: $stored['checkedAt'],
+            proxy: is_string($stored['proxy'] ?? null) ? $stored['proxy'] : null,
+            reachedOverHttp: ($stored['reachedOverHttp'] ?? false) === true,
         );
     }
 }

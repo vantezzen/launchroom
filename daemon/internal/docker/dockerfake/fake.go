@@ -144,6 +144,16 @@ func (f *Fake) SetState(id, state string, exitCode int) {
 	}
 }
 
+// Update changes a container's observed state in place (restart counts,
+// OOM kills, Docker's restarting state).
+func (f *Fake) Update(id string, fn func(c *docker.Container)) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if e, ok := f.containers[id]; ok {
+		fn(&e.c)
+	}
+}
+
 func (f *Fake) owned(labels map[string]string) bool { return docker.IsManaged(labels, f.ServerID) }
 
 func (f *Fake) get(id string) (*entry, error) {

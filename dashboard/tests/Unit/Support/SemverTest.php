@@ -37,3 +37,18 @@ test('image references must be pinned by digest without a tag', function (): voi
         ->and(ImageReference::isDigestPinned('ghcr.io/vantezzen/launchroomd:0.1.0@sha256:'.str_repeat('a', 64)))->toBeFalse()
         ->and(ImageReference::isDigestPinned('launchroomd@sha256:'.str_repeat('a', 64)))->toBeFalse();
 });
+
+test('release candidates order by number, before their release', function (string $newer, string $older): void {
+    expect(Semver::newer($newer, $older))->toBeTrue()
+        ->and(Semver::newer($older, $newer))->toBeFalse()
+        ->and(Semver::newer($newer, $newer))->toBeFalse();
+})->with([
+    ['0.1.0-rc.4', '0.1.0-rc.3'],
+    ['v0.1.0-rc.4', '0.1.0-rc.3'],
+    ['0.1.0-rc.10', '0.1.0-rc.9'],
+    ['0.1.0', '0.1.0-rc.10'],
+    ['0.1.1-rc.1', '0.1.0'],
+    ['0.2.0-beta.1', '0.1.9'],
+    ['0.1.0-rc.1', '0.1.0-beta.5'],
+    ['0.1.0-rc.3', '0.0.0-dev'],
+]);

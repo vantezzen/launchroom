@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Data\Ingress;
 
 use App\Models\Server;
+use App\Support\Network\ServerAddress;
 use Spatie\LaravelData\Data;
 
 /**
@@ -27,6 +28,7 @@ final class EdgeIngressStatusData extends Data
         public bool $controlPlane = false,
         /** Gets the install-wide certificate storage and DNS-01 token (an instance owner admitted it, docs/05 §5). */
         public bool $shared = false,
+        public ?string $publicIpv6 = null,
     ) {}
 
     public static function fromServer(Server $server): self
@@ -37,7 +39,8 @@ final class EdgeIngressStatusData extends Data
         return new self(
             id: $server->public_id,
             name: $server->name,
-            publicIpv4: $server->public_ipv4,
+            // Where DNS must point: never a private or Docker address (docs/05 §5).
+            publicIpv4: ServerAddress::ipv4($server->public_ipv4),
             state: is_string($status['state'] ?? null) ? $status['state'] : null,
             routes: is_int($status['routes'] ?? null) ? $status['routes'] : null,
             storage: is_string($storage['state'] ?? null) ? $storage['state'] : null,
@@ -46,6 +49,7 @@ final class EdgeIngressStatusData extends Data
             reportedAt: $server->ingress_status_at?->toIso8601ZuluString(),
             controlPlane: $server->is_control_plane,
             shared: $server->isSharedEdge(),
+            publicIpv6: ServerAddress::ipv6($server->public_ipv6),
         );
     }
 }

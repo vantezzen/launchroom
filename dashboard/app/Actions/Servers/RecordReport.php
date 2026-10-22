@@ -32,6 +32,7 @@ use App\Models\Placement;
 use App\Models\Server;
 use App\Queries\MeshServers;
 use App\Services\Volumes\VolumeRetirements;
+use App\Support\Network\ServerAddress;
 use App\Support\Servers\HostStatusFacts;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
@@ -110,6 +111,7 @@ final readonly class RecordReport
                 $this->meshStatus->handle($server, is_array($report->host->mesh) ? $report->host->mesh : null);
                 $this->recordFeatures($server, $report->host);
                 $this->recordControlPlane($server, $report->host);
+                $this->recordPublicAddresses($server, $report->host);
 
                 // Docker mode, dockerd-guard and capabilities (D49); kept when omitted.
                 if (is_array($report->host->runtime)) {
@@ -214,6 +216,32 @@ final readonly class RecordReport
 
         $server->forceFill(['daemon_features' => $features]);
         event(new NodeStateInvalidated(array_values(array_unique([$server->id, ...MeshServers::ids()]))));
+    }
+
+    /**
+     * Where DNS records must point (docs/05 §5): the public addresses
+     * launchroomd reports. Without a report, a stored address that can't be
+     * public (Docker's bridge gateway from an older enrollment) is dropped.
+     */
+    private function recordPublicAddresses(Server $server, HostStatus $host): void
+    {
+        $reported = is_array($host->publicAddresses) ? $host->publicAddresses : null;
+
+        if ($reported !== null) {
+            $ipv4 = ServerAddress::ipv4(is_string($reported['ipv4'] ?? null) ? $reported['ipv4'] : null);
+            $ipv6 = ServerAddress::ipv6(is_string($reported['ipv6'] ?? null) ? $reported['ipv6'] : null);
+
+            if ($ipv4 !== null || $ipv6 !== null) {
+                $server->forceFill(['public_ipv4' => $ipv4, 'public_ipv6' => $ipv6]);
+
+                return;
+            }
+        }
+
+        $server->forceFill([
+            'public_ipv4' => ServerAddress::ipv4($server->public_ipv4),
+            'public_ipv6' => ServerAddress::ipv6($server->public_ipv6),
+        ]);
     }
 
     /**

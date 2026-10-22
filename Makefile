@@ -43,7 +43,7 @@ IN_DASHBOARD = if [ -n "$$($(COMPOSE) ps -q --status running dashboard 2>/dev/nu
 
 .DEFAULT_GOAL := help
 .PHONY: go-image test-db test-dashboard-pest check-dashboard lint-templates help up up-multi down nuke logs ps shell artisan composer npm migrate seed restart-workers \
-	up-backups test test-dashboard lint lint-dashboard test-daemon test-daemon-integration test-daemon-integration-rootless go lint-daemon lint-deploy test-server-sh lint-workflows test-install test-update test-move dev-daemon \
+	up-backups test test-dashboard lint lint-dashboard test-daemon test-daemon-integration test-daemon-integration-rootless go lint-daemon lint-deploy test-server-sh test-install-sh lint-workflows test-install test-update test-move dev-daemon \
 	dev-enroll-2 dev-enroll-3 test-failover gen gen-protocol gen-types gen-openapi design-tools-image device-art world-map fixtures test-next-adapter next-adapter caddy-image caddy-image-load \
 	site-install site-dev site-build site-preview site-format lint-site test-cli lint-cli cli test-cli-e2e up-forgejo test-git-e2e
 
@@ -343,7 +343,7 @@ BUSYBOX_IMAGE ?= busybox@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532
 
 lint-deploy: ## Install bundle: shellcheck (POSIX sh) of the install scripts and helper CLI
 	docker run --rm --label launchroom.dev=true -v "$(CURDIR)/deploy:/mnt:ro" -w /mnt $(SHELLCHECK_IMAGE) \
-		-s sh -x install/install.sh install/server.sh install/cli.sh control-plane/launchroom test/e2e-install.sh test/e2e-update.sh test/e2e-move.sh test/server-sh-test.sh release/build-bundle.sh release/check-pinned-images.sh
+		-s sh -x install/install.sh install/server.sh install/cli.sh control-plane/launchroom test/e2e-install.sh test/e2e-update.sh test/e2e-move.sh test/server-sh-test.sh test/install-sh-test.sh release/build-bundle.sh release/check-pinned-images.sh
 	docker run --rm --label launchroom.dev=true -v "$(CURDIR)/release.sh:/mnt/release.sh:ro" -w /mnt $(SHELLCHECK_IMAGE) -s sh release.sh
 	@# Release Dockerfiles: base images and frontends by digest only (docs/09 R31).
 	docker run --rm --label launchroom.dev=true -v "$(CURDIR):/repo:ro" -w /repo $(BUSYBOX_IMAGE) sh deploy/release/check-pinned-images.sh
@@ -352,6 +352,11 @@ lint-deploy: ## Install bundle: shellcheck (POSIX sh) of the install scripts and
 # with stubbed uname/docker in a throwaway busybox container (D53).
 test-server-sh: ## Install bundle: unit tests of server.sh's macOS/Linux branches (stubbed docker, busybox)
 	docker run --rm --label launchroom.dev=true -v "$(CURDIR)/deploy:/mnt:ro" $(BUSYBOX_IMAGE) sh /mnt/test/server-sh-test.sh
+
+# install.sh's host preparation (Docker and inotify prompts, update channel)
+# with stubbed docker/curl/sysctl, a file as terminal and a fake /proc/sys.
+test-install-sh: ## Install bundle: unit tests of install.sh's Docker/inotify prompts and update channel (stubs, busybox)
+	docker run --rm --label launchroom.dev=true -v "$(CURDIR)/deploy:/mnt:ro" $(BUSYBOX_IMAGE) sh /mnt/test/install-sh-test.sh
 
 ACTIONLINT_IMAGE ?= rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
 
@@ -364,7 +369,7 @@ lint-workflows: ## GitHub Actions workflows: actionlint (with its shellcheck int
 # docker:dind "VPS" (labelled launchroom.dev=true, no host ports, removed
 # afterwards; KEEP=1 keeps it), loads the images into it and runs install.sh +
 # uninstall there. Needs internet in the VPS for postgres/valkey/zot pulls.
-test-install: lint-deploy test-server-sh ## Install bundle: e2e fresh install + uninstall inside an ephemeral dind VPS
+test-install: lint-deploy test-server-sh test-install-sh ## Install bundle: e2e fresh install + uninstall inside an ephemeral dind VPS
 	$(HEAVY) test-install sh deploy/test/e2e-install.sh
 
 test-update: lint-deploy dev/.env ## Control-plane update e2e: install 1.0.0, update to 1.1.0 from the dashboard, roll back a broken 1.2.0 (dind VPS)

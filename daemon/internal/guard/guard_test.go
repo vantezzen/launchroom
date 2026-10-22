@@ -240,6 +240,7 @@ func TestConstantsMatchPackages(t *testing.T) {
 		{caddyName, caddy.ContainerName}, {caddyDataVolume, caddy.DataVolume}, {caddyConfigVolume, caddy.ConfigVolume},
 		{tailscaleName, mesh.ContainerName}, {tailscaleStateVolume, mesh.StateVolume},
 		{buildkitName, buildkitd.ContainerName}, {buildkitNetwork, buildkitd.NetworkName}, {buildkitStateVolume, buildkitd.StateVolume},
+		{buildkitAppArmor, buildkitd.AppArmorProfile},
 		{ambassadorName, ambassadord.ContainerName}, {ambassadorNetwork, ambassadord.NetworkName}, {ambassadorVolume, ambassadord.ConfigVolume},
 		{systemAmbassador, policy.SystemAmbassador}, {volumeHelperImage, docker.HelperImage}, {volumeHelperMount, docker.HelperMount},
 	}
@@ -430,6 +431,56 @@ func TestSystemShapes(t *testing.T) {
 	ts.HostConfig.Mounts = append(ts.HostConfig.Mounts, mount.Mount{Type: mount.TypeVolume, Source: "lr-v_data", Target: "/x"})
 	if err := h.srv.CheckCreate(ctx, ts.Name, marshal(ts)); err == nil {
 		t.Fatal("tailscale with a workload volume passed")
+	}
+}
+
+// The BuildKit container passes with AppArmor unconfined or the
+// launchroom-buildkit profile (D58), and with nothing else.
+func TestBuildkitSecurityOptions(t *testing.T) {
+	h := newHarness(t)
+	ctx := t.Context()
+	img := state.ImageRef("127.0.0.1:5000/mirror/docker.io/moby/buildkit@" + policy.BuildkitImageDigest)
+	m := buildkitd.New(buildkitd.Options{ServerID: testServer, MemoryMB: 1024})
+	check := func(opts []string) error {
+		cc := m.ContainerSpec(img, "unconfined")
+		cc.HostConfig.SecurityOpt = opts
+		b, err := json.Marshal(container.CreateRequest{Config: cc.Config, HostConfig: cc.HostConfig, NetworkingConfig: cc.Networking})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return h.srv.CheckCreate(ctx, cc.Name, b)
+	}
+	for _, profile := range []string{"unconfined", buildkitd.AppArmorProfile} {
+		cc := m.ContainerSpec(img, profile)
+		b, _ := json.Marshal(container.CreateRequest{Config: cc.Config, HostConfig: cc.HostConfig, NetworkingConfig: cc.Networking})
+		if err := h.srv.CheckCreate(ctx, cc.Name, b); err != nil {
+			t.Errorf("buildkit with apparmor=%s: %v", profile, err)
+		}
+	}
+	for _, opts := range [][]string{
+		{"seccomp=unconfined", "apparmor=docker-default"},
+		{"seccomp=unconfined", "apparmor=unprivileged_userns"},
+		{"seccomp=unconfined", "apparmor=launchroom-buildkit", "apparmor=unconfined"},
+		{"seccomp=unconfined", "apparmor=launchroom-buildkit", "label=disable"},
+		{"apparmor=launchroom-buildkit"},
+		{"seccomp=unconfined", "apparmor:launchroom-buildkit"},
+		{"seccomp=unconfined", "apparmor=Launchroom-buildkit"},
+		{"seccomp=unconfined", "apparmor=launchroom-buildkit "},
+		{"seccomp=unconfined"},
+	} {
+		if err := check(opts); err == nil || !strings.Contains(err.Error(), "security options") {
+			t.Errorf("buildkit with %v: %v", opts, err)
+		}
+	}
+	// The profile is the build container's only: a workload asking for it
+	// (or for any other AppArmor profile) is refused by the policy floor.
+	for _, o := range []string{"apparmor=" + buildkitd.AppArmorProfile, "apparmor:unprivileged_userns", "apparmor=docker-default"} {
+		req := workload()
+		req.HostConfig.SecurityOpt = append(req.HostConfig.SecurityOpt, o)
+		b, _ := json.Marshal(req)
+		if err := h.srv.CheckCreate(ctx, "lr-wl_01j9z8x7w6v5t4s3r2q1p0n9m8", b); err == nil || !strings.Contains(err.Error(), "security option") {
+			t.Errorf("workload with %s: %v", o, err)
+		}
 	}
 }
 

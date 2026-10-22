@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -18,6 +19,7 @@ import (
 	"github.com/opencontainers/go-digest"
 	rpplan "github.com/railwayapp/railpack/core/plan"
 
+	"github.com/vantezzen/launchroom/daemon/internal/build/buildkitd"
 	"github.com/vantezzen/launchroom/daemon/internal/build/presets"
 	"github.com/vantezzen/launchroom/daemon/internal/secret"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
@@ -403,3 +405,36 @@ func TestParseNextSummary(t *testing.T) {
 type sinkFunc func(step string, stream state.LogStream, text string)
 
 func (f sinkFunc) Line(step string, stream state.LogStream, text string) { f(step, stream, text) }
+
+type lineSink struct{ lines []string }
+
+func (s *lineSink) Line(step string, _ state.LogStream, text string) {
+	s.lines = append(s.lines, "["+step+"] "+text)
+}
+
+func TestBuildkitUnavailable(t *testing.T) {
+	sink := &lineSink{}
+	nr := &buildkitd.NotReadyError{CrashLoop: true, Restarts: 6, ExitCode: 1, State: "restarting", LogTail: []string{"a", "rootlesskit: permission denied"}, UsernsRestricted: true}
+	e := buildkitUnavailable(fmt.Errorf("wrapped: %w", nr), sink)
+	f := e.Failure()
+	if f.Class != state.FailureInternal || f.Step != "setup" || !f.Retryable {
+		t.Fatalf("failure %+v", f)
+	}
+	if len(f.Hints) != 2 || f.Hints[0].Code != buildkitd.HintUserns || f.Hints[1].Code != buildkitd.HintCrashLoop {
+		t.Fatalf("hints %+v", f.Hints)
+	}
+	for _, h := range f.Hints {
+		if err := h.Code.Validate(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if strings.Join(sink.lines, "\n") != "[setup] BuildKit's last log lines:\n[setup]   a\n[setup]   rootlesskit: permission denied" {
+		t.Fatalf("log lines %q", sink.lines)
+	}
+	if e := buildkitUnavailable(fmt.Errorf("x: %w", context.DeadlineExceeded), sink); e.Class != state.FailureTimeout {
+		t.Fatalf("deadline class %s", e.Class)
+	}
+	if e := buildkitUnavailable(buildkitd.ErrNotRunning, nil); e.Class != state.FailureInternal || len(e.Hints) != 0 {
+		t.Fatalf("not running %+v", e)
+	}
+}

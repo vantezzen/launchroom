@@ -11,6 +11,7 @@ use App\Models\Server;
 use App\Services\Dns\DnsCheck;
 use App\Services\Http\DashboardProbe;
 use App\Support\Hostname;
+use App\Support\Network\ServerAddress;
 
 /**
  * The checks of Settings → Dashboard domain (docs/05 §4.1): the dashboard
@@ -35,12 +36,15 @@ final readonly class DashboardDomainChecks
         $server = $this->controlPlane();
         $records = [];
 
-        if ($server?->public_ipv4 !== null) {
-            $records[] = ['A', $server->public_ipv4];
+        $ipv4 = ServerAddress::ipv4($server?->public_ipv4);
+        $ipv6 = ServerAddress::ipv6($server?->public_ipv6);
+
+        if ($ipv4 !== null) {
+            $records[] = ['A', $ipv4];
         }
 
-        if ($server?->public_ipv6 !== null) {
-            $records[] = ['AAAA', $server->public_ipv6];
+        if ($ipv6 !== null) {
+            $records[] = ['AAAA', $ipv6];
         }
 
         return $records;
@@ -76,13 +80,16 @@ final readonly class DashboardDomainChecks
     }
 
     /**
-     * @param  list<string>  $addresses  where DNS points (only ours are tested)
+     * @param  list<string>|null  $addresses  where DNS points (only ours are
+     *                                        tested); null when the name reaches this server through a proxy
+     *                                        (DNS shows the proxy's addresses): the test request then goes to
+     *                                        this server's own addresses directly
      */
-    public function probe(string $hostname, array $addresses): DashboardProbeData
+    public function probe(string $hostname, ?array $addresses): DashboardProbeData
     {
         $own = array_map(static fn (array $record): string => $record[1], $this->records());
 
-        return $this->probe->check($hostname, array_values(array_intersect($own, $addresses)));
+        return $this->probe->check($hostname, $addresses === null ? $own : array_values(array_intersect($own, $addresses)));
     }
 
     private function controlPlane(): ?Server

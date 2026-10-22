@@ -96,6 +96,16 @@ final class IpClassifier
         return null;
     }
 
+    /**
+     * Whether $ip lies in $cidr (both families; false for invalid input).
+     */
+    public static function inCidr(string $ip, string $cidr): bool
+    {
+        $packed = self::isIp($ip) ? @inet_pton($ip) : false;
+
+        return $packed !== false && self::inRange($packed, $cidr);
+    }
+
     private static function inRange(string $packedIp, string $cidr): bool
     {
         [$network, $bits] = explode('/', $cidr, 2);

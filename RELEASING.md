@@ -70,7 +70,7 @@ The workflow refuses to continue if:
   - with SBOM and SLSA provenance attestations and cosign signatures
   - tagged `<version>`, plus `latest` for stable releases
 
-  launchroom-caddy is built first. Its digest is compiled into launchroomd, so each signed launchroomd only runs its own release's edge Caddy ([docs/05](docs/05-networking-ingress.md) §4).
+  launchroom-caddy and the dashboard build in parallel (the dashboard on a native runner per platform, merged into one signed index); launchroomd waits for launchroom-caddy, because its digest is compiled into launchroomd, so each signed launchroomd only runs its own release's edge Caddy ([docs/05](docs/05-networking-ingress.md) §4).
 - **GitHub release assets:**
   - `launchroom-deploy.tar.gz`, plus `.sha256`, `.sigstore.json` and provenance
   - `images.env` (the digests of this release)

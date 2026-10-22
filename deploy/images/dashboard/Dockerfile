@@ -13,30 +13,36 @@
 #               calls `php artisan`) can run in the same image.
 #   production  Code, vendor (no dev deps) and built assets baked in. The same
 #               image runs web, horizon, reverb and scheduler (see entrypoint.sh).
+#
+# Multi-arch (`docker buildx build --platform linux/amd64,linux/arm64`): the
+# platform-independent work (composer install, the Vite build) runs once, on
+# the BUILD platform (stages build-php, vendor, assets), and is copied into
+# each target image. Only the per-platform stages (base, dev, production)
+# run under emulation for a foreign platform: OS packages, PHP extensions,
+# users and COPYs. build-php has the same FrankenPHP base and extensions as
+# base, so composer resolves and checks platform requirements exactly as on
+# the target (no --ignore-platform-reqs).
 
 ARG FRANKENPHP_IMAGE=dunglas/frankenphp:1-php8.4-trixie@sha256:b32a81ad4db40b528ada04087f47e22833f260266e73b3d88c62fd54e2a29aa6
 ARG COMPOSER_IMAGE=composer:2@sha256:af98f42dfff7c68ba8d53c2164fd9fde1087b7d449514baa38c418b1f6bc4bac
 ARG NODE_IMAGE=node:24-trixie-slim@sha256:7f486cabe892bff8fef04c0f7da8dba84a560be3e4e2740b7a86afc57ebec315
 
+# PHP extensions on top of the FrankenPHP defaults (sodium ships with the base
+# image; install-php-extensions skips what exists). One list for base and
+# build-php, so the native build stages see the same platform as the image.
+ARG PHP_EXTENSIONS="pdo_pgsql pgsql redis sodium intl pcntl zip opcache bcmath"
+
 FROM ${COMPOSER_IMAGE} AS composer
 FROM ${NODE_IMAGE} AS node
+FROM --platform=$BUILDPLATFORM ${NODE_IMAGE} AS node-build
 
 # ---------------------------------------------------------------------------
 # base: FrankenPHP + PHP extensions + Caddyfile. Shared by every target.
 # ---------------------------------------------------------------------------
 FROM ${FRANKENPHP_IMAGE} AS base
 
-# sodium ships with the base image; install-php-extensions skips what exists.
-RUN install-php-extensions \
-        pdo_pgsql \
-        pgsql \
-        redis \
-        sodium \
-        intl \
-        pcntl \
-        zip \
-        opcache \
-        bcmath
+ARG PHP_EXTENSIONS
+RUN install-php-extensions $PHP_EXTENSIONS
 
 # Backups (docs/14 §2): the control-plane backup and `launchroom:restore` run
 # in this image. restic is a pinned release binary, verified by SHA-256 per
@@ -125,9 +131,21 @@ ENV COMPOSER_HOME=/home/launchroom/.composer \
 USER launchroom
 
 # ---------------------------------------------------------------------------
-# vendor: production composer dependencies + optimized autoloader.
+# build-php: base's PHP (same image, extensions and php.ini overrides) on the
+# BUILD platform, for the platform-independent build stages below.
 # ---------------------------------------------------------------------------
-FROM base AS vendor
+FROM --platform=$BUILDPLATFORM ${FRANKENPHP_IMAGE} AS build-php
+
+ARG PHP_EXTENSIONS
+RUN install-php-extensions $PHP_EXTENSIONS
+COPY deploy/images/dashboard/php.ini "$PHP_INI_DIR/conf.d/zz-launchroom.ini"
+WORKDIR /var/www/html
+
+# ---------------------------------------------------------------------------
+# vendor: production composer dependencies + optimized autoloader (pure PHP,
+# platform-independent; built natively).
+# ---------------------------------------------------------------------------
+FROM build-php AS vendor
 
 COPY --from=composer /usr/bin/composer /usr/local/bin/composer
 
@@ -141,12 +159,13 @@ RUN mkdir -p storage/framework/cache/data storage/framework/sessions storage/fra
     && composer dump-autoload --no-dev --optimize --no-interaction
 
 # ---------------------------------------------------------------------------
-# assets: Vite build. Needs PHP too: the wayfinder Vite plugin runs artisan.
+# assets: Vite build (platform-independent JS/CSS; built natively). Needs PHP
+# too: the wayfinder Vite plugin runs artisan.
 # ---------------------------------------------------------------------------
 FROM vendor AS assets
 
-COPY --from=node /usr/local/bin/node /usr/local/bin/node
-COPY --from=node /usr/local/lib/node_modules /usr/local/lib/node_modules
+COPY --from=node-build /usr/local/bin/node /usr/local/bin/node
+COPY --from=node-build /usr/local/lib/node_modules /usr/local/lib/node_modules
 RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm
 
 RUN --mount=type=cache,target=/root/.npm \

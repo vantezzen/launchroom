@@ -63,6 +63,32 @@ The log usually shows `JavaScript heap out of memory`, `exit code: 137` or `sign
 
 The same out-of-memory pattern after the build (the app itself exits with code 137) is a runtime limit instead: raise the memory limit under Settings → Scaling.
 
+## This server blocks what builds need
+
+The build log shows `buildkitd keeps restarting` and BuildKit's last lines name
+`apparmor_restrict_unprivileged_userns` or `fork/exec /proc/self/exe: permission denied`. On the server page, the
+**Builds** row under Capabilities says **Unavailable**.
+
+**Cause.** Ubuntu 23.10 and later restrict user namespaces through AppArmor, and rootless BuildKit needs one. launchroom
+allows it with an AppArmor profile for its build container only, and this server doesn't have that profile loaded yet.
+This happens on servers installed before the installer offered the profile, or when the question was answered with `n`.
+
+**Fix.** Run the installer on the server again (the same command you installed with) and answer `y` when it asks about
+user namespaces. Or load the profile by hand:
+
+```sh title="On the server"
+printf 'abi <abi/4.0>,\ninclude <tunables/global>\nprofile launchroom-buildkit flags=(unconfined) {\n  userns,\n}\n' | sudo tee /etc/apparmor.d/launchroom-buildkit >/dev/null
+sudo apparmor_parser -r -W /etc/apparmor.d/launchroom-buildkit
+```
+
+launchroom switches its build container to the profile within a few minutes, without a restart. Then redeploy. To
+check, run `docker inspect lr-system-buildkit --format '{{.HostConfig.SecurityOpt}}'`: it shows
+`apparmor=launchroom-buildkit`.
+
+Turning the restriction off for the whole server (`sysctl kernel.apparmor_restrict_unprivileged_userns=0`) also works,
+but it removes the protection for every program on the server. The profile keeps it for everything except
+launchroom's build container.
+
 ## A native module or PHP extension is missing
 
 - **"A native module could not be compiled"** (`gyp ERR!` in the log): a dependency builds native code and the build image has no compiler. Click **Add RAILPACK_BUILD_APT_PACKAGES** to add `python3 make g++` at build time, or switch to a package with prebuilt binaries.

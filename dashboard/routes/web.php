@@ -86,6 +86,9 @@ Route::middleware(['auth', 'verified'])->group(function (): void {
         ->middleware('throttle:10,1')
         ->name('onboarding.two-factor.dismiss');
     Route::put('onboarding/domain', [OnboardingController::class, 'domain'])->name('onboarding.domain');
+    Route::post('onboarding/domain/confirm', [OnboardingController::class, 'confirmDomain'])
+        ->middleware('throttle:20,1')
+        ->name('onboarding.domain.confirm');
     Route::post('onboarding/domain/check', [OnboardingController::class, 'check'])
         ->middleware('throttle:20,1')
         ->name('onboarding.domain.check');
@@ -114,6 +117,9 @@ Route::middleware(['auth', 'verified'])->group(function (): void {
 
     Route::get('servers', [ServerController::class, 'index'])->name('servers.index');
     Route::get('servers/new', [ServerEnrollmentController::class, 'create'])->name('servers.create');
+    Route::post('servers/small-server-hint/dismiss', [ServerController::class, 'dismissSmallServerHint'])
+        ->middleware('throttle:10,1')
+        ->name('servers.small-server-hint.dismiss');
     Route::post('servers/enrollments', [ServerEnrollmentController::class, 'store'])
         ->middleware(RequireRecentPassword::class)
         ->name('servers.enrollments.store');

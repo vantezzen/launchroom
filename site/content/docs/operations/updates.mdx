@@ -62,7 +62,21 @@ Servers are updated only to the dashboard's own version. They are never updated 
 
 ## Update channel
 
-Under **How launchroom updates**, **Channel** is **Stable** (default) or **Beta**. Beta includes pre-releases.
+Under **How launchroom updates**, **Channel** is **Stable** or **Beta**. Beta includes pre-releases such as `0.1.0-rc.4`; Stable only offers final releases.
+
+Until you pick one, launchroom chooses for you: an install made with `--unstable` is on Beta, and so is any instance that runs a pre-release. Everything else is on Stable. Pre-releases are ordered by their number, so `0.1.0-rc.10` comes after `0.1.0-rc.9`, and the final `0.1.0` after every `0.1.0-rc`.
+
+## When the dashboard can't install a release
+
+Once in a while a release can't be installed from Settings → Updates, for example when GitHub doesn't hand out the list of images that belongs to it. The page then says why and shows the installer command for exactly that release, with a copy button:
+
+```sh title="On the control-plane server, in the folder that contains launchroom/"
+curl -fsSL https://launchroom.vantezzen.io/install | sh -s -- --version 0.1.0-rc.4
+```
+
+Often it's temporary: **Check for updates** again a few minutes later. Otherwise run the command, see [Update manually](#update-manually) below.
+
+After an update, by the dashboard or by hand, the page always reflects the version that runs now. A release you already have is never offered again.
 
 ## Automatic updates
 
@@ -93,7 +107,7 @@ Re-running the installer is the manual upgrade path. It keeps your `.env` and da
 curl -fsSL https://launchroom.vantezzen.io/install | sh
 ```
 
-Pass `-s -- --dir /path/to/launchroom` if you installed into another folder, and `--version x.y.z` to pick a specific release.
+Pass `-s -- --dir /path/to/launchroom` if you installed into another folder, and `--version x.y.z` to pick a specific release (both together: `sh -s -- --dir /path/to/launchroom --version x.y.z`). Without `--version` the installer takes the newest stable release; use `--version` for a pre-release. Run it as a user with access to Docker.
 
 On the control plane, `./launchroom update` re-pulls the images already pinned in `.env` and restarts. It doesn't move to a new release.
 

@@ -18,7 +18,7 @@ Re-running is also how you upgrade, so repeated runs are supported:
 - `.env` (your secrets) and `data/` (database, keys, registry) are kept. `compose.yml`, the `launchroom` helper and the image pins are replaced.
 - The local launchroomd is only enrolled again if it isn't enrolled yet.
 - Once launchroom's own Caddy holds ports 80 and 443, the port check skips them.
-- Nothing is written outside the install folder (`./launchroom`, or the one you pass with `--dir`), apart from Docker objects labelled `launchroom.managed=true`.
+- Nothing is written outside the install folder (`./launchroom`, or the one you pass with `--dir`), apart from Docker objects labelled `launchroom.managed=true`. The two exceptions, Docker itself and `/etc/sysctl.d/60-launchroom-inotify.conf`, only happen after you answer yes or pass a flag (see [Install](/docs/getting-started/install#docker)).
 
 If you installed into another folder, pass it again: `sh -s -- --dir /opt/launchroom`.
 
@@ -49,7 +49,9 @@ Other ports the control plane binds: `127.0.0.1:8000` (dashboard), `127.0.0.1:50
 
 | Message | Fix |
 |---|---|
-| "Docker is not installed. Install Docker Engine >= 24 with the compose plugin" | You ran with `--no-install-docker`. Install Docker Engine from docs.docker.com for your distribution, or run the installer without that option. |
+| "Docker is not installed. Install Docker Engine >= 24 with the compose plugin" | You answered `n`, or ran with `--no-install-docker`. Install Docker Engine from docs.docker.com for your distribution, or run the installer again and answer `y`. |
+| "… To install it with Docker's official script (get.docker.com) instead, run this again with --install-docker." | The installer had no terminal to ask on (cloud-init, CI, `ssh host 'curl … \| sh'`). Install Docker first, or pass `--install-docker`. |
+| "Docker is not installed, and installing it needs root" | You aren't root and `sudo` is missing. Run the installer as root, or install Docker first. |
 | "Docker's install script failed" | Docker's official script doesn't support this distribution or couldn't reach Docker's package repository. Its output above says which. Install Docker Engine by hand from docs.docker.com, then run the installer again. |
 | "Docker is installed. Your user can't use it yet" | Run the command it prints to add your user to the `docker` group, log out and back in, then run the installer again. |
 | "Docker Engine >= 24 is required (found 20.10.24)" | Distribution packages are often old. Install Docker Engine from Docker's own repository. |
@@ -59,6 +61,38 @@ Other ports the control plane binds: `127.0.0.1:8000` (dashboard), `127.0.0.1:50
 | "the control plane runs on Linux (found Darwin)" | The dashboard needs a Linux server. Docker Desktop on macOS or Windows works for build servers and development, not for the control plane. |
 
 A warning about less than 2 GB of RAM doesn't stop the install. The control plane fits, but builds on the same machine may run out of memory. See [Build problems](/docs/troubleshooting/builds).
+
+## Low inotify limits
+
+```text
+launchroom: warning: This server's inotify limits are low (max_user_watches 8192, max_user_instances 128). Raise them with these commands, or run this again with --raise-inotify:
+    printf '%s\n' 'fs.inotify.max_user_watches = 524288' 'fs.inotify.max_user_instances = 512' | tee /etc/sysctl.d/60-launchroom-inotify.conf
+    sysctl -w fs.inotify.max_user_watches=524288 fs.inotify.max_user_instances=512
+```
+
+**Cause.** Every inotify watcher in every container counts against two per-user kernel limits. Below 65,536 watches or
+256 instances, containers fail with "too many open files" or "no space left on device" from file watchers, and the
+dashboard shows **File watch limits** as a warning on the server's page. Stock Ubuntu allows 128 instances.
+
+The warning doesn't stop the install. On a terminal, as root, the installer asks first and raises the limits when you
+answer `y`. It prints the commands instead when:
+
+- you answered `n`,
+- it had no terminal and you didn't pass `--raise-inotify`,
+- it doesn't run as root (then with `sudo`).
+
+**Fix.** Run the two printed commands, or run the installer again with `--raise-inotify`. Either writes
+`/etc/sysctl.d/60-launchroom-inotify.conf`, which applies again after a reboot, and sets the values right away. Only
+limits that are lower than the new values are written; a higher value stays.
+
+To check the current values:
+
+```sh
+cat /proc/sys/fs/inotify/max_user_watches /proc/sys/fs/inotify/max_user_instances
+```
+
+To undo it, delete the file and reboot. Its first lines name the earlier values and the `sysctl -w` command that sets
+them back without a reboot.
 
 ## Could not detect this server's public IP
 

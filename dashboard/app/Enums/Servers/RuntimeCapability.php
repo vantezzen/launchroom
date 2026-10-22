@@ -25,4 +25,6 @@ enum RuntimeCapability: string
     case PortDiscovery = 'portDiscovery';
     /** Apps here are reachable from the other servers (unavailable on Docker Desktop, D53). */
     case Workloads = 'workloads';
+    /** BuildKit can run here (build servers only; unavailable when Ubuntu restricts user namespaces and launchroom's AppArmor profile is not loaded, D58). */
+    case Builds = 'builds';
 }

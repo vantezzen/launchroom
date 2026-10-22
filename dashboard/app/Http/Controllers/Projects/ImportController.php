@@ -116,9 +116,10 @@ final class ImportController extends Controller
         [$repository, $branch] = $this->repository($request, $team);
         $request->validate([
             'rootDirectory' => ['nullable', 'string', 'max:1024', 'regex:/^(?:[A-Za-z0-9_.@+=,-]+(?:\/[A-Za-z0-9_.@+=,-]+)*)?$/D'],
+            'retry' => ['sometimes', 'boolean'],
         ]);
 
-        return new JsonResponse($previewer->previewForTeam($repository->repositoryTeamId(), $repository, $branch, $request->string('rootDirectory')->toString()));
+        return new JsonResponse($previewer->previewForTeam($repository->repositoryTeamId(), $repository, $branch, $request->string('rootDirectory')->toString(), $request->boolean('retry')));
     }
 
     /**

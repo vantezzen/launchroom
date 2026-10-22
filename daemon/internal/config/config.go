@@ -23,6 +23,7 @@ import (
 	"strings"
 
 	"github.com/vantezzen/launchroom/daemon/internal/identity"
+	"github.com/vantezzen/launchroom/daemon/internal/publicip"
 	"github.com/vantezzen/launchroom/daemon/internal/secret"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
@@ -121,6 +122,13 @@ const (
 	// (system.controlPlane, docs/03 §4.2). Off, it only ever talks to
 	// LR_CONTROL_PLANE_URL.
 	EnvControlPlaneFollow = "LR_CONTROL_PLANE_FOLLOW"
+	// EnvPublicIPDetect is "on" (default) or "off": whether launchroomd asks
+	// IP echo services for this server's public address (what DNS records
+	// must point at, docs/05 §5). Off mirrors install.sh --no-public-ip-detect.
+	EnvPublicIPDetect = "LR_PUBLIC_IP_DETECT"
+	// EnvPublicIPs sets the public addresses instead of detecting them:
+	// comma-separated, at most one IPv4 and one IPv6, each public.
+	EnvPublicIPs = "LR_PUBLIC_IPS"
 
 	// DefaultAskAddr is the default loopback address of the on-demand TLS ask endpoint.
 	DefaultAskAddr = "127.0.0.1:2021"
@@ -201,6 +209,10 @@ type Config struct {
 	LinkProbeOff bool
 	// ControlPlaneFollowOff refuses system.controlPlane (LR_CONTROL_PLANE_FOLLOW=off).
 	ControlPlaneFollowOff bool
+	// PublicIPDetectOff never contacts IP echo services (LR_PUBLIC_IP_DETECT=off).
+	PublicIPDetectOff bool
+	// PublicIPs are the configured public addresses (LR_PUBLIC_IPS), nil = detect.
+	PublicIPs *state.PublicAddresses
 }
 
 // DefaultCertStorageUpstream is where the control-plane compose publishes Valkey for launchroomd.
@@ -337,6 +349,18 @@ func loadFirewallConfig(cfg *Config, get func(string) string) []error {
 		cfg.ControlPlaneFollowOff = true
 	default:
 		errs = append(errs, fmt.Errorf("config: %s must be on or off, got %q", EnvControlPlaneFollow, v))
+	}
+	switch v := strings.ToLower(get(EnvPublicIPDetect)); v {
+	case "", "on":
+	case "off":
+		cfg.PublicIPDetectOff = true
+	default:
+		errs = append(errs, fmt.Errorf("config: %s must be on or off, got %q", EnvPublicIPDetect, v))
+	}
+	if ips, err := publicip.ParseConfigured(get(EnvPublicIPs)); err != nil {
+		errs = append(errs, fmt.Errorf("config: %s: %w", EnvPublicIPs, err))
+	} else {
+		cfg.PublicIPs = ips
 	}
 	cfg.Firewall = orDefault(strings.ToLower(get(EnvFirewall)), "enforce")
 	if cfg.Firewall != "enforce" && cfg.Firewall != "off" {

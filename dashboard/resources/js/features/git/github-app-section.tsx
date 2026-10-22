@@ -1,12 +1,12 @@
 import { router } from '@inertiajs/react';
 import { ArrowUpRight, RefreshCw } from 'lucide-react';
 import { Logo } from '@/components/logo';
-import { EmptyState } from '@/components/patterns/empty-state';
 import { TimeAgo } from '@/components/time-ago';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
-import { SettingsRow } from '@/features/settings/settings-card';
+import { GitHubSetupSteps } from '@/features/git/github-setup-steps';
 import { WebhookHealth } from '@/features/git/webhook-health';
+import { SettingsRow } from '@/features/settings/settings-card';
 import { refresh } from '@/routes/git/installations';
 
 function InstallationRow({
@@ -129,21 +129,13 @@ export function GitHubAppSection({ app }: { app: App.Data.Git.GitHubAppData }) {
             </div>
             <div className="divide-y border-t">
                 {app.installations.length === 0 ? (
-                    <EmptyState
-                        variant="plain"
-                        action={
-                            app.canManage && (
-                                <Button asChild>
-                                    <a href={app.installUrl}>
-                                        Install on GitHub
-                                    </a>
-                                </Button>
-                            )
-                        }
-                    >
-                        Install the app on the accounts whose repositories you
-                        want to deploy.
-                    </EmptyState>
+                    <div className="p-4 sm:p-5">
+                        <GitHubSetupSteps
+                            appName={app.name}
+                            installUrl={app.installUrl}
+                            canManage={app.canManage}
+                        />
+                    </div>
                 ) : (
                     app.installations.map((installation) => (
                         <InstallationRow

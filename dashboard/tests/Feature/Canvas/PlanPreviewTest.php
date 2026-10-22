@@ -7,12 +7,14 @@ use App\Actions\Daemons\LeaseTasks;
 use App\Actions\Services\RecordPlanResult;
 use App\Data\Protocol\V1\LeaseRequest;
 use App\Data\Protocol\V1\TaskCompletion;
+use App\Enums\DaemonTaskStatus;
 use App\Enums\DaemonTaskType;
 use App\Enums\TeamRole;
 use App\Models\DaemonTask;
 use App\Models\Server;
 use App\Models\ServiceInstance;
 use App\Models\Team;
+use App\Services\Canvas\TaskPlanPreviewer;
 use App\Support\PublicId;
 use Illuminate\Support\Facades\Http;
 use Tests\Support\GitHubFake;
@@ -142,4 +144,77 @@ test('previews are scoped to the team’s repositories', function (): void {
 
     $outsider = memberOf(Team::factory()->create(), TeamRole::Owner);
     $this->actingAs($outsider)->getJson(($this->url)())->assertNotFound();
+});
+
+function ppLease(Server $server): void
+{
+    resolve(LeaseTasks::class)->handle($server->refresh(), LeaseRequest::from(['apiVersion' => 'launchroom.vantezzen.io/v1', 'kind' => 'LeaseRequest', 'max' => 4, 'types' => ['plan']]));
+}
+
+test('a leased preview names the server it runs on', function (): void {
+    [$server] = Projects::server($this->team);
+    $server->forceFill(['name' => 'control plane'])->save();
+
+    $this->actingAs($this->developer)->getJson(($this->url)())->assertJson(['status' => 'pending']);
+    ppLease($server);
+
+    $this->actingAs($this->developer)->getJson(($this->url)())
+        ->assertJson(['status' => 'pending', 'message' => 'Inspecting the repository on the server control plane']);
+});
+
+test('a preview nobody picks up fails instead of waiting forever, and Retry starts a new one', function (): void {
+    Projects::server($this->team);
+
+    $this->actingAs($this->developer)->getJson(($this->url)())->assertJson(['status' => 'pending']);
+    $task = DaemonTask::query()->sole();
+
+    $this->travel(TaskPlanPreviewer::LEASE_WAIT_SECONDS + 1)->seconds();
+
+    $this->actingAs($this->developer)->getJson(($this->url)())
+        ->assertJsonPath('status', 'failed')
+        ->assertJsonPath('message', 'No build server picked up the detection. Check that your build server is online, then retry.');
+    expect($task->refresh()->status)->toBe(DaemonTaskStatus::Cancelled);
+
+    // Polling again keeps the answer; Retry forgets the task.
+    $this->actingAs($this->developer)->getJson(($this->url)())->assertJsonPath('status', 'failed');
+    expect(DaemonTask::query()->count())->toBe(1);
+
+    $this->actingAs($this->developer)->getJson(($this->url)().'&retry=1')->assertJsonPath('status', 'pending');
+    expect(DaemonTask::query()->count())->toBe(2);
+});
+
+test('a preview past its deadline is reported as failed and can be retried', function (): void {
+    [$server] = Projects::server($this->team);
+
+    $this->actingAs($this->developer)->getJson(($this->url)())->assertJson(['status' => 'pending']);
+    ppLease($server);
+    $task = DaemonTask::query()->sole();
+    expect($task->refresh()->status)->toBe(DaemonTaskStatus::Leased);
+
+    $this->travel($task->timeout_seconds + 1)->seconds();
+
+    $this->actingAs($this->developer)->getJson(($this->url)())
+        ->assertJsonPath('status', 'failed')
+        ->assertJsonPath('message', 'Detection did not finish in time. Retry, or add the service: the first build detects again.');
+
+    $this->actingAs($this->developer)->getJson(($this->url)().'&retry=1')->assertJsonPath('status', 'pending');
+    expect(DaemonTask::query()->count())->toBe(2)
+        ->and($task->refresh()->cancel_requested_at)->not->toBeNull();
+});
+
+test('Retry after a failed plan starts a new task; a running one is kept', function (): void {
+    [$server] = Projects::server($this->team);
+
+    $this->actingAs($this->developer)->getJson(($this->url)())->assertJson(['status' => 'pending']);
+    // Retrying a task that still runs does not start another one.
+    $this->actingAs($this->developer)->getJson(($this->url)().'&retry=1')->assertJson(['status' => 'pending']);
+    expect(DaemonTask::query()->count())->toBe(1);
+
+    ppComplete($server, DaemonTask::query()->sole(), ['outcome' => 'failed', 'error' => 'internal_error (setup): buildkitd: not ready', 'failure' => ['class' => 'internal_error', 'step' => 'setup', 'retryable' => false]]);
+    $this->actingAs($this->developer)->getJson(($this->url)())
+        ->assertJsonPath('status', 'failed')
+        ->assertJsonPath('message', 'Detection failed: internal_error (setup): buildkitd: not ready');
+
+    $this->actingAs($this->developer)->getJson(($this->url)().'&retry=1')->assertJsonPath('status', 'pending');
+    expect(DaemonTask::query()->count())->toBe(2);
 });

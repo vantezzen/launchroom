@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\Updates\RunAutomaticUpdate;
 use App\Contracts\DnsResolver;
+use App\Data\Updates\ReleaseCheckData;
 use App\Enums\AuditAction;
 use App\Enums\DaemonTaskStatus;
 use App\Enums\DaemonTaskType;
@@ -22,6 +23,7 @@ use App\Models\Updates\ControlPlaneUpdate;
 use App\Models\Updates\FleetUpdate;
 use App\Models\User;
 use App\Services\Updates\AutoUpdateWindow;
+use App\Services\Updates\ReleaseChecker;
 use Illuminate\Http\Client\Request;
 use Illuminate\Routing\Middleware\ThrottleRequests;
 use Illuminate\Support\Facades\Http;
@@ -63,8 +65,18 @@ function release(string $tag, array $overrides = []): array
 }
 
 /**
+ * Where GitHub's API redirects an asset download: its storage host, with a
+ * signed query string that must be sent as it is.
+ */
+function storageUrl(string $tag): string
+{
+    return 'https://release-assets.githubusercontent.com/github-production-release-asset/1/'.crc32($tag).'?sp=r&sv=2018-11-09&se=2026-10-21T17%3A16%3A58Z&sig=c2lnbmVk&jwt=e30';
+}
+
+/**
  * Fakes GitHub: the releases list, each release by tag, and every images.env
- * asset (one redirect to the storage host, like the real API).
+ * asset (one redirect to the storage host, like the real API). The storage
+ * host answers 403 unless the signed query string arrives intact.
  *
  * @param  list<array<string, mixed>>  $releases
  */
@@ -77,10 +89,11 @@ function fakeGitHub(array $releases, array $first = []): void
 
     foreach ($releases as $release) {
         $fakes[RELEASES_URL.'/tags/'.$release['tag_name']] ??= Http::response($release);
-        $fakes[RELEASES_URL.'/assets/'.crc32((string) $release['tag_name'])] ??= Http::response('', 302, ['Location' => 'https://objects.githubusercontent.com/assets/'.crc32((string) $release['tag_name'])]);
+        $fakes[RELEASES_URL.'/assets/'.crc32((string) $release['tag_name'])] ??= Http::response('', 302, ['Location' => storageUrl((string) $release['tag_name'])]);
+        $fakes[storageUrl((string) $release['tag_name'])] ??= Http::response("# pins\nLR_DASHBOARD_IMAGE=ghcr.io/vantezzen/launchroom-dashboard@sha256:".str_repeat('d', 64)."\nLR_DAEMON_IMAGE=".daemonImage('b')."\nLR_POSTGRES_IMAGE=postgres:18\n");
     }
 
-    $fakes['https://objects.githubusercontent.com/*'] = Http::response("# pins\nLR_DASHBOARD_IMAGE=ghcr.io/vantezzen/launchroom-dashboard@sha256:".str_repeat('d', 64)."\nLR_DAEMON_IMAGE=".daemonImage('b')."\nLR_POSTGRES_IMAGE=postgres:18\n");
+    $fakes['https://release-assets.githubusercontent.com/*'] = Http::response('<Error>AuthenticationFailed</Error>', 403);
     $fakes[RELEASES_URL.'/tags/*'] = Http::response(['message' => 'Not Found'], 404);
 
     Http::fake($fakes);
@@ -92,7 +105,7 @@ function githubDns(): void
     {
         public function resolve(string $hostname): array
         {
-            return in_array($hostname, ['api.github.com', 'objects.githubusercontent.com', 'evil.example.com', 's3.example.com'], true) ? ['140.82.121.6'] : [];
+            return in_array($hostname, ['api.github.com', 'release-assets.githubusercontent.com', 'evil.example.com', 's3.example.com'], true) ? ['140.82.121.6'] : [];
         }
     });
 }
@@ -180,9 +193,123 @@ test('the check offers the newest stable release with its changelog and pinned i
             ->where('highlights', ['alert(1) is just text'])
             ->where('check.error', null));
 
-    // The asset redirect was followed once, to GitHub's storage host only.
+    // The asset redirect was followed once, to GitHub's storage host only,
+    // with its signed query string intact.
     Http::assertSent(fn (Request $request): bool => $request->url() === RELEASES_URL.'/assets/'.crc32('v0.2.1') && $request->hasHeader('Accept', 'application/octet-stream'));
+    Http::assertSent(fn (Request $request): bool => $request->url() === storageUrl('v0.2.1'));
 });
+
+test('release candidates are found on the beta channel and ordered by semver precedence', function (): void {
+    fakeGitHub([
+        release('v0.1.0-rc.10', ['prerelease' => true]),
+        release('v0.1.0-rc.9', ['prerelease' => true]),
+        release('v0.1.0-rc.3', ['prerelease' => true]),
+        release('v0.1.0-rc.2', ['prerelease' => true]),
+        release('v0.0.9'),
+    ]);
+    config(['launchroom.version' => '0.1.0-rc.3', 'launchroom.updates.channel' => 'beta']);
+
+    $this->actingAs($this->owner)->post(route('updates.check'))->assertSessionHas('success', 'launchroom 0.1.0-rc.10 is available.');
+    $this->actingAs($this->owner)->get(route('updates.edit'))
+        ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+            ->where('check.available.version', '0.1.0-rc.10')
+            ->where('check.available.prerelease', true)
+            ->where('check.available.daemonImage', daemonImage('b'))
+            ->where('check.available.cannotInstallReason', null));
+
+    // Stable never offers a pre-release, not even a newer one.
+    config(['launchroom.updates.channel' => 'stable']);
+    $this->actingAs($this->owner)->post(route('updates.check'))->assertSessionHas('success', 'launchroom is up to date.');
+});
+
+test('without a chosen channel a pre-release version follows beta, a release stable', function (): void {
+    fakeGitHub([release('v0.1.0-rc.4', ['prerelease' => true]), release('v0.1.0-rc.3', ['prerelease' => true]), release('v0.0.9')]);
+    config(['launchroom.version' => '0.1.0-rc.3', 'launchroom.updates.channel' => null]);
+
+    $this->actingAs($this->owner)->post(route('updates.check'))->assertSessionHas('success', 'launchroom 0.1.0-rc.4 is available.');
+    $this->actingAs($this->owner)->get(route('updates.edit'))
+        ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page->where('preferences.channel', 'beta')->where('check.channel', 'beta'));
+
+    // An empty LAUNCHROOM_UPDATES_CHANNEL counts as unset too.
+    config(['launchroom.version' => '0.0.9', 'launchroom.updates.channel' => '']);
+    $this->actingAs($this->owner)->post(route('updates.check'))->assertSessionHas('success', 'launchroom is up to date.');
+
+    // Development builds are not releases.
+    config(['launchroom.version' => '0.0.0-dev']);
+    expect(resolve(ReleaseChecker::class)->channel())->toBe('stable');
+
+    // A channel picked in Settings → Updates wins over the inference.
+    InstanceSettings::current()->forceFill(['update_channel' => 'stable'])->save();
+    config(['launchroom.version' => '0.1.0-rc.3']);
+    $this->actingAs($this->owner)->post(route('updates.check'))->assertSessionHas('success', 'launchroom is up to date.');
+});
+
+test('a version change never shows the previous check, and nothing at or below the running version is offered', function (): void {
+    fakeGitHub([release('v0.1.0-rc.4', ['prerelease' => true]), release('v0.1.0-rc.3', ['prerelease' => true])]);
+    config(['launchroom.version' => '0.1.0-rc.3', 'launchroom.updates.channel' => 'beta']);
+
+    $this->actingAs($this->owner)->post(route('updates.check'));
+    $this->actingAs($this->owner)->get(route('updates.edit'))
+        ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page->where('check.available.version', '0.1.0-rc.4')->where('updateAvailable', true));
+
+    // Updated by hand with the installer: the dashboard now runs rc.4.
+    config(['launchroom.version' => '0.1.0-rc.4']);
+
+    $this->actingAs($this->owner)->get(route('updates.edit'))
+        ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+            ->where('currentVersion', '0.1.0-rc.4')
+            ->where('check.currentVersion', '0.1.0-rc.4')
+            ->where('check.available', null)
+            ->where('check.checkedAt', null)
+            ->where('updateAvailable', false));
+
+    $this->actingAs($this->owner)->post(route('updates.check'))->assertSessionHas('success', 'launchroom is up to date.');
+});
+
+test('a cached release that is not newer than the running version is dropped', function (): void {
+    fakeGitHub([release('v0.2.0')]);
+    $checker = resolve(ReleaseChecker::class);
+    $release = $checker->release('0.2.0');
+
+    // Whatever ended up in the cache entry of this version (an old entry,
+    // a hand-edited one), the running version decides what is offered.
+    config(['launchroom.version' => '0.2.0']);
+    $key = new ReflectionMethod($checker, 'cacheKey')->invoke($checker);
+    cache()->put($key, new ReleaseCheckData('0.1.0', 'stable', $release, now()->toIso8601String(), null)->toArray());
+
+    expect($checker->cached()->available)->toBeNull()
+        ->and($checker->cached()->currentVersion)->toBe('0.2.0');
+
+    config(['launchroom.version' => '0.1.0']);
+    cache()->put(new ReflectionMethod($checker, 'cacheKey')->invoke($checker), new ReleaseCheckData('0.1.0', 'stable', $release, now()->toIso8601String(), null)->toArray());
+    expect($checker->cached()->available?->version)->toBe('0.2.0');
+});
+
+test('a release the dashboard cannot install says why and shows the installer command', function (string $case, string $reason): void {
+    fakeGitHub([release('v0.1.0-rc.4', ['prerelease' => true, ...($case === 'no images.env' ? ['assets' => []] : [])])], match ($case) {
+        'no images.env' => [],
+        'storage refuses' => [storageUrl('v0.1.0-rc.4') => Http::response('denied', 403)],
+        default => [storageUrl('v0.1.0-rc.4') => Http::response("LR_DAEMON_IMAGE=ghcr.io/vantezzen/launchroomd:0.1.0-rc.4\n")],
+    });
+    config(['launchroom.version' => '0.1.0-rc.3', 'launchroom.updates.channel' => 'beta']);
+
+    $this->actingAs($this->owner)->post(route('updates.check'));
+    $this->actingAs($this->owner)->get(route('updates.edit'))
+        ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+            ->where('check.available.version', '0.1.0-rc.4')
+            ->where('check.available.daemonImage', null)
+            ->where('check.available.cannotInstallReason', $reason)
+            ->where('check.available.installerCommand', 'curl -fsSL https://launchroom.vantezzen.io/install | sh -s -- --version 0.1.0-rc.4'));
+
+    $this->actingAs($this->owner)->withSession(passwordConfirmed())
+        ->post(route('updates.control-plane'), ['version' => '0.1.0-rc.4', 'skipBackup' => true])
+        ->assertSessionHasErrors(['version' => "{$reason} Install it with the installer instead: curl -fsSL https://launchroom.vantezzen.io/install | sh -s -- --version 0.1.0-rc.4"]);
+    expect(ControlPlaneUpdate::query()->count())->toBe(0);
+})->with([
+    ['no images.env', 'The release has no image list (images.env), so the dashboard doesn’t know which images to install.'],
+    ['storage refuses', 'GitHub answered 403 when the dashboard downloaded the release’s image list (images.env).'],
+    ['no pinned server image', 'Its image list (images.env) doesn’t pin the server image (LR_DAEMON_IMAGE) by digest.'],
+]);
 
 test('the beta channel includes prereleases; up to date and failures are reported', function (): void {
     fakeGitHub([release('v0.3.0-beta.1', ['prerelease' => true]), release('v0.1.0')]);
@@ -207,7 +334,8 @@ test('assets that redirect anywhere but GitHub storage are ignored', function ()
     $this->actingAs($this->owner)->post(route('updates.check'));
 
     $this->actingAs($this->owner)->get(route('updates.edit'))
-        ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page->where('check.available.version', '0.2.0')->where('check.available.daemonImage', null));
+        ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page->where('check.available.version', '0.2.0')->where('check.available.daemonImage', null)
+            ->where('check.available.cannotInstallReason', 'GitHub sent the release’s image list (images.env) from an unexpected address, so the dashboard didn’t use it.'));
     Http::assertNotSent(fn (Request $request): bool => str_contains($request->url(), 'evil.example.com'));
 });
 

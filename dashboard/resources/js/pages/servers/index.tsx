@@ -19,6 +19,7 @@ import { FleetTopology } from '@/features/servers/fleet-topology';
 import { fleetOrder, shortAge } from '@/features/servers/format';
 import { formatLatency } from '@/features/servers/link-format';
 import { roleIcons } from '@/features/servers/server-status';
+import { SmallServerHint } from '@/features/servers/small-server-hint';
 import {
     ServerMetricsLiveUpdates,
     useFleetMetrics,
@@ -38,6 +39,7 @@ type Props = {
     pendingEnrollments: App.Data.Servers.EnrollmentData[];
     replaceable: string[];
     meshLinks: App.Data.Servers.MeshLinkData[];
+    smallServerHint?: App.Data.Servers.SmallServerHintData | null;
 };
 
 function plural(count: number, one: string, many = `${one}s`): string {
@@ -394,6 +396,7 @@ export default function ServersIndex({
     pendingEnrollments,
     replaceable,
     meshLinks,
+    smallServerHint = null,
 }: Props) {
     const metrics = useFleetMetrics('1h');
     const usage = new Map(
@@ -459,6 +462,8 @@ export default function ServersIndex({
                     edgeOverview={edgeOverview}
                     canManageIngress={canManageIngress}
                 />
+
+                {smallServerHint && <SmallServerHint hint={smallServerHint} />}
 
                 {active.length === 0 && pendingEnrollments.length === 0 ? (
                     <EmptyState

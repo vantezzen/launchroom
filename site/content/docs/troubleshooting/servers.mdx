@@ -80,19 +80,21 @@ Each check in the **Health** section explains itself. The most common ones:
 | **Disk** | Less than 20% free is a warning, less than 10% critical. Builds and pulls fail on a full disk. | launchroom removes unused images daily and when the disk is 85% full. It never deletes volumes, databases or anything it didn't create. Remove other data, or grow the disk. |
 | **Memory** | Less than 15% available is a warning. | Services may be killed for lack of memory. Lower memory limits, move services to another server or add memory. |
 | **Load** | Sustained load of 2 per CPU or more. | Builds and requests get slow. Move builds to another server with the Build role. |
-| **File watch limits** | inotify limits below 65,536 watches or 256 instances. | Raise `fs.inotify.max_user_watches` and `fs.inotify.max_user_instances` in a file under `/etc/sysctl.d/`. |
+| **File watch limits** | inotify limits below 65,536 watches or 256 instances. | Raise `fs.inotify.max_user_watches` and `fs.inotify.max_user_instances` in a file under `/etc/sysctl.d/`. The installers offer to do this. |
 | **Docker networks** | Many networks that other software created on this server. Docker's default address pools run out at about 30 networks. | Remove unused networks other tools left behind (`docker network ls`). launchroom's own networks use a separate range and don't count. |
 | **Health report** | No fresh facts from the server for 15 minutes. | launchroomd isn't running or can't reach the dashboard. See Unreachable above. |
 | **Desired state** | "Server refused v12; it keeps running v11", or "Not rendered: the previous version stays applied". | The new configuration for this server was refused, and the detail line says why. Deployments that caused it are failed and the server keeps running what it had. Fix the configuration named in the detail and deploy again. If the server runs an older launchroomd than the dashboard, update it under Settings → Updates. |
 
 For the file watch limits, for example:
 
-```sh title="/etc/sysctl.d/90-launchroom-inotify.conf"
+```sh title="/etc/sysctl.d/60-launchroom-inotify.conf"
 fs.inotify.max_user_watches = 524288
 fs.inotify.max_user_instances = 512
 ```
 
-Apply it with `sudo sysctl --system`.
+Apply it with `sudo sysctl -w fs.inotify.max_user_watches=524288 fs.inotify.max_user_instances=512`, or run the
+installer again with `--raise-inotify`, which writes the same file. Keep a value that is already higher. See
+[Low inotify limits](/docs/troubleshooting/install#low-inotify-limits).
 
 ## Rootless Docker hosts
 

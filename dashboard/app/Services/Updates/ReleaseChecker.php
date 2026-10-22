@@ -25,11 +25,14 @@ use Throwable;
  *
  * Nothing here is trusted for integrity: the control-plane daemon downloads
  * the signed bundle itself and verifies it against the identity pinned at
- * install. Results are cached; `check(fresh: true)` refreshes.
+ * install. Results are cached per channel and per running version, so a
+ * version change (an update, or the installer run by hand) never shows the
+ * previous check; `cached()` also drops any release that is not newer than
+ * the running version. `check(fresh: true)` refreshes.
  */
 final readonly class ReleaseChecker
 {
-    private const string CACHE_KEY = 'launchroom:updates:release-check';
+    private const string CACHE_KEY = 'launchroom:updates:release-check:v2';
 
     private const int MAX_NOTES = 20000;
 
@@ -44,7 +47,7 @@ final readonly class ReleaseChecker
 
         if (is_array($cached)) {
             try {
-                return ReleaseCheckData::from($cached);
+                return $this->forRunningVersion(ReleaseCheckData::from($cached));
             } catch (Throwable) {
                 // Shape changed between releases: check again below.
             }
@@ -65,8 +68,10 @@ final readonly class ReleaseChecker
             $result = new ReleaseCheckData($this->currentVersion(), $this->channel(), null, now()->toIso8601String(), $e instanceof ReleaseCheckFailed ? $e->getMessage() : 'GitHub could not be reached.');
         }
 
-        // Failures are cached briefly so the page doesn't hammer GitHub.
-        $this->cache->put($this->cacheKey(), $result->toArray(), $result->error === null ? config()->integer('launchroom.updates.check_ttl_seconds') : 300);
+        // Failures (and a release whose image list could not be read) are
+        // cached briefly so the page doesn't hammer GitHub but recovers soon.
+        $brief = $result->error !== null || $result->available?->cannotInstallReason !== null;
+        $this->cache->put($this->cacheKey(), $result->toArray(), $brief ? 300 : config()->integer('launchroom.updates.check_ttl_seconds'));
 
         return $result;
     }
@@ -103,14 +108,23 @@ final readonly class ReleaseChecker
 
     /**
      * The channel picked in Settings → Updates, else the configured default
-     * (`LAUNCHROOM_UPDATES_CHANNEL`): stable skips prereleases, beta
-     * includes them.
+     * (`LAUNCHROOM_UPDATES_CHANNEL`, which `install.sh --unstable` sets to
+     * beta), else inferred from the running version: a pre-release (such as
+     * 0.1.0-rc.3) follows beta, anything else (releases, -dev builds) stable. Stable skips
+     * prereleases, beta includes them.
      */
     public function channel(): string
     {
         $channel = InstanceSettings::current()->update_channel ?? config('launchroom.updates.channel');
 
-        return $channel === 'beta' ? 'beta' : 'stable';
+        if ($channel === 'beta' || $channel === 'stable') {
+            return $channel;
+        }
+
+        // Development builds (0.0.0-dev) are not releases: stable.
+        $current = $this->currentVersion();
+
+        return Semver::parse($current)?->isPrerelease() === true && ! str_ends_with($current, '-dev') ? 'beta' : 'stable';
     }
 
     /**
@@ -118,13 +132,44 @@ final readonly class ReleaseChecker
      */
     public function forget(): void
     {
-        $this->cache->forget(self::CACHE_KEY.':stable');
-        $this->cache->forget(self::CACHE_KEY.':beta');
+        $this->cache->forget($this->cacheKey('stable'));
+        $this->cache->forget($this->cacheKey('beta'));
     }
 
-    private function cacheKey(): string
+    /**
+     * The installer command that installs $version by hand (docs/11 §2.1),
+     * run on the main server in the folder that contains `launchroom/`.
+     */
+    public static function installerCommand(string $version): string
     {
-        return self::CACHE_KEY.':'.$this->channel();
+        $semver = Semver::parse($version);
+
+        return 'curl -fsSL https://launchroom.vantezzen.io/install | sh'.($semver instanceof Semver ? ' -s -- --version '.$semver->normalized() : '');
+    }
+
+    /**
+     * Per channel and per running version: after the version changes the
+     * old result is never read again (it expires on its own).
+     */
+    private function cacheKey(?string $channel = null): string
+    {
+        return self::CACHE_KEY.':'.($channel ?? $this->channel()).':'.hash('xxh128', $this->currentVersion());
+    }
+
+    /**
+     * The cached result as of the running version: a release that is not
+     * newer than what runs now is never offered.
+     */
+    private function forRunningVersion(ReleaseCheckData $check): ReleaseCheckData
+    {
+        $current = $this->currentVersion();
+        $available = $check->available;
+
+        if ($available instanceof ReleaseData && Semver::compare($available->version, $current) !== null && ! Semver::newer($available->version, $current)) {
+            $available = null;
+        }
+
+        return new ReleaseCheckData($current, $this->channel(), $available, $check->checkedAt, $check->error);
     }
 
     /**
@@ -183,7 +228,12 @@ final readonly class ReleaseChecker
             return null;
         }
 
-        $images = $withImages ? $this->images($release) : [];
+        [$images, $problem] = $withImages ? $this->images($release) : [[], null];
+
+        if ($problem === null && ! isset($images['LR_DAEMON_IMAGE'])) {
+            $problem = 'Its image list (images.env) doesn’t pin the server image (LR_DAEMON_IMAGE) by digest.';
+        }
+
         $url = is_string($release['html_url'] ?? null) && str_starts_with($release['html_url'], 'https://github.com/') ? $release['html_url'] : '';
 
         return new ReleaseData(
@@ -196,14 +246,17 @@ final readonly class ReleaseChecker
             prerelease: $version->isPrerelease() || ($release['prerelease'] ?? false) === true,
             dashboardImage: $images['LR_DASHBOARD_IMAGE'] ?? null,
             daemonImage: $images['LR_DAEMON_IMAGE'] ?? null,
+            cannotInstallReason: $problem,
+            installerCommand: self::installerCommand($version->normalized()),
         );
     }
 
     /**
-     * Digest-pinned LR_*_IMAGE values of the release's images.env asset.
+     * Digest-pinned LR_*_IMAGE values of the release's images.env asset, and
+     * why it could not be read (plain words, shown on Settings → Updates).
      *
      * @param  array<mixed>  $release
-     * @return array<string, string>
+     * @return array{array<string, string>, ?string}
      */
     private function images(array $release): array
     {
@@ -216,33 +269,38 @@ final readonly class ReleaseChecker
             }
         }
 
+        if ($assetUrl === null) {
+            return [[], 'The release has no image list (images.env), so the dashboard doesn’t know which images to install.'];
+        }
+
         $prefix = $this->apiBase().'/repos/'.$this->repository().'/releases/assets/';
 
-        if ($assetUrl === null || ! str_starts_with($assetUrl, $prefix)) {
-            return [];
+        if (! str_starts_with($assetUrl, $prefix)) {
+            return [[], 'The release’s image list (images.env) isn’t stored with the release on GitHub.'];
         }
 
         try {
             $response = $this->http->get($assetUrl, [], ['Accept' => 'application/octet-stream']);
 
             // The API answers with a redirect to GitHub's storage host; follow
-            // exactly one hop, and only to those hosts.
+            // exactly one hop, and only to those hosts. The signed query
+            // string of that URL must be sent as it is.
             if ($response->redirect()) {
                 $location = $response->header('Location');
                 $host = parse_url($location, PHP_URL_HOST);
 
                 if (! str_starts_with($location, 'https://') || ! is_string($host) || ! in_array($host, $this->assetHosts(), true)) {
-                    return [];
+                    return [[], 'GitHub sent the release’s image list (images.env) from an unexpected address, so the dashboard didn’t use it.'];
                 }
 
                 $response = $this->http->get($location);
             }
         } catch (ConnectionException|UnsafeUrl|ResponseTooLarge) {
-            return [];
+            return [[], 'GitHub couldn’t be reached to download the release’s image list (images.env).'];
         }
 
         if (! $response->successful()) {
-            return [];
+            return [[], "GitHub answered {$response->status()} when the dashboard downloaded the release’s image list (images.env)."];
         }
 
         $images = [];
@@ -253,7 +311,7 @@ final readonly class ReleaseChecker
             }
         }
 
-        return $images;
+        return [$images, null];
     }
 
     /**

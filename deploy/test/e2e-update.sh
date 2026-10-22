@@ -204,7 +204,8 @@ ok "owner, project $project and destination created"
 
 # start_update VERSION DASHBOARD_IMAGE DAEMON_IMAGE: what "Update now" on
 # Settings → Updates does, with GitHub's Releases API faked in this process
-# only (the release, its images.env asset).
+# only (the release, its images.env asset behind a redirect to the storage
+# host whose signed query string must arrive intact, like the real one).
 start_update() {
 	# shellcheck disable=SC2016 # PHP code
 	in_lr docker compose exec -T -e E2E_VERSION="$1" -e E2E_DASHBOARD="$2" -e E2E_DAEMON="$3" \
@@ -214,7 +215,9 @@ start_update() {
 			app()->instance(App\Contracts\DnsResolver::class, new class implements App\Contracts\DnsResolver { public function resolve(string $hostname): array { return ["140.82.121.6"]; } });
 			Illuminate\Support\Facades\Http::fake([
 				"$api/tags/v$v" => Illuminate\Support\Facades\Http::response(["tag_name" => "v$v", "name" => "launchroom $v", "body" => "## Faster deploys\n- e2e", "html_url" => "https://github.com/vantezzen/launchroom/releases/tag/v$v", "published_at" => now()->toIso8601String(), "draft" => false, "prerelease" => false, "assets" => [["name" => "images.env", "url" => "$api/assets/1"]]]),
-				"$api/assets/1" => Illuminate\Support\Facades\Http::response("LR_DASHBOARD_IMAGE=".getenv("E2E_DASHBOARD")."\nLR_DAEMON_IMAGE=".getenv("E2E_DAEMON")."\n"),
+				"$api/assets/1" => Illuminate\Support\Facades\Http::response("", 302, ["Location" => "https://release-assets.githubusercontent.com/e2e/1?sp=r&sig=e2e"]),
+				"https://release-assets.githubusercontent.com/e2e/1?sp=r&sig=e2e" => Illuminate\Support\Facades\Http::response("LR_DASHBOARD_IMAGE=".getenv("E2E_DASHBOARD")."\nLR_DAEMON_IMAGE=".getenv("E2E_DAEMON")."\n"),
+				"https://release-assets.githubusercontent.com/*" => Illuminate\Support\Facades\Http::response("signature missing", 403),
 			]);
 			$owner = App\Models\User::query()->where("email", "owner@e2e.test")->sole();
 			$u = app(App\Actions\Updates\StartControlPlaneUpdate::class)->handle($owner, new App\Data\Updates\StartControlPlaneUpdateInput($v), App\Data\Audit\AuditActor::system());
