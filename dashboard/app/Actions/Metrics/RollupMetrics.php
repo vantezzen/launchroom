@@ -73,16 +73,16 @@ final readonly class RollupMetrics
         $bucket = $this->bucket($to);
 
         return DB::affectingStatement(<<<SQL
-            INSERT INTO server_metric_samples (server_id, resolution, at, cpu_pct, mem_used_mb, mem_total_mb, disk_used_mb, disk_total_mb, net_rx_bps, net_tx_bps, load1)
+            INSERT INTO server_metric_samples (server_id, resolution, at, cpu_pct, mem_used_mb, mem_total_mb, disk_used_mb, disk_total_mb, net_rx_bps, net_tx_bps, load1, build_cpu_cores)
             SELECT server_id, ?, {$bucket}, avg(cpu_pct), round(avg(mem_used_mb)), max(mem_total_mb), round(avg(disk_used_mb)), max(disk_total_mb),
-                   round(avg(net_rx_bps)), round(avg(net_tx_bps)), avg(load1)
+                   round(avg(net_rx_bps)), round(avg(net_tx_bps)), avg(load1), avg(build_cpu_cores)
             FROM server_metric_samples
             WHERE resolution = ? AND at >= {$this->floor($to)}
             GROUP BY server_id, {$bucket}
             ON CONFLICT (server_id, resolution, at) DO UPDATE SET
                 cpu_pct = excluded.cpu_pct, mem_used_mb = excluded.mem_used_mb, mem_total_mb = excluded.mem_total_mb,
                 disk_used_mb = excluded.disk_used_mb, disk_total_mb = excluded.disk_total_mb,
-                net_rx_bps = excluded.net_rx_bps, net_tx_bps = excluded.net_tx_bps, load1 = excluded.load1
+                net_rx_bps = excluded.net_rx_bps, net_tx_bps = excluded.net_tx_bps, load1 = excluded.load1, build_cpu_cores = excluded.build_cpu_cores
             SQL, [$to, $from, $since->toIso8601String()]);
     }
 

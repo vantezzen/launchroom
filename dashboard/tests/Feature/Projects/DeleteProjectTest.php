@@ -48,8 +48,8 @@ test('the danger zone shows what deleting would remove', function (): void {
         ->assertInertia(fn ($page) => $page->where('canDelete', false)->where('deletion', null));
 });
 
-test('deleting needs the delete permission, a recent password and the typed name', function (): void {
-    $this->actingAs($this->developer)->delete($this->url, ['confirmName' => $this->project->name])->assertRedirect(route('password.confirm'));
+test('deleting needs the delete permission and the typed name', function (): void {
+    $this->actingAs($this->developer)->delete($this->url, ['confirmName' => 'wrong'])->assertSessionHasErrors('confirmName');
     $this->actingAs($this->viewer)->withSession(passwordConfirmed())->delete($this->url, ['confirmName' => $this->project->name])->assertForbidden();
     ($this->delete)(['confirmName' => 'shop'])->assertSessionHasErrors('confirmName');
     ($this->delete)(['confirmName' => ''])->assertSessionHasErrors('confirmName');
@@ -121,7 +121,6 @@ test('a failed final backup blocks the deletion until an admin deletes without o
     $admin = memberOf($this->team, TeamRole::Admin);
     $this->actingAs($this->developer)->withSession(passwordConfirmed())->post($skip)->assertForbidden();
     $this->flushSession();
-    $this->actingAs($admin)->post($skip)->assertRedirect(route('password.confirm'));
     $outsider = memberOf(Team::factory()->create(), TeamRole::Owner);
     $this->actingAs($outsider)->withSession(passwordConfirmed())->post($skip)->assertNotFound();
 

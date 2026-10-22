@@ -66,7 +66,7 @@ The restriction stays on for the rest of the server. dockerd-guard allows exactl
 - **Encrypted at rest with envelope encryption.** Each project has its own data key, wrapped by a key-encryption key that lives in a file on the control plane, not in the database. Git provider tokens, DNS tokens, backup credentials and webhook secrets use the same scheme.
 - **Sealed per server.** A secret reaches a server only encrypted to that server's own key, and only if a workload that needs it runs there.
 - **Never in logs.** Secret values are masked in build, deploy and runtime logs (also base64 and URL-encoded forms), redacted from application logs, and never written to the audit log.
-- **Revealing is deliberate.** Showing a secret value needs the reveal permission (owners and admins) and a fresh password. Every reveal is audited.
+- **Revealing is deliberate.** Showing a secret value needs the reveal permission (owners and admins). Every reveal is audited.
 - **Builds get secrets as build secrets**, never as build arguments, so they don't end up in image layers.
 - Browser-inlined variables like `NEXT_PUBLIC_*` or `VITE_*` may not reference a secret, so a secret can't leak into client-side code by accident.
 
@@ -83,7 +83,7 @@ The restriction stays on for the rest of the server. dockerd-guard allows exactl
 
 ## Sign-in and access
 
-- Accounts by invitation only, [two-factor and passkeys](/docs/teams-and-security/two-factor), password confirmation for sensitive actions, rate limits on sign-in.
+- Accounts by invitation only, [two-factor and passkeys](/docs/teams-and-security/two-factor), rate limits on sign-in.
 - [Roles](/docs/teams-and-security/teams-and-roles) per team, checked on every request. Resources of another team return not found.
 - [API tokens](/docs/reference/api) are bound to one team, expire within a year, and can never do more than their owner.
 - A tamper-evident [audit log](/docs/teams-and-security/audit-log) that you can forward elsewhere.

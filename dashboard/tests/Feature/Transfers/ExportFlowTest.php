@@ -51,13 +51,12 @@ function exportable(Server $server): void
     $server->forceFill(['daemon_features' => [DaemonFeature::DataTransfer->value]])->save();
 }
 
-test('a download needs a recent password, is uploaded by launchroomd and is one use', function (): void {
+test('an authorized download needs no extra password, is uploaded by launchroomd and is one use', function (): void {
     [$team, $server, , $postgres] = Backups::runningPostgres();
     exportable($server);
     $owner = memberOf($team, TeamRole::Owner);
 
-    $this->actingAs($owner)->postJson(route('transfers.services.exports.store', $postgres))->assertStatus(423)->assertJsonPath('requiresPassword', true);
-    $this->postJson(route('transfers.services.exports.store', $postgres), ['password' => 'password'])
+    $this->actingAs($owner)->postJson(route('transfers.services.exports.store', $postgres))
         ->assertSuccessful()
         ->assertJsonPath('exports.0.status', 'preparing')
         ->assertJsonPath('exports.0.source', 'live');

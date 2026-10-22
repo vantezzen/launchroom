@@ -150,6 +150,7 @@ cmd_uninstall() {
 		say "kept volumes, images and $DIR. Run this again to delete them."
 		inotify_note
 		apparmor_note
+		swap_note
 		return
 	fi
 	volumes="$(docker volume ls -q --filter label=launchroom.managed=true)"
@@ -166,6 +167,7 @@ cmd_uninstall() {
 	say "launchroom has been removed from this server."
 	inotify_note
 	apparmor_note
+	swap_note
 }
 
 # inotify_note: the installer may have raised the kernel's inotify limits
@@ -186,6 +188,15 @@ apparmor_note() {
 	[ -f /etc/apparmor.d/launchroom-buildkit ] || return 0
 	say "the installer loaded the AppArmor profile /etc/apparmor.d/launchroom-buildkit (only launchroom's build container used it)."
 	say "to remove it, as root: apparmor_parser -R /etc/apparmor.d/launchroom-buildkit && rm /etc/apparmor.d/launchroom-buildkit"
+}
+
+# swap_note: the installer may have created a swap file on a small host
+# (D59). It stays: uninstall doesn't run as root, and the rest of the
+# server may rely on the swap by now.
+swap_note() {
+	[ -f /swapfile-launchroom ] || return 0
+	say "the installer created the swap file /swapfile-launchroom. It stays."
+	say "to remove it, as root: swapoff /swapfile-launchroom && rm /swapfile-launchroom, then delete its line in /etc/fstab and /etc/sysctl.d/60-launchroom-swap.conf"
 }
 
 main() {

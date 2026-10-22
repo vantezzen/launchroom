@@ -5,7 +5,6 @@ declare(strict_types=1);
 use App\Http\Controllers\Environments\EnvironmentController;
 use App\Http\Controllers\Environments\ProjectActivityController;
 use App\Http\Controllers\Environments\PromotionController;
-use App\Http\Middleware\RequireRecentPassword;
 use App\Support\PublicId;
 use Illuminate\Support\Facades\Route;
 
@@ -27,7 +26,7 @@ Route::middleware(['web', 'auth', 'verified'])
     ->group(function (): void {
         Route::patch('p/{project}/environments/{environment}', [EnvironmentController::class, 'update'])->name('environments.update');
         Route::delete('p/{project}/environments/{environment}', [EnvironmentController::class, 'destroy'])
-            ->middleware(RequireRecentPassword::class)
+
             ->name('environments.destroy');
         Route::post('p/{project}/environments/{environment}/resume', [EnvironmentController::class, 'resume'])->name('environments.resume');
         Route::put('p/{project}/settings/secrets-policy', [EnvironmentController::class, 'secretsPolicy'])->name('environments.secrets-policy');

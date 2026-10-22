@@ -36,6 +36,7 @@ use App\Support\Deployments\PrefetchedInputs;
 use App\Support\Images\ImageReference;
 use App\Support\PublicId;
 use Carbon\CarbonImmutable;
+use Carbon\CarbonInterface;
 use Illuminate\Contracts\Database\Query\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
@@ -338,7 +339,7 @@ final readonly class AdvanceDeployment
     private function rollOut(Deployment $deployment, ServiceSpec $spec): bool
     {
         if ($deployment->placements()->exists()) {
-            return $this->beginHealthCheck($deployment);
+            return $this->waitForRollOut($deployment);
         }
 
         if ($spec->kind->isStateful()) {
@@ -369,7 +370,46 @@ final readonly class AdvanceDeployment
         }
 
         $this->render($servers, $deployment);
-        $this->finishStep($deployment, DeploymentStepName::Rollout, DeploymentStepStatus::Succeeded, ['servers' => $this->serverPublicIds($servers)]);
+        $this->stepMeta($deployment, DeploymentStepName::Rollout, ['servers' => $this->serverPublicIds($servers)]);
+
+        return $servers === [] && $this->completeRollOut($deployment);
+    }
+
+    private function waitForRollOut(Deployment $deployment): bool
+    {
+        $placements = $deployment->placements()->get();
+        $broken = $placements->first(static fn (Placement $placement): bool => $placement->phase->isStopped());
+
+        if ($broken !== null) {
+            $message = $broken->message ?? "The container {$broken->phase->value}.";
+            $this->finishStep($deployment, DeploymentStepName::Rollout, DeploymentStepStatus::Failed, ['message' => $message]);
+
+            return $this->fail($deployment, str_starts_with($message, 'pull failed') ? DeploymentFailureClass::Transient : DeploymentFailureClass::RuntimeError, $message);
+        }
+
+        if ($placements->every(static fn (Placement $placement): bool => $placement->phase->isObserved())) {
+            return $this->completeRollOut($deployment);
+        }
+
+        $step = $this->findStep($deployment, DeploymentStepName::Rollout);
+        $latest = $placements->filter(static fn (Placement $placement): bool => $placement->phase === WorkloadPhase::Pulling)->max('observed_at');
+        $since = $latest instanceof CarbonInterface && $step?->started_at !== null && $latest->greaterThan($step->started_at) ? $latest : $step?->started_at;
+
+        if ($since !== null && $since->copy()->addSeconds(self::PULL_ALLOWANCE_SECONDS)->isPast()) {
+            $message = 'The server stopped reporting progress while preparing the image.';
+            $this->finishStep($deployment, DeploymentStepName::Rollout, DeploymentStepStatus::Failed, ['message' => $message]);
+
+            return $this->fail($deployment, DeploymentFailureClass::Transient, $message);
+        }
+
+        return false;
+    }
+
+    private function completeRollOut(Deployment $deployment): bool
+    {
+        if (! $this->isRolling($deployment)) {
+            $this->finishStep($deployment, DeploymentStepName::Rollout, DeploymentStepStatus::Succeeded);
+        }
 
         return $this->beginHealthCheck($deployment);
     }
@@ -530,6 +570,9 @@ final readonly class AdvanceDeployment
         }
 
         if ($allHealthy) {
+            if ($this->isRolling($deployment)) {
+                $this->finishStep($deployment, DeploymentStepName::Rollout, DeploymentStepStatus::Succeeded);
+            }
             $this->finishStep($deployment, DeploymentStepName::Health, DeploymentStepStatus::Succeeded);
 
             if ($deployment->hold_traffic) {
@@ -706,6 +749,9 @@ final readonly class AdvanceDeployment
         }
 
         $drained = $this->stepMeta($deployment, DeploymentStepName::Rollout)['drained'] ?? [];
+        foreach ($deployment->steps()->where('status', DeploymentStepStatus::Running->value)->get() as $step) {
+            $this->finishStep($deployment, $step->name, DeploymentStepStatus::Failed, ['message' => $message]);
+        }
         $deployment->transitionTo(DeploymentStatus::Failed, $class, $message);
 
         $servers = $this->ids($deployment->placements()->pluck('server_id')->all());

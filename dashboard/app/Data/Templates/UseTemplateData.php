@@ -25,6 +25,7 @@ final class UseTemplateData extends Data
         public ?string $repository = null,
         #[Max(255)]
         public ?string $branch = null,
+        public bool $deploy = true,
     ) {}
 
     /**

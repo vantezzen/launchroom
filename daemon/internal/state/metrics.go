@@ -81,6 +81,8 @@ type HostMetricSample struct {
 	Samples int `json:"samples" jsonschema:"minimum=1,maximum=60"`
 	// CPUPct is busy time of all CPUs from /proc/stat, 0–100.
 	CPUPct *float64 `json:"cpuPct,omitzero" jsonschema:"nullable,minimum=0,maximum=100"`
+	// BuildCPUCores is the managed BuildKit container's CPU, including builds.
+	BuildCPUCores *float64 `json:"buildCpuCores,omitzero" jsonschema:"nullable,minimum=0,maximum=4096"`
 	// MemUsedMB is MemTotal − MemAvailable from /proc/meminfo.
 	MemUsedMB  *int64 `json:"memUsedMb,omitzero" jsonschema:"nullable,minimum=0"`
 	MemTotalMB *int64 `json:"memTotalMb,omitzero" jsonschema:"nullable,minimum=0"`
@@ -142,6 +144,7 @@ func (m *ReportMetrics) validate(e *errs, p string) {
 			e.addf(q+".samples", "must be between 1 and 60")
 		}
 		checkFloat(e, q+".cpuPct", s.CPUPct, 100)
+		checkFloat(e, q+".buildCpuCores", s.BuildCPUCores, 4096)
 		checkFloat(e, q+".load1", s.Load1, 1e6)
 		checkNonNegative(e, q, map[string]*int64{
 			"memUsedMb": s.MemUsedMB, "memTotalMb": s.MemTotalMB, "diskUsedMb": s.DiskUsedMB,

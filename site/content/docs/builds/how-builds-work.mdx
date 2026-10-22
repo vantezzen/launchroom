@@ -82,11 +82,15 @@ Variables like `NEXT_PUBLIC_*` are baked into the browser bundle and visible to 
 
 ## Where builds run
 
-Builds run on servers with the **Build** role. On a single server, that server builds. With several, launchroom prefers the server that built the service last (its BuildKit cache is there), then the least busy one. Each build server runs one build per four cores in parallel, at least one. A build times out after 30 minutes.
+Builds run on servers with the **Build** role. On a single server, that server builds. With several, launchroom prefers the server that built the service last (its BuildKit cache is there), then the least busy one. Each build server runs one build per four cores in parallel, at least one. Builds wait for a free slot before their two-hour timeout starts.
+
+Builds run at low priority with memory reserved for the dashboard and running apps. On one- and two-CPU servers, a CPU cap leaves capacity for other work, and memory limits also reduce parallel build steps. Builds can use a bounded amount of existing swap. On a server with less than 4 GB and no swap, the installer offers a 2 GB swap file; re-run the installer to add it to an existing server. A large app can still need more memory or a separate build server.
 
 BuildKit runs as a rootless system container that launchroomd starts on demand. It is never privileged, and build steps have no way to reach BuildKit's API. An image is built for the CPU architecture of the servers it will run on. An ARM server needs an ARM build server, and an x86 server needs an x86 build server.
 
-Base images and Railpack's images are pulled through launchroom's registry mirror, so upstream outages or rate limits don't break your builds. Build logs are split into steps (clone, plan, install, build, push). Every secret value is masked before a log line leaves the server.
+Base images and Railpack's images are pulled through launchroom's registry mirror, so upstream outages or rate limits don't break your builds. Build logs are split into steps (clone, plan, install, build, push). Every secret value is masked before a log line leaves the server. The first build has no saved build cache yet: it starts from scratch, which is informational and does not fail the build.
+
+The deployment's **Steps** section follows new output while the build runs. Scroll up to pause, then use **Jump to latest** to resume. Search covers every step; **Expand all**, **Wrap**, **Timestamps**, and full-log copy and download are in the same toolbar. A failed step opens at its first error, with error lines highlighted.
 
 ## Images and immutable deployments
 

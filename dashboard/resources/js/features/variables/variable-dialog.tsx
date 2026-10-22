@@ -1,12 +1,6 @@
-import { ChevronRight } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-import {
-    Collapsible,
-    CollapsibleContent,
-    CollapsibleTrigger,
-} from '@/components/ui/collapsible';
 import {
     Dialog,
     DialogClose,
@@ -56,7 +50,12 @@ export function VariableDialog({
     preset,
 }: {
     /** New variable prefilled from a link (`?add=NAME&value=`). */
-    preset?: { key: string; value: string };
+    preset?: {
+        key: string;
+        value: string;
+        buildTime?: boolean;
+        type?: App.Enums.VariableType;
+    };
     open: boolean;
     onOpenChange: (open: boolean) => void;
     data: Data;
@@ -70,10 +69,14 @@ export function VariableDialog({
     const [key, setKey] = useState(variable?.key ?? preset?.key ?? '');
     const [value, setValue] = useState(variable?.value ?? preset?.value ?? '');
     const [type, setType] = useState<App.Enums.VariableType>(
-        variable?.type ?? 'config',
+        variable?.type ?? preset?.type ?? 'config',
     );
     const [exposure, setExposure] = useState<string>(
-        variable?.exposureOverridden ? variable.exposure : 'auto',
+        preset?.buildTime
+            ? 'both'
+            : variable?.exposureOverridden
+              ? variable.exposure
+              : 'auto',
     );
     const [targets, setTargets] = useState<Target[]>(
         variable?.targets.length
@@ -422,49 +425,39 @@ export function VariableDialog({
                         </fieldset>
                     </div>
 
-                    <Collapsible>
-                        <CollapsibleTrigger className="group flex items-center gap-1 type-label text-muted-foreground hover:text-foreground">
-                            <ChevronRight
-                                aria-hidden="true"
-                                className="size-4 transition-transform group-data-[state=open]:rotate-90"
-                            />
-                            Advanced
-                        </CollapsibleTrigger>
-                        <CollapsibleContent className="flex flex-col gap-2 pt-3">
-                            <Label htmlFor="variable-exposure">
-                                Available at
-                            </Label>
-                            <Select
-                                value={exposure}
-                                onValueChange={setExposure}
+                    <div className="flex flex-col gap-2">
+                        <Label htmlFor="variable-exposure">Available at</Label>
+                        <Select value={exposure} onValueChange={setExposure}>
+                            <SelectTrigger
+                                id="variable-exposure"
+                                className="sm:w-72"
                             >
-                                <SelectTrigger
-                                    id="variable-exposure"
-                                    className="sm:w-72"
-                                >
-                                    <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="auto">
-                                        Detected from the key
-                                    </SelectItem>
-                                    <SelectItem value="runtime">
-                                        Runtime only
-                                    </SelectItem>
-                                    <SelectItem value="build">
-                                        Build only
-                                    </SelectItem>
-                                    <SelectItem value="both">
-                                        Build and runtime
-                                    </SelectItem>
-                                </SelectContent>
-                            </Select>
-                            <p className="type-small text-muted-foreground">
-                                Build-time values reach builds as secrets and
-                                changing them rebuilds the service.
-                            </p>
-                        </CollapsibleContent>
-                    </Collapsible>
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="auto">
+                                    {variable && !variable.exposureOverridden
+                                        ? `Automatic: ${variable.exposure === 'runtime' ? 'runtime only' : variable.exposure === 'build' ? 'build only' : 'build and runtime'}`
+                                        : 'Automatic (runtime only unless recognized)'}
+                                </SelectItem>
+                                <SelectItem value="runtime">
+                                    Runtime only
+                                </SelectItem>
+                                <SelectItem value="build">
+                                    Build only
+                                </SelectItem>
+                                <SelectItem value="both">
+                                    Build and runtime
+                                </SelectItem>
+                            </SelectContent>
+                        </Select>
+                        <p className="type-small text-muted-foreground">
+                            If your app reads this variable while building,
+                            choose Build and runtime. Build-time values reach
+                            builds as secrets; changing them rebuilds the
+                            service.
+                        </p>
+                    </div>
 
                     {error && (
                         <p role="alert" className="type-body text-status-error">

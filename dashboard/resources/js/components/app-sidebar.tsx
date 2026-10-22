@@ -1,6 +1,7 @@
 import { Link, usePage } from '@inertiajs/react';
 import {
     Activity,
+    BookOpen,
     FolderKanban,
     ListChecks,
     ScrollText,
@@ -31,6 +32,7 @@ import { show as onboarding } from '@/routes/onboarding';
 import { index as projects } from '@/routes/projects';
 import { index as servers } from '@/routes/servers';
 import { edit as teamSettings } from '@/routes/team';
+import { useDocsUrl } from '@/features/settings/settings-card';
 
 const isMac =
     typeof navigator !== 'undefined' &&
@@ -83,6 +85,7 @@ function AppVersion() {
 }
 
 export function AppSidebar() {
+    const docsUrl = useDocsUrl();
     const {
         onboardingProgress: progress,
         updateAvailable,
@@ -146,6 +149,20 @@ export function AppSidebar() {
             </SidebarContent>
 
             <SidebarFooter className="gap-1">
+                <SidebarMenu>
+                    <SidebarMenuItem>
+                        <SidebarMenuButton asChild tooltip="Docs">
+                            <a
+                                href={docsUrl('')}
+                                target="_blank"
+                                rel="noreferrer"
+                            >
+                                <BookOpen aria-hidden="true" />
+                                <span>Docs</span>
+                            </a>
+                        </SidebarMenuButton>
+                    </SidebarMenuItem>
+                </SidebarMenu>
                 <NavUser />
                 <AppVersion />
             </SidebarFooter>

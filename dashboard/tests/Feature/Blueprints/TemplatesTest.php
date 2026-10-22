@@ -41,6 +41,14 @@ test('the gallery lists the catalog for people who can create projects', functio
             ->where('templates.0.needsRepository', true));
 });
 
+test('a template can create services without deploying them', function (): void {
+    $this->actingAs($this->developer)->post(route('projects.templates.store', 'umami'), [
+        'name' => 'Stats', 'deploy' => false,
+    ])->assertRedirect()->assertSessionHasNoErrors();
+    expect(Project::query()->sole()->services()->count())->toBeGreaterThan(0)
+        ->and(Deployment::query()->count())->toBe(0);
+});
+
 test('a one-click app creates its services with generated secrets and deploys', function (): void {
     Projects::server($this->team);
     $logged = [];

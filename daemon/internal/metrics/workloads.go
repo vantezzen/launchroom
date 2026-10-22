@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/vantezzen/launchroom/daemon/internal/docker"
+	"github.com/vantezzen/launchroom/daemon/internal/policy"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
 
@@ -21,8 +22,9 @@ type workloadReading struct {
 }
 
 type workloadReadings struct {
-	at    time.Time
-	items []workloadReading
+	at       time.Time
+	items    []workloadReading
+	buildCPU *float64
 }
 
 // sampleWorkloads reads the stats of every running managed workload
@@ -47,7 +49,8 @@ func (c *Collector) sampleWorkloads(ctx context.Context, now time.Time) workload
 	var jobs []job
 	for _, ct := range ctrs {
 		wl := state.WorkloadID(ct.Labels[docker.LabelWorkload])
-		if !ct.Running || wl == "" || wl.Validate() != nil {
+		buildkit := ct.Labels[docker.LabelSystem] == policy.SystemBuildkit
+		if !ct.Running || (!buildkit && (wl == "" || wl.Validate() != nil)) {
 			continue
 		}
 		jobs = append(jobs, job{ct.ID, wl})
@@ -94,6 +97,10 @@ func (c *Collector) sampleWorkloads(ctx context.Context, now time.Time) workload
 			r.cores = ptr(min(max(cores, 0), 4096))
 		}
 		c.prevCtr[j.id] = ctrReading{read: read, cpuNs: s.CPUTotalNs}
+		if j.wl == "" {
+			out.buildCPU = r.cores
+			continue
+		}
 		if s.HasMemory {
 			r.memMB = ptr(float64(s.MemUsedBytes) / (1 << 20))
 		}

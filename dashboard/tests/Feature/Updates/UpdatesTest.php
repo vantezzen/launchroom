@@ -166,9 +166,8 @@ test('only instance owners see and use Settings → Updates', function (): void 
             ->where('servers.0.name', 'main')
             ->where('running', false));
 
-    // Mutations need a recently confirmed password.
     $this->flushSession();
-    $this->actingAs($this->owner)->post(route('updates.control-plane'), ['version' => '0.2.0'])->assertRedirect(route('password.confirm'));
+    $this->actingAs($admin)->post(route('updates.control-plane'), ['version' => '0.2.0'])->assertForbidden();
 });
 
 test('the check offers the newest stable release with its changelog and pinned images', function (): void {
@@ -541,7 +540,7 @@ test('the channel and automatic updates are owner settings, audited, and automat
 
     $this->actingAs($admin)->withSession(passwordConfirmed())->put(route('updates.preferences'), ['channel' => 'beta', 'autoUpdate' => false])->assertForbidden();
     $this->flushSession();
-    $this->actingAs($this->owner)->put(route('updates.preferences'), ['channel' => 'beta', 'autoUpdate' => false])->assertRedirect(route('password.confirm'));
+    $this->actingAs($this->owner)->put(route('updates.preferences'), ['channel' => 'stable', 'autoUpdate' => false])->assertRedirect()->assertSessionHasNoErrors();
 
     // Without a control-plane destination, automatic updates stay off.
     $this->actingAs($this->owner)->withSession(passwordConfirmed())

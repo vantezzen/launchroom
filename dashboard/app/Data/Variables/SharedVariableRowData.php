@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Data\Variables;
 
+use App\Enums\VariableExposure;
 use App\Enums\VariableType;
 use Spatie\LaravelData\Data;
 
@@ -24,5 +25,6 @@ final class SharedVariableRowData extends Data
         public ?string $preview,
         public array $errors,
         public bool $used,
+        public VariableExposure $exposure = VariableExposure::Runtime,
     ) {}
 }

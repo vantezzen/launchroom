@@ -22,7 +22,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
-import { api, RequestFailed } from '@/features/variables/api';
+import { api } from '@/features/variables/api';
 import {
     SettingsBody,
     SettingsCard,
@@ -277,8 +277,6 @@ function CreateTokenDialog({
     );
     const [abilities, setAbilities] =
         useState<App.Enums.ApiAbility[]>(defaults);
-    const [password, setPassword] = useState('');
-    const [askPassword, setAskPassword] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
     const [created, setCreated] =
@@ -287,8 +285,6 @@ function CreateTokenDialog({
     const reset = () => {
         setName('');
         setAbilities(defaults);
-        setPassword('');
-        setAskPassword(false);
         setError(null);
         setCreated(null);
     };
@@ -325,21 +321,15 @@ function CreateTokenDialog({
                     name: name.trim() === '' ? 'API token' : name.trim(),
                     expiresInDays: Number(days),
                     abilities: ['read', ...abilities],
-                    ...(askPassword ? { password } : {}),
                 },
             );
             setCreated(result);
-            setPassword('');
         } catch (failure) {
-            if (failure instanceof RequestFailed && failure.status === 423) {
-                setAskPassword(true);
-            } else {
-                setError(
-                    failure instanceof Error
-                        ? failure.message
-                        : 'Could not create the token.',
-                );
-            }
+            setError(
+                failure instanceof Error
+                    ? failure.message
+                    : 'Could not create the token.',
+            );
         } finally {
             setBusy(false);
         }
@@ -462,24 +452,6 @@ function CreateTokenDialog({
                             })}
                         </fieldset>
 
-                        {askPassword && (
-                            <div className="grid gap-2">
-                                <Label htmlFor="token-password">
-                                    Confirm your password
-                                </Label>
-                                <Input
-                                    id="token-password"
-                                    type="password"
-                                    autoComplete="current-password"
-                                    value={password}
-                                    autoFocus
-                                    onChange={(event) =>
-                                        setPassword(event.target.value)
-                                    }
-                                />
-                            </div>
-                        )}
-
                         <InputError message={error ?? undefined} />
 
                         <DialogFooter>
@@ -488,12 +460,7 @@ function CreateTokenDialog({
                                     Cancel
                                 </Button>
                             </DialogClose>
-                            <Button
-                                type="submit"
-                                disabled={
-                                    busy || (askPassword && password === '')
-                                }
-                            >
+                            <Button type="submit" disabled={busy}>
                                 {busy && <Spinner />}
                                 Create token
                             </Button>

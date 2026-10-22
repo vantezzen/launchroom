@@ -71,8 +71,7 @@ test('the checklist replaces the previous control-plane server with the new one,
         ->assertInertia(fn ($page) => $page->where('current.id', $current->public_id)->where('replacement', null));
 
     // The old box is still "online" in the restored database: recovery replaces it anyway.
-    $this->actingAs($this->owner)->post(route('recovery.replace'))->assertRedirect(route('password.confirm'));
-    $this->actingAs($this->owner)->withSession(passwordConfirmed())->post(route('recovery.replace'))->assertRedirect(route('recovery.show'));
+    $this->actingAs($this->owner)->post(route('recovery.replace'))->assertRedirect(route('recovery.show'));
 
     $replacement = ServerReplacement::query()->sole();
     expect($replacement->recovery)->toBeTrue()
@@ -99,7 +98,7 @@ test('outside recovery mode the previous control-plane server is revoked on --fo
     expect($this->previous->refresh()->status)->toBe(ServerStatus::Revoked)
         ->and(InstanceSettings::current()->recovery_state)->toBeNull();
 
-    $this->actingAs($this->owner)->withSession(passwordConfirmed())->post(route('recovery.replace'))->assertStatus(409);
+    $this->actingAs($this->owner)->post(route('recovery.replace'))->assertStatus(409);
 });
 
 test('the recovery helpers show which servers reconnected and which images are missing', function (): void {

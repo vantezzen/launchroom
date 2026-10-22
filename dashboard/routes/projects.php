@@ -17,7 +17,6 @@ use App\Http\Controllers\Projects\ProjectMetricsPageController;
 use App\Http\Controllers\Projects\ProjectSettingsController;
 use App\Http\Controllers\Projects\ServiceController;
 use App\Http\Controllers\Projects\ServiceSettingsController;
-use App\Http\Middleware\RequireRecentPassword;
 use App\Support\PublicId;
 use Illuminate\Support\Facades\Route;
 
@@ -59,7 +58,7 @@ Route::middleware(['web', 'auth', 'verified'])
             ->name('projects.settings');
         Route::patch('p/{project}/settings', [ProjectSettingsController::class, 'update'])->name('projects.settings.update');
         Route::delete('p/{project}', [ProjectSettingsController::class, 'destroy'])
-            ->middleware(RequireRecentPassword::class)
+
             ->name('projects.destroy');
         Route::post('p/{project}/environments', [ProjectSettingsController::class, 'storeEnvironment'])->name('projects.environments.store');
 

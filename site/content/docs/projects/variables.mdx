@@ -109,10 +109,12 @@ launchroom decides for each variable whether the build sees it, so changing a ru
 - **Build and runtime**, automatically, for values frameworks bake into the bundle (`NEXT_PUBLIC_*`, `VITE_*`,
   `PUBLIC_*`, `REACT_APP_*`, `EXPO_PUBLIC_*`, `GATSBY_*`) and build tooling (`SENTRY_AUTH_TOKEN`, `SENTRY_ORG`,
   `SENTRY_PROJECT`, `NODE_OPTIONS`, `NPM_TOKEN`, `NPM_CONFIG_*`, `COMPOSER_AUTH`, `PIP_INDEX_URL`, `UV_INDEX_URL`,
-  `BUNDLE_*`).
+  `BUNDLE_*`), and authentication keys read during Next.js builds (`AUTH_SECRET`, `NEXTAUTH_SECRET`).
 - **Runtime only** for everything else, including `NUXT_PUBLIC_*` (Nuxt reads it at runtime).
 
-You can override the choice per variable. Changing a build variable rebuilds the service. Changing a runtime variable
+Each row labels its availability: **Runtime only**, **Build only**, or **Build + runtime**. Set this explicitly in the variable editor's **Available at** field. If your build imports code that needs a secret, choose **Build and runtime**; its value is still sent as a BuildKit secret. Missing-variable build errors link back to the variable editor with this availability selected.
+
+Changing a build variable rebuilds the service. Changing a runtime variable
 restarts it. Variables baked into a browser bundle are visible to anyone who loads the page, so they can't be secrets.
 Build values reach the build as BuildKit secrets, never as image layers. See
 [How builds work](/docs/builds/how-builds-work).

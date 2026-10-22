@@ -27,7 +27,7 @@ use Illuminate\Support\Facades\DB;
  * Settings → Move launchroom (docs/14 §13.4): opens a control-plane move
  * and issues its one-time token, shown once in the command
  * `install.sh --move <token>` for the new machine. Instance owners only,
- * with a recent password (the controller). Only the token secret's hash is
+ * authorized by the controller. Only the token secret's hash is
  * stored; the token stops working when the move ends or after 24 hours
  * without a claim.
  *

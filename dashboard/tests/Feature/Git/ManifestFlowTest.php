@@ -103,9 +103,9 @@ test('GitHub Enterprise URLs are validated before anything is sent there', funct
         ->assertSessionHasErrors('organization');
 });
 
-test('starting the flow needs a confirmed password and the servers permission', function (): void {
+test('starting the flow needs the servers permission', function (): void {
     $this->actingAs($this->admin)->post(route('git.github.manifest.store'))
-        ->assertRedirect(route('password.confirm'));
+        ->assertRedirect()->assertSessionHasNoErrors();
 
     foreach ([TeamRole::Developer, TeamRole::Viewer] as $role) {
         $this->actingAs(memberOf($this->team, $role))->withSession(passwordConfirmed())

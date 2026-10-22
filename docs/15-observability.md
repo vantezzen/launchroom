@@ -74,6 +74,8 @@ A project tab **Metrics** (`/p/{project}/{env}/metrics`, page `projects/metrics`
 
 ### 2.4 Server page
 
+**What runs here → Builds** reports the managed BuildKit container's CPU independently of app services, including build subprocesses. The existing collector samples its counter every 15 seconds and reports `Report.metrics.host[].buildCpuCores` as a minute average. The dashboard stores `server_metric_samples.build_cpu_cores` (nullable, included in rollups) and exposes the latest fresh minute as `current.buildCpuCores`; the row shows a share of the server's cores and the core value on hover. Missing measurements and older servers produce no row. This is BuildKit's combined usage, not per-deployment attribution.
+
 Below the usage tiles, a **Metrics** section with full-size charts (CPU %, memory %, disk %, network rx/tx; for edges also **Public traffic**: req/s through this server) over the page's range, with deploy markers of the services that ran here.
 
 ## 3. Alerts and notifications

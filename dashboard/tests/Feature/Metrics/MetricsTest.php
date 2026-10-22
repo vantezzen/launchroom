@@ -86,6 +86,18 @@ test('report metrics are stored idempotently and attributed to the workload\'s s
     Event::assertDispatched(ServerMetricsUpdated::class, fn (ServerMetricsUpdated $e): bool => $e->serverId === $this->server->public_id && $e->teamId === $this->team->public_id);
 });
 
+test('build CPU is reported separately from service usage', function (): void {
+    $sample = [...hostMinute('2026-10-20T11:59:00Z'), 'buildCpuCores' => 0.5];
+    $body = metricsReport($this->server, [$sample]);
+    expect(ProtocolSchemas::errors('report', (string) json_encode($body)))->toBe([]);
+    $this->daemon->send($this, 'POST', '/daemon/v1/reports', $body)->assertNoContent();
+
+    $this->actingAs(memberOf($this->team, TeamRole::Viewer))
+        ->getJson(route('servers.metrics.show', $this->server))->assertOk()
+        ->assertJsonPath('current.buildCpuCores', 0.5);
+    expect(DB::table('workload_metric_samples')->count())->toBe(0);
+});
+
 test('odd metric samples are dropped without failing the report', function (): void {
     $this->daemon->send($this, 'POST', '/daemon/v1/reports', metricsReport($this->server, [
         hostMinute('2026-10-20T11:59:30Z'),             // not a whole minute

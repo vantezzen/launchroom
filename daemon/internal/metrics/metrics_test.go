@@ -257,3 +257,31 @@ func TestWorkloadStats(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestBuildCPUIsHostUsageNotAWorkload(t *testing.T) {
+	fake := dockerfake.New(testServer)
+	fake.AddImage("img")
+	labels := docker.ManagedLabels(testServer)
+	labels[docker.LabelSystem] = "buildkit"
+	ctx := context.Background()
+	id, err := fake.CreateContainer(ctx, &docker.ContainerCreate{Name: "lr-system-buildkit", Config: &container.Config{Image: "img", Labels: labels}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := fake.StartContainer(ctx, id); err != nil {
+		t.Fatal(err)
+	}
+	clk := &clock{time.Date(2026, 10, 19, 12, 0, 0, 0, time.UTC)}
+	c := New(Options{ProcRoot: t.TempDir(), Now: clk.now, Containers: fake, Stats: fake})
+	fake.SetStats(id, docker.ContainerStats{Read: clk.t, CPUTotalNs: 1e9})
+	c.Sample(ctx)
+	clk.t = clk.t.Add(15 * time.Second)
+	fake.SetStats(id, docker.ContainerStats{Read: clk.t, CPUTotalNs: 1e9 + 15e9/2})
+	c.Sample(ctx)
+	clk.t = clk.t.Add(time.Minute)
+	c.Sample(ctx)
+	m := c.Pending()
+	if m == nil || len(m.Host) != 1 || m.Host[0].BuildCPUCores == nil || *m.Host[0].BuildCPUCores != 0.5 || len(m.Workloads) != 0 {
+		t.Fatalf("build CPU: %+v", m)
+	}
+}

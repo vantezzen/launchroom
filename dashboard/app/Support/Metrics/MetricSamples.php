@@ -22,7 +22,7 @@ final class MetricSamples
     private const int MAX_AGE_MINUTES = 6 * 60;
 
     /**
-     * @return list<array{at: CarbonImmutable, cpu_pct: float|null, mem_used_mb: int|null, mem_total_mb: int|null, disk_used_mb: int|null, disk_total_mb: int|null, net_rx_bps: int|null, net_tx_bps: int|null, load1: float|null}>
+     * @return list<array{at: CarbonImmutable, cpu_pct: float|null, build_cpu_cores: float|null, mem_used_mb: int|null, mem_total_mb: int|null, disk_used_mb: int|null, disk_total_mb: int|null, net_rx_bps: int|null, net_tx_bps: int|null, load1: float|null}>
      */
     public static function host(mixed $metrics, CarbonImmutable $now): array
     {
@@ -38,6 +38,7 @@ final class MetricSamples
             $rows[$at->getTimestamp()] = [
                 'at' => $at,
                 'cpu_pct' => self::float($item['cpuPct'] ?? null, 100),
+                'build_cpu_cores' => self::float($item['buildCpuCores'] ?? null, 4096),
                 'mem_used_mb' => self::int($item['memUsedMb'] ?? null),
                 'mem_total_mb' => self::int($item['memTotalMb'] ?? null),
                 'disk_used_mb' => self::int($item['diskUsedMb'] ?? null),

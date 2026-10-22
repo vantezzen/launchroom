@@ -15,8 +15,6 @@ export class TransferRequestFailed extends Error {
     constructor(
         message: string,
         public readonly status: number,
-        /** 423: the server wants the password confirmed first. */
-        public readonly requiresPassword = false,
     ) {
         super(message);
     }
@@ -91,8 +89,6 @@ export async function transfersApi<T>(
             throw new TransferRequestFailed(
                 messageFrom(response.data, response.status),
                 response.status,
-                response.status === 423 &&
-                    parse(response.data)?.requiresPassword === true,
             );
         }
 

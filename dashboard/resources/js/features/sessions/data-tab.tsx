@@ -25,7 +25,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 import type { ServiceRef } from './api';
-import { PasswordPrompt } from './password-prompt';
 import { NullChip, ResultGrid } from './result-grid';
 import type { DataResult } from './result-types';
 import { useDataSession } from './use-data-session';
@@ -121,17 +120,7 @@ function DataView({
                         </div>
                     </div>
                     <div className="flex flex-wrap items-center gap-3">
-                        <Button
-                            onClick={() =>
-                                data.passwordRequired
-                                    ? session.setPhase({
-                                          kind: 'password',
-                                          error: null,
-                                      })
-                                    : void session.open()
-                            }
-                            disabled={phase.kind === 'password'}
-                        >
+                        <Button onClick={() => void session.open()}>
                             {phase.kind === 'ended'
                                 ? 'Open again'
                                 : 'Open data'}
@@ -148,18 +137,6 @@ function DataView({
                         </p>
                     )}
                 </div>
-            )}
-            {phase.kind === 'password' && (
-                <PasswordPrompt
-                    id="data-password"
-                    busy={false}
-                    error={phase.error}
-                    action="Open data"
-                    onSubmit={(password) => void session.open(password)}
-                    onCancel={() =>
-                        session.setPhase({ kind: 'idle', error: null })
-                    }
-                />
             )}
             <HistoryList history={data.history} />
         </div>

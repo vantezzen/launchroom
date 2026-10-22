@@ -33,6 +33,9 @@
 #                          23.10+), load launchroom's AppArmor profile for its
 #                          build container without asking; also
 #                          --allow-buildkit-userns
+#   LR_CREATE_SWAP         1 = with less than 4 GB of memory and no swap (Linux),
+#                          create a 2 GB swap file without asking; also
+#                          --create-swap
 #   LR_JOIN_TOKEN          single-use join token from "Add server" (required;
 #                          from the environment or typed at the prompt, never
 #                          as an argument, so it does not show up in `ps`)
@@ -56,7 +59,7 @@
 #                          in .env; for DNS instructions without detection)
 #
 # Nothing is written outside the install folder (on macOS too: no launchd
-# jobs; containers restart with the engine, which starts at login), with two
+# jobs; containers restart with the engine, which starts at login), with these
 # exceptions on Linux that the script asks about first (or a flag allows):
 # Docker itself when it is missing,
 # /etc/sysctl.d/60-launchroom-inotify.conf when the kernel's inotify limits
@@ -65,7 +68,11 @@
 # delete the file and reboot), and /etc/apparmor.d/launchroom-buildkit when
 # AppArmor restricts unprivileged user namespaces (Ubuntu 23.10+): it lets
 # only launchroom's build container create the user namespace BuildKit
-# needs (undo: apparmor_parser -R the file, then delete it). Docker objects carry the label
+# needs (undo: apparmor_parser -R the file, then delete it), and
+# /swapfile-launchroom (2 GB, in /etc/fstab, plus vm.swappiness = 10 in
+# /etc/sysctl.d/60-launchroom-swap.conf) when the server has less than 4 GB
+# of memory and no swap (undo: swapoff and delete the file, its fstab line
+# and the sysctl file). Docker objects carry the label
 # launchroom.managed=true. Re-running it with a new token re-enrolls only
 # when launchroomd has not enrolled yet.
 set -eu
@@ -91,9 +98,10 @@ INSTALL_DOCKER="${LR_INSTALL_DOCKER:-0}"
 NO_INSTALL_DOCKER="${LR_NO_INSTALL_DOCKER:-0}"
 RAISE_INOTIFY="${LR_RAISE_INOTIFY:-0}"
 ALLOW_BUILDKIT_USERNS="${LR_BUILDKIT_APPARMOR:-0}"
+CREATE_SWAP="${LR_CREATE_SWAP:-0}"
 # Test seams (deploy/test/server-sh-test.sh): the terminal prompts are read
-# from, and a folder standing in for / (for /proc/sys, /sys/module,
-# /etc/sysctl.d and /etc/apparmor.d).
+# from, and a folder standing in for / (for /proc/sys, /proc/meminfo,
+# /sys/module, /etc/sysctl.d, /etc/apparmor.d, /etc/fstab and the swap file).
 TTY="${LR_TEST_TTY:-/dev/tty}"
 HOST_ROOT="${LR_TEST_ROOT:-}"
 # macOS engine (docker-desktop, orbstack, colima), set by check_macos.
@@ -176,7 +184,7 @@ INOTIFY_WATCHES=524288
 INOTIFY_INSTANCES=512
 
 # check_inotify: when the limits are low, raises them after asking (or with
-# --raise-inotify), else prints the commands. The only file written outside
+# --raise-inotify), else prints the commands. Writes INOTIFY_FILE outside
 # the install folder. Never during an update (LR_BUNDLE_VERIFIED=1: the
 # installer runs in a helper container then, and the host was checked at install).
 check_inotify() {
@@ -312,6 +320,105 @@ apparmor_manual() {
 	warn "$2"
 	rules="$(printf '%s' "$APPARMOR_RULES" | awk '{ printf "%s\\n", $0 }')"
 	printf "    printf '%s' | %stee %s >/dev/null && %sapparmor_parser -r -W %s\n" "$rules" "$1" "$APPARMOR_PROFILE" "$1" "$APPARMOR_PROFILE" >&2
+}
+
+# Swap on small hosts (docs/11 §2.1c, D59). With less than 4 GB of memory
+# and no swap, a build that needs more memory than is free gets killed
+# instead of slowing down. The installer offers a 2 GB swap file at
+# /swapfile-launchroom (mode 600, in /etc/fstab) and sets vm.swappiness=10
+# in /etc/sysctl.d/60-launchroom-swap.conf, so the kernel swaps only under
+# pressure. Other swap is never touched. Undo: swapoff /swapfile-launchroom
+# && rm /swapfile-launchroom, delete its /etc/fstab line and
+# /etc/sysctl.d/60-launchroom-swap.conf.
+SWAP_FILE=/swapfile-launchroom
+SWAP_SYSCTL=/etc/sysctl.d/60-launchroom-swap.conf
+SWAP_MB=2048
+SWAP_MAX_MEM_KB=4194304
+
+# check_swap: on small hosts without swap, creates the swap file after
+# asking (or with --create-swap), else prints the commands. Never during an
+# update (LR_BUNDLE_VERIFIED=1).
+check_swap() {
+	[ "${LR_BUNDLE_VERIFIED:-}" != 1 ] || return 0
+	meminfo="$HOST_ROOT/proc/meminfo"
+	mem_kb="$(awk '/^MemTotal:/ { print $2 }' "$meminfo" 2>/dev/null || true)"
+	swap_kb="$(awk '/^SwapTotal:/ { print $2 }' "$meminfo" 2>/dev/null || true)"
+	case "$mem_kb" in "" | *[!0-9]*) return 0 ;; esac
+	case "$swap_kb" in "" | *[!0-9]*) return 0 ;; esac
+	[ "$mem_kb" -lt "$SWAP_MAX_MEM_KB" ] && [ "$swap_kb" = 0 ] || return 0
+	if [ -r "$HOST_ROOT/proc/swaps" ] && [ "$(sed 1d "$HOST_ROOT/proc/swaps" | grep -c .)" != 0 ]; then
+		return 0
+	fi
+	gb="$(awk -v k="$mem_kb" 'BEGIN { printf "%.1f", k / 1048576 }')"
+	why="This server has $gb GB of memory and no swap, so builds can run out of memory"
+	if [ "$(id -u)" != 0 ]; then
+		swap_manual "sudo " "$why. Add a 2 GB swap file as root:"
+		return 0
+	fi
+	if [ "$CREATE_SWAP" != 1 ]; then
+		if ! has_tty; then
+			swap_manual "" "$why. Add a 2 GB swap file with these commands, or run this again with --create-swap:"
+			return 0
+		fi
+		if ! ask "$why. Create a 2 GB swap file ($SWAP_FILE)?"; then
+			swap_manual "" "Kept the server without swap. To add a swap file later:"
+			return 0
+		fi
+	fi
+	file="$HOST_ROOT$SWAP_FILE"
+	if [ -L "$file" ] || { [ -e "$file" ] && [ ! -f "$file" ]; }; then
+		warn "$SWAP_FILE is not a regular file; skipped."
+		return 0
+	fi
+	if [ ! -f "$file" ]; then
+		free_kb="$(df -Pk "$HOST_ROOT/" 2>/dev/null | awk 'NR == 2 { print $4 }')"
+		case "$free_kb" in "" | *[!0-9]*) free_kb=0 ;; esac
+		if [ "$free_kb" -lt $(((SWAP_MB + 1024) * 1024)) ]; then
+			warn "not enough free disk space for a 2 GB swap file ($((free_kb / 1024)) MB free, 3072 MB needed); skipped."
+			return 0
+		fi
+		(umask 077 && { fallocate -l "${SWAP_MB}M" "$file" 2>/dev/null ||
+			{ rm -f "$file" && dd if=/dev/zero of="$file" bs=1M count="$SWAP_MB" 2>/dev/null; }; }) ||
+			{ rm -f "$file"; warn "could not create $SWAP_FILE"; swap_manual "" "Add the swap file by hand:"; return 0; }
+		chmod 600 "$file"
+		mkswap "$file" >/dev/null || { rm -f "$file"; warn "mkswap failed for $SWAP_FILE"; return 0; }
+	else
+		chmod 600 "$file"
+	fi
+	if ! swapon "$file" 2>/dev/null; then
+		warn "could not turn on $SWAP_FILE; an existing file is never reformatted."
+		return 0
+	fi
+	fstab="$HOST_ROOT/etc/fstab"
+	if ! grep -q "^${SWAP_FILE}[[:space:]]" "$fstab" 2>/dev/null; then
+		printf '%s none swap sw 0 0\n' "$SWAP_FILE" >>"$fstab" || warn "could not add $SWAP_FILE to /etc/fstab; it is off after a reboot"
+	fi
+	conf="$HOST_ROOT$SWAP_SYSCTL"
+	(umask 022 && mkdir -p "${conf%/*}" && {
+		printf '# Written by the launchroom installer: swap only under memory pressure.\n'
+		printf '# Undo: delete this file (and %s, see docs/11 §2.1c).\n' "$SWAP_FILE"
+		printf 'vm.swappiness = 10\n'
+	} >"$conf") || warn "could not write $SWAP_SYSCTL"
+	if command -v sysctl >/dev/null 2>&1; then
+		sysctl -w vm.swappiness=10 >/dev/null || warn "sysctl -w vm.swappiness=10 failed; it applies after a reboot"
+	else
+		printf '10\n' >"$HOST_ROOT/proc/sys/vm/swappiness" || warn "could not set vm.swappiness; it applies after a reboot"
+	fi
+	say "created a 2 GB swap file ($SWAP_FILE, vm.swappiness=10)"
+}
+
+# swap_manual SUDO MESSAGE: the warning and the exact commands.
+swap_manual() {
+	warn "$2"
+	{
+		printf '    %sfallocate -l 2G %s\n' "$1" "$SWAP_FILE"
+		printf '    %schmod 600 %s\n' "$1" "$SWAP_FILE"
+		printf '    %smkswap %s\n' "$1" "$SWAP_FILE"
+		printf '    %sswapon %s\n' "$1" "$SWAP_FILE"
+		printf "    echo '%s none swap sw 0 0' | %stee -a /etc/fstab\n" "$SWAP_FILE" "$1"
+		printf "    echo 'vm.swappiness = 10' | %stee %s\n" "$1" "$SWAP_SYSCTL"
+		printf '    %ssysctl -w vm.swappiness=10\n' "$1"
+	} >&2
 }
 
 check_prerequisites() {
@@ -603,6 +710,7 @@ parse_args() {
 		--no-install-docker) NO_INSTALL_DOCKER=1 ;;
 		--raise-inotify) RAISE_INOTIFY=1 ;;
 		--allow-buildkit-userns) ALLOW_BUILDKIT_USERNS=1 ;;
+		--create-swap) CREATE_SWAP=1 ;;
 		-h | --help) sed -n '2,/^set -eu$/p' "$0" 2>/dev/null | sed -e '$d' -e 's/^# \{0,1\}//'; exit 0 ;;
 		*) die "unknown option $1 (see --help)" ;;
 		esac
@@ -682,6 +790,7 @@ main() {
 	check_prerequisites
 	[ "$OS" != Linux ] || check_inotify
 	[ "$OS" != Linux ] || check_buildkit_apparmor
+	[ "$OS" != Linux ] || check_swap
 	unfilled "$LR_CONTROL_PLANE_URL" && die "set LR_CONTROL_PLANE_URL (the dashboard URL)."
 	unfilled "$LR_CP_KEY" && die "set LR_CP_KEY (shown next to the join command in the dashboard)."
 	unfilled "$LR_DAEMON_IMAGE" && die "set LR_DAEMON_IMAGE."
@@ -742,6 +851,9 @@ main() {
 	fi
 	if [ -f "$HOST_ROOT$APPARMOR_PROFILE" ]; then
 		say "the AppArmor profile $APPARMOR_PROFILE stays after an uninstall (it applies to nothing else); to remove it: apparmor_parser -R $APPARMOR_PROFILE && rm $APPARMOR_PROFILE"
+	fi
+	if [ -f "$HOST_ROOT$SWAP_FILE" ]; then
+		say "the swap file $SWAP_FILE stays after an uninstall; to remove it: swapoff $SWAP_FILE && rm $SWAP_FILE, then delete its line in /etc/fstab and $SWAP_SYSCTL"
 	fi
 }
 

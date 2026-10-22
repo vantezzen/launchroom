@@ -21,7 +21,7 @@ Dockerfile generation is off by default, at two levels. A team only sees **Gener
 
 | Level | Who | Where |
 |---|---|---|
-| Instance | Instance owners, with a recent password confirmation | Settings → Dockerfile generation: provider (Anthropic's Claude API), API key, model, on/off |
+| Instance | Instance owners | Settings → Dockerfile generation: provider (Anthropic's Claude API), API key, model, on/off |
 | Team | Team owners | Same page, team card: on/off |
 
 The API key is encrypted at rest and never shown again. The page shows only "Key ending in …" with who set it and when. Changing or removing it is audited. The default model is `claude-opus-5-5`. You can pick `claude-sonnet-5` for lower cost or enter another model id. A run usually costs about $0.05 to $0.50, and the sheet shows the cost of each run. Starting a generation needs permission to change the service (developers and up).

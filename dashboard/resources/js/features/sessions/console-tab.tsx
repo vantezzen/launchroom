@@ -13,10 +13,9 @@ import {
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
-import { endOnUnload, openSession, RequestFailed } from './api';
+import { endOnUnload, openSession } from './api';
 import type { ServiceRef } from './api';
 import { clock, endSentence, shellLabel } from './format';
-import { PasswordPrompt } from './password-prompt';
 import { RecentSessions } from './recent-sessions';
 import { SessionClient } from './session-client';
 import { Terminal } from './terminal';
@@ -28,7 +27,6 @@ type Opened = App.Data.Sessions.OpenedSessionData;
 
 type Phase =
     | { kind: 'idle' }
-    | { kind: 'password'; error: string | null; busy: boolean }
     | { kind: 'connecting' }
     | { kind: 'live'; shell: string | null; since: number }
     | { kind: 'ended'; reason: string };
@@ -89,7 +87,6 @@ function ConsoleView({
     const lastInput = useRef(Date.now());
     const terminal = useRef<TerminalHandle>(null);
     const client = useRef<SessionClient | null>(null);
-    const password = useRef<string | undefined>(undefined);
     const openedRef = useRef<Opened | null>(null);
     const [attempt, setAttempt] = useState(0);
     // The attempt a session was requested for: mounting twice (dev
@@ -140,9 +137,7 @@ function ConsoleView({
                     shell: shell === '' ? null : shell,
                     cols,
                     rows,
-                    password: password.current,
                 });
-                password.current = undefined;
                 openedRef.current = session;
                 setOpened(session);
                 lastInput.current = Date.now();
@@ -180,26 +175,10 @@ function ConsoleView({
                 client.current = live;
                 await live.connect(realtime);
             } catch (failure) {
-                if (
-                    failure instanceof RequestFailed &&
-                    failure.status === 423
-                ) {
-                    setPhase({ kind: 'password', error: null, busy: false });
-
-                    return;
-                }
-
                 const message =
                     failure instanceof Error
                         ? failure.message
                         : 'The console couldn’t be opened.';
-
-                if (password.current !== undefined) {
-                    password.current = undefined;
-                    setPhase({ kind: 'password', error: message, busy: false });
-
-                    return;
-                }
 
                 setError(message);
                 setPhase({ kind: 'idle' });
@@ -227,7 +206,7 @@ function ConsoleView({
 
     return (
         <div className="flex flex-col gap-8">
-            {(phase.kind === 'idle' || phase.kind === 'password') && (
+            {phase.kind === 'idle' && (
                 <div className="flex flex-col gap-4">
                     {!data.available ? (
                         <EmptyState
@@ -284,21 +263,9 @@ function ConsoleView({
                                 </Select>
                                 <Button
                                     onClick={() => {
-                                        if (
-                                            data.passwordRequired &&
-                                            password.current === undefined
-                                        ) {
-                                            setPhase({
-                                                kind: 'password',
-                                                error: null,
-                                                busy: false,
-                                            });
-                                        } else {
-                                            setAttempt((n) => n + 1);
-                                            setPhase({ kind: 'connecting' });
-                                        }
+                                        setAttempt((n) => n + 1);
+                                        setPhase({ kind: 'connecting' });
                                     }}
-                                    disabled={phase.kind === 'password'}
                                 >
                                     <SquareTerminal aria-hidden="true" />
                                     Open console
@@ -319,20 +286,6 @@ function ConsoleView({
                                 </p>
                             )}
                         </div>
-                    )}
-                    {phase.kind === 'password' && (
-                        <PasswordPrompt
-                            id="console-password"
-                            busy={phase.busy}
-                            error={phase.error}
-                            action="Open console"
-                            onSubmit={(value) => {
-                                password.current = value;
-                                setAttempt((n) => n + 1);
-                                setPhase({ kind: 'connecting' });
-                            }}
-                            onCancel={() => setPhase({ kind: 'idle' })}
-                        />
                     )}
                 </div>
             )}

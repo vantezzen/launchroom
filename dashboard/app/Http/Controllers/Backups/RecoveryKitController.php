@@ -17,8 +17,7 @@ use Illuminate\Support\Facades\Gate;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * Recovery passphrase and kit (docs/14 §4). Instance owners only; setting
- * the passphrase and downloading the kit need a recent password.
+ * Recovery passphrase and kit (docs/14 §4). Instance owners only.
  */
 final class RecoveryKitController extends Controller
 {

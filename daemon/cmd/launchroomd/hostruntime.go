@@ -111,7 +111,7 @@ func (rt *daemonRuntime) setBuilds(c *state.HostCapability) {
 // buildsCapability is the "builds" row (pure, tested): nil when BuildKit is
 // off here; unavailable when the host restricts user namespaces, lacks
 // launchroom's AppArmor profile and buildkitd doesn't answer (D58).
-func buildsCapability(enabled bool, userns buildkitd.Userns, answering bool) *state.HostCapability {
+func buildsCapability(enabled bool, userns buildkitd.Userns, answering bool, resources buildkitd.Resources) *state.HostCapability {
 	if !enabled {
 		return nil
 	}
@@ -122,6 +122,11 @@ func buildsCapability(enabled bool, userns buildkitd.Userns, answering bool) *st
 	case userns == buildkitd.UsernsBlocked && !answering:
 		c.State = state.CapabilityUnavailable
 		c.Message = "Ubuntu's user-namespace restriction blocks BuildKit here. Re-run the launchroom installer on this server, or run: " + buildkitd.ProfileCommand
+	case resources.NoSwap:
+		c.State = state.CapabilityDegraded
+		c.Message = buildkitd.SwapHint
+	case resources.MemoryMB > 0:
+		c.Message = resources.Summary()
 	}
 	return c
 }

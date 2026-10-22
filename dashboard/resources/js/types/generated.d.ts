@@ -714,6 +714,7 @@ files: Record<string, string>,
 databases: Record<string, string>,
 convertBindMounts: boolean,
 name: string | null,
+deploy: boolean,
 };
 export type ComposeInputData = {
 name: string,
@@ -1244,6 +1245,11 @@ buildDurationMs: number | null,
 durationSeconds: number,
 finishedAt: string,
 };
+export type BuildServerData = {
+id: string,
+name: string,
+device: App.Data.Servers.DeviceData,
+};
 export type DeploymentDetailData = {
 deployment: App.Data.Deployments.DeploymentSummaryData,
 projectName: string,
@@ -1263,6 +1269,7 @@ serving: App.Data.Deployments.DeploymentRefData | null,
 previous: App.Data.Deployments.DeploymentRefData | null,
 compareUrl: string | null,
 configErrors: App.Data.ConfigAsCode.DeploymentConfigErrorsData | null,
+buildServer: App.Data.Deployments.BuildServerData | null,
 };
 export type DeploymentFailureData = {
 class: App.Enums.DeploymentFailureClass,
@@ -1978,6 +1985,7 @@ diskPct: number | null,
 netRxBps: number | null,
 netTxBps: number | null,
 load1: number | null,
+buildCpuCores: number | null,
 };
 export type MetricsQueryData = {
 range: App.Enums.MetricRange,
@@ -2360,6 +2368,7 @@ repository: string,
 branch: string,
 apps: App.Data.Projects.ImportAppData[],
 databases: App.Data.Projects.ImportDatabaseData[],
+deploy: boolean,
 };
 export type InspectedAppData = {
 rootDirectory: string,
@@ -3596,7 +3605,6 @@ unavailableReason: string | null,
 replicas: App.Data.Sessions.SessionReplicaData[],
 shells: string[],
 record: boolean,
-passwordRequired: boolean,
 idleMinutes: number,
 maxMinutes: number,
 sessions: App.Data.Sessions.SessionHistoryItemData[],
@@ -3608,7 +3616,6 @@ engine: string,
 engineLabel: string,
 dialect: 'sql' | 'redis' | 'mongo',
 replica: App.Data.Sessions.SessionReplicaData | null,
-passwordRequired: boolean,
 idleMinutes: number,
 history: App.Data.Sessions.QueryHistoryItemData[],
 };
@@ -3910,6 +3917,7 @@ name: string | null,
 inputs: Record<string, string>,
 repository: string | null,
 branch: string | null,
+deploy: boolean,
 };
 }
 namespace Transfers {
@@ -4218,6 +4226,7 @@ value: string | null,
 preview: string | null,
 errors: string[],
 used: boolean,
+exposure: App.Enums.VariableExposure,
 };
 export type SystemVariableData = {
 key: string,

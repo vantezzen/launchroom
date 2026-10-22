@@ -70,7 +70,7 @@ Each control-plane backup contains launchroom's keys: the keys that decrypt your
 
 ### The recovery kit
 
-The **recovery kit** is a small text file with everything needed to find your backups on a new server: the destination, bucket, folder, region, the S3 credentials and the repository password. It does not contain the passphrase. Download it (it asks for your password), store it outside launchroom and confirm. Until you do, instance owners see a reminder. A new passphrase or a moved destination needs a new kit.
+The **recovery kit** is a small text file with everything needed to find your backups on a new server: the destination, bucket, folder, region, the S3 credentials and the repository password. It does not contain the passphrase. Download it, store it outside launchroom and confirm. Until you do, instance owners see a reminder. A new passphrase or a moved destination needs a new kit.
 
 Keep the kit and the passphrase in different places. The kit opens the backups, and the passphrase opens the keys inside them. Together they bring everything back with [one command](/docs/databases/restore-and-disaster-recovery#when-the-main-server-is-gone).
 
@@ -93,7 +93,7 @@ launchroom takes a snapshot on its own:
 
 ### Final backup before delete
 
-Deleting an environment, a project, a preview or a service with backups configured first takes a **final backup** of every database and volume in it, while they still run. The deletion waits for it ("Taking a final backup") and proceeds only once it succeeded. If it fails, nothing is deleted, and you can **Retry final backup**. Owners and admins can choose **Delete without final backup** with a recent password. That choice is audited. Final backups stay in the destination, marked "Before delete".
+Deleting an environment, a project, a preview or a service with backups configured first takes a **final backup** of every database and volume in it, while they still run. The deletion waits for it ("Taking a final backup") and proceeds only once it succeeded. If it fails, nothing is deleted, and you can **Retry final backup**. Owners and admins can choose **Delete without final backup**. That choice is audited. Final backups stay in the destination, marked "Before delete".
 
 ## Verification
 
@@ -112,7 +112,7 @@ The Backups tab shows "Last verified" with the result, and **Verify now** runs o
 
 ## Download a backup
 
-Select a snapshot in the **Backups** tab and choose **Download** for the decrypted backup in the engine's own format: a `pg_dump -Fc` file, gzipped SQL for MySQL, a `mongodump` archive, ClickHouse's backup zip, a Redis or Valkey RDB file, or a `.tar.gz` of a volume. **Download now** gives you the current data without making a backup first. Downloads need the Owner or Admin role and a recently confirmed password, and each link works once. See [Import and export](/docs/databases/import-and-export#download).
+Select a snapshot in the **Backups** tab and choose **Download** for the decrypted backup in the engine's own format: a `pg_dump -Fc` file, gzipped SQL for MySQL, a `mongodump` archive, ClickHouse's backup zip, a Redis or Valkey RDB file, or a `.tar.gz` of a volume. **Download now** gives you the current data without making a backup first. Downloads need the Owner or Admin role, and each link works once. See [Import and export](/docs/databases/import-and-export#download).
 
 ## Retention and maintenance
 

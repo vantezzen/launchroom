@@ -570,7 +570,7 @@ return [
     'builds' => [
         // Railpack version pinned for new services; must equal the daemon's linked one.
         'railpack_version' => env('LAUNCHROOM_RAILPACK_VERSION', '0.42.0'),
-        'timeout_seconds' => (int) env('LAUNCHROOM_BUILD_TIMEOUT', 1800),
+        'timeout_seconds' => (int) env('LAUNCHROOM_BUILD_TIMEOUT', 7200),
         'plan_timeout_seconds' => 300,
         // Lease-expiry retries; a `transient` failure additionally gets one new task.
         'max_attempts' => 2,
@@ -865,7 +865,6 @@ return [
     'sessions' => [
         'enabled' => (bool) env('LAUNCHROOM_INTERACTIVE_SESSIONS', true),
         'ticket_seconds' => 60,
-        'password_window_seconds' => (int) env('LAUNCHROOM_SESSION_PASSWORD_WINDOW', 900),
         'idle_minutes' => (int) env('LAUNCHROOM_SESSION_IDLE_MINUTES', 15),
         'max_minutes' => min(240, max(5, (int) env('LAUNCHROOM_SESSION_MAX_MINUTES', 60))),
         'max_open_per_user' => 3,
@@ -893,7 +892,6 @@ return [
         'task_timeout_seconds' => 21600,
         'inspect_timeout_seconds' => 600,
         'inspection_ttl_seconds' => 600,
-        'password_window_seconds' => 900,
         // The throwaway container of database imports.
         'resources' => ['cpus' => 1.0, 'memory_mb' => 1024, 'pids' => 512],
     ],

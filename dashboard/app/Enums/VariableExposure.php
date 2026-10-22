@@ -24,12 +24,13 @@ enum VariableExposure: string
     /** Prefixes that stay runtime-only although they look public (Nitro reads them at runtime). */
     public const array RUNTIME_PREFIXES = ['NUXT_PUBLIC_'];
 
-    /** Build tooling that reads these during the build. */
+    /** Known keys read by build tooling or imported application modules. */
     public const array BUILD_TOOLING_KEYS = [
         'SENTRY_AUTH_TOKEN', 'SENTRY_ORG', 'SENTRY_PROJECT',
         'NODE_OPTIONS', 'NPM_TOKEN', 'COMPOSER_AUTH', 'PIP_INDEX_URL', 'UV_INDEX_URL',
         // launchroom-generated build keys (docs/04 §3, Next.js preset).
         'NEXT_SERVER_ACTIONS_ENCRYPTION_KEY',
+        'AUTH_SECRET', 'NEXTAUTH_SECRET',
     ];
 
     public const array BUILD_TOOLING_PREFIXES = ['NPM_CONFIG_', 'BUNDLE_'];

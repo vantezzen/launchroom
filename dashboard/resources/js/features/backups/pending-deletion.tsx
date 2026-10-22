@@ -35,7 +35,7 @@ const runStates: Record<string, StatusState> = {
  * A deletion waiting for its final backup (docs/14 §9.13): which databases
  * and volumes are backed up, why it is blocked, and the two ways on:
  * "Retry final backup" or "Delete without final backup" (owners/admins,
- * recent password, audited).
+ * authorized, audited).
  */
 export function PendingDeletion({
     request,

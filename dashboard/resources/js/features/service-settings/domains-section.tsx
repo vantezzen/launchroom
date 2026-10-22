@@ -222,6 +222,10 @@ function overall(
         return { state: 'warning', label: 'Renewal overdue' };
     }
 
+    if (cert.state !== 'active') {
+        return { state: cert.state, label: cert.title };
+    }
+
     return { state: 'active', label: 'Live' };
 }
 
@@ -373,24 +377,34 @@ export function DnsRecords({ domain }: { domain: Domain }) {
                 {records.map((record) => (
                     <li
                         key={`${record.type}-${record.name}-${record.value}`}
-                        className="grid grid-cols-[3.5rem_minmax(0,1fr)] items-center gap-x-3 gap-y-1 px-3 py-2.5 @lg/settings:grid-cols-[3.5rem_minmax(0,1fr)_minmax(0,1fr)]"
+                        className="grid min-w-0 grid-cols-[3.5rem_minmax(0,1fr)] items-start gap-x-3 gap-y-2 p-4"
                     >
                         <span className="inline-flex h-6 w-fit items-center rounded-md bg-hover px-2 type-mono-small font-medium">
                             {record.type}
                         </span>
-                        <span className="flex min-w-0 items-center">
-                            <code className="truncate type-mono-small">
-                                {record.name}
-                            </code>
+                        <span className="flex min-w-0 items-start">
+                            <span className="flex min-w-0 flex-1 flex-col gap-1">
+                                <span className="type-small text-muted-foreground">
+                                    Name
+                                </span>
+                                <code className="type-mono-small break-all">
+                                    {record.name}
+                                </code>
+                            </span>
                             <CopyButton
                                 value={record.name}
                                 label={`${record.type} record name`}
                             />
                         </span>
-                        <span className="col-start-2 flex min-w-0 items-center @lg/settings:col-start-auto">
-                            <code className="truncate type-mono-small text-muted-foreground">
-                                {record.value}
-                            </code>
+                        <span className="col-start-2 flex min-w-0 items-start">
+                            <span className="flex min-w-0 flex-1 flex-col gap-1">
+                                <span className="type-small text-muted-foreground">
+                                    Value
+                                </span>
+                                <code className="type-mono-small break-all">
+                                    {record.value}
+                                </code>
+                            </span>
                             <CopyButton
                                 value={record.value}
                                 label={`${record.type} record value`}
@@ -406,7 +420,7 @@ export function DnsRecords({ domain }: { domain: Domain }) {
                         CNAME
                     </code>{' '}
                     to
-                    <code className="type-mono-small text-foreground">
+                    <code className="min-w-0 type-mono-small break-all text-foreground">
                         {domain.cnameTarget}
                     </code>
                     <CopyButton
@@ -854,7 +868,7 @@ function AddDomainDialog({
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="gap-6 sm:max-w-lg">
+            <DialogContent className="max-h-[85dvh] gap-6 overflow-y-auto sm:max-w-lg">
                 {added === null ? (
                     <form onSubmit={submit} className="flex flex-col gap-6">
                         <div className="flex flex-col gap-1.5">
@@ -919,7 +933,7 @@ function AddDomainDialog({
                             <DialogDescription>
                                 {ok ? (
                                     <>
-                                        <code className="type-mono-small text-foreground">
+                                        <code className="type-mono-small break-all text-foreground">
                                             {added}
                                         </code>{' '}
                                         points at your servers. HTTPS starts on
@@ -933,7 +947,7 @@ function AddDomainDialog({
                                             ? 'this record'
                                             : 'these records'}{' '}
                                         for{' '}
-                                        <code className="type-mono-small text-foreground">
+                                        <code className="type-mono-small break-all text-foreground">
                                             {added}
                                         </code>{' '}
                                         at your DNS provider.
@@ -1054,6 +1068,24 @@ function useAutoCheckFor(
  */
 export function DomainsSection({ context }: { context: SettingsContext }) {
     const { settings, canUpdate } = context;
+    const { active } = useSettingsPage();
+    const waitingForCertificate = settings.domains.some(
+        (domain) =>
+            !domain.staged &&
+            !domain.hostname.endsWith('.localhost') &&
+            (domain.certificate === null ||
+                domain.certificate.status === 'pending'),
+    );
+
+    useEffect(() => {
+        if (!active || !waitingForCertificate) return;
+        const timer = window.setInterval(() => {
+            if (document.visibilityState === 'visible') {
+                router.reload({ only: ['panel'] });
+            }
+        }, 5000);
+        return () => window.clearInterval(timer);
+    }, [active, waitingForCertificate]);
     const [adding, setAdding] = useState(false);
     const port = settings.deploy.port ?? settings.detected?.port ?? null;
     const domains = settings.domains.filter(

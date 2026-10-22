@@ -186,11 +186,11 @@ export default function ImportCompose() {
         });
     };
 
-    const deploy = () => {
+    const deploy = (deployNow: boolean) => {
         setDeploying(true);
         router.post(
             store().url,
-            { ...payload, name },
+            { ...payload, name, deploy: deployNow },
             {
                 onError: (failed) => setErrors(failed),
                 onFinish: () => setDeploying(false),
@@ -594,20 +594,34 @@ export default function ImportCompose() {
                             )}
                             <div className="flex flex-col-reverse gap-3 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
                                 <p className="type-small text-muted-foreground">
-                                    {plural(services.length, 'service')} deploy
-                                    to production right away.
+                                    {plural(services.length, 'service')} in
+                                    production. Configure variables before
+                                    deploying if needed.
                                 </p>
-                                <Button
-                                    onClick={deploy}
-                                    disabled={
-                                        deploying ||
-                                        loading ||
-                                        name.trim() === ''
-                                    }
-                                >
-                                    {deploying && <Spinner />}
-                                    Deploy
-                                </Button>
+                                <div className="flex flex-wrap justify-end gap-2">
+                                    <Button
+                                        variant="outline"
+                                        onClick={() => deploy(false)}
+                                        disabled={
+                                            deploying ||
+                                            loading ||
+                                            name.trim() === ''
+                                        }
+                                    >
+                                        Create without deploying
+                                    </Button>
+                                    <Button
+                                        onClick={() => deploy(true)}
+                                        disabled={
+                                            deploying ||
+                                            loading ||
+                                            name.trim() === ''
+                                        }
+                                    >
+                                        {deploying && <Spinner />}
+                                        Create and deploy
+                                    </Button>
+                                </div>
                             </div>
                         </div>
                     </Section>

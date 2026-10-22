@@ -2,7 +2,6 @@ import { Head, Link, router } from '@inertiajs/react';
 import { Check, Globe, Zap } from 'lucide-react';
 import type { FormEvent, ReactNode } from 'react';
 import { useCallback, useEffect, useState } from 'react';
-import { CopyValue } from '@/components/copy-value';
 import InputError from '@/components/input-error';
 import { Logo } from '@/components/logo';
 import { ChoiceTiles } from '@/components/patterns/choice-tiles';
@@ -15,6 +14,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
 import { DnsCheckResult } from '@/features/domains/dns-check-result';
+import { PlatformDnsRecords } from '@/features/domains/platform-dns-records';
 import { GitHubSetupSteps } from '@/features/git/github-setup-steps';
 import { ManifestRedirect } from '@/features/git/manifest-redirect';
 import { WebhookReachabilityNote } from '@/features/git/webhook-reachability-note';
@@ -309,52 +309,7 @@ function DnsRecord({ data, domain }: { data: Onboarding; domain: string }) {
             : data.serverAddress
               ? [data.serverAddress]
               : [];
-
-    if (addresses.length === 0) {
-        return (
-            <div className="flex flex-col gap-1 rounded-xl border bg-recessed px-4 py-3">
-                <Status
-                    state="progress"
-                    label="Looking up this server’s public address"
-                />
-                <p className="type-small text-muted-foreground">
-                    The record to create appears here once your server reports
-                    its public IP, usually within a minute.
-                </p>
-            </div>
-        );
-    }
-
-    return (
-        <div className="flex flex-col gap-2">
-            <span className="type-label">
-                {addresses.length === 1
-                    ? 'Create this record at your DNS provider'
-                    : `Create these ${addresses.length} records (one per address)`}
-            </span>
-            <div className="divide-y overflow-hidden rounded-xl border bg-recessed">
-                {addresses.map((ip) => (
-                    <div
-                        key={ip}
-                        className="grid grid-cols-[3rem_minmax(0,1fr)] items-center gap-x-4 gap-y-1 px-4 py-3 sm:grid-cols-[3rem_minmax(0,1fr)_minmax(0,1fr)]"
-                    >
-                        <span className="type-mono-small text-muted-foreground">
-                            {ip.includes(':') ? 'AAAA' : 'A'}
-                        </span>
-                        <span className="truncate type-mono">*.{domain}</span>
-                        <span className="col-start-2 sm:col-start-3">
-                            <CopyValue value={ip} label="address" />
-                        </span>
-                    </div>
-                ))}
-            </div>
-            <p className="type-small text-muted-foreground">
-                The public address of your server. Behind a proxy such as
-                Cloudflare, launchroom checks over HTTP that requests still
-                arrive here.
-            </p>
-        </div>
-    );
+    return <PlatformDnsRecords domain={domain} addresses={addresses} />;
 }
 
 /**

@@ -8,7 +8,6 @@ use App\Http\Controllers\Backups\BackupSettingsController;
 use App\Http\Controllers\Backups\DeletionRequestController;
 use App\Http\Controllers\Backups\RecoveryKitController;
 use App\Http\Controllers\Backups\ServiceBackupsController;
-use App\Http\Middleware\RequireRecentPassword;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -22,13 +21,13 @@ Route::middleware(['web', 'auth', 'verified'])->group(function (): void {
     Route::get('settings/backups', [BackupSettingsController::class, 'edit'])->name('backups.settings');
 
     Route::post('settings/backups/destinations', [BackupDestinationController::class, 'store'])
-        ->middleware(RequireRecentPassword::class)
+
         ->name('backups.destinations.store');
     Route::put('settings/backups/destinations/{backupDestination}', [BackupDestinationController::class, 'update'])
-        ->middleware(RequireRecentPassword::class)
+
         ->name('backups.destinations.update');
     Route::delete('settings/backups/destinations/{backupDestination}', [BackupDestinationController::class, 'destroy'])
-        ->middleware(RequireRecentPassword::class)
+
         ->name('backups.destinations.destroy');
     Route::post('settings/backups/destinations/{backupDestination}/test', [BackupDestinationController::class, 'test'])
         ->middleware('throttle:10,1')
@@ -41,10 +40,10 @@ Route::middleware(['web', 'auth', 'verified'])->group(function (): void {
 
     // Recovery kit (instance owners).
     Route::post('settings/backups/recovery/passphrase', [RecoveryKitController::class, 'passphrase'])
-        ->middleware([RequireRecentPassword::class, 'throttle:6,1'])
+        ->middleware('throttle:6,1')
         ->name('backups.recovery.passphrase');
     Route::get('settings/backups/recovery/kit', [RecoveryKitController::class, 'download'])
-        ->middleware([RequireRecentPassword::class, 'throttle:10,1'])
+        ->middleware('throttle:10,1')
         ->name('backups.recovery.kit');
     Route::post('settings/backups/recovery/confirm', [RecoveryKitController::class, 'confirm'])->name('backups.recovery.confirm');
 
@@ -72,7 +71,7 @@ Route::middleware(['web', 'auth', 'verified'])->group(function (): void {
         ->middleware('throttle:10,1')
         ->name('deletions.retry');
     Route::post('deletions/{deletion}/skip-final-backup', [DeletionRequestController::class, 'skip'])
-        ->middleware([RequireRecentPassword::class, 'throttle:10,1'])
+        ->middleware('throttle:10,1')
         ->name('deletions.skip');
     Route::put('backups/services/{serviceInstance}/volumes/{volume}', [ServiceBackupsController::class, 'updateVolume'])
         ->middleware('throttle:30,1')

@@ -6,6 +6,7 @@ namespace App\Queries;
 
 use App\Data\Canvas\DetectedPlanData;
 use App\Data\ConfigAsCode\DeploymentConfigErrorsData;
+use App\Data\Deployments\BuildServerData;
 use App\Data\Deployments\DeploymentDetailData;
 use App\Data\Deployments\DeploymentFailureData;
 use App\Data\Deployments\DeploymentRefData;
@@ -14,8 +15,10 @@ use App\Data\Deployments\EnvSnapshotEntryData;
 use App\Data\Deployments\FailureExplanationData;
 use App\Data\Deployments\ResolvedConfigEntryData;
 use App\Data\Git\RepositoryRef;
+use App\Data\Servers\DeviceData;
 use App\Data\Services\GitSource;
 use App\Data\Specs\ServiceSpec;
+use App\Enums\DaemonTaskStatus;
 use App\Enums\DaemonTaskType;
 use App\Enums\DeploymentStatus;
 use App\Enums\DeploymentStepName;
@@ -24,6 +27,7 @@ use App\Enums\WorkloadPhase;
 use App\Models\DaemonTask;
 use App\Models\Deployment;
 use App\Models\DeploymentStep;
+use App\Models\LogChunk;
 use App\Models\Server;
 use App\Models\Service;
 use App\Services\Crypto\ProjectKeyring;
@@ -56,8 +60,8 @@ final readonly class DeploymentDetailView
         $project = $deployment->environment->project;
 
         $stepRows = $deployment->steps()->orderBy('id')->get();
-        // While new workloads pull their image, the running health step says how far (docs/04 §11 "Pulls").
-        $pulling = $stepRows->contains(static fn (DeploymentStep $step): bool => $step->name === DeploymentStepName::Health && $step->status === DeploymentStepStatus::Running)
+        // Pulling and unpacking happen before the container's health check.
+        $pulling = $stepRows->contains(static fn (DeploymentStep $step): bool => $step->name === DeploymentStepName::Rollout && $step->status === DeploymentStepStatus::Running)
             ? PullProgressMessage::for($deployment->placements()->where('phase', WorkloadPhase::Pulling->value)->get())
             : null;
         $steps = array_values($stepRows->map(static fn (DeploymentStep $step): DeploymentStepData => new DeploymentStepData(
@@ -67,7 +71,7 @@ final readonly class DeploymentDetailView
             finishedAt: $step->finished_at,
             message: isset($step->meta['message']) && is_string($step->meta['message'])
                 ? mb_substr($step->meta['message'], 0, 2000)
-                : ($step->name === DeploymentStepName::Health && $step->status === DeploymentStepStatus::Running ? $pulling : null),
+                : ($step->name === DeploymentStepName::Rollout && $step->status === DeploymentStepStatus::Running ? $pulling : null),
         ))->all());
 
         $service = $deployment->revision?->spec->service($deployment->serviceInstance->service->public_id);
@@ -96,6 +100,7 @@ final readonly class DeploymentDetailView
             previous: $related['previous'],
             compareUrl: $related['compareUrl'],
             configErrors: DeploymentConfigErrorsData::fromStored($deployment->config_errors),
+            buildServer: $related['buildServer'],
         );
     }
 
@@ -134,6 +139,13 @@ final readonly class DeploymentDetailView
             }
         }
 
+        if ($build !== null) {
+            $tail = LogChunk::query()->where('team_id', $deployment->team_id)
+                ->where('daemon_task_id', $build->id)->latest('id')->limit(8)->get(['lines'])
+                ->reverse()->flatMap(static fn (LogChunk $chunk): array => array_column($chunk->lines, 'text'))->implode("\n");
+            $stepMessages[] = mb_substr($tail, -16000);
+        }
+
         return FailureCatalogue::explain(new FailureContext(
             class: $deployment->failure_class,
             message: $deployment->failure_message,
@@ -148,7 +160,7 @@ final readonly class DeploymentDetailView
      * Logo, build server, the live and the previous deployment of the
      * service and a commit-range link (overview card and related cards).
      *
-     * @return array{logo: string, builtOn: string|null, serving: DeploymentRefData|null, previous: DeploymentRefData|null, compareUrl: string|null}
+     * @return array{logo: string, builtOn: string|null, buildServer: BuildServerData|null, serving: DeploymentRefData|null, previous: DeploymentRefData|null, compareUrl: string|null}
      */
     private function related(Deployment $deployment): array
     {
@@ -173,11 +185,19 @@ final readonly class DeploymentDetailView
             ? $this->providers->forSource($source)->compareUrl(RepositoryRef::fromSource($deployment->team_id, $source), $previous->commit_sha, $deployment->commit_sha)
             : null;
 
-        $builtOn = $deployment->build_server_id === null ? null : Server::query()->where('team_id', $deployment->team_id)->whereKey($deployment->build_server_id)->value('name');
+        $serverId = $deployment->build_server_id;
+        if ($deployment->status === DeploymentStatus::Building || $serverId === null) {
+            $serverId = DaemonTask::query()->where('team_id', $deployment->team_id)
+                ->where('deployment_id', $deployment->id)->where('type', DaemonTaskType::Build->value)
+                ->whereIn('status', [DaemonTaskStatus::Leased->value, DaemonTaskStatus::Succeeded->value, DaemonTaskStatus::Failed->value])
+                ->latest('id')->value('server_id');
+        }
+        $builtOn = is_int($serverId) ? Server::query()->where('team_id', $deployment->team_id)->whereKey($serverId)->first() : null;
 
         return [
             'logo' => ServiceGlyph::logo($service, $framework),
-            'builtOn' => is_string($builtOn) ? $builtOn : null,
+            'builtOn' => $builtOn?->name,
+            'buildServer' => $builtOn === null ? null : new BuildServerData($builtOn->public_id, $builtOn->name, DeviceData::fromServer($builtOn)),
             'serving' => $serving instanceof Deployment ? DeploymentRefData::of($serving) : null,
             'previous' => $previous instanceof Deployment ? DeploymentRefData::of($previous) : null,
             'compareUrl' => $compare,

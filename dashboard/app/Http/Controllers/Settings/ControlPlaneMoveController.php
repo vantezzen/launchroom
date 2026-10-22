@@ -32,7 +32,7 @@ use Inertia\Response;
  * Settings → Move launchroom (docs/14 §13.4), instance owners only: the
  * pre-flight and the move command, confirming the new server's code,
  * moving the apps and data, the hand-over, and on the new dashboard the
- * checklist after the move. Changes need a recently confirmed password.
+ * checklist after the move. Changes authorize the instance owner.
  */
 final class ControlPlaneMoveController extends Controller
 {

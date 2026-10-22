@@ -129,7 +129,7 @@ beforeEach(function (): void {
  */
 function startMove(TestCase $test, User $owner): string
 {
-    $test->actingAs($owner)->withSession(passwordConfirmed())->post(route('move.start'))->assertRedirect(route('move.edit'));
+    $test->actingAs($owner)->post(route('move.start'))->assertRedirect(route('move.edit'));
     $token = session('moveToken');
     expect($token)->toBeString();
 
@@ -152,7 +152,6 @@ function claimMove(TestCase $test, string $token, string $publicKey): array
 }
 
 test('the move command is shown once to an instance owner, with a token only this move accepts', function (): void {
-    $this->actingAs($this->owner)->post(route('move.start'))->assertRedirect(route('password.confirm'));
     $token = startMove($this, $this->owner);
     $move = ControlPlaneMove::query()->sole();
 
@@ -172,7 +171,7 @@ test('the move command is shown once to an instance owner, with a token only thi
     // Only instance owners.
     $admin = memberOf($this->team, TeamRole::Admin);
     $this->actingAs($admin)->get(route('move.edit'))->assertForbidden();
-    $this->actingAs($admin)->withSession(passwordConfirmed())->post(route('move.start'))->assertForbidden();
+    $this->actingAs($admin)->post(route('move.start'))->assertForbidden();
 });
 
 test('the new machine claims with its key; a wrong secret or a second machine is refused', function (): void {
@@ -198,8 +197,8 @@ test('the owner confirms the code; only the new machine can open its join token;
     $token = startMove($this, $this->owner);
     [$move, $secret, $code] = claimMove($this, $token, $this->receiverPublic);
 
-    $this->actingAs($this->owner)->withSession(passwordConfirmed())->post(route('move.approve'), ['code' => 'ABCD-EFGH'])->assertSessionHasErrors('code');
-    $this->actingAs($this->owner)->withSession(passwordConfirmed())->post(route('move.approve'), ['code' => strtolower($code)])->assertRedirect();
+    $this->actingAs($this->owner)->post(route('move.approve'), ['code' => 'ABCD-EFGH'])->assertSessionHasErrors('code');
+    $this->actingAs($this->owner)->post(route('move.approve'), ['code' => strtolower($code)])->assertRedirect();
     expect($move->refresh()->status)->toBe(ControlPlaneMoveStatus::Joining);
 
     $status = receiver($this, 'GET', "/move/v1/{$move->public_id}", $secret)->assertOk();
@@ -226,23 +225,23 @@ test('the hand-over freezes this dashboard, seals the final dump to the new mach
     $dumps = fakeDumps(str_repeat('PGDMP', 500_000));
     $token = startMove($this, $this->owner);
     [$move, $secret, $code] = claimMove($this, $token, $this->receiverPublic);
-    $this->actingAs($this->owner)->withSession(passwordConfirmed())->post(route('move.approve'), ['code' => $code]);
+    $this->actingAs($this->owner)->post(route('move.approve'), ['code' => $code]);
     [$target] = Projects::server($this->team, ip: '203.0.113.9');
     ServerEnrollment::query()->update(['used_at' => now(), 'server_id' => $target->id]);
     receiver($this, 'GET', "/move/v1/{$move->public_id}", $secret);
 
     // Nothing runs on the dashboard's server: the workload move is ready right away.
-    $this->actingAs($this->owner)->withSession(passwordConfirmed())->post(route('move.workloads'))->assertRedirect();
+    $this->actingAs($this->owner)->post(route('move.workloads'))->assertRedirect();
     $this->get(route('move.edit'));
     expect($move->refresh()->status)->toBe(ControlPlaneMoveStatus::ReadyToHandOver)
         ->and(ServerMove::query()->sole()->control_plane)->toBeTrue();
 
     // The installer on the new machine must be waiting.
     $move->forceFill(['receiver_seen_at' => now()->subMinutes(5)])->save();
-    $this->actingAs($this->owner)->withSession(passwordConfirmed())->post(route('move.handover'), ['confirmation' => 'hand over'])->assertSessionHasErrors();
+    $this->actingAs($this->owner)->post(route('move.handover'), ['confirmation' => 'hand over'])->assertSessionHasErrors();
     receiver($this, 'GET', "/move/v1/{$move->public_id}", $secret);
-    $this->actingAs($this->owner)->withSession(passwordConfirmed())->post(route('move.handover'), ['confirmation' => 'nope'])->assertSessionHasErrors('confirmation');
-    $this->actingAs($this->owner)->withSession(passwordConfirmed())->post(route('move.handover'), ['confirmation' => 'Hand over'])->assertRedirect();
+    $this->actingAs($this->owner)->post(route('move.handover'), ['confirmation' => 'nope'])->assertSessionHasErrors('confirmation');
+    $this->actingAs($this->owner)->post(route('move.handover'), ['confirmation' => 'Hand over'])->assertRedirect();
 
     expect($move->refresh()->status)->toBe(ControlPlaneMoveStatus::HandoverReady)
         ->and(InstanceSettings::current()->frozen_at)->not->toBeNull()
@@ -293,13 +292,13 @@ test('an aborted hand-over thaws the dashboard', function (): void {
     fakeDumps('PGDMP');
     $token = startMove($this, $this->owner);
     [$move, $secret, $code] = claimMove($this, $token, $this->receiverPublic);
-    $this->actingAs($this->owner)->withSession(passwordConfirmed())->post(route('move.approve'), ['code' => $code]);
+    $this->actingAs($this->owner)->post(route('move.approve'), ['code' => $code]);
     [$target] = Projects::server($this->team, ip: '203.0.113.9');
     ServerEnrollment::query()->update(['used_at' => now(), 'server_id' => $target->id]);
     receiver($this, 'GET', "/move/v1/{$move->public_id}", $secret);
-    $this->actingAs($this->owner)->withSession(passwordConfirmed())->post(route('move.workloads'));
+    $this->actingAs($this->owner)->post(route('move.workloads'));
     $this->get(route('move.edit'));
-    $this->actingAs($this->owner)->withSession(passwordConfirmed())->post(route('move.handover'), ['confirmation' => 'hand over']);
+    $this->actingAs($this->owner)->post(route('move.handover'), ['confirmation' => 'hand over']);
     expect($move->refresh()->status)->toBe(ControlPlaneMoveStatus::HandoverReady);
 
     receiver($this, 'POST', "/move/v1/{$move->public_id}/abort", $secret, ['reason' => 'disk full'])->assertOk()->assertJsonPath('status', 'ready_to_hand_over');
@@ -367,7 +366,7 @@ test('the new machine’s installer joins and receives the hand-over end to end 
         $move = ControlPlaneMove::query()->first();
 
         if ($path === '/move/v1/claim' && $move?->status === ControlPlaneMoveStatus::Claimed) {
-            $test->actingAs($owner)->withSession(passwordConfirmed())->post(route('move.approve'), ['code' => (string) $move->claim_code]);
+            $test->actingAs($owner)->post(route('move.approve'), ['code' => (string) $move->claim_code]);
         }
 
         if ($move?->status === ControlPlaneMoveStatus::Joining && ServerEnrollment::query()->whereNull('used_at')->exists()) {
@@ -384,9 +383,9 @@ test('the new machine’s installer joins and receives the hand-over end to end 
 
     // Joined; the owner moves the (no) apps and hands over.
     $this->artisan('launchroom:move:receive', ['--join' => true, '--state' => $state, '--json' => true])->assertSuccessful();
-    $this->actingAs($this->owner)->withSession(passwordConfirmed())->post(route('move.workloads'));
+    $this->actingAs($this->owner)->post(route('move.workloads'));
     $this->get(route('move.edit'));
-    $this->actingAs($this->owner)->withSession(passwordConfirmed())->post(route('move.handover'), ['confirmation' => 'hand over'])->assertRedirect();
+    $this->actingAs($this->owner)->post(route('move.handover'), ['confirmation' => 'hand over'])->assertRedirect();
     expect(ControlPlaneMove::query()->sole()->status)->toBe(ControlPlaneMoveStatus::HandoverReady);
 
     $this->artisan('launchroom:move:receive', ['--handover' => true, '--force' => true, '--state' => $state, '--json' => true])->assertSuccessful();

@@ -116,6 +116,8 @@ export function fixAction(detail: Detail, canFix: boolean): FixAction | null {
                 {
                     query: {
                         add: name,
+                        ...(params.buildTime ? { buildTime: '1' } : {}),
+                        ...(params.type === 'secret' ? { type: 'secret' } : {}),
                         ...(params.value
                             ? { value: String(params.value) }
                             : {}),
@@ -124,7 +126,7 @@ export function fixAction(detail: Detail, canFix: boolean): FixAction | null {
             ).url;
 
             return {
-                label: `Add ${name}`,
+                label: `Set up ${name}`,
                 href,
                 run: () => router.visit(href),
             };

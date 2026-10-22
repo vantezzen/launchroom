@@ -112,6 +112,7 @@ func (c *Collector) Sample(ctx context.Context) {
 	now := c.o.Now().UTC()
 	h := c.sampleHost(ctx, now)
 	w := c.sampleWorkloads(ctx, now)
+	h.buildCPU = w.buildCPU
 	c.mu.Lock()
 	completed := c.rollLocked(now)
 	c.addHostLocked(now, h)
@@ -165,6 +166,7 @@ type hostAcc struct {
 	minute                      time.Time
 	samples                     int
 	cpu, load                   avg
+	buildCPU                    avg
 	memUsed, memTotal           avg
 	diskUsed, diskTotal, rx, tx avg
 }
@@ -247,7 +249,8 @@ func (a *hostAcc) sample() (state.HostMetricSample, bool) {
 	s := state.HostMetricSample{
 		At: a.minute, Samples: min(max(a.samples, 1), 60),
 		CPUPct: a.cpu.float(100), Load1: a.load.float(100),
-		MemUsedMB: a.memUsed.int(), MemTotalMB: a.memTotal.int(),
+		BuildCPUCores: a.buildCPU.float(1000),
+		MemUsedMB:     a.memUsed.int(), MemTotalMB: a.memTotal.int(),
 		DiskUsedMB: a.diskUsed.int(), DiskTotalMB: a.diskTotal.int(),
 		NetRxBps: a.rx.int(), NetTxBps: a.tx.int(),
 	}
@@ -255,7 +258,7 @@ func (a *hostAcc) sample() (state.HostMetricSample, bool) {
 		v := 100.0
 		s.CPUPct = &v
 	}
-	ok := s.CPUPct != nil || s.Load1 != nil || s.MemUsedMB != nil || s.DiskUsedMB != nil || s.NetRxBps != nil
+	ok := s.CPUPct != nil || s.BuildCPUCores != nil || s.Load1 != nil || s.MemUsedMB != nil || s.DiskUsedMB != nil || s.NetRxBps != nil
 	return s, ok
 }
 
@@ -267,6 +270,7 @@ func (c *Collector) addHostLocked(now time.Time, h hostReading) {
 	a := c.hostAcc
 	a.samples++
 	a.cpu.add(h.cpuPct)
+	a.buildCPU.add(h.buildCPU)
 	a.load.add(h.load1)
 	a.memUsed.add(h.memUsed)
 	a.memTotal.add(h.memTotal)

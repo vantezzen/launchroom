@@ -80,7 +80,7 @@ Code: `App\Scheduling\Scheduler` (pure: no IO, property-tested in `tests/Unit/Sc
 
 ### 2.2 Changing server roles
 
-Roles are chosen at enrollment (join token) and can be changed later on Servers → server → Roles (admins, password confirmation; `launchroom:servers:update <server> --roles=edge,runtime --labels=k=v,…` for scripts; both run `UpdateServerRoles`, audited as `server.roles_updated`). Only `edge`, `runtime` and `build` are editable; `registry` stays as it is. Typical use: the control-plane VPS drops `build` so builds run on a home build box.
+Roles are chosen at enrollment (join token) and can be changed later on Servers → server → Roles (admins; `launchroom:servers:update <server> --roles=edge,runtime --labels=k=v,…` for scripts; both run `UpdateServerRoles`, audited as `server.roles_updated`). Only `edge`, `runtime` and `build` are editable; `registry` stays as it is. Typical use: the control-plane VPS drops `build` so builds run on a home build box.
 
 - **Refused** (the message names the reason): no role left; removing `runtime` while the server still has placements or volumes ("move them first": placement constraints and a deploy, or Replace server); removing `build` from the team's last online build server; removing `edge` from the team's last edge (offline edges count, they come back).
 - **Effects**: every mesh server is re-rendered (the server's own `system.caddy`/`system.buildkit` follow its roles; routes, edge upstreams, mesh allow-lists and the shared certificate storage follow the set of edges), build/plan tasks pinned to it that nobody leased yet go back to the pool (running builds finish there), and the Headscale node tags follow the roles (MaintainMesh). Nothing running is moved.

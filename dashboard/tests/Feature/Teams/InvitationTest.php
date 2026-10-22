@@ -49,12 +49,12 @@ test('admins invite by e-mail; the token is stored hashed and audited', function
         ->and(AuditEvent::query()->where('action', AuditAction::MemberInvited->value)->sole()->meta)->toEqual(['email' => 'new@example.com', 'role' => 'developer']);
 });
 
-test('inviting requires a recently confirmed password', function (): void {
+test('authorized invitations do not require another password', function (): void {
     $this->actingAs($this->admin)
         ->post(route('team.invitations.store'), ['email' => 'new@example.com', 'role' => 'viewer'])
-        ->assertRedirect(route('password.confirm'));
+        ->assertRedirect()->assertSessionHasNoErrors();
 
-    expect(TeamInvitation::query()->count())->toBe(0);
+    expect(TeamInvitation::query()->count())->toBe(1);
 });
 
 test('an inviter cannot grant a role above their own', function (): void {

@@ -15,9 +15,6 @@ import { cn } from '@/lib/cn';
 export function InstallVisual() {
     return (
         <div className="flex h-full flex-col items-center justify-center gap-3 px-6 py-5">
-            <div className="w-full max-w-[300px] rounded-control border border-border bg-card px-3 py-2 font-mono text-[11px] leading-[18px] break-all text-foreground shadow-card">
-                <span className="text-muted-foreground">$ </span>curl -fsSL https://launchroom.vantezzen.io/install | sh
-            </div>
             <Device render="server" width={200} />
             <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1 type-small">
                 <StatusIcon state="active" className="size-3" />

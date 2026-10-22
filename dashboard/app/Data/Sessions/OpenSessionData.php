@@ -11,8 +11,7 @@ use Spatie\LaravelData\Attributes\Validation\Regex;
 use Spatie\LaravelData\Data;
 
 /**
- * Opening a Console or Data session. The password is only read by the
- * controller (inline confirmation) and never stored.
+ * Opening an authorized Console or Data session.
  */
 final class OpenSessionData extends Data
 {

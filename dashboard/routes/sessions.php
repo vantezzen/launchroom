@@ -6,14 +6,13 @@ use App\Http\Controllers\Sessions\InteractiveSessionController;
 use App\Http\Controllers\Sessions\ServiceSessionController;
 use App\Http\Controllers\Teams\MembershipController;
 use App\Http\Controllers\Teams\TeamSettingsController;
-use App\Http\Middleware\RequireRecentPassword;
 use App\Support\PublicId;
 use Illuminate\Support\Facades\Route;
 
 /*
 | Interactive sessions: Console and Data tabs (docs/03 §11, docs/08 §15,
 | docs/09 R33). Loaded by App\Providers\InteractiveSessionsServiceProvider
-| with the `web` group here. Opening asks for a fresh password inline (423).
+| with the `web` group here. Opening uses the current authenticated session.
 */
 
 Route::middleware(['web', 'auth', 'verified'])->group(function (): void {
@@ -49,9 +48,9 @@ Route::middleware(['web', 'auth', 'verified'])->group(function (): void {
 
     // Team settings: developers' Console/Data access, opt-in transcripts.
     Route::put('settings/team/members/{membership}/permissions', [MembershipController::class, 'permissions'])
-        ->middleware(RequireRecentPassword::class)
+
         ->name('team.members.permissions');
     Route::put('settings/team/console-recording', [TeamSettingsController::class, 'recording'])
-        ->middleware(RequireRecentPassword::class)
+
         ->name('team.console-recording');
 });

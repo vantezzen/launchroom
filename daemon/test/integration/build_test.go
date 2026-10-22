@@ -266,7 +266,7 @@ func setupBuild(t *testing.T) *buildEnv {
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	be.bk = buildkitd.New(buildkitd.Options{
 		ServerID: string(e.serverID), Docker: be.engine, Ops: be.engine, Policy: policy.DefaultConfig(),
-		MaxParallelism: 4, MemoryMB: 4096, Log: log, DialTimeout: 2 * time.Minute,
+		Resources: buildkitd.PlanResources(buildkitd.HostFacts{CPUs: 4, MemoryMB: 6144}, buildkitd.Overrides{}), Log: log, DialTimeout: 2 * time.Minute,
 	})
 	sctx, scancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer scancel()

@@ -16,6 +16,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/moby/moby/api/types/blkiodev"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/api/types/network"
@@ -440,7 +441,7 @@ func TestBuildkitSecurityOptions(t *testing.T) {
 	h := newHarness(t)
 	ctx := t.Context()
 	img := state.ImageRef("127.0.0.1:5000/mirror/docker.io/moby/buildkit@" + policy.BuildkitImageDigest)
-	m := buildkitd.New(buildkitd.Options{ServerID: testServer, MemoryMB: 1024})
+	m := buildkitd.New(buildkitd.Options{ServerID: testServer, Resources: buildkitd.PlanResources(buildkitd.HostFacts{CPUs: 1, MemoryMB: 2048, SwapMB: 2048}, buildkitd.Overrides{})})
 	check := func(opts []string) error {
 		cc := m.ContainerSpec(img, "unconfined")
 		cc.HostConfig.SecurityOpt = opts
@@ -481,6 +482,58 @@ func TestBuildkitSecurityOptions(t *testing.T) {
 		if err := h.srv.CheckCreate(ctx, "lr-wl_01j9z8x7w6v5t4s3r2q1p0n9m8", b); err == nil || !strings.Contains(err.Error(), "security option") {
 			t.Errorf("workload with %s: %v", o, err)
 		}
+	}
+}
+
+// The BuildKit container gets a low CPU and I/O weight and a raised OOM
+// score (D59); the guard lets it lower nothing else and raise nothing.
+func TestBuildkitResourceShape(t *testing.T) {
+	h := newHarness(t)
+	ctx := t.Context()
+	img := state.ImageRef("127.0.0.1:5000/mirror/docker.io/moby/buildkit@" + policy.BuildkitImageDigest)
+	m := buildkitd.New(buildkitd.Options{ServerID: testServer, Resources: buildkitd.PlanResources(buildkitd.HostFacts{CPUs: 1, MemoryMB: 2048, SwapMB: 2048, ControlPlane: true}, buildkitd.Overrides{})})
+	check := func(mut func(hc *container.HostConfig)) error {
+		cc := m.ContainerSpec(img, "unconfined")
+		mut(cc.HostConfig)
+		b, err := json.Marshal(container.CreateRequest{Config: cc.Config, HostConfig: cc.HostConfig, NetworkingConfig: cc.Networking})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return h.srv.CheckCreate(ctx, cc.Name, b)
+	}
+	if err := check(func(*container.HostConfig) {}); err != nil {
+		t.Fatalf("planned buildkit shape refused: %v", err)
+	}
+	spec := m.ContainerSpec(img, "unconfined").HostConfig
+	if spec.OomScoreAdj != 1000 || spec.CPUShares != 64 || spec.BlkioWeight != 10 || spec.NanoCPUs != 75e7 || spec.MemorySwap <= spec.Memory {
+		t.Fatalf("planned shape %+v", spec.Resources)
+	}
+	for name, mut := range map[string]func(*container.HostConfig){
+		"protected from the OOM killer": func(hc *container.HostConfig) { hc.OomScoreAdj = -500 },
+		"OOM score out of range":        func(hc *container.HostConfig) { hc.OomScoreAdj = 1001 },
+		"higher CPU weight":             func(hc *container.HostConfig) { hc.CPUShares = 4096 },
+		"invalid I/O weight":            func(hc *container.HostConfig) { hc.BlkioWeight = 5 },
+		"memory reservation":            func(hc *container.HostConfig) { hc.MemoryReservation = 1 << 30 },
+		"I/O device weight": func(hc *container.HostConfig) {
+			hc.BlkioWeightDevice = []*blkiodev.WeightDevice{{Path: "/dev/sda", Weight: 1000}}
+		},
+	} {
+		if err := check(mut); err == nil {
+			t.Errorf("%s passed", name)
+		}
+	}
+	// Other system containers and workloads can't set an OOM score or I/O weight.
+	ts := mesh.ContainerSpec(testServer, state.ImageRef("docker.io/tailscale/tailscale@"+policy.TailscaleImageDigest))
+	ts.HostConfig.OomScoreAdj = -1000
+	b, _ := json.Marshal(container.CreateRequest{Config: ts.Config, HostConfig: ts.HostConfig, NetworkingConfig: ts.Networking})
+	if err := h.srv.CheckCreate(ctx, ts.Name, b); err == nil {
+		t.Fatal("tailscale with an OOM score passed")
+	}
+	req := workload()
+	req.HostConfig.OomScoreAdj = -1000
+	b, _ = json.Marshal(req)
+	if err := h.srv.CheckCreate(ctx, "lr-wl_01j9z8x7w6v5t4s3r2q1p0n9m8", b); err == nil {
+		t.Fatal("workload with an OOM score passed")
 	}
 }
 

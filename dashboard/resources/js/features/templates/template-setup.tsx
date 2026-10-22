@@ -63,13 +63,14 @@ export function TemplateSetup({
         ([key]) => !['name', 'repository', 'branch'].includes(key),
     )?.[1];
 
-    const submit = () => {
+    const submit = (deployNow: boolean) => {
         setProcessing(true);
         router.post(
             url,
             {
                 ...(askName ? { name } : {}),
                 inputs,
+                deploy: deployNow,
                 repository: repository?.repository.id ?? null,
                 branch: repository?.branch ?? null,
             },
@@ -232,17 +233,34 @@ export function TemplateSetup({
                             'Built from your code'
                         )}
                     </p>
-                    <Button
-                        onClick={submit}
-                        disabled={
-                            processing ||
-                            (askName && name.trim() === '') ||
-                            (template.needsRepository && repository === null)
-                        }
-                    >
-                        {processing && <Spinner />}
-                        {submitLabel}
-                    </Button>
+                    <div className="flex flex-wrap justify-end gap-2">
+                        {askName && (
+                            <Button
+                                variant="outline"
+                                onClick={() => submit(false)}
+                                disabled={
+                                    processing ||
+                                    name.trim() === '' ||
+                                    (template.needsRepository &&
+                                        repository === null)
+                                }
+                            >
+                                Create without deploying
+                            </Button>
+                        )}
+                        <Button
+                            onClick={() => submit(true)}
+                            disabled={
+                                processing ||
+                                (askName && name.trim() === '') ||
+                                (template.needsRepository &&
+                                    repository === null)
+                            }
+                        >
+                            {processing && <Spinner />}
+                            {submitLabel}
+                        </Button>
+                    </div>
                 </div>
             </SheetSection>
         </>

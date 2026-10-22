@@ -10,8 +10,10 @@ use App\Enums\DaemonFeature;
 use App\Enums\DaemonTaskStatus;
 use App\Enums\DaemonTaskType;
 use App\Enums\ServerRole;
+use App\Events\Broadcasts\DeploymentUpdated;
 use App\Exceptions\TaskSealingFailed;
 use App\Models\DaemonTask;
+use App\Models\Deployment;
 use App\Models\Server;
 use App\Services\Tasks\TaskSecrets;
 use App\Support\ServerPlatform;
@@ -100,6 +102,7 @@ final readonly class LeaseTasks
 
                 try {
                     $leased[] = Task::fromTask($task, $this->secrets->materialize($task, $server));
+                    $this->broadcastBuildServer($task);
                 } catch (TaskSealingFailed $e) {
                     // Never hand out a task whose secrets can't be delivered.
                     $task->forceFill([
@@ -113,6 +116,24 @@ final readonly class LeaseTasks
             }
 
             return $leased;
+        });
+    }
+
+    private function broadcastBuildServer(DaemonTask $task): void
+    {
+        if ($task->type !== DaemonTaskType::Build || $task->deployment_id === null) {
+            return;
+        }
+
+        $deployment = Deployment::query()->where('team_id', $task->team_id)->whereKey($task->deployment_id)
+            ->with(['environment:id,public_id', 'serviceInstance:id,service_id', 'serviceInstance.service:id,public_id'])->first();
+        if ($deployment === null) {
+            return;
+        }
+
+        $event = new DeploymentUpdated($deployment->public_id, $deployment->environment->public_id, $deployment->serviceInstance->service->public_id, $deployment->status->value);
+        DB::afterCommit(static function () use ($event): void {
+            broadcast($event);
         });
     }
 }

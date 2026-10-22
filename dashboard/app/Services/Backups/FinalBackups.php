@@ -33,7 +33,7 @@ use Throwable;
  * successful backup), while their workloads still run. The deletion waits
  * for them; if one fails (or can't start, e.g. a database that isn't
  * running), the deletion is blocked with the reason until an owner/admin
- * retries it or chooses "delete without final backup" (recent password,
+ * retries it or chooses "delete without final backup" (authorized,
  * audited). Callers own authorization and their transaction.
  *
  * The state lives in a {@see DeletionRequest} per subject:
@@ -239,7 +239,7 @@ final readonly class FinalBackups
     }
 
     /**
-     * "Delete without final backup" (owner/admin with a recent password;
+     * "Delete without final backup" (owner/admin with the required permission;
      * callers authorize). Audited.
      */
     public function skip(DeletionRequest $request, ?User $user, AuditActor $actor): void

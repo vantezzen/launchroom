@@ -5,7 +5,6 @@ declare(strict_types=1);
 use App\Http\Controllers\ApiTokens\ApiDocsController;
 use App\Http\Controllers\ApiTokens\ApiTokenController;
 use App\Http\Controllers\ApiTokens\CliLoginController;
-use App\Http\Middleware\RequireRecentPassword;
 use App\Support\PublicId;
 use Illuminate\Support\Facades\Route;
 
@@ -26,11 +25,11 @@ Route::middleware(['web', 'auth', 'verified'])->group(function (): void {
         ->name('api-tokens.destroy');
 
     Route::get('cli/login', [CliLoginController::class, 'show'])
-        ->middleware([RequireRecentPassword::class, 'throttle:30,1'])
+        ->middleware('throttle:30,1')
         ->name('cli-login.show');
     Route::post('cli/login/{code}/approve', [CliLoginController::class, 'approve'])
         ->where('code', '[A-Za-z]{4}-?[A-Za-z]{4}')
-        ->middleware([RequireRecentPassword::class, 'throttle:10,1'])
+        ->middleware('throttle:10,1')
         ->name('cli-login.approve');
     Route::post('cli/login/{code}/deny', [CliLoginController::class, 'deny'])
         ->where('code', '[A-Za-z]{4}-?[A-Za-z]{4}')

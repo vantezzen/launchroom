@@ -29,7 +29,6 @@ final class DataTabData extends Data
         #[LiteralTypeScriptType("'sql' | 'redis' | 'mongo'")]
         public string $dialect,
         public ?SessionReplicaData $replica,
-        public bool $passwordRequired,
         public int $idleMinutes,
         public array $history,
     ) {}

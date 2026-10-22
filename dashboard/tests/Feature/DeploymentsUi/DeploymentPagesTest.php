@@ -4,11 +4,16 @@ declare(strict_types=1);
 
 use App\Actions\Deployments\RedeployService;
 use App\Data\Audit\AuditActor;
+use App\Enums\DaemonTaskStatus;
+use App\Enums\DaemonTaskType;
 use App\Enums\DeploymentFailureClass;
 use App\Enums\DeploymentStatus;
 use App\Enums\DeploymentTrigger;
+use App\Enums\LogSourceKind;
 use App\Enums\TeamRole;
+use App\Models\DaemonTask;
 use App\Models\Deployment;
+use App\Models\LogChunk;
 use App\Models\ServiceInstance;
 use Illuminate\Contracts\Database\Query\Builder;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -16,6 +21,42 @@ use Tests\Support\DeploymentUi;
 use Tests\Support\Projects;
 
 beforeEach(fn () => Projects::useTestKek());
+
+test('a build failure explains the missing variable from its logs and names the build server', function (): void {
+    $world = DeploymentUi::make();
+    $deployment = $world->latest($world->web);
+    $deployment->forceFill([
+        'status' => DeploymentStatus::Failed, 'failure_class' => DeploymentFailureClass::BuildError,
+        'failure_message' => 'failed to solve: process npm run build exited with code 1',
+        'build_server_id' => $world->server->id,
+    ])->save();
+    $task = DaemonTask::query()->create([
+        'team_id' => $world->team->id, 'server_id' => $world->server->id,
+        'type' => DaemonTaskType::Build, 'deployment_id' => $deployment->id,
+        'spec' => new stdClass, 'timeout_seconds' => 7200, 'max_attempts' => 1,
+    ]);
+    LogChunk::query()->create([
+        'team_id' => $world->team->id, 'server_id' => $world->server->id,
+        'daemon_task_id' => $task->id, 'source_kind' => LogSourceKind::Task,
+        'source_id' => $task->public_id, 'seq' => 1,
+        'lines' => [['time' => now()->toIso8601String(), 'stream' => 'stderr', 'text' => '#17 Error: AUTH_SECRET environment variable is not set. It is required for encryption/decryption.']],
+    ]);
+
+    $this->actingAs($world->member(TeamRole::Developer))
+        ->get(route('deployments.show', $world->deploymentArgs($deployment)))
+        ->assertInertia(fn (Assert $page): Assert => $page
+            ->where('detail.failureExplanation.key', 'missing_variable')
+            ->where('detail.failureExplanation.params.name', 'AUTH_SECRET')
+            ->where('detail.failureExplanation.params.buildTime', '1')
+            ->where('detail.buildServer.id', $world->server->public_id));
+
+    $deployment->forceFill(['status' => DeploymentStatus::Building, 'build_server_id' => null])->save();
+    $task->forceFill(['status' => DaemonTaskStatus::Leased])->save();
+    $this->get(route('deployments.show', $world->deploymentArgs($deployment)))
+        ->assertInertia(fn (Assert $page): Assert => $page
+            ->where('detail.buildServer.id', $world->server->public_id)
+            ->where('detail.buildServer.name', $world->server->name));
+});
 
 test('the deployment page shows the summary, steps, config and env names, never values', function (): void {
     $world = DeploymentUi::make();

@@ -283,7 +283,7 @@ test('an already stored S3 batch (412) counts as delivered', function (): void {
 
 test('destinations on private, loopback or unresolvable addresses are refused unless the owner allows the private network', function (): void {
     $owner = auditOwner();
-    $post = fn (array $form) => $this->actingAs($owner)->withSession(passwordConfirmed())->post(route('audit-sinks.store'), $form);
+    $post = fn (array $form) => $this->actingAs($owner)->post(route('audit-sinks.store'), $form);
 
     $post(['kind' => 'webhook', 'secretUrl' => 'https://internal.example.com/hook'])->assertSessionHasErrors('secretUrl');
     $post(['kind' => 'webhook', 'secretUrl' => 'http://siem.example.com/hook'])->assertSessionHasErrors('secretUrl');
@@ -307,26 +307,23 @@ test('only instance owners see and manage destinations, with a recent password',
     $admin = memberOf($team, TeamRole::Owner);
     $form = ['kind' => 'webhook', 'secretUrl' => 'https://siem.example.com/hook'];
 
-    $this->actingAs($admin)->withSession(passwordConfirmed())->get(route('instance-security.edit'))->assertForbidden();
-    $this->actingAs($admin)->withSession(passwordConfirmed())->post(route('audit-sinks.store'), $form)->assertForbidden();
+    $this->actingAs($admin)->get(route('instance-security.edit'))->assertForbidden();
+    $this->actingAs($admin)->post(route('audit-sinks.store'), $form)->assertForbidden();
 
     $owner = auditOwner();
     $this->flushSession();
-    $this->actingAs($owner)->post(route('audit-sinks.store'), $form)->assertRedirect(route('password.confirm'));
-    expect(AuditSink::query()->count())->toBe(0);
-
-    $this->actingAs($owner)->withSession(passwordConfirmed())->post(route('audit-sinks.store'), $form)
+    $this->actingAs($owner)->post(route('audit-sinks.store'), $form)
         ->assertRedirect()->assertSessionHasNoErrors();
     $sink = AuditSink::query()->sole();
 
-    $this->actingAs($admin)->withSession(passwordConfirmed())->patch(route('audit-sinks.update', $sink->public_id), ['enabled' => false])->assertForbidden();
+    $this->actingAs($admin)->patch(route('audit-sinks.update', $sink->public_id), ['enabled' => false])->assertForbidden();
     $this->actingAs($admin)->post(route('audit-sinks.test', $sink->public_id))->assertForbidden();
-    $this->actingAs($admin)->withSession(passwordConfirmed())->delete(route('audit-sinks.destroy', $sink->public_id))->assertForbidden();
+    $this->actingAs($admin)->delete(route('audit-sinks.destroy', $sink->public_id))->assertForbidden();
 
-    $this->actingAs($owner)->withSession(passwordConfirmed())->patch(route('audit-sinks.update', $sink->public_id), ['enabled' => false])->assertRedirect();
+    $this->actingAs($owner)->patch(route('audit-sinks.update', $sink->public_id), ['enabled' => false])->assertRedirect();
     expect($sink->refresh()->status())->toBe(AuditSinkStatus::Paused);
 
-    $this->actingAs($owner)->withSession(passwordConfirmed())->delete(route('audit-sinks.destroy', $sink->public_id))->assertRedirect();
+    $this->actingAs($owner)->delete(route('audit-sinks.destroy', $sink->public_id))->assertRedirect();
     expect(AuditSink::query()->count())->toBe(0)
         ->and(AuditEvent::query()->where('action', AuditAction::AuditSinkDeleted->value)->count())->toBe(1);
 });
@@ -334,7 +331,7 @@ test('only instance owners see and manage destinations, with a recent password',
 test('credentials are envelope-encrypted, never serialized or rendered, and rewrapped with the KEK', function (): void {
     Http::fake();
     $owner = auditOwner();
-    $this->actingAs($owner)->withSession(passwordConfirmed())->post(route('audit-sinks.store'), [
+    $this->actingAs($owner)->post(route('audit-sinks.store'), [
         'kind' => 's3', 'endpoint' => 'https://s3.example.com', 'bucket' => 'audit-copies',
         'accessKeyId' => 'AKIAVISIBLE', 'secretAccessKey' => 'super-secret-key-material',
     ])->assertSessionHasNoErrors();
@@ -344,7 +341,7 @@ test('credentials are envelope-encrypted, never serialized or rendered, and rewr
         ->and(json_encode($sink->toArray(), JSON_THROW_ON_ERROR))->not->toContain('lr1:')
         ->and(resolve(AuditSinkSecrets::class)->reveal($sink)['secretAccessKey'])->toBe('super-secret-key-material');
 
-    $page = $this->actingAs($owner)->withSession(passwordConfirmed())->get(route('instance-security.edit'))
+    $page = $this->actingAs($owner)->get(route('instance-security.edit'))
         ->assertOk()
         ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
             ->component('settings/instance-security')

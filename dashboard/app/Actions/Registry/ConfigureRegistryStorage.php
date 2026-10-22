@@ -19,7 +19,7 @@ use Illuminate\Support\Facades\DB;
 /**
  * Puts (or keeps) the registry's storage on an S3-compatible bucket
  * (docs/14 §9.11). Instance owners only (the caller authorizes
- * `manageInstance`, the route requires a recent password). The endpoint is
+ * `manageInstance`). The endpoint is
  * checked like a backup destination's (docs/09 R5): https and public
  * addresses, unless the audited private-network override is set; the
  * credentials are envelope-encrypted. Nothing reaches Zot until the config

@@ -45,8 +45,7 @@ final class FortifyServiceProvider extends ServiceProvider
     {
         Fortify::resetUserPasswordsUsing(ResetUserPassword::class);
 
-        // The confirm-password page shares the failed-attempt budget of
-        // inline confirmations (secret reveal): 5/min per user and IP (review L4).
+        // The legacy confirm-password endpoint allows 5 failures/min per user and IP.
         Fortify::confirmPasswordsUsing(static function (User $user, #[SensitiveParameter] ?string $password): bool {
             PasswordConfirmationThrottle::confirm(request(), $user, $password);
 

@@ -24,7 +24,6 @@ final class ConsoleTabData extends Data
         public array $shells,
         public bool $record,
         /** The password has to be confirmed before opening (not confirmed in the last 15 min). */
-        public bool $passwordRequired,
         public int $idleMinutes,
         public int $maxMinutes,
         public array $sessions,

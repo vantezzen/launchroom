@@ -96,8 +96,7 @@ export function useDeploymentLogs(
 
     const [loading, setLoading] = useState(false);
     const latest = useRef(state);
-    const inFlight = useRef(false);
-    const again = useRef(false);
+    const inFlight = useRef<Promise<void> | null>(null);
     const timer = useRef<number | null>(null);
     const url = logsRoute(args).url;
     const deployment = args.deployment;
@@ -106,35 +105,27 @@ export function useDeploymentLogs(
         latest.current = state;
     });
 
-    const fetchNext = useCallback(async (): Promise<void> => {
+    const fetchNext = useCallback((): Promise<void> => {
         if (inFlight.current) {
-            again.current = true;
-
-            return;
+            return inFlight.current;
         }
 
-        inFlight.current = true;
         setLoading(true);
-
-        try {
-            const page = await requestJson<LogPage>(
-                'get',
-                `${url}?after=${latest.current.cursor}`,
-            );
-            const next = appendLogPage(latest.current, deployment, page);
-            latest.current = next;
-            setStored(next);
-        } catch {
-            // Transient: the next nudge or poll retries.
-        } finally {
-            inFlight.current = false;
-            setLoading(false);
-        }
-
-        if (again.current) {
-            again.current = false;
-            await fetchNext();
-        }
+        const request = requestJson<LogPage>(
+            'get',
+            `${url}?after=${latest.current.cursor}`,
+        )
+            .then((page) => {
+                const next = appendLogPage(latest.current, deployment, page);
+                latest.current = next;
+                setStored(next);
+            })
+            .finally(() => {
+                inFlight.current = null;
+                setLoading(false);
+            });
+        inFlight.current = request;
+        return request;
     }, [url, deployment]);
 
     /** A new chunk arrived: fetch soon, coalescing bursts. */
@@ -145,9 +136,30 @@ export function useDeploymentLogs(
 
         timer.current = window.setTimeout(() => {
             timer.current = null;
-            void fetchNext();
+            if (inFlight.current) {
+                void inFlight.current.finally(nudge).catch(() => undefined);
+                return;
+            }
+            void fetchNext().catch(() => undefined);
         }, BATCH_MS);
     }, [fetchNext]);
+
+    /** Every line, fetching the pages not loaded yet (copy and download). */
+    const loadAll = useCallback(async (): Promise<LogLine[]> => {
+        while (latest.current.hasMore) {
+            if (latest.current.deployment !== deployment) {
+                throw new Error('The deployment changed while loading the log');
+            }
+            const before = latest.current.cursor;
+            await fetchNext();
+
+            if (latest.current.hasMore && latest.current.cursor <= before) {
+                throw new Error('Could not load the rest of the log');
+            }
+        }
+
+        return latest.current.lines;
+    }, [fetchNext, deployment]);
 
     useEffect(
         () => () => {
@@ -163,7 +175,8 @@ export function useDeploymentLogs(
         lines: state.lines,
         hasMore: state.hasMore,
         loading,
-        loadMore: fetchNext,
+        loadMore: () => fetchNext().catch(() => undefined),
+        loadAll,
         nudge,
     };
 }

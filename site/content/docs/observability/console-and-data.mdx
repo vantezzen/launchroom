@@ -33,7 +33,7 @@ Nothing in between can inject input or replay it.
 
 Owners and admins grant Console or Data access to individual developers from the member's menu in **Settings → Members**. Members without the permission don't see the tabs. See [Teams and roles](/docs/teams-and-security/teams-and-roles).
 
-Opening a session asks for your password if you haven't confirmed it in the last 15 minutes.
+Opening a session uses your signed-in session and checks your Console or Data permission.
 
 ## Console
 
@@ -53,7 +53,7 @@ If the service runs several replicas, choose one ("Replica 1 · fra-1"). Only ru
 <Step>
 ### Open console
 
-Confirm your password if asked. The terminal connects within a second or two.
+The terminal connects within a second or two.
 </Step>
 </Steps>
 
@@ -63,7 +63,7 @@ The status line under the terminal shows the shell, the user and how long the se
 
 ### Recording
 
-Console sessions are **not recorded** by default. A team owner can turn on **Record console sessions** under **Settings → Members**. Recorded sessions keep only what the terminal showed (never keystrokes), with secret values masked, up to 1 MiB per session. The tab says "This session is recorded" before you connect. Reading a recording needs Console access and a fresh password, and each read is audited.
+Console sessions are **not recorded** by default. A team owner can turn on **Record console sessions** under **Settings → Members**. Recorded sessions keep only what the terminal showed (never keystrokes), with secret values masked, up to 1 MiB per session. The tab says "This session is recorded" before you connect. Reading a recording needs Console access, and each read is audited.
 
 ## Data tab
 
@@ -94,7 +94,7 @@ Some commands are refused even with writes allowed, because they could take the 
 - MongoDB: user and role management, `shutdown` and commands against another database
 
 <Callout type="warn" title="Read-only mode guards against mistakes">
-Read-only mode protects you from accidents. Access is controlled by the Data permission, the password confirmation and the audit trail.
+Read-only mode protects you from accidents. Access is controlled by the Data permission and the audit trail.
 </Callout>
 
 ### Limits

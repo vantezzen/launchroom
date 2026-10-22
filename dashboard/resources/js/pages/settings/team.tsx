@@ -522,7 +522,7 @@ export default function TeamSettings({
                     <SettingsCard
                         title="Console recording"
                         description="Keep a transcript of what console sessions showed."
-                        footer="Output only, never keystrokes. Secret values are masked; reading a recording needs a fresh password and is audited."
+                        footer="Output only, never keystrokes. Secret values are masked; reading a recording requires Console access and is audited."
                     >
                         <SettingsRow
                             label="Record console sessions"

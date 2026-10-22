@@ -25,6 +25,7 @@ import (
 
 	bkclient "github.com/moby/buildkit/client"
 
+	"github.com/vantezzen/launchroom/daemon/internal/build/buildkitd"
 	"github.com/vantezzen/launchroom/daemon/internal/build/presets"
 	"github.com/vantezzen/launchroom/daemon/internal/secret"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
@@ -51,6 +52,8 @@ type Options struct {
 	// place (firewall.Manager.Sync) before build steps run; a failure fails
 	// the build (fail closed). nil = no isolation (tests).
 	Isolate func(ctx context.Context) error
+	// Resources returns the limits applied to the running build container.
+	Resources func() buildkitd.Resources
 	// NoAttestations disables SBOM/provenance (tests only).
 	NoAttestations bool
 	Log            *slog.Logger
@@ -467,6 +470,9 @@ func (b *Builder) resolve(dir, work string, job *Job, envNames []string, sink Lo
 	}
 	p := state.Port(port)
 	s.Port = &p
+	if rp.info.Provider == "node" && b.o.Resources != nil {
+		limitNodeBuild(rp.result.Plan, b.o.Resources(), job.Env)
+	}
 	raw, err := json.Marshal(rp.result.Plan)
 	if err != nil {
 		return nil, fail(state.FailureInternal, "plan", err)
@@ -525,6 +531,13 @@ func (b *Builder) build(ctx context.Context, job *Job, dir, work string, r *reso
 		return "", buildkitUnavailable(err, sink)
 	}
 	defer func() { _ = c.Close() }()
+	if b.o.Resources != nil {
+		resources := b.o.Resources()
+		sink.Line("setup", state.StreamStdout, resources.Summary())
+		if resources.NoSwap {
+			sink.Line("setup", state.StreamStdout, buildkitd.SwapHint)
+		}
+	}
 
 	secrets := make(map[string][]byte, len(job.Env))
 	for k, v := range job.Env {

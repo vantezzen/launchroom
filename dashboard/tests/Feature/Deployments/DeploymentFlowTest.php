@@ -106,8 +106,8 @@ test('first deploy: revision, deployments, placements and a schema-valid NodeSta
         ->and($result->revision->message)->toBe('first')
         ->and($result->deployments)->toHaveCount(2)
         ->and($production->refresh()->last_applied_revision_id)->toBe($result->revision->id)
-        ->and(deploymentOf($postgres)->status)->toBe(DeploymentStatus::HealthChecking)
-        ->and(deploymentOf($web)->status)->toBe(DeploymentStatus::HealthChecking)
+        ->and(deploymentOf($postgres)->status)->toBe(DeploymentStatus::RollingOut)
+        ->and(deploymentOf($web)->status)->toBe(DeploymentStatus::RollingOut)
         ->and(deploymentOf($postgres)->image)->toStartWith('127.0.0.1:5000/mirror/docker.io/library/postgres@sha256:')
         ->and(deploymentOf($web)->image)->toBe('127.0.0.1:5000/mirror/docker.io/library/nginx@'.Projects::DIGEST)
         ->and(Volume::query()->sole()->server_id)->toBe($server->id);
@@ -259,7 +259,7 @@ test('stateful services stop the old container before starting the new one', fun
 
     // Stopped: the new container starts on the volume's server.
     Projects::report($server, phases: [$oldWorkload => 'exited']);
-    expect($second->refresh()->status)->toBe(DeploymentStatus::HealthChecking)
+    expect($second->refresh()->status)->toBe(DeploymentStatus::RollingOut)
         ->and($second->placements()->sole()->server_id)->toBe($server->id);
 
     converge($server);

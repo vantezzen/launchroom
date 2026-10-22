@@ -4,6 +4,10 @@ All changes to launchroomd ↔ dashboard contract. Format: one section per proto
 
 ## v1 (unreleased)
 
+### Build CPU usage (2026-10-22)
+
+Additive, no daemon feature. `ReportMetrics.host[].buildCpuCores` is the managed BuildKit container's average CPU in cores (optional, 0–4096), sampled and aggregated with the existing host metrics. It includes build processes in that container and is not attributed to a workload. Older servers omit it and the dashboard leaves the Builds row out. Design: docs/15 §2.4.
+
 ### Builds capability (2026-10-21, D58)
 
 Additive, no daemon feature. `HostCapability.name` gained `builds` (sent only by build servers): `full`, or `unavailable` when the host restricts unprivileged user namespaces (`kernel.apparmor_restrict_unprivileged_userns=1`), launchroom's AppArmor profile `launchroom-buildkit` is not loaded and BuildKit doesn't answer; the message names the fix. Older dashboards drop unknown capability names. Design: docs/04 §5.

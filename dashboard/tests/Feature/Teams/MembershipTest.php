@@ -47,10 +47,11 @@ test('admins cannot promote to owner or touch owners', function (): void {
         ->assertForbidden();
 });
 
-test('role changes require a recently confirmed password', function (): void {
+test('authorized role changes do not interrupt the form', function (): void {
     $this->actingAs($this->admin)
         ->patch(route('team.members.update', membershipOf($this->developer, $this->team)->public_id), ['role' => 'viewer'])
-        ->assertRedirect(route('password.confirm'));
+        ->assertRedirect()->assertSessionHasNoErrors();
+    expect(membershipOf($this->developer, $this->team)->role)->toBe(TeamRole::Viewer);
 });
 
 test('developers cannot change roles', function (): void {

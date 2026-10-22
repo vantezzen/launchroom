@@ -19,11 +19,13 @@ Each web service gets a generated domain per environment, shown as **Generated b
 | A platform domain, such as `apps.example.com` | `{service}-{environment}.{project}.apps.example.com` |
 | No platform domain yet | `{service}-{environment}-{project}.{server-ip-with-dashes}.sslip.io` |
 
-You set the platform domain during onboarding. One wildcard DNS record (`*.apps.example.com`) pointing at your edge
+Set or change the platform domain during onboarding or in **Settings → Network → App domains**. Clear it there to use sslip.io for new services; existing generated addresses keep their names. One wildcard DNS record (`*.apps.example.com`) pointing at your edge
 servers covers every generated address, preview and per-deployment URL. Get started shows the record with your
 server's public IP and checks it before you continue. Without a platform domain, launchroom falls
 back to sslip.io, a public DNS service that resolves names containing an IP address to that IP. sslip.io works at once,
 but names under it share Let's Encrypt's rate limits with everyone else who uses it, so use a domain of your own.
+
+With Cloudflare, set the platform records to **DNS only** (turn off the orange cloud). Universal SSL normally covers the zone's root domain and first-level subdomains; deeper generated addresses can fail with `ERR_SSL_VERSION_OR_CIPHER_MISMATCH` unless your Cloudflare certificate explicitly covers them. See [Cloudflare's coverage limits](https://developers.cloudflare.com/ssl/edge-certificates/universal-ssl/limitations/).
 
 Keep the platform domain apart from your dashboard's domain, ideally on a different registrable domain, so apps and the
 dashboard never share cookies. See [Dashboard domain](/docs/operations/dashboard-domain).

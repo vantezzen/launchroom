@@ -32,7 +32,7 @@ test('security page is displayed', function (): void {
         );
 });
 
-test('security page requires password confirmation when enabled', function (): void {
+test('security page stays accessible without password confirmation', function (): void {
     $this->skipUnlessFortifyHas(Features::twoFactorAuthentication());
 
     $user = User::factory()->create();
@@ -44,7 +44,7 @@ test('security page requires password confirmation when enabled', function (): v
 
     $this->actingAs($user)
         ->get(route('security.edit'))
-        ->assertRedirect(route('password.confirm'));
+        ->assertOk();
 });
 
 test('security page renders without two factor when feature is disabled', function (): void {

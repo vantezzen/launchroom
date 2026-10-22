@@ -32,6 +32,7 @@ func SkipInterface(name string) bool {
 
 type hostReading struct {
 	cpuPct, load1                          *float64
+	buildCPU                               *float64
 	memUsed, memTotal, diskUsed, diskTotal *float64
 	rxBps, txBps                           *float64
 }

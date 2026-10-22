@@ -1,4 +1,5 @@
 import { edit as teamSettings } from '@/routes/team';
+import { AppDomainsSettings } from '@/features/domains/app-domains-settings';
 import { Form, Head, Link, router } from '@inertiajs/react';
 import { ChevronRight } from 'lucide-react';
 import { useState } from 'react';
@@ -37,6 +38,7 @@ type Props = {
     recommendedPolicy: string;
     tags: string[];
     ingress: App.Data.Ingress.IngressSettingsData;
+    edgeAddresses: string[];
     errors?: Record<string, string>;
 };
 
@@ -73,7 +75,7 @@ function PrivateNetwork({
     recommendedPolicy,
     tags,
     errors,
-}: Omit<Props, 'ingress'>) {
+}: Omit<Props, 'ingress' | 'edgeAddresses'>) {
     const [mode, setMode] = useState<Mode>(
         mesh.mode ?? (mesh.builtInAvailable ? 'embedded' : 'byo'),
     );
@@ -708,11 +710,17 @@ export default function NetworkSettings({
     recommendedPolicy,
     tags,
     ingress,
+    edgeAddresses,
     errors,
 }: Props) {
     return (
         <>
             <Head title="Network" />
+            <AppDomainsSettings
+                key={ingress.appsDomain ?? 'sslip'}
+                domain={ingress.appsDomain}
+                addresses={edgeAddresses}
+            />
             <PrivateNetwork
                 mesh={mesh}
                 members={members}

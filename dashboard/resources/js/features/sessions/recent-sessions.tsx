@@ -6,9 +6,8 @@ import { Status } from '@/components/status';
 import { TimeAgo } from '@/components/time-ago';
 import { Button } from '@/components/ui/button';
 import { AnsiText } from '@/features/logs/ansi-text';
-import { endSession, fetchRecording, RequestFailed } from './api';
+import { endSession, fetchRecording } from './api';
 import { duration } from './format';
-import { PasswordPrompt } from './password-prompt';
 
 type Item = App.Data.Sessions.SessionHistoryItemData;
 
@@ -132,70 +131,33 @@ function RecordingPanel({
             }
             size="lg"
         >
-            {item && (
-                <RecordingBody key={item.id} item={item} onCancel={onClose} />
-            )}
+            {item && <RecordingBody key={item.id} item={item} />}
         </SidePanel>
     );
 }
 
-function RecordingBody({
-    item,
-    onCancel,
-}: {
-    item: Item;
-    onCancel: () => void;
-}) {
+function RecordingBody({ item }: { item: Item }) {
     const [lines, setLines] = useState<string[] | null>(null);
-    const [asking, setAsking] = useState(false);
-    const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    const load = useCallback(
-        async (password?: string) => {
-            setBusy(true);
-            setError(null);
+    const load = useCallback(async () => {
+        setError(null);
 
-            try {
-                const result = await fetchRecording(item.id, password);
-                setLines(result.lines);
-                setAsking(false);
-            } catch (failure) {
-                if (
-                    failure instanceof RequestFailed &&
-                    failure.status === 423
-                ) {
-                    setAsking(true);
-                } else {
-                    setError(
-                        failure instanceof Error
-                            ? failure.message
-                            : 'Couldn’t load the recording.',
-                    );
-                }
-            } finally {
-                setBusy(false);
-            }
-        },
-        [item.id],
-    );
+        try {
+            const result = await fetchRecording(item.id);
+            setLines(result.lines);
+        } catch (failure) {
+            setError(
+                failure instanceof Error
+                    ? failure.message
+                    : 'Couldn’t load the recording.',
+            );
+        }
+    }, [item.id]);
 
     useEffect(() => {
         void load();
     }, [load]);
-
-    if (asking) {
-        return (
-            <PasswordPrompt
-                id="recording-password"
-                busy={busy}
-                error={error}
-                action="Show recording"
-                onSubmit={(password) => void load(password)}
-                onCancel={onCancel}
-            />
-        );
-    }
 
     if (error) {
         return <p className="type-small text-status-error">{error}</p>;

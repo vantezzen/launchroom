@@ -56,15 +56,12 @@ test('webhook health turns stale', function (): void {
         ->assertInertia(fn ($page) => $page->where('apps.0.webhook.health', 'stale')->where('canManage', true));
 });
 
-test('disconnecting needs a confirmed password and the servers permission', function (): void {
-    $this->actingAs($this->admin)->delete(route('git.github.destroy', $this->githubApp->public_id))
-        ->assertRedirect(route('password.confirm'));
-
-    $this->actingAs($this->developer)->withSession(passwordConfirmed())
+test('disconnecting needs the servers permission', function (): void {
+    $this->actingAs($this->developer)
         ->delete(route('git.github.destroy', $this->githubApp->public_id))
         ->assertForbidden();
 
-    $this->actingAs($this->admin)->withSession(passwordConfirmed())
+    $this->actingAs($this->admin)
         ->delete(route('git.github.destroy', $this->githubApp->public_id))
         ->assertRedirect(route('git.edit'));
 
@@ -76,11 +73,11 @@ test('disconnecting needs a confirmed password and the servers permission', func
 test('apps of other teams are not found', function (): void {
     $foreign = GitHubFake::app(Team::factory()->create(), 9999);
 
-    $this->actingAs($this->admin)->withSession(passwordConfirmed())
+    $this->actingAs($this->admin)
         ->delete(route('git.github.destroy', $foreign->public_id))
         ->assertNotFound();
 
-    $this->actingAs($this->admin)->withSession(passwordConfirmed())
+    $this->actingAs($this->admin)
         ->delete('/settings/git/github/gha_not-valid')
         ->assertNotFound();
 });

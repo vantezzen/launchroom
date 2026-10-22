@@ -25,8 +25,7 @@ use Symfony\Component\HttpFoundation\Response as HttpResponse;
 /**
  * Settings → Dashboard domain (docs/05 §4.1, D43), instance owners only:
  * enter a domain, point DNS at the main server, let Caddy get a certificate,
- * test HTTPS, then switch (and switch back). Mutations need a recently
- * confirmed password; switching sends the browser to the new origin, where
+ * test HTTPS, then switch (and switch back). Switching sends the browser to the new origin, where
  * the owner signs in again (cookies are per host).
  */
 final class DashboardDomainController extends Controller

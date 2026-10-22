@@ -40,7 +40,7 @@ final readonly class RecordMetrics
             DB::table('server_metric_samples')->upsert(
                 array_map(static fn (array $row): array => ['server_id' => $server->id, 'resolution' => 1, ...$row, 'at' => $row['at']->toIso8601String()], $host),
                 ['server_id', 'resolution', 'at'],
-                ['cpu_pct', 'mem_used_mb', 'mem_total_mb', 'disk_used_mb', 'disk_total_mb', 'net_rx_bps', 'net_tx_bps', 'load1'],
+                ['cpu_pct', 'build_cpu_cores', 'mem_used_mb', 'mem_total_mb', 'disk_used_mb', 'disk_total_mb', 'net_rx_bps', 'net_tx_bps', 'load1'],
             );
         }
 

@@ -3,6 +3,7 @@ package hostinfo
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -260,5 +261,23 @@ func TestMemoryTotalMB(t *testing.T) {
 	}
 	if MemoryTotalMB(t.TempDir()) != 0 {
 		t.Fatal("unknown must be 0")
+	}
+}
+
+func TestReadMemInfo(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "meminfo"), []byte("MemTotal:        2014312 kB\nMemFree:          100000 kB\nMemAvailable:     870000 kB\nSwapTotal:       2097148 kB\nSwapFree:        2000000 kB\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	m, ok := ReadMemInfo(dir)
+	if !ok || m.TotalMB != 1967 || m.AvailableMB != 849 || m.SwapTotalMB != 2047 || m.SwapFreeMB != 1953 {
+		t.Fatalf("%+v %v", m, ok)
+	}
+	// No swap lines (containers with LXCFS, old kernels): zero swap.
+	if m, ok := ReadMemInfo("testdata/proc"); !ok || m.SwapTotalMB != 0 || m.TotalMB != 7939 {
+		t.Fatalf("%+v %v", m, ok)
+	}
+	if _, ok := ReadMemInfo(t.TempDir()); ok {
+		t.Fatal("missing meminfo read")
 	}
 }

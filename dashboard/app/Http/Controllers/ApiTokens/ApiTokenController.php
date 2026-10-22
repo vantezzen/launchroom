@@ -11,7 +11,6 @@ use App\Data\Api\CreateApiTokenInput;
 use App\Data\Api\CreatedApiTokenData;
 use App\Enums\ApiTokenClient;
 use App\Exceptions\DomainRuleViolation;
-use App\Http\Auth\PasswordConfirmationThrottle;
 use App\Http\Controllers\Controller;
 use App\Models\ApiToken;
 use App\Models\User;
@@ -25,9 +24,8 @@ use Inertia\Inertia;
 use Inertia\Response;
 
 /**
- * Settings → API tokens (docs/16 §1.3): your tokens, create (password
- * confirmed inline, the plaintext in this one JSON response only) and
- * revoke.
+ * Settings → API tokens (docs/16 §1.3): your tokens, create (the plaintext
+ * in this one JSON response only) and revoke.
  */
 final class ApiTokenController extends Controller
 {
@@ -49,17 +47,6 @@ final class ApiTokenController extends Controller
         $team = $user->currentTeam ?? throw new DomainRuleViolation('Pick a team first.');
         Gate::authorize('create', [ApiToken::class, $team]);
 
-        // Creating a token is a sensitive action (docs/09 R10), confirmed
-        // inline like a secret reveal (a fetch can't follow the confirm page).
-        if (! $this->passwordRecentlyConfirmed($request)) {
-            if (! $request->filled('password')) {
-                return response()->json(['message' => 'Confirm your password to create a token.', 'requiresPassword' => true], 423);
-            }
-
-            PasswordConfirmationThrottle::confirm($request, $user, $request->string('password')->toString());
-            $request->session()->put('auth.password_confirmed_at', time());
-        }
-
         $new = $create->handle($user, $team, $input->name, $input->abilityList(), $input->expiresInDays, ApiTokenClient::Dashboard, $this->auditActor($request, $user));
 
         return response()
@@ -75,12 +62,5 @@ final class ApiTokenController extends Controller
         Inertia::flash('toast', ['type' => 'success', 'message' => "{$apiToken->name} revoked. Requests with it stop working now."]);
 
         return back();
-    }
-
-    private function passwordRecentlyConfirmed(Request $request): bool
-    {
-        $confirmedAt = $request->session()->get('auth.password_confirmed_at', 0);
-
-        return is_numeric($confirmedAt) && (time() - (int) $confirmedAt) < config()->integer('auth.password_timeout', 10800);
     }
 }

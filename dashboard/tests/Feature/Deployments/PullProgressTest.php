@@ -25,7 +25,7 @@ use Tests\Support\Projects;
 
 /*
  * Large first pulls (docs/04 §11 "Pulls"): launchroomd reports the pull's
- * progress on the workload, the health step shows it, and the health
+ * progress on the workload, the rollout step shows it, and the health
  * deadline waits while the pull moves.
  */
 
@@ -52,12 +52,12 @@ function pullDeploymentOf(Service $service): Deployment
     return Deployment::query()->whereHas('serviceInstance', static fn (Builder $query) => $query->where('service_id', $service->id))->latest('id')->firstOrFail();
 }
 
-function healthStepMessage(Deployment $deployment): ?string
+function rolloutStepMessage(Deployment $deployment): ?string
 {
     $steps = resolve(DeploymentDetailView::class)->get($deployment)->steps;
 
     foreach ($steps as $step) {
-        if ($step->name === DeploymentStepName::Health) {
+        if ($step->name === DeploymentStepName::Rollout) {
             return $step->message;
         }
     }
@@ -65,21 +65,21 @@ function healthStepMessage(Deployment $deployment): ?string
     return null;
 }
 
-test('pull progress lands on the placement and in the running health step', function (): void {
+test('pull progress lands on the placement and in the running rollout step', function (): void {
     [$server, $web, $placement] = pullingDeployment();
     $w = $placement->workload_id;
 
     Projects::report($server, 'pulling', pulls: [$w => ['stage' => 'mirroring', 'downloadedBytes' => 0, 'totalBytes' => 0]]);
     expect($placement->refresh()->pull)->toEqual(['stage' => 'mirroring', 'downloaded' => 0, 'total' => 0])
-        ->and(healthStepMessage(pullDeploymentOf($web)))->toBe('Fetching image into the local registry (first deploy of this image)');
+        ->and(rolloutStepMessage(pullDeploymentOf($web)))->toBe('Fetching image into the local registry (first deploy of this image)');
 
     Projects::report($server, 'pulling', pulls: [$w => ['stage' => 'downloading', 'downloadedBytes' => 412_400_000, 'totalBytes' => 690_100_000]]);
-    expect(healthStepMessage(pullDeploymentOf($web)))->toBe('Downloading image (412 MB of 690 MB)');
+    expect(rolloutStepMessage(pullDeploymentOf($web)))->toBe('Downloading image (412 MB of 690 MB)');
 
     // Once the container exists, the pull is gone from the placement and the step.
     Projects::report($server, 'starting');
     expect($placement->refresh()->pull)->toBeNull()
-        ->and(healthStepMessage(pullDeploymentOf($web)))->toBeNull();
+        ->and(rolloutStepMessage(pullDeploymentOf($web)))->toBeNull();
 });
 
 test('progress alone nudges open pages without advancing the deployment', function (): void {
@@ -101,13 +101,13 @@ test('the health deadline waits while the image is still pulling', function (): 
     [$server, $web, $placement] = pullingDeployment();
     $w = $placement->workload_id;
 
-    // An hour of pulling with progress: still health checking.
+    // An hour of pulling with progress: still rolling out.
     for ($minutes = 0; $minutes < 60; $minutes += 2) {
         Date::setTestNow(now()->addMinutes(2));
         Projects::report($server, 'pulling', pulls: [$w => ['stage' => 'downloading', 'downloadedBytes' => $minutes * 10_000_000, 'totalBytes' => 690_000_000]]);
         resolve(SweepDeployments::class)->handle();
     }
-    expect(pullDeploymentOf($web)->status)->toBe(DeploymentStatus::HealthChecking);
+    expect(pullDeploymentOf($web)->status)->toBe(DeploymentStatus::RollingOut);
 
     // The pull finished; the container never got healthy: the deadline applies from then.
     Projects::report($server, 'starting');
@@ -116,14 +116,14 @@ test('the health deadline waits while the image is still pulling', function (): 
     expect(pullDeploymentOf($web)->failure_class)->toBe(DeploymentFailureClass::HealthTimeout);
 });
 
-test('a placement that stopped reporting while pulling does not hold the deadline', function (): void {
+test('a placement that stopped reporting while pulling fails rollout', function (): void {
     [$server, $web, $placement] = pullingDeployment();
     Projects::report($server, 'pulling', pulls: [$placement->workload_id => ['stage' => 'mirroring', 'downloadedBytes' => 0, 'totalBytes' => 0]]);
 
     Date::setTestNow(now()->addHours(2));
     resolve(SweepDeployments::class)->handle();
 
-    expect(pullDeploymentOf($web)->failure_class)->toBe(DeploymentFailureClass::HealthTimeout);
+    expect(pullDeploymentOf($web)->failure_class)->toBe(DeploymentFailureClass::Transient);
 });
 
 test('pull messages: the slowest server speaks, sizes in decimal units', function (): void {

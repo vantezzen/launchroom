@@ -899,7 +899,7 @@ export default function ImportRepository({
         return parts.join(' and ');
     }, [selectedApps.length, selectedDatabases.length]);
 
-    const deploy = () => {
+    const deploy = (deployNow: boolean) => {
         if (!repository) {
             return;
         }
@@ -912,6 +912,7 @@ export default function ImportRepository({
                 name,
                 repository: repository.id,
                 branch,
+                deploy: deployNow,
                 apps: selectedApps.map((app) => {
                     const plan = plans[app.rootDirectory]?.plan ?? null;
 
@@ -1255,7 +1256,7 @@ export default function ImportRepository({
                 )}
 
                 {inspection && (
-                    <Section title="Name and deploy">
+                    <Section title="Create your project">
                         <div className="flex flex-col gap-5 rounded-[14px] border bg-card p-5 shadow-card">
                             <div className="flex flex-col gap-1.5">
                                 <Label htmlFor="project-name">
@@ -1287,25 +1288,38 @@ export default function ImportRepository({
                                         errors.branch}
                                 </p>
                             )}
-                            <div className="flex flex-col-reverse gap-3 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
+                            <div className="flex flex-col gap-3 border-t pt-4">
                                 <p className="type-small text-muted-foreground">
-                                    {summary} deploy to production from{' '}
+                                    {summary} in production, tracking{' '}
                                     <span className="type-mono-small text-foreground">
                                         {branch}
                                     </span>
                                     .
                                 </p>
-                                <Button
-                                    onClick={deploy}
-                                    disabled={
-                                        deploying ||
-                                        selectedApps.length === 0 ||
-                                        name.trim() === ''
-                                    }
-                                >
-                                    {deploying && <Spinner />}
-                                    Deploy
-                                </Button>
+                                <div className="flex flex-wrap justify-end gap-2">
+                                    <Button
+                                        variant="outline"
+                                        onClick={() => deploy(false)}
+                                        disabled={
+                                            deploying ||
+                                            selectedApps.length === 0 ||
+                                            name.trim() === ''
+                                        }
+                                    >
+                                        Create without deploying
+                                    </Button>
+                                    <Button
+                                        onClick={() => deploy(true)}
+                                        disabled={
+                                            deploying ||
+                                            selectedApps.length === 0 ||
+                                            name.trim() === ''
+                                        }
+                                    >
+                                        {deploying && <Spinner />}
+                                        Create and deploy
+                                    </Button>
+                                </div>
                             </div>
                         </div>
                     </Section>

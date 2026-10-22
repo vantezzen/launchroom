@@ -33,7 +33,7 @@ The API is a second entry point to the same use cases: every endpoint calls the 
 1. Each API route declares its ability (`RequireTokenAbility:<ability>` middleware; `403 missing_ability` before the controller runs).
 2. `User::hasTeamPermission()` intersects the role's permissions with the current token's abilities, and `User::teamIdsQuery()` narrows to the token's team. Every existing policy and team-scoped binding therefore respects the token without knowing about it (authorization by construction, R7).
 
-Secrets are never part of a list response. `GET …/variables` returns secret rows with `value: null`; their values come from the single-value endpoint or `…/env` with `secrets=1`, both of which need `secrets:read` **and** the reveal permission, and both are audited. The dashboard's reveal asks for the password again; a token can't, so the equivalent safeguard is that `secrets:read` is opt-in, password-confirmed at creation and shown as "Read secret values" on the token. `data:transfer` follows the same rule for imports and downloads (decrypted data leaves the platform): opt-in, never a default, and owner/admin only through `backups.manage`.
+Secrets are never part of a list response. `GET …/variables` returns secret rows with `value: null`; their values come from the single-value endpoint or `…/env` with `secrets=1`, both of which need `secrets:read` **and** the reveal permission, and both are audited. `secrets:read` is opt-in and shown as "Read secret values" on the token. `data:transfer` follows the same rule for imports and downloads (decrypted data leaves the platform): opt-in, never a default, and owner/admin only through `backups.manage`.
 
 ### 1.3 Settings → API tokens
 
@@ -41,7 +41,7 @@ Secrets are never part of a list response. `GET …/variables` returns secret ro
 
 - **Use the CLI** card: one sentence, the install line (`curl … | sh`, §5.3) and `launchroom login`, both with copy; footer link to the API reference.
 - **Your tokens**: one row per token (name, CLI badge, team, "Last used 3 min ago from 203.0.113.7" / "Never used", "Expires in 28 days" with an amber ⚠ under 7 days, ability chips), an outline-red Revoke behind a `ConfirmPopover`. Empty state: one line; "Create token" in the card header.
-- **Create token** dialog (password confirmed inline, like reveal: the first submit answers 423 and the dialog asks for it): name, expiry as `ChoiceTiles` (7 days · 30 days · 90 days · 1 year), abilities as a checklist with one sentence each (`read` always on; the defaults `deploy`, `env:read`, `env:write` checked; abilities the role can't use disabled with "not with your role"), team = the current team (named in the dialog). After creating, the dialog turns into the **show once** view: the token in mono with copy, "You won't see it again", and an example `curl`. `POST /settings/api-tokens` answers the plaintext in its JSON body (`Cache-Control: no-store`), never through the session.
+- **Create token** dialog: name, expiry as `ChoiceTiles` (7 days · 30 days · 90 days · 1 year), abilities as a checklist with one sentence each (`read` always on; the defaults `deploy`, `env:read`, `env:write` checked; abilities the role can't use disabled with "not with your role"), team = the current team (named in the dialog). After creating, the dialog turns into the **show once** view: the token in mono with copy, "You won't see it again", and an example `curl`. `POST /settings/api-tokens` answers the plaintext in its JSON body (`Cache-Control: no-store`), never through the session.
 
 ## 2. REST API v1
 
@@ -106,13 +106,13 @@ The command reference (flags, output, exit codes, CI variables) is the [CLI refe
 
 ## 4. CLI sign-in (device flow)
 
-`launchroom login --no-browser --json` prints the pending code as the first stderr line (`{"event":"pending","userCode":…,"verificationUrlComplete":…,"expiresIn":600}`) for scripts. Approval needs a recently confirmed password (`RequireRecentPassword` on the page and on Approve). The CLI keeps polling on `428`, adds 2 s on `429`, exits 4 on `access_denied` and 6 on `expired_token`.
+`launchroom login --no-browser --json` prints the pending code as the first stderr line (`{"event":"pending","userCode":…,"verificationUrlComplete":…,"expiresIn":600}`) for scripts. Approval uses the current authenticated session and checks team permissions. The CLI keeps polling on `428`, adds 2 s on `429`, exits 4 on `access_denied` and 6 on `expired_token`.
 
 Modelled on OAuth 2.0 device authorization (RFC 8628), without OAuth:
 
 1. `POST /api/v1/cli/sessions {clientName, hostname, version}` → `{deviceCode, userCode, verificationUrl, verificationUrlComplete, expiresIn: 600, interval: 2}`. The device code is 256 bits (only its SHA-256 is stored); the user code is 8 characters from an unambiguous alphabet (`WDJB-MJHT`).
 2. The CLI prints the user code and opens `verificationUrlComplete` (`/cli/login?code=WDJB-MJHT`) in the browser.
-3. The dashboard (signed in, password recently confirmed) shows **"Sign in to the launchroom CLI?"** with the code (the user compares it with the terminal), the machine name, client, IP and time, the team (current team, switchable), the abilities (default `read`, `deploy`, `env:read`, `env:write`; `secrets:read` opt-in) and the expiry (default 90 days). **Approve** creates the token (`client = cli`) and keeps its plaintext encrypted (`APP_KEY`) on the request until it is picked up; **Deny** ends it.
+3. The dashboard (signed in) shows **"Sign in to the launchroom CLI?"** with the code (the user compares it with the terminal), the machine name, client, IP and time, the team (current team, switchable), the abilities (default `read`, `deploy`, `env:read`, `env:write`; `secrets:read` opt-in) and the expiry (default 90 days). **Approve** creates the token (`client = cli`) and keeps its plaintext encrypted (`APP_KEY`) on the request until it is picked up; **Deny** ends it.
 4. The CLI polls `POST /api/v1/cli/sessions/token {deviceCode}` every `interval` seconds: `428 authorization_pending`, `403 access_denied`, `410 expired_token`, or `200` with the token **once** (the ciphertext is wiped in the same transaction; a second poll is `410`).
 
 Requests expire after 10 minutes; expired rows are pruned daily. Starting is limited per IP; a user code is only shown to signed-in members and only approves into a team they belong to. A stolen device code is useless without the user approving that exact code.

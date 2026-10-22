@@ -16,7 +16,7 @@ use Illuminate\Support\Facades\DB;
 
 /**
  * Returns a variable's stored value. Secrets are audited (docs/06 §3.1:
- * reveal is its own permission, password-confirmed at the entry point).
+ * reveal is its own permission, authorized at the entry point).
  */
 final readonly class RevealSecret
 {

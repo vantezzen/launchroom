@@ -8,7 +8,7 @@ Decision **D48** ([README](README.md)). Builder resolution: [04](04-build-and-de
 
 | Level | Who | What |
 |---|---|---|
-| **Instance** (Settings → Dockerfile generation) | instance owners, recently confirmed password, audited | Provider (Anthropic's Claude API, the only one for now), API key, model (default `claude-opus-5-5`, e.g. `claude-sonnet-5` for lower cost), on/off. **Off by default.** |
+| **Instance** (Settings → Dockerfile generation) | instance owners, audited | Provider (Anthropic's Claude API, the only one for now), API key, model (default `claude-opus-5-5`, e.g. `claude-sonnet-5` for lower cost), on/off. **Off by default.** |
 | **Team** (same page, team card) | team owners (`TeamPolicy::update`, the ManageTeam permission), audited | `teams.settings.generateDockerfiles`. **Off by default.** A team only sees "Generate a Dockerfile" when both are on. |
 
 - The API key is envelope-encrypted (own data key wrapped by the KEK, context `ai_provider:anthropic`, associated data `ai_provider|anthropic`; rotated by `RotateKek`), `$hidden`, `#[SensitiveParameter]`, never in a Data object, log line or Inertia prop. The page shows only "Key ending in …a1b2", who set it and when. Replacing or removing it is audited (`ai_provider.updated`, never the key).

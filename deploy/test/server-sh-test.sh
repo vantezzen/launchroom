@@ -39,7 +39,8 @@ case "$1" in
 -w)
 	printf 'sysctl %s\n' "$*" >>"$STUB_LOG"
 	key="${2%%=*}"
-	printf '%s\n' "${2#*=}" >"$LR_TEST_ROOT/proc/sys/fs/inotify/${key#fs.inotify.}" ;;
+	mkdir -p "$LR_TEST_ROOT/proc/sys/$(dirname "$(printf %s "$key" | tr . /)")"
+	printf '%s\n' "${2#*=}" >"$LR_TEST_ROOT/proc/sys/$(printf %s "$key" | tr . /)" ;;
 *) exit 1 ;;
 esac
 EOF
@@ -84,9 +85,30 @@ cat >"$STUBS/apparmor_parser" <<'EOF'
 printf 'apparmor_parser %s\n' "$*" >>"$STUB_LOG"
 [ "${STUB_AA_FAIL:-}" != 1 ] || { printf 'apparmor_parser: syntax error\n' >&2; exit 1; }
 EOF
+# Swap stubs: record the call; fallocate/dd create the file (STUB_FALLOCATE_FAIL=1
+# makes fallocate fail), df reports STUB_DF_KB free (default 50 GB).
+for tool in mkswap swapon; do
+	# shellcheck disable=SC2016 # the stub expands $* and $STUB_LOG itself
+	printf '#!/bin/sh\nprintf "%s %%s\\n" "$*" >>"$STUB_LOG"\n' "$tool" >"$STUBS/$tool"
+done
+cat >"$STUBS/fallocate" <<'EOF'
+#!/bin/sh
+printf 'fallocate %s\n' "$*" >>"$STUB_LOG"
+[ "${STUB_FALLOCATE_FAIL:-}" != 1 ] || exit 1
+printf 'swap\n' >"$3"
+EOF
+cat >"$STUBS/dd" <<'EOF'
+#!/bin/sh
+printf 'dd %s\n' "$*" >>"$STUB_LOG"
+for a; do case "$a" in of=*) printf 'swap\n' >"${a#of=}" ;; esac; done
+EOF
+cat >"$STUBS/df" <<'EOF'
+#!/bin/sh
+printf 'Filesystem 1024-blocks Used Available Capacity Mounted on\n/dev/vda1 60000000 1000 %s 1%% /\n' "${STUB_DF_KB:-50000000}"
+EOF
 chmod +x "$STUBS"/*
 mkdir -p "$WORK/nodocker-linux"
-for tool in uname curl sysctl id apparmor_parser; do cp "$STUBS/$tool" "$WORK/nodocker-linux/"; done
+for tool in uname curl sysctl id apparmor_parser mkswap swapon fallocate dd df; do cp "$STUBS/$tool" "$WORK/nodocker-linux/"; done
 
 # A minimal unpacked release bundle (LR_BUNDLE_DIR skips the download).
 BUNDLE="$WORK/bundle"
@@ -101,13 +123,18 @@ printf 'name: launchroomd\n' >"$BUNDLE/daemon/compose.yml"
 #   STUB_NO_DOCKER  1 = docker is missing until get.docker.com "installs" it
 #   STUB_USERNS     kernel.apparmor_restrict_unprivileged_userns (unset: no such file)
 #   STUB_APPARMOR   /sys/module/apparmor/parameters/enabled (default Y)
+#   STUB_MEM_KB     MemTotal in /proc/meminfo (unset: no meminfo, the swap step skips)
+#   STUB_SWAP_KB    SwapTotal (default 0)
 #   STUB_VERIFIED   LR_BUNDLE_VERIFIED (default 1, as in a self-update; empty = a
 #                   fresh install from the dashboard's command)
 run() {
 	name="$1"
 	shift
 	export HOME="$WORK/$name/home" STUB_LOG="$WORK/$name/docker.log"
-	mkdir -p "$HOME" "$WORK/$name/root/proc/sys/fs/inotify" "$WORK/$name/late"
+	mkdir -p "$HOME" "$WORK/$name/root/proc/sys/fs/inotify" "$WORK/$name/late" "$WORK/$name/root/etc"
+	if [ -n "${STUB_MEM_KB:-}" ]; then
+		printf 'MemTotal:       %s kB\nSwapTotal:      %s kB\n' "$STUB_MEM_KB" "${STUB_SWAP_KB:-0}" >"$WORK/$name/root/proc/meminfo"
+	fi
 	printf '%s\n' "${STUB_WATCHES:-524288}" >"$WORK/$name/root/proc/sys/fs/inotify/max_user_watches"
 	printf '%s\n' "${STUB_INSTANCES:-512}" >"$WORK/$name/root/proc/sys/fs/inotify/max_user_instances"
 	mkdir -p "$WORK/$name/root/proc/sys/kernel" "$WORK/$name/root/sys/module/apparmor/parameters"
@@ -409,6 +436,70 @@ ok aa-update
 [ ! -e "$WORK/aa-update/root$AA" ] || fail "aa-update wrote $AA"
 lacks "$WORK/aa-update.out" 'user namespaces'
 has "$WORK/aa-yes-y.out" "the AppArmor profile $AA stays after an uninstall"
+
+# --- Swap on small hosts (D59) -----------------------------------------------
+SW=/swapfile-launchroom
+SW_Q="This server has 1.9 GB of memory and no swap, so builds can run out of memory. Create a 2 GB swap file ($SW)? \[Y/n\]"
+swap_made() {
+	c="$WORK/$1"
+	[ -f "$c/root$SW" ] || fail "$1: no $SW"
+	[ "$(grep -c "^$SW none swap sw 0 0\$" "$c/root/etc/fstab")" = 1 ] || fail "$1: fstab line missing or twice"
+	has "$c/root/etc/sysctl.d/60-launchroom-swap.conf" '^vm.swappiness = 10$'
+	has "$c/docker.log" "^swapon $c/root$SW\$"
+	has "$WORK/$1.out" "created a 2 GB swap file ($SW, vm.swappiness=10)"
+}
+
+STUB_VERIFIED='' STUB_UNAME=Linux STUB_INFO='Ubuntu 24.04.2 LTS|vps-1' STUB_MEM_KB=2014000 STUB_TTY=y run swap-yes
+ok swap-yes
+has "$WORK/swap-yes/tty" "$SW_Q"
+has "$WORK/swap-yes/docker.log" "^mkswap $WORK/swap-yes/root$SW\$"
+swap_made swap-yes
+has "$WORK/swap-yes.out" "the swap file $SW stays after an uninstall"
+
+STUB_VERIFIED='' STUB_UNAME=Linux STUB_INFO='Ubuntu 24.04.2 LTS|vps-1' STUB_MEM_KB=2014000 run swap-flag --create-swap
+ok swap-flag
+swap_made swap-flag
+# A re-run keeps one fstab line and reuses the file.
+STUB_VERIFIED='' STUB_UNAME=Linux STUB_INFO='Ubuntu 24.04.2 LTS|vps-1' STUB_MEM_KB=2014000 LR_CREATE_SWAP=1 run swap-flag
+ok swap-flag
+swap_made swap-flag
+[ "$(grep -c '^fallocate' "$WORK/swap-flag/docker.log")" = 1 ] || fail "swap-flag: the re-run created the file again"
+
+STUB_VERIFIED='' STUB_UNAME=Linux STUB_INFO='Ubuntu 24.04.2 LTS|vps-1' STUB_MEM_KB=2014000 STUB_TTY=n run swap-no
+ok swap-no
+[ ! -e "$WORK/swap-no/root$SW" ] || fail "swap-no created $SW"
+has "$WORK/swap-no.out" "^    fallocate -l 2G $SW\$"
+
+STUB_VERIFIED='' STUB_UNAME=Linux STUB_INFO='Ubuntu 24.04.2 LTS|vps-1' STUB_MEM_KB=2014000 run swap-no-tty
+ok swap-no-tty
+[ ! -e "$WORK/swap-no-tty/root$SW" ] || fail "swap-no-tty created $SW"
+has "$WORK/swap-no-tty.out" 'run this again with --create-swap'
+
+STUB_VERIFIED='' STUB_UNAME=Linux STUB_INFO='Ubuntu 24.04.2 LTS|vps-1' STUB_MEM_KB=2014000 STUB_UID=1000 run swap-user --create-swap
+[ ! -e "$WORK/swap-user/root$SW" ] || fail "swap-user created $SW"
+has "$WORK/swap-user.out" "^    sudo mkswap $SW\$"
+
+STUB_VERIFIED='' STUB_UNAME=Linux STUB_INFO='Ubuntu 24.04.2 LTS|vps-1' STUB_MEM_KB=2014000 STUB_DF_KB=1000 run swap-disk --create-swap
+ok swap-disk
+[ ! -e "$WORK/swap-disk/root$SW" ] || fail "swap-disk created $SW"
+has "$WORK/swap-disk.out" 'not enough free disk space'
+
+STUB_VERIFIED='' STUB_UNAME=Linux STUB_INFO='Ubuntu 24.04.2 LTS|vps-1' STUB_MEM_KB=16000000 STUB_TTY=y run swap-big
+ok swap-big
+lacks "$WORK/swap-big.out" "memory and no swap"
+
+STUB_VERIFIED='' STUB_UNAME=Linux STUB_INFO='Ubuntu 24.04.2 LTS|vps-1' STUB_MEM_KB=2014000 STUB_SWAP_KB=2097148 STUB_TTY=y run swap-has
+ok swap-has
+lacks "$WORK/swap-has.out" "memory and no swap"
+
+# An update and a Mac never check.
+STUB_UNAME=Linux STUB_INFO='Ubuntu 24.04.2 LTS|vps-1' STUB_MEM_KB=2014000 STUB_TTY=y run swap-update --create-swap
+ok swap-update
+[ ! -e "$WORK/swap-update/root$SW" ] || fail "swap-update created $SW"
+STUB_VERIFIED='' STUB_MEM_KB=2014000 STUB_TTY=y run mac-swap --create-swap
+ok mac-swap
+lacks "$WORK/mac-swap.out" "$SW"
+lacks "$WORK/mac-swap.out" "memory and no swap"
 
 # A Mac never checks (AppArmor belongs to the engine's VM).
 STUB_VERIFIED='' STUB_USERNS=1 STUB_TTY=y run mac-aa

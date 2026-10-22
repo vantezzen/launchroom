@@ -6,6 +6,8 @@ Product rules (maintainer taste): apps, not compose projects; a guided visual fl
 
 ## 1. The common target: `ProjectBlueprint`
 
+New-project flows offer **Create without deploying** alongside immediate deployment. The input's `deploy` defaults to true; false creates intent and redirects to the canvas so variables can be configured before the first Deploy.
+
 Every source produces the same pure Data object, `App\Data\Blueprints\ProjectBlueprint`, and one Action applies it (`App\Actions\Blueprints\ApplyBlueprint`). The Compose translator and the template compiler both target it; nothing else creates services in bulk. `launchroom.json` ([18](18-config-as-code.md)) is applied to the intent tables through its own path.
 
 ```
@@ -33,7 +35,7 @@ BlueprintService {
 
 - **Validation** (`App\Support\Blueprints\BlueprintValidator`, pure): key grammar and uniqueness, kinds vs. sources (image xor build xor database), parents are apps of the same blueprint, connections point at existing keys (databases and web services only), references `${{key.VAR}}` point at blueprint keys, commands are argv (≤ 256 items of ≤ 4 KiB), mount paths pass the volume rules (`AddServiceVolume`: clean, outside `/proc`, `/sys`, `/dev`, never the Docker socket), capabilities ⊆ the allow-list, databases have one replica. A blueprint that fails validation is never applied (the translator only emits valid blueprints; the test suite proves it with fuzzing, §5).
 - **Applying** (`ApplyBlueprint`, one transaction): services in dependency order (databases, then apps/images, then workers) through `AddService`/`CreateService` (so slugs, generated domains, database credentials and plan previews behave exactly as when added by hand), then settings (`UpdateServiceSettings`), volumes (`AddServiceVolume`), connections (`CreateConnection`), variables (`CreateVariable`, generators evaluated once per environment, generated values typed `secret`), custom domains (`AddDomain`), private image services lose their generated domain. When a key is taken in an existing environment (catalog on the canvas) the service gets the next free slug and every `${{key.…}}` reference is rewritten. Positions are laid out as Public → App → Data columns.
-- **Where it lands**: a new project deploys its production environment right away (`DeployEnvironment`, trigger config, "Imported from compose.yml" / "Created from the Umami template"), like a repository import. Adding from the catalog on a canvas is **staged** like every other addition (docs/06 §4): it shows as "3 new services · Deploy".
+- **Where it lands**: a new project defaults to deploying its production environment right away (`DeployEnvironment`, trigger config, "Imported from compose.yml" / "Created from the Umami template"), like a repository import; **Create without deploying** skips that first deployment. Adding from the catalog on a canvas is **staged** like every other addition (docs/06 §4): it shows as "3 new services · Deploy".
 
 ## 2. Compose import
 

@@ -12,8 +12,8 @@ use App\Services\Backups\FinalBackups;
 use Illuminate\Support\Facades\DB;
 
 /**
- * "Delete without final backup" (docs/14 §9.13): an owner/admin with a
- * recent password overrides a blocked (or still running) final backup. It
+ * "Delete without final backup" (docs/14 §9.13): an authorized owner/admin
+ * overrides a blocked (or still running) final backup. It
  * is audited (`backup.final_backup_skipped`); environments and projects are
  * deleted right away, a staged service removal goes with the next Deploy.
  * Its volumes are deleted after the retention period like any other.

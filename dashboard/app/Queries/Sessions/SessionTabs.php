@@ -39,7 +39,7 @@ final readonly class SessionTabs
         private ProjectKeyring $keyring,
     ) {}
 
-    public function console(ServiceInstance $instance, User $user, bool $passwordRequired): ConsoleTabData
+    public function console(ServiceInstance $instance, User $user): ConsoleTabData
     {
         $replicas = $this->targets->replicas($instance, InteractiveSessionKind::Console);
         $instance->loadMissing('environment.project.team');
@@ -50,14 +50,13 @@ final readonly class SessionTabs
             replicas: array_values($replicas->map(static fn (Placement $placement): SessionReplicaData => SessionReplicaData::fromPlacement($placement))->all()),
             shells: ['', ...OpenSessionData::SHELLS],
             record: $instance->environment->project->team->settings->recordConsoleSessions,
-            passwordRequired: $passwordRequired,
             idleMinutes: config()->integer('launchroom.sessions.idle_minutes'),
             maxMinutes: config()->integer('launchroom.sessions.max_minutes'),
             sessions: $this->recent($instance, $user, InteractiveSessionKind::Console),
         );
     }
 
-    public function data(ServiceInstance $instance, User $user, bool $passwordRequired): ?DataTabData
+    public function data(ServiceInstance $instance, User $user): ?DataTabData
     {
         $source = $this->targets->database($instance);
 
@@ -80,7 +79,6 @@ final readonly class SessionTabs
             engineLabel: $source->engine->label(),
             dialect: $source->engine->dataDialect(),
             replica: $running ? SessionReplicaData::fromPlacement($placement) : null,
-            passwordRequired: $passwordRequired,
             idleMinutes: config()->integer('launchroom.sessions.idle_minutes'),
             history: $this->history($instance, $user),
         );

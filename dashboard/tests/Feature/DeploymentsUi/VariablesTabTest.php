@@ -92,7 +92,7 @@ test('variables of another project or team are not found', function (): void {
         ->assertNotFound();
 });
 
-test('reveal: permission, password confirmation and audit', function (): void {
+test('reveal: permission and audit without an extra password', function (): void {
     $world = DeploymentUi::make();
     $secret = $world->variable('API_TOKEN', 'tok_super_secret_value', VariableType::Secret);
     $config = $world->variable('APP_NAME', 'Shop');
@@ -101,17 +101,14 @@ test('reveal: permission, password confirmation and audit', function (): void {
     $this->actingAs($world->member(TeamRole::Developer))->postJson(route('variables.reveal', $args))->assertForbidden();
 
     $admin = $world->member(TeamRole::Admin);
-    $this->actingAs($admin)->postJson(route('variables.reveal', $args))->assertStatus(423)->assertJsonPath('requiresPassword', true);
-    $this->actingAs($admin)->postJson(route('variables.reveal', $args), ['password' => 'wrong'])->assertUnprocessable();
-
     expect(AuditEvent::query()->where('action', AuditAction::SecretRevealed->value)->count())->toBe(0);
 
-    $this->actingAs($admin)->postJson(route('variables.reveal', $args), ['password' => 'password'])
+    $this->actingAs($admin)->postJson(route('variables.reveal', $args))
         ->assertOk()
         ->assertJsonPath('value', 'tok_super_secret_value')
         ->assertHeader('Cache-Control', 'no-store, private');
 
-    // Recently confirmed: no password needed for the next one.
+    // Every reveal remains audited.
     $this->actingAs($admin)->postJson(route('variables.reveal', $args))->assertOk();
 
     expect(AuditEvent::query()->where('action', AuditAction::SecretRevealed->value)->count())->toBe(2);

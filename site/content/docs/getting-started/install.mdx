@@ -14,10 +14,11 @@ Every install follows two rules:
 - **It's Docker containers and a folder.** Everything launchroom needs lives in one folder, `./launchroom` by default.
 - **Nothing is written outside the folder without asking.** The installer creates no systemd units and never edits
   Docker's `daemon.json`. Outside the folder, launchroom only creates Docker objects (containers, images, volumes,
-  networks) labelled `launchroom.managed=true`. There are three exceptions, and the installer asks before each:
+  networks) labelled `launchroom.managed=true`. There are four exceptions, and the installer asks before each:
   - installing Docker, when it's missing
   - raising the kernel's inotify limits in `/etc/sysctl.d/60-launchroom-inotify.conf`, when they are too low
   - loading the AppArmor profile `/etc/apparmor.d/launchroom-buildkit`, on Ubuntu 23.10 and later, so builds can run
+  - creating a 2 GB swap file on servers with less than 4 GB of RAM and no swap
 
 ## Requirements
 
@@ -58,7 +59,7 @@ launchroom: This server's inotify limits are low (max_user_watches 8192, max_use
 ```
 
 Enter or `y` writes `/etc/sysctl.d/60-launchroom-inotify.conf` and applies the new values right away with `sysctl -w`.
-The file is the only one launchroom writes outside its folder. It contains only the limits that were lower than the new
+The file contains only the limits that were lower than the new
 values, so a higher value you set yourself stays as it is. `n` keeps the limits and prints the commands to raise them
 later.
 
@@ -71,6 +72,14 @@ To undo it, delete the file and reboot. The file names the earlier values, if yo
 sudo rm /etc/sysctl.d/60-launchroom-inotify.conf
 sudo reboot
 ```
+
+### Swap on small servers
+
+On Linux servers with less than 4 GB of RAM and no swap, the installer offers a 2 GB `/swapfile-launchroom`. Swap gives memory-intensive builds room to slow down while build limits protect your dashboard and apps. It needs at least 3 GB free on the root filesystem.
+
+Accepting creates the file with mode 0600, adds its entry to `/etc/fstab`, and sets `vm.swappiness=10` in `/etc/sysctl.d/60-launchroom-swap.conf`. Declining prints the commands for later. Without a terminal, pass `--create-swap` or set `LR_CREATE_SWAP=1`; without root, the installer prints commands using `sudo`. Existing swap stays unchanged, and updates never create swap automatically.
+
+Re-run the installer to add swap to an existing server. Uninstall keeps it; to remove it, run `sudo swapoff /swapfile-launchroom`, delete the file and its `/etc/fstab` entry, and remove `/etc/sysctl.d/60-launchroom-swap.conf`.
 
 ### User namespaces for builds
 

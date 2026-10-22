@@ -83,15 +83,14 @@ test('an online or control-plane server is not replaced from the wizard', functi
     $this->actingAs($this->owner)->get(route('servers.replace', $this->new))
         ->assertInertia(fn ($page) => $page->where('blockedReason', fn (string $reason): bool => str_contains($reason, 'is online')));
 
-    $this->actingAs($this->owner)->withSession(passwordConfirmed())
+    $this->actingAs($this->owner)
         ->post(route('servers.replace.store', $this->new), ['replacement' => $this->old->public_id])
         ->assertSessionHasErrors('replacement');
 });
 
 test('replacing moves roles, labels and data, revokes the dead server and restores the database before re-placing the rest', function (): void {
     $url = route('servers.replace.store', $this->old);
-    $this->actingAs($this->owner)->post($url, ['replacement' => $this->new->public_id])->assertRedirect(route('password.confirm'));
-    $this->actingAs($this->owner)->withSession(passwordConfirmed())
+    $this->actingAs($this->owner)
         ->post($url, ['replacement' => $this->new->public_id, 'restore' => [$this->postgres->public_id]])
         ->assertRedirect(route('servers.replace', $this->old));
 
@@ -143,7 +142,7 @@ test('replacing moves roles, labels and data, revokes the dead server and restor
 });
 
 test('a replaced server may only fetch its empty decommission state', function (): void {
-    $this->actingAs($this->owner)->withSession(passwordConfirmed())
+    $this->actingAs($this->owner)
         ->post(route('servers.replace.store', $this->old), ['replacement' => $this->new->public_id, 'restore' => []])
         ->assertRedirect();
 
@@ -171,7 +170,7 @@ test('the decommission state turns the mesh client off and carries no key (revie
     InstanceSettings::current()->forceFill(['mesh_enabled_at' => now(), 'mesh_mode' => MeshMode::OwnTailscale, 'mesh_login_server' => 'https://login.tailscale.com'])->save();
     resolve(MeshSecrets::class)->put(MeshSecrets::instanceScope(), MeshCredentialPurpose::TailscaleAuthKey, 'tskey-auth-SECRET');
 
-    $this->actingAs($this->owner)->withSession(passwordConfirmed())
+    $this->actingAs($this->owner)
         ->post(route('servers.replace.store', $this->old), ['replacement' => $this->new->public_id, 'restore' => []])
         ->assertRedirect();
 
@@ -183,7 +182,7 @@ test('the decommission state turns the mesh client off and carries no key (revie
 });
 
 test('services without a backup start empty and are reported so', function (): void {
-    $this->actingAs($this->owner)->withSession(passwordConfirmed())
+    $this->actingAs($this->owner)
         ->post(route('servers.replace.store', $this->old), ['replacement' => $this->new->public_id, 'restore' => []])
         ->assertRedirect();
 

@@ -596,6 +596,19 @@
             }
           ]
         },
+        "buildCpuCores": {
+          "oneOf": [
+            {
+              "type": "number",
+              "maximum": 4096,
+              "minimum": 0,
+              "description": "BuildCPUCores is the managed BuildKit container's CPU, including builds."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "memUsedMb": {
           "oneOf": [
             {

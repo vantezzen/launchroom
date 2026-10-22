@@ -64,13 +64,10 @@ test('only instance owners see and change ingress settings', function (): void {
             ->where('ingress.hasToken', false));
 });
 
-test('setting the provider needs a recent password, stores the token encrypted and checks it', function (): void {
+test('setting the provider stores the token encrypted and checks it without another password', function (): void {
     cloudflareOk();
 
-    $this->actingAs($this->owner)->put(route('servers.ingress.dns.update'), ['provider' => 'cloudflare', 'token' => 'cf-SECRET'])->assertRedirect();
-    expect(InstanceSettings::current()->dns_provider)->toBeNull();
-
-    $this->actingAs($this->owner)->withSession(passwordConfirmed())
+    $this->actingAs($this->owner)
         ->put(route('servers.ingress.dns.update'), ['provider' => 'cloudflare', 'token' => 'cf-SECRET'])
         ->assertRedirect()
         ->assertSessionMissing('_old_input');

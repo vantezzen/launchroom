@@ -124,23 +124,27 @@ func TestHostOSOf(t *testing.T) {
 }
 
 func TestBuildsCapability(t *testing.T) {
-	if c := buildsCapability(false, buildkitd.UsernsBlocked, false); c != nil {
+	if c := buildsCapability(false, buildkitd.UsernsBlocked, false, buildkitd.Resources{}); c != nil {
 		t.Fatalf("not a build server: %+v", c)
 	}
-	if c := buildsCapability(true, buildkitd.UsernsOpen, false); c.Name != state.CapBuilds || c.State != state.CapabilityFull || c.Message != "" {
+	if c := buildsCapability(true, buildkitd.UsernsOpen, false, buildkitd.Resources{}); c.Name != state.CapBuilds || c.State != state.CapabilityFull || c.Message != "" {
 		t.Fatalf("open: %+v", c)
 	}
-	if c := buildsCapability(true, buildkitd.UsernsProfile, true); c.State != state.CapabilityFull || !strings.Contains(c.Message, "launchroom-buildkit") {
+	if c := buildsCapability(true, buildkitd.UsernsProfile, true, buildkitd.Resources{}); c.State != state.CapabilityFull || !strings.Contains(c.Message, "launchroom-buildkit") {
 		t.Fatalf("profile: %+v", c)
 	}
-	c := buildsCapability(true, buildkitd.UsernsBlocked, false)
+	c := buildsCapability(true, buildkitd.UsernsBlocked, false, buildkitd.Resources{})
 	if c.State != state.CapabilityUnavailable || !strings.Contains(c.Message, "apparmor_parser -r -W /etc/apparmor.d/launchroom-buildkit") || len(c.Message) > 512 {
 		t.Fatalf("blocked: %+v", c)
 	}
 	// Restricted without the profile, but BuildKit answers (the owner
 	// allowed rootlesskit another way): builds work.
-	if c := buildsCapability(true, buildkitd.UsernsBlocked, true); c.State != state.CapabilityFull {
+	if c := buildsCapability(true, buildkitd.UsernsBlocked, true, buildkitd.Resources{}); c.State != state.CapabilityFull {
 		t.Fatalf("blocked but answering: %+v", c)
+	}
+	resources := buildkitd.PlanResources(buildkitd.HostFacts{CPUs: 1, MemoryMB: 2048}, buildkitd.Overrides{})
+	if c := buildsCapability(true, buildkitd.UsernsOpen, true, resources); c.State != state.CapabilityDegraded || !strings.Contains(c.Message, "swap") || len(c.Message) > 512 {
+		t.Fatalf("small host without swap: %+v", c)
 	}
 	if err := state.CapBuilds.Validate(); err != nil {
 		t.Fatal(err)

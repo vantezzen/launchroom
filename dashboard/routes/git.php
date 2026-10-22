@@ -12,7 +12,6 @@ use App\Http\Controllers\Git\GitOAuthController;
 use App\Http\Controllers\Git\GitRepositoryController;
 use App\Http\Controllers\Git\GitServerController;
 use App\Http\Controllers\Git\GitSettingsController;
-use App\Http\Middleware\RequireRecentPassword;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -24,9 +23,9 @@ use Illuminate\Support\Facades\Route;
 Route::middleware(['web', 'auth', 'verified'])->group(function (): void {
     Route::get('settings/git', [GitSettingsController::class, 'edit'])->name('git.edit');
 
-    // Manifest flow: start (password-confirmed, docs/09 R10) → GitHub → callback.
+    // Manifest flow: start → GitHub → callback.
     Route::post('settings/git/github/manifest', [GitHubAppManifestController::class, 'store'])
-        ->middleware(RequireRecentPassword::class)
+
         ->name('git.github.manifest.store');
     Route::get('settings/git/github/callback', [GitHubAppManifestController::class, 'callback'])
         ->middleware('throttle:20,1')
@@ -36,7 +35,7 @@ Route::middleware(['web', 'auth', 'verified'])->group(function (): void {
         ->middleware('throttle:20,1')
         ->name('git.github.setup');
     Route::delete('settings/git/github/{githubApp}', [GitHubAppController::class, 'destroy'])
-        ->middleware(RequireRecentPassword::class)
+
         ->name('git.github.destroy');
     Route::post('settings/git/installations/{githubInstallation}/refresh', [GitHubInstallationController::class, 'refresh'])
         ->middleware('throttle:10,1')
@@ -44,16 +43,16 @@ Route::middleware(['web', 'auth', 'verified'])->group(function (): void {
 
     // GitLab / Gitea / Forgejo / any git server (docs/19 §4).
     Route::post('settings/git/connections', [GitConnectionController::class, 'store'])
-        ->middleware([RequireRecentPassword::class, 'throttle:20,1'])
+        ->middleware('throttle:20,1')
         ->name('git.connections.store');
     Route::delete('settings/git/connections/{gitConnection}', [GitConnectionController::class, 'destroy'])
-        ->middleware(RequireRecentPassword::class)
+
         ->name('git.connections.destroy');
     Route::get('settings/git/oauth/callback', GitOAuthController::class)
         ->middleware('throttle:20,1')
         ->name('git.oauth.callback');
     Route::post('settings/git/servers', [GitServerController::class, 'store'])
-        ->middleware([RequireRecentPassword::class, 'throttle:20,1'])
+        ->middleware('throttle:20,1')
         ->name('git.servers.store');
     Route::post('settings/git/servers/{gitConnection}/confirm', [GitServerController::class, 'confirm'])
         ->middleware('throttle:20,1')

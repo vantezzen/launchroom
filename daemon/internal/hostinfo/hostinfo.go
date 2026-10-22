@@ -102,11 +102,30 @@ func (c *Collector) read(rel string) ([]byte, bool) {
 
 // memory parses MemTotal and MemAvailable (kB) from /proc/meminfo.
 func (c *Collector) memory() *state.MemoryUsage {
-	data, ok := c.read("meminfo")
+	m, ok := c.memInfo()
 	if !ok {
 		return nil
 	}
-	var total, avail int64 = -1, -1
+	return &state.MemoryUsage{TotalMB: m.TotalMB, AvailableMB: m.AvailableMB}
+}
+
+// MemInfo is the host's memory and swap from /proc/meminfo (MB).
+type MemInfo struct {
+	TotalMB, AvailableMB, SwapTotalMB, SwapFreeMB int64
+}
+
+// ReadMemInfo reads <procRoot>/meminfo (ok = MemTotal and MemAvailable
+// were there). /proc/meminfo is the host's inside launchroomd's container.
+func ReadMemInfo(procRoot string) (MemInfo, bool) {
+	return (&Collector{o: Options{ProcRoot: procRoot}}).memInfo()
+}
+
+func (c *Collector) memInfo() (MemInfo, bool) {
+	data, ok := c.read("meminfo")
+	if !ok {
+		return MemInfo{}, false
+	}
+	m := MemInfo{TotalMB: -1, AvailableMB: -1}
 	sc := bufio.NewScanner(bytes.NewReader(data))
 	for sc.Scan() {
 		f := strings.Fields(sc.Text())
@@ -119,15 +138,21 @@ func (c *Collector) memory() *state.MemoryUsage {
 		}
 		switch f[0] {
 		case "MemTotal:":
-			total = v >> 10
+			m.TotalMB = v >> 10
 		case "MemAvailable:":
-			avail = v >> 10
+			m.AvailableMB = v >> 10
+		case "SwapTotal:":
+			m.SwapTotalMB = v >> 10
+		case "SwapFree:":
+			m.SwapFreeMB = v >> 10
 		}
 	}
-	if total < 0 || avail < 0 {
-		return nil
+	if m.TotalMB < 0 || m.AvailableMB < 0 {
+		return MemInfo{}, false
 	}
-	return &state.MemoryUsage{TotalMB: total, AvailableMB: min(avail, total)}
+	m.AvailableMB = min(m.AvailableMB, m.TotalMB)
+	m.SwapFreeMB = min(m.SwapFreeMB, m.SwapTotalMB)
+	return m, true
 }
 
 func (c *Collector) load() *state.LoadAverage {

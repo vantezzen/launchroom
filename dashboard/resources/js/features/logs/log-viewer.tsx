@@ -1,103 +1,44 @@
 import { defaultRangeExtractor, useVirtualizer } from '@tanstack/react-virtual';
 import type { Range } from '@tanstack/react-virtual';
 import {
+    Check,
     ChevronDown,
     ChevronRight,
     ChevronUp,
-    Circle,
-    CircleCheck,
-    CircleDashed,
-    LoaderCircle,
+    Copy,
+    Download,
     Search,
-    X,
 } from 'lucide-react';
-import type { ReactNode } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { StepChip } from '@/components/steps/step-list';
+import { StepIcon, STEP_STATUS_LABEL } from '@/components/steps/step-icon';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Toggle } from '@/components/ui/toggle';
 import { cn } from '@/lib/utils';
-import { stripAnsi } from './ansi';
-import { JumpToLatest, useFollowScroll } from './use-follow-scroll';
 import { AnsiText } from './ansi-text';
 import type { LogSection } from './sections';
+import { SECTION_LABELS } from './sections';
+import type { LogLine, StepRow, TimelineStep } from './step-log';
 import {
-    firstErrorLine,
-    isSection,
-    SECTION_LABELS,
-    SECTION_ORDER,
-} from './sections';
+    buildRows,
+    expandedAfterChange,
+    failedStepErrors,
+    findMatches,
+    groupBySection,
+    initialExpanded,
+    isExpandable,
+    logText,
+    normalizeLine,
+    sectionOf,
+    withLoggedSteps,
+} from './step-log';
+import { JumpToLatest, useFollowScroll } from './use-follow-scroll';
 
-type LogLine = App.Data.Deployments.LogLineData;
-
-export type TimelineStepStatus =
-    | 'pending'
-    | 'running'
-    | 'succeeded'
-    | 'failed'
-    | 'skipped';
-
-export type TimelineStep = {
-    section: LogSection;
-    status: TimelineStepStatus;
-    duration: string | null;
-    message: string | null;
-};
-
-type Row =
-    | { type: 'step'; step: TimelineStep; count: number; expanded: boolean }
-    | { type: 'substep'; name: string; section: LogSection }
-    | { type: 'line'; line: LogLine }
-    | { type: 'empty'; section: LogSection; text: string }
-    | { type: 'more' };
+export type { TimelineStep } from './step-log';
 
 const ROW_HEIGHT = 20;
-const STEP_HEIGHT = 36;
-
-function stepIcon(status: TimelineStepStatus): ReactNode {
-    switch (status) {
-        case 'running':
-            return (
-                <LoaderCircle
-                    aria-hidden="true"
-                    className="size-3.5 text-status-progress motion-safe:animate-spin"
-                />
-            );
-        case 'succeeded':
-            return (
-                <CircleCheck
-                    aria-hidden="true"
-                    className="size-3.5 text-status-success"
-                />
-            );
-        case 'failed':
-            return (
-                <X aria-hidden="true" className="size-3.5 text-status-error" />
-            );
-        case 'skipped':
-            return (
-                <CircleDashed
-                    aria-hidden="true"
-                    className="size-3.5 text-status-idle"
-                />
-            );
-        default:
-            return (
-                <Circle
-                    aria-hidden="true"
-                    className="size-3.5 text-status-idle"
-                />
-            );
-    }
-}
-
-const statusLabels: Record<TimelineStepStatus, string> = {
-    pending: 'Pending',
-    running: 'Running',
-    succeeded: 'Done',
-    failed: 'Failed',
-    skipped: 'Skipped',
-};
+const STEP_HEIGHT = 40;
 
 function time(iso: string): string {
     const date = new Date(iso);
@@ -110,20 +51,25 @@ function time(iso: string): string {
 }
 
 /**
- * Deployment step timeline with its logs (docs/08 §3.5, design-system §6):
- * one virtualized list of step headers (sticky, collapsible) and log lines
- * (mono-small, line numbers with `#L42` anchors, ANSI toned to the palette,
- * rendered as text). Search (`/` to focus), wrap, timestamps, follow and
- * jump-to-bottom. The failing step opens on its first error line.
+ * The deployment's Steps (docs/08 §3.5, design-system §6): one virtualized
+ * list of step headers (sticky, collapsible: status icon and word, error
+ * count, lines, duration) and their log lines (mono-small, line numbers
+ * with `#L42` anchors, ANSI toned to the palette, rendered as text).
+ * The running step is open and followed; the failed step opens on its first
+ * error with every error line marked. Search across all steps (`/`, Enter
+ * / Shift+Enter, "Only matches"), expand all, wrap, timestamps, follow,
+ * copy and download.
  */
 export function LogViewer({
     steps,
-    lines,
+    lines: rawLines,
     hasMore,
     loadingMore,
     onLoadMore,
+    onLoadAll,
     live,
     following = false,
+    fileName = 'deployment.log',
     className,
 }: {
     steps: TimelineStep[];
@@ -131,9 +77,12 @@ export function LogViewer({
     hasMore: boolean;
     loadingMore: boolean;
     onLoadMore: () => void;
+    /** Every line, loading pages not fetched yet (copy, download). */
+    onLoadAll?: () => Promise<LogLine[]>;
     live: boolean;
     /** Start in follow mode (the deployment is still in progress). */
     following?: boolean;
+    fileName?: string;
     className?: string;
 }) {
     const scrollRef = useRef<HTMLDivElement>(null);
@@ -141,172 +90,96 @@ export function LogViewer({
     const [wrap, setWrap] = useState(false);
     const [timestamps, setTimestamps] = useState(false);
     const [query, setQuery] = useState('');
+    const [onlyMatches, setOnlyMatches] = useState(false);
     // -1: matches highlighted, none selected yet (Enter jumps to the first).
     const [matchIndex, setMatchIndex] = useState(-1);
     const [selected, setSelected] = useState<number | null>(null);
+    const [expandAll, setExpandAll] = useState(false);
+    const [copied, setCopied] = useState(false);
+    const [announcement, setAnnouncement] = useState('');
+    const [loadingAll, setLoadingAll] = useState(false);
+    const [loadError, setLoadError] = useState(false);
 
-    const plain = useMemo(() => {
-        const cache = new Map<number, string>();
-
-        return (line: LogLine): string => {
-            let text = cache.get(line.number);
-
-            if (text === undefined) {
-                text = stripAnsi(line.text);
-                cache.set(line.number, text);
-            }
-
-            return text;
-        };
-    }, []);
-
-    const bySection = useMemo(() => {
-        const map = new Map<LogSection, LogLine[]>();
-
-        for (const line of lines) {
-            const section: LogSection = isSection(line.section)
-                ? line.section
-                : 'rollout';
-            const list = map.get(section) ?? [];
-            list.push(line);
-            map.set(section, list);
-        }
-
-        return map;
-    }, [lines]);
-
-    // Steps with logs but no timeline entry (runtime logs, unknown steps).
-    const allSteps = useMemo(() => {
-        const known = new Set(steps.map((step) => step.section));
-        const extra = SECTION_ORDER.filter(
-            (section) => !known.has(section) && bySection.has(section),
-        ).map((section): TimelineStep => ({
-            section,
-            status: section === 'runtime' && live ? 'running' : 'succeeded',
-            duration: null,
-            message: null,
-        }));
-
-        return [...steps, ...extra].sort(
-            (a, b) =>
-                SECTION_ORDER.indexOf(a.section) -
-                SECTION_ORDER.indexOf(b.section),
-        );
-    }, [steps, bySection, live]);
-
-    const failed =
-        allSteps.find((step) => step.status === 'failed')?.section ?? null;
-    const errorLine = useMemo(
-        () =>
-            failed ? firstErrorLine(bySection.get(failed) ?? [], plain) : null,
-        [failed, bySection, plain],
+    const lines = useMemo(() => rawLines.map(normalizeLine), [rawLines]);
+    const bySection = useMemo(() => groupBySection(lines), [lines]);
+    const allSteps = useMemo(
+        () => withLoggedSteps(steps, bySection, live),
+        [steps, bySection, live],
+    );
+    const errors = useMemo(
+        () => failedStepErrors(allSteps, bySection),
+        [allSteps, bySection],
     );
 
-    const [expanded, setExpanded] = useState<Set<LogSection>>(() => {
-        const open = new Set<LogSection>();
+    const [expanded, setExpanded] = useState<Set<LogSection>>(() =>
+        initialExpanded(allSteps),
+    );
+    const touched = useRef(new Set<LogSection>());
 
-        for (const step of allSteps) {
-            if (step.status === 'failed' || step.status === 'running') {
-                open.add(step.section);
-            }
-        }
-
-        // Finished without failure: everything that has output.
-        if (open.size === 0) {
-            for (const step of allSteps) {
-                if (bySection.has(step.section)) {
-                    open.add(step.section);
-                }
-            }
-        }
-
-        return open;
-    });
-
-    // A step that starts running opens; one that fails opens too.
-    const statusKey = allSteps
-        .map((step) => `${step.section}:${step.status}`)
-        .join(',');
-    const seenStatus = useRef(statusKey);
+    const needle = query.trim().toLowerCase();
 
     useEffect(() => {
-        if (seenStatus.current === statusKey) {
+        if (!hasMore) {
+            setLoadingAll(false);
+        }
+        if (
+            !hasMore ||
+            !onLoadAll ||
+            loadError ||
+            (!following &&
+                needle === '' &&
+                errors.section === null &&
+                !/^#L\d+$/.test(window.location.hash))
+        ) {
             return;
         }
-
-        seenStatus.current = statusKey;
-        setExpanded((current) => {
-            const next = new Set(current);
-
-            for (const step of allSteps) {
-                if (step.status === 'running' || step.status === 'failed') {
-                    next.add(step.section);
+        let active = true;
+        setLoadingAll(true);
+        void onLoadAll()
+            .catch(() => {
+                if (active) {
+                    setLoadError(true);
                 }
-            }
-
-            return next;
-        });
-    }, [statusKey, allSteps]);
-
-    const rows = useMemo(() => {
-        const result: Row[] = [];
-
-        for (const step of allSteps) {
-            const sectionLines = bySection.get(step.section) ?? [];
-            const open = expanded.has(step.section);
-            result.push({
-                type: 'step',
-                step,
-                count: sectionLines.length,
-                expanded: open,
+            })
+            .finally(() => {
+                if (active) {
+                    setLoadingAll(false);
+                }
             });
+        return () => {
+            active = false;
+        };
+    }, [hasMore, onLoadAll, following, needle, errors.section, loadError]);
+    const matches = useMemo(() => findMatches(lines, needle), [lines, needle]);
+    const only = useMemo(
+        () => (onlyMatches && needle !== '' ? new Set(matches) : null),
+        [onlyMatches, needle, matches],
+    );
 
-            if (!open) {
-                continue;
-            }
+    const openSteps = useMemo(
+        () =>
+            expandAll
+                ? new Set(
+                      allSteps
+                          .filter((step) => isExpandable(step, bySection))
+                          .map((step) => step.section),
+                  )
+                : expanded,
+        [expandAll, expanded, allSteps, bySection],
+    );
 
-            if (sectionLines.length === 0) {
-                result.push({
-                    type: 'empty',
-                    section: step.section,
-                    text:
-                        step.message ??
-                        (step.status === 'pending'
-                            ? 'Waiting for the previous steps.'
-                            : step.status === 'running'
-                              ? 'Waiting for output…'
-                              : 'No output for this step.'),
-                });
-
-                continue;
-            }
-
-            let sub: string | null = null;
-
-            for (const line of sectionLines) {
-                if (
-                    line.step &&
-                    line.step !== sub &&
-                    line.step !== step.section
-                ) {
-                    sub = line.step;
-                    result.push({
-                        type: 'substep',
-                        name: line.step,
-                        section: step.section,
-                    });
-                }
-
-                result.push({ type: 'line', line });
-            }
-        }
-
-        if (hasMore) {
-            result.push({ type: 'more' });
-        }
-
-        return result;
-    }, [allSteps, bySection, expanded, hasMore]);
+    const rows = useMemo(
+        () =>
+            buildRows({
+                steps: allSteps,
+                bySection,
+                expanded: openSteps,
+                errors,
+                hasMore,
+                only,
+            }),
+        [allSteps, bySection, openSteps, errors, hasMore, only],
+    );
 
     const rowsRef = useRef(rows);
 
@@ -353,22 +226,65 @@ export function LogViewer({
             live,
             initial: following,
             scrollToEdge: () =>
-                virtualizer.scrollToIndex(rows.length - 1, { align: 'end' }),
+                virtualizer.scrollToIndex(rowsRef.current.length - 1, {
+                    align: 'end',
+                }),
         });
 
-    // Search matches (plain text, case-insensitive) across all lines.
-    const needle = query.trim().toLowerCase();
-    const matches = useMemo(
-        () =>
-            needle === ''
-                ? []
-                : lines
-                      .filter((line) =>
-                          plain(line).toLowerCase().includes(needle),
-                      )
-                      .map((line) => line.number),
-        [lines, needle, plain],
-    );
+    // A step that starts running or fails opens (and is announced); while
+    // following, a step that finished fine closes so the running one stays
+    // in view.
+    const statusKey = allSteps
+        .map((step) => `${step.section}:${step.status}`)
+        .join(',');
+    const previousSteps = useRef(allSteps);
+    const seenStatus = useRef(statusKey);
+    const followRef = useRef(follow);
+
+    useEffect(() => {
+        followRef.current = follow;
+    }, [follow]);
+
+    useEffect(() => {
+        if (seenStatus.current === statusKey) {
+            previousSteps.current = allSteps;
+
+            return;
+        }
+
+        seenStatus.current = statusKey;
+        const previous = previousSteps.current;
+        previousSteps.current = allSteps;
+        const before = new Map(
+            previous.map((step) => [step.section, step.status]),
+        );
+        const changed = allSteps.filter(
+            (step) =>
+                before.has(step.section) &&
+                before.get(step.section) !== step.status,
+        );
+
+        setExpanded((current) =>
+            expandedAfterChange(
+                current,
+                previous,
+                allSteps,
+                touched.current,
+                followRef.current,
+            ),
+        );
+
+        if (changed.length > 0) {
+            setAnnouncement(
+                changed
+                    .map(
+                        (step) =>
+                            `${SECTION_LABELS[step.section]}: ${STEP_STATUS_LABEL[step.status]}`,
+                    )
+                    .join('. '),
+            );
+        }
+    }, [statusKey, allSteps]);
 
     const reveal = useCallback(
         (number: number, align: 'center' | 'start' = 'center') => {
@@ -378,9 +294,7 @@ export function LogViewer({
                 return;
             }
 
-            const section: LogSection = isSection(line.section)
-                ? line.section
-                : 'rollout';
+            const section = sectionOf(line);
             setFollow(false);
             setExpanded((current) =>
                 current.has(section) ? current : new Set([...current, section]),
@@ -399,7 +313,7 @@ export function LogViewer({
                 }),
             );
         },
-        [lines, virtualizer],
+        [lines, setFollow, virtualizer],
     );
 
     const goToMatch = (direction: 1 | -1) => {
@@ -417,11 +331,12 @@ export function LogViewer({
         reveal(matches[next]);
     };
 
-    // `#L42` anchors, then the first error of a failed step.
+    // `#L42` anchors, then the first error of a failed step, else the end
+    // of a live log.
     const initialised = useRef(false);
 
     useEffect(() => {
-        if (initialised.current) {
+        if (initialised.current || hasMore) {
             return;
         }
 
@@ -436,8 +351,8 @@ export function LogViewer({
             return;
         }
 
-        if (errorLine !== null) {
-            reveal(errorLine);
+        if (errors.first !== null) {
+            reveal(errors.first);
         } else if (live) {
             requestAnimationFrame(() =>
                 virtualizer.scrollToIndex(rowsRef.current.length - 1, {
@@ -445,13 +360,29 @@ export function LogViewer({
                 }),
             );
         }
-    }, [errorLine, live, reveal, virtualizer]);
+    }, [errors.first, hasMore, live, reveal, virtualizer]);
+
+    // A live deployment that fails: stop following and show the error.
+    const seenFirstError = useRef<number | null>(null);
+
+    useEffect(() => {
+        if (hasMore || seenFirstError.current === errors.first) {
+            return;
+        }
+
+        seenFirstError.current = errors.first;
+
+        if (errors.first !== null) {
+            reveal(errors.first);
+        }
+    }, [errors.first, hasMore, reveal]);
 
     useEffect(() => {
         const onHash = () => {
             const anchor = /^#L(\d+)$/.exec(window.location.hash);
 
             if (anchor) {
+                setOnlyMatches(false);
                 setSelected(Number(anchor[1]));
                 reveal(Number(anchor[1]));
             }
@@ -488,7 +419,18 @@ export function LogViewer({
         return () => document.removeEventListener('keydown', onKey);
     }, []);
 
-    const toggleSection = (section: LogSection) =>
+    const toggleSection = (section: LogSection) => {
+        touched.current.add(section);
+
+        if (expandAll) {
+            setExpandAll(false);
+            setExpanded(
+                new Set([...openSteps].filter((item) => item !== section)),
+            );
+
+            return;
+        }
+
         setExpanded((current) => {
             const next = new Set(current);
 
@@ -500,14 +442,58 @@ export function LogViewer({
 
             return next;
         });
+    };
+
+    const fullText = async (): Promise<string> => {
+        const all = onLoadAll ? (await onLoadAll()).map(normalizeLine) : lines;
+
+        return logText(
+            withLoggedSteps(steps, groupBySection(all), live),
+            groupBySection(all),
+        );
+    };
+
+    const copy = async () => {
+        try {
+            await navigator.clipboard.writeText(await fullText());
+            setCopied(true);
+            setAnnouncement('Log copied');
+            window.setTimeout(() => setCopied(false), 2000);
+        } catch {
+            setAnnouncement('Could not copy the log');
+        }
+    };
+
+    const download = async () => {
+        try {
+            const url = URL.createObjectURL(
+                new Blob([await fullText()], {
+                    type: 'text/plain;charset=utf-8',
+                }),
+            );
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = fileName;
+            link.click();
+            window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+        } catch {
+            setAnnouncement('Could not download the full log. Try again.');
+        }
+    };
 
     const items = virtualizer.getVirtualItems();
     const currentMatch = matches[matchIndex] ?? null;
+    const totalSize = virtualizer.getTotalSize();
 
     return (
-        <div className={cn('flex min-h-0 flex-col', className)}>
+        <div
+            className={cn(
+                'flex min-h-0 flex-col overflow-hidden rounded-[14px] border bg-card shadow-[0_1px_2px_rgb(0_0_0/0.04)] dark:shadow-none',
+                className,
+            )}
+        >
             <div className="flex flex-wrap items-center gap-2 border-b px-3 py-2">
-                <div className="relative flex min-w-48 flex-1 items-center sm:max-w-sm">
+                <div className="relative flex min-w-0 flex-1 basis-56 items-center sm:max-w-sm">
                     <Search
                         aria-hidden="true"
                         className="pointer-events-none absolute left-2.5 size-4 text-muted-foreground"
@@ -531,9 +517,9 @@ export function LogViewer({
                                 searchRef.current?.blur();
                             }
                         }}
-                        placeholder="Search logs"
-                        aria-label="Search logs"
-                        className="h-8 pr-16 pl-8 type-mono-small"
+                        placeholder="Search all steps"
+                        aria-label="Search all steps"
+                        className="h-8 pr-8 pl-8 type-mono-small"
                     />
                     {query === '' && (
                         <kbd className="pointer-events-none absolute right-2 rounded border px-1 type-mono-small text-muted-foreground">
@@ -569,9 +555,31 @@ export function LogViewer({
                         >
                             <ChevronDown />
                         </Button>
+                        <Toggle
+                            size="sm"
+                            pressed={onlyMatches}
+                            onPressedChange={setOnlyMatches}
+                            className="type-label"
+                        >
+                            Only matches
+                        </Toggle>
                     </div>
                 )}
-                <div className="ml-auto flex items-center gap-1">
+                <div className="ml-auto flex flex-wrap items-center gap-1">
+                    <Toggle
+                        size="sm"
+                        pressed={expandAll}
+                        onPressedChange={(pressed) => {
+                            setExpandAll(pressed);
+
+                            if (!pressed) {
+                                setExpanded(initialExpanded(allSteps));
+                            }
+                        }}
+                        className="type-label"
+                    >
+                        Expand all
+                    </Toggle>
                     <Toggle
                         size="sm"
                         pressed={wrap}
@@ -598,21 +606,68 @@ export function LogViewer({
                             Follow
                         </Toggle>
                     )}
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        className="size-8"
+                        aria-label={copied ? 'Log copied' : 'Copy log'}
+                        title="Copy log"
+                        disabled={lines.length === 0}
+                        onClick={() => void copy()}
+                    >
+                        {copied ? <Check /> : <Copy />}
+                    </Button>
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        className="size-8"
+                        aria-label="Download log"
+                        title="Download log"
+                        disabled={lines.length === 0}
+                        onClick={() => void download()}
+                    >
+                        <Download />
+                    </Button>
                 </div>
             </div>
 
-            <div className="relative min-h-0 flex-1">
+            <p className="sr-only" aria-live="polite" role="status">
+                {announcement}
+            </p>
+            {(loadingAll || loadError) && (
+                <p
+                    className="border-b px-3 py-2 type-small text-muted-foreground"
+                    role="status"
+                >
+                    {loadingAll
+                        ? 'Loading the rest of the log…'
+                        : 'Could not load the rest of the log.'}
+                    {loadError && (
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setLoadError(false)}
+                        >
+                            Try again
+                        </Button>
+                    )}
+                </p>
+            )}
+
+            <div className="relative min-h-0">
                 <div
                     ref={scrollRef}
                     onScroll={onScroll}
-                    className="h-full overflow-auto"
+                    tabIndex={0}
+                    className="max-h-[70vh] overflow-auto focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-(--signal)"
+                    style={{ height: totalSize }}
                     role="log"
-                    aria-label="Deployment logs"
+                    aria-label="Step logs"
                     aria-live="off"
                 >
                     <div
                         className="relative w-full"
-                        style={{ height: virtualizer.getTotalSize() }}
+                        style={{ height: totalSize }}
                     >
                         {items.map((item) => {
                             const row = rows[item.index];
@@ -643,59 +698,15 @@ export function LogViewer({
                                     }
                                 >
                                     {row.type === 'step' && (
-                                        <button
-                                            type="button"
-                                            onClick={() =>
+                                        <StepHeader
+                                            row={row}
+                                            onToggle={() =>
                                                 toggleSection(row.step.section)
                                             }
-                                            aria-expanded={row.expanded}
-                                            className="flex h-9 w-full items-center gap-2 border-b bg-background px-3 text-left hover:bg-muted/60 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
-                                        >
-                                            {row.expanded ? (
-                                                <ChevronDown
-                                                    aria-hidden="true"
-                                                    className="size-4 text-muted-foreground"
-                                                />
-                                            ) : (
-                                                <ChevronRight
-                                                    aria-hidden="true"
-                                                    className="size-4 text-muted-foreground"
-                                                />
-                                            )}
-                                            {stepIcon(row.step.status)}
-                                            <span className="type-label">
-                                                {
-                                                    SECTION_LABELS[
-                                                        row.step.section
-                                                    ]
-                                                }
-                                            </span>
-                                            <span className="sr-only">
-                                                {statusLabels[row.step.status]}
-                                            </span>
-                                            {row.step.message &&
-                                                !row.expanded && (
-                                                    <span className="min-w-0 truncate type-mono-small text-muted-foreground">
-                                                        {row.step.message}
-                                                    </span>
-                                                )}
-                                            <span className="ml-auto flex shrink-0 items-center gap-3 type-small text-muted-foreground tabular-nums">
-                                                {row.count > 0 && (
-                                                    <span>
-                                                        {row.count.toLocaleString()}{' '}
-                                                        lines
-                                                    </span>
-                                                )}
-                                                {row.step.duration && (
-                                                    <span>
-                                                        {row.step.duration}
-                                                    </span>
-                                                )}
-                                            </span>
-                                        </button>
+                                        />
                                     )}
                                     {row.type === 'substep' && (
-                                        <div className="flex h-5 items-center bg-muted/40 pl-[4.75rem] type-mono-small text-muted-foreground">
+                                        <div className="flex h-5 items-center bg-(--recessed) pl-[4.75rem] type-mono-small text-muted-foreground">
                                             {row.name}
                                         </div>
                                     )}
@@ -724,8 +735,11 @@ export function LogViewer({
                                             wrap={wrap}
                                             timestamps={timestamps}
                                             query={needle}
-                                            isError={
-                                                row.line.number === errorLine
+                                            isError={errors.lines.has(
+                                                row.line.number,
+                                            )}
+                                            isFirstError={
+                                                row.line.number === errors.first
                                             }
                                             isSelected={
                                                 row.line.number === selected
@@ -747,12 +761,12 @@ export function LogViewer({
                             );
                         })}
                     </div>
-                    {lines.length === 0 && allSteps.length === 0 && (
-                        <p className="p-6 type-body text-muted-foreground">
-                            No logs yet.
-                        </p>
-                    )}
                 </div>
+                {lines.length === 0 && allSteps.length === 0 && (
+                    <p className="p-6 type-body text-muted-foreground">
+                        No logs yet.
+                    </p>
+                )}
 
                 <JumpToLatest
                     visible={!atEdge && rows.length > 0}
@@ -765,12 +779,97 @@ export function LogViewer({
     );
 }
 
+function StepHeader({
+    row,
+    onToggle,
+}: {
+    row: Extract<StepRow, { type: 'step' }>;
+    onToggle: () => void;
+}) {
+    const { step } = row;
+    const quiet =
+        step.status === 'pending' ||
+        step.status === 'skipped' ||
+        step.status === 'canceled';
+    const content = (
+        <>
+            <ChevronRight
+                aria-hidden="true"
+                className={cn(
+                    'size-4 shrink-0 text-(--faint) motion-safe:transition-transform motion-safe:duration-[120ms]',
+                    row.expanded && 'rotate-90',
+                    !row.expandable && 'invisible',
+                )}
+            />
+            <StepIcon status={step.status} size={16} />
+            <span
+                className={cn(
+                    'shrink-0 type-label font-medium',
+                    quiet && 'text-muted-foreground',
+                )}
+            >
+                {SECTION_LABELS[step.section]}
+            </span>
+            <span
+                className={cn(
+                    'shrink-0 type-small',
+                    step.status === 'failed'
+                        ? 'text-status-error'
+                        : 'text-muted-foreground',
+                )}
+            >
+                {STEP_STATUS_LABEL[step.status]}
+            </span>
+            {step.message && (
+                <span className="hidden min-w-0 truncate type-small text-muted-foreground sm:inline">
+                    · {step.message}
+                </span>
+            )}
+            <span className="ml-auto flex shrink-0 items-center gap-3 type-small text-muted-foreground tabular-nums">
+                {row.errors > 0 && (
+                    <StepChip tone="error">
+                        {row.errors} {row.errors === 1 ? 'error' : 'errors'}
+                    </StepChip>
+                )}
+                {row.count > 0 && (
+                    <span className="hidden sm:inline">
+                        {row.count.toLocaleString()}{' '}
+                        {row.count === 1 ? 'line' : 'lines'}
+                    </span>
+                )}
+                {step.duration && <span>{step.duration}</span>}
+            </span>
+        </>
+    );
+    const className =
+        'flex h-10 w-full items-center gap-2.5 border-b bg-card px-3 text-left';
+
+    if (!row.expandable) {
+        return <div className={className}>{content}</div>;
+    }
+
+    return (
+        <button
+            type="button"
+            onClick={onToggle}
+            aria-expanded={row.expanded}
+            className={cn(
+                className,
+                'hover:bg-(--hover) focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-(--signal)',
+            )}
+        >
+            {content}
+        </button>
+    );
+}
+
 function LogLineRow({
     line,
     wrap,
     timestamps,
     query,
     isError,
+    isFirstError,
     isSelected,
     isMatch,
     onSelect,
@@ -780,6 +879,7 @@ function LogLineRow({
     timestamps: boolean;
     query: string;
     isError: boolean;
+    isFirstError: boolean;
     isSelected: boolean;
     isMatch: boolean;
     onSelect: (number: number) => void;
@@ -787,9 +887,10 @@ function LogLineRow({
     return (
         <div
             data-line={line.number}
+            aria-current={isFirstError ? 'true' : undefined}
             className={cn(
                 'flex border-l-2 border-transparent type-mono-small',
-                isError && 'border-status-error',
+                isError && 'border-(--status-error) bg-(--status-error-soft)',
                 isSelected && 'bg-accent',
                 isMatch && 'bg-status-progress/10',
                 line.stream === 'system' && 'text-muted-foreground',
@@ -801,12 +902,19 @@ function LogLineRow({
                     event.preventDefault();
                     onSelect(line.number);
                 }}
-                className="sticky left-0 w-14 shrink-0 bg-background pr-3 text-right text-muted-foreground tabular-nums select-none hover:text-foreground"
+                className={cn(
+                    'sticky left-0 w-14 shrink-0 pr-3 text-right text-muted-foreground tabular-nums select-none hover:text-foreground',
+                    isError ? 'bg-(--status-error-soft)' : 'bg-card',
+                )}
                 aria-label={`Line ${line.number}`}
             >
                 {line.number}
             </a>
-            {isError && <span className="sr-only">First error: </span>}
+            {isError && (
+                <span className="sr-only">
+                    {isFirstError ? 'First error: ' : 'Error: '}
+                </span>
+            )}
             {timestamps && (
                 <span className="w-24 shrink-0 pr-3 text-muted-foreground tabular-nums select-none">
                     {time(line.time)}
@@ -816,6 +924,7 @@ function LogLineRow({
                 className={cn(
                     'min-w-0 pr-4',
                     wrap ? 'break-all whitespace-pre-wrap' : 'whitespace-pre',
+                    isFirstError && 'text-status-error',
                 )}
             >
                 <AnsiText text={line.text} highlight={query} />

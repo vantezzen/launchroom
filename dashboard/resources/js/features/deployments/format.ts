@@ -67,8 +67,12 @@ export function formatDuration(seconds: number | null): string | null {
     return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
 }
 
-export function elapsedSeconds(from: string, to: string | null): number {
-    const end = to === null ? Date.now() : new Date(to).getTime();
+export function elapsedSeconds(
+    from: string,
+    to: string | null,
+    now = Date.now(),
+): number {
+    const end = to === null ? now : new Date(to).getTime();
 
     return Math.max(0, Math.round((end - new Date(from).getTime()) / 1000));
 }
@@ -136,13 +140,14 @@ export function startedBy(
 /** Total seconds so far for a running deployment, else the recorded duration. */
 export function deploymentSeconds(
     deployment: App.Data.Deployments.DeploymentSummaryData,
+    now = Date.now(),
 ): number | null {
     if (deployment.durationSeconds !== null) {
         return deployment.durationSeconds;
     }
 
     return deployment.startedAt
-        ? elapsedSeconds(deployment.startedAt, deployment.finishedAt)
+        ? elapsedSeconds(deployment.startedAt, deployment.finishedAt, now)
         : null;
 }
 

@@ -30,15 +30,12 @@ test('the page lists your tokens and what your role allows', function (): void {
             ->where('teamOptions.0.abilities.4.available', false));
 });
 
-test('creating a token asks for the password, then shows the plaintext once', function (): void {
+test('creating an authorized token shows the plaintext once without an extra password', function (): void {
     $world = DeploymentUi::make(false);
     $owner = $world->member(TeamRole::Owner);
     $body = ['name' => 'CI', 'expiresInDays' => 90, 'abilities' => ['deploy']];
 
-    $this->actingAs($owner)->postJson('/settings/api-tokens', $body)->assertStatus(423)->assertJsonPath('requiresPassword', true);
-    $this->actingAs($owner)->postJson('/settings/api-tokens', [...$body, 'password' => 'wrong'])->assertUnprocessable();
-
-    $created = $this->actingAs($owner)->postJson('/settings/api-tokens', [...$body, 'password' => 'password'])
+    $created = $this->actingAs($owner)->postJson('/settings/api-tokens', $body)
         ->assertCreated()
         ->assertHeader('Cache-Control', 'no-store, private')
         ->assertJsonPath('token.abilities', ['read', 'deploy'])

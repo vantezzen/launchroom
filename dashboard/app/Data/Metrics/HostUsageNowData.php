@@ -24,5 +24,6 @@ final class HostUsageNowData extends Data
         public ?int $netRxBps,
         public ?int $netTxBps,
         public ?float $load1,
+        public ?float $buildCpuCores = null,
     ) {}
 }

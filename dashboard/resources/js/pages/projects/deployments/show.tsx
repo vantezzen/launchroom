@@ -1,28 +1,19 @@
 import { Head, Link, router } from '@inertiajs/react';
-import { ChevronRight, ScrollText } from 'lucide-react';
+import { ScrollText } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
 import { CommitAvatar } from '@/components/commit-avatar';
 import { Logo } from '@/components/logo';
 import { Page, PageHeader } from '@/components/patterns/page';
 import { Section } from '@/components/patterns/section';
-import { StepList } from '@/components/steps';
 import { Button } from '@/components/ui/button';
 import { ConfigFailureCard } from '@/features/config-as-code/config-failure-card';
-import {
-    Collapsible,
-    CollapsibleContent,
-    CollapsibleTrigger,
-} from '@/components/ui/collapsible';
 import {
     FailureCard,
     fixAction,
 } from '@/features/deployment-detail/failure-card';
 import { OverviewCard } from '@/features/deployment-detail/overview-card';
 import { RelatedCards } from '@/features/deployment-detail/related-cards';
-import {
-    stepRows,
-    useDeploymentSteps,
-} from '@/features/deployment-detail/steps';
+import { stepRows } from '@/features/deployment-detail/steps';
 import type { PendingAction } from '@/features/deployments/deployment-actions';
 import { DeploymentActionDialog } from '@/features/deployments/deployment-actions';
 import {
@@ -35,10 +26,17 @@ import {
 import { ChannelEvents } from '@/features/deployments/realtime';
 import type { TimelineStep } from '@/features/logs/log-viewer';
 import { LogViewer } from '@/features/logs/log-viewer';
+import {
+    failedStepErrors,
+    groupBySection,
+    normalizeLine,
+    withLoggedSteps,
+} from '@/features/logs/step-log';
 import { useDeploymentLogs } from '@/features/logs/use-deployment-logs';
 import type { ProjectShellProps } from '@/features/projects/types';
 import { logs as projectLogs } from '@/routes/projects';
 import { TimeAgo } from '@/components/time-ago';
+import { useNow } from '@/hooks/use-now';
 
 type Props = ProjectShellProps & {
     detail: App.Data.Deployments.DeploymentDetailData;
@@ -49,7 +47,7 @@ type Props = ProjectShellProps & {
  * Deployment detail (direction §9.7, flows §5–6): a beautiful technical
  * page. Header (logo, commit message, who and when, actions) → overview
  * card → explained failure → steps with their lines (the failed step opens
- * on the error) → related cards → the full log with search and follow.
+ * on the error, with search and follow) → related cards.
  * Everything in one `wide` container; the raw id sits in the overview
  * card's footer with a copy button.
  */
@@ -72,7 +70,7 @@ function DeploymentPage({
     const inProgress =
         isInProgress(deployment.status) && deployment.status !== 'ready';
     const live = inProgress || deployment.status === 'active';
-    const [showLog, setShowLog] = useState(inProgress);
+    const now = useNow(inProgress);
     const stream = useDeploymentLogs(
         {
             project: project.id,
@@ -81,17 +79,25 @@ function DeploymentPage({
         },
         logs,
     );
-    const { steps, errorLine } = useDeploymentSteps(detail, stream.lines);
     const timeline = useMemo(
         (): TimelineStep[] =>
-            stepRows(detail).map((row) => ({
+            stepRows(detail, now).map((row) => ({
                 section: row.section,
-                status: row.status === 'canceled' ? 'skipped' : row.status,
+                status: row.status,
                 duration: formatDuration(row.seconds),
                 message: row.message,
             })),
-        [detail],
+        [detail, now],
     );
+    // The failure card's "Jump to line N": the first error of the failed step.
+    const errorLine = useMemo(() => {
+        const bySection = groupBySection(stream.lines.map(normalizeLine));
+
+        return failedStepErrors(
+            withLoggedSteps(timeline, bySection, live),
+            bySection,
+        ).first;
+    }, [stream.lines, timeline, live]);
     const environmentName =
         environment?.id === deployment.environmentId
             ? environment.name
@@ -101,13 +107,8 @@ function DeploymentPage({
     const refreshDetail = () => router.reload({ only: ['detail'] });
 
     const jumpTo = useCallback((line: number) => {
-        setShowLog(true);
-        window.setTimeout(() => {
-            document
-                .getElementById('full-log')
-                ?.scrollIntoView({ block: 'start' });
-            window.location.hash = `L${line}`;
-        }, 50);
+        document.getElementById('steps')?.scrollIntoView({ block: 'start' });
+        window.location.hash = `L${line}`;
     }, []);
 
     const logsHref = projectLogs(
@@ -246,6 +247,7 @@ function DeploymentPage({
                     <OverviewCard
                         detail={detail}
                         environmentName={environmentName}
+                        now={now}
                     />
                     {detail.configErrors ? (
                         <ConfigFailureCard detail={detail} />
@@ -260,6 +262,7 @@ function DeploymentPage({
                 </div>
 
                 <Section
+                    id="steps"
                     title="Steps"
                     description={
                         deployment.status === 'ready'
@@ -269,47 +272,20 @@ function DeploymentPage({
                               : undefined
                     }
                 >
-                    <StepList key={deployment.status} steps={steps} />
+                    <LogViewer
+                        steps={timeline}
+                        lines={stream.lines}
+                        hasMore={stream.hasMore}
+                        loadingMore={stream.loading}
+                        onLoadMore={() => void stream.loadMore()}
+                        onLoadAll={stream.loadAll}
+                        live={live}
+                        following={inProgress}
+                        fileName={`${deployment.serviceName}-${deployment.id}.log`}
+                    />
                 </Section>
 
                 <RelatedCards detail={detail} />
-
-                <Collapsible
-                    open={showLog}
-                    onOpenChange={setShowLog}
-                    className="flex flex-col gap-3.5"
-                >
-                    <CollapsibleTrigger className="group flex items-center gap-1.5 self-start rounded-md type-heading focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-signal">
-                        <ChevronRight
-                            aria-hidden="true"
-                            className="size-4 text-muted-foreground transition-transform duration-fast group-data-[state=open]:rotate-90"
-                        />
-                        Full log
-                        <span className="type-body font-normal text-muted-foreground tabular-nums">
-                            {stream.lines.length}{' '}
-                            {stream.lines.length === 1 ? 'line' : 'lines'}
-                            {stream.hasMore && '+'}
-                        </span>
-                    </CollapsibleTrigger>
-                    <CollapsibleContent>
-                        <section
-                            id="full-log"
-                            aria-label="Full log"
-                            className="flex h-[70vh] min-h-[420px] flex-col overflow-hidden rounded-[14px] border bg-card"
-                        >
-                            <LogViewer
-                                steps={timeline}
-                                lines={stream.lines}
-                                hasMore={stream.hasMore}
-                                loadingMore={stream.loading}
-                                onLoadMore={() => void stream.loadMore()}
-                                live={live}
-                                following={inProgress}
-                                className="flex-1"
-                            />
-                        </section>
-                    </CollapsibleContent>
-                </Collapsible>
             </Page>
 
             <DeploymentActionDialog

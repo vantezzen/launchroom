@@ -1,4 +1,5 @@
 import { Link } from '@inertiajs/react';
+import { Hammer } from 'lucide-react';
 import { useState } from 'react';
 import { StatTile } from '@/components/charts/stat-tile';
 import { TimeRangeSelect } from '@/components/charts/time-range-select';
@@ -217,6 +218,32 @@ export function WhatRunsHere({
             }
         >
             <div className="overflow-hidden rounded-xl border bg-card shadow-card">
+                {metrics?.current?.buildCpuCores != null && (
+                    <div className="flex items-center gap-3 border-b px-6 py-4">
+                        <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-recessed">
+                            <Hammer
+                                className="size-4 text-muted-foreground"
+                                aria-hidden="true"
+                            />
+                        </span>
+                        <div className="min-w-0 flex-1">
+                            <p className="type-body font-medium">Builds</p>
+                            <p className="type-small text-muted-foreground">
+                                BuildKit · average CPU over the latest reported
+                                minute
+                            </p>
+                        </div>
+                        <span
+                            className="type-mono-small tabular-nums"
+                            title={`${metrics.current.buildCpuCores.toFixed(2)} CPU cores`}
+                        >
+                            {formatServiceCpu(
+                                metrics.current.buildCpuCores,
+                                cores,
+                            )}
+                        </span>
+                    </div>
+                )}
                 {usedBy.length > 0 && total > 0 && (
                     <div className="border-b px-6 py-5">
                         <UsageMeter
@@ -239,7 +266,9 @@ export function WhatRunsHere({
                 )}
                 {list.length === 0 ? (
                     <p className="px-6 py-8 text-center type-body text-muted-foreground">
-                        Nothing runs here yet.
+                        {metrics?.current?.buildCpuCores != null
+                            ? 'No app services run here.'
+                            : 'Nothing runs here yet.'}
                     </p>
                 ) : (
                     <>

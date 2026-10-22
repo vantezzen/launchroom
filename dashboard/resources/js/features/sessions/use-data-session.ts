@@ -1,6 +1,6 @@
 import { usePage } from '@inertiajs/react';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { endOnUnload, openSession, RequestFailed, sendCommand } from './api';
+import { endOnUnload, openSession, sendCommand } from './api';
 import type { ServiceRef } from './api';
 import { endSentence } from './format';
 import type { DataResult } from './result-types';
@@ -8,7 +8,6 @@ import { SessionClient } from './session-client';
 
 export type DataPhase =
     | { kind: 'idle'; error: string | null }
-    | { kind: 'password'; error: string | null }
     | { kind: 'connecting' }
     | { kind: 'live' }
     | { kind: 'ended'; reason: string };
@@ -18,7 +17,7 @@ type Waiter = { resolve: (result: DataResult) => void; timer: number };
 const RESULT_TIMEOUT_MS = 30_000;
 
 /**
- * A Data tab session: open (with the inline password when needed), join
+ * A Data tab session: open, join
  * the channel, run commands and wait for their results by op id. Results
  * can arrive before the POST that sent the command returns, so early ones
  * are kept until someone asks.
@@ -74,59 +73,45 @@ export function useDataSession(ref: ServiceRef, onEnded: () => void) {
         };
     }, [stop]);
 
-    const open = useCallback(
-        async (password?: string): Promise<void> => {
-            setPhase({ kind: 'connecting' });
+    const open = useCallback(async (): Promise<void> => {
+        setPhase({ kind: 'connecting' });
 
-            try {
-                const session = await openSession(ref, 'data', {
-                    cols: 80,
-                    rows: 24,
-                    password,
-                });
-                sessionId.current = session.id;
-                const live = new SessionClient(
-                    session,
-                    {
-                        onReady: () => {
-                            setPhase({ kind: 'live' });
-                        },
-                        onResult: (op, result) =>
-                            settle(op, result as DataResult),
-                        onEnd: (reason) => {
-                            client.current = null;
-                            failAll('The session ended.');
-                            setPhase({
-                                kind: 'ended',
-                                reason: endSentence(reason),
-                            });
-                            onEnded();
-                        },
+        try {
+            const session = await openSession(ref, 'data', {
+                cols: 80,
+                rows: 24,
+            });
+            sessionId.current = session.id;
+            const live = new SessionClient(
+                session,
+                {
+                    onReady: () => {
+                        setPhase({ kind: 'live' });
                     },
-                    () => ({ t: 'hello' }),
-                );
-                client.current = live;
-                await live.connect(realtime);
-            } catch (failure) {
-                const message =
-                    failure instanceof Error
-                        ? failure.message
-                        : 'The data session couldn’t be opened.';
+                    onResult: (op, result) => settle(op, result as DataResult),
+                    onEnd: (reason) => {
+                        client.current = null;
+                        failAll('The session ended.');
+                        setPhase({
+                            kind: 'ended',
+                            reason: endSentence(reason),
+                        });
+                        onEnded();
+                    },
+                },
+                () => ({ t: 'hello' }),
+            );
+            client.current = live;
+            await live.connect(realtime);
+        } catch (failure) {
+            const message =
+                failure instanceof Error
+                    ? failure.message
+                    : 'The data session couldn’t be opened.';
 
-                if (
-                    failure instanceof RequestFailed &&
-                    failure.status === 423
-                ) {
-                    setPhase({ kind: 'password', error: null });
-                } else if (password !== undefined) {
-                    setPhase({ kind: 'password', error: message });
-                } else {
-                    setPhase({ kind: 'idle', error: message });
-                }
-            }
-        },
-        [ref, realtime, settle, failAll, onEnded],
-    );
+            setPhase({ kind: 'idle', error: message });
+        }
+    }, [ref, realtime, settle, failAll, onEnded]);
 
     const run = useCallback(
         async (command: Record<string, unknown>): Promise<DataResult> => {

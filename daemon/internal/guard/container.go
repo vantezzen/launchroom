@@ -144,8 +144,11 @@ var shapes = map[class]systemShape{
 		// Hosts that restrict user namespaces: the installers' AppArmor
 		// profile (unconfined plus userns) instead of unconfined (D58).
 		securityOptAlt: []string{"seccomp=unconfined", "apparmor=" + buildkitAppArmor},
-		volumes:        []string{buildkitStateVolume}, extraHost: []string{"MaskedPaths", "ReadonlyPaths", "ExtraHosts"},
-		putRoots: []string{"/home/user/.config"}, exec: []string{"buildctl", "dial-stdio"}, execExact: true,
+		volumes:        []string{buildkitStateVolume},
+		// Builds lose every contest for the host (D59): a block I/O weight
+		// and a raised OOM score, never a lowered one.
+		extraHost: []string{"MaskedPaths", "ReadonlyPaths", "ExtraHosts", "BlkioWeight", "OomScoreAdj"},
+		putRoots:  []string{"/home/user/.config"}, exec: []string{"buildctl", "dial-stdio"}, execExact: true,
 	},
 	classAmbassador: {
 		name: ambassadorName, labelKind: systemAmbassador, network: ambassadorNetwork,
@@ -305,6 +308,12 @@ func (s *Server) checkSystem(ctx context.Context, cls class, name string, cfg *c
 	case classBuildkit:
 		if len(hc.MaskedPaths) > 0 || len(hc.ReadonlyPaths) > 0 {
 			return deny("container %s: masked/read-only paths may only be emptied", name)
+		}
+		if hc.OomScoreAdj < 0 || hc.OomScoreAdj > 1000 {
+			return deny("container %s: the OOM score may only be raised (0–1000)", name)
+		}
+		if hc.CPUShares < 0 || hc.CPUShares > 1024 || hc.BlkioWeight != 0 && (hc.BlkioWeight < 10 || hc.BlkioWeight > 1000) {
+			return deny("container %s: builds may only get a default or lower CPU weight and a valid I/O weight", name)
 		}
 		for _, h := range hc.ExtraHosts {
 			if !reExtraHost.MatchString(h) {

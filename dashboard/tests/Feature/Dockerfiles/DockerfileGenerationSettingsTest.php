@@ -61,9 +61,9 @@ test('only instance owners change the provider; turning it on needs a key', func
     $this->actingAs($this->owner)->withSession(passwordConfirmed())->put(route('dockerfile-generation.update'), ['model' => 'gpt-5'])->assertSessionHasErrors('model');
 });
 
-test('changing the provider needs a recently confirmed password', function (): void {
-    $this->actingAs($this->owner)->put(route('dockerfile-generation.update'), ['apiKey' => DS_KEY])->assertRedirect(route('password.confirm'));
-    expect(AiProviderSettings::current()->hasKey())->toBeFalse();
+test('an instance owner can set the provider without confirming again', function (): void {
+    $this->actingAs($this->owner)->put(route('dockerfile-generation.update'), ['apiKey' => DS_KEY])->assertRedirect()->assertSessionHasNoErrors();
+    expect(AiProviderSettings::current()->hasKey())->toBeTrue();
 });
 
 test('team owners switch the team; admins and developers can’t', function (): void {

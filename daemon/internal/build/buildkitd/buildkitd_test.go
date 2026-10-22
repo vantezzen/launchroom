@@ -13,7 +13,7 @@ import (
 const image = state.ImageRef("127.0.0.1:5000/mirror/docker.io/moby/buildkit@" + policy.BuildkitImageDigest)
 
 func TestConfig(t *testing.T) {
-	m := New(Options{ServerID: "srv_01J9Z8X7W6V5T4S3R2Q1P0N9MK", MaxParallelism: 3, GC: GC{MaxUsedSpace: "60GB", ReservedSpace: "10GB"}})
+	m := New(Options{ServerID: "srv_01J9Z8X7W6V5T4S3R2Q1P0N9MK", Resources: Resources{Parallelism: 3}, GC: GC{MaxUsedSpace: "60GB", ReservedSpace: "10GB"}})
 	cfg := string(m.Config())
 	for _, want := range []string{
 		"max-parallelism = 3",
@@ -34,7 +34,7 @@ func TestConfig(t *testing.T) {
 }
 
 func TestContainerSpec(t *testing.T) {
-	m := New(Options{ServerID: "srv_01J9Z8X7W6V5T4S3R2Q1P0N9MK", MemoryMB: 2048, CPUs: 2})
+	m := New(Options{ServerID: "srv_01J9Z8X7W6V5T4S3R2Q1P0N9MK", Resources: Resources{MemoryMB: 2048, SwapMB: 1024, CPUs: 2, CPUShares: 64, BlkioWeight: 10, OOMScoreAdj: 1000}})
 	cc := m.ContainerSpec(image, appArmorUnconfined)
 	hc := cc.HostConfig
 	if hc.Privileged || hc.NetworkMode != NetworkName || hc.PidMode != "" || len(hc.CapAdd) != 0 || len(hc.Binds) != 0 {
@@ -43,8 +43,11 @@ func TestContainerSpec(t *testing.T) {
 	if strings.Join(hc.SecurityOpt, ",") != "seccomp=unconfined,apparmor=unconfined" || hc.MaskedPaths == nil || len(hc.MaskedPaths) != 0 || hc.ReadonlyPaths == nil {
 		t.Fatalf("security options %v masked %v", hc.SecurityOpt, hc.MaskedPaths)
 	}
-	if hc.ExtraHosts[0] != "registry.launchroom.internal:10.232.0.1" || hc.Memory != 2048<<20 || hc.NanoCPUs != 2e9 {
-		t.Fatalf("extra hosts %v mem %d cpus %d", hc.ExtraHosts, hc.Memory, hc.NanoCPUs)
+	if hc.ExtraHosts[0] != "registry.launchroom.internal:10.232.0.1" || hc.Memory != 2048<<20 || hc.MemorySwap != 3072<<20 || hc.NanoCPUs != 2e9 {
+		t.Fatalf("extra hosts %v mem %d swap %d cpus %d", hc.ExtraHosts, hc.Memory, hc.MemorySwap, hc.NanoCPUs)
+	}
+	if hc.CPUShares != 64 || hc.BlkioWeight != 10 || hc.OomScoreAdj != 1000 || hc.MemoryReservation != 0 {
+		t.Fatalf("priority: shares %d blkio %d oom %d reservation %d", hc.CPUShares, hc.BlkioWeight, hc.OomScoreAdj, hc.MemoryReservation)
 	}
 	if !docker.IsManaged(cc.Config.Labels, "srv_01J9Z8X7W6V5T4S3R2Q1P0N9MK") || cc.Config.Labels[docker.LabelSystem] != policy.SystemBuildkit {
 		t.Fatalf("labels %v", cc.Config.Labels)

@@ -11,7 +11,7 @@ A failed build never takes your site down. The previous deployment keeps serving
 
 - The card title starts with **Build failed:** followed by the explanation, for example "Build failed: pnpm-lock.yaml is out of date". When launchroom doesn't recognise the error, the title is "Build failed" and the card shows the first line of the error message.
 - The label next to the title is the failure class: `plan_error` (launchroom could not work out how to build the app), `build_error` (a build step exited with an error), `config_error` (a setting or the repository content is wrong), `transient` (registry or network trouble, retried once automatically).
-- The **Build** step opens on the lines around the first error. **Jump to line** opens the full log at that line.
+- The **Build** step opens at the first error. **Jump to line** takes you to that line in **Steps**; **Expand all** opens every step.
 - The service's **Settings → Build** page shows what launchroom detected: framework, package manager, versions and where each came from, and the install, build and start commands. **Detect again** re-reads the branch head after you push a fix.
 
 ## Build failed: launchroom couldn't detect how to build this app
@@ -54,11 +54,12 @@ The card has a copy button for the command. Make sure the package manager versio
 
 The log usually shows `JavaScript heap out of memory`, `exit code: 137` or `signal: killed`.
 
-**Cause.** The build used more memory than the build server allows. BuildKit runs with a memory limit of 75% of the server's memory, and a Next.js or large TypeScript build on a 2 GB machine often goes past it.
+**Cause.** The build used more memory than its budget allows. launchroom reserves memory for the dashboard and running apps, then limits build memory and swap. A Next.js or large TypeScript build on a 2 GB machine can need more than that budget.
 
 **Fix.**
 
 - For Node builds, click **Add NODE_OPTIONS** on the card. It opens the service's variables with `NODE_OPTIONS=--max-old-space-size=2048` filled in, available at build time. Lower the number on small servers.
+- On a small server without swap, re-run the installer and accept the 2 GB swap file. New builds can then use some swap and run more slowly. Without a terminal, pass `--create-swap`. Updates do not create swap automatically.
 - Add a server with more memory and give it the **Build** role. Builds then run there and your apps keep their memory. A laptop or desktop at home works well as a build server. See [Roles and placement](/docs/servers/roles-and-placement).
 
 The same out-of-memory pattern after the build (the app itself exits with code 137) is a runtime limit instead: raise the memory limit under Settings → Scaling.
@@ -140,7 +141,7 @@ The deployment sits on **Build** with nothing happening, or the plan preview say
 - If every build server is busy, wait, or cancel builds you don't need. A newer push to the same service replaces queued builds of older commits.
 - Add a second build server to spread the load.
 
-Builds stop after 30 minutes. A build that hits that limit fails like any other build error.
+Builds stop after two hours by default; instance owners can set `LAUNCHROOM_BUILD_TIMEOUT` in seconds to change it. Waiting for a build slot does not consume that time. A build that hits its deadline fails with a timeout.
 
 ## The clone fails
 

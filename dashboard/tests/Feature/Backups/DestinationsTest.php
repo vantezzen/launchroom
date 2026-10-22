@@ -46,7 +46,7 @@ test('admins add a destination; secrets are envelope-encrypted, hidden and never
     $team = Team::factory()->create();
     $admin = memberOf($team, TeamRole::Admin);
 
-    $this->actingAs($admin)->withSession(passwordConfirmed())
+    $this->actingAs($admin)
         ->post(route('backups.destinations.store'), destinationForm())
         ->assertRedirect()
         ->assertSessionHasNoErrors();
@@ -80,7 +80,7 @@ test('endpoints must be public https unless an instance owner allows a private n
     $admin = memberOf($team, TeamRole::Admin);
     $admin->forceFill(['is_instance_owner' => $private])->save();
 
-    $response = $this->actingAs($admin)->withSession(passwordConfirmed())
+    $response = $this->actingAs($admin)
         ->post(route('backups.destinations.store'), destinationForm(['endpoint' => $endpoint, 'allowPrivateNetwork' => $private]));
 
     if ($error === null) {
@@ -107,7 +107,7 @@ test('allowing a private network is audited', function (): void {
     $admin = memberOf($team, TeamRole::Owner);
     $admin->forceFill(['is_instance_owner' => true])->save();
 
-    $this->actingAs($admin)->withSession(passwordConfirmed())
+    $this->actingAs($admin)
         ->post(route('backups.destinations.store'), destinationForm(['endpoint' => 'http://versitygw:7070', 'allowPrivateNetwork' => true]))
         ->assertSessionHasNoErrors();
 
@@ -118,7 +118,7 @@ test('team admins and owners who are not instance owners cannot allow a private 
     $team = Team::factory()->create();
     $member = memberOf($team, $role);
 
-    $this->actingAs($member)->withSession(passwordConfirmed())
+    $this->actingAs($member)
         ->post(route('backups.destinations.store'), destinationForm(['endpoint' => 'http://169.254.169.254', 'allowPrivateNetwork' => true]))
         ->assertSessionHasErrors('allowPrivateNetwork');
 
@@ -133,21 +133,21 @@ test('team admins cannot enable the override on update or move a destination tha
     $admin = memberOf($team, TeamRole::Admin);
     $public = Backups::destination($team, $admin);
 
-    $this->actingAs($admin)->withSession(passwordConfirmed())
+    $this->actingAs($admin)
         ->put(route('backups.destinations.update', $public), destinationForm(['endpoint' => 'http://minio.local:9000', 'allowPrivateNetwork' => true]))
         ->assertSessionHasErrors('allowPrivateNetwork');
     expect($public->refresh()->allow_private_network)->toBeFalse();
 
-    $this->actingAs($instanceOwner)->withSession(passwordConfirmed())
+    $this->actingAs($instanceOwner)
         ->post(route('backups.destinations.store'), destinationForm(['name' => 'LAN', 'endpoint' => 'http://minio.local:9000', 'allowPrivateNetwork' => true]))
         ->assertSessionHasNoErrors();
     $lan = BackupDestination::query()->where('name', 'LAN')->sole();
 
     // Editing other fields keeps the override; pointing it elsewhere doesn't.
-    $this->actingAs($admin)->withSession(passwordConfirmed())
+    $this->actingAs($admin)
         ->put(route('backups.destinations.update', $lan), destinationForm(['name' => 'LAN 2', 'endpoint' => 'http://minio.local:9000', 'allowPrivateNetwork' => true, 'accessKeyId' => '', 'secretAccessKey' => '']))
         ->assertSessionHasNoErrors();
-    $this->actingAs($admin)->withSession(passwordConfirmed())
+    $this->actingAs($admin)
         ->put(route('backups.destinations.update', $lan), destinationForm(['endpoint' => 'http://nas.local:9000', 'allowPrivateNetwork' => true, 'accessKeyId' => '', 'secretAccessKey' => '']))
         ->assertSessionHasErrors('allowPrivateNetwork');
 
@@ -160,7 +160,7 @@ test('even with the override, loopback, metadata and control-plane services are 
     $owner = memberOf($team, TeamRole::Owner);
     $owner->forceFill(['is_instance_owner' => true])->save();
 
-    $this->actingAs($owner)->withSession(passwordConfirmed())
+    $this->actingAs($owner)
         ->post(route('backups.destinations.store'), destinationForm(['endpoint' => $endpoint, 'allowPrivateNetwork' => true]))
         ->assertSessionHasErrors('endpoint');
 
@@ -183,7 +183,7 @@ test('"test destination" re-runs the guard and never contacts a refused endpoint
     // A row that predates the rule.
     $destination->forceFill(['endpoint' => 'http://169.254.169.254', 'allow_private_network' => true])->save();
 
-    $this->actingAs($admin)->withSession(passwordConfirmed())
+    $this->actingAs($admin)
         ->post(route('backups.destinations.test', $destination))
         ->assertRedirect();
 
@@ -196,7 +196,7 @@ test('bucket, prefix and region follow the daemon grammar', function (array $ove
     $team = Team::factory()->create();
     $admin = memberOf($team, TeamRole::Admin);
 
-    $this->actingAs($admin)->withSession(passwordConfirmed())
+    $this->actingAs($admin)
         ->post(route('backups.destinations.store'), destinationForm($overrides))
         ->assertSessionHasErrors($field);
 })->with([
@@ -213,15 +213,15 @@ test('developers and viewers cannot manage destinations; other teams cannot see 
 
     foreach ([TeamRole::Developer, TeamRole::Viewer] as $role) {
         $member = memberOf($team, $role);
-        $this->actingAs($member)->withSession(passwordConfirmed())
+        $this->actingAs($member)
             ->post(route('backups.destinations.store'), destinationForm())->assertForbidden();
-        $this->actingAs($member)->withSession(passwordConfirmed())
+        $this->actingAs($member)
             ->delete(route('backups.destinations.destroy', $destination))->assertForbidden();
         $this->actingAs($member)->get(route('backups.settings'))->assertOk();
     }
 
     $stranger = memberOf(Team::factory()->create(), TeamRole::Owner);
-    $this->actingAs($stranger)->withSession(passwordConfirmed())
+    $this->actingAs($stranger)
         ->put(route('backups.destinations.update', $destination), destinationForm())->assertNotFound();
     $this->actingAs($stranger)->post(route('backups.destinations.test', $destination))->assertNotFound();
 });
@@ -230,18 +230,18 @@ test('the control-plane destination and recovery kit belong to instance owners',
     $team = Team::factory()->create();
     $admin = memberOf($team, TeamRole::Admin);
 
-    $this->actingAs($admin)->withSession(passwordConfirmed())
+    $this->actingAs($admin)
         ->post(route('backups.destinations.store'), [...destinationForm(), 'scope' => 'instance'])
         ->assertForbidden();
-    $this->actingAs($admin)->withSession(passwordConfirmed())
+    $this->actingAs($admin)
         ->post(route('backups.recovery.passphrase'), ['passphrase' => 'correct horse battery staple', 'passphrase_confirmation' => 'correct horse battery staple'])
         ->assertForbidden();
-    $this->actingAs($admin)->withSession(passwordConfirmed())->get(route('backups.recovery.kit'))->assertForbidden();
+    $this->actingAs($admin)->get(route('backups.recovery.kit'))->assertForbidden();
 
     $owner = memberOf($team, TeamRole::Owner);
     $owner->forceFill(['is_instance_owner' => true])->save();
 
-    $this->actingAs($owner)->withSession(passwordConfirmed())
+    $this->actingAs($owner)
         ->post(route('backups.destinations.store'), [...destinationForm(), 'scope' => 'instance'])
         ->assertSessionHasNoErrors();
 
@@ -250,7 +250,7 @@ test('the control-plane destination and recovery kit belong to instance owners',
         ->and(BackupSchedule::query()->where('subject', 'control_plane')->sole()->cron)->toMatch('/^\d{1,2} \*\/6 \* \* \*$/');
 
     // Instance destinations never resolve for non-owners (404, not 403).
-    $this->actingAs($admin)->withSession(passwordConfirmed())
+    $this->actingAs($admin)
         ->put(route('backups.destinations.update', $instance), destinationForm())->assertNotFound();
 });
 
@@ -261,15 +261,15 @@ test('the recovery kit flow: passphrase, audited download, confirmation', functi
     $owner->forceFill(['is_instance_owner' => true])->save();
     Backups::destination(null, $owner, 'Control plane');
 
-    $this->actingAs($owner)->withSession(passwordConfirmed())
+    $this->actingAs($owner)
         ->post(route('backups.recovery.confirm'))
         ->assertSessionHasErrors('recoveryKit');
 
-    $this->actingAs($owner)->withSession(passwordConfirmed())
+    $this->actingAs($owner)
         ->post(route('backups.recovery.passphrase'), ['passphrase' => 'short', 'passphrase_confirmation' => 'short'])
         ->assertSessionHasErrors('passphrase');
 
-    $this->actingAs($owner)->withSession(passwordConfirmed())
+    $this->actingAs($owner)
         ->post(route('backups.recovery.passphrase'), ['passphrase' => 'correct horse battery staple', 'passphrase_confirmation' => 'correct horse battery staple'])
         ->assertSessionHasNoErrors();
 
@@ -277,11 +277,10 @@ test('the recovery kit flow: passphrase, audited download, confirmation', functi
     expect($settings->recovery_public_key)->toStartWith('x25519:')
         ->and(json_encode($settings->toArray(), JSON_THROW_ON_ERROR))->not->toContain('correct horse');
 
-    // Password confirmation is required for the download.
+    // Authorized owners can download without leaving the page.
     $this->flushSession();
-    $this->actingAs($owner)->get(route('backups.recovery.kit'))->assertRedirect(route('password.confirm'));
 
-    $kit = $this->actingAs($owner)->withSession(passwordConfirmed())->get(route('backups.recovery.kit'))
+    $kit = $this->actingAs($owner)->get(route('backups.recovery.kit'))
         ->assertOk()
         ->assertHeader('Cache-Control', 'no-store, private');
 
@@ -290,11 +289,11 @@ test('the recovery kit flow: passphrase, audited download, confirmation', functi
         ->not->toContain('correct horse')
         ->and(AuditEvent::query()->where('action', AuditAction::RecoveryKitDownloaded->value)->count())->toBe(1);
 
-    $this->actingAs($owner)->withSession(passwordConfirmed())->post(route('backups.recovery.confirm'))->assertSessionHasNoErrors();
+    $this->actingAs($owner)->post(route('backups.recovery.confirm'))->assertSessionHasNoErrors();
     expect(InstanceSettings::current()->recovery_kit_confirmed_at)->not->toBeNull();
 
     // Rotating the passphrase asks for a new kit.
-    $this->actingAs($owner)->withSession(passwordConfirmed())
+    $this->actingAs($owner)
         ->post(route('backups.recovery.passphrase'), ['passphrase' => 'another long passphrase', 'passphrase_confirmation' => 'another long passphrase']);
     expect(InstanceSettings::current()->recovery_kit_confirmed_at)->toBeNull();
 });

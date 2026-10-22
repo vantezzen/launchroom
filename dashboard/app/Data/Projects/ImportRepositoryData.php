@@ -29,5 +29,6 @@ final class ImportRepositoryData extends Data
         public array $apps,
         #[Max(6)]
         public array $databases = [],
+        public bool $deploy = true,
     ) {}
 }

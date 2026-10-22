@@ -55,7 +55,7 @@ final class InteractiveSessionPolicy
 
     /**
      * Read a console transcript: the exec permission plus being its opener or
-     * an owner/admin (the controller also asks for a fresh password).
+     * an owner/admin (the controller authorizes access).
      */
     public function viewRecording(User $user, InteractiveSession $session): bool
     {

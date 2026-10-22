@@ -12,7 +12,6 @@ use App\Data\Audit\AuditEntryData;
 use App\Data\Sessions\AuthorizeSessionData;
 use App\Data\Sessions\SessionCommandData;
 use App\Enums\AuditAction;
-use App\Http\Auth\SessionPasswordGate;
 use App\Http\Controllers\Controller;
 use App\Models\LogChunk;
 use App\Models\Sessions\InteractiveSession;
@@ -72,12 +71,6 @@ final class InteractiveSessionController extends Controller
     public function recording(Request $request, InteractiveSession $interactiveSession, #[CurrentUser] User $user, RecordAuditEvent $audit): JsonResponse
     {
         Gate::authorize('viewRecording', $interactiveSession);
-
-        $denied = SessionPasswordGate::check($request, $user, $request->filled('password') ? $request->string('password')->toString() : null);
-
-        if ($denied instanceof JsonResponse) {
-            return $denied;
-        }
 
         $lines = [];
 

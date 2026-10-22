@@ -76,17 +76,13 @@ test('a Mac never takes the edge role; Docker Desktop never runs apps (D53)', fu
             ->missing('roleLimits.build'));
 });
 
-test('admins change roles behind a password confirmation; developers cannot; audited', function (): void {
+test('admins change roles without another password; developers cannot; audited', function (): void {
     [$cp] = Projects::server($this->team);
     Projects::server($this->team, [ServerRole::Build], ip: '203.0.113.9');
 
-    // Without a recent password the request goes to the confirmation first.
-    $this->actingAs($this->admin)->put(route('servers.roles.update', $cp->public_id), ['roles' => ['edge', 'runtime']])->assertRedirectContains('confirm-password');
-    expect(rolesOf($cp))->toBe(['edge', 'runtime', 'build']);
+    $this->actingAs($this->developer)->put(route('servers.roles.update', $cp->public_id), ['roles' => ['edge', 'runtime']])->assertForbidden();
 
-    $this->actingAs($this->developer)->withSession(passwordConfirmed())->put(route('servers.roles.update', $cp->public_id), ['roles' => ['edge', 'runtime']])->assertForbidden();
-
-    $this->actingAs($this->admin)->withSession(passwordConfirmed())->put(route('servers.roles.update', $cp->public_id), ['roles' => ['edge', 'runtime']])->assertRedirect();
+    $this->actingAs($this->admin)->put(route('servers.roles.update', $cp->public_id), ['roles' => ['edge', 'runtime']])->assertRedirect();
 
     expect(rolesOf($cp))->toBe(['edge', 'runtime'])
         ->and(AuditEvent::query()->where('action', AuditAction::ServerRolesUpdated->value)->sole()->meta)->toEqual(['from' => ['edge', 'runtime', 'build'], 'to' => ['edge', 'runtime']]);
@@ -95,18 +91,18 @@ test('admins change roles behind a password confirmation; developers cannot; aud
 test('roles are validated: at least one, only edge/runtime/build', function (): void {
     [$server] = Projects::server($this->team);
 
-    $this->actingAs($this->admin)->withSession(passwordConfirmed())->put(route('servers.roles.update', $server->public_id), ['roles' => []])->assertSessionHasErrors('roles');
-    $this->actingAs($this->admin)->withSession(passwordConfirmed())->put(route('servers.roles.update', $server->public_id), ['roles' => ['registry']])->assertSessionHasErrors('roles.0');
+    $this->actingAs($this->admin)->put(route('servers.roles.update', $server->public_id), ['roles' => []])->assertSessionHasErrors('roles');
+    $this->actingAs($this->admin)->put(route('servers.roles.update', $server->public_id), ['roles' => ['registry']])->assertSessionHasErrors('roles.0');
     expect(rolesOf($server))->toBe(['edge', 'runtime', 'build']);
 });
 
 test('servers of other teams cannot be changed; revoked ones neither', function (): void {
     [$foreign] = Projects::server(Team::factory()->create());
-    $this->actingAs($this->admin)->withSession(passwordConfirmed())->put(route('servers.roles.update', $foreign->public_id), ['roles' => ['edge']])->assertNotFound();
+    $this->actingAs($this->admin)->put(route('servers.roles.update', $foreign->public_id), ['roles' => ['edge']])->assertNotFound();
 
     [$revoked] = Projects::server($this->team);
     $revoked->forceFill(['status' => ServerStatus::Revoked, 'revoked_at' => now()])->save();
-    $this->actingAs($this->admin)->withSession(passwordConfirmed())->put(route('servers.roles.update', $revoked->public_id), ['roles' => ['edge']])->assertForbidden();
+    $this->actingAs($this->admin)->put(route('servers.roles.update', $revoked->public_id), ['roles' => ['edge']])->assertForbidden();
     expect(fn (): Server => updateRoles($revoked, ['edge']))->toThrow(DomainRuleViolation::class, 'revoked');
 });
 

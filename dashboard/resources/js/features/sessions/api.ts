@@ -23,7 +23,6 @@ export function openSession(
         shell?: string | null;
         cols: number;
         rows: number;
-        password?: string;
     },
 ): Promise<App.Data.Sessions.OpenedSessionData> {
     return api('post', serviceSessions.open({ ...ref, kind }).url, body);
@@ -40,15 +39,8 @@ export function endSession(session: string): Promise<null> {
     return api('post', sessions.end(session).url, {});
 }
 
-export function fetchRecording(
-    session: string,
-    password?: string,
-): Promise<{ lines: string[] }> {
-    return api(
-        'post',
-        sessions.recording(session).url,
-        password === undefined ? {} : { password },
-    );
+export function fetchRecording(session: string): Promise<{ lines: string[] }> {
+    return api('post', sessions.recording(session).url, {});
 }
 
 function xsrfToken(): string | null {

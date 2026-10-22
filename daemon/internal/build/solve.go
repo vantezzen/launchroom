@@ -164,6 +164,9 @@ func (m *logMapper) status(st *bkclient.SolveStatus) {
 			continue
 		}
 		switch {
+		case v.Error != "" && isCacheImport(vi.name):
+			vi.done = true
+			m.emit(vi.step, state.StreamStdout, fmt.Sprintf("#%d %s", vi.num, cacheImportNote(v.Error)))
 		case v.Error != "":
 			vi.done = true
 			if m.failed == "" {
@@ -226,6 +229,30 @@ func (m *logMapper) failedStep() string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.failed
+}
+
+// NoCacheYet replaces BuildKit's "cache importer … not found" error on the
+// first build of a service (no cache/<service>:buildcache pushed yet).
+const NoCacheYet = "No build cache yet for this service: this first build starts from scratch."
+
+// isCacheImport is BuildKit's "importing cache manifest from <ref>" vertex.
+// Its errors never fail the solve: a cache source that can't be loaded just
+// has no records (llbsolver lazyCacheManager), so the build runs uncached.
+func isCacheImport(name string) bool {
+	return strings.HasPrefix(name, "importing cache manifest")
+}
+
+// cacheImportNote is the log line for a failed cache import: a plain note,
+// never an "ERROR" line or the build's failed step.
+func cacheImportNote(err string) string {
+	if strings.Contains(err, "not found") {
+		return NoCacheYet
+	}
+	reason := err
+	if i := strings.LastIndex(err, "cache importer: "); i >= 0 {
+		reason = err[i+len("cache importer: "):]
+	}
+	return "WARNING: Couldn't load the build cache, building without it (" + reason + ")"
 }
 
 var reStage = regexp.MustCompile(`^\[([A-Za-z0-9_.-]+)(?: [0-9]+/[0-9]+)?\]`)

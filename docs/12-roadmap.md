@@ -132,7 +132,7 @@ Not implemented. Grouped by area; order within a group is not a priority.
 - Verify Fulcio's `SourceRepositoryRef` in launchroomd; downgrade protection in the installers; delete update rollback copies after a successful update.
 - Run `pg_restore` as a non-superuser.
 - Authorization cleanups: snapshot listing needs `deploy` or `backups.manage`; scope the parent-service lookup in `DiscardChanges`; bind `{revision}`, `{preview}` and `{shareLink}` through `TeamScopedBindings`; align permissions for retired-volume deletion, environment copies with secrets and Revert.
-- Account hygiene: throttle forgot-password without revealing whether an account exists; case-insensitive e-mail uniqueness; password re-confirmation for member removal and in-place restores.
+- Account hygiene: throttle forgot-password without revealing whether an account exists; case-insensitive e-mail uniqueness.
 - Secrets delivered as tmpfs `*_FILE` files.
 
 ### Dashboard

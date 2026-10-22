@@ -7,6 +7,7 @@ namespace App\Support\Deployments\Failures;
 use App\Data\Deployments\FailureExplanationData;
 use App\Enums\DeploymentFailureClass;
 use App\Enums\FailureFixAction;
+use App\Enums\VariableType;
 use Closure;
 
 /**
@@ -269,13 +270,14 @@ final class FailureCatalogue
                 'classes' => null,
                 'hints' => [],
                 'patterns' => [
+                    '/\b'.self::VARIABLE.' environment variable is not set/',
                     '/import\.meta\.env\.'.self::VARIABLE.' is undefined/',
                     '/missing (?:required )?(?:environment|env) variable[:\s]+[\'"`]?'.self::VARIABLE.'/i',
                     '/(?:environment|env) variable [\'"`]?'.self::VARIABLE.'[\'"`]? (?:is )?(?:not set|missing|required|undefined)/i',
                     '/KeyError: [\'"]'.self::VARIABLE.'[\'"]/',
                     '/\b'.self::VARIABLE.' (?:is not defined|is not set|is required|must be set)/',
                 ],
-                'explain' => static function (FailureMatch $m): ?FailureExplanationData {
+                'explain' => static function (FailureMatch $m, FailureContext $context): ?FailureExplanationData {
                     $name = $m->firstGroup();
 
                     // "X is not defined" with a short or camel-cased name is a code bug, not a variable.
@@ -283,7 +285,7 @@ final class FailureCatalogue
                         return null;
                     }
 
-                    $vite = str_contains($m->group(0), 'import.meta.env');
+                    $vite = str_contains($m->group(0), 'import.meta.env') || in_array($context->class, [DeploymentFailureClass::BuildError, DeploymentFailureClass::PlanError], true);
 
                     return new FailureExplanationData(
                         key: 'missing_variable',
@@ -292,10 +294,10 @@ final class FailureCatalogue
                             ? "The app reads {$name} while it is built, but the build did not get it."
                             : "The app reads {$name}, but it is not set for this environment.",
                         fix: $vite
-                            ? "Add {$name} and make it available to the build, then deploy again."
+                            ? "Open {$name} in this service’s variables, set its value and availability to Build and runtime, then deploy again."
                             : "Add {$name} to this service's variables, then deploy again.",
                         action: FailureFixAction::AddVariable,
-                        params: array_filter(['name' => $name, 'buildTime' => $vite ? '1' : '']),
+                        params: array_filter(['name' => $name, 'buildTime' => $vite ? '1' : '', 'type' => VariableType::suggestFor($name) === VariableType::Secret ? 'secret' : null]),
                     );
                 },
             ],

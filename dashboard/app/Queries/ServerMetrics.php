@@ -319,7 +319,7 @@ final readonly class ServerMetrics
         }
 
         $rows = DB::table('server_metric_samples')
-            ->selectRaw('DISTINCT ON (server_id) server_id, at, cpu_pct, mem_used_mb, mem_total_mb, disk_used_mb, disk_total_mb, net_rx_bps, net_tx_bps, load1')
+            ->selectRaw('DISTINCT ON (server_id) server_id, at, cpu_pct, mem_used_mb, mem_total_mb, disk_used_mb, disk_total_mb, net_rx_bps, net_tx_bps, load1, build_cpu_cores')
             ->whereIn('server_id', $serverIds)
             ->where('resolution', 1)
             ->where('at', '>=', $now->subMinutes(self::CURRENT_WITHIN_MINUTES)->toIso8601String())
@@ -346,6 +346,7 @@ final readonly class ServerMetrics
                 Cast::int($row->net_rx_bps ?? null),
                 Cast::int($row->net_tx_bps ?? null),
                 Cast::round(Cast::float($row->load1 ?? null), 2),
+                Cast::round(Cast::float($row->build_cpu_cores ?? null), 3),
             );
         }
 

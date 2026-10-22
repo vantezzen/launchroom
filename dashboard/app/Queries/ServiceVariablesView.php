@@ -113,6 +113,7 @@ final readonly class ServiceVariablesView
                 preview: $result !== null && $variable->references !== [] ? $result['preview'] : null,
                 errors: $result['errors'] ?? [],
                 used: in_array($id, $serviceSpec->sharedVariableIds, true),
+                exposure: $variable->exposure,
             );
         }
 

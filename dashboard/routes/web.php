@@ -27,7 +27,6 @@ use App\Http\Controllers\Teams\InvitationController;
 use App\Http\Controllers\Teams\MembershipController;
 use App\Http\Controllers\Teams\TeamController;
 use App\Http\Controllers\Teams\TeamSettingsController;
-use App\Http\Middleware\RequireRecentPassword;
 use App\Support\PublicId;
 use Illuminate\Routing\RedirectController;
 use Illuminate\Support\Facades\Route;
@@ -73,7 +72,7 @@ Route::middleware(['auth', 'verified'])->group(function (): void {
     // Recovery mode after `install.sh --restore` (docs/14 §5.2), instance owners.
     Route::get('recovery', [RecoveryController::class, 'show'])->name('recovery.show');
     Route::post('recovery/replace', [RecoveryController::class, 'replace'])
-        ->middleware([RequireRecentPassword::class, 'throttle:6,1'])
+        ->middleware('throttle:6,1')
         ->name('recovery.replace');
     Route::post('recovery/rebuild', [RecoveryController::class, 'rebuild'])
         ->middleware('throttle:6,1')
@@ -121,31 +120,31 @@ Route::middleware(['auth', 'verified'])->group(function (): void {
         ->middleware('throttle:10,1')
         ->name('servers.small-server-hint.dismiss');
     Route::post('servers/enrollments', [ServerEnrollmentController::class, 'store'])
-        ->middleware(RequireRecentPassword::class)
+
         ->name('servers.enrollments.store');
     Route::get('servers/enrollments/{enrollment}', [ServerEnrollmentController::class, 'show'])->name('servers.enrollments.show');
     Route::delete('servers/enrollments/{enrollment}', [ServerEnrollmentController::class, 'destroy'])->name('servers.enrollments.destroy');
     // Mesh settings (instance owners, docs/05 §2); before servers/{server}.
     Route::get('servers/mesh', [MeshController::class, 'show'])->name('servers.mesh.show');
     Route::post('servers/mesh/enable', [MeshController::class, 'enable'])
-        ->middleware([RequireRecentPassword::class, 'throttle:10,1'])
+        ->middleware('throttle:10,1')
         ->name('servers.mesh.enable');
     Route::put('servers/mesh/own-tailscale', [MeshController::class, 'ownTailscale'])
-        ->middleware([RequireRecentPassword::class, 'throttle:10,1'])
+        ->middleware('throttle:10,1')
         ->name('servers.mesh.own-tailscale');
     // Ingress & certificates (instance owners, docs/05 §4–5); before servers/{server}.
     Route::get('servers/ingress', [IngressController::class, 'show'])->name('servers.ingress.show');
     Route::put('servers/ingress/dns', [IngressController::class, 'update'])
-        ->middleware([RequireRecentPassword::class, 'throttle:10,1'])
+        ->middleware('throttle:10,1')
         ->name('servers.ingress.dns.update');
     Route::delete('servers/ingress/dns', [IngressController::class, 'destroy'])
-        ->middleware(RequireRecentPassword::class)
+
         ->name('servers.ingress.dns.destroy');
     Route::post('servers/ingress/dns/verify', [IngressController::class, 'verify'])
         ->middleware('throttle:10,1')
         ->name('servers.ingress.dns.verify');
     Route::put('servers/ingress/edges/{server}', [IngressController::class, 'sharedEdge'])
-        ->middleware([RequireRecentPassword::class, 'throttle:10,1'])
+        ->middleware('throttle:10,1')
         ->name('servers.ingress.edges.update');
     // Usage metrics JSON and device/location overrides; before servers/{server}.
     Route::get('servers/-/metrics', [ServerMetricsController::class, 'index'])->name('servers.metrics.index');
@@ -158,23 +157,23 @@ Route::middleware(['auth', 'verified'])->group(function (): void {
         ->name('servers.tab');
     Route::put('servers/{server}/settings', [ServerController::class, 'updateSettings'])->name('servers.settings.update');
     Route::put('servers/{server}/roles', [ServerController::class, 'updateRoles'])
-        ->middleware([RequireRecentPassword::class, 'throttle:10,1'])
+        ->middleware('throttle:10,1')
         ->name('servers.roles.update');
     Route::post('servers/{server}/approve', [ServerController::class, 'approve'])
-        ->middleware(RequireRecentPassword::class)
+
         ->name('servers.approve');
     Route::post('servers/{server}/revoke', [ServerController::class, 'revoke'])
-        ->middleware(RequireRecentPassword::class)
+
         ->name('servers.revoke');
     // Replace a dead server (docs/14 §5.3).
     Route::get('servers/{server}/replace', [ServerReplacementController::class, 'show'])->name('servers.replace');
     Route::post('servers/{server}/replace', [ServerReplacementController::class, 'store'])
-        ->middleware([RequireRecentPassword::class, 'throttle:6,1'])
+        ->middleware('throttle:6,1')
         ->name('servers.replace.store');
     // Move to another server (docs/14 §13.2).
     Route::get('servers/{server}/move', [ServerMoveController::class, 'show'])->name('servers.move');
     Route::post('servers/{server}/move', [ServerMoveController::class, 'store'])
-        ->middleware([RequireRecentPassword::class, 'throttle:6,1'])
+        ->middleware('throttle:6,1')
         ->name('servers.move.store');
     Route::post('servers/{server}/move/{move}/cancel', [ServerMoveController::class, 'cancel'])
         ->where('move', PublicId::routePattern('smv'))
@@ -186,11 +185,11 @@ Route::middleware(['auth', 'verified'])->group(function (): void {
         ->name('servers.move.retry');
     Route::post('servers/{server}/move/{move}/retire', [ServerMoveController::class, 'retire'])
         ->where('move', PublicId::routePattern('smv'))
-        ->middleware([RequireRecentPassword::class, 'throttle:6,1'])
+        ->middleware('throttle:6,1')
         ->name('servers.move.retire');
     Route::post('servers/{server}/retired-volumes/{volume}/confirm', [RetiredVolumeController::class, 'confirm'])
         ->where('volume', 'vol_[0-9A-HJKMNP-TV-Z]{26}')
-        ->middleware(RequireRecentPassword::class)
+
         ->name('servers.retired-volumes.confirm');
 
     // Local-only showcase of the visual primitives; 404 elsewhere.
@@ -198,11 +197,11 @@ Route::middleware(['auth', 'verified'])->group(function (): void {
 
     Route::get('settings/team', [TeamSettingsController::class, 'edit'])->name('team.edit');
     Route::post('settings/team/invitations', [InvitationController::class, 'store'])
-        ->middleware(RequireRecentPassword::class)
+
         ->name('team.invitations.store');
     Route::delete('settings/team/invitations/{invitation}', [InvitationController::class, 'destroy'])->name('team.invitations.destroy');
     Route::patch('settings/team/members/{membership}', [MembershipController::class, 'update'])
-        ->middleware(RequireRecentPassword::class)
+
         ->name('team.members.update');
     Route::delete('settings/team/members/{membership}', [MembershipController::class, 'destroy'])->name('team.members.destroy');
 });

@@ -80,7 +80,7 @@ test('an image service with a tag deploys digest-pinned through the mirror', fun
     resolve(DeployEnvironment::class)->handle($project->production()->sole(), null, AuditActor::system());
 
     $deployment = Deployment::query()->latest('id')->firstOrFail();
-    expect($deployment->status)->toBe(DeploymentStatus::HealthChecking)
+    expect($deployment->status)->toBe(DeploymentStatus::RollingOut)
         ->and($deployment->image)->toBe('127.0.0.1:5000/mirror/ghcr.io/umami-software/umami@'.IR_DIGEST);
 });
 

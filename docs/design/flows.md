@@ -79,7 +79,7 @@ Plan preview states, each designed: Inspecting (skeleton card with the repo name
 
 1. The node says "Last deploy failed · still serving 3b7d5e1" (reassurance first: nothing went down).
 2. Deployment page: the overview card, then the **explained failure card** (Laravel error page style): a human title ("Build failed: pnpm lockfile is out of date"), one or two sentences of cause and fix, actions ("Jump to line 7", "Copy command"), the failure class as a small chip.
-3. Steps list with the failed step open, showing **only the ±5 lines around the first error** with the error line highlighted; "Show all 146 lines" expands.
+3. Steps list with the failed step open and scrolled to its first error, with error lines highlighted. The same toolbar searches every step, expands all steps, and copies or downloads the whole log.
 4. Known fixes are buttons: `port_mismatch` → "Use port 5173 and redeploy"; `health_timeout` → "Allow 60s to start and redeploy"; missing variable → "Add NEXT_PUBLIC_STRIPE_KEY" (opens the Variables tab prefilled). The fix stages the change and deploys it in the same click when it is the only staged change.
 
 **Magic.** The fix is one click for known errors.

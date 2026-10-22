@@ -38,8 +38,6 @@ use Illuminate\Support\Facades\Gate;
  */
 final class ServiceTransfersController extends Controller
 {
-    use ConfirmsRecentPassword;
-
     public function show(ServiceInstance $serviceInstance, #[CurrentUser] User $user, ServiceTransfersView $view): ServiceTransfersData
     {
         Gate::authorize('viewAny', [BackupRun::class, $serviceInstance]);
@@ -77,27 +75,19 @@ final class ServiceTransfersController extends Controller
         return $view->for($serviceInstance, $user);
     }
 
-    public function storeExport(Request $request, ServiceInstance $serviceInstance, StartExportInput $input, #[CurrentUser] User $user, StartExport $start, ServiceTransfersView $view): ServiceTransfersData|JsonResponse
+    public function storeExport(Request $request, ServiceInstance $serviceInstance, StartExportInput $input, #[CurrentUser] User $user, StartExport $start, ServiceTransfersView $view): ServiceTransfersData
     {
         Gate::authorize('create', [DataExportRun::class, $serviceInstance]);
-
-        if (($required = $this->passwordRequired($request, $user, 'Confirm your password to download this data.')) instanceof JsonResponse) {
-            return $required;
-        }
 
         $start->handle($serviceInstance, $input, $user, $this->auditActor($request, $user));
 
         return $view->for($serviceInstance, $user);
     }
 
-    public function link(Request $request, ServiceInstance $serviceInstance, DataExportRun $export, #[CurrentUser] User $user, CreateDownloadLink $link): DownloadLinkData|JsonResponse
+    public function link(Request $request, ServiceInstance $serviceInstance, DataExportRun $export, #[CurrentUser] User $user, CreateDownloadLink $link): DownloadLinkData
     {
         abort_unless($export->service_instance_id === $serviceInstance->id, 404);
         Gate::authorize('download', $export);
-
-        if (($required = $this->passwordRequired($request, $user, 'Confirm your password to download this data.')) instanceof JsonResponse) {
-            return $required;
-        }
 
         ['token' => $token, 'expiresAt' => $expiresAt] = $link->handle($export, $user);
 

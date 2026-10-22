@@ -13,10 +13,8 @@ use Illuminate\Validation\ValidationException;
 use SensitiveParameter;
 
 /**
- * Password re-confirmation outside the login form (the confirm-password page
- * and inline confirmation when revealing a secret) shares one budget of
- * failed attempts, per user and per client IP (review L4): a hijacked
- * session can't use these endpoints as a password oracle. Lockouts are
+ * The legacy confirm-password endpoint limits failed attempts per user and
+ * client IP (review L4), so a hijacked session can't use it as a password oracle. Lockouts are
  * logged (no password, no value).
  */
 final class PasswordConfirmationThrottle

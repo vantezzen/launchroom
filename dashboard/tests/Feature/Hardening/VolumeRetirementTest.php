@@ -34,7 +34,7 @@ beforeEach(function (): void {
     $this->project = $this->database->environment->project;
     $this->volume = Volume::query()->where('service_instance_id', $this->database->id)->sole();
     $this->admin = memberOf($this->team, TeamRole::Admin);
-    $this->deleteProject = fn (array $data = []) => $this->actingAs($this->admin)->withSession(passwordConfirmed())
+    $this->deleteProject = fn (array $data = []) => $this->actingAs($this->admin)
         ->delete(route('projects.destroy', $this->project), ['confirmName' => $this->project->name, ...$data]);
 });
 
@@ -134,9 +134,8 @@ test('a backed-up volume retired without a final backup is kept until an admin a
             ->where('canConfirmVolumeDeletion', true));
 
     $url = route('servers.retired-volumes.confirm', [$this->server, 'vol_01J9Z8X7W6V5T4S3R2Q1P0N9Z1']);
-    $this->actingAs($this->admin)->post($url)->assertRedirect(route('password.confirm'));
-    $this->actingAs(memberOf($this->team, TeamRole::Developer))->withSession(passwordConfirmed())->post($url)->assertForbidden();
-    $this->actingAs($this->admin)->withSession(passwordConfirmed())->post($url)->assertRedirect();
+    $this->actingAs(memberOf($this->team, TeamRole::Developer))->post($url)->assertForbidden();
+    $this->actingAs($this->admin)->post($url)->assertRedirect();
 
     expect($retirement->refresh()->confirmed_by)->toBe($this->admin->id)
         ->and(AuditEvent::query()->where('action', AuditAction::VolumeDeletionConfirmed->value)->exists())->toBeTrue();

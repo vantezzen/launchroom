@@ -45,5 +45,6 @@ final class DeploymentDetailData extends Data
         public ?string $compareUrl = null,
         /** The launchroom.json problems a push failed on (docs/18 §6). */
         public ?DeploymentConfigErrorsData $configErrors = null,
+        public ?BuildServerData $buildServer = null,
     ) {}
 }

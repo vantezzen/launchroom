@@ -61,6 +61,14 @@ test('the preview shows the canvas and the notes, never a value', function (): v
     $this->actingAs($this->developer)->postJson(route('projects.compose.preview'), [])->assertUnprocessable();
 });
 
+test('a Compose project can be configured before deploying', function (): void {
+    $this->actingAs($this->developer)->post(route('projects.compose.store'), [
+        'compose' => $this->wordpress, 'name' => 'Blog', 'deploy' => false,
+    ])->assertRedirect()->assertSessionHasNoErrors();
+    expect(Project::query()->sole()->services()->count())->toBeGreaterThan(0)
+        ->and(Deployment::query()->count())->toBe(0);
+});
+
 test('importing creates the services, keeps secrets encrypted and deploys right away', function (): void {
     Queue::fake();
     Projects::server($this->team);

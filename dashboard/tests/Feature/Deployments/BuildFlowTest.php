@@ -200,7 +200,7 @@ test('a git app is built by a build task sealed at lease time, released, rolled 
         ->and($task->type)->toBe(DaemonTaskType::Build)
         ->and($task->required_role)->toBe(ServerRole::Build)
         ->and($task->max_attempts)->toBe(2)
-        ->and($task->timeout_seconds)->toBe(1800)
+        ->and($task->timeout_seconds)->toBe(7200)
         ->and($task->spec->repo)->toEqual((object) ['provider' => 'git', 'cloneUrl' => 'http://git-fixtures:8080/node-hello.git', 'sha' => BF_SHA_A])
         ->and($task->spec->platform)->toBe('linux/arm64')
         ->and($task->spec->image)->toBe('127.0.0.1:5000/apps/'.strtolower($app->public_id))
@@ -245,7 +245,7 @@ test('a git app is built by a build task sealed at lease time, released, rolled 
         ->and($releaseEnv['DATABASE_URL'])->toStartWith('postgresql://');
 
     bfComplete($server, $release->public_id, ['outcome' => 'succeeded', 'runOnce' => ['exitCode' => 0, 'durationMs' => 1200]]);
-    expect($deployment->refresh()->status)->toBe(DeploymentStatus::HealthChecking);
+    expect($deployment->refresh()->status)->toBe(DeploymentStatus::RollingOut);
 
     $state = Projects::nodeState($server);
     $workload = collect($state['workloads'])->firstWhere('deployment', $deployment->public_id);
@@ -370,7 +370,7 @@ test('workers run the image of their parent app', function (): void {
 
     $deployment = bfLatest($worker);
     expect($deployment->image)->toBe(bfImage($app))
-        ->and($deployment->status)->toBe(DeploymentStatus::HealthChecking);
+        ->and($deployment->status)->toBe(DeploymentStatus::RollingOut);
 
     $workload = collect(Projects::nodeState($server)['workloads'])->firstWhere('deployment', $deployment->public_id);
     expect($workload['command'])->toBe(['node', 'worker.js'])

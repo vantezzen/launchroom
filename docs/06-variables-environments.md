@@ -85,7 +85,7 @@ final env for (service instance S in environment E, branch B) =
 - One **variable row** = key + value + type + **targets**. Targets are a set of environments: specific persistent environments, `production`, and/or "All previews" with an optional branch pattern. Targeting is described in §3.6.
 - **Types**:
   - `config`: readable by anyone who can see the service.
-  - `secret`: write-only after saving (replace/rotate only), masked in logs; reveal only for roles with permission, password-confirmed and audited.
+  - `secret`: write-only after saving (replace/rotate only), masked in logs; reveal only for roles with permission, authorized and audited.
 
   Imported keys matching secret patterns (`*_KEY`, `*_SECRET`, `*_TOKEN`, `*PASSWORD*`, `*_DSN`) default to `secret`.
 - **Shared variables** are project-level, with the same targets. They are **not** auto-injected everywhere: a service opts in ("Use in: web, api"), which injects the variable under its own key, or references it as `${{shared.KEY}}`. A shared variable a service didn't opt into is reachable only by reference.
@@ -126,11 +126,12 @@ Accepting stores a **connection** row plus the injected references. These are or
 
 ### 3.3 Build vs runtime (automatic)
 
-Each variable has an effective **exposure**: `runtime` (default), `build`, or `build+runtime`, computed automatically and overridable under Advanced:
+Each variable has an effective **exposure**: `runtime` (default), `build`, or `build+runtime`, computed automatically and overridable in the visible **Available at** field:
 - **Build+runtime automatically**:
   - framework-inlined prefixes: `NEXT_PUBLIC_*`, `VITE_*`, `PUBLIC_*` (SvelteKit/Astro), `REACT_APP_*`, `EXPO_PUBLIC_*`, `GATSBY_*`
   - build tooling: `SENTRY_AUTH_TOKEN`/`SENTRY_ORG`/`SENTRY_PROJECT`, `NODE_OPTIONS`, `NPM_TOKEN`/`NPM_CONFIG_*`, `COMPOSER_AUTH`, `PIP_INDEX_URL`/`UV_INDEX_URL`, `BUNDLE_*`
   - launchroom-generated build keys (`NEXT_SERVER_ACTIONS_ENCRYPTION_KEY`)
+  - authentication keys imported during Next.js page collection (`AUTH_SECRET`, `NEXTAUTH_SECRET`); these stay secrets, passed to builds through BuildKit's secret transport.
 - `NUXT_PUBLIC_*` stays runtime (Nitro reads it at runtime).
 - Inlined-prefix variables get a 🏗 badge: "baked into the browser bundle at build time, visible to anyone. Changing it requires a rebuild." They **cannot** be type `secret`.
 - Everything else is runtime-only, so editing it doesn't rebuild ([04](04-build-and-deploy.md) §7).
@@ -138,7 +139,7 @@ Each variable has an effective **exposure**: `runtime` (default), `build`, or `b
 
 ### 3.4 Editor features
 
-- Table with key, value (masked for secrets), environment chips, badges (🔒 secret, ↗ reference, 🏗 build, 🔗 connection).
+- Table with key, value (masked for secrets), environment chips, an explicit Runtime only / Build only / Build + runtime badge, and secret, reference and connection cues. Missing-variable build failures read the masked build log tail and link to this editor, editing an existing key when present with Build and runtime preselected.
 - **Paste a `.env` anywhere** to bulk-import (preview table with conflicts and auto-detected secrets).
 - Raw `.env` mode (secrets shown as placeholders that preserve existing values).
 - Export (`.env` with references resolved; secrets only with permission, audited).
@@ -407,5 +408,5 @@ Only changes made in the source **since the base** are offered. Items where the 
 ### 6.6 Copying environments and activity
 
 - **Copying an environment.** `CopyEnvironmentIntent` (used by `CreateEnvironment` and by previews; options `secrets`, `variables`, `serviceIds`, `recordBase`) copies the current instances with their settings, volumes (empty) and canvas positions, and the variables targeted at the base as rows of their own (§3.6). Keys the target already has (e.g. new database credentials) are kept. It records the `created` promotion base (§6.3).
-- **Deleting an environment.** `DeleteEnvironment` (never production; typed name, recent password; refused while a backup/restore of its databases runs; databases with backups need `confirmBackups`) tears down through desired state like `DeleteProject`, deletes rows that only applied there and services that only existed there, and retires its volumes (kept for the retention period, then deleted explicitly, [05](05-networking-ingress.md) §1.1).
+- **Deleting an environment.** `DeleteEnvironment` (never production; typed name; refused while a backup/restore of its databases runs; databases with backups need `confirmBackups`) tears down through desired state like `DeleteProject`, deletes rows that only applied there and services that only existed there, and retires its volumes (kept for the retention period, then deleted explicitly, [05](05-networking-ingress.md) §1.1).
 - **Activity**: `/p/{project}/activity` lists deploys (with their messages), environment copies, promotions ("Promoted 5 changes from staging to production") and rollbacks from the domain tables. The audit log keeps the full trail.

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use App\Http\Controllers\Dockerfiles\DockerfileGenerationSettingsController;
 use App\Http\Controllers\Dockerfiles\ServiceDockerfileGenerationController;
-use App\Http\Middleware\RequireRecentPassword;
 use App\Support\PublicId;
 use Illuminate\Support\Facades\Route;
 
@@ -17,7 +16,7 @@ Route::middleware(['web', 'auth', 'verified'])->group(function (): void {
     Route::get('settings/dockerfile-generation', [DockerfileGenerationSettingsController::class, 'edit'])
         ->name('dockerfile-generation.edit');
     Route::put('settings/dockerfile-generation', [DockerfileGenerationSettingsController::class, 'update'])
-        ->middleware([RequireRecentPassword::class, 'throttle:10,1'])
+        ->middleware('throttle:10,1')
         ->name('dockerfile-generation.update');
     Route::put('settings/dockerfile-generation/team', [DockerfileGenerationSettingsController::class, 'team'])
         ->middleware('throttle:20,1')

@@ -49,7 +49,8 @@ cat >"$STUBS/sysctl" <<'EOF'
 printf 'sysctl %s\n' "$*" >>"$STUB_LOG"
 [ "$1" = -w ] || exit 1
 key="${2%%=*}"
-printf '%s\n' "${2#*=}" >"$LR_TEST_ROOT/proc/sys/fs/inotify/${key#fs.inotify.}"
+mkdir -p "$LR_TEST_ROOT/proc/sys/$(dirname "$(printf %s "$key" | tr . /)")"
+printf '%s\n' "${2#*=}" >"$LR_TEST_ROOT/proc/sys/$(printf %s "$key" | tr . /)"
 EOF
 cat >"$STUBS/id" <<'EOF'
 #!/bin/sh
@@ -64,8 +65,31 @@ cat >"$STUBS/apparmor_parser" <<'EOF'
 printf 'apparmor_parser %s\n' "$*" >>"$STUB_LOG"
 [ "${STUB_AA_FAIL:-}" != 1 ] || { printf 'apparmor_parser: syntax error\n' >&2; exit 1; }
 EOF
+# Swap stubs: record the call; fallocate/dd create the file (STUB_FALLOCATE_FAIL=1
+# makes fallocate fail), df reports STUB_DF_KB free (default 50 GB).
+for tool in mkswap swapon; do
+	# shellcheck disable=SC2016 # the stub expands $* and $STUB_LOG itself
+	printf '#!/bin/sh\nprintf "%s %%s\\n" "$*" >>"$STUB_LOG"\n' "$tool" >"$STUBS/$tool"
+done
+# shellcheck disable=SC2016 # expanded by the stub
+printf '[ "${STUB_SWAPON_FAIL:-}" != 1 ]\n' >>"$STUBS/swapon"
+cat >"$STUBS/fallocate" <<'EOF'
+#!/bin/sh
+printf 'fallocate %s\n' "$*" >>"$STUB_LOG"
+[ "${STUB_FALLOCATE_FAIL:-}" != 1 ] || exit 1
+printf 'swap\n' >"$3"
+EOF
+cat >"$STUBS/dd" <<'EOF'
+#!/bin/sh
+printf 'dd %s\n' "$*" >>"$STUB_LOG"
+for a; do case "$a" in of=*) printf 'swap\n' >"${a#of=}" ;; esac; done
+EOF
+cat >"$STUBS/df" <<'EOF'
+#!/bin/sh
+printf 'Filesystem 1024-blocks Used Available Capacity Mounted on\n/dev/vda1 60000000 1000 %s 1%% /\n' "${STUB_DF_KB:-50000000}"
+EOF
 chmod +x "$STUBS"/*
-for tool in curl sysctl id apparmor_parser; do cp "$STUBS/$tool" "$WORK/nodocker/"; done
+for tool in curl sysctl id apparmor_parser mkswap swapon fallocate dd df; do cp "$STUBS/$tool" "$WORK/nodocker/"; done
 
 # run NAME [args…]: runs install.sh in $WORK/NAME. Output in $WORK/NAME.out,
 # docker/sysctl calls in $WORK/NAME/log, exit status in $STATUS.
@@ -75,18 +99,26 @@ for tool in curl sysctl id apparmor_parser; do cp "$STUBS/$tool" "$WORK/nodocker
 #   STUB_NO_DOCKER 1 = docker is missing until get.docker.com "installs" it
 #   STUB_USERNS    kernel.apparmor_restrict_unprivileged_userns (unset: no such file)
 #   STUB_APPARMOR  /sys/module/apparmor/parameters/enabled (default Y)
+#   STUB_MEM_KB    MemTotal in /proc/meminfo (unset: no meminfo, the swap step skips)
+#   STUB_SWAP_KB   SwapTotal (default 0)
+#   STUB_SWAPS     a line for /proc/swaps after its header (default none)
 # Without --bundle in the args, a missing bundle stops the run right after
 # the host checks.
 run() {
 	name="$1"
 	shift
 	case="$WORK/$name"
-	mkdir -p "$case/root/proc/sys/fs/inotify" "$case/late"
+	mkdir -p "$case/root/proc/sys/fs/inotify" "$case/late" "$case/root/etc"
 	mkdir -p "$case/root/proc/sys/kernel" "$case/root/sys/module/apparmor/parameters"
 	[ -z "${STUB_USERNS:-}" ] || printf '%s\n' "$STUB_USERNS" >"$case/root/proc/sys/kernel/apparmor_restrict_unprivileged_userns"
 	printf '%s\n' "${STUB_APPARMOR:-Y}" >"$case/root/sys/module/apparmor/parameters/enabled"
 	printf '%s\n' "${STUB_WATCHES:-524288}" >"$case/root/proc/sys/fs/inotify/max_user_watches"
 	printf '%s\n' "${STUB_INSTANCES:-512}" >"$case/root/proc/sys/fs/inotify/max_user_instances"
+	if [ -n "${STUB_MEM_KB:-}" ]; then
+		printf 'MemTotal:       %s kB\nSwapTotal:      %s kB\n' "$STUB_MEM_KB" "${STUB_SWAP_KB:-0}" >"$case/root/proc/meminfo"
+		printf 'Filename\t\t\t\tType\t\tSize\t\tUsed\t\tPriority\n%s' "${STUB_SWAPS:+$STUB_SWAPS
+}" >"$case/root/proc/swaps"
+	fi
 	tty="$case/no-tty"
 	if [ -n "${STUB_TTY+set}" ]; then
 		tty="$case/tty"
@@ -337,6 +369,126 @@ LR_BUNDLE_VERIFIED=1 STUB_USERNS=1 STUB_TTY=y run aa-update --allow-buildkit-use
 checked aa-update
 [ ! -e "$WORK/aa-update/root$AA" ] || fail "aa-update wrote $AA"
 lacks "$WORK/aa-update.out" 'user namespaces'
+
+# --- Swap on small hosts (D59) -----------------------------------------------
+SW=/swapfile-launchroom
+SW_CONF=/etc/sysctl.d/60-launchroom-swap.conf
+SW_Q="This server has 1.9 GB of memory and no swap, so builds can run out of memory. Create a 2 GB swap file ($SW)? \[Y/n\]"
+SMALL=2014000
+# swap_made NAME: the file, its fstab line (once), swappiness and the calls.
+swap_made() {
+	c="$WORK/$1"
+	[ -f "$c/root$SW" ] || fail "$1: no $SW"
+	perms="$(stat -c %A "$c/root$SW")"
+	[ "$perms" = "-rw-------" ] || fail "$1: $SW is $perms"
+	[ "$(grep -c "^$SW none swap sw 0 0\$" "$c/root/etc/fstab")" = 1 ] || fail "$1: fstab line missing or twice: $(cat "$c/root/etc/fstab")"
+	has "$c/root$SW_CONF" '^vm.swappiness = 10$'
+	has "$c/log" "^swapon $c/root$SW\$"
+	has "$c/log" '^sysctl -w vm.swappiness=10$'
+	has "$WORK/$1.out" "created a 2 GB swap file ($SW, vm.swappiness=10)"
+}
+no_swap_made() {
+	[ ! -e "$WORK/$1/root$SW" ] || fail "$1 created $SW"
+	lacks "$WORK/$1/log" 'swapon'
+}
+
+for answer in y ''; do
+	STUB_MEM_KB=$SMALL STUB_TTY="$answer" run "swap-yes-$answer" --bundle /missing
+	checked "swap-yes-$answer"
+	asked "swap-yes-$answer" "$SW_Q"
+	has "$WORK/swap-yes-$answer/log" "^fallocate -l 2048M $WORK/swap-yes-$answer/root$SW\$"
+	has "$WORK/swap-yes-$answer/log" "^mkswap $WORK/swap-yes-$answer/root$SW\$"
+	swap_made "swap-yes-$answer"
+done
+
+STUB_MEM_KB=$SMALL run swap-flag --create-swap --bundle /missing
+checked swap-flag
+swap_made swap-flag
+# A re-run reuses the file: no new file, one fstab line.
+mv "$WORK/swap-flag.out" "$WORK/swap-flag-first.out"
+: >"$WORK/swap-flag/log"
+STUB_MEM_KB=$SMALL run swap-flag --create-swap --bundle /missing
+checked swap-flag
+lacks "$WORK/swap-flag/log" 'fallocate'
+swap_made swap-flag
+
+mkdir -p "$WORK/swap-existing/root"
+printf 'keep this file\n' >"$WORK/swap-existing/root$SW"
+STUB_MEM_KB=$SMALL STUB_SWAPON_FAIL=1 run swap-existing --create-swap --bundle /missing
+checked swap-existing
+has "$WORK/swap-existing/root$SW" '^keep this file$'
+lacks "$WORK/swap-existing/log" 'mkswap'
+has "$WORK/swap-existing.out" 'an existing file is never reformatted'
+
+mkdir -p "$WORK/swap-link/root"
+printf 'keep this target\n' >"$WORK/swap-link/target"
+ln -s "$WORK/swap-link/target" "$WORK/swap-link/root$SW"
+STUB_MEM_KB=$SMALL run swap-link --create-swap --bundle /missing
+checked swap-link
+lacks "$WORK/swap-link/log" 'swapon'
+has "$WORK/swap-link/target" '^keep this target$'
+has "$WORK/swap-link.out" 'is not a regular file; skipped'
+
+STUB_MEM_KB=$SMALL STUB_TTY=n LR_CREATE_SWAP=1 run swap-env --bundle /missing
+checked swap-env
+not_asked swap-env
+swap_made swap-env
+
+# fallocate unsupported (some filesystems): dd writes the file instead.
+STUB_MEM_KB=$SMALL STUB_FALLOCATE_FAIL=1 run swap-dd --create-swap --bundle /missing
+checked swap-dd
+has "$WORK/swap-dd/log" "^dd if=/dev/zero of=$WORK/swap-dd/root$SW bs=1M count=2048\$"
+swap_made swap-dd
+
+STUB_MEM_KB=$SMALL STUB_TTY=n run swap-no --bundle /missing
+checked swap-no
+asked swap-no "$SW_Q"
+no_swap_made swap-no
+has "$WORK/swap-no.out" 'Kept the server without swap'
+has "$WORK/swap-no.out" "^    fallocate -l 2G $SW\$"
+has "$WORK/swap-no.out" "^    echo '$SW none swap sw 0 0' | tee -a /etc/fstab\$"
+has "$WORK/swap-no.out" '^    sysctl -w vm.swappiness=10$'
+
+STUB_MEM_KB=$SMALL run swap-no-tty --bundle /missing
+checked swap-no-tty
+no_swap_made swap-no-tty
+has "$WORK/swap-no-tty.out" 'run this again with --create-swap'
+has "$WORK/swap-no-tty.out" "^    mkswap $SW\$"
+
+STUB_MEM_KB=$SMALL STUB_TTY=y STUB_UID=1000 run swap-user --create-swap --bundle /missing
+checked swap-user
+not_asked swap-user
+no_swap_made swap-user
+has "$WORK/swap-user.out" 'Add a 2 GB swap file as root:'
+has "$WORK/swap-user.out" "^    sudo fallocate -l 2G $SW\$"
+has "$WORK/swap-user.out" "^    sudo swapon $SW\$"
+has "$WORK/swap-user.out" "^    echo 'vm.swappiness = 10' | sudo tee $SW_CONF\$"
+
+# Not enough disk: a warning, nothing created.
+STUB_MEM_KB=$SMALL STUB_DF_KB=2000000 run swap-disk --create-swap --bundle /missing
+checked swap-disk
+no_swap_made swap-disk
+has "$WORK/swap-disk.out" 'not enough free disk space for a 2 GB swap file (1953 MB free, 3072 MB needed); skipped.'
+
+# Enough memory, or swap already on: nothing happens.
+STUB_MEM_KB=8000000 STUB_TTY=y run swap-big --bundle /missing
+checked swap-big
+not_asked swap-big
+no_swap_made swap-big
+STUB_MEM_KB=$SMALL STUB_SWAP_KB=1048572 STUB_TTY=y run swap-has --bundle /missing
+checked swap-has
+not_asked swap-has
+no_swap_made swap-has
+STUB_MEM_KB=$SMALL STUB_SWAPS='/dev/zram0 partition 1048572 0 100' STUB_TTY=y run swap-zram --bundle /missing
+checked swap-zram
+not_asked swap-zram
+no_swap_made swap-zram
+
+# An update never touches it.
+LR_BUNDLE_VERIFIED=1 STUB_MEM_KB=$SMALL STUB_TTY=y run swap-update --create-swap --bundle /missing
+checked swap-update
+no_swap_made swap-update
+lacks "$WORK/swap-update.out" 'swap'
 
 # --- update channel -------------------------------------------------------
 # The run stops at the local launchroomd's enrollment (the stub dashboard

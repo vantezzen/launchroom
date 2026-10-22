@@ -3,18 +3,15 @@
 declare(strict_types=1);
 
 use App\Enums\TeamRole;
-use App\Enums\VariableType;
 use App\Http\Middleware\SecurityHeaders;
 use App\Models\Team;
 use App\Models\User;
 use App\Support\Logging\RedactSensitiveContext;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\RateLimiter;
 use Monolog\Handler\TestHandler;
 use Monolog\Processor\PsrLogMessageProcessor;
 use Tests\Support\Backups;
-use Tests\Support\DeploymentUi;
 use Tests\Support\Projects;
 
 /**
@@ -102,28 +99,17 @@ test('secrets are never flashed to the session as old input (L3)', function (): 
     expect(session()->get('_old_input', []))->toBe(['nested' => ['keep' => 'y']]);
 });
 
-test('failed password confirmations share a 5/min budget per user and IP, and lockouts are logged (L4)', function (): void {
-    $world = DeploymentUi::make();
-    $secret = $world->variable('API_TOKEN', 'tok_super_secret_value', VariableType::Secret);
-    $args = [...$world->envArgs(), 'variable' => $secret->public_id];
-    $admin = $world->member(TeamRole::Admin);
+test('failed password confirmations share a budget per user and IP, and lockouts are logged', function (): void {
+    $admin = User::factory()->create();
     Log::spy();
 
     for ($i = 0; $i < 5; $i++) {
-        $this->actingAs($admin)->postJson(route('variables.reveal', $args), ['password' => 'guess-'.$i])->assertUnprocessable();
+        $this->actingAs($admin)->post(route('password.confirm.store'), ['password' => 'guess-'.$i])->assertSessionHasErrors('password');
     }
 
-    // Locked out, even with the right password, here and on the confirm page.
-    $this->actingAs($admin)->postJson(route('variables.reveal', $args), ['password' => 'password'])->assertStatus(429);
-    $this->actingAs($admin)->from(route('profile.edit'))->post(route('password.confirm.store'), ['password' => 'password'])
-        ->assertSessionHasErrors('password');
+    $this->actingAs($admin)->post(route('password.confirm.store'), ['password' => 'password'])->assertSessionHasErrors('password');
     expect(session()->has('auth.password_confirmed_at'))->toBeFalse();
-
     Log::shouldHaveReceived('warning')->withArgs(fn (string $message, array $context): bool => str_contains($message, 'locked out') && $context['user'] === $admin->id)->atLeast()->once();
-
-    RateLimiter::clear('password-confirmation|user:'.$admin->id);
-    RateLimiter::clear('password-confirmation|ip:127.0.0.1');
-    $this->actingAs($admin)->postJson(route('variables.reveal', $args), ['password' => 'password'])->assertOk();
 });
 
 test('the confirm-password page counts failures too (L4)', function (): void {
@@ -137,28 +123,17 @@ test('the confirm-password page counts failures too (L4)', function (): void {
     expect(session('errors')->first('password'))->toContain('Too many attempts');
 });
 
-test('after confirming the password, users return only to same-origin pages (L5)', function (): void {
+test('sensitive forms validate without a password redirect and keep authorization', function (): void {
     $team = Team::factory()->create();
     $admin = memberOf($team, TeamRole::Admin);
+    $this->actingAs($admin)->from(route('team.edit'))
+        ->post(route('team.invitations.store'), ['email' => 'invalid', 'role' => 'viewer'])
+        ->assertRedirect(route('team.edit'))->assertSessionHasErrors('email');
+    expect(session()->has('url.intended'))->toBeFalse();
 
-    // A POST from an attacker-controlled Referer.
-    $this->actingAs($admin)->withHeader('Referer', 'https://evil.example/phish')
+    $this->actingAs(memberOf($team, TeamRole::Viewer))
         ->post(route('team.invitations.store'), ['email' => 'x@example.com', 'role' => 'viewer'])
-        ->assertRedirect(route('password.confirm'));
-    expect(session('url.intended'))->toBe(url('/'));
-
-    // A same-origin form page is kept.
-    $this->actingAs($admin)->withHeader('Referer', url('/settings/team'))
-        ->post(route('team.invitations.store'), ['email' => 'x@example.com', 'role' => 'viewer'])
-        ->assertRedirect(route('password.confirm'));
-    expect(session('url.intended'))->toBe(url('/settings/team'));
-
-    // A GET goes back to itself, whatever the Referer says.
-    $owner = User::factory()->instanceOwner()->withTwoFactor()->create();
-    $this->actingAs($owner)->withHeader('Referer', 'https://evil.example/')
-        ->get(route('backups.recovery.kit'))
-        ->assertRedirect(route('password.confirm'));
-    expect(session('url.intended'))->toBe(route('backups.recovery.kit'));
+        ->assertForbidden();
 });
 
 test('log context keys that look like credentials are redacted (Info: log processor)', function (): void {

@@ -66,6 +66,18 @@ export type VariablesTabProps = {
 type Data = App.Data.Variables.ServiceVariablesData;
 type Row = App.Data.Variables.VariableRowData;
 
+function ExposureBadge({ exposure }: { exposure: App.Enums.VariableExposure }) {
+    return (
+        <Badge variant="outline">
+            {exposure === 'runtime'
+                ? 'Runtime only'
+                : exposure === 'build'
+                  ? 'Build only'
+                  : 'Build + runtime'}
+        </Badge>
+    );
+}
+
 export function serviceVariablesKey(environment: string, service: string) {
     return ['service-variables', environment, service] as const;
 }
@@ -91,7 +103,8 @@ function Hint({ label, children }: { label: string; children: ReactNode }) {
 /** Quiet icon cues with tooltips (direction §9.5): secret, reference, build, connection. */
 function Badges({ row }: { row: Row }) {
     return (
-        <span className="flex shrink-0 items-center gap-0.5">
+        <span className="flex shrink-0 flex-wrap items-center gap-1">
+            <ExposureBadge exposure={row.exposure} />
             {row.managedByFile && (
                 <Hint
                     label={
@@ -178,7 +191,12 @@ export function VariablesTab({
 
     const [dialog, setDialog] = useState<{
         variable: Row | null;
-        preset?: { key: string; value: string };
+        preset?: {
+            key: string;
+            value: string;
+            buildTime?: boolean;
+            type?: App.Enums.VariableType;
+        };
     } | null>(null);
     const [importing, setImporting] = useState<string | null>(null);
     const [deleting, setDeleting] = useState<Row | null>(null);
@@ -205,8 +223,15 @@ export function VariablesTab({
 
         if (canWrite && add) {
             const value = params.get('value') ?? '';
+            const buildTime = params.get('buildTime') === '1';
+            const type =
+                params.get('type') === 'secret'
+                    ? ('secret' as const)
+                    : undefined;
             params.delete('add');
             params.delete('value');
+            params.delete('buildTime');
+            params.delete('type');
             const query = params.toString();
             window.history.replaceState(
                 window.history.state,
@@ -216,10 +241,15 @@ export function VariablesTab({
             setDialog(
                 add === 'variable' || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(add)
                     ? { variable: null }
-                    : { variable: null, preset: { key: add, value } },
+                    : {
+                          variable:
+                              data?.variables.find((row) => row.key === add) ??
+                              null,
+                          preset: { key: add, value, buildTime, type },
+                      },
             );
         }
-    }, [canWrite]);
+    }, [canWrite, data]);
 
     useEffect(() => {
         if (!canWrite || busy) {
@@ -622,6 +652,9 @@ export function VariablesTab({
                                                     className="size-3.5 text-muted-foreground"
                                                 />
                                             )}
+                                            <ExposureBadge
+                                                exposure={row.exposure}
+                                            />
                                         </span>
                                         <span className="type-mono-small [overflow-wrap:anywhere] text-muted-foreground">
                                             {row.type === 'secret'
@@ -657,8 +690,10 @@ export function VariablesTab({
                 </CollapsibleTrigger>
                 <CollapsibleContent className="flex flex-col gap-2">
                     <p className="max-w-[65ch] type-small text-muted-foreground">
-                        launchroom sets these for every deployment. Your
-                        variables with the same name take precedence.
+                        launchroom sets these at runtime for every deployment.
+                        Your variables with the same name take precedence. To
+                        use one while building, add it as a variable with Build
+                        and runtime availability.
                     </p>
                     <dl className="divide-y">
                         {data.system.map((row) => (

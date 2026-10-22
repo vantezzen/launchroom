@@ -76,15 +76,18 @@ test('adding a server issues a join token shown once, with the install command i
     expect(AuditEvent::query()->where('action', AuditAction::ServerEnrollmentCreated->value)->count())->toBe(1);
 });
 
-test('adding a server needs a confirmed password and the servers permission', function (): void {
-    $this->actingAs($this->admin)->post(route('servers.enrollments.store'), ['roles' => ['runtime']])
-        ->assertRedirect(route('password.confirm'));
+test('adding a server preserves build-only roles and hostname without password confirmation', function (): void {
+    $this->actingAs($this->admin)->post(route('servers.enrollments.store'), ['roles' => ['build'], 'name' => 'builder'])
+        ->assertRedirect()->assertSessionHasNoErrors();
 
     $this->actingAs($this->viewer)->withSession(passwordConfirmed())
         ->post(route('servers.enrollments.store'), ['roles' => ['runtime']])->assertForbidden();
     $this->actingAs($this->viewer)->get(route('servers.create'))->assertForbidden();
 
-    expect(ServerEnrollment::query()->count())->toBe(0);
+    expect(ServerEnrollment::query()->count())->toBe(1);
+    $enrollment = ServerEnrollment::query()->sole();
+    expect($enrollment->name)->toBe('builder')
+        ->and($enrollment->roles->map->value->all())->toBe(['build']);
 });
 
 test('roles are validated', function (): void {

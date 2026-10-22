@@ -203,7 +203,7 @@ test('a move is refused onto a server that can’t take it', function (): void {
     expect(implode(' ', $planner->plan($this->source->refresh(), $this->target)->blockers))->toContain('use Replace server');
 
     // And the form refuses what the plan refuses.
-    $this->actingAs($this->owner)->withSession(passwordConfirmed())
+    $this->actingAs($this->owner)
         ->post(route('servers.move.store', $this->source), ['target' => $this->target->public_id, 'confirmation' => 'droplet'])
         ->assertSessionHasErrors('target');
     expect(ServerMove::query()->exists())->toBeFalse();
@@ -217,9 +217,8 @@ test('the private network must be on before services move between servers', func
 
 test('everything moves: apps first, then the database with a short stop, then the source is retired', function (): void {
     $url = route('servers.move.store', $this->source);
-    $this->actingAs($this->owner)->post($url, ['target' => $this->target->public_id, 'confirmation' => 'droplet'])->assertRedirect(route('password.confirm'));
-    $this->actingAs($this->owner)->withSession(passwordConfirmed())->post($url, ['target' => $this->target->public_id, 'confirmation' => 'nope'])->assertSessionHasErrors('confirmation');
-    $this->actingAs($this->owner)->withSession(passwordConfirmed())
+    $this->actingAs($this->owner)->post($url, ['target' => $this->target->public_id, 'confirmation' => 'nope'])->assertSessionHasErrors('confirmation');
+    $this->actingAs($this->owner)
         ->post($url, ['target' => $this->target->public_id, 'backupFirst' => false, 'confirmation' => 'droplet'])
         ->assertRedirect(route('servers.move', $this->source));
 
@@ -286,8 +285,8 @@ test('everything moves: apps first, then the database with a short stop, then th
 
     // Retire: typed name, recent password; the target takes the source's place.
     $retire = route('servers.move.retire', [$this->source, $move->public_id]);
-    $this->actingAs($this->owner)->withSession(passwordConfirmed())->post($retire, ['confirmation' => 'x'])->assertSessionHasErrors('confirmation');
-    $this->actingAs($this->owner)->withSession(passwordConfirmed())->post($retire, ['confirmation' => 'droplet'])->assertRedirect();
+    $this->actingAs($this->owner)->post($retire, ['confirmation' => 'x'])->assertSessionHasErrors('confirmation');
+    $this->actingAs($this->owner)->post($retire, ['confirmation' => 'droplet'])->assertRedirect();
 
     expect($move->refresh()->status)->toBe(ServerMoveStatus::Completed)
         ->and($this->source->refresh()->status)->toBe(ServerStatus::Revoked)
@@ -299,7 +298,7 @@ test('everything moves: apps first, then the database with a short stop, then th
 });
 
 test('a failed copy after the cutover puts the database back on the source, and a retry starts over', function (): void {
-    $this->actingAs($this->owner)->withSession(passwordConfirmed())
+    $this->actingAs($this->owner)
         ->post(route('servers.move.store', $this->source), ['target' => $this->target->public_id, 'confirmation' => 'droplet'])
         ->assertRedirect();
     settleServers([$this->target, $this->source]);
@@ -334,7 +333,7 @@ test('a failed copy after the cutover puts the database back on the source, and 
 });
 
 test('cancelling before the copy keeps the database on the source; moved apps stay moved', function (): void {
-    $this->actingAs($this->owner)->withSession(passwordConfirmed())
+    $this->actingAs($this->owner)
         ->post(route('servers.move.store', $this->source), ['target' => $this->target->public_id, 'confirmation' => 'droplet'])
         ->assertRedirect();
     settleServers([$this->target, $this->source]);
@@ -361,7 +360,7 @@ test('a service with files is held while its volume is created on the target and
     $item = collect($plan->items)->firstWhere('instanceId', $app->public_id);
     expect($item?->kind)->toBe(MoveItemKind::Files);
 
-    $this->actingAs($this->owner)->withSession(passwordConfirmed())
+    $this->actingAs($this->owner)
         ->post(route('servers.move.store', $this->source), ['target' => $this->target->public_id, 'confirmation' => 'droplet'])
         ->assertRedirect();
 
@@ -393,7 +392,7 @@ test('a service with files is held while its volume is created on the target and
 });
 
 test('the source drains: new deployments go to the target while the move is open', function (): void {
-    $this->actingAs($this->owner)->withSession(passwordConfirmed())
+    $this->actingAs($this->owner)
         ->post(route('servers.move.store', $this->source), ['target' => $this->target->public_id, 'confirmation' => 'droplet'])
         ->assertRedirect();
 

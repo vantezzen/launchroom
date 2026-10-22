@@ -89,12 +89,12 @@ test('only instance owners see or change the registry storage', function (TeamRo
     expect(RegistryStorage::query()->count())->toBe(0);
 })->with(['team owner' => [TeamRole::Owner], 'admin' => [TeamRole::Admin], 'developer' => [TeamRole::Developer]]);
 
-test('changing the registry storage needs a recent password', function (): void {
+test('an instance owner can change registry storage without confirming again', function (): void {
     $this->actingAs(registryInstanceOwner())
         ->put(route('registry-settings.update'), registryForm())
-        ->assertRedirect(route('password.confirm'));
+        ->assertRedirect()->assertSessionHasNoErrors();
 
-    expect(RegistryStorage::query()->count())->toBe(0);
+    expect(RegistryStorage::query()->count())->toBe(1);
 });
 
 test('endpoints follow the backup destination rules; the private-network override is audited', function (): void {

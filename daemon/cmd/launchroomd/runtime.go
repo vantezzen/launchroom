@@ -96,15 +96,18 @@ type daemonRuntime struct {
 	traffic *traffic.Collector
 
 	// Registry access and builds (docs/04 §5, docs/05 §6).
-	tokens     *registry.Tokens
-	regFwd     *registry.Forwarder // 127.0.0.1:5000 → Zot
-	buildFwd   *registry.Forwarder // build network gateway:5000 → Zot (for buildkitd)
-	buildkit   *buildkitd.Manager  // nil when the Docker client cannot run system ops (tests)
-	builder    *build.Builder
-	fwdOn      bool
-	buildFwdOn bool
-	sealingKey *ecdh.PrivateKey
-	policy     policy.Config
+	tokens         *registry.Tokens
+	regFwd         *registry.Forwarder // 127.0.0.1:5000 → Zot
+	buildFwd       *registry.Forwarder // build network gateway:5000 → Zot (for buildkitd)
+	buildkit       *buildkitd.Manager  // nil when the Docker client cannot run system ops (tests)
+	builder        *build.Builder
+	buildSlots     chan struct{}
+	planSlots      chan struct{}
+	workloadMemory atomic.Pointer[[]int]
+	fwdOn          bool
+	buildFwdOn     bool
+	sealingKey     *ecdh.PrivateKey
+	policy         policy.Config
 
 	// firewall is the nftables network isolation (docs/05 §1).
 	firewall *firewall.Manager
@@ -289,19 +292,18 @@ func (rt *daemonRuntime) setupBuilds(ctx context.Context, dc docker.Client, pol 
 	if !ok {
 		return
 	}
-	memMB, cpus := rt.cfg.BuildkitMemoryMB, rt.cfg.BuildkitCPUs
-	if memMB == 0 {
-		ictx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		if info, err := dc.Info(ictx); err == nil && info.MemoryMB > 0 {
-			memMB = info.MemoryMB * 3 / 4
-		}
-		cancel()
-	}
+	// Builds and plans each get their own slots: a plan (clone + Railpack
+	// planning in launchroomd) never waits behind a long build, and the task
+	// runner leases no more than the free slots (D59).
+	rt.buildSlots = make(chan struct{}, max(1, rt.cfg.BuildSlots))
+	rt.planSlots = make(chan struct{}, planSlots)
 	rt.buildkit = buildkitd.New(buildkitd.Options{
 		ServerID: string(rt.serverID), Docker: dc, Ops: ops, Policy: pol, Subnet: rt.cfg.BuildSubnet,
-		MaxParallelism: max(2, runtime.NumCPU()), CPUs: cpus, MemoryMB: memMB,
-		GC:  buildkitd.GC{MaxUsedSpace: "60GB", ReservedSpace: "10GB", MinFreeSpace: "15%"},
-		Log: rt.log.With("component", "buildkitd"),
+		Measure:   rt.measureBuildHost,
+		Overrides: buildkitd.Overrides{MemoryMB: rt.cfg.BuildkitMemoryMB, CPUs: rt.cfg.BuildkitCPUs},
+		Busy:      func() bool { return len(rt.buildSlots) > 0 },
+		GC:        buildkitd.GC{MaxUsedSpace: "60GB", ReservedSpace: "10GB", MinFreeSpace: "15%"},
+		Log:       rt.log.With("component", "buildkitd"),
 	})
 	gw := netip.AddrPortFrom(rt.buildkit.Gateway(), buildkitd.RegistryPort)
 	rt.buildFwd = registry.NewForwarder(gw.String(), "", rt.log.With("component", "registry-build"))
@@ -313,8 +315,56 @@ func (rt *daemonRuntime) setupBuilds(ctx context.Context, dc docker.Client, pol 
 		WorkDir:          filepath.Join(rt.cfg.DataDir, buildsDir),
 		InsecureGitHosts: rt.cfg.InsecureGitHosts,
 		Isolate:          rt.firewall.Sync,
+		Resources:        rt.buildkit.Resources,
 		Log:              rt.log.With("component", "build"),
 	})
+}
+
+// planSlots bounds concurrent plan tasks (they run in launchroomd itself).
+const planSlots = 1
+
+// measureBuildHost is what buildkitd's limits are planned from (D59):
+// launchroomd's own reading of the host, never the dashboard's. In use =
+// MemTotal − MemAvailable − buildkitd's own usage; the declared workload
+// limits come from the NodeState being applied.
+func (rt *daemonRuntime) measureBuildHost(ctx context.Context) buildkitd.HostFacts {
+	h := buildkitd.HostFacts{ControlPlane: len(rt.cfg.AllowedLocalUpstreams) > 0}
+	if workloads := rt.workloadMemory.Load(); workloads != nil {
+		h.WorkloadsMB = *workloads
+	}
+	ictx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	if info, err := rt.docker.Info(ictx); err == nil {
+		h.CPUs, h.MemoryMB = info.CPUs, info.MemoryMB
+	}
+	m, ok := hostinfo.ReadMemInfo("/proc")
+	if !ok {
+		return h
+	}
+	if h.MemoryMB <= 0 {
+		h.MemoryMB = int(m.TotalMB)
+	}
+	h.SwapMB = int(m.SwapTotalMB)
+	inUse := int(m.TotalMB - m.AvailableMB)
+	if stats, ok := rt.docker.(docker.StatsOps); ok {
+		if cs, err := rt.docker.ListContainers(ictx, map[string]string{docker.LabelSystem: policy.SystemBuildkit}); err == nil {
+			for _, c := range cs {
+				if st, err := stats.ContainerStats(ictx, c.ID); err == nil && st.HasMemory {
+					inUse -= int(st.MemUsedBytes >> 20)
+				}
+			}
+		}
+	}
+	h.InUseMB = max(0, inUse)
+	return h
+}
+
+func declaredMemory(workloads []state.WorkloadSpec) *[]int {
+	limits := make([]int, 0, len(workloads))
+	for _, workload := range workloads {
+		limits = append(limits, workload.Resources.MemoryMB)
+	}
+	return &limits
 }
 
 // meshIP is this server's mesh IPv4 once the mesh client reports it AND
@@ -354,6 +404,7 @@ func (rt *daemonRuntime) syncSystem(ctx context.Context, ns *state.NodeState) {
 	if rt.buildkit == nil {
 		return
 	}
+	rt.workloadMemory.Store(declaredMemory(ns.Workloads))
 	if err := rt.buildkit.Sync(ctx, ns.System.Buildkit); err != nil && ctx.Err() == nil {
 		rt.log.Warn("buildkitd not converged", "err", err)
 	}
@@ -362,7 +413,7 @@ func (rt *daemonRuntime) syncSystem(ctx context.Context, ns *state.NodeState) {
 	_ = rt.firewall.Sync(ctx)
 	if !rt.buildkit.Enabled() {
 		rt.setBuildPlatforms(nil)
-		rt.setBuilds(buildsCapability(ns.System.Buildkit.Enabled, rt.buildkit.Userns(), false))
+		rt.setBuilds(buildsCapability(ns.System.Buildkit.Enabled, rt.buildkit.Userns(), false, rt.buildkit.Resources()))
 		return
 	}
 	// What this builder can build, emulated platforms included (D53);
@@ -373,7 +424,7 @@ func (rt *daemonRuntime) syncSystem(ctx context.Context, ns *state.NodeState) {
 		rt.setBuildPlatforms(p)
 	}
 	cancel()
-	rt.setBuilds(buildsCapability(true, rt.buildkit.Userns(), p != nil))
+	rt.setBuilds(buildsCapability(true, rt.buildkit.Userns(), p != nil, rt.buildkit.Resources()))
 	buildUp := upstream
 	if buildUp == "" {
 		buildUp = registry.DefaultAddress // Zot itself listens on 127.0.0.1:5000 (control-plane host)
@@ -453,12 +504,31 @@ func (rt *daemonRuntime) run(ctx context.Context, syncState func(context.Context
 	start(func() { rt.reconcileLoop(ctx) })
 	start(func() { rt.scheduleLoop(ctx) })
 	start(func() { rt.reportLoop(ctx) })
+	handlers := rt.handlers()
+	var buildRunners []*tasks.Runner
+	for _, pool := range []struct {
+		typ   state.TaskType
+		slots int
+	}{{state.TaskBuild, max(1, rt.cfg.BuildSlots)}, {state.TaskPlan, planSlots}} {
+		if handler, ok := handlers[pool.typ]; ok {
+			buildRunners = append(buildRunners, tasks.New(tasks.Options{
+				Client: rt.client, Interval: taskInterval, Log: rt.log.With("component", "tasks", "type", pool.typ),
+				Handlers: map[state.TaskType]tasks.Handler{pool.typ: handler}, MaxConcurrent: pool.slots,
+				ShutdownGrace: taskShutdownGrace,
+			}))
+			delete(handlers, pool.typ)
+		}
+	}
 	runner := tasks.New(tasks.Options{
 		Client: rt.client, Interval: taskInterval, Log: rt.log.With("component", "tasks"),
-		Handlers: rt.handlers(), ShutdownGrace: taskShutdownGrace,
+		Handlers: handlers, ShutdownGrace: taskShutdownGrace,
 	})
 	start(func() { runner.Run(ctx) })
 	runners := []*tasks.Runner{runner}
+	for _, r := range buildRunners {
+		start(func() { r.Run(ctx) })
+		runners = append(runners, r)
+	}
 	if sessions := rt.sessionRunner(taskInterval); sessions != nil {
 		start(func() { sessions.Run(ctx) })
 		runners = append(runners, sessions)
@@ -893,12 +963,14 @@ func (rt *daemonRuntime) handlers() map[state.TaskType]tasks.Handler {
 		}),
 	}
 	if rt.builder != nil {
-		bh := tasks.BuildHandler(tasks.BuildOptions{
+		h[state.TaskBuild] = tasks.BuildHandler(tasks.BuildOptions{
 			ServerID: rt.serverID, SealingKey: rt.sealingKey, Builder: rt.builder, Client: rt.client,
-			Slots: make(chan struct{}, rt.cfg.BuildSlots), Forget: rt.tokens.Forget,
+			Slots: rt.buildSlots, Forget: rt.tokens.Forget,
 		})
-		h[state.TaskBuild] = bh
-		h[state.TaskPlan] = bh
+		h[state.TaskPlan] = tasks.BuildHandler(tasks.BuildOptions{
+			ServerID: rt.serverID, SealingKey: rt.sealingKey, Builder: rt.builder, Client: rt.client,
+			Slots: rt.planSlots, Forget: rt.tokens.Forget,
+		})
 	}
 	rt.addBackupHandlers(h)
 	rt.addUpdateHandler(h)

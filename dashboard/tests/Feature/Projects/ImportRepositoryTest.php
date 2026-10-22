@@ -140,6 +140,19 @@ test('importing creates the suggested processes the user kept as workers of thei
         ->and(AuditEvent::query()->where('action', 'project.imported')->sole()->meta)->toMatchArray(['apps' => 1, 'processes' => 2]);
 });
 
+test('a project can be created before variables are configured and deployed', function (): void {
+    Queue::fake();
+    $this->actingAs($this->developer)->post(route('projects.import.store'), [
+        'name' => 'Shop', 'repository' => $this->repository->public_id, 'branch' => 'main',
+        'apps' => [['name' => 'web', 'port' => 3000]], 'deploy' => false,
+    ])->assertRedirect()->assertSessionHasNoErrors();
+
+    $project = Project::query()->sole();
+    expect($project->services()->count())->toBe(1)
+        ->and(Deployment::query()->count())->toBe(0)
+        ->and($project->production()->sole()->last_applied_revision_id)->toBeNull();
+});
+
 test('importing creates the project, services and connections, then deploys right away', function (): void {
     Queue::fake();
     Projects::server($this->team);

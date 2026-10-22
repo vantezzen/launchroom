@@ -68,15 +68,15 @@ test('the device flow: pending, approved once, then expired', function (): void 
         ->assertJsonPath('error.code', 'expired_token');
 });
 
-test('approving needs a recent password', function (): void {
+test('authorized CLI approval needs no extra password', function (): void {
     $world = DeploymentUi::make(false);
     $session = startCliLogin();
 
     $this->actingAs($world->member(TeamRole::Owner))
         ->post("/cli/login/{$session['userCode']}/approve", ['team' => $world->team->public_id, 'abilities' => ['read'], 'expiresInDays' => 30])
-        ->assertRedirect(route('password.confirm'));
+        ->assertRedirect()->assertSessionHasNoErrors();
 
-    expect(ApiToken::query()->count())->toBe(0);
+    expect(ApiToken::query()->count())->toBe(1);
 });
 
 test('a denied sign-in is access_denied', function (): void {

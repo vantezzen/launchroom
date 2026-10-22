@@ -7,7 +7,6 @@ namespace App\Http\Controllers\Sessions;
 use App\Actions\Sessions\OpenSession;
 use App\Data\Sessions\OpenSessionData;
 use App\Enums\Sessions\InteractiveSessionKind;
-use App\Http\Auth\SessionPasswordGate;
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Projects\ProjectScope;
 use App\Models\Environment;
@@ -34,10 +33,9 @@ final class ServiceSessionController extends Controller
         Gate::authorize('view', $instance);
         Gate::authorize('viewAny', [InteractiveSession::class, $instance, $sessionKind]);
 
-        $passwordRequired = ! SessionPasswordGate::recentlyConfirmed($request);
         $data = $sessionKind === InteractiveSessionKind::Console
-            ? $tabs->console($instance, $user, $passwordRequired)
-            : $tabs->data($instance, $user, $passwordRequired);
+            ? $tabs->console($instance, $user)
+            : $tabs->data($instance, $user);
 
         abort_if($data === null, 404);
 
@@ -50,12 +48,6 @@ final class ServiceSessionController extends Controller
         $sessionKind = InteractiveSessionKind::from($kind);
         Gate::authorize('view', $instance);
         Gate::authorize('open', [InteractiveSession::class, $instance, $sessionKind]);
-
-        $denied = SessionPasswordGate::check($request, $user, $request->filled('password') ? $request->string('password')->toString() : null);
-
-        if ($denied instanceof JsonResponse) {
-            return $denied;
-        }
 
         return response()
             ->json($open->handle($user, $instance, $sessionKind, $data, $this->auditActor($request, $user)), 201)

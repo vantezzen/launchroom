@@ -38,6 +38,7 @@ final class ComposeImportData extends Data
         public bool $convertBindMounts = true,
         #[Min(1), Max(100)]
         public ?string $name = null,
+        public bool $deploy = true,
     ) {}
 
     /**

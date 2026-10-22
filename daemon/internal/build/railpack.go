@@ -14,7 +14,9 @@ import (
 	rpapp "github.com/railwayapp/railpack/core/app"
 	rpplan "github.com/railwayapp/railpack/core/plan"
 
+	"github.com/vantezzen/launchroom/daemon/internal/build/buildkitd"
 	"github.com/vantezzen/launchroom/daemon/internal/build/presets"
+	"github.com/vantezzen/launchroom/daemon/internal/secret"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
 
@@ -39,6 +41,34 @@ var railpackMu sync.Mutex
 type railpackPlan struct {
 	result *rpcore.BuildResult
 	info   presets.Info
+}
+
+// limitNodeBuild leaves explicit settings alone and changes only the build
+// step: these limits must never reach the app's runtime environment.
+func limitNodeBuild(p *rpplan.BuildPlan, resources buildkitd.Resources, env map[string]secret.Secret) {
+	if !resources.Small && !resources.Tight || resources.NodeHeapMB <= 0 {
+		return
+	}
+	for i := range p.Steps {
+		step := &p.Steps[i]
+		if step.Name != "build" {
+			continue
+		}
+		if step.Variables == nil {
+			step.Variables = map[string]string{}
+		}
+		for name, value := range map[string]string{
+			"NODE_OPTIONS":      fmt.Sprintf("--max-old-space-size=%d", resources.NodeHeapMB),
+			"RAYON_NUM_THREADS": fmt.Sprint(resources.Workers),
+		} {
+			if _, supplied := env[name]; supplied {
+				continue
+			}
+			if _, supplied := step.Variables[name]; !supplied {
+				step.Variables[name] = value
+			}
+		}
+	}
 }
 
 // railpackEnv builds the Railpack environment: non-secret RAILPACK_* config

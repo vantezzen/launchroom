@@ -5,7 +5,11 @@ import {
     GitBranch,
     GitCommitHorizontal,
     Globe,
+    Hammer,
 } from 'lucide-react';
+import { Link } from '@inertiajs/react';
+import { DeviceImage } from '@/components/devices';
+import { show as serverPage } from '@/routes/servers';
 import type { ReactNode } from 'react';
 import { useState } from 'react';
 import { UrlCard } from '@/components/cards/preview-card';
@@ -86,6 +90,28 @@ export function CopyButton({
 function Stage({ detail }: { detail: Detail }) {
     const deployment = detail.deployment;
     const url = deployment.urls[0]?.replace(/^https:\/\//, '') ?? null;
+    if (detail.buildServer && deployment.status === 'building') {
+        const server = detail.buildServer;
+        return (
+            <Link
+                href={serverPage(server.id)}
+                className="flex flex-col items-center justify-center gap-2 rounded-[10px] border bg-(--recessed) p-4 hover:bg-hover"
+            >
+                <DeviceImage
+                    device={server.device.kind}
+                    status="busy"
+                    size={120}
+                />
+                <span className="inline-flex items-center gap-2 type-small text-muted-foreground">
+                    <Hammer className="size-3.5" aria-hidden="true" />
+                    Building on{' '}
+                    <span className="font-medium text-foreground">
+                        {server.name}
+                    </span>
+                </span>
+            </Link>
+        );
+    }
     return (
         <div className="relative flex h-44 items-center justify-center overflow-hidden rounded-[10px] border bg-(--recessed) max-sm:hidden lg:h-full lg:min-h-48">
             {url ? (
@@ -110,12 +136,14 @@ function Stage({ detail }: { detail: Detail }) {
 export function OverviewCard({
     detail,
     environmentName,
+    now,
 }: {
     detail: Detail;
     environmentName: string;
+    now: number;
 }) {
     const deployment = detail.deployment;
-    const seconds = deploymentSeconds(deployment);
+    const seconds = deploymentSeconds(deployment, now);
     const branch = branchName(deployment.gitRef);
     const message = firstLine(deployment.commitMessage);
 
@@ -152,10 +180,12 @@ export function OverviewCard({
                     <Fact label="Built on">
                         {detail.builtOn ?? (
                             <span className="text-muted-foreground">
-                                {deployment.trigger === 'rollback' ||
-                                deployment.trigger === 'manual'
-                                    ? 'Reused image'
-                                    : 'No build'}
+                                {deployment.status === 'building'
+                                    ? 'Waiting for a build server'
+                                    : deployment.trigger === 'rollback' ||
+                                        deployment.trigger === 'manual'
+                                      ? 'Reused image'
+                                      : 'No build'}
                             </span>
                         )}
                     </Fact>

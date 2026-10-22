@@ -19,7 +19,7 @@ import { controlPlane } from '@/routes/updates';
 /**
  * "Update now" (docs/08 §11): one sentence of what happens, the servers as
  * an opt-out, and the explicit acknowledgement when there is no off-site
- * backup. The password confirmation happens on the way if needed.
+ * backup.
  */
 export function UpdateDialog({
     version,

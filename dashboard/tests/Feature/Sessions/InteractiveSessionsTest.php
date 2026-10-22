@@ -77,14 +77,10 @@ test('other teams’ services and sessions are not found', function (): void {
     $this->actingAs($outsider)->postJson('/sessions/'.$opened['id'].'/authorize', ['socket_id' => '1.2', 'ticket' => $opened['ticket']])->assertNotFound();
 });
 
-test('opening asks for the password inline, then creates a ticketed session and a pinned task', function (): void {
+test('opening an authorized session creates a ticket and pinned task without an extra password', function (): void {
     $owner = memberOf($this->team, TeamRole::Owner);
 
-    $this->actingAs($owner)->postJson(Sessions::url($this->instance, 'console'))
-        ->assertStatus(423)->assertJson(['requiresPassword' => true]);
-    $this->actingAs($owner)->postJson(Sessions::url($this->instance, 'console'), ['password' => 'wrong'])->assertUnprocessable();
-
-    $response = $this->actingAs($owner)->postJson(Sessions::url($this->instance, 'console'), ['password' => 'password', 'shell' => '/bin/sh', 'cols' => 120, 'rows' => 40])
+    $response = $this->actingAs($owner)->postJson(Sessions::url($this->instance, 'console'), ['shell' => '/bin/sh', 'cols' => 120, 'rows' => 40])
         ->assertCreated();
 
     $session = InteractiveSession::query()->where('public_id', $response->json('id'))->sole();
@@ -113,12 +109,12 @@ test('opening asks for the password inline, then creates a ticketed session and 
         ->and(json_encode($audit->meta))->not->toContain((string) $response->json('ticket'));
 });
 
-test('a password confirmed hours ago is not enough for a session', function (): void {
+test('an old password confirmation does not interrupt an authorized session', function (): void {
     $owner = memberOf($this->team, TeamRole::Owner);
 
     $this->actingAs($owner)->withSession(['auth.password_confirmed_at' => time() - 3600])
         ->postJson(Sessions::url($this->instance, 'console'))
-        ->assertStatus(423);
+        ->assertCreated();
 });
 
 test('the lease seals the key to the server and task, opens the session and wipes the stored key', function (): void {
@@ -401,12 +397,11 @@ test('console recording is an owner switch and is carried into new sessions', fu
         ->and($task->spec->record ?? null)->toBeTrue()
         ->and(AuditEvent::query()->where('action', AuditAction::ConsoleRecordingChanged->value)->exists())->toBeTrue();
 
-    // Reading it needs the password again and is audited.
+    // Reading it is authorized and audited.
     $leased = Sessions::lease($this, $this->daemon);
     sessionComplete($this, $leased, ['endReason' => 'closed', 'bytesIn' => 1, 'bytesOut' => 1]);
     $this->flushSession();
-    $this->actingAs($owner)->postJson('/sessions/'.$opened['id'].'/recording')->assertStatus(423);
-    $this->actingAs($owner)->withSession(passwordConfirmed())->postJson('/sessions/'.$opened['id'].'/recording')->assertOk()->assertJson(['lines' => []]);
+    $this->actingAs($owner)->postJson('/sessions/'.$opened['id'].'/recording')->assertOk()->assertJson(['lines' => []]);
     expect(AuditEvent::query()->where('action', AuditAction::SessionRecordingViewed->value)->count())->toBe(1);
 });
 

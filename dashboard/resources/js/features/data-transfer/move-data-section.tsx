@@ -1,11 +1,4 @@
-import {
-    Download,
-    FileDown,
-    FileUp,
-    FolderUp,
-    KeyRound,
-    RotateCcw,
-} from 'lucide-react';
+import { Download, FileDown, FileUp, FolderUp, RotateCcw } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Section } from '@/components/patterns/section';
@@ -13,12 +6,10 @@ import { Status } from '@/components/status';
 import type { StatusState } from '@/components/status';
 import { TimeAgo } from '@/components/time-ago';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
 import { show as showSection } from '@/routes/transfers/services';
 import { link as linkRoute } from '@/routes/transfers/services/exports';
-import { TransferRequestFailed, transfersApi } from './api';
+import { transfersApi } from './api';
 import type { ExportRun, ImportRun, ServiceTransfers } from './api';
 import { formatBytes, formatDuration } from './format';
 import { ImportSheet } from './import-sheet';
@@ -26,10 +17,6 @@ import type { ImportTarget } from './import-sheet';
 
 /** A backup snapshot to download, picked on the snapshot timeline. */
 export type SnapshotDownload = { id: string; label: string };
-
-type PendingPassword =
-    | { kind: 'export'; body: Record<string, unknown>; label: string }
-    | { kind: 'link'; run: ExportRun };
 
 const importLabels: Record<App.Enums.Transfers.ImportRunStatus, string> = {
     waiting_for_safety_backup: 'Taking a safety snapshot',
@@ -105,9 +92,6 @@ export function MoveDataSection({
 }) {
     const [data, setData] = useState<ServiceTransfers | null>(null);
     const [target, setTarget] = useState<ImportTarget | null>(null);
-    const [pending, setPending] = useState<PendingPassword | null>(null);
-    const [password, setPassword] = useState('');
-    const [passwordError, setPasswordError] = useState<string | null>(null);
     const [busy, setBusy] = useState<string | null>(null);
     const abort = useRef<AbortController | null>(null);
     const url = showSection(serviceInstanceId).url;
@@ -148,54 +132,26 @@ export function MoveDataSection({
     }, [data, load]);
 
     const startExport = useCallback(
-        async (
-            body: Record<string, unknown>,
-            label: string,
-            withPassword?: string,
-        ) => {
-            if (data === null) {
-                return;
-            }
-
+        async (body: Record<string, unknown>, label: string) => {
+            if (data === null) return;
             setBusy(`export:${label}`);
-
             try {
                 setData(
                     await transfersApi<ServiceTransfers>(
                         'post',
                         data.urls.exports,
-                        {
-                            ...body,
-                            ...(withPassword === undefined
-                                ? {}
-                                : { password: withPassword }),
-                        },
+                        body,
                     ),
                 );
-                setPending(null);
-                setPassword('');
                 toast.success(
                     'Preparing the download. It appears here when it is ready.',
                 );
             } catch (error) {
-                if (
-                    error instanceof TransferRequestFailed &&
-                    error.requiresPassword
-                ) {
-                    setPending({ kind: 'export', body, label });
-                } else if (
-                    withPassword !== undefined &&
-                    error instanceof TransferRequestFailed &&
-                    error.status === 422
-                ) {
-                    setPasswordError(error.message);
-                } else {
-                    toast.error(
-                        error instanceof Error
-                            ? error.message
-                            : 'The download couldn’t start.',
-                    );
-                }
+                toast.error(
+                    error instanceof Error
+                        ? error.message
+                        : 'The download couldn’t start.',
+                );
             } finally {
                 setBusy(null);
             }
@@ -203,9 +159,8 @@ export function MoveDataSection({
         [data],
     );
 
-    const download = async (run: ExportRun, withPassword?: string) => {
+    const download = async (run: ExportRun) => {
         setBusy(`link:${run.id}`);
-
         try {
             const made =
                 await transfersApi<App.Data.Transfers.DownloadLinkData>(
@@ -214,33 +169,16 @@ export function MoveDataSection({
                         serviceInstance: serviceInstanceId,
                         export: run.id,
                     }).url,
-                    withPassword === undefined
-                        ? {}
-                        : { password: withPassword },
+                    {},
                 );
-            setPending(null);
-            setPassword('');
             window.location.assign(made.url);
         } catch (error) {
-            if (
-                error instanceof TransferRequestFailed &&
-                error.requiresPassword
-            ) {
-                setPending({ kind: 'link', run });
-            } else if (
-                withPassword !== undefined &&
-                error instanceof TransferRequestFailed &&
-                error.status === 422
-            ) {
-                setPasswordError(error.message);
-            } else {
-                toast.error(
-                    error instanceof Error
-                        ? error.message
-                        : 'The download couldn’t start.',
-                );
-                void load();
-            }
+            toast.error(
+                error instanceof Error
+                    ? error.message
+                    : 'The download couldn’t start.',
+            );
+            void load();
         } finally {
             setBusy(null);
         }
@@ -380,83 +318,6 @@ export function MoveDataSection({
                         </li>
                     ))}
                 </ul>
-            )}
-
-            {pending !== null && (
-                <form
-                    className="flex flex-col gap-3 rounded-xl border bg-card p-4 shadow-card motion-safe:animate-enter"
-                    onSubmit={(event) => {
-                        event.preventDefault();
-                        setPasswordError(null);
-
-                        if (pending.kind === 'export') {
-                            void startExport(
-                                pending.body,
-                                pending.label,
-                                password,
-                            );
-                        } else {
-                            void download(pending.run, password);
-                        }
-                    }}
-                >
-                    <div className="flex items-start gap-3">
-                        <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-recessed text-muted-foreground">
-                            <KeyRound aria-hidden="true" className="size-4" />
-                        </span>
-                        <div className="flex flex-col gap-0.5">
-                            <p className="type-label">Confirm it’s you</p>
-                            <p className="type-small text-muted-foreground">
-                                Downloads take decrypted data off launchroom and
-                                are recorded in the audit log.
-                            </p>
-                        </div>
-                    </div>
-                    <div className="flex flex-col gap-2">
-                        <Label htmlFor="transfer-password">Password</Label>
-                        <Input
-                            id="transfer-password"
-                            type="password"
-                            autoComplete="current-password"
-                            autoFocus
-                            className="sm:max-w-72"
-                            value={password}
-                            onChange={(event) =>
-                                setPassword(event.target.value)
-                            }
-                        />
-                        {passwordError && (
-                            <p
-                                role="alert"
-                                className="type-small text-status-error"
-                            >
-                                {passwordError}
-                            </p>
-                        )}
-                    </div>
-                    <div className="flex gap-2">
-                        <Button
-                            type="submit"
-                            size="sm"
-                            disabled={busy !== null || password === ''}
-                        >
-                            {busy !== null && <Spinner />}
-                            Continue
-                        </Button>
-                        <Button
-                            type="button"
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => {
-                                setPending(null);
-                                setPassword('');
-                                setPasswordError(null);
-                            }}
-                        >
-                            Cancel
-                        </Button>
-                    </div>
-                </form>
             )}
 
             {runs.length > 0 && (
