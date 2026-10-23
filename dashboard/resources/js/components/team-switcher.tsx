@@ -44,9 +44,6 @@ export function TeamSwitcher() {
                             className="data-[state=open]:bg-sidebar-accent"
                             data-test="team-switcher"
                         >
-                            <span className="flex size-8 shrink-0 items-center justify-center rounded-md border bg-background type-label text-foreground">
-                                {active.name.charAt(0).toUpperCase()}
-                            </span>
                             <span className="grid min-w-0 flex-1 text-left">
                                 <span className="truncate type-label">
                                     {active.name}

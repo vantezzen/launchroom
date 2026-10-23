@@ -412,23 +412,43 @@ export function DnsRecords({ domain }: { domain: Domain }) {
                         </span>
                     </li>
                 ))}
+
+                {domain.cnameTarget && (
+                    <>
+                        <li
+                            className="flex items-center justify-center gap-2 bg-recessed px-4 py-2"
+                            key="cname-or"
+                        >
+                            <span className="type-small text-muted-foreground">
+                                or
+                            </span>
+                        </li>
+
+                        <li
+                            key="cname"
+                            className="grid min-w-0 grid-cols-[3.5rem_minmax(0,1fr)] items-start gap-x-3 gap-y-2 p-4"
+                        >
+                            <span className="inline-flex h-6 w-fit items-center rounded-md bg-hover px-2 type-mono-small font-medium">
+                                CNAME
+                            </span>
+                            <span className="col-start-2 flex min-w-0 items-start">
+                                <span className="flex min-w-0 flex-1 flex-col gap-1">
+                                    <span className="type-small text-muted-foreground">
+                                        Value
+                                    </span>
+                                    <code className="type-mono-small break-all">
+                                        {domain.cnameTarget}
+                                    </code>
+                                </span>
+                                <CopyButton
+                                    value={domain.cnameTarget}
+                                    label={`${domain.cnameTarget} cname value`}
+                                />
+                            </span>
+                        </li>
+                    </>
+                )}
             </ul>
-            {domain.cnameTarget && (
-                <p className="flex flex-wrap items-center gap-x-1 type-small text-muted-foreground">
-                    Or one{' '}
-                    <code className="type-mono-small text-foreground">
-                        CNAME
-                    </code>{' '}
-                    to
-                    <code className="min-w-0 type-mono-small break-all text-foreground">
-                        {domain.cnameTarget}
-                    </code>
-                    <CopyButton
-                        value={domain.cnameTarget}
-                        label="CNAME target"
-                    />
-                </p>
-            )}
         </div>
     );
 }

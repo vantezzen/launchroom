@@ -1,6 +1,8 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+    AppWindow,
     ChevronRight,
+    Drill,
     FileCode2,
     Hammer,
     KeyRound,
@@ -66,18 +68,6 @@ export type VariablesTabProps = {
 type Data = App.Data.Variables.ServiceVariablesData;
 type Row = App.Data.Variables.VariableRowData;
 
-function ExposureBadge({ exposure }: { exposure: App.Enums.VariableExposure }) {
-    return (
-        <Badge variant="outline">
-            {exposure === 'runtime'
-                ? 'Runtime only'
-                : exposure === 'build'
-                  ? 'Build only'
-                  : 'Build + runtime'}
-        </Badge>
-    );
-}
-
 export function serviceVariablesKey(environment: string, service: string) {
     return ['service-variables', environment, service] as const;
 }
@@ -97,6 +87,29 @@ function Hint({ label, children }: { label: string; children: ReactNode }) {
             </TooltipTrigger>
             <TooltipContent className="max-w-72">{label}</TooltipContent>
         </Tooltip>
+    );
+}
+
+function ExposureBadge({ exposure }: { exposure: App.Enums.VariableExposure }) {
+    return (
+        <Badge variant="outline">
+            {(exposure === 'build' || exposure === 'both') && (
+                <Hint label="Available while building. Changing it requires a rebuild.">
+                    <Hammer
+                        aria-hidden="true"
+                        className="size-3.5 text-muted-foreground"
+                    />
+                </Hint>
+            )}
+            {(exposure === 'runtime' || exposure === 'both') && (
+                <Hint label="Available at runtime">
+                    <AppWindow
+                        aria-hidden="true"
+                        className="size-3.5 text-muted-foreground"
+                    />
+                </Hint>
+            )}
+        </Badge>
     );
 }
 
