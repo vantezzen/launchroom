@@ -2,6 +2,7 @@ import { Head, Link, router } from '@inertiajs/react';
 import { Rocket } from 'lucide-react';
 import { useMemo, useRef, useState } from 'react';
 import { EmptyState } from '@/components/patterns/empty-state';
+import { MetaLine } from '@/components/patterns/meta-line';
 import { Page, PageHeader } from '@/components/patterns/page';
 import { Button } from '@/components/ui/button';
 import {
@@ -203,19 +204,18 @@ export default function ProjectDeployments({
     const filtered = Boolean(
         filters.environment || filters.service || filters.status,
     );
-    const summary = [
-        `${stats.weekTotal} ${stats.weekTotal === 1 ? 'deploy' : 'deploys'} this week`,
-        stats.weekFailed > 0 ? `${stats.weekFailed} failed` : null,
-        stats.medianDurationSeconds !== null
-            ? `median ${formatDuration(stats.medianDurationSeconds)}`
-            : null,
-    ]
-        .filter(Boolean)
-        .join(' · ');
+    const summary = (
+        <MetaLine>
+            {`${stats.weekTotal} ${stats.weekTotal === 1 ? 'deploy' : 'deploys'} this week`}
+            {stats.weekFailed > 0 && `${stats.weekFailed} failed`}
+            {stats.medianDurationSeconds !== null &&
+                `Median ${formatDuration(stats.medianDurationSeconds)}`}
+        </MetaLine>
+    );
 
     return (
         <>
-            <Head title={`Deployments · ${project.name}`} />
+            <Head title={`Deployments - ${project.name}`} />
             {watched.map((environment) => (
                 <ChannelEvents
                     key={environment}

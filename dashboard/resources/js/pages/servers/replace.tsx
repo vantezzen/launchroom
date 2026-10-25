@@ -102,11 +102,10 @@ export function ReplacementProgress({
                 />
             </div>
             <p className="max-w-[65ch] type-body text-muted-foreground">
-                Roles and labels moved to {replacement.newServer} and{' '}
-                {replacement.oldServer}’s key was revoked: if it comes back, it
-                only receives an empty desired state and stops its workloads.
-                Databases and volumes are restored first; the services that ran
-                there start after them.
+                Roles and labels moved to {replacement.newServer}, and{' '}
+                {replacement.oldServer}’s key was revoked. If it comes back
+                online, it stops its apps. Databases and volumes are restored
+                first, then the services that ran there start.
             </p>
             {replacement.error !== null && (
                 <p className="type-body">{replacement.error}</p>
@@ -351,7 +350,7 @@ export default function ReplaceServer({
                                                         <span className="type-small text-muted-foreground">
                                                             {item.snapshot !==
                                                             null
-                                                                ? `Latest backup, ${age(item.backupTakenAt)} · ${item.snapshot}`
+                                                                ? `Latest backup, ${age(item.backupTakenAt)} (snapshot ${item.snapshot})`
                                                                 : (item.reason ??
                                                                   'No backup: it starts empty.')}
                                                         </span>
@@ -373,7 +372,7 @@ export default function ReplaceServer({
                                 <div className="flex flex-col gap-4 rounded-xl border bg-card p-5 shadow-card sm:flex-row sm:items-center">
                                     <p className="min-w-0 flex-1 type-small text-muted-foreground">
                                         {chosen
-                                            ? `${server.name}’s key is revoked; if it ever comes back, it stops its apps. Its disk isn’t touched.`
+                                            ? `${server.name}’s key is revoked. If it comes back online, it stops its apps. Its disk isn’t touched.`
                                             : 'Pick a server first.'}
                                     </p>
                                     <Button

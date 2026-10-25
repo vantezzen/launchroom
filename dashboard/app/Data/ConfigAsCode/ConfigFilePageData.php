@@ -7,7 +7,7 @@ namespace App\Data\ConfigAsCode;
 use Spatie\LaravelData\Data;
 
 /**
- * Settings → General → Config file (docs/18 §3.1).
+ * Settings → Config file (docs/18 §3.1).
  */
 final class ConfigFilePageData extends Data
 {

@@ -60,8 +60,8 @@ export function GitServerSetup({
                 <Step number={1} title="Check the server’s identity">
                     <p className="max-w-prose type-body text-muted-foreground">
                         {keyChanged
-                            ? 'Builds stop until you confirm the new key. Make sure the server was really reinstalled or rotated its keys.'
-                            : 'launchroom will only ever talk to the server with this key. Compare it with what the server itself shows:'}{' '}
+                            ? 'Builds are paused until you confirm the new key. Only confirm it if the server was reinstalled or rotated its keys.'
+                            : 'launchroom only connects to the server if it presents this key. Compare it with what the server shows:'}{' '}
                         <span className="type-mono-small text-foreground">
                             ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub
                         </span>
@@ -91,8 +91,8 @@ export function GitServerSetup({
                             <span className="type-mono-small">
                                 authorized_keys
                             </span>
-                            ). It was made for this repository only; the private
-                            half never leaves launchroom.
+                            ). The key is only for this repository, and its
+                            private half stays in launchroom.
                         </p>
                         <CopyValue
                             value={connection.deployKey}

@@ -71,7 +71,7 @@ final readonly class DashboardDomainChecks
                 addresses: [],
                 expected: [],
                 cname: null,
-                message: 'Names under .localhost always point at this machine; no DNS record needed.',
+                message: 'Names under .localhost always point at this machine, so no DNS record is needed.',
                 checkedAt: now()->toIso8601ZuluString(),
             );
         }

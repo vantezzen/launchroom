@@ -11,6 +11,7 @@ Each one must honour `$PORT` and answer quickly on a health path.
 | Fixture | Exercises |
 |---|---|
 | `node-hello` | Plain Node, no dependencies, `npm start`, `$PORT`, `/health`, graceful SIGTERM (node-server preset); `/db` does one Postgres round trip over `DATABASE_URL` (`db.js`, a dependency-free client) and reports the replica (container hostname) and `release` (branch `failover`: two commits, release 1 and 2, for the failover test, `make test-failover`) |
+| `node-vulnerable` | Node with a known-vulnerable runtime dependency (`lodash` 4.17.20) and dev dependency (`minimist` 1.2.5) in `package-lock.json`: the security center's inventory, findings and alert levels (docs/22 §3, §5) |
 | `vite-spa` | Static build output served by Railpack's Caddy, SPA fallback, `VITE_*` build-time variable (static-spa preset) |
 | `next-standalone` | Next.js with `output: 'standalone'`: the nextjs preset copies static assets and starts `node .next/standalone/server.js` |
 | `next-adapter` | Next.js 16.4 (≥ 16.2) without `output` in next.config: the nextjs preset injects `@vantezzen/launchroom-next-adapter` (standalone, `deploymentId`, static assets, manifest). App Router, ISR page `/isr` (60 s), `proxy.js` (adds `x-launchroom-proxy: 1`), `public/launchroom.txt`, health `/api/health`. Integration copy: `daemon/test/integration/testdata/build/next-adapter` |

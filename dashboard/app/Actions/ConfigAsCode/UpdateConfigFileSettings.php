@@ -16,7 +16,7 @@ use App\Models\Project;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Settings → General → Config file (docs/18 §3.1): on/off, path and the
+ * Settings → Config file (docs/18 §3.1): on/off, path and the
  * repository holding launchroom.json (one of the project's app repositories).
  */
 final readonly class UpdateConfigFileSettings

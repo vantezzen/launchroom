@@ -74,7 +74,7 @@ test('project settings list each environment\'s last read; download and check no
     ($this->apply)(['scaling' => ['replicas' => 2]]);
 
     $this->actingAs($this->viewer)
-        ->get(route('projects.settings', [$this->project, 'general']))
+        ->get(route('projects.settings', [$this->project, 'config-file']))
         ->assertOk()
         ->assertInertia(fn ($page) => $page
             ->where('configFile.settings.path', 'launchroom.json')

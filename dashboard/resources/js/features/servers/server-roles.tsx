@@ -27,11 +27,11 @@ function removalConsequence(
     }
 
     if (role === 'edge') {
-        return `${name} stops receiving public traffic; point DNS at your other edges first.`;
+        return `${name} stops receiving public traffic. Point DNS at your other edge servers first.`;
     }
 
     if (role === 'build') {
-        return 'Builds that haven’t started move to another build server; running builds finish here.';
+        return 'Running builds finish here. Queued builds move to another build server.';
     }
 
     return null;

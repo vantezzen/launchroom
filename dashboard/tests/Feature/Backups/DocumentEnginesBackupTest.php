@@ -26,7 +26,7 @@ test('MongoDB and ClickHouse backups go to launchroomd versions that know the en
     $server->forceFill(['daemon_features' => []])->save();
 
     expect(fn () => resolve(StartDatabaseBackup::class)->handle($instance->fresh(), BackupReason::Manual, $owner, AuditActor::user($owner)))
-        ->toThrow(DomainRuleViolation::class, 'Update launchroomd');
+        ->toThrow(DomainRuleViolation::class, 'in Settings → Updates');
 
     $server->forceFill(['daemon_features' => [DaemonFeature::MongoClickHouse->value]])->save();
     $run = resolve(StartDatabaseBackup::class)->handle($instance->fresh(), BackupReason::Manual, $owner, AuditActor::user($owner));

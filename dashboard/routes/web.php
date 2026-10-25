@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 use App\Enums\ServerTab;
 use App\Http\Controllers\Activity\TeamActivityController;
+use App\Http\Controllers\Analytics\TeamAnalyticsController;
 use App\Http\Controllers\ConfigSchemaController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\Dev\DesignVisualsController;
+use App\Http\Controllers\Instance\ClientVersionController;
 use App\Http\Controllers\Instance\OnboardingController;
 use App\Http\Controllers\Instance\RecoveryController;
 use App\Http\Controllers\Logs\TeamLogsController;
@@ -54,6 +56,13 @@ Route::get('schema/launchroom.v1.json', ConfigSchemaController::class)
     ->middleware('throttle:60,1')
     ->name('config.schema');
 
+// The asset version, polled while launchroom restarts (docs/08 §1.4):
+// public and sessionless like /up.
+Route::get('up/version', ClientVersionController::class)
+    ->withoutMiddleware('web')
+    ->middleware('throttle:240,1')
+    ->name('client-version');
+
 Route::get('registry/token', RegistryTokenController::class)
     ->withoutMiddleware('web')
     ->middleware('throttle:120,1')
@@ -100,6 +109,12 @@ Route::middleware(['auth', 'verified'])->group(function (): void {
     // The team activity page in the sidebar.
     Route::get('activity', TeamActivityController::class)->name('activity.index');
 
+    // Request analytics of every project (docs/15 §5.4).
+    Route::get('analytics', [TeamAnalyticsController::class, 'show'])->name('analytics.index');
+    Route::get('analytics/-/data', [TeamAnalyticsController::class, 'data'])
+        ->middleware('throttle:120,1')
+        ->name('analytics.data');
+
     // Search the logs of every project (owners and admins).
     Route::get('logs', [TeamLogsController::class, 'show'])->name('logs.index');
     Route::get('logs/-/entries', [TeamLogsController::class, 'entries'])
@@ -120,7 +135,7 @@ Route::middleware(['auth', 'verified'])->group(function (): void {
         ->middleware('throttle:10,1')
         ->name('servers.small-server-hint.dismiss');
     Route::post('servers/enrollments', [ServerEnrollmentController::class, 'store'])
-
+        ->middleware('throttle:20,1')
         ->name('servers.enrollments.store');
     Route::get('servers/enrollments/{enrollment}', [ServerEnrollmentController::class, 'show'])->name('servers.enrollments.show');
     Route::delete('servers/enrollments/{enrollment}', [ServerEnrollmentController::class, 'destroy'])->name('servers.enrollments.destroy');
@@ -138,7 +153,7 @@ Route::middleware(['auth', 'verified'])->group(function (): void {
         ->middleware('throttle:10,1')
         ->name('servers.ingress.dns.update');
     Route::delete('servers/ingress/dns', [IngressController::class, 'destroy'])
-
+        ->middleware('throttle:20,1')
         ->name('servers.ingress.dns.destroy');
     Route::post('servers/ingress/dns/verify', [IngressController::class, 'verify'])
         ->middleware('throttle:10,1')
@@ -160,10 +175,10 @@ Route::middleware(['auth', 'verified'])->group(function (): void {
         ->middleware('throttle:10,1')
         ->name('servers.roles.update');
     Route::post('servers/{server}/approve', [ServerController::class, 'approve'])
-
+        ->middleware('throttle:20,1')
         ->name('servers.approve');
     Route::post('servers/{server}/revoke', [ServerController::class, 'revoke'])
-
+        ->middleware('throttle:20,1')
         ->name('servers.revoke');
     // Replace a dead server (docs/14 §5.3).
     Route::get('servers/{server}/replace', [ServerReplacementController::class, 'show'])->name('servers.replace');
@@ -189,7 +204,7 @@ Route::middleware(['auth', 'verified'])->group(function (): void {
         ->name('servers.move.retire');
     Route::post('servers/{server}/retired-volumes/{volume}/confirm', [RetiredVolumeController::class, 'confirm'])
         ->where('volume', 'vol_[0-9A-HJKMNP-TV-Z]{26}')
-
+        ->middleware('throttle:20,1')
         ->name('servers.retired-volumes.confirm');
 
     // Local-only showcase of the visual primitives; 404 elsewhere.
@@ -197,11 +212,11 @@ Route::middleware(['auth', 'verified'])->group(function (): void {
 
     Route::get('settings/team', [TeamSettingsController::class, 'edit'])->name('team.edit');
     Route::post('settings/team/invitations', [InvitationController::class, 'store'])
-
+        ->middleware('throttle:20,1')
         ->name('team.invitations.store');
     Route::delete('settings/team/invitations/{invitation}', [InvitationController::class, 'destroy'])->name('team.invitations.destroy');
     Route::patch('settings/team/members/{membership}', [MembershipController::class, 'update'])
-
+        ->middleware('throttle:20,1')
         ->name('team.members.update');
     Route::delete('settings/team/members/{membership}', [MembershipController::class, 'destroy'])->name('team.members.destroy');
 });

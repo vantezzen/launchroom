@@ -1,0 +1,107 @@
+{
+  "apiVersion": "launchroom.vantezzen.io/v1",
+  "kind": "TaskCompletion",
+  "attempt": 1,
+  "outcome": "succeeded",
+  "containerInspection": {
+    "workload": "wl_01J9Z8X7W6V5T4S3R2Q1P0N9N7",
+    "containerId": "7d1f0c2a9b8e4d3c2b1a0f9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a2f1e0d9c",
+    "imageId": "sha256:4b5e57f6eb2f42b9039b3d1e13929295f231749c510cbe341cd68036d9af97e2",
+    "imageMatches": true,
+    "startedAt": "2026-10-14T09:12:00Z",
+    "restartCount": 0,
+    "user": "node",
+    "workingDir": "/app",
+    "changes": {
+      "total": 214,
+      "entries": [
+        {
+          "path": "/tmp/.x/kworker",
+          "kind": "added",
+          "type": "file",
+          "size": 2201416,
+          "executable": true,
+          "modifiedAt": "2026-10-16T22:41:07Z",
+          "flags": [
+            "executable",
+            "temp_dir",
+            "hidden"
+          ]
+        },
+        {
+          "path": "/tmp/.x",
+          "kind": "added",
+          "type": "dir",
+          "modifiedAt": "2026-10-16T22:41:05Z",
+          "flags": [
+            "temp_dir",
+            "hidden"
+          ]
+        },
+        {
+          "path": "/app/.next/server/app/page.js",
+          "kind": "modified",
+          "type": "file",
+          "size": 48211,
+          "modifiedAt": "2026-10-16T22:40:59Z",
+          "flags": [
+            "app_code"
+          ]
+        },
+        {
+          "path": "/tmp/upload_3f1c2b",
+          "kind": "deleted",
+          "flags": [
+            "temp_dir"
+          ]
+        }
+      ],
+      "collapsed": [
+        {
+          "prefix": "/app/.next/cache",
+          "count": 187
+        },
+        {
+          "prefix": "/home/node/.npm",
+          "count": 23
+        }
+      ]
+    },
+    "processes": {
+      "total": 4,
+      "entries": [
+        {
+          "pid": 41210,
+          "ppid": 41188,
+          "user": "node",
+          "command": "node .next/standalone/server.js",
+          "flags": [
+            "entry"
+          ]
+        },
+        {
+          "pid": 41377,
+          "ppid": 41210,
+          "user": "node",
+          "command": "/bin/sh -c cd /tmp/.x && ./kworker --url pool.example:3333",
+          "flags": [
+            "shell",
+            "inline_code"
+          ]
+        },
+        {
+          "pid": 41380,
+          "ppid": 41377,
+          "user": "node",
+          "command": "./kworker --url pool.example:3333 --pass ***",
+          "flags": [
+            "temp_executable",
+            "added_binary"
+          ]
+        }
+      ],
+      "truncated": false
+    },
+    "inspectedAt": "2026-10-17T12:01:30Z"
+  }
+}

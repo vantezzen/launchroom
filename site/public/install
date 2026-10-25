@@ -415,6 +415,7 @@ check_swap() {
 		warn "$SWAP_FILE is not a regular file; skipped."
 		return 0
 	fi
+	created=0
 	if [ ! -f "$file" ]; then
 		free_kb="$(df -Pk "$HOST_ROOT/" 2>/dev/null | awk 'NR == 2 { print $4 }')"
 		case "$free_kb" in "" | *[!0-9]*) free_kb=0 ;; esac
@@ -427,11 +428,18 @@ check_swap() {
 			{ rm -f "$file"; warn "could not create $SWAP_FILE"; swap_manual "" "Add the swap file by hand:"; return 0; }
 		chmod 600 "$file"
 		mkswap "$file" >/dev/null || { rm -f "$file"; warn "mkswap failed for $SWAP_FILE"; return 0; }
+		created=1
 	else
 		chmod 600 "$file"
 	fi
 	if ! swapon "$file" 2>/dev/null; then
-		warn "could not turn on $SWAP_FILE; an existing file is never reformatted."
+		if [ "$created" = 1 ]; then
+			# Some file systems can't hold a swap file; don't leave 2 GB behind.
+			rm -f "$file"
+			warn "could not turn on the new swap file $SWAP_FILE (the file system may not support swap files); removed it."
+		else
+			warn "could not turn on $SWAP_FILE; an existing file is never reformatted."
+		fi
 		return 0
 	fi
 	fstab="$HOST_ROOT/etc/fstab"
@@ -483,7 +491,7 @@ check_prerequisites() {
 
 	mem_kb="$(awk '/^MemTotal:/ { print $2 }' /proc/meminfo 2>/dev/null || echo 0)"
 	if [ "${mem_kb:-0}" -lt 1900000 ]; then
-		warn "this server has less than 2 GB of memory. The control plane fits, but builds are slow and may run out of memory. Add swap (asked below) or a separate build server."
+		warn "this server has less than 2 GB of memory. The control plane fits, but builds may run out of memory without swap or a separate build server."
 	fi
 
 	# Our own Caddy holds 80/443 on a re-run.

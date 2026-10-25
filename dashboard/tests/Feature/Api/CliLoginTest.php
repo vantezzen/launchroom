@@ -38,7 +38,7 @@ test('the device flow: pending, approved once, then expired', function (): void 
         ->assertStatus(428)
         ->assertJsonPath('error.code', 'authorization_pending');
 
-    $this->actingAs($owner)->withSession(passwordConfirmed())
+    $this->actingAs($owner)
         ->get('/cli/login?code='.strtolower(str_replace('-', '', $session['userCode'])))
         ->assertOk()
         ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
@@ -47,7 +47,7 @@ test('the device flow: pending, approved once, then expired', function (): void 
             ->where('login.hostname', 'laptop')
             ->where('login.status', 'pending'));
 
-    $this->actingAs($owner)->withSession(passwordConfirmed())
+    $this->actingAs($owner)
         ->post("/cli/login/{$session['userCode']}/approve", ['team' => $world->team->public_id, 'abilities' => ['read', 'deploy'], 'expiresInDays' => 30])
         ->assertRedirect();
 
@@ -107,11 +107,11 @@ test('a sign-in can only be approved into a team of your own, with abilities you
     $foreign = Team::factory()->create();
     $session = startCliLogin();
 
-    $this->actingAs($viewer)->withSession(passwordConfirmed())
+    $this->actingAs($viewer)
         ->post("/cli/login/{$session['userCode']}/approve", ['team' => $foreign->public_id, 'abilities' => ['read'], 'expiresInDays' => 30])
         ->assertSessionHasErrors('team');
 
-    $this->actingAs($viewer)->withSession(passwordConfirmed())
+    $this->actingAs($viewer)
         ->post("/cli/login/{$session['userCode']}/approve", ['team' => $world->team->public_id, 'abilities' => ['read', 'deploy'], 'expiresInDays' => 30])
         ->assertSessionHasErrors('abilities');
 

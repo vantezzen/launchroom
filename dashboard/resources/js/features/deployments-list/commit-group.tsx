@@ -1,6 +1,7 @@
 import { Link } from '@inertiajs/react';
 import { GitCommitHorizontal, MoreHorizontal } from 'lucide-react';
 import { CommitAvatar } from '@/components/commit-avatar';
+import { Duration } from '@/components/elapsed';
 import { Logo } from '@/components/logo';
 import { Status } from '@/components/status';
 import { TimeAgo } from '@/components/time-ago';
@@ -24,6 +25,7 @@ import {
     shortSha,
     startedBy,
 } from '@/features/deployments/format';
+import { useNow } from '@/hooks/use-now';
 import { cn } from '@/lib/utils';
 
 type Summary = App.Data.Deployments.DeploymentSummaryData;
@@ -95,6 +97,44 @@ function DurationBar({
             />
             <span className="absolute inset-y-0 left-1/2 w-px bg-background" />
         </span>
+    );
+}
+
+/**
+ * The duration bar and number of one row. A running deployment ticks on
+ * the page's shared clock; only this cell re-renders.
+ */
+function RowTiming({
+    deployment,
+    median,
+}: {
+    deployment: Summary;
+    median: number | null;
+}) {
+    const running =
+        deployment.durationSeconds === null &&
+        deployment.startedAt !== null &&
+        deployment.finishedAt === null;
+    const now = useNow(running);
+    const seconds = deploymentSeconds(deployment, now);
+
+    return (
+        <>
+            <DurationBar
+                seconds={deployment.status === 'failed' ? null : seconds}
+                median={median}
+            />
+            <span
+                className={cn(
+                    'w-14 shrink-0 text-right type-small tabular-nums',
+                    isInProgress(deployment.status)
+                        ? 'text-foreground'
+                        : 'text-muted-foreground',
+                )}
+            >
+                <Duration seconds={seconds} />
+            </span>
+        </>
     );
 }
 
@@ -220,8 +260,6 @@ export function CommitGroupCard({
             </div>
             <ul className="border-t">
                 {group.deployments.map((deployment) => {
-                    const seconds = deploymentSeconds(deployment);
-
                     return (
                         <li
                             key={deployment.id}
@@ -262,28 +300,14 @@ export function CommitGroupCard({
                                         </span>
                                     )}
                             </span>
-                            <DurationBar
-                                seconds={
-                                    deployment.status === 'failed'
-                                        ? null
-                                        : seconds
-                                }
+                            <RowTiming
+                                deployment={deployment}
                                 median={
                                     medians.get(
                                         `${deployment.serviceId}|${deployment.environmentId}`,
                                     ) ?? null
                                 }
                             />
-                            <span
-                                className={cn(
-                                    'w-14 shrink-0 text-right type-small tabular-nums',
-                                    isInProgress(deployment.status)
-                                        ? 'text-foreground'
-                                        : 'text-muted-foreground',
-                                )}
-                            >
-                                {formatDuration(seconds) ?? ''}
-                            </span>
                             {canDeploy ? (
                                 <RowActions
                                     deployment={deployment}

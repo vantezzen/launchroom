@@ -49,6 +49,10 @@ const (
 	// through its own network (lr-system-ambassador): only its listed
 	// upstreams (mesh-published ports on other servers) are reachable.
 	ChainAmbassador = "ambassador"
+	// ChainAccess gates the ports of temporary remote access (docs/05 §8):
+	// per access, its allowed sources, then drop. Present only while an
+	// access runs.
+	ChainAccess = "access"
 )
 
 // Priority of the base chains: just before the default filter priority so
@@ -147,6 +151,14 @@ type Spec struct {
 	// destinations it may reach (docs/05 §3).
 	AmbassadorBridge    string
 	AmbassadorUpstreams []netip.AddrPort
+	// Access are the running temporary accesses' ports and allowed sources.
+	Access []AccessRule
+}
+
+// AccessRule is one temporary access port and the sources that may reach it.
+type AccessRule struct {
+	Port uint16
+	From []netip.Prefix
 }
 
 // MeshAllow is one mesh-published port and its allowed peers.
@@ -405,9 +417,34 @@ func Build(spec Spec) Ruleset {
 	}
 	host = append(host, Rule{Verdict: "drop"})
 
+	var access []Rule
+	rules := slices.Clone(spec.Access)
+	slices.SortFunc(rules, func(a, b AccessRule) int { return int(a.Port) - int(b.Port) })
+	for _, a := range rules {
+		if a.Port == 0 {
+			continue
+		}
+		from := slices.Clone(a.From)
+		slices.SortFunc(from, comparePrefix)
+		for _, p := range slices.Compact(from) {
+			if p.IsValid() {
+				access = append(access, Rule{Src: p.Masked(), Proto: "tcp", DPort: a.Port, Verdict: "accept"})
+			}
+		}
+		access = append(access, Rule{Proto: "tcp", DPort: a.Port, Verdict: "drop"})
+	}
+	if len(access) > 0 {
+		// Last: launchroom bridges and the mesh are decided by their own
+		// chains above; this sees the host's other interfaces.
+		in = append(in, Rule{Verdict: "jump " + ChainAccess})
+	}
+
 	chains := []Chain{
 		{Name: ChainEgress, Rules: egress},
 		{Name: ChainHost, Rules: host},
+	}
+	if len(access) > 0 {
+		chains = append(chains, Chain{Name: ChainAccess, Rules: access})
 	}
 	if spec.MeshInterface != "" {
 		chains = append(chains, Chain{Name: ChainMeshHost, Rules: meshHost}, Chain{Name: ChainMeshForward, Rules: meshFwd}, Chain{Name: ChainMeshPublished, Rules: meshPub})

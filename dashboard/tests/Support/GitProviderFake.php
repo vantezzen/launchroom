@@ -68,7 +68,7 @@ final class GitProviderFake
                 default => GitServerKind::Git,
             },
             'base_url' => $base,
-            'name' => parse_url($base, PHP_URL_HOST).' · ada',
+            'name' => parse_url($base, PHP_URL_HOST).' (ada)',
             'account_login' => $provider === GitProviderKind::Git ? null : 'ada',
             'account_id' => $provider === GitProviderKind::Git ? null : $accountId,
             'auth_method' => $provider === GitProviderKind::Git ? GitAuthMethod::DeployKey : $method,

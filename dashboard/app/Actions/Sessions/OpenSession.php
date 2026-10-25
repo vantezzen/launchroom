@@ -34,8 +34,8 @@ use Illuminate\Support\Facades\DB;
  * Opens a Console or Data session (docs/03 §11.1): the session row with a
  * single-use ticket and a fresh key, the `session` daemon task pinned to the
  * replica's server (the key is sealed to that server at lease time), and the
- * "started" audit entry. The caller has authorized the user and confirmed
- * their password.
+ * "started" audit entry. The caller has authorized the user (D60: no
+ * password prompt).
  */
 final readonly class OpenSession
 {
@@ -43,6 +43,7 @@ final readonly class OpenSession
         private SessionTargets $targets,
         private SessionRelay $relay,
         private RecordAuditEvent $audit,
+        private EndSession $end,
     ) {}
 
     public function handle(User $user, ServiceInstance $instance, InteractiveSessionKind $kind, OpenSessionData $data, AuditActor $actor): OpenedSessionData
@@ -55,6 +56,7 @@ final readonly class OpenSession
 
         $instance->loadMissing('service', 'environment.project');
         [$placement, $engine] = $this->target($instance, $kind, $data);
+        $this->replacePrevious($user, $instance, $kind);
 
         $ticket = SessionSecrets::ticket();
         $key = SessionSecrets::key();
@@ -65,9 +67,11 @@ final readonly class OpenSession
         $session = DB::transaction(function () use ($user, $instance, $kind, $data, $placement, $engine, $ticket, $key, $idle, $max, $record, $actor): InteractiveSession {
             // Serialize this user's opens (FOR UPDATE can't be combined with COUNT).
             User::query()->whereKey($user->id)->lockForUpdate()->value('id');
+            // Sessions already being ended (replaced, closed) don't count.
             $open = InteractiveSession::query()
                 ->where('user_id', $user->id)
                 ->whereIn('status', [InteractiveSessionStatus::Pending->value, InteractiveSessionStatus::Open->value])
+                ->whereNull('ended_by_id')
                 ->count();
 
             if ($open >= config()->integer('launchroom.sessions.max_open_per_user')) {
@@ -160,6 +164,23 @@ final readonly class OpenSession
     }
 
     /**
+     * A new session replaces the user's live ones of the same kind on the
+     * same service (docs/03 §11.1): a reconnect never waits for the old
+     * session's server to notice the browser left.
+     */
+    private function replacePrevious(User $user, ServiceInstance $instance, InteractiveSessionKind $kind): void
+    {
+        InteractiveSession::query()
+            ->where('user_id', $user->id)
+            ->where('service_instance_id', $instance->id)
+            ->where('kind', $kind->value)
+            ->whereIn('status', [InteractiveSessionStatus::Pending->value, InteractiveSessionStatus::Open->value])
+            ->whereNull('ended_by_id')
+            ->get()
+            ->each(fn (InteractiveSession $previous) => $this->end->handle($previous, $user, 'Replaced by a new session.'));
+    }
+
+    /**
      * @return array{Placement, string|null} the replica and the daemon engine name (data sessions)
      */
     private function target(ServiceInstance $instance, InteractiveSessionKind $kind, OpenSessionData $data): array
@@ -180,7 +201,7 @@ final readonly class OpenSession
             $feature = $source->engine->daemonFeature();
 
             if ($feature instanceof DaemonFeature && ! $placement->server->supportsDaemonFeature($feature)) {
-                throw DomainRuleViolation::conflict("Update launchroomd on {$placement->server->name} to browse {$source->engine->label()}.");
+                throw DomainRuleViolation::conflict("Update {$placement->server->name} in Settings → Updates to browse {$source->engine->label()}.");
             }
 
             return [$placement, $this->daemonEngine($source->engine)];

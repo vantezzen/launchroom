@@ -10,7 +10,7 @@ What is built, where the built parts fall short, and what is next. Decisions are
 | Single server | Desired-state reconcile, Railpack + presets + Dockerfile builds on BuildKit, Zot registry, Caddy ingress with on-demand TLS, variables with references, staged changes and revisions, deployments with health-gated rollouts and rollback, GitHub App, backups with restic and `install --restore` | D3, D4, D6, D7, D8, D9, D12, D13, D18, D19, D23, D24, D25 |
 | Environments and previews | Persistent environments, Compare & promote, preview environments per pull request with databases, protection and GitHub feedback | D14, D20, D28 |
 | Multi-server | Headscale mesh, multi-server enrollment, scheduler with placement constraints and rescheduling, build routing, ambassadors and mesh-published ports, multi-edge ingress, volume backups, Replace server, recovery mode | D10, D11, D29, D30, D31 |
-| Operations and data | Optional 2FA, Postgres point-in-time recovery and restore verification, console and Data tab sessions, public API v1 and CLI, request metrics and alerts, link quality, log search and retention, guided updates, clean database stops | D33, D34, D35, D36, D40, D41, D42 |
+| Operations and data | Optional 2FA, Postgres point-in-time recovery and restore verification, console and Data tab sessions, public API v1 and CLI, request metrics and alerts, request analytics, link quality, log search and retention, guided updates, clean database stops | D33, D34, D35, D36, D40, D41, D42, D62 |
 | Breadth | Dashboard at its own domain, templates and Compose import, `launchroom.json`, GitLab / Gitea / Forgejo / any git server, more DNS-01 providers, MongoDB and ClickHouse, generated Dockerfiles, dockerd-guard and rootless Docker hosts, mTLS for daemon transport and tamper-evident audit log, cron schedules, website and user docs | D43, D44, D45, D46, D47, D48, D49, D50, D51, D52 |
 | Data in and out | Import into databases (dump files, connection URLs) and volumes (archives), downloads of backups and current data, CLI `db import`/`db export`/`volume export` | D55 |
 | Moves | Move an online server to another (no data loss, no S3), move the control plane with `install.sh --move`, CPU architecture changes with rebuilds before the switch | D56 |
@@ -30,6 +30,7 @@ Limits of features that exist. Security limitations are listed in [09](09-securi
 - **Measurements**
   - Link throughput above about 1 Gbit/s is underestimated (16 MiB transfer, TCP slow start).
   - Request metrics don't cover the dashboard's own route or plain-HTTP redirects.
+  - Request analytics lose the open 10-minute window of paths when launchroomd restarts, merge top lists approximately (a path below the top 50 of every window lands in "other") and have no countries (no local GeoIP database).
   - Log filter facet counts cover the loaded page only.
 - **Backups:** restore verification runs on the database's own server. Redis/Valkey can be backed up but not restored.
 - **Rootless hosts:** visitor addresses are not preserved (RootlessKit's builtin port driver), and resource limits need cgroup v2 delegation.
@@ -134,6 +135,8 @@ Not implemented. Grouped by area; order within a group is not a priority.
 - Authorization cleanups: snapshot listing needs `deploy` or `backups.manage`; scope the parent-service lookup in `DiscardChanges`; bind `{revision}`, `{preview}` and `{shareLink}` through `TeamScopedBindings`; align permissions for retired-volume deletion, environment copies with secrets and Revert.
 - Account hygiene: throttle forgot-password without revealing whether an account exists; case-insensitive e-mail uniqueness.
 - Secrets delivered as tmpfs `*_FILE` files.
+
+- Security center follow-ups ([22](22-security-center.md) §15): per-service outbound network rules, runtime detection of shells spawned in containers, rotating managed database credentials as one action, rebuild without cache, firewall settings in `launchroom.json`, CVSS v4 scoring, SBOM downloads, API writes for the firewall and dismissals, inventories of previews.
 
 ### Dashboard
 - Presence avatars on projects.

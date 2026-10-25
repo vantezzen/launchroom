@@ -420,6 +420,13 @@ has "$WORK/swap-existing/root$SW" '^keep this file$'
 lacks "$WORK/swap-existing/log" 'mkswap'
 has "$WORK/swap-existing.out" 'an existing file is never reformatted'
 
+# A new file the file system can't swap on is removed again.
+STUB_MEM_KB=$SMALL STUB_SWAPON_FAIL=1 run swap-unsupported --create-swap --bundle /missing
+checked swap-unsupported
+[ ! -e "$WORK/swap-unsupported/root$SW" ] || fail "swap-unsupported left $SW behind"
+lacks "$WORK/swap-unsupported/log" 'sysctl -w vm.swappiness'
+has "$WORK/swap-unsupported.out" 'may not support swap files); removed it'
+
 mkdir -p "$WORK/swap-link/root"
 printf 'keep this target\n' >"$WORK/swap-link/target"
 ln -s "$WORK/swap-link/target" "$WORK/swap-link/root$SW"

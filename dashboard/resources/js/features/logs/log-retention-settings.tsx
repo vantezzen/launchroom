@@ -78,7 +78,7 @@ function EnvironmentRetention({
         environment.storedBytes > 0
             ? `${stored(environment.storedBytes)} of runtime logs stored${environment.oldestAt ? ` since ${dateFormat.format(new Date(environment.oldestAt))}` : ''}.`
             : environment.enabled
-              ? 'Nothing stored yet. Lines arrive within seconds of being written.'
+              ? 'Nothing stored yet. New lines show up within a few seconds.'
               : 'Without it, runtime logs are shown live and kept for a day.';
 
     return (
@@ -147,7 +147,7 @@ function EnvironmentRetention({
                     </SettingsRow>
                     <SettingsRow
                         label="Up to"
-                        description="When it's full, the oldest lines go first."
+                        description="When the limit is reached, the oldest lines are deleted first."
                         htmlFor={`size-${environment.id}`}
                     >
                         <Select
@@ -201,8 +201,8 @@ export function LogRetentionSettings({
         <div className="flex flex-col gap-10">
             <p className="max-w-prose type-body text-muted-foreground">
                 Build and deploy logs are kept with their deployments. Runtime
-                logs are shown live; keep them to search them later. They stay
-                on this dashboard's server, inside its database.
+                logs are only shown live unless you keep them here. Kept logs
+                are stored in the dashboard's database.
             </p>
             {environments.map((environment) => (
                 <EnvironmentRetention

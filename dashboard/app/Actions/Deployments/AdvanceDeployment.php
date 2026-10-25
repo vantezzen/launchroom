@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Deployments;
 
 use App\Actions\Servers\RenderNodeState;
+use App\Actions\Transfers\EndDatabasePreparation;
 use App\Contracts\BuildOrchestrator;
 use App\Contracts\ImageDigestResolver;
 use App\Contracts\ReleaseRunner;
@@ -31,6 +32,7 @@ use App\Scheduling\PlacementFailed;
 use App\Services\Deployments\Placer;
 use App\Services\Moves\Prebuilds;
 use App\Services\NodeStates\MeshReadiness;
+use App\Services\Transfers\DatabasePreparations;
 use App\Support\Deployments\EffectiveDeploy;
 use App\Support\Deployments\PrefetchedInputs;
 use App\Support\Images\ImageReference;
@@ -102,6 +104,7 @@ final readonly class AdvanceDeployment
         private Placer $placer,
         private RenderNodeState $renderNodeState,
         private MeshReadiness $meshReadiness,
+        private EndDatabasePreparation $endPreparation,
     ) {}
 
     public function handle(int $deploymentId): void
@@ -242,6 +245,12 @@ final readonly class AdvanceDeployment
 
     private function start(Deployment $deployment, ServiceSpec $spec, PrefetchedInputs $prefetched): bool
     {
+        // A database running alone for an import (docs/14 §12.9) gives way
+        // to its first deploy once no import waits or runs.
+        if (! DatabasePreparations::is($deployment)) {
+            $this->endPreparation->handle($deployment->serviceInstance);
+        }
+
         if ($this->isBlocked($deployment)) {
             return false;
         }
@@ -688,7 +697,7 @@ final readonly class AdvanceDeployment
             return false;
         }
 
-        $this->finishStep($deployment, DeploymentStepName::Route, DeploymentStepStatus::Succeeded, $applied ? [] : ['note' => 'Some edge servers had not applied the new routes yet; they will when they reconnect.']);
+        $this->finishStep($deployment, DeploymentStepName::Route, DeploymentStepStatus::Succeeded, $applied ? [] : ['note' => 'Some edge servers haven’t applied the new routes yet. They apply them when they reconnect.']);
         $deployment->transitionTo(DeploymentStatus::Active);
         $this->startDrain($deployment, $spec);
 

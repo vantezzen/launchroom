@@ -47,7 +47,7 @@ final class PreviewAuthController extends Controller
         $target = $host === null ? null : $urls->resolve($host);
 
         if ($target === null) {
-            return $this->text(403, 'launchroom: this preview does not exist (anymore).');
+            return $this->denied($request, 403, 'launchroom: this preview no longer exists.', 'This preview doesn’t exist', 'It was removed, or the address is wrong.', $host);
         }
 
         $environment = $target['environment'];
@@ -75,7 +75,7 @@ final class PreviewAuthController extends Controller
             $cookie = $access->exchange($token, $environment, (string) $host);
 
             if ($cookie === null) {
-                return $this->text(403, 'launchroom: this preview link is invalid, was revoked or has expired. Ask for a new one.');
+                return $this->denied($request, 403, 'launchroom: this preview link is invalid, was revoked or has expired. Ask for a new one.', 'This link no longer works', 'It is invalid, was revoked or has expired. Ask for a new one.', $host);
             }
 
             return $this->noStore(new RedirectResponse($this->origin((string) $host, $port).$cleanUri, 302))
@@ -99,7 +99,7 @@ final class PreviewAuthController extends Controller
         }
 
         if (! in_array($method, ['GET', 'HEAD'], true)) {
-            return $this->text(401, 'launchroom: sign in to view this preview.');
+            return $this->denied($request, 401, 'launchroom: sign in to view this preview.', 'Sign in to view this preview', 'This preview is protected. Reload the page to sign in.', $host);
         }
 
         $start = rtrim(config()->string('app.url'), '/').'/auth/preview/start?'.http_build_query([
@@ -207,6 +207,23 @@ final class PreviewAuthController extends Controller
     private function origin(string $host, ?int $port): string
     {
         return 'https://'.$host.($port === null ? '' : ':'.$port);
+    }
+
+    /**
+     * A denial the edge passes to the visitor unchanged: an HTML page in the
+     * edge's error-page style for browsers, the plain line for everyone else.
+     */
+    private function denied(Request $request, int $status, string $plain, string $title, string $text, ?string $host): Response
+    {
+        if (! str_contains((string) $request->headers->get('Accept', ''), 'text/html')) {
+            return $this->text($status, $plain);
+        }
+
+        return $this->noStore(new Response(
+            view('edge-error', ['status' => $status, 'title' => $title, 'text' => $text, 'host' => $host])->render(),
+            $status,
+            ['Content-Type' => 'text/html; charset=utf-8'],
+        ));
     }
 
     private function text(int $status, string $body): Response

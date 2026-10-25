@@ -3,6 +3,7 @@ import { ChevronRight } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { CopyValue } from '@/components/copy-value';
 import { Page, PageHeader } from '@/components/patterns/page';
+import { MetaLine } from '@/components/patterns/meta-line';
 import { Section } from '@/components/patterns/section';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
@@ -214,13 +215,11 @@ function OperationRow({
                                     <code className="type-mono-small font-medium">
                                         {parameter.name}
                                     </code>
-                                    <span className="type-small text-muted-foreground">
+                                    <MetaLine className="type-small text-muted-foreground">
                                         {parameter.in}
-                                        {parameter.required
-                                            ? ', required'
-                                            : ''}{' '}
-                                        · {typeLabel(parameter.schema)}
-                                    </span>
+                                        {parameter.required && 'required'}
+                                        {typeLabel(parameter.schema)}
+                                    </MetaLine>
                                     {parameter.description && (
                                         <span className="w-full type-small text-muted-foreground">
                                             {parameter.description}

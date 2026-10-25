@@ -44,7 +44,7 @@ IN_DASHBOARD = if [ -n "$$($(COMPOSE) ps -q --status running dashboard 2>/dev/nu
 .DEFAULT_GOAL := help
 .PHONY: go-image test-db test-dashboard-pest check-dashboard lint-templates help up up-multi down nuke logs ps shell artisan composer npm migrate seed restart-workers \
 	up-backups test test-dashboard lint lint-dashboard test-daemon test-daemon-integration test-daemon-integration-rootless go lint-daemon lint-deploy test-server-sh test-install-sh lint-workflows test-install test-update test-move dev-daemon \
-	dev-enroll-2 dev-enroll-3 test-failover gen gen-protocol gen-types gen-openapi design-tools-image device-art world-map fixtures test-next-adapter next-adapter caddy-image caddy-image-load \
+	dev-enroll-2 dev-enroll-3 test-failover gen gen-protocol gen-types gen-openapi design-tools-image device-art world-map fixtures test-next-adapter next-adapter caddy-image caddy-image-load caddy-image-pin \
 	site-install site-dev site-build site-preview site-format lint-site test-cli lint-cli cli test-cli-e2e up-forgejo test-git-e2e
 
 help: ## Show this help
@@ -329,6 +329,21 @@ caddy-image-load: dev/.env ## Load launchroom-dev-caddy:dev into the dev fake se
 		docker save $(CADDY_DEV_IMAGE) | $(COMPOSE_MULTI) exec -T $$svc docker load -q >/dev/null && \
 		echo "$$svc: $$($(COMPOSE_MULTI) exec -T $$svc docker image inspect $(CADDY_DEV_IMAGE) --format '{{index .RepoDigests 0}}')"; \
 	done
+
+# Pins the loaded launchroom-dev-caddy:dev for the dev stack (host config
+# only, like a real server's): LR_DEV_SYSTEM_IMAGE_DIGESTS for the fake
+# servers' launchroomd and LR_DEV_CADDY_IMAGE for the dashboard, written to
+# dev/.env. `make up` (or up-multi) recreates them with the pin; edges then
+# run the web firewall (docs/22 §6.1). Remove both lines to go back to stock Caddy.
+caddy-image-pin: caddy-image-load ## Pin the loaded launchroom-dev-caddy:dev on the dev servers and the dashboard (dev/.env)
+	@ref=$$($(COMPOSE) exec -T server-1 docker image inspect $(CADDY_DEV_IMAGE) --format '{{index .RepoDigests 0}}') || exit 1; \
+	digest=$${ref#*@}; \
+	case "$$digest" in sha256:*) ;; *) echo "no digest for $(CADDY_DEV_IMAGE) on server-1: $$ref"; exit 1;; esac; \
+	grep -v '^LR_DEV_SYSTEM_IMAGE_DIGESTS=\|^LR_DEV_CADDY_IMAGE=' dev/.env > dev/.env.tmp; \
+	echo "LR_DEV_SYSTEM_IMAGE_DIGESTS=caddy=$$digest" >> dev/.env.tmp; \
+	echo "LR_DEV_CADDY_IMAGE=docker.io/library/launchroom-dev-caddy@$$digest" >> dev/.env.tmp; \
+	mv dev/.env.tmp dev/.env; \
+	echo "pinned launchroom-dev-caddy@$$digest in dev/.env; run \`make up\` (or up-multi) to apply"
 
 go: dev/.env go-image ## launchroomd: run a go command in the Go tools container (ARGS="get example.com/mod@v1.2.3")
 	@# GOPATH in the home dir: the sum database cache ($$GOPATH/pkg/sumdb) must be writable.

@@ -16,6 +16,8 @@ final readonly class TemplateDefinition
     /**
      * @param  list<TemplateInputData>  $inputs
      * @param  array<array-key, mixed>  $services
+     * @param  list<string>  $notes  requirements and limits shown on the detail sheet
+     * @param  array<array-key, mixed>  $configs  Compose top-level `configs` (inline content only)
      */
     public function __construct(
         public string $id,
@@ -29,6 +31,8 @@ final readonly class TemplateDefinition
         public array $inputs,
         public array $services,
         public YamlLineIndex $lines,
+        public array $notes = [],
+        public array $configs = [],
     ) {}
 
     public function input(string $id): ?TemplateInputData

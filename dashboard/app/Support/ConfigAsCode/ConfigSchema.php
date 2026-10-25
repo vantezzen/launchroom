@@ -281,8 +281,8 @@ final class ConfigSchema
             'services' => 'Add "services": { } with your services.',
             'kind' => 'Add "kind": "app" (or image, database, worker, cron).',
             'secret' => 'Write { "secret": true } for a secret whose value is set in the dashboard.',
-            'hostname' => 'Write { "hostname": "shop.example.com" } or just "shop.example.com".',
-            'to' => 'Write { "to": "postgres" } or just "postgres".',
+            'hostname' => 'Write { "hostname": "shop.example.com" } or the plain string "shop.example.com".',
+            'to' => 'Write { "to": "postgres" } or the plain string "postgres".',
             default => null,
         };
     }

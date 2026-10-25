@@ -82,8 +82,8 @@ export default function ProjectCanvas({
             <Head
                 title={
                     activeNode
-                        ? `${activeNode.name} · ${project.name}`
-                        : `${project.name} · ${environment.name}`
+                        ? `${activeNode.name} - ${project.name}`
+                        : `${project.name} - ${environment.name}`
                 }
             />
             <EnvironmentLiveUpdates

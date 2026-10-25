@@ -37,7 +37,7 @@ final class DatabaseWorkloads
 
         return ! $feature instanceof DaemonFeature || $server->supportsDaemonFeature($feature)
             ? null
-            : "Update launchroomd on {$server->name} to {$doing} {$source->engine->label()}.";
+            : "Update {$server->name} in Settings → Updates to {$doing} {$source->engine->label()}.";
     }
 
     public static function source(ServiceInstance $instance): ?DatabaseSource

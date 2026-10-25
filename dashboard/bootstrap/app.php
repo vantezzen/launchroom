@@ -8,6 +8,7 @@ use App\Http\Middleware\HandleAppearance;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\RespectInstanceFreeze;
 use App\Http\Middleware\SecurityHeaders;
+use App\Http\Middleware\ThrottleRequestsPerRoute;
 use App\Http\Middleware\UseDashboardOrigin;
 use App\Support\SensitiveInput;
 use Illuminate\Foundation\Application;
@@ -76,6 +77,9 @@ return Application::configure(basePath: dirname(__DIR__))
         // private ranges only, for the client IP (rate limits, audit) and the
         // https scheme (docs/11 §2, docs/05 §4).
         $middleware->trustProxies(at: ['127.0.0.1/8', '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16', '::1', 'fc00::/7']);
+
+        // `throttle:N,M` counts per user (or IP) and route, not per user alone.
+        $middleware->alias(['throttle' => ThrottleRequestsPerRoute::class]);
 
         // CSP (nonce), HSTS (production), nosniff, frame and referrer policy (docs/09 R26).
         $middleware->append(SecurityHeaders::class);

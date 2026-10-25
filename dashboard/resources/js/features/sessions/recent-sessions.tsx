@@ -1,5 +1,6 @@
 import { History, PlayCircle } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
+import { MetaLine } from '@/components/patterns/meta-line';
 import { Section } from '@/components/patterns/section';
 import { SidePanel } from '@/components/patterns/sheet';
 import { Status } from '@/components/status';
@@ -46,24 +47,28 @@ export function RecentSessions({
                                     {item.isMine ? 'You' : item.userName}
                                 </b>{' '}
                                 <span className="text-muted-foreground">
-                                    on {item.replicaLabel}
-                                    {item.serverName
-                                        ? ` · ${item.serverName}`
-                                        : ''}
+                                    opened{' '}
                                     {item.shell
-                                        ? ` · ${item.shell.replace('/bin/', '')}`
+                                        ? item.shell.replace('/bin/', '')
+                                        : 'a console'}{' '}
+                                    in {item.replicaLabel.toLowerCase()}
+                                    {item.serverName
+                                        ? ` on ${item.serverName}`
                                         : ''}
                                 </span>
                             </p>
-                            <p className="truncate type-small text-muted-foreground">
-                                {item.status === 'ended'
-                                    ? [
-                                          duration(item.durationSeconds),
-                                          item.endReason,
-                                      ]
-                                          .filter(Boolean)
-                                          .join(' · ')
-                                    : 'Open now'}
+                            <p
+                                className="truncate type-small text-muted-foreground"
+                                title={item.failure ?? undefined}
+                            >
+                                {item.status === 'ended' ? (
+                                    <MetaLine>
+                                        {duration(item.durationSeconds)}
+                                        {item.failure ?? item.endReason}
+                                    </MetaLine>
+                                ) : (
+                                    'Open now'
+                                )}
                             </p>
                         </div>
                         <span className="hidden shrink-0 type-small text-muted-foreground sm:inline">
@@ -126,7 +131,7 @@ function RecordingPanel({
             title="Console recording"
             description={
                 item
-                    ? `${item.isMine ? 'You' : item.userName} on ${item.replicaLabel} · output only, secrets masked`
+                    ? `${item.isMine ? 'You' : item.userName} in ${item.replicaLabel.toLowerCase()}. Shows output only, with secret values masked.`
                     : undefined
             }
             size="lg"

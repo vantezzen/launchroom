@@ -58,13 +58,13 @@ final class Sessions
     }
 
     /**
-     * Opens a session as $user (password confirmed) and returns the JSON answer.
+     * Opens a session as $user and returns the JSON answer.
      *
      * @return array<string, mixed>
      */
     public static function open(TestCase $test, User $user, ServiceInstance $instance, string $kind = 'console', array $body = []): array
     {
-        $response = $test->actingAs($user)->withSession(passwordConfirmed())->postJson(self::url($instance, $kind), $body);
+        $response = $test->actingAs($user)->postJson(self::url($instance, $kind), $body);
         $response->assertCreated();
 
         /** @var array<string, mixed> $json */

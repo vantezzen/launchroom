@@ -64,11 +64,30 @@ export default function Page() {
                     last verified, and you can check it yourself.
                 </FeatureRow>
             </Section>
-            <Section tone="frame" labelledBy="account-title">
+            <Section tone="frame" labelledBy="center-title">
+                <FeatureRow
+                    id="center-title"
+                    label="Security center"
+                    title="Know which packages need an update."
+                    visual={<Screenshot id="security-page" caption={false} sizes="(min-width: 1024px) 700px, 100vw" />}
+                    points={[
+                        'Vulnerability data from OSV, CISA’s list of exploited flaws and endoflife.date',
+                        'A web firewall with the OWASP Core Rule Set, set to Block or Log only per service',
+                        'Investigations check the container, firewall hits and requests, then list next steps',
+                    ]}
+                    more={{ href: '/docs/security', text: 'Security overview' }}
+                >
+                    launchroom lists the packages and runtimes in every running image and checks them against public
+                    vulnerability data. It raises an alert when a vulnerable package runs in a public service and a fix
+                    exists, or when the flaw is known to be exploited.
+                </FeatureRow>
+            </Section>
+            <Section labelledBy="account-title">
                 <FeatureRow
                     id="account-title"
                     label="Accounts"
                     title="Two-factor, passkeys and scoped tokens."
+                    reverse
                     visual={<Screenshot id="two-factor" caption={false} sizes="(min-width: 1024px) 700px, 100vw" />}
                     more={{ href: '/docs/teams-and-security/two-factor', text: 'Two-factor authentication' }}
                 >

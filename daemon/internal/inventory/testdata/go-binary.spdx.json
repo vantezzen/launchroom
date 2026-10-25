@@ -1,0 +1,181 @@
+{
+ "_type": "https://in-toto.io/Statement/v0.1",
+ "predicate": {
+  "creationInfo": {
+   "created": "2026-10-25T12:54:56Z",
+   "creators": [
+    "Organization: Anchore, Inc",
+    "Tool: syft-v1.51.0"
+   ],
+   "licenseListVersion": "3.28"
+  },
+  "packages": [
+   {
+    "SPDXID": "SPDXRef-Package-go-module-github.com-gorilla-websocket-af35910af011ce74",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:gorilla:websocket:v1.5.3:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:golang/github.com/gorilla/websocket@v1.5.3",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "github.com/gorilla/websocket",
+    "versionInfo": "v1.5.3"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-go-module-github.com-traefik-whoami-ab876918fec5c824",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:traefik:whoami:v1.12.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:golang/github.com/traefik/whoami@v1.12.0",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "github.com/traefik/whoami",
+    "versionInfo": "v1.12.0"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-go-module-golang.org-x-net-d32519cda6b64e90",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:golang:networking:v0.57.0:*:*:*:*:go:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:golang:net:v0.57.0:*:*:*:*:go:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:golang/golang.org/x/net@v0.57.0",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "golang.org/x/net",
+    "versionInfo": "v0.57.0"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-go-module-golang.org-x-sys-86140dc3e14202d7",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:golang:x\\/sys:v0.47.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:golang/golang.org/x/sys@v0.47.0",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "golang.org/x/sys",
+    "versionInfo": "v0.47.0"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-go-module-golang.org-x-text-3afda60a45f19fd2",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:golang:text:v0.40.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:golang/golang.org/x/text@v0.40.0",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "golang.org/x/text",
+    "versionInfo": "v0.40.0"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-go-module-google.golang.org-genproto-googleapis-rpc-1e3796aefd1b6570",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:google:genproto:v0.0.0-20260727163830-6c54dddc4772:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:golang/google.golang.org/genproto/googleapis/rpc@v0.0.0-20260727163830-6c54dddc4772",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "google.golang.org/genproto/googleapis/rpc",
+    "versionInfo": "v0.0.0-20260727163830-6c54dddc4772"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-go-module-google.golang.org-grpc-3875fd2543d2de1a",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:google:grpc:v1.82.1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:golang/google.golang.org/grpc@v1.82.1",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "google.golang.org/grpc",
+    "versionInfo": "v1.82.1"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-go-module-google.golang.org-protobuf-3c3d56f9ef9410e5",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:google:protobuf:v1.36.11:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:golang/google.golang.org/protobuf@v1.36.11",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "google.golang.org/protobuf",
+    "versionInfo": "v1.36.11"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-go-module-stdlib-b8e5b6724d021cc7",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:golang:go:1.26.5:-:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:golang/stdlib@1.26.5",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "stdlib",
+    "versionInfo": "go1.26.5"
+   },
+   {
+    "SPDXID": "SPDXRef-DocumentRoot-Directory-sbom",
+    "externalRefs": null,
+    "name": "sbom",
+    "versionInfo": null
+   }
+  ],
+  "spdxVersion": "SPDX-2.3"
+ },
+ "predicateType": "https://spdx.dev/Document"
+}

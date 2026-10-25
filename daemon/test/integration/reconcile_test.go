@@ -82,6 +82,7 @@ type env struct {
 	rec      *reconcile.Reconciler
 	api      *client.Client
 	engine   *docker.Engine
+	ingress  *caddy.Manager
 }
 
 func setup(t *testing.T) *env {
@@ -105,6 +106,15 @@ func setupLocal(t *testing.T, extra caddy.Options, local []netip.AddrPort) *env 
 // setupLocalOpen is setupLocal with sealed ingress credentials opened by
 // open (with the env's key; nil: none).
 func setupLocalOpen(t *testing.T, extra caddy.Options, local []netip.AddrPort, open func(e *env) func(state.Sealed, state.IngressSecretPurpose) (map[string]secret.Secret, error)) *env {
+	t.Helper()
+	return setupEdge(t, extra, local, open, nil)
+}
+
+// setupEdge is setupLocalOpen with a hook that adjusts the ingress
+// manager's options and the local policy (e.g. a locally built Caddy).
+func setupEdge(t *testing.T, extra caddy.Options, local []netip.AddrPort, open func(e *env) func(state.Sealed, state.IngressSecretPurpose) (map[string]secret.Secret, error),
+	mut func(*caddy.ManagerOptions, *policy.Config),
+) *env {
 	t.Helper()
 	api, err := client.New(client.FromEnv)
 	if err != nil {
@@ -134,12 +144,18 @@ func setupLocalOpen(t *testing.T, extra caddy.Options, local []netip.AddrPort, o
 	t.Cleanup(cancel)
 	go func() { _ = ask.Serve(ctx, askAddr) }()
 
-	ingress := caddy.NewManager(caddy.ManagerOptions{
-		ServerID: string(e.serverID), Docker: e.engine, Admin: caddy.NewAdminClient(caddy.DefaultAdminListen), Policy: pol,
+	mo := caddy.ManagerOptions{
+		ServerID: string(e.serverID), Docker: e.engine, Admin: caddy.NewAdminClient(caddy.DefaultAdminListen),
 		Ask: ask, CacheDir: t.TempDir(), Log: log, ReadyTimeout: time.Minute, OpenSecret: openWith(open, e),
 		Render: caddy.Options{AdminListen: caddy.DefaultAdminListen, AskURL: "http://" + askAddr + caddy.AskPath, HTTPPort: 80, HTTPSPort: 443, RedirectHTTPSPort: 443,
 			ForwardAuthOrigins: extra.ForwardAuthOrigins, AccessLogAddress: extra.AccessLogAddress},
-	})
+	}
+	if mut != nil {
+		mut(&mo, &pol)
+	}
+	mo.Policy = pol
+	ingress := caddy.NewManager(mo)
+	e.ingress = ingress
 	mon := health.NewMonitor(ctx, health.MonitorOptions{})
 	t.Cleanup(mon.Close)
 	e.rec = reconcile.New(reconcile.Options{

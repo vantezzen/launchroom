@@ -219,8 +219,8 @@ export function ConnectPopover({
                                     className="mt-0.5 size-3.5 shrink-0 text-status-progress"
                                 />
                                 Use the public URL only for values a browser
-                                reads (NEXT_PUBLIC_*). Server-to-server traffic
-                                is faster and private on the network.
+                                reads (NEXT_PUBLIC_*). Services reach each other
+                                faster over the private network.
                             </p>
                         )}
                         <ul

@@ -190,7 +190,7 @@ function certificateStep(domain: Domain, dnsOk: boolean): Step {
                 : null,
         ]
             .filter(Boolean)
-            .join(' · '),
+            .join(', '),
     };
 }
 
@@ -317,8 +317,8 @@ function EdgeServers({ edges }: { edges: App.Data.Canvas.EdgeServerData[] }) {
                 </h4>
                 <p className="type-small text-muted-foreground">
                     {edges.length === 1
-                        ? 'Answers for every domain here. A second server with the edge role keeps traffic flowing if it’s down.'
-                        : `These ${edges.length} answer for every domain here, so traffic keeps flowing if one is down.`}
+                        ? 'This server answers for every domain here. Give a second server the edge role to keep traffic flowing if it goes down.'
+                        : `These ${edges.length} servers answer for every domain here. If one goes down, the others keep serving traffic.`}
                 </p>
             </div>
             <ul className="grid grid-cols-1 gap-3 @md/page:grid-cols-2 @2xl/page:grid-cols-3">
@@ -350,105 +350,168 @@ function EdgeServers({ edges }: { edges: App.Data.Canvas.EdgeServerData[] }) {
     );
 }
 
-/** The records to create, each value copyable. */
-export function DnsRecords({ domain }: { domain: Domain }) {
-    const records = domain.wwwRedirect
-        ? [
-              ...domain.dnsRecords,
-              ...domain.dnsRecords.map((record) => ({
-                  ...record,
-                  name: `www.${record.name}`,
-              })),
-          ]
-        : domain.dnsRecords;
+type DnsRecord = App.Data.Canvas.DnsRecordData;
 
-    if (records.length === 0) {
+/** A subdomain can point at the platform with a CNAME (docs/05 §5). */
+function cnameRecommended(domain: Domain): boolean {
+    return domain.cnameTarget !== null && !domain.apex;
+}
+
+/** "Add this record" / "Add one of these" for the setup headings. */
+export function dnsRecordsHint(domain: Domain): string {
+    if (cnameRecommended(domain)) {
+        return 'Add the CNAME record at your DNS provider, or the A records below it.';
+    }
+
+    return domain.dnsRecords.length === 1
+        ? 'Add this record at your DNS provider.'
+        : 'Add these records at your DNS provider.';
+}
+
+function RecordList({ records }: { records: DnsRecord[] }) {
+    return (
+        <ul className="divide-y overflow-hidden rounded-lg border bg-card">
+            {records.map((record) => (
+                <li
+                    key={`${record.type}-${record.name}-${record.value}`}
+                    className="grid min-w-0 grid-cols-[3.5rem_minmax(0,1fr)] items-start gap-x-3 gap-y-2 p-4"
+                >
+                    <span className="inline-flex h-6 w-fit items-center rounded-md bg-hover px-2 type-mono-small font-medium">
+                        {record.type}
+                    </span>
+                    <span className="flex min-w-0 items-start">
+                        <span className="flex min-w-0 flex-1 flex-col gap-1">
+                            <span className="type-small text-muted-foreground">
+                                Name
+                            </span>
+                            <code className="type-mono-small break-all">
+                                {record.name}
+                            </code>
+                        </span>
+                        <CopyButton
+                            value={record.name}
+                            label={`${record.type} record name`}
+                        />
+                    </span>
+                    <span className="col-start-2 flex min-w-0 items-start">
+                        <span className="flex min-w-0 flex-1 flex-col gap-1">
+                            <span className="type-small text-muted-foreground">
+                                Value
+                            </span>
+                            <code className="type-mono-small break-all">
+                                {record.value}
+                            </code>
+                        </span>
+                        <CopyButton
+                            value={record.value}
+                            label={`${record.type} record value`}
+                        />
+                    </span>
+                </li>
+            ))}
+        </ul>
+    );
+}
+
+/**
+ * The records to create, each value copyable. With a platform domain a
+ * subdomain gets a CNAME to the service's generated name first: it keeps
+ * pointing at the right servers when edges are added or replaced. A zone
+ * apex keeps the A records first (most DNS hosts allow no CNAME there) and
+ * mentions ALIAS/ANAME/flattening. The A/AAAA records always stay as the
+ * alternative.
+ */
+export function DnsRecords({ domain }: { domain: Domain }) {
+    const withWww = (records: DnsRecord[]) =>
+        domain.wwwRedirect
+            ? [
+                  ...records,
+                  ...records.map((record) => ({
+                      ...record,
+                      name: `www.${record.name}`,
+                  })),
+              ]
+            : records;
+    const addresses = withWww(domain.dnsRecords);
+    const target = domain.cnameTarget;
+    const noAddresses = (
+        <p className="type-small text-muted-foreground">
+            No server with the edge role has a public address yet. The records
+            appear here once one has.
+        </p>
+    );
+
+    if (target && cnameRecommended(domain)) {
         return (
-            <p className="type-small text-muted-foreground">
-                No server with the edge role has a public address yet. Once one
-                does, its address shows up here.
-            </p>
+            <div className="flex flex-col gap-4">
+                <div className="flex flex-col gap-2">
+                    <span className="flex items-center gap-2">
+                        <span className="type-label">CNAME record</span>
+                        <span className="inline-flex h-5 items-center rounded-md border border-signal/40 bg-signal-soft px-1.5 type-small font-medium text-signal">
+                            Recommended
+                        </span>
+                    </span>
+                    <RecordList
+                        records={withWww([
+                            {
+                                type: 'CNAME',
+                                name: domain.hostname,
+                                value: target,
+                            },
+                        ])}
+                    />
+                    <p className="type-small text-muted-foreground">
+                        It keeps pointing at the right servers when you add an
+                        edge server or move to another one.
+                    </p>
+                </div>
+                <div className="flex flex-col gap-2">
+                    <span className="type-label">
+                        Or A records to your servers’ addresses
+                    </span>
+                    {addresses.length === 0 ? (
+                        noAddresses
+                    ) : (
+                        <RecordList records={addresses} />
+                    )}
+                </div>
+            </div>
         );
     }
 
     return (
         <div className="flex flex-col gap-3">
-            <ul className="divide-y overflow-hidden rounded-lg border bg-card">
-                {records.map((record) => (
-                    <li
-                        key={`${record.type}-${record.name}-${record.value}`}
-                        className="grid min-w-0 grid-cols-[3.5rem_minmax(0,1fr)] items-start gap-x-3 gap-y-2 p-4"
-                    >
-                        <span className="inline-flex h-6 w-fit items-center rounded-md bg-hover px-2 type-mono-small font-medium">
-                            {record.type}
-                        </span>
-                        <span className="flex min-w-0 items-start">
-                            <span className="flex min-w-0 flex-1 flex-col gap-1">
-                                <span className="type-small text-muted-foreground">
-                                    Name
-                                </span>
-                                <code className="type-mono-small break-all">
-                                    {record.name}
-                                </code>
-                            </span>
-                            <CopyButton
-                                value={record.name}
-                                label={`${record.type} record name`}
-                            />
-                        </span>
-                        <span className="col-start-2 flex min-w-0 items-start">
-                            <span className="flex min-w-0 flex-1 flex-col gap-1">
-                                <span className="type-small text-muted-foreground">
-                                    Value
-                                </span>
-                                <code className="type-mono-small break-all">
-                                    {record.value}
-                                </code>
-                            </span>
-                            <CopyButton
-                                value={record.value}
-                                label={`${record.type} record value`}
-                            />
-                        </span>
-                    </li>
-                ))}
-
-                {domain.cnameTarget && (
-                    <>
-                        <li
-                            className="flex items-center justify-center gap-2 bg-recessed px-4 py-2"
-                            key="cname-or"
-                        >
-                            <span className="type-small text-muted-foreground">
-                                or
-                            </span>
-                        </li>
-
-                        <li
-                            key="cname"
-                            className="grid min-w-0 grid-cols-[3.5rem_minmax(0,1fr)] items-start gap-x-3 gap-y-2 p-4"
-                        >
-                            <span className="inline-flex h-6 w-fit items-center rounded-md bg-hover px-2 type-mono-small font-medium">
-                                CNAME
-                            </span>
-                            <span className="col-start-2 flex min-w-0 items-start">
-                                <span className="flex min-w-0 flex-1 flex-col gap-1">
-                                    <span className="type-small text-muted-foreground">
-                                        Value
-                                    </span>
-                                    <code className="type-mono-small break-all">
-                                        {domain.cnameTarget}
-                                    </code>
-                                </span>
-                                <CopyButton
-                                    value={domain.cnameTarget}
-                                    label={`${domain.cnameTarget} cname value`}
-                                />
-                            </span>
-                        </li>
-                    </>
-                )}
-            </ul>
+            {addresses.length === 0 ? (
+                noAddresses
+            ) : (
+                <RecordList records={addresses} />
+            )}
+            {target && domain.apex && (
+                <div className="flex flex-col gap-1 rounded-lg border bg-card px-4 py-3">
+                    <p className="type-small text-muted-foreground">
+                        Most DNS hosts allow no CNAME on a root domain. If yours
+                        offers ALIAS, ANAME or CNAME flattening, point the root
+                        at this name instead of the A records. It keeps pointing
+                        at the right servers when they change.
+                    </p>
+                    <span className="flex min-w-0 items-center">
+                        <code className="type-mono-small break-all">
+                            {target}
+                        </code>
+                        <CopyButton
+                            value={target}
+                            label={`${target} alias target`}
+                        />
+                    </span>
+                </div>
+            )}
+            {!target && !domain.apex && (
+                <p className="type-small text-muted-foreground">
+                    With a platform domain (Settings → Network), a CNAME record
+                    can replace these and keep pointing at the right servers
+                    when they change.
+                </p>
+            )}
         </div>
     );
 }
@@ -651,11 +714,7 @@ function DomainCard({
                                 Point your DNS here
                             </span>
                             <span className="type-small text-muted-foreground">
-                                Add{' '}
-                                {domain.dnsRecords.length === 1
-                                    ? 'this record'
-                                    : 'these records'}{' '}
-                                at your DNS provider.
+                                {dnsRecordsHint(domain)}
                             </span>
                         </div>
                         {editable && (
@@ -682,11 +741,10 @@ function DomainCard({
                             aria-live="polite"
                         >
                             <StatusIcon state="progress" />
-                            Checking by itself every 20 seconds
+                            Checking every 20 seconds
                             {domain.verification && (
                                 <>
-                                    {' '}
-                                    · last{' '}
+                                    , last check{' '}
                                     <TimeAgo
                                         value={domain.verification.checkedAt}
                                     />
@@ -747,12 +805,13 @@ function DomainCard({
                     {editable && domain.canDelete && (
                         <div className="flex items-center justify-between gap-4 px-5 py-3">
                             <span className="type-small text-muted-foreground">
-                                Routing stops right away when you remove it.
+                                Traffic to this domain stops as soon as you
+                                remove it.
                             </span>
                             <ConfirmPopover
                                 tone="destructive"
                                 title={`Remove ${domain.hostname}?`}
-                                consequence="Visitors get an error until you add it again. Nothing to deploy."
+                                consequence="Visitors get an error until you add it again. This doesn’t need a deploy."
                                 confirmLabel="Remove domain"
                                 onConfirm={() => {
                                     setBusy('remove');
@@ -839,9 +898,13 @@ function hostnameHint(
         return `Addresses under ${appsDomain} are generated by launchroom. Use a domain of your own.`;
     }
 
-    return value.split('.').length >= 3
-        ? 'A subdomain: one A record (or a CNAME) at your DNS provider is enough.'
-        : 'A root domain: you’ll add an A record at your DNS provider.';
+    if (value.split('.').length < 3) {
+        return 'A root domain: you’ll add an A record at your DNS provider.';
+    }
+
+    return appsDomain
+        ? 'A subdomain: one CNAME record at your DNS provider is enough.'
+        : 'A subdomain: one A record at your DNS provider is enough.';
 }
 
 /**
@@ -894,8 +957,8 @@ function AddDomainDialog({
                         <div className="flex flex-col gap-1.5">
                             <DialogTitle>Add a domain</DialogTitle>
                             <DialogDescription>
-                                Routing starts as soon as DNS points at your
-                                servers. Nothing to deploy.
+                                Traffic is routed as soon as DNS points at your
+                                servers. You don’t need to deploy.
                             </DialogDescription>
                         </div>
                         <div className="flex flex-col gap-2">
@@ -956,21 +1019,14 @@ function AddDomainDialog({
                                         <code className="type-mono-small break-all text-foreground">
                                             {added}
                                         </code>{' '}
-                                        points at your servers. HTTPS starts on
-                                        the first visit.
+                                        points at your servers. The certificate
+                                        is issued on the first visit.
                                     </>
                                 ) : (
                                     <>
-                                        Add{' '}
-                                        {domain &&
-                                        domain.dnsRecords.length === 1
-                                            ? 'this record'
-                                            : 'these records'}{' '}
-                                        for{' '}
-                                        <code className="type-mono-small break-all text-foreground">
-                                            {added}
-                                        </code>{' '}
-                                        at your DNS provider.
+                                        {domain
+                                            ? dnsRecordsHint(domain)
+                                            : 'Add these records at your DNS provider.'}
                                     </>
                                 )}
                             </DialogDescription>
@@ -995,9 +1051,9 @@ function AddDomainDialog({
                                     timeoutSeconds={300}
                                     fallback={
                                         <p className="type-small text-muted-foreground">
-                                            Still nothing? Some providers take
-                                            up to an hour. You can close this;
-                                            the domain card keeps checking.
+                                            Some providers take up to an hour.
+                                            You can close this dialog. The
+                                            domain card keeps checking.
                                         </p>
                                     }
                                 />
@@ -1133,8 +1189,8 @@ export function DomainsSection({ context }: { context: SettingsContext }) {
             title="Domains"
             description={
                 domains.length === 0
-                    ? 'Where people reach this service. Changes apply right away.'
-                    : `${live} of ${domains.length} live · changes apply right away, certificates follow by themselves.`
+                    ? 'The addresses people use to reach this service. Changes apply without a deploy.'
+                    : `${live} of ${domains.length} live. Changes apply without a deploy, certificates are issued automatically.`
             }
             actions={
                 canUpdate && (
@@ -1164,8 +1220,8 @@ export function DomainsSection({ context }: { context: SettingsContext }) {
                     }
                 >
                     {port === null
-                        ? 'A generated domain appears once the port is known: deploy once, or set it under Deploy.'
-                        : 'Add your own domain; launchroom handles HTTPS.'}
+                        ? 'A generated domain appears once the port is known. Deploy once, or set the port under Deploy.'
+                        : 'Add your own domain. launchroom takes care of HTTPS.'}
                 </EmptyState>
             ) : (
                 <ul data-setting="domains-list" className="flex flex-col gap-4">

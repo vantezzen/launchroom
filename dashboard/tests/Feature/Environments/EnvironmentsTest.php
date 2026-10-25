@@ -248,16 +248,16 @@ test('deleting an environment: typed name, never production, rows that only appl
         ->and(AuditEvent::query()->where('action', AuditAction::EnvironmentDeleted->value)->exists())->toBeTrue();
 });
 
-test('deleting over HTTP needs a recent password and the delete ability', function (): void {
+test('deleting over HTTP needs the delete ability', function (): void {
     [$project] = envProject();
     $staging = envCreate($project, 'staging');
     $developer = memberOf($project->team, TeamRole::Developer);
 
-    $this->actingAs(memberOf($project->team, TeamRole::Viewer))->withSession(passwordConfirmed())
+    $this->actingAs(memberOf($project->team, TeamRole::Viewer))
         ->delete("/p/{$project->public_id}/environments/{$staging->public_id}", ['confirmName' => 'staging'])
         ->assertForbidden();
 
-    $this->actingAs($developer)->withSession(passwordConfirmed())
+    $this->actingAs($developer)
         ->delete("/p/{$project->public_id}/environments/{$staging->public_id}", ['confirmName' => 'staging'])
         ->assertRedirect("/p/{$project->public_id}/settings/environments");
 

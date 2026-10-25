@@ -3,6 +3,7 @@ import { Circle, Radio, SquareTerminal } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { EmptyState } from '@/components/patterns/empty-state';
 import { LiveWait } from '@/components/patterns/live-wait';
+import { MetaDivider } from '@/components/patterns/meta-line';
 import { Button } from '@/components/ui/button';
 import {
     Select,
@@ -12,9 +13,13 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import { RemoteAccessButton } from '@/features/remote-access/remote-access';
+import { useNow } from '@/hooks/use-now';
 import { cn } from '@/lib/utils';
 import { endOnUnload, openSession } from './api';
 import type { ServiceRef } from './api';
+import { watchConnect } from './connect-watch';
+import { DataTabHint } from './data-tab-hint';
 import { clock, endSentence, shellLabel } from './format';
 import { RecentSessions } from './recent-sessions';
 import { SessionClient } from './session-client';
@@ -39,7 +44,13 @@ const IDLE_HINT_SECONDS = 180;
  * terminal inside that container. The session ends when the tab, the panel
  * or the page goes away.
  */
-export function ConsoleTab(ref: ServiceRef) {
+export function ConsoleTab({
+    dataHint = false,
+    ...ref
+}: ServiceRef & {
+    /** A database: point at its Data tab. */
+    dataHint?: boolean;
+}) {
     const query = useTabData<Data>(ref, 'console');
     const data = query.data;
 
@@ -58,11 +69,14 @@ export function ConsoleTab(ref: ServiceRef) {
     }
 
     return (
-        <ConsoleView
-            serviceRef={ref}
-            data={data}
-            refresh={() => void query.refetch()}
-        />
+        <div className="flex flex-col gap-4">
+            {dataHint && <DataTabHint {...ref} />}
+            <ConsoleView
+                serviceRef={ref}
+                data={data}
+                refresh={() => void query.refetch()}
+            />
+        </div>
     );
 }
 
@@ -83,11 +97,13 @@ function ConsoleView({
     const [phase, setPhase] = useState<Phase>({ kind: 'idle' });
     const [opened, setOpened] = useState<Opened | null>(null);
     const [error, setError] = useState<string | null>(null);
-    const [now, setNow] = useState(() => Date.now());
+    // The page's shared clock (one interval, paused in hidden tabs).
+    const now = useNow(phase.kind === 'live');
     const lastInput = useRef(Date.now());
     const terminal = useRef<TerminalHandle>(null);
     const client = useRef<SessionClient | null>(null);
     const openedRef = useRef<Opened | null>(null);
+    const unwatch = useRef<(() => void) | null>(null);
     const [attempt, setAttempt] = useState(0);
     // The attempt a session was requested for: mounting twice (dev
     // StrictMode) must not open two sessions.
@@ -100,6 +116,8 @@ function ConsoleView({
     const stop = useCallback(() => {
         const current = client.current;
         client.current = null;
+        unwatch.current?.();
+        unwatch.current = null;
 
         if (current) {
             endOnUnload(openedRef.current?.id ?? '');
@@ -116,16 +134,6 @@ function ConsoleView({
             stop();
         };
     }, [stop]);
-
-    useEffect(() => {
-        if (phase.kind !== 'live') {
-            return;
-        }
-
-        const timer = window.setInterval(() => setNow(Date.now()), 1000);
-
-        return () => window.clearInterval(timer);
-    }, [phase.kind]);
 
     const connect = useCallback(
         async (cols: number, rows: number) => {
@@ -146,6 +154,8 @@ function ConsoleView({
                     session,
                     {
                         onStarted: (started) => {
+                            unwatch.current?.();
+                            unwatch.current = null;
                             setPhase({
                                 kind: 'live',
                                 shell: started ?? session.shell,
@@ -158,11 +168,13 @@ function ConsoleView({
                             terminal.current?.write(
                                 `\r\n\x1b[90m[exited${code === null ? '' : ` with code ${code}`}]\x1b[0m\r\n`,
                             ),
-                        onEnd: (reason) => {
+                        onEnd: (reason, message) => {
+                            unwatch.current?.();
+                            unwatch.current = null;
                             client.current = null;
                             setPhase({
                                 kind: 'ended',
-                                reason: endSentence(reason),
+                                reason: message ?? endSentence(reason),
                             });
                             refresh();
                         },
@@ -173,6 +185,19 @@ function ConsoleView({
                     }),
                 );
                 client.current = live;
+                // A server that can't start the console (no shell, a
+                // refusal, offline) says so here instead of "Connecting…".
+                unwatch.current = watchConnect(
+                    session.id,
+                    session.replica.serverName,
+                    (message) => {
+                        client.current = null;
+                        live.close();
+                        setError(message);
+                        setPhase({ kind: 'idle' });
+                        refresh();
+                    },
+                );
                 await live.connect(realtime);
             } catch (failure) {
                 const message =
@@ -221,10 +246,10 @@ function ConsoleView({
                             <div className="flex flex-col gap-1">
                                 <p className="type-heading">Open a console</p>
                                 <p className="type-small text-muted-foreground">
-                                    A shell inside one replica’s container, as
-                                    the container’s own user. It ends after{' '}
-                                    {data.idleMinutes} minutes without input, at
-                                    most after {data.maxMinutes} minutes.
+                                    Opens a shell in one replica’s container as
+                                    the container’s user. It closes after{' '}
+                                    {data.idleMinutes} minutes without input and
+                                    after {data.maxMinutes} minutes at most.
                                 </p>
                             </div>
                             <ReplicaPicker
@@ -268,8 +293,12 @@ function ConsoleView({
                                     }}
                                 >
                                     <SquareTerminal aria-hidden="true" />
-                                    Open console
+                                    {error ? 'Try again' : 'Open console'}
                                 </Button>
+                                <RemoteAccessButton
+                                    serviceRef={serviceRef}
+                                    kind="ssh"
+                                />
                                 {data.record && (
                                     <span className="flex items-center gap-1.5 type-small text-muted-foreground">
                                         <Radio
@@ -346,8 +375,8 @@ function ConsoleView({
                                 Connected
                             </span>
                             <span>
-                                {shellLabel(phase.shell)} on{' '}
-                                {opened?.replica.label.toLowerCase()} ·{' '}
+                                {shellLabel(phase.shell)} in{' '}
+                                {opened?.replica.label.toLowerCase()} on{' '}
                                 {opened?.replica.serverName}
                             </span>
                             <span className="tabular-nums">
@@ -446,7 +475,7 @@ function ReplicaPicker({
                         )}
                     >
                         <span className="font-medium">{replica.label}</span>
-                        <span className="text-faint">·</span>
+                        <MetaDivider />
                         <span>{replica.serverName}</span>
                         {replica.phase === 'unhealthy' && (
                             <span className="text-status-progress">

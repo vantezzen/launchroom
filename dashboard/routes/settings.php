@@ -19,7 +19,8 @@ use Illuminate\Support\Facades\Route;
 use Inertia\Controller as InertiaPage;
 
 Route::middleware(['auth'])->group(function (): void {
-    Route::redirect('settings', '/settings/profile');
+    // The settings list on phones, Profile beside the sidebar on wide screens (docs/08 §1).
+    Route::get('settings', [ProfileController::class, 'edit'])->name('settings.index');
 
     Route::get('settings/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('settings/profile', [ProfileController::class, 'update'])->name('profile.update');
@@ -29,7 +30,6 @@ Route::middleware(['auth', 'verified'])->group(function (): void {
     Route::delete('settings/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
 
     Route::get('settings/security', [SecurityController::class, 'edit'])
-
         ->name('security.edit');
 
     Route::put('settings/password', [SecurityController::class, 'update'])
@@ -83,7 +83,6 @@ Route::middleware(['auth', 'verified'])->group(function (): void {
     // Settings → Security for this launchroom (D50): server certificates
     // (docs/03 §4.3) and the audit log (docs/09 R34). Section actions below.
     Route::get('settings/instance-security', [InstanceSecurityController::class, 'edit'])
-
         ->name('instance-security.edit');
 
     // Settings → Security → Server certificates (docs/03 §4.3).

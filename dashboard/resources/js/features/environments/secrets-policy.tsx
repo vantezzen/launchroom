@@ -24,13 +24,13 @@ export function SecretsPolicy({
     const enforced = policy.team;
 
     return (
-        <SettingsCard title="Secrets">
+        <SettingsCard title="Secrets" setting="secrets">
             <SettingsRow
                 label="Production secrets must differ from preview"
                 description={
                     <>
-                        Saving, deploying and promoting are refused when they
-                        would be equal.
+                        Saving, deploying and promoting fail when a production
+                        secret has the same value as in a preview.
                         {enforced &&
                             ' Your team turns this on for every project.'}
                         <InputError message={error ?? undefined} />

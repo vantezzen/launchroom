@@ -86,11 +86,13 @@ printf 'apparmor_parser %s\n' "$*" >>"$STUB_LOG"
 [ "${STUB_AA_FAIL:-}" != 1 ] || { printf 'apparmor_parser: syntax error\n' >&2; exit 1; }
 EOF
 # Swap stubs: record the call; fallocate/dd create the file (STUB_FALLOCATE_FAIL=1
-# makes fallocate fail), df reports STUB_DF_KB free (default 50 GB).
+# makes fallocate fail, STUB_SWAPON_FAIL=1 swapon), df reports STUB_DF_KB free (default 50 GB).
 for tool in mkswap swapon; do
 	# shellcheck disable=SC2016 # the stub expands $* and $STUB_LOG itself
 	printf '#!/bin/sh\nprintf "%s %%s\\n" "$*" >>"$STUB_LOG"\n' "$tool" >"$STUBS/$tool"
 done
+# shellcheck disable=SC2016 # expanded by the stub
+printf '[ "${STUB_SWAPON_FAIL:-}" != 1 ]\n' >>"$STUBS/swapon"
 cat >"$STUBS/fallocate" <<'EOF'
 #!/bin/sh
 printf 'fallocate %s\n' "$*" >>"$STUB_LOG"
@@ -464,6 +466,11 @@ STUB_VERIFIED='' STUB_UNAME=Linux STUB_INFO='Ubuntu 24.04.2 LTS|vps-1' STUB_MEM_
 ok swap-flag
 swap_made swap-flag
 [ "$(grep -c '^fallocate' "$WORK/swap-flag/docker.log")" = 1 ] || fail "swap-flag: the re-run created the file again"
+
+STUB_VERIFIED='' STUB_UNAME=Linux STUB_INFO='Ubuntu 24.04.2 LTS|vps-1' STUB_MEM_KB=2014000 STUB_SWAPON_FAIL=1 run swap-unsupported --create-swap
+ok swap-unsupported
+[ ! -e "$WORK/swap-unsupported/root$SW" ] || fail "swap-unsupported left $SW behind"
+has "$WORK/swap-unsupported.out" 'may not support swap files); removed it'
 
 STUB_VERIFIED='' STUB_UNAME=Linux STUB_INFO='Ubuntu 24.04.2 LTS|vps-1' STUB_MEM_KB=2014000 STUB_TTY=n run swap-no
 ok swap-no

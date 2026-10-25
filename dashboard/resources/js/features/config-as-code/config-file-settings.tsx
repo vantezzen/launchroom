@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 import InputError from '@/components/input-error';
+import { MetaDivider } from '@/components/patterns/meta-line';
 import { UnsavedBar } from '@/components/patterns/unsaved-bar';
 import { TimeAgo } from '@/components/time-ago';
 import { Button } from '@/components/ui/button';
@@ -23,7 +24,12 @@ import {
 import { Switch } from '@/components/ui/switch';
 import { CopyButton } from '@/features/deployment-detail/overview-card';
 import { shortSha } from '@/features/deployments/format';
-import { SettingsCard, SettingsRow } from '@/features/settings/settings-card';
+import {
+    LearnMore,
+    SettingsCard,
+    SettingsRow,
+    useDocsUrl,
+} from '@/features/settings/settings-card';
 import config from '@/routes/projects/config';
 import { ConfigProblem, fileLineUrl } from './config-problem';
 
@@ -99,7 +105,7 @@ function EnvironmentRow({
                                         {shortSha(row.commitSha)}
                                     </span>
                                 )}
-                                <span aria-hidden="true">·</span>
+                                <MetaDivider />
                                 <TimeAgo value={row.checkedAt} />
                             </>
                         ) : (
@@ -107,7 +113,7 @@ function EnvironmentRow({
                         )}
                         {row.managedSettings > 0 && (
                             <>
-                                <span aria-hidden="true">·</span>
+                                <MetaDivider />
                                 <span>
                                     {plural(row.managedSettings, 'setting')} in{' '}
                                     {plural(row.managedServices, 'service')}
@@ -191,7 +197,7 @@ function EnvironmentRow({
 }
 
 /**
- * Settings → General → Config file (docs/18 §3.1): read launchroom.json or
+ * Settings → Config file (docs/18 §3.1): read launchroom.json or
  * not, its path and repository, then each environment's last read with
  * Download and Check now. The `$schema` line for editor autocompletion sits
  * in the footer.
@@ -213,6 +219,7 @@ export function ConfigFileSettings({
             preserveScroll: true,
             onSuccess: () => form.setDefaults(),
         });
+    const docsUrl = useDocsUrl();
     const schemaLine = `"$schema": "${page.schemaUrl}"`;
     const needsRepository =
         form.data.enabled &&
@@ -229,7 +236,15 @@ export function ConfigFileSettings({
         >
             <SettingsCard
                 title="Config file"
-                description="Service settings in a launchroom.json next to your code, read at every push."
+                description={
+                    <>
+                        Service settings in a launchroom.json next to your code,
+                        read at every push.{' '}
+                        <LearnMore href={docsUrl('config-as-code')}>
+                            launchroom.json reference
+                        </LearnMore>
+                    </>
+                }
                 footer={
                     <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
                         <span>Autocompletion in your editor:</span>
@@ -244,8 +259,7 @@ export function ConfigFileSettings({
                 }
             >
                 <SettingsRow
-                    label="Read launchroom.json"
-                    description="Off: no file is read and nothing is managed by one."
+                    label="Follow launchroom.json"
                     htmlFor="config-enabled"
                     inline
                 >

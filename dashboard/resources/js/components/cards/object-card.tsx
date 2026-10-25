@@ -10,7 +10,7 @@ export type ObjectCardProps = {
     href?: NonNullable<InertiaLinkProps['href']>;
     /** 150 px recessed stage on top (device, mini canvas, preview). */
     media?: ReactNode;
-    /** Small chip at the top-left of the stage ("Hetzner · Frankfurt"). */
+    /** Small chip at the top-left of the stage ("Hetzner, Frankfurt"). */
     mediaLabel?: ReactNode;
     /** Quiet text at the top-right of the stage ("12s ago"). */
     mediaMeta?: ReactNode;

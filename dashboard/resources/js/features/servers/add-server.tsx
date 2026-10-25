@@ -60,13 +60,13 @@ export const MACHINES: {
         roles: ['build'],
         hint: 'A Mac makes a fast build server, also for your x86 servers. With OrbStack or Colima it can run apps too.',
         limits: {
-            edge: 'A Mac’s Docker runs in a Linux VM, so it can’t take public traffic. Let a public server serve traffic.',
+            edge: 'Docker on a Mac runs in a Linux VM, so it can’t receive public traffic. Use a public server for that.',
         },
     },
     {
         value: 'board',
         label: 'Small board',
-        description: 'Raspberry Pi and friends',
+        description: 'Raspberry Pi and similar',
         device: 'sbc',
         roles: ['runtime'],
         hint: 'Good for small apps and databases. It connects out, so it works behind your router.',
@@ -177,7 +177,7 @@ const PLATFORMS: { value: Platform; label: string; hint: string }[] = [
     {
         value: 'macos',
         label: 'macOS',
-        hint: 'Start OrbStack, Docker Desktop or Colima first. Installs into ~/launchroom. Docker Desktop builds only; OrbStack and Colima also run apps.',
+        hint: 'Start OrbStack, Docker Desktop or Colima first. It installs into ~/launchroom. With Docker Desktop the Mac only builds, with OrbStack or Colima it can run apps too.',
     },
 ];
 

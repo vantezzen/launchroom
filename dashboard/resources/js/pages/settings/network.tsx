@@ -1,5 +1,3 @@
-import { edit as teamSettings } from '@/routes/team';
-import { AppDomainsSettings } from '@/features/domains/app-domains-settings';
 import { Form, Head, Link, router } from '@inertiajs/react';
 import { ChevronRight } from 'lucide-react';
 import { useState } from 'react';
@@ -16,6 +14,7 @@ import { Input } from '@/components/ui/input';
 import { Spinner } from '@/components/ui/spinner';
 import { Switch } from '@/components/ui/switch';
 import { shortAge } from '@/features/servers/format';
+import { AppDomainsSettings } from '@/features/domains/app-domains-settings';
 import { MeshStatus, meshModeLabels } from '@/features/servers/mesh-status';
 import {
     useDocsUrl,
@@ -26,11 +25,11 @@ import {
 } from '@/features/settings/settings-card';
 import { cn } from '@/lib/utils';
 import { edit as networkSettings } from '@/routes/network-settings';
-import { show as onboarding } from '@/routes/onboarding';
 import { show as serverPage } from '@/routes/servers';
 import { destroy, update, verify } from '@/routes/servers/ingress/dns';
 import { update as updateEdge } from '@/routes/servers/ingress/edges';
 import { enable, ownTailscale } from '@/routes/servers/mesh';
+import { index as settingsHome } from '@/routes/settings';
 
 type Props = {
     mesh: App.Data.Servers.MeshOverviewData;
@@ -38,7 +37,7 @@ type Props = {
     recommendedPolicy: string;
     tags: string[];
     ingress: App.Data.Ingress.IngressSettingsData;
-    edgeAddresses: string[];
+    appsDomain: App.Data.Domains.AppsDomainSetupData;
     errors?: Record<string, string>;
 };
 
@@ -75,7 +74,7 @@ function PrivateNetwork({
     recommendedPolicy,
     tags,
     errors,
-}: Omit<Props, 'ingress' | 'edgeAddresses'>) {
+}: Omit<Props, 'ingress' | 'appsDomain'>) {
     const [mode, setMode] = useState<Mode>(
         mesh.mode ?? (mesh.builtInAvailable ? 'embedded' : 'byo'),
     );
@@ -90,7 +89,8 @@ function PrivateNetwork({
             actions={
                 <StatusPill
                     state={on ? 'active' : 'idle'}
-                    label={on ? `On · ${meshModeLabels[mesh.mode!]}` : 'Off'}
+                    label={on ? 'On' : 'Off'}
+                    detail={on ? meshModeLabels[mesh.mode!] : undefined}
                 />
             }
         >
@@ -102,7 +102,7 @@ function PrivateNetwork({
                         {mesh.errorAt !== null && (
                             <span className="text-muted-foreground">
                                 {' '}
-                                · {shortAge(mesh.errorAt)}
+                                ({shortAge(mesh.errorAt)})
                             </span>
                         )}
                     </p>
@@ -119,7 +119,7 @@ function PrivateNetwork({
                         value: 'embedded',
                         title: 'Built-in',
                         description: mesh.builtInAvailable
-                            ? 'Runs on the dashboard’s server and turns on by itself when a second server joins.'
+                            ? 'Runs on the dashboard’s server and turns on when a second server joins.'
                             : 'Not available on this install.',
                         disabled: !mesh.builtInAvailable,
                     },
@@ -147,7 +147,7 @@ function PrivateNetwork({
                                     ? mesh.enabledAt
                                         ? `Since ${shortAge(mesh.enabledAt)}.`
                                         : undefined
-                                    : 'Other servers need to reach this dashboard over HTTPS; UDP 3478 helps them connect directly.'
+                                    : 'Other servers must reach this dashboard over HTTPS. With UDP 3478 open, they can also connect directly.'
                             }
                         >
                             {!(mesh.enabled && mesh.mode === 'embedded') && (
@@ -306,7 +306,7 @@ function PublicTraffic({
         <SettingsCard
             id="public-traffic"
             title="Public traffic"
-            description="Edge servers receive it; DNS points at all of them."
+            description="Edge servers receive the traffic for your apps. Your DNS records point at all of them."
             footer={
                 overview.singlePointOfFailure ? (
                     <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -368,11 +368,12 @@ function PublicTraffic({
                                     {storage && (
                                         <Status
                                             state={storage.state}
-                                            label={
+                                            label={storage.label}
+                                            detail={
                                                 edge.mirrored !== null &&
                                                 edge.storage !== 'local'
-                                                    ? `${storage.label} · ${edge.mirrored} mirrored`
-                                                    : storage.label
+                                                    ? `${edge.mirrored} mirrored`
+                                                    : undefined
                                             }
                                             className="type-small"
                                         />
@@ -479,7 +480,7 @@ function DnsCredentialFields({
                                 required={!keep}
                                 placeholder={
                                     keep && field.secret
-                                        ? 'Stored · leave empty to keep'
+                                        ? 'Stored. Leave empty to keep it.'
                                         : undefined
                                 }
                                 className={cn(!field.secret && 'type-mono')}
@@ -511,7 +512,7 @@ function Certificates({
         <SettingsCard
             id="certificates"
             title="Certificates"
-            description="HTTPS for every address, issued and renewed by itself."
+            description="launchroom issues and renews an HTTPS certificate for every address."
         >
             <SettingsRow
                 label="Wildcard certificates"
@@ -525,7 +526,7 @@ function Certificates({
             >
                 {ingress.appsDomain === null ? (
                     <Button asChild size="sm" variant="outline">
-                        <Link href={onboarding()}>Set a platform domain</Link>
+                        <a href="#app-domains">Set a platform domain</a>
                     </Button>
                 ) : (
                     <StatusPill
@@ -598,9 +599,9 @@ function Certificates({
                                 </div>
                                 <div className="flex flex-col gap-3">
                                     <p className="type-small text-muted-foreground">
-                                        {option.help} Stored encrypted; only
-                                        edges you share certificates with
-                                        receive it.
+                                        {option.help} It’s stored encrypted and
+                                        only sent to edges you share
+                                        certificates with.
                                     </p>
                                     <DnsCredentialFields
                                         option={option}
@@ -664,8 +665,8 @@ function Certificates({
                         </>
                     ) : (
                         <>
-                            Each edge keeps its own certificates, fine for one
-                            edge.{' '}
+                            Each edge keeps its own certificates, which is fine
+                            with a single edge.{' '}
                             <LearnMore
                                 href={docsUrl(
                                     'servers/high-availability-ingress',
@@ -684,7 +685,7 @@ function Certificates({
             {ingress.dnsProvider !== null && (
                 <SettingsRow
                     label="Remove the DNS provider"
-                    description="Its credentials are deleted; addresses get a certificate each again."
+                    description="Deletes its credentials. Each address gets its own certificate again."
                 >
                     <ConfirmAction
                         trigger="Remove"
@@ -710,16 +711,15 @@ export default function NetworkSettings({
     recommendedPolicy,
     tags,
     ingress,
-    edgeAddresses,
+    appsDomain,
     errors,
 }: Props) {
     return (
         <>
             <Head title="Network" />
             <AppDomainsSettings
-                key={ingress.appsDomain ?? 'sslip'}
-                domain={ingress.appsDomain}
-                addresses={edgeAddresses}
+                key={appsDomain.domain ?? 'sslip'}
+                setup={appsDomain}
             />
             <PrivateNetwork
                 mesh={mesh}
@@ -736,7 +736,7 @@ export default function NetworkSettings({
 
 NetworkSettings.layout = {
     breadcrumbs: [
-        { title: 'Settings', href: teamSettings() },
+        { title: 'Settings', href: settingsHome() },
         { title: 'Network', href: networkSettings() },
     ],
 };

@@ -201,7 +201,7 @@ final readonly class Rescheduler
             return;
         }
 
-        $this->mark($instance, 'stateful_server_down', "{$dead->name} is unreachable. {$instance->service->name} keeps its data there and is never moved automatically: bring the server back, or restore the latest backup on another server.", $dead);
+        $this->mark($instance, 'stateful_server_down', "{$dead->name} is unreachable. {$instance->service->name} keeps its data there and isn’t moved automatically. Bring the server back online, or restore the latest backup on another server.", $dead);
 
         Log::warning('A stateful service is down with its server.', ['server' => $dead->public_id, 'instance' => $instance->public_id]);
 

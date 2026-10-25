@@ -1,6 +1,7 @@
 import { Archive, FileUp, Link2, RotateCcw, TriangleAlert } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
+import { MetaLine } from '@/components/patterns/meta-line';
 import { OptionCards } from '@/components/patterns/option-cards';
 import { SheetSection, SidePanel } from '@/components/patterns/sheet';
 import { Status } from '@/components/status';
@@ -79,6 +80,52 @@ async function waitForInspection(
     throw new Error('The server didn’t answer in time. Try again.');
 }
 
+/** The sheet keeps a started database waiting while it is open. */
+const PREPARE_KEEPALIVE_MS = 120_000;
+
+/**
+ * Starts a database that was never deployed on its own (docs/14 §12.9) and
+ * waits until it runs. `onServer` gets the server once it is placed.
+ */
+async function prepareDatabase(
+    data: ServiceTransfers,
+    signal: AbortSignal,
+    onServer: (server: string | null) => void,
+): Promise<void> {
+    let state = await transfersApi<ServiceTransfers>(
+        'post',
+        data.urls.prepare,
+        {},
+        signal,
+    );
+
+    for (let attempt = 0; attempt < 200; attempt++) {
+        const preparation = state.preparation;
+
+        if (preparation === null || preparation.state === 'ready') {
+            return;
+        }
+
+        if (preparation.state === 'failed' || preparation.state === 'needed') {
+            throw new Error(
+                preparation.message ??
+                    `${data.serviceName} didn’t start. Try again.`,
+            );
+        }
+
+        onServer(preparation.serverName);
+        await new Promise((resolve) => window.setTimeout(resolve, 2000));
+        state = await transfersApi<ServiceTransfers>(
+            'get',
+            data.urls.self,
+            undefined,
+            signal,
+        );
+    }
+
+    throw new Error(`${data.serviceName} didn’t start in time. Try again.`);
+}
+
 /**
  * The import sheet (docs/14 §12.6): 1 Source (a file, uploaded right
  * away and resumable, or a connection URL with a check), 2 Target (what is
@@ -115,6 +162,10 @@ export function ImportSheet({
     const [busy, setBusy] = useState(false);
     const abort = useRef<AbortController | null>(null);
     const fileInput = useRef<HTMLInputElement | null>(null);
+    // Never deployed: started alone for the import, stopped again after it (docs/14 §12.9).
+    const preparing = !isVolume && data.preparation !== null;
+    const [startingOn, setStartingOn] = useState<string | null>(null);
+    const [starting, setStarting] = useState(false);
 
     const reset = useCallback(() => {
         abort.current?.abort();
@@ -132,7 +183,21 @@ export function ImportSheet({
         setGid('');
         setTyped('');
         setBusy(false);
+        setStarting(false);
+        setStartingOn(null);
     }, []);
+
+    /** Closing without an import stops a database started for it. */
+    const close = useCallback(() => {
+        if (preparing) {
+            void transfersApi('delete', data.urls.prepare, {}).catch(
+                () => undefined,
+            );
+        }
+
+        reset();
+        onClose();
+    }, [preparing, data.urls.prepare, reset, onClose]);
 
     // Look at the target as soon as the sheet opens.
     useEffect(() => {
@@ -146,6 +211,16 @@ export function ImportSheet({
 
         void (async () => {
             try {
+                if (preparing) {
+                    setStarting(true);
+                    await prepareDatabase(
+                        data,
+                        controller.signal,
+                        setStartingOn,
+                    );
+                    setStarting(false);
+                }
+
                 const started = await transfersApi<Inspection>(
                     'post',
                     data.urls.inspect,
@@ -170,6 +245,7 @@ export function ImportSheet({
                 }
             } catch (error) {
                 if (!controller.signal.aborted) {
+                    setStarting(false);
                     setTargetCheck({
                         state: 'failed',
                         message: messageOf(
@@ -180,6 +256,15 @@ export function ImportSheet({
                 }
             }
         })();
+
+        // While the sheet is open, the started database keeps waiting.
+        const keepalive = preparing
+            ? window.setInterval(() => {
+                  void transfersApi('post', data.urls.prepare, {}).catch(
+                      () => undefined,
+                  );
+              }, PREPARE_KEEPALIVE_MS)
+            : null;
 
         if (target?.transferId) {
             void transfersApi<Transfer>(
@@ -196,7 +281,13 @@ export function ImportSheet({
                 .catch(() => undefined);
         }
 
-        return () => controller.abort();
+        return () => {
+            controller.abort();
+
+            if (keepalive !== null) {
+                window.clearInterval(keepalive);
+            }
+        };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [open]);
 
@@ -275,7 +366,8 @@ export function ImportSheet({
         sourceKind === 'file' ? upload.state === 'done' : url.trim() !== '';
     const mustChoose = empty === false;
     const replacing = replace === 'replace';
-    const dependents = isVolume ? [] : data.dependents;
+    // Apps of a database that was never deployed aren't running.
+    const dependents = isVolume || preparing ? [] : data.dependents;
     const transfer = upload.state === 'done' ? upload.transfer : null;
     const topFolder = transfer?.topFolder ?? null;
     const name = isVolume
@@ -314,7 +406,7 @@ export function ImportSheet({
                 text:
                     replace === 'replace'
                         ? `Empty ${name}`
-                        : `Keep what is in ${name}; files with the same name are replaced`,
+                        : `Keep what is in ${name} and replace files with the same name`,
             });
             list.push({
                 text: `Extract ${transfer?.fileName ?? 'the archive'}${
@@ -330,6 +422,12 @@ export function ImportSheet({
             list.push({ text: `Start ${data.serviceName} again` });
 
             return list;
+        }
+
+        if (preparing) {
+            list.push({
+                text: `Start ${data.serviceName} on its own${startingOn ? ` on ${startingOn}` : ''} while your apps stay off`,
+            });
         }
 
         if (stopDependents && dependents.length > 0) {
@@ -353,8 +451,16 @@ export function ImportSheet({
             list.push({ text: `Start ${names} again` });
         }
 
+        if (preparing) {
+            list.push({
+                text: `Stop ${data.serviceName} again, so the first deploy starts it with this data`,
+            });
+        }
+
         return list;
     }, [
+        preparing,
+        startingOn,
         data,
         dependents,
         isVolume,
@@ -414,8 +520,7 @@ export function ImportSheet({
             open={open}
             onOpenChange={(next) => {
                 if (!next) {
-                    reset();
-                    onClose();
+                    close();
                 }
             }}
             title={
@@ -430,13 +535,7 @@ export function ImportSheet({
             }
             footer={
                 <div className="flex flex-wrap items-center justify-end gap-2">
-                    <Button
-                        variant="ghost"
-                        onClick={() => {
-                            reset();
-                            onClose();
-                        }}
-                    >
+                    <Button variant="ghost" onClick={close}>
                         Cancel
                     </Button>
                     <Button
@@ -451,10 +550,10 @@ export function ImportSheet({
             }
         >
             <SheetSection
-                title="1 · Source"
+                title="Source"
                 description={
                     isVolume
-                        ? 'Uploads right away; a reload continues where it stopped.'
+                        ? 'The upload starts right away and continues where it stopped after a reload.'
                         : undefined
                 }
             >
@@ -480,7 +579,7 @@ export function ImportSheet({
                                 value: 'url' as const,
                                 title: 'From a connection URL',
                                 description:
-                                    'Copied straight from a database this server can reach.',
+                                    'Copy from a database this server can reach.',
                                 media: (
                                     <Link2
                                         aria-hidden="true"
@@ -556,15 +655,11 @@ export function ImportSheet({
                                     </span>
                                 </div>
                                 <Progress value={percent} tone="progress" />
-                                <span className="type-small text-muted-foreground tabular-nums">
-                                    {[
-                                        `${formatBytes(progress.sentBytes)} of ${formatBytes(progress.totalBytes)}`,
-                                        rate(progress.bytesPerSecond),
-                                        timeLeft(progress.secondsLeft),
-                                    ]
-                                        .filter(Boolean)
-                                        .join(' · ')}
-                                </span>
+                                <MetaLine className="type-small text-muted-foreground tabular-nums">
+                                    {`${formatBytes(progress.sentBytes)} of ${formatBytes(progress.totalBytes)}`}
+                                    {rate(progress.bytesPerSecond)}
+                                    {timeLeft(progress.secondsLeft)}
+                                </MetaLine>
                             </div>
                         )}
                         {upload.state === 'done' && (
@@ -573,16 +668,10 @@ export function ImportSheet({
                                     <span className="truncate type-mono">
                                         {upload.transfer.fileName}
                                     </span>
-                                    <span className="type-small text-muted-foreground">
-                                        {[
-                                            upload.transfer.detail,
-                                            formatBytes(
-                                                upload.transfer.sizeBytes,
-                                            ),
-                                        ]
-                                            .filter(Boolean)
-                                            .join(' · ')}
-                                    </span>
+                                    <MetaLine className="type-small text-muted-foreground">
+                                        {upload.transfer.detail}
+                                        {formatBytes(upload.transfer.sizeBytes)}
+                                    </MetaLine>
                                 </div>
                                 <Button
                                     size="sm"
@@ -641,9 +730,9 @@ export function ImportSheet({
                             </Button>
                         </div>
                         <p className="type-small text-muted-foreground">
-                            Used once from {data.serviceName}’s server, never
-                            stored. Private and mesh addresses can’t be reached:
-                            use a dump file for those.
+                            {data.serviceName}’s server uses the URL once and
+                            doesn’t store it. It can’t reach private or mesh
+                            addresses, so use a dump file for those.
                         </p>
                         {urlCheck.state === 'done' && (
                             <Status
@@ -663,11 +752,21 @@ export function ImportSheet({
                 )}
             </SheetSection>
 
-            <SheetSection title="2 · Target">
+            <SheetSection title="Target">
                 {targetCheck.state === 'pending' && (
                     <div className="flex items-center gap-2 type-body text-muted-foreground">
-                        <Spinner /> Looking at {name}
+                        <Spinner />
+                        {starting
+                            ? `Starting ${data.serviceName} on its own${startingOn ? ` on ${startingOn}` : ''}. This takes up to a minute.`
+                            : `Looking at ${name}`}
                     </div>
+                )}
+                {preparing && (
+                    <p className="type-small text-muted-foreground">
+                        {data.serviceName} hasn’t been deployed yet. launchroom
+                        starts it alone for the import, with the credentials
+                        your apps will get, and stops it again afterwards.
+                    </p>
                 )}
                 {targetCheck.state === 'failed' && (
                     <p role="alert" className="type-body text-status-error">
@@ -706,13 +805,13 @@ export function ImportSheet({
                                         value: 'merge' as const,
                                         title: 'Merge',
                                         description:
-                                            'Keeps what is there; files with the same name are replaced.',
+                                            'Keeps what is there and replaces files with the same name.',
                                     },
                                     {
                                         value: 'replace' as const,
                                         title: 'Replace contents',
                                         description:
-                                            'Empties the volume first. A safety snapshot is taken.',
+                                            'Takes a safety snapshot, then empties the volume.',
                                     },
                                 ]}
                             />
@@ -843,7 +942,7 @@ export function ImportSheet({
                 )}
             </SheetSection>
 
-            <SheetSection title="3 · What will happen">
+            <SheetSection title="What will happen">
                 <ol className="flex flex-col gap-2">
                     {steps.map((step, index) => (
                         <li

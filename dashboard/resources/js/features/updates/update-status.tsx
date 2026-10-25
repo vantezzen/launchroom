@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { CopyValue } from '@/components/copy-value';
+import { MetaLine } from '@/components/patterns/meta-line';
 import { Status } from '@/components/status';
 import { StepList } from '@/components/steps/step-list';
 import { TimeAgo } from '@/components/time-ago';
@@ -140,12 +141,17 @@ function HeroCard({
 
 function Checked({ result }: { result: App.Data.Updates.ReleaseCheckData }) {
     return result.checkedAt === null ? (
-        <>never checked</>
+        <span>Never checked</span>
     ) : (
-        <>
-            checked <TimeAgo value={result.checkedAt} />
-        </>
+        <span>
+            Checked <TimeAgo value={result.checkedAt} />
+        </span>
     );
+}
+
+/** "Stable channel", "Beta channel". */
+function channelLabel(channel: string): string {
+    return `${channel.charAt(0).toUpperCase()}${channel.slice(1)} channel`;
 }
 
 /** What "Update now" will do, as three quiet numbered rows. */
@@ -179,7 +185,7 @@ function Plan({
         },
         {
             title: `Install ${version}`,
-            detail: 'The dashboard is away for a few minutes. Your apps keep running.',
+            detail: 'The dashboard is unavailable for a few minutes while your apps keep running.',
         },
     ];
 
@@ -189,7 +195,7 @@ function Plan({
                 serverCount === 1
                     ? 'Update your other server'
                     : `Update ${serverCount} servers`,
-            detail: 'One at a time, edge servers last. Each one goes back by itself if the new version doesn’t start.',
+            detail: 'Servers update one at a time, with edge servers last. A server that can’t start the new version goes back to its old one.',
         });
     }
 
@@ -254,7 +260,12 @@ function InstallByHand({ release }: { release: App.Data.Updates.ReleaseData }) {
  * The status hero (docs/08 §11, flows §15): up to date, a release that is
  * ready with what will happen, or the running update as one step list.
  */
-export function UpdateHero(props: UpdatesPageProps) {
+export function UpdateHero(
+    props: UpdatesPageProps & {
+        /** The dashboard doesn't answer right now (lib/connection.ts). */
+        restarting?: boolean;
+    },
+) {
     const {
         currentVersion,
         check: result,
@@ -265,6 +276,7 @@ export function UpdateHero(props: UpdatesPageProps) {
         fleetUpdate,
         serversBehindRelease,
         running,
+        restarting = false,
     } = props;
     const available = result.available;
     const updating =
@@ -290,21 +302,29 @@ export function UpdateHero(props: UpdatesPageProps) {
                         </HeroIcon>
                     }
                     title={
-                        serversRunning
-                            ? `Updating your servers to ${update.toVersion}`
-                            : `Updating to ${update.toVersion}`
+                        restarting
+                            ? 'launchroom is restarting…'
+                            : serversRunning
+                              ? `Updating your servers to ${update.toVersion}`
+                              : `Updating to ${update.toVersion}`
                     }
                     meta={
-                        <>
-                            {update.automatic ? 'Automatic update · ' : ''}
-                            started{' '}
-                            <TimeAgo
-                                value={update.startedAt ?? update.createdAt}
-                            />{' '}
-                            · your apps keep running
-                        </>
+                        <MetaLine>
+                            {update.automatic && 'Automatic update'}
+                            <span>
+                                Started{' '}
+                                <TimeAgo
+                                    value={update.startedAt ?? update.createdAt}
+                                />
+                            </span>
+                            Your apps keep running
+                        </MetaLine>
                     }
-                    footer="You can leave this page. While the dashboard restarts it is away for a few minutes; this page picks up where it left off."
+                    footer={
+                        restarting
+                            ? `This takes about a minute. The page reloads when ${update.toVersion} responds.`
+                            : 'You can leave this page. The dashboard is unavailable for a few minutes while it restarts, and this page continues afterwards.'
+                    }
                 />
                 <StepList
                     steps={updateSteps(
@@ -331,11 +351,11 @@ export function UpdateHero(props: UpdatesPageProps) {
                     }
                     title="You’re up to date"
                     meta={
-                        <>
-                            <span className="type-mono">{currentVersion}</span>{' '}
-                            · {result.channel} channel ·{' '}
+                        <MetaLine>
+                            <span className="type-mono">{currentVersion}</span>
+                            {channelLabel(result.channel)}
                             <Checked result={result} />
-                        </>
+                        </MetaLine>
                     }
                     actions={<CheckButton />}
                     footer={
@@ -376,18 +396,19 @@ export function UpdateHero(props: UpdatesPageProps) {
                 }
                 title={`launchroom ${available.version} is ready`}
                 meta={
-                    <>
-                        You have{' '}
-                        <span className="type-mono">{currentVersion}</span>
+                    <MetaLine>
+                        <span>
+                            You have{' '}
+                            <span className="type-mono">{currentVersion}</span>
+                        </span>
                         {available.publishedAt !== null && (
-                            <>
-                                {' '}
-                                · released{' '}
+                            <span>
+                                Released{' '}
                                 <TimeAgo value={available.publishedAt} />
-                            </>
+                            </span>
                         )}
-                        {available.prerelease && ' · beta'}
-                    </>
+                        {available.prerelease && 'Beta'}
+                    </MetaLine>
                 }
                 actions={
                     <>
@@ -410,10 +431,10 @@ export function UpdateHero(props: UpdatesPageProps) {
                             label={`Couldn’t check for updates: ${result.error}`}
                         />
                     ) : (
-                        <>
-                            {result.channel} channel ·{' '}
+                        <MetaLine>
+                            {channelLabel(result.channel)}
                             <Checked result={result} />
-                        </>
+                        </MetaLine>
                     )
                 }
             >
@@ -503,7 +524,7 @@ export function UpdateAttention({
             : null;
 
     const summary = rolledBack
-        ? `${update.toVersion} didn’t start, so launchroom went back to ${update.fromVersion} by itself. Your apps kept running.`
+        ? `${update.toVersion} didn’t start, so launchroom rolled back to ${update.fromVersion}. Your apps kept running.`
         : backupFailed
           ? 'The backup before the update failed, so nothing was changed.'
           : stillOnOld
@@ -512,7 +533,7 @@ export function UpdateAttention({
 
     const todo: ReactNode[] = rolledBack
         ? [
-              `Nothing to fix to keep working: everything is as it was before the update${window ? ` (dashboard changes made between ${window} were undone)` : ''}.`,
+              `You don’t need to fix anything. Everything is as it was before the update${window ? ` (dashboard changes made between ${window} were undone)` : ''}.`,
               'Read the release notes for known issues, then try again. A release that failed is never installed automatically.',
           ]
         : backupFailed
@@ -569,10 +590,10 @@ export function UpdateAttention({
                 }
                 title={`The update to ${update.toVersion} didn’t go through`}
                 meta={
-                    <>
-                        {update.automatic ? 'Automatic update · ' : ''}
+                    <MetaLine>
+                        {update.automatic && 'Automatic update'}
                         <TimeAgo value={update.finishedAt} />
-                    </>
+                    </MetaLine>
                 }
                 actions={
                     retry !== undefined &&

@@ -10,6 +10,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ConfirmPopover } from '@/components/patterns/confirm-popover';
 import { EmptyState } from '@/components/patterns/empty-state';
 import { LiveWait } from '@/components/patterns/live-wait';
+import { MetaLine } from '@/components/patterns/meta-line';
 import { TimeAgo } from '@/components/time-ago';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -20,6 +21,7 @@ import {
     PopoverTrigger,
 } from '@/components/ui/popover';
 import { Skeleton } from '@/components/ui/skeleton';
+import { RemoteAccessButton } from '@/features/remote-access/remote-access';
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
@@ -113,9 +115,9 @@ function DataView({
                                 Browse {data.engineLabel}
                             </p>
                             <p className="type-small text-muted-foreground">
-                                {DIALECT[data.dialect].summary}, read-only until
-                                you allow writes. Every statement is recorded in
-                                the audit log.
+                                {DIALECT[data.dialect].summary}. The session is
+                                read-only until you allow writes, and each
+                                statement is written to the audit log.
                             </p>
                         </div>
                     </div>
@@ -123,11 +125,17 @@ function DataView({
                         <Button onClick={() => void session.open()}>
                             {phase.kind === 'ended'
                                 ? 'Open again'
-                                : 'Open data'}
+                                : phase.kind === 'idle' && phase.error
+                                  ? 'Try again'
+                                  : 'Open data'}
                         </Button>
+                        <RemoteAccessButton
+                            serviceRef={serviceRef}
+                            kind="database"
+                        />
                         {phase.kind === 'ended' && (
                             <span className="type-small text-muted-foreground">
-                                Session ended · {phase.reason}
+                                {phase.reason}
                             </span>
                         )}
                     </div>
@@ -155,21 +163,21 @@ const DIALECT: Record<
     }
 > = {
     sql: {
-        summary: 'Tables, rows and a SQL console',
+        summary: 'Browse tables and rows or run SQL',
         noun: 'table',
         pick: 'Pick a table on the left to see its rows.',
         statement: 'SQL statement',
         placeholder: 'SELECT * FROM users LIMIT 10',
     },
     redis: {
-        summary: 'Keys, values and commands',
+        summary: 'Browse keys and values or run commands',
         noun: 'key',
         pick: 'Pick a key on the left to see its value.',
         statement: 'Command',
         placeholder: 'GET user:1',
     },
     mongo: {
-        summary: 'Collections, documents and database commands',
+        summary: 'Browse collections and documents or run database commands',
         noun: 'collection',
         pick: 'Pick a collection on the left to see its documents.',
         statement: 'Database command (JSON)',
@@ -589,7 +597,7 @@ function ResultLine({ result }: { result: DataResult }) {
 
     return (
         <p className="type-small text-muted-foreground tabular-nums">
-            {parts.join(' · ')}
+            <MetaLine>{parts}</MetaLine>
         </p>
     );
 }
@@ -718,13 +726,17 @@ function KeyBrowser({ run, name }: { run: Run; name: string }) {
                 </p>
                 <Badge variant="outline">{value.type}</Badge>
                 <span className="type-small text-muted-foreground">
-                    {ttlLabel(value.ttlMs)} · {value.size}{' '}
-                    {value.type === 'string'
-                        ? 'bytes'
-                        : value.size === 1
-                          ? 'item'
-                          : 'items'}
-                    {value.truncated ? ' · first part shown' : ''}
+                    <MetaLine>
+                        {ttlLabel(value.ttlMs)}
+                        {`${value.size} ${
+                            value.type === 'string'
+                                ? 'bytes'
+                                : value.size === 1
+                                  ? 'item'
+                                  : 'items'
+                        }`}
+                        {value.truncated && 'first part shown'}
+                    </MetaLine>
                 </span>
             </div>
             {value.text !== undefined ? (
@@ -806,7 +818,7 @@ function QueryConsole({ data, run }: { data: Data; run: Run }) {
                 ) : (
                     <ConfirmPopover
                         title="Allow writes?"
-                        consequence={`Statements can change data in ${data.engineLabel} for the rest of this session. Each one is recorded.`}
+                        consequence={`Statements can change data in ${data.engineLabel} until this session ends, and each one is written to the audit log.`}
                         confirmLabel="Allow writes"
                         onConfirm={() => setAllowWrites(true)}
                         align="start"

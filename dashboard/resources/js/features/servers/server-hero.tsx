@@ -3,6 +3,7 @@ import { MapPin } from 'lucide-react';
 import { useState } from 'react';
 import type { ReactNode } from 'react';
 import { DeviceImage, DEVICE_LABEL } from '@/components/devices/device-image';
+import { MetaLine } from '@/components/patterns/meta-line';
 import { StatusPill, serverStatus } from '@/components/status';
 import { Button } from '@/components/ui/button';
 import {
@@ -13,6 +14,7 @@ import {
     specParts,
 } from '@/features/servers/format';
 import { RoleChipLabel } from '@/features/servers/server-status';
+import { useNow } from '@/hooks/use-now';
 import { tab } from '@/routes/servers';
 import { update as updateAppearance } from '@/routes/servers/appearance';
 
@@ -26,8 +28,8 @@ function Chip({ children }: { children: ReactNode }) {
     );
 }
 
-/** "Virtual machine in Berlin · runs this dashboard · joined 21 days ago". */
-function describe(server: Server): string {
+/** ["Virtual machine in Berlin", "Runs this dashboard", "Joined 21 days ago"]. */
+function describe(server: Server): string[] {
     const what =
         server.device?.model && server.device.model !== 'Container'
             ? server.device.model
@@ -39,11 +41,9 @@ function describe(server: Server): string {
 
     return [
         `${what}${where}`,
-        server.isControlPlane ? 'runs this dashboard' : null,
-        joined ? `joined ${joined}` : null,
-    ]
-        .filter(Boolean)
-        .join(' · ');
+        server.isControlPlane ? 'Runs this dashboard' : null,
+        joined ? `Joined ${joined}` : null,
+    ].filter((part): part is string => part !== null);
 }
 
 /** "Is server-2 in Helsinki?" once, for a location we only guessed. */
@@ -104,7 +104,8 @@ function LocationPrompt({ server }: { server: Server }) {
 export function ServerHero({ server }: { server: Server }) {
     const { state, label } = serverStatus[server.status];
     const down = server.status === 'unreachable' || server.status === 'offline';
-    const since = down ? shortDuration(server.lastSeenAt) : null;
+    const now = useNow(down && server.lastSeenAt !== null, 10_000);
+    const since = down ? shortDuration(server.lastSeenAt, now) : null;
     const specs = specParts(server.specs);
 
     return (
@@ -129,9 +130,9 @@ export function ServerHero({ server }: { server: Server }) {
                             detail={since ? `for ${since}` : undefined}
                         />
                     </div>
-                    <p className="type-body text-muted-foreground">
+                    <MetaLine className="type-body text-muted-foreground">
                         {describe(server)}
-                    </p>
+                    </MetaLine>
                 </div>
                 <div className="flex flex-wrap gap-1.5">
                     {server.roles.map((role) => (

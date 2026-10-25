@@ -3,6 +3,7 @@ import { Database, HardDrive, Shield } from 'lucide-react';
 import { useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
 import InputError from '@/components/input-error';
+import { MetaLine } from '@/components/patterns/meta-line';
 import { SidePanel, SheetSection } from '@/components/patterns/sheet';
 import { Stepper } from '@/components/patterns/stepper';
 import { RunStrip } from '@/components/steps/run-strip';
@@ -207,8 +208,8 @@ export function ScheduleSheet({
                     title="Back up automatically"
                     description={
                         form.data.enabled
-                            ? 'On a schedule, plus before deploys and deletes.'
-                            : 'Paused: only manual and safety backups run.'
+                            ? 'Backups run on a schedule and before deploys and deletes.'
+                            : 'Paused. Only manual and safety backups run.'
                     }
                     control={
                         <Switch
@@ -402,7 +403,7 @@ function dayLabel(
               ? 'failed'
               : 'no backup';
 
-    return `${day} · ${word}`;
+    return `${day}: ${word}`;
 }
 
 const icons = {
@@ -453,8 +454,8 @@ export function ScheduleRow({
                         {schedule.projectName !== null && (
                             <span className="font-normal text-muted-foreground">
                                 {' '}
-                                · {schedule.projectName} ·{' '}
-                                {schedule.environmentName}
+                                in {schedule.projectName} (
+                                {schedule.environmentName})
                             </span>
                         )}
                     </span>
@@ -462,9 +463,14 @@ export function ScheduleRow({
             }
             description={
                 description ??
-                (schedule.enabled
-                    ? `${when} · keeps ${schedule.retentionSummary}`
-                    : 'Paused')
+                (schedule.enabled ? (
+                    <MetaLine>
+                        {when}
+                        {`Keeps ${schedule.retentionSummary}`}
+                    </MetaLine>
+                ) : (
+                    'Paused'
+                ))
             }
         >
             {protection &&
@@ -482,11 +488,11 @@ export function ScheduleRow({
                 )}
             <span className="type-small text-muted-foreground tabular-nums sm:w-32 sm:text-right">
                 {healthy && last !== null ? (
-                    <>
+                    <MetaLine className="sm:justify-end">
                         {relativeTime(last)}
                         {protection?.lastSizeBytes != null &&
-                            ` · ${formatBytes(protection.lastSizeBytes)}`}
-                    </>
+                            formatBytes(protection.lastSizeBytes)}
+                    </MetaLine>
                 ) : (
                     <BackupHealthStatus health={schedule.health} />
                 )}

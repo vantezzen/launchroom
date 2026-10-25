@@ -47,14 +47,14 @@ export function UpdatePreferences({
     return (
         <SettingsCard
             title="How launchroom updates"
-            footer="Your apps keep running during every update. Servers follow the dashboard, never the other way round."
+            footer="Your apps keep running during updates. Servers update after the dashboard."
         >
             <SettingsRow
                 label="Channel"
                 description={
                     channel === 'beta'
-                        ? 'New releases a little earlier, with rough edges.'
-                        : 'Releases once they are ready. Recommended.'
+                        ? 'Earlier releases that may still have rough edges.'
+                        : 'Releases once they are ready. Recommended for most installs.'
                 }
             >
                 <TimeRangeSelect<Channel>
@@ -79,7 +79,7 @@ export function UpdatePreferences({
                 inline
                 description={
                     preferences.canAutoUpdate || preferences.autoUpdate ? (
-                        `At night (${hour(preferences.windowStart)}–${hour(preferences.windowEnd)}, ${zone}), after a backup, then your servers. A release that fails is left for you.`
+                        `Between ${hour(preferences.windowStart)} and ${hour(preferences.windowEnd)} (${zone}), after a backup. If an update fails, it isn’t retried automatically.`
                     ) : (
                         <>
                             Needs a backup of launchroom first.{' '}

@@ -285,7 +285,7 @@ test('deleting the project removes its icon files', function (): void {
     $this->actingAs($owner)->post(route('projects.icon.store', $this->project), ['icon' => UploadedFile::fake()->createWithContent('i.png', iconPng())]);
     expect(Storage::disk(ProjectIconStore::DISK)->allFiles())->toHaveCount(1);
 
-    $this->actingAs($owner)->withSession(passwordConfirmed())->delete(route('projects.destroy', $this->project), ['confirmName' => 'shop']);
+    $this->actingAs($owner)->delete(route('projects.destroy', $this->project), ['confirmName' => 'shop']);
 
     expect(Project::query()->whereKey($this->project->id)->exists())->toBeFalse()
         ->and(Storage::disk(ProjectIconStore::DISK)->allFiles())->toBe([])

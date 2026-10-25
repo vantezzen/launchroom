@@ -20,7 +20,7 @@ export default function DeleteUser() {
     const passwordInput = useRef<HTMLInputElement>(null);
 
     return (
-        <SettingsCard title="Danger zone">
+        <SettingsCard title="Danger zone" setting="delete-account">
             <SettingsRow
                 label="Delete your account"
                 description="Removes you from every team. This can’t be undone."

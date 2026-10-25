@@ -9,14 +9,13 @@ use App\Enums\Backups\BackupRunStatus;
 use App\Enums\Transfers\DataSubject;
 use App\Enums\Transfers\ImportRunStatus;
 use App\Enums\Transfers\TransferStatus;
-use App\Events\NodeStateInvalidated;
 use App\Models\Placement;
 use App\Models\Server;
 use App\Models\Transfers\DataImportRun;
 use App\Models\Transfers\DataTransfer;
 use App\Models\Volume;
-use App\Services\Backups\DatabaseWorkloads;
 use App\Services\Backups\RestoreHolds;
+use App\Services\Transfers\DatabasePreparations;
 use App\Services\Transfers\ImportHolds;
 use App\Services\Transfers\ImportTarget;
 use App\Services\Transfers\TransferTasks;
@@ -30,14 +29,19 @@ use Throwable;
  * - waiting_for_safety_backup → holding once the snapshot succeeded (or none
  *   was needed); a failed snapshot fails the run and nothing changes;
  * - holding: the services that use the data leave their servers' desired
- *   state ({@see ImportHolds}); once they stopped (or after
- *   `restore_hold_wait_seconds`, like restores) the task is created → importing;
+ *   state ({@see ImportHolds}); once they stopped the task is created →
+ *   importing. A volume import goes ahead after `restore_hold_wait_seconds`
+ *   (launchroomd itself waits until nothing uses the volume); a database
+ *   import fails after `transfers.hold_timeout_seconds` naming the services
+ *   that still run, and so does any run that couldn't start by then, so a
+ *   run never stays `holding` (the services start again);
  * - importing → succeeded/failed comes from the task ({@see SyncTransferTasks}).
  */
 final readonly class AdvanceImports
 {
     public function __construct(
         private TransferTasks $tasks,
+        private FailStuckImports $stuck,
     ) {}
 
     public function handle(): int
@@ -59,7 +63,7 @@ final readonly class AdvanceImports
             }
         }
 
-        return $advanced;
+        return $advanced + $this->stuck->handle();
     }
 
     private function advance(int $id): bool
@@ -85,7 +89,7 @@ final readonly class AdvanceImports
                 }
 
                 $run->transitionTo(ImportRunStatus::Holding);
-                $this->rerender(ImportHolds::heldBy($run), $run);
+                ImportHolds::release($run, ImportHolds::heldBy($run));
                 // Nothing to wait for (no held services): start right away.
                 $this->start($run);
 
@@ -110,6 +114,12 @@ final readonly class AdvanceImports
             return $this->fail($run, $held, 'The uploaded file is gone. Upload it again.');
         }
 
+        // Never import long after the hold began (a run that got stuck, for
+        // example before an update): fail it, the services start again.
+        if (ImportHolds::overdue($run)) {
+            return $this->fail($run, $held, ImportHolds::overdueReason($run, $run->subject === DataSubject::Database ? RestoreHolds::running($held) : []));
+        }
+
         if ($run->subject === DataSubject::Volume) {
             $volume = $run->volume;
 
@@ -132,7 +142,7 @@ final readonly class AdvanceImports
                 $run->owner_uid !== null && $run->owner_gid !== null ? ['uid' => $run->owner_uid, 'gid' => $run->owner_gid] : null,
             );
         } else {
-            $placement = DatabaseWorkloads::servingPlacement($instance);
+            $placement = DatabasePreparations::importPlacement($instance);
             $target = ImportTarget::for($instance);
 
             if (! $placement instanceof Placement || ! $target->database instanceof DatabaseSource) {
@@ -147,7 +157,9 @@ final readonly class AdvanceImports
                 return $this->fail($run, $held, "{$instance->service->name} moved to another server. Start the import again.");
             }
 
-            if ($held !== [] && ! RestoreHolds::released($held) && ! $waited) {
+            // Wait for every held service to stop, a failed or never
+            // started one counts as stopped; {@see FailStuckImports} ends the wait.
+            if (! RestoreHolds::released($held)) {
                 return false;
             }
 
@@ -178,24 +190,8 @@ final readonly class AdvanceImports
     private function fail(DataImportRun $run, array $held, string $error): bool
     {
         $run->transitionTo(ImportRunStatus::Failed, $error);
-        $this->rerender($held, $run);
+        ImportHolds::release($run, $held);
 
         return true;
-    }
-
-    /**
-     * @param  list<int>  $held
-     */
-    private function rerender(array $held, DataImportRun $run): void
-    {
-        $servers = RestoreHolds::serverIds($held);
-
-        if ($run->subject === DataSubject::Volume && $run->volume?->server_id !== null) {
-            $servers[] = $run->volume->server_id;
-        }
-
-        if ($servers !== []) {
-            event(new NodeStateInvalidated(array_values(array_unique($servers))));
-        }
     }
 }

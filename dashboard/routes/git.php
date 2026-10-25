@@ -25,7 +25,7 @@ Route::middleware(['web', 'auth', 'verified'])->group(function (): void {
 
     // Manifest flow: start → GitHub → callback.
     Route::post('settings/git/github/manifest', [GitHubAppManifestController::class, 'store'])
-
+        ->middleware('throttle:20,1')
         ->name('git.github.manifest.store');
     Route::get('settings/git/github/callback', [GitHubAppManifestController::class, 'callback'])
         ->middleware('throttle:20,1')
@@ -35,7 +35,7 @@ Route::middleware(['web', 'auth', 'verified'])->group(function (): void {
         ->middleware('throttle:20,1')
         ->name('git.github.setup');
     Route::delete('settings/git/github/{githubApp}', [GitHubAppController::class, 'destroy'])
-
+        ->middleware('throttle:20,1')
         ->name('git.github.destroy');
     Route::post('settings/git/installations/{githubInstallation}/refresh', [GitHubInstallationController::class, 'refresh'])
         ->middleware('throttle:10,1')
@@ -46,7 +46,7 @@ Route::middleware(['web', 'auth', 'verified'])->group(function (): void {
         ->middleware('throttle:20,1')
         ->name('git.connections.store');
     Route::delete('settings/git/connections/{gitConnection}', [GitConnectionController::class, 'destroy'])
-
+        ->middleware('throttle:20,1')
         ->name('git.connections.destroy');
     Route::get('settings/git/oauth/callback', GitOAuthController::class)
         ->middleware('throttle:20,1')

@@ -8,6 +8,7 @@ use App\Data\Services\BuildSettings;
 use App\Data\Services\DeploySettings;
 use App\Data\Services\ScalingSettings;
 use App\Enums\PreviewStrategy;
+use App\Enums\Security\WafMode;
 use App\Models\Concerns\BelongsToTeam;
 use App\Models\Concerns\HasPublicId;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -41,9 +42,13 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $updated_at
  * @property-read Environment $environment
  * @property-read Service $service
+ * @property WafMode $waf_mode web firewall (docs/22 §6.2): new instances block, existing ones started in log only
+ * @property int $waf_paranoia CRS paranoia level 1 or 2
+ * @property int $waf_inspect_body_kib request body inspected by the firewall: 32, 128 or 1024 KiB
+ * @property Carbon|null $waf_mode_changed_at
  * @property-read Deployment|null $activeDeployment
  */
-#[Fillable(['team_id', 'environment_id', 'service_id', 'enabled', 'branch_override', 'build', 'deploy', 'scaling', 'preview_strategy'])]
+#[Fillable(['team_id', 'environment_id', 'service_id', 'enabled', 'branch_override', 'build', 'deploy', 'scaling', 'preview_strategy', 'waf_mode', 'waf_paranoia', 'waf_inspect_body_kib'])]
 final class ServiceInstance extends Model
 {
     use BelongsToTeam, HasPublicId;
@@ -54,6 +59,9 @@ final class ServiceInstance extends Model
         'build' => '{}',
         'deploy' => '{}',
         'scaling' => '{}',
+        'waf_mode' => 'block',
+        'waf_paranoia' => 1,
+        'waf_inspect_body_kib' => 32,
     ];
 
     public static function publicIdPrefix(): string
@@ -121,9 +129,22 @@ final class ServiceInstance extends Model
     }
 
     /**
+     * The volumes the service has now (staged removals left out).
+     *
      * @return HasMany<Volume, $this>
      */
     public function volumes(): HasMany
+    {
+        return $this->hasMany(Volume::class)->whereNull('removed_at');
+    }
+
+    /**
+     * Every volume row, including staged removals that a running deployment
+     * may still mount (NodeStates, retirement).
+     *
+     * @return HasMany<Volume, $this>
+     */
+    public function allVolumes(): HasMany
     {
         return $this->hasMany(Volume::class);
     }
@@ -151,6 +172,10 @@ final class ServiceInstance extends Model
             'removed_at' => 'datetime',
             'plan' => 'array',
             'placement_issue' => 'array',
+            'waf_mode' => WafMode::class,
+            'waf_paranoia' => 'integer',
+            'waf_inspect_body_kib' => 'integer',
+            'waf_mode_changed_at' => 'datetime',
         ];
     }
 }

@@ -1,0 +1,7 @@
+{
+  "name": "inventory-node",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": { "ms": "2.1.3", "lodash": "4.17.20", "zod": "3.25.0" },
+  "devDependencies": { "is-number": "7.0.0" }
+}

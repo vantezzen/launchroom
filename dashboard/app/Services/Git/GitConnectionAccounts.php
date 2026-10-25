@@ -20,7 +20,7 @@ final class GitConnectionAccounts
         $login = $account->stringOrNull('username') ?? $account->stringOrNull('login') ?? 'unknown';
         $connection->account_login = mb_substr($login, 0, 255);
         $connection->account_id = $account->intOrNull('id');
-        $connection->name = mb_substr($connection->host().' · '.$login, 0, 100);
+        $connection->name = mb_substr($connection->host().' ('.$login.')', 0, 100);
     }
 
     /**

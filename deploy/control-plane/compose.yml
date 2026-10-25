@@ -336,6 +336,10 @@ services:
       # Local policy (docs/14 §12.2): data imports and exports on this
       # server: on | off.
       LR_DATA_TRANSFERS: ${LR_DATA_TRANSFERS:-on}
+      # Local policy (docs/09 R39): temporary SSH and database access on
+      # this server: on | ssh | database | off, and its port range.
+      LR_REMOTE_ACCESS: ${LR_REMOTE_ACCESS:-on}
+      LR_REMOTE_ACCESS_PORTS: ${LR_REMOTE_ACCESS_PORTS:-40100-40199}
       # Docker through dockerd-guard (D49).
       DOCKER_HOST: unix:///run/launchroom/docker.sock
     volumes:

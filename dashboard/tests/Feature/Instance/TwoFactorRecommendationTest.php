@@ -24,7 +24,7 @@ test('an owner without two-factor uses every page, including sensitive settings'
     $owner = tfOwner();
 
     foreach (['servers.index', 'projects.index', 'git.edit', 'team.edit', 'updates.edit', 'onboarding.show', 'security.edit'] as $route) {
-        $this->actingAs($owner)->withSession(passwordConfirmed())->get(route($route))->assertOk();
+        $this->actingAs($owner)->get(route($route))->assertOk();
     }
 });
 

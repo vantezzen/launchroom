@@ -119,7 +119,7 @@ function steps(generation: Generation): Step[] {
             status: status('read'),
             summary:
                 generation.filesSent.length > 0
-                    ? `${plural(generation.filesSent.length, 'file')} · ${plural(generation.filesListed, 'path')} listed`
+                    ? `${plural(generation.filesSent.length, 'file')}, ${plural(generation.filesListed, 'path')} listed`
                     : undefined,
         },
         {
@@ -199,11 +199,11 @@ export function SharingNotice({
         {
             icon: FileCode2,
             title: 'Manifests and entry files',
-            body: 'package.json, pyproject.toml, go.mod and similar, plus the start of likely entry points. Each cut at 32 KB.',
+            body: 'package.json, pyproject.toml, go.mod and similar, plus the start of likely entry points. Each file is cut at 32 KB.',
         },
         {
             icon: KeyRound,
-            title: 'Never secrets',
+            title: 'No secrets',
             body: 'No .env files, keys, credentials or variable values. Anything that looks like a credential is redacted.',
         },
     ];
@@ -282,7 +282,7 @@ function FilesSent({ generation }: { generation: Generation }) {
     return (
         <SheetSection
             title="What launchroom sent"
-            description={`${plural(generation.filesSent.length, 'file')} and a list of ${plural(generation.filesListed, 'path')}. Secrets were never included.`}
+            description={`${plural(generation.filesSent.length, 'file')} and a list of ${plural(generation.filesListed, 'path')}. No secrets were included.`}
             control={
                 <Button
                     variant="ghost"
@@ -304,7 +304,7 @@ function FilesSent({ generation }: { generation: Generation }) {
                             <span className="truncate">{file.path}</span>
                             <span className="shrink-0 text-muted-foreground tabular-nums">
                                 {(file.bytes / 1024).toFixed(1)} KB
-                                {file.truncated ? ' · cut' : ''}
+                                {file.truncated ? ' (cut)' : ''}
                             </span>
                         </li>
                     ))}
@@ -390,7 +390,7 @@ function Verified({
                 title={generation.repositoryPath}
                 description={
                     generation.previousDockerfile
-                        ? 'Changes from the try before are marked.'
+                        ? 'Changes from the previous attempt are marked.'
                         : 'Base images are pinned to their digests.'
                 }
                 control={
@@ -698,8 +698,8 @@ export function DockerfileGenerationSheet({
             <SheetSection className={cn(!generation && 'hidden')}>
                 <p className="type-small text-faint">
                     Drafted with {generation?.model ?? panel.model}. launchroom
-                    checks every Dockerfile itself: pinned base images, no host
-                    access, no secrets in the image.
+                    checks every Dockerfile for pinned base images, host access
+                    and secrets in the image.
                 </p>
             </SheetSection>
         </SidePanel>

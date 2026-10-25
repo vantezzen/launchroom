@@ -22,7 +22,7 @@ Charts on the project and service pages have three ranges: **Hour**, **Day** and
 
 ## Request metrics
 
-Every server with the "Serve traffic" role runs Caddy, which handles HTTPS for your domains. For each request, Caddy hands launchroomd a short record: host, method, status, duration and sizes. launchroomd sums them per route and minute and sends only these per-minute totals to the dashboard.
+Every server with the "Serve traffic" role runs Caddy, which handles HTTPS for your domains. For each request, Caddy hands launchroomd a short record: host, method, path, status, duration and sizes. launchroomd sums them per route and minute and sends only these per-minute totals to the dashboard. The paths feed [Analytics](/docs/observability/analytics).
 
 The totals give you:
 
@@ -37,7 +37,7 @@ Latency is kept as a histogram, so percentiles stay correct when several servers
 
 ### What never leaves Caddy
 
-Before a record leaves Caddy, launchroom removes the client's IP address and port, the request path and query string, every request and response header (cookies and credentials included) and TLS details. launchroomd never sees who visited or which pages they opened, and nothing per request is stored. Plain-HTTP requests only redirect to HTTPS and are not counted. Requests for hosts launchroom doesn't route are dropped.
+Before a record leaves Caddy, launchroom removes the client's IP address and port, the query string, every request and response header (cookies and credentials included) and TLS details. Only the referrer's host and one word from the user agent ("bot", "Mozilla" or nothing) remain for [Analytics](/docs/observability/analytics). launchroomd never sees who visited, and nothing per request is stored. Plain-HTTP requests only redirect to HTTPS and are not counted. Requests for hosts launchroom doesn't route are dropped.
 
 <Callout type="info" title="Workers and databases">
 Services without a public domain (workers, cron jobs, databases) have no request metrics. Their Metrics tab shows CPU and memory only.
@@ -83,6 +83,7 @@ Older data is rolled up automatically, so the Week view loads fast and the datab
 The same numbers drive the built-in alert rules: high error rate, high CPU or memory and nearly full disks. Thresholds are set per team. See [Alerts](/docs/observability/alerts).
 
 <Cards>
+  <Card title="Analytics" href="/docs/observability/analytics" description="Requests per hour, top paths, referrers and clients." />
   <Card title="Alerts" href="/docs/observability/alerts" description="Built-in rules, thresholds and where alerts go." />
   <Card title="Logs" href="/docs/observability/logs" description="Search build and runtime lines across services." />
   <Card title="Scaling" href="/docs/projects/scaling" description="Add replicas and set CPU and memory limits." />

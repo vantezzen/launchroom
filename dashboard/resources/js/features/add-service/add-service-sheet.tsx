@@ -28,7 +28,7 @@ const choices: {
         id: 'github',
         logo: 'github',
         title: 'GitHub repository',
-        description: 'Deploys on every push. We detect the rest.',
+        description: 'Detects how to build it and deploys on every push.',
     },
     {
         id: 'catalog',
@@ -52,13 +52,13 @@ const choices: {
         id: 'worker',
         logo: 'worker',
         title: 'Worker',
-        description: 'Runs a queue of one of your apps.',
+        description: 'Processes a queue for one of your apps.',
     },
     {
         id: 'cron',
         logo: 'cron',
         title: 'Cron',
-        description: 'Runs a schedule of one of your apps.',
+        description: 'Runs a command of one of your apps on a schedule.',
     },
 ];
 

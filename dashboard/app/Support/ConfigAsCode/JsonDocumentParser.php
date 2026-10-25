@@ -344,11 +344,11 @@ final class JsonDocumentParser
             }
 
             if ($char === '/' && in_array($this->source[$this->offset + 1] ?? '', ['/', '*'], true)) {
-                $this->fail('Comments aren\'t allowed in JSON.', 'Remove the comment; explain settings in a README or the commit message instead.');
+                $this->fail('Comments aren\'t allowed in JSON.', 'Remove the comment. Explain settings in a README or the commit message instead.');
             }
 
             if ($char === '#') {
-                $this->fail('Comments aren\'t allowed in JSON.', 'Remove the comment; explain settings in a README or the commit message instead.');
+                $this->fail('Comments aren\'t allowed in JSON.', 'Remove the comment. Explain settings in a README or the commit message instead.');
             }
 
             return;

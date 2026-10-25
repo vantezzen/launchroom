@@ -6,11 +6,13 @@ namespace App\Services\Tasks;
 
 use App\Data\Git\RepositoryRef;
 use App\Data\Services\GitSource;
+use App\Enums\RemoteAccess\RemoteAccessStatus;
 use App\Enums\Sessions\InteractiveSessionStatus;
 use App\Exceptions\DomainRuleViolation;
 use App\Exceptions\TaskSealingFailed;
 use App\Models\DaemonTask;
 use App\Models\Deployment;
+use App\Models\RemoteAccess\RemoteAccess;
 use App\Models\Server;
 use App\Models\Sessions\InteractiveSession;
 use App\Models\Team;
@@ -41,6 +43,7 @@ use Throwable;
  *   TaskToken purpose `clone` into `spec.cloneToken`, or a deploy key seed
  *   sealed as purpose `ssh_key` into `spec.sshKey` plus the pinned host keys
  *   as `spec.repo.knownHosts`; public remotes get nothing;
+ * - `sourceCloneToken`: the same into `spec.source` (inventory tasks, docs/03 §13.1);
  * - `sessionKey`: `{"session": ses_…}` → the interactive session's key,
  *   sealed as TaskToken (purpose session) into `spec.key` (docs/03 §11).
  *
@@ -75,6 +78,15 @@ final readonly class TaskSecrets
 
             if (is_array($seal['cloneToken'] ?? null)) {
                 $this->cloneCredentials($spec, $task, $server, $seal['cloneToken']);
+            }
+
+            // Inventory tasks carry the build's repository under `source` (docs/03 §13.1).
+            if (is_array($seal['sourceCloneToken'] ?? null) && ($spec->source ?? null) instanceof stdClass) {
+                $this->cloneCredentials($spec->source, $task, $server, $seal['sourceCloneToken']);
+            }
+
+            if (is_array($seal['accessPassword'] ?? null)) {
+                $spec->password = (object) ['sealed' => $this->accessPassword($task, $server, $seal['accessPassword'])];
             }
 
             if (is_array($seal['sessionKey'] ?? null)) {
@@ -169,6 +181,35 @@ final readonly class TaskSecrets
         $sealed = TaskSealer::token($server->sealing_public_key, $server->public_id, $task->public_id, 'session', $key);
         $session->forceFill(['session_key' => null]);
         $session->transitionTo(InteractiveSessionStatus::Open);
+
+        return $sealed;
+    }
+
+    /**
+     * The password of a temporary access, sealed as TaskToken purpose
+     * `access` to the leasing server and task (docs/03 §12.1). The dashboard
+     * keeps its encrypted copy for the opener until the access ends.
+     *
+     * @param  array<mixed>  $reference
+     */
+    private function accessPassword(DaemonTask $task, Server $server, array $reference): string
+    {
+        $access = RemoteAccess::query()
+            ->where('team_id', $task->team_id)
+            ->where('daemon_task_id', $task->id)
+            ->where('public_id', is_string($reference['access'] ?? null) ? $reference['access'] : '')
+            ->where('server_id', $server->id)
+            ->lockForUpdate()
+            ->first();
+
+        $password = $access?->password;
+
+        if (! $access instanceof RemoteAccess || $access->status !== RemoteAccessStatus::Pending || ! is_string($password) || $password === '') {
+            throw new TaskSealingFailed('The access this task belongs to is no longer waiting for its server.');
+        }
+
+        $sealed = TaskSealer::token($server->sealing_public_key, $server->public_id, $task->public_id, 'access', $password);
+        $access->transitionTo(RemoteAccessStatus::Open);
 
         return $sealed;
     }

@@ -107,7 +107,7 @@ Cron services are a kind with a command and an optional `deploy.schedule` (D51; 
 
 ### 3.1 Where the file comes from
 
-Project **Settings → General → Config file** (`projects.settings.configFile`):
+Project **Settings → Config file** (`projects.settings.configFile`):
 
 - **Path**: `launchroom.json` by default, any repository-relative path (`deploy/launchroom.json`), validated like a root directory ([09](09-security.md) R4).
 - **Repository**: the repository holding the file. Defaults to the repository of the project's app services when they all use one; a project with several repositories picks one (until then no file is read, and the card says so).
@@ -162,7 +162,7 @@ This keeps the rule that a push never ships somebody's half-finished dashboard e
 
 The current environment can be downloaded as a `launchroom.json` that **imports back without a single change** (round trip, tested):
 
-- **UI**: Settings → General → Config file → **Download** on each environment's row (`GET /p/{project}/{environment}/-/config`, an attachment named after the configured path).
+- **UI**: Settings → Config file → **Download** on each environment's row (`GET /p/{project}/{environment}/-/config`, an attachment named after the configured path).
 - **API**: `GET /api/v1/environments/{environment}/config` (`env:read`), `?revision=N` exports a deployed revision instead of the current intent.
 - **CLI**: `launchroom config pull [FILE] [--revision N] [--yes]` (default `./launchroom.json`; asks before overwriting).
 
@@ -250,6 +250,6 @@ The export writes one environment; `environments` overrides are written by hand.
 - `App\Actions\ConfigAsCode`: `ApplyConfigFile` (check + apply + record, nested transaction so a failed apply writes nothing), `ApplyConfigFileOnPush` (§3.4), `ApplyPreviewConfigFile` (§5, once per head commit, `previews.data.configSha`/`configError`), `DryRunConfigFile` (rolled back), `ExportEnvironmentConfig`, `SyncConfigFile`, `UpdateConfigFileSettings`.
 - Hooks: `DeployOnGitPush` groups matched instances per environment (a change of the file's path counts as touching every service), `DeployPreview` (before its revision snapshot), `DeployEnvironment` (`$commits`: the pushed commit pinned on pushed services), `StagedChangesView` (`configFile`), `ServiceSettings` (`configFile`), `ServiceVariablesView` (`managedByFile`, config values read-only), `DeploymentDetailView` (`configErrors`).
 - HTTP: `ConfigFileController` (settings, Check now, download), `Api\V1\ConfigController` (export, validate, diff, status), `ConfigSchemaController` (`/schema/launchroom.v1.json`, public).
-- UI (`resources/js/features/config-as-code`): `ManagedByFile` (callout + read-only page, wraps every service settings page), `ConfigProblem` (excerpt with the line marked and a caret), `ConfigFailureCard` (deployment page), `ConfigFileSettings` (project Settings → General), `StagedConfigNote` (review sheet); the Variables tab's file icon and the staged items' `launchroom.json` chip.
+- UI (`resources/js/features/config-as-code`): `ManagedByFile` (callout + read-only page, wraps every service settings page), `ConfigProblem` (excerpt with the line marked and a caret), `ConfigFailureCard` (deployment page), `ConfigFileSettings` (project Settings → Config file), `StagedConfigNote` (review sheet); the Variables tab's file icon and the staged items' `launchroom.json` chip.
 - CLI: `cli/internal/commands/config.go`, `cli/internal/configfile` (local syntax check, excerpts).
 - Tests: `tests/Unit/Support/ConfigAsCode` (parser positions and messages, schema/rule messages, schema ↔ Data drift), `tests/Feature/ConfigAsCode` (round trip, push flows, managed/unmanaged, conflicts, overrides, identity, trust, dry run, previews and forks through a real `DeployPreview`, UI data), `tests/Feature/Api/ConfigApiTest.php`, `cli/internal/commands/config_test.go`.

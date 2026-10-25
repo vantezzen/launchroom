@@ -1,5 +1,6 @@
 import type { InertiaLinkProps } from '@inertiajs/react';
 import type { ReactNode } from 'react';
+import { MetaDivider } from '@/components/patterns/meta-line';
 import { ObjectCard } from './object-card';
 
 /** Environment card (direction §5.2): name, trigger, live revision, changes ahead/behind, services. */
@@ -49,11 +50,9 @@ export function EnvironmentCard({
                 </p>
             )}
             {(ahead !== undefined || behind !== undefined) && (
-                <p className="type-body tabular-nums">
+                <p className="flex items-center gap-2 type-body tabular-nums">
                     {ahead ? <span>{ahead} ahead</span> : null}
-                    {ahead && behind ? (
-                        <span className="text-muted-foreground"> · </span>
-                    ) : null}
+                    {ahead && behind ? <MetaDivider /> : null}
                     {behind ? <span>{behind} behind</span> : null}
                     {!ahead && !behind ? (
                         <span className="text-muted-foreground">

@@ -214,9 +214,9 @@ export function StageOption({
                     Stage without routing traffic
                 </Label>
                 <p className="type-small text-muted-foreground">
-                    New versions are built and started next to the current ones;
-                    promote them from the deployments to switch traffic.
-                    Databases deploy as usual.
+                    New versions are built and started next to the current ones.
+                    Promote them from Deployments to switch traffic. Databases
+                    deploy as usual.
                 </p>
             </div>
         </div>

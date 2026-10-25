@@ -28,8 +28,8 @@ beforeEach(function (): void {
 
 test('only instance owners see and change the private network settings', function (): void {
     $this->actingAs($this->admin)->get(route('servers.mesh.show'))->assertForbidden();
-    $this->actingAs($this->admin)->withSession(passwordConfirmed())->post(route('servers.mesh.enable'))->assertForbidden();
-    $this->actingAs($this->admin)->withSession(passwordConfirmed())->put(route('servers.mesh.own-tailscale'), ['loginServer' => 'https://controlplane.tailscale.com', 'authKey' => 'tskey-auth-x'])->assertForbidden();
+    $this->actingAs($this->admin)->post(route('servers.mesh.enable'))->assertForbidden();
+    $this->actingAs($this->admin)->put(route('servers.mesh.own-tailscale'), ['loginServer' => 'https://controlplane.tailscale.com', 'authKey' => 'tskey-auth-x'])->assertForbidden();
 
     $this->actingAs($this->admin)->get(route('network-settings.edit'))->assertForbidden();
 
@@ -48,14 +48,8 @@ test('only instance owners see and change the private network settings', functio
             ->has('ingress'));
 });
 
-test('changes need a recently confirmed password', function (): void {
-    $this->actingAs($this->owner)->post(route('servers.mesh.enable'))->assertRedirect();
-
-    expect(InstanceSettings::current()->mesh_enabled_at)->toBeNull();
-});
-
 test('the owner can switch the built-in mesh on before a second server joins', function (): void {
-    $this->actingAs($this->owner)->withSession(passwordConfirmed())->post(route('servers.mesh.enable'))->assertRedirect();
+    $this->actingAs($this->owner)->post(route('servers.mesh.enable'))->assertRedirect();
 
     expect(InstanceSettings::current()->mesh_mode)->toBe(MeshMode::Embedded);
 });
@@ -63,7 +57,7 @@ test('the owner can switch the built-in mesh on before a second server joins', f
 test('Headscale failures come back as a form error', function (): void {
     $this->headscale->down = true;
 
-    $this->actingAs($this->owner)->withSession(passwordConfirmed())->from(route('network-settings.edit'))
+    $this->actingAs($this->owner)->from(route('network-settings.edit'))
         ->post(route('servers.mesh.enable'))
         ->assertRedirect(route('network-settings.edit'))
         ->assertSessionHasErrors('mesh');
@@ -79,7 +73,7 @@ test('bring your own Tailscale stores the key encrypted and advertises role tags
         'approved_by' => $this->owner->id,
     ]);
 
-    $this->actingAs($this->owner)->withSession(passwordConfirmed())
+    $this->actingAs($this->owner)
         ->put(route('servers.mesh.own-tailscale'), ['loginServer' => 'https://ControlPlane.Tailscale.com/', 'authKey' => ' tskey-auth-k123-SECRETSECRET '])
         ->assertRedirect()
         ->assertSessionHasNoErrors();
@@ -104,7 +98,7 @@ test('bring your own Tailscale stores the key encrypted and advertises role tags
 });
 
 test('own Tailscale input is validated', function (array $input, string $field): void {
-    $this->actingAs($this->owner)->withSession(passwordConfirmed())
+    $this->actingAs($this->owner)
         ->put(route('servers.mesh.own-tailscale'), $input)
         ->assertSessionHasErrors($field);
 

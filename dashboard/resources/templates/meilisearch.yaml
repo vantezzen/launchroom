@@ -3,8 +3,8 @@ id: meilisearch
 name: Meilisearch
 tagline: Fast, typo-tolerant search for your apps.
 description: >-
-    A search engine with instant results, filters and facets behind a simple
-    API. The master key is generated; use it to create search keys for your
+    A search engine with instant results, filters and facets behind an HTTP
+    API. The master key is generated. Use it to create search keys for your
     apps.
 category: search
 logo: meilisearch

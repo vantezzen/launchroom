@@ -39,6 +39,14 @@ export function endSession(session: string): Promise<null> {
     return api('post', sessions.end(session).url, {});
 }
 
+/** One session as the Recent sessions list shows it (status, end, failure). */
+export function fetchSession(
+    session: string,
+    signal?: AbortSignal,
+): Promise<App.Data.Sessions.SessionHistoryItemData> {
+    return api('get', sessions.show(session).url, undefined, signal);
+}
+
 export function fetchRecording(session: string): Promise<{ lines: string[] }> {
     return api('post', sessions.recording(session).url, {});
 }

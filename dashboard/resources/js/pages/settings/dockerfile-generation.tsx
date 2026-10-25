@@ -18,7 +18,7 @@ import {
     team as teamRoute,
     update,
 } from '@/routes/dockerfile-generation';
-import { edit as teamSettings } from '@/routes/team';
+import { index as settingsHome } from '@/routes/settings';
 
 type Props = {
     provider: App.Data.Dockerfiles.AiProviderSettingsData;
@@ -120,7 +120,7 @@ export default function DockerfileGenerationSettings({
                     </SettingsRow>
                     <SettingsRow
                         label="Model"
-                        description="The most capable model gives the best first drafts; a smaller one costs less."
+                        description="A larger model writes better first drafts, and a smaller one costs less."
                         htmlFor="dockerfile-model"
                     >
                         <div className="flex w-full flex-col gap-2 sm:w-72">
@@ -190,8 +190,8 @@ export default function DockerfileGenerationSettings({
                             provider.stub
                                 ? 'Development: launchroom answers with a stub, no key needed.'
                                 : provider.hasKey
-                                  ? `Key ending in …${provider.keyLast4 ?? '····'}, encrypted. Paste a new one to replace it.`
-                                  : 'From console.anthropic.com. Stored encrypted; launchroom never shows it again.'
+                                  ? `Key ending in …${provider.keyLast4 ?? '••••'}, encrypted. Paste a new one to replace it.`
+                                  : 'Create one at console.anthropic.com. It is stored encrypted and not shown again.'
                         }
                         htmlFor="dockerfile-key"
                     >
@@ -284,8 +284,8 @@ export default function DockerfileGenerationSettings({
 
             <SettingsCard
                 title="What launchroom sends"
-                description={`At most ${limits.files} files (${limits.fileKb} KB each, ${limits.totalKb} KB together) and a list of up to ${limits.listing} paths, per try.`}
-                footer={`Every Dockerfile is linted, built and started before you see it, with up to ${limits.repairs} repairs that send back the masked build log.`}
+                description={`At most ${limits.files} files (${limits.fileKb} KB each, ${limits.totalKb} KB together) and a list of up to ${limits.listing} paths per attempt.`}
+                footer={`Every Dockerfile is linted, built and started before you see it. If that fails, launchroom sends back the masked build log for up to ${limits.repairs} repairs.`}
             >
                 <SettingsBody>
                     <SharingNotice
@@ -300,7 +300,7 @@ export default function DockerfileGenerationSettings({
 
 DockerfileGenerationSettings.layout = {
     breadcrumbs: [
-        { title: 'Settings', href: teamSettings() },
+        { title: 'Settings', href: settingsHome() },
         { title: 'Dockerfile generation', href: edit() },
     ],
 };

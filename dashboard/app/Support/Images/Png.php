@@ -100,7 +100,7 @@ final class Png
                     // APNG frames) are dropped. Unknown critical ones can't
                     // be decoded safely.
                     if (ctype_upper($type[0])) {
-                        throw InvalidImage::because('The PNG image uses features we do not support.');
+                        throw InvalidImage::because('The PNG image uses features launchroom doesn’t support.');
                     }
             }
         }

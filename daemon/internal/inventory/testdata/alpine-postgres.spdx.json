@@ -1,0 +1,1218 @@
+{
+ "_type": "https://in-toto.io/Statement/v0.1",
+ "predicate": {
+  "creationInfo": {
+   "created": "2026-10-25T12:55:14Z",
+   "creators": [
+    "Organization: Anchore, Inc",
+    "Tool: syft-v1.51.0"
+   ],
+   "licenseListVersion": "3.28"
+  },
+  "packages": [
+   {
+    "SPDXID": "SPDXRef-Package-apk-.postgresql-rundeps-c1c6ac0fad7df8d1",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:.postgresql-rundeps:.postgresql-rundeps:20260917.213058:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:.postgresql-rundeps:.postgresql_rundeps:20260917.213058:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:.postgresql_rundeps:.postgresql-rundeps:20260917.213058:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:.postgresql_rundeps:.postgresql_rundeps:20260917.213058:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:.postgresql:.postgresql-rundeps:20260917.213058:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:.postgresql:.postgresql_rundeps:20260917.213058:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:apk/alpine/.postgresql-rundeps@20260917.213058?arch=noarch&distro=alpine-3.24.2",
+      "referenceType": "purl"
+     }
+    ],
+    "name": ".postgresql-rundeps",
+    "versionInfo": "20260917.213058"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-apk-alpine-baselayout-fc97152c8139b3ba",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:alpine-baselayout:alpine-baselayout:3.7.2-r1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:alpine-baselayout:alpine_baselayout:3.7.2-r1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:alpine_baselayout:alpine-baselayout:3.7.2-r1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:alpine_baselayout:alpine_baselayout:3.7.2-r1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:alpine:alpine-baselayout:3.7.2-r1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:alpine:alpine_baselayout:3.7.2-r1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:apk/alpine/alpine-baselayout@3.7.2-r1?arch=aarch64&distro=alpine-3.24.2",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "alpine-baselayout",
+    "versionInfo": "3.7.2-r1"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-apk-alpine-baselayout-data-683b8aea1dc949a8",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:alpine-baselayout-data:alpine-baselayout-data:3.7.2-r1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:alpine-baselayout-data:alpine_baselayout_data:3.7.2-r1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:alpine_baselayout_data:alpine-baselayout-data:3.7.2-r1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:alpine_baselayout_data:alpine_baselayout_data:3.7.2-r1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:alpine-baselayout:alpine-baselayout-data:3.7.2-r1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:alpine-baselayout:alpine_baselayout_data:3.7.2-r1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:alpine_baselayout:alpine-baselayout-data:3.7.2-r1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:alpine_baselayout:alpine_baselayout_data:3.7.2-r1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:alpine:alpine-baselayout-data:3.7.2-r1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:alpine:alpine_baselayout_data:3.7.2-r1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:apk/alpine/alpine-baselayout-data@3.7.2-r1?arch=aarch64&distro=alpine-3.24.2&upstream=alpine-baselayout",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "alpine-baselayout-data",
+    "versionInfo": "3.7.2-r1"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-apk-alpine-keys-8ab971571ca3fe0a",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:alpine-keys:alpine-keys:2.6-r0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:alpine-keys:alpine_keys:2.6-r0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:alpine_keys:alpine-keys:2.6-r0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:alpine_keys:alpine_keys:2.6-r0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:alpine:alpine-keys:2.6-r0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:alpine:alpine_keys:2.6-r0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:apk/alpine/alpine-keys@2.6-r0?arch=aarch64&distro=alpine-3.24.2",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "alpine-keys",
+    "versionInfo": "2.6-r0"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-apk-alpine-release-e7a34d23913bead7",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:alpine-release:alpine-release:3.24.2-r0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:alpine-release:alpine_release:3.24.2-r0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:alpine_release:alpine-release:3.24.2-r0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:alpine_release:alpine_release:3.24.2-r0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:alpine:alpine-release:3.24.2-r0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:alpine:alpine_release:3.24.2-r0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:apk/alpine/alpine-release@3.24.2-r0?arch=aarch64&distro=alpine-3.24.2&upstream=alpine-base",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "alpine-release",
+    "versionInfo": "3.24.2-r0"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-apk-apk-tools-b0820629af718db3",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:apk-tools:apk-tools:3.0.8-r0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:apk-tools:apk_tools:3.0.8-r0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:apk_tools:apk-tools:3.0.8-r0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:apk_tools:apk_tools:3.0.8-r0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:apk:apk-tools:3.0.8-r0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:apk:apk_tools:3.0.8-r0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:apk/alpine/apk-tools@3.0.8-r0?arch=aarch64&distro=alpine-3.24.2",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "apk-tools",
+    "versionInfo": "3.0.8-r0"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-apk-bash-93c3841d1b6eafdc",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:bash:bash:5.3.9-r1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:gnu:bash:5.3.9-r1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:apk/alpine/bash@5.3.9-r1?arch=aarch64&distro=alpine-3.24.2",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "bash",
+    "versionInfo": "5.3.9-r1"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-apk-brotli-libs-d14087b572066c96",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:brotli-libs:brotli-libs:1.2.0-r1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:brotli-libs:brotli_libs:1.2.0-r1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:brotli_libs:brotli-libs:1.2.0-r1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:brotli_libs:brotli_libs:1.2.0-r1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:brotli:brotli-libs:1.2.0-r1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:brotli:brotli_libs:1.2.0-r1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:google:brotli-libs:1.2.0-r1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:google:brotli_libs:1.2.0-r1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:apk/alpine/brotli-libs@1.2.0-r1?arch=aarch64&distro=alpine-3.24.2&upstream=brotli",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "brotli-libs",
+    "versionInfo": "1.2.0-r1"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-apk-busybox-6cb7d4b8a66ff2bf",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:busybox:busybox:1.37.0-r31:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:apk/alpine/busybox@1.37.0-r31?arch=aarch64&distro=alpine-3.24.2",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "busybox",
+    "versionInfo": "1.37.0-r31"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-apk-busybox-binsh-896e64dcadcbdc1c",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:busybox-binsh:busybox-binsh:1.37.0-r31:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:busybox-binsh:busybox_binsh:1.37.0-r31:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:busybox_binsh:busybox-binsh:1.37.0-r31:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:busybox_binsh:busybox_binsh:1.37.0-r31:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:busybox:busybox-binsh:1.37.0-r31:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:busybox:busybox_binsh:1.37.0-r31:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:apk/alpine/busybox-binsh@1.37.0-r31?arch=aarch64&distro=alpine-3.24.2&upstream=busybox",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "busybox-binsh",
+    "versionInfo": "1.37.0-r31"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-apk-c-ares-32c1f4a76325e87f",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:c-ares:c-ares:1.34.8-r0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:c-ares:c_ares:1.34.8-r0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:c_ares:c-ares:1.34.8-r0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:c_ares:c_ares:1.34.8-r0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:c:c-ares:1.34.8-r0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:c:c_ares:1.34.8-r0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:apk/alpine/c-ares@1.34.8-r0?arch=aarch64&distro=alpine-3.24.2",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "c-ares",
+    "versionInfo": "1.34.8-r0"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-apk-ca-certificates-bundle-6a5b389b052eb0cb",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:ca-certificates-bundle:ca-certificates-bundle:20260909-r0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:ca-certificates-bundle:ca_certificates_bundle:20260909-r0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:ca_certificates_bundle:ca-certificates-bundle:20260909-r0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:ca_certificates_bundle:ca_certificates_bundle:20260909-r0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:ca-certificates:ca-certificates-bundle:20260909-r0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:ca-certificates:ca_certificates_bundle:20260909-r0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:ca_certificates:ca-certificates-bundle:20260909-r0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:ca_certificates:ca_certificates_bundle:20260909-r0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:mozilla:ca-certificates-bundle:20260909-r0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:mozilla:ca_certificates_bundle:20260909-r0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:ca:ca-certificates-bundle:20260909-r0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:ca:ca_certificates_bundle:20260909-r0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:apk/alpine/ca-certificates-bundle@20260909-r0?arch=aarch64&distro=alpine-3.24.2&upstream=ca-certificates",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "ca-certificates-bundle",
+    "versionInfo": "20260909-r0"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-apk-gdbm-1343dd459f7afa16",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:gdbm:gdbm:1.26-r0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:gnu:gdbm:1.26-r0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:apk/alpine/gdbm@1.26-r0?arch=aarch64&distro=alpine-3.24.2",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "gdbm",
+    "versionInfo": "1.26-r0"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-go-module-github.com-moby-sys-user-8d82df1aeef8d43e",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:moby:sys\\/user:v0.1.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:golang/github.com/moby/sys/user@v0.1.0",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "github.com/moby/sys/user",
+    "versionInfo": "v0.1.0"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-go-module-github.com-tianon-gosu-2ea6a2f2f8c9e620",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:tianon:gosu:v1.19.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:golang/github.com/tianon/gosu@v1.19.0",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "github.com/tianon/gosu",
+    "versionInfo": "v1.19.0"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-go-module-golang.org-x-sys-c701399003c0c6a2",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:golang:x\\/sys:v0.1.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:golang/golang.org/x/sys@v0.1.0",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "golang.org/x/sys",
+    "versionInfo": "v0.1.0"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-apk-icu-data-full-97634e7a4661ac5d",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:icu-data-full:icu-data-full:78.1-r0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:icu-data-full:icu_data_full:78.1-r0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:icu_data_full:icu-data-full:78.1-r0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:icu_data_full:icu_data_full:78.1-r0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:icu-data:icu-data-full:78.1-r0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:icu-data:icu_data_full:78.1-r0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:icu_data:icu-data-full:78.1-r0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:icu_data:icu_data_full:78.1-r0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:icu:icu-data-full:78.1-r0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:icu:icu_data_full:78.1-r0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:apk/alpine/icu-data-full@78.1-r0?arch=aarch64&distro=alpine-3.24.2&upstream=icu",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "icu-data-full",
+    "versionInfo": "78.1-r0"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-apk-icu-libs-a2d697e6ef91edaa",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:icu-libs:icu-libs:78.1-r0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:icu-libs:icu_libs:78.1-r0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:icu_libs:icu-libs:78.1-r0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:icu_libs:icu_libs:78.1-r0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:icu:icu-libs:78.1-r0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:icu:icu_libs:78.1-r0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:apk/alpine/icu-libs@78.1-r0?arch=aarch64&distro=alpine-3.24.2&upstream=icu",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "icu-libs",
+    "versionInfo": "78.1-r0"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-apk-keyutils-libs-5e1297a89fbeb186",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:keyutils-libs:keyutils-libs:1.6.3-r4:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:keyutils-libs:keyutils_libs:1.6.3-r4:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:keyutils_libs:keyutils-libs:1.6.3-r4:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:keyutils_libs:keyutils_libs:1.6.3-r4:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:keyutils:keyutils-libs:1.6.3-r4:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:keyutils:keyutils_libs:1.6.3-r4:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:apk/alpine/keyutils-libs@1.6.3-r4?arch=aarch64&distro=alpine-3.24.2&upstream=keyutils",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "keyutils-libs",
+    "versionInfo": "1.6.3-r4"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-apk-krb5-conf-02bb50777740d96a",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:krb5-conf:krb5-conf:1.0-r2:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:krb5-conf:krb5_conf:1.0-r2:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:krb5_conf:krb5-conf:1.0-r2:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:krb5_conf:krb5_conf:1.0-r2:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:krb-conf:krb5-conf:1.0-r2:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:krb-conf:krb5_conf:1.0-r2:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:krb5-conf:krb-conf:1.0-r2:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:krb5-conf:krb_conf:1.0-r2:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:krb5_conf:krb-conf:1.0-r2:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:krb5_conf:krb_conf:1.0-r2:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:krb_conf:krb5-conf:1.0-r2:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:krb_conf:krb5_conf:1.0-r2:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:krb-conf:krb-conf:1.0-r2:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:krb-conf:krb_conf:1.0-r2:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:krb_conf:krb-conf:1.0-r2:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:krb_conf:krb_conf:1.0-r2:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:krb5:krb5-conf:1.0-r2:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:krb5:krb5_conf:1.0-r2:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:krb5:krb-conf:1.0-r2:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:krb5:krb_conf:1.0-r2:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:krb:krb5-conf:1.0-r2:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:krb:krb5_conf:1.0-r2:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:krb:krb-conf:1.0-r2:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:krb:krb_conf:1.0-r2:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:apk/alpine/krb5-conf@1.0-r2?arch=aarch64&distro=alpine-3.24.2",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "krb5-conf",
+    "versionInfo": "1.0-r2"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-apk-krb5-libs-df04f2770503ea7a",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:krb5-libs:krb5-libs:1.22.2-r1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:krb5-libs:krb5_libs:1.22.2-r1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:krb5_libs:krb5-libs:1.22.2-r1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:krb5_libs:krb5_libs:1.22.2-r1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:krb-libs:krb5-libs:1.22.2-r1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:krb-libs:krb5_libs:1.22.2-r1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:krb5-libs:krb-libs:1.22.2-r1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:krb5-libs:krb_libs:1.22.2-r1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:krb5_libs:krb-libs:1.22.2-r1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:krb5_libs:krb_libs:1.22.2-r1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:krb_libs:krb5-libs:1.22.2-r1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:krb_libs:krb5_libs:1.22.2-r1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:krb-libs:krb-libs:1.22.2-r1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:krb-libs:krb_libs:1.22.2-r1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:krb_libs:krb-libs:1.22.2-r1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:krb_libs:krb_libs:1.22.2-r1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:krb5:krb5-libs:1.22.2-r1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:krb5:krb5_libs:1.22.2-r1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:krb5:krb-libs:1.22.2-r1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:krb5:krb_libs:1.22.2-r1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:krb:krb5-libs:1.22.2-r1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:krb:krb5_libs:1.22.2-r1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:krb:krb-libs:1.22.2-r1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:krb:krb_libs:1.22.2-r1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:apk/alpine/krb5-libs@1.22.2-r1?arch=aarch64&distro=alpine-3.24.2&upstream=krb5",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "krb5-libs",
+    "versionInfo": "1.22.2-r1"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-apk-libapk-90a5cab42c222f6b",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:libapk:libapk:3.0.8-r0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:apk/alpine/libapk@3.0.8-r0?arch=aarch64&distro=alpine-3.24.2&upstream=apk-tools",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "libapk",
+    "versionInfo": "3.0.8-r0"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-apk-libcom-err-5be8d47b50a132a5",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:libcom-err:libcom-err:1.47.4-r0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:libcom-err:libcom_err:1.47.4-r0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:libcom_err:libcom-err:1.47.4-r0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:libcom_err:libcom_err:1.47.4-r0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:libcom:libcom-err:1.47.4-r0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:libcom:libcom_err:1.47.4-r0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:apk/alpine/libcom_err@1.47.4-r0?arch=aarch64&distro=alpine-3.24.2&upstream=e2fsprogs",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "libcom_err",
+    "versionInfo": "1.47.4-r0"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-apk-libcrypto3-357b849edde822d9",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:libcrypto3:libcrypto3:3.5.8-r0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:libcrypto3:libcrypto:3.5.8-r0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:libcrypto:libcrypto3:3.5.8-r0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:libcrypto:libcrypto:3.5.8-r0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:apk/alpine/libcrypto3@3.5.8-r0?arch=aarch64&distro=alpine-3.24.2&upstream=openssl",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "libcrypto3",
+    "versionInfo": "3.5.8-r0"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-apk-libcurl-498a7ed51d6821d1",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:libcurl:libcurl:8.22.0-r0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:apk/alpine/libcurl@8.22.0-r0?arch=aarch64&distro=alpine-3.24.2&upstream=curl",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "libcurl",
+    "versionInfo": "8.22.0-r0"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-apk-libedit-1d7031a4119314c3",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:libedit:libedit:20260508.3.1-r1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:apk/alpine/libedit@20260508.3.1-r1?arch=aarch64&distro=alpine-3.24.2",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "libedit",
+    "versionInfo": "20260508.3.1-r1"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-apk-libffi-f2d9f788d1886e53",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:libffi:libffi:3.5.2-r1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:apk/alpine/libffi@3.5.2-r1?arch=aarch64&distro=alpine-3.24.2",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "libffi",
+    "versionInfo": "3.5.2-r1"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-apk-libgcc-72e7e3249893c223",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:libgcc:libgcc:15.2.0-r5:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:apk/alpine/libgcc@15.2.0-r5?arch=aarch64&distro=alpine-3.24.2&upstream=gcc",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "libgcc",
+    "versionInfo": "15.2.0-r5"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-binary-postgresql-a7b8afbada432f7c",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:postgresql:postgresql:18.6:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:generic/postgresql@18.6",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "postgresql",
+    "versionInfo": "18.6"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-go-module-stdlib-c5726b35636bdfbb",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:golang:go:1.24.6:-:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:golang/stdlib@1.24.6",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "stdlib",
+    "versionInfo": "go1.24.6"
+   },
+   {
+    "SPDXID": "SPDXRef-DocumentRoot-Directory-sbom",
+    "externalRefs": null,
+    "name": "sbom",
+    "versionInfo": null
+   }
+  ],
+  "spdxVersion": "SPDX-2.3"
+ },
+ "predicateType": "https://spdx.dev/Document"
+}

@@ -129,7 +129,7 @@ func TestClientAuthRefusedByLocalPolicy(t *testing.T) {
 				t.Fatal(err)
 			}
 			s := string(data)
-			if !strings.Contains(s, refusedClientAuthBody[:30]) || strings.Contains(s, "reverse_proxy") {
+			if !strings.Contains(s, pageRefusedClientAuth.plain[:30]) || strings.Contains(s, "reverse_proxy") {
 				t.Error("refused route is not answered with 403 only")
 			}
 			if strings.Contains(s, "tls_connection_policies") || strings.Contains(s, "X-Lr-Edge") {

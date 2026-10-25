@@ -38,6 +38,9 @@ type Fake struct {
 	PullErr map[string]error
 	// CreateErr makes CreateContainer fail for a container name.
 	CreateErr map[string]error
+	// FilesErr fails CreateContainer for this container name as if writing
+	// its config files failed (the real engine removes the container then).
+	FilesErr map[string]error
 	// ExitOnStart makes a container exit immediately with this code when started.
 	ExitOnStart map[string]int
 	// Unbound names containers whose published ports Docker did not bind on
@@ -54,6 +57,9 @@ type Fake struct {
 	OnCreate func(docker.ContainerCreate)
 	// Stats are returned by ContainerStats per container id (missing: an error).
 	Stats map[string]docker.ContainerStats
+	// ImageLabels are an image's own labels, merged into the labels of
+	// containers created from it (like Docker).
+	ImageLabels map[string]map[string]string
 }
 
 type entry struct {
@@ -252,6 +258,9 @@ func (f *Fake) CreateContainer(_ context.Context, cc *docker.ContainerCreate) (s
 			return "", fmt.Errorf("conflict: container name %s is in use", cc.Name)
 		}
 	}
+	if err := f.FilesErr[cc.Name]; err != nil && len(cc.Files) > 0 {
+		return "", err
+	}
 	if !f.images[cc.Config.Image] {
 		return "", fmt.Errorf("no such image %s: %w", cc.Config.Image, docker.ErrNotFound)
 	}
@@ -264,7 +273,12 @@ func (f *Fake) CreateContainer(_ context.Context, cc *docker.ContainerCreate) (s
 		}
 	}
 	id := newID()
-	c := docker.Container{ID: id, Name: cc.Name, Image: cc.Config.Image, Labels: maps.Clone(cc.Config.Labels), State: "created", Networks: map[string]netip.Addr{}, Created: f.now().UTC()}
+	labels := maps.Clone(f.ImageLabels[cc.Config.Image])
+	if labels == nil {
+		labels = map[string]string{}
+	}
+	maps.Copy(labels, cc.Config.Labels)
+	c := docker.Container{ID: id, Name: cc.Name, Image: cc.Config.Image, Labels: labels, State: "created", Networks: map[string]netip.Addr{}, Created: f.now().UTC()}
 	if cc.Config.StopTimeout != nil {
 		c.StopTimeout = time.Duration(*cc.Config.StopTimeout) * time.Second
 	}

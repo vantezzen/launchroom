@@ -3,6 +3,7 @@ import { Archive, CopyPlus, Download, History, RefreshCw } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { toast } from 'sonner';
+import { MetaLine } from '@/components/patterns/meta-line';
 import type { StatusState } from '@/components/status';
 import { EmptyState } from '@/components/patterns/empty-state';
 import { OptionCards } from '@/components/patterns/option-cards';
@@ -28,6 +29,7 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import { Spinner } from '@/components/ui/spinner';
+import { RemoteAccessButton } from '@/features/remote-access/remote-access';
 import { BackupRequestFailed, backupsApi } from '@/features/backups/api';
 import { BackupHealthStatus } from '@/features/backups/backup-health';
 import { BackupTrend } from '@/features/backups/backup-trend';
@@ -354,42 +356,57 @@ export function BackupsTab({ project, environment, service }: BackupsTabProps) {
                                                 'Created on the next deploy'}
                                         </span>
                                     </div>
-                                    {data.canConfigure ? (
-                                        <Select
-                                            value={volume.consistency}
-                                            disabled={busyAction !== null}
-                                            onValueChange={(value) =>
-                                                void act(
-                                                    `volume-${volume.id}`,
-                                                    volume.updateUrl,
-                                                    { consistency: value },
-                                                    'Backup setting saved.',
-                                                    'put',
-                                                )
-                                            }
-                                        >
-                                            <SelectTrigger
-                                                className="w-56"
-                                                aria-label={`Consistency of ${volume.mountPath}`}
+                                    <span className="flex flex-wrap items-center gap-2">
+                                        {volume.server !== null && (
+                                            <RemoteAccessButton
+                                                serviceRef={{
+                                                    project,
+                                                    environment,
+                                                    service,
+                                                }}
+                                                kind="volume"
+                                                volume={volume.id}
+                                                variant="ghost"
+                                                size="sm"
+                                            />
+                                        )}
+                                        {data.canConfigure ? (
+                                            <Select
+                                                value={volume.consistency}
+                                                disabled={busyAction !== null}
+                                                onValueChange={(value) =>
+                                                    void act(
+                                                        `volume-${volume.id}`,
+                                                        volume.updateUrl,
+                                                        { consistency: value },
+                                                        'Backup setting saved.',
+                                                        'put',
+                                                    )
+                                                }
                                             >
-                                                <SelectValue />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                <SelectItem value="live">
-                                                    Live (keeps running)
-                                                </SelectItem>
-                                                <SelectItem value="pause">
-                                                    Pause while reading
-                                                </SelectItem>
-                                            </SelectContent>
-                                        </Select>
-                                    ) : (
-                                        <span className="type-small text-muted-foreground">
-                                            {volume.consistency === 'pause'
-                                                ? 'Pauses while reading'
-                                                : 'Live'}
-                                        </span>
-                                    )}
+                                                <SelectTrigger
+                                                    className="w-56"
+                                                    aria-label={`Consistency of ${volume.mountPath}`}
+                                                >
+                                                    <SelectValue />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="live">
+                                                        Live (keeps running)
+                                                    </SelectItem>
+                                                    <SelectItem value="pause">
+                                                        Pause while reading
+                                                    </SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                        ) : (
+                                            <span className="type-small text-muted-foreground">
+                                                {volume.consistency === 'pause'
+                                                    ? 'Pauses while reading'
+                                                    : 'Live'}
+                                            </span>
+                                        )}
+                                    </span>
                                 </li>
                             ))}
                         </ul>
@@ -402,7 +419,7 @@ export function BackupsTab({ project, environment, service }: BackupsTabProps) {
                 title="Snapshots"
                 description={
                     data.snapshots.length > 0
-                        ? `${data.snapshots.length} kept · newest first`
+                        ? `${data.snapshots.length} kept, newest first`
                         : undefined
                 }
                 actions={
@@ -470,8 +487,9 @@ export function BackupsTab({ project, environment, service }: BackupsTabProps) {
 
                 {data.snapshots.length > 0 && !data.restoreSupported && (
                     <p className="type-small text-muted-foreground">
-                        Restoring {data.engine} from here isn’t available yet;
-                        the snapshots are in your bucket for restic.
+                        Restoring {data.engine} from the dashboard isn’t
+                        available yet. The snapshots are in your bucket, where
+                        you can restore them with restic.
                     </p>
                 )}
             </Section>
@@ -609,16 +627,17 @@ export function BackupsTab({ project, environment, service }: BackupsTabProps) {
                                             restore.mode === 'new_service'
                                                 ? `as ${restore.targetServiceName ?? 'a new service'}`
                                                 : 'into this service'
-                                        }${
+                                        }`}
+                                        detail={
                                             restore.restoredTo !== null
-                                                ? ` · to ${pointLabel(restore.restoredTo)}`
+                                                ? `to ${pointLabel(restore.restoredTo)}`
                                                 : restore.pointInTime
                                                   ? restore.requestedTime !==
                                                     null
-                                                      ? ` · to ${pointLabel(restore.requestedTime)}`
-                                                      : ' · to the newest point'
-                                                  : ''
-                                        }`}
+                                                      ? `to ${pointLabel(restore.requestedTime)}`
+                                                      : 'to the newest point'
+                                                  : undefined
+                                        }
                                     />
                                     <span className="type-small text-muted-foreground">
                                         <TimeAgo value={restore.createdAt} />
@@ -652,11 +671,11 @@ export function BackupsTab({ project, environment, service }: BackupsTabProps) {
                                         state={runStates[run.status]}
                                         label={`${subjectLabels[run.subject] !== '' ? `${subjectLabels[run.subject]} (${run.reasonLabel.toLowerCase()})` : `${run.reasonLabel} backup`} ${runLabels[run.status].toLowerCase()}`}
                                     />
-                                    <span className="type-small text-muted-foreground tabular-nums">
+                                    <MetaLine className="type-small text-muted-foreground tabular-nums">
                                         {run.sizeBytes !== null &&
-                                            `${formatBytes(run.sizeBytes)} · `}
+                                            formatBytes(run.sizeBytes)}
                                         <TimeAgo value={run.createdAt} />
-                                    </span>
+                                    </MetaLine>
                                 </div>
                                 {run.error !== null && (
                                     <p className="type-mono-small break-words text-muted-foreground">
@@ -781,10 +800,10 @@ function RestoreDialog({
                 <DialogDescription>
                     {data.subject === 'volume'
                         ? inPlace
-                            ? `This replaces the files in ${restoring !== null && 'snapshot' in restoring ? (restoring.snapshot.mountPath ?? 'the volume') : 'the volume'} with ${taken}. A safety snapshot is taken first; ${data.serviceName} is stopped while the volume is replaced and starts again afterwards.`
+                            ? `This replaces the files in ${restoring !== null && 'snapshot' in restoring ? (restoring.snapshot.mountPath ?? 'the volume') : 'the volume'} with ${taken}. A safety snapshot is taken first. ${data.serviceName} stops while the volume is replaced and starts again afterwards.`
                             : `This adds a copy of ${data.serviceName} (same settings and variables), in this environment only, and restores ${taken} into its volume. Nothing existing is changed.`
                         : inPlace
-                          ? `This replaces the data in ${data.serviceName} with ${taken}. A safety snapshot is taken first; ${data.serviceName} and the services connected to it are stopped during the restore and start again afterwards.`
+                          ? `This replaces the data in ${data.serviceName} with ${taken}. A safety snapshot is taken first. ${data.serviceName} and the services connected to it stop during the restore and start again afterwards.`
                           : `This adds a new database next to ${data.serviceName}, in this environment only, and restores ${taken} into it. Nothing existing is changed.`}
                 </DialogDescription>
 
@@ -865,9 +884,9 @@ function SwapDialog({
                     {data.subject === 'volume'
                         ? `In this environment, ${copy} takes over ${data.serviceName}’s domains and connections, and ${data.serviceName} is removed.`
                         : `In this environment, every service connected to ${data.serviceName} is connected to ${copy} instead, and ${data.serviceName} is removed.`}{' '}
-                    This is staged: nothing changes until you deploy, and
-                    Discard undoes it. Other environments keep{' '}
-                    {data.serviceName}. Its volume is kept.
+                    The change is staged, so nothing happens until you deploy,
+                    and Discard undoes it. Other environments keep{' '}
+                    {data.serviceName}, and its volume is kept.
                 </DialogDescription>
 
                 <div className="flex flex-col gap-2">
@@ -960,8 +979,7 @@ function ProtectionCard({
             <div className="flex flex-col gap-3 rounded-xl border border-dashed p-5">
                 <BackupHealthStatus health={data.status} />
                 <p className="type-body text-muted-foreground">
-                    Add a place for backups and this database is backed up
-                    daily.
+                    Add a backup destination to back up this database daily.
                 </p>
                 <div>
                     <Button asChild size="sm" variant="outline">
@@ -1140,8 +1158,8 @@ function VerificationItem({ verification }: { verification: Verification }) {
                         running
                             ? `Verifying snapshot ${verification.shortSnapshotId}`
                             : verification.status === 'passed'
-                              ? `Verified restorable · snapshot ${verification.shortSnapshotId}`
-                              : `Verification failed · snapshot ${verification.shortSnapshotId}`
+                              ? `Snapshot ${verification.shortSnapshotId} verified restorable`
+                              : `Snapshot ${verification.shortSnapshotId} failed verification`
                     }
                 />
                 <span className="type-small text-muted-foreground">
@@ -1151,9 +1169,10 @@ function VerificationItem({ verification }: { verification: Verification }) {
                 </span>
             </div>
             {findings.length > 0 && (
-                <p className="type-small text-muted-foreground">
-                    Restored into a throwaway database · {findings.join(' · ')}
-                </p>
+                <MetaLine className="type-small text-muted-foreground">
+                    Restored into a throwaway database
+                    {findings}
+                </MetaLine>
             )}
             {verification.error !== null && (
                 <p className="type-mono-small break-words text-muted-foreground">
@@ -1291,15 +1310,13 @@ function SnapshotTimeline({
                                 <span className="type-body">
                                     {capitalise(snapshotTime(snapshot.time))}
                                 </span>
-                                <span className="truncate type-small text-muted-foreground">
+                                <MetaLine className="type-small text-muted-foreground">
                                     {reasonLabel(snapshot.reason)}
-                                    {snapshot.mountPath !== null &&
-                                        ` · ${snapshot.mountPath}`}{' '}
-                                    ·{' '}
+                                    {snapshot.mountPath}
                                     <span className="type-mono-small">
                                         {snapshot.shortId}
                                     </span>
-                                </span>
+                                </MetaLine>
                             </span>
                             <span className="type-small text-muted-foreground tabular-nums">
                                 {formatBytes(snapshot.sizeBytes)}

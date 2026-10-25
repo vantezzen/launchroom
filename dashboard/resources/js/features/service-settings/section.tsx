@@ -5,6 +5,7 @@ import {
     FloatingBar,
     FloatingBarButton,
 } from '@/components/patterns/unsaved-bar';
+import { SettingsPage as SharedSettingsPage } from '@/components/settings/settings-page';
 import { useReportDirty } from './dirty';
 
 type PageState = { id: string; active: boolean };
@@ -29,8 +30,8 @@ export function useSettingsPage(): PageState {
 }
 
 /**
- * One page of the Settings tab: title, one sentence, then its cards 32 px
- * apart (design-system §13.9 "Service settings").
+ * One page of the Settings tab: the shared `SettingsPage` (title, one
+ * sentence, then its cards 32 px apart) under the panel's headings.
  */
 export function SettingsPage({
     title,
@@ -46,32 +47,15 @@ export function SettingsPage({
     const { id } = useSettingsPage();
 
     return (
-        <section
-            aria-labelledby={`settings-${id}-title`}
-            className="flex flex-col gap-8"
+        <SharedSettingsPage
+            level={3}
+            labelId={`settings-${id}-title`}
+            title={title}
+            description={description}
+            actions={actions}
         >
-            <header className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
-                <div className="flex min-w-0 flex-col gap-1">
-                    <h3
-                        id={`settings-${id}-title`}
-                        className="text-[20px] leading-7 font-semibold tracking-[-0.01em]"
-                    >
-                        {title}
-                    </h3>
-                    {description && (
-                        <p className="max-w-[62ch] type-body text-muted-foreground">
-                            {description}
-                        </p>
-                    )}
-                </div>
-                {actions && (
-                    <div className="flex shrink-0 items-center gap-2">
-                        {actions}
-                    </div>
-                )}
-            </header>
             {children}
-        </section>
+        </SharedSettingsPage>
     );
 }
 

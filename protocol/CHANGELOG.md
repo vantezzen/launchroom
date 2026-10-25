@@ -4,6 +4,50 @@ All changes to launchroomd ↔ dashboard contract. Format: one section per proto
 
 ## v1 (unreleased)
 
+### SFTP into a volume (2026-10-25, D67)
+
+Additive. New daemon feature `remoteAccessVolume`, announced when the local policy allows the kind (`LR_REMOTE_ACCESS` now also takes a list such as `ssh,volume`).
+
+- `AccessSpec.kind` gained `volume`. A volume access takes the SSH user (`lr-…`), `authorizedKeys` or a sealed password like `ssh`, `allowWrites` (mount the volume writable), and two new fields that only it may carry: `volume` (the `vol_` id; the workload must mount it in the verified NodeState) and `image` (the SFTP helper, digest-pinned, a digest launchroomd pins for the new system component `files`: busybox 1.37.0-glibc).
+- `AccessStatus.owner?: FileOwner {uid, gid}`: who the helper reads and writes as (the volume's top folder).
+- Fixtures: `task-lease.access.json` (a third task, kind `volume`), `task-heartbeat.access.json` (`owner`). Design: docs/03 §12.4.
+
+### Web firewall body limit, process parents (2026-10-25)
+
+Additive, within the unreleased daemon features `waf` and `containerInspection`.
+
+- `RouteWaf.inspectBodyKiB?`: 32 (default when omitted), 128 or 1024. How much of a request body the firewall inspects; the rest passes uninspected, never refused (docs/22 §6.3, §6.7). Fixture `node-state.waf.json` (the Log only route: 128).
+- `ContainerProcesses.parentsUnknown?`: true when the host's `ps` printed no parent PIDs (busybox). Every `ppid` is then 0 and only the lowest PID is flagged `entry`.
+
+### Config files (2026-10-25)
+
+Additive. Daemon feature `configFiles`.
+
+- `WorkloadSpec.files?: [ConfigFile]` (≤ 32): `{path, content}`. `path` is an absolute, clean container path (mount-path grammar, ≤ 255 bytes), not under `/proc`, `/sys`, `/dev`, not `/etc/hosts`, `/etc/hostname`, `/etc/resolv.conf`, unique, never a parent directory of another file and never inside a mount target; `content` is UTF-8 text without NUL, ≤ 64 KiB each and ≤ 256 KiB together. launchroomd writes them into the created container before it starts (regular files, mode 0444, owner 0:0); the spec hash covers them. Fixture `node-state.config-files.json`.
+
+### Security center (2026-10-25, D63)
+
+Additive. Three daemon features, each gating its part: `inventory`, `containerInspection`, `waf`. Defined with the contract; launchroomd announces them once it implements them (`waf` only when its pinned Caddy has the firewall module). Design: docs/22, protocol: docs/03 §13.
+
+- New task type `inventory` with `InventorySpec {image (digest-pinned, apps/ or mirror/), platform, service? (required for and only with apps/ images, must be that repository's service), source? {repo, cloneToken? | sshKey? (sealed TaskToken as for builds), rootDir?}}`; result `TaskCompletion.inventory: InventoryResult {image, platform, generator, distro? {id, versionId?}, sourceAnalyzed, lockfiles? [{path, kind (npm|pnpm|yarn|bun|composer|poetry|uv|pipfile|requirements|pyproject|gemfile|gomod), packages}] (≤ 32), components [InventoryComponent {ecosystem (npm|pypi|go|maven|nuget|cargo|rubygems|packagist|hex|pub|deb|apk|rpm|binary), name, version, purl?, kind (os|library|runtime), scope (runtime|dev|client|unknown), presence (installed|bundled), direct?}] (≤ 20,000, unique by ecosystem, name, version), dropped?, truncated?, notes? (≤ 16), durationMs}`. Registry tokens: pull `apps/<service>` for a held inventory task of that service.
+- New task type `inspect_container` with `InspectContainerSpec {workload, maskEnv?}`; result `TaskCompletion.containerInspection: ContainerInspectionResult {workload, containerId, imageId, imageMatches, startedAt, restartCount, user?, workingDir?, changes {total, entries [{path (InspectedPath), kind (added|modified|deleted), type? (file|dir|symlink|other), size?, executable?, modifiedAt?, flags? (executable|system_path|sensitive_file|app_code|temp_dir|hidden)}] (≤ 2000, ≤ 256 with stat fields), collapsed? [{prefix, count}] (≤ 64), truncated?}, processes {total, entries [{pid, ppid, user, command (≤ 512, masked), flags? (entry|shell|network_tool|miner|temp_executable|inline_code|added_binary)}] (≤ 256), truncated?}, inspectedAt}`.
+- `RouteSpec.waf?: RouteWaf {mode (block|log), paranoia? (1|2), exclusions? [{rule (911000–944999), path? (prefix), target?}] (≤ 50, unique)}` (only to edges with `waf`).
+- `IngressStatus.waf?: WafStatus {state (on|off|error|unsupported), engine?, ruleSet?, routes, droppedRecords?, message?}`.
+- `ReportMetrics.waf?: [WafSample]` (≤ 1024): `{route, at (multiple of 10 min), blocked?, detected? (≥ 1 together), categories [{category, blocked?, detected?}] (1–13), rules? [{rule, blocked?, detected?}] (≤ 20), paths? [{path, blocked?, detected?}] (≤ 10), otherPaths?, events? [WafEvent {at, action (blocked|detected), method, path, rules (1–8), categories, targets? (≤ 8), clientNetwork (canonical CIDR: IPv4 /24 or IPv6 /48; the full client address is never sent), score?, reference}] (≤ 20)}`.
+- `BuildInputs` validation moved into the shared `validateRepoAccess` (same rules and messages), now also used for `InventorySpec.source`.
+
+### Temporary remote access (2026-10-25, D61)
+
+Additive. New task type `access` with `AccessSpec {access (acc_ULID), kind ssh|database, workload, engine? (postgres|redis|valkey), user (lr-[a-z0-9]{10} or lr_tmp_[a-z0-9]{12}), authorizedKeys? (≤ 4 OpenSSH keys, RSA ≥ 3072 bit), password? (sealed TaskToken, new purpose `access`), allowFrom (1–16 canonical prefixes; IPv4 ≥ /8, IPv6 ≥ /32; no unspecified, link-local or multicast), hosts? (≤ 4 IPs or hostnames), allowWrites?, idleTimeout (5m–1h)}`; ssh takes keys or a password, never both. `TaskHeartbeat.access: AccessStatus {port, hostKey?, certificate?, privateAddresses?, behindNat?, activeConnections, lastActivityAt?, events? (≤ 50: connected / auth_failed / locked), dropped?}` and `TaskCompletion.access: AccessResult {endReason ended|idle|deadline|locked|refused|error, startedAt?, connections, authFailures, bytesIn, bytesOut, events?}`. New daemon features `remoteAccessSsh` and `remoteAccessDatabase`, announced only when the local policy allows the kind on a rootful Linux host. Fixtures: `task-lease.access.json`, `task-heartbeat.access.json`, `task-completion.access.json`. Design: docs/03 §12.
+
+### Request analytics (2026-10-25)
+
+Additive. New daemon feature `requestAnalytics`: the edge sends `ReportMetrics.analytics: [RequestAnalyticsSample] (≤ 1024)`, one per (route, 10-minute window): `{route, at (multiple of 10 min, UTC), requests ≥ 1, paths?: [PathCount {path, requests ≥ 1, status4xx?, status5xx?}] (≤ 50, unique), otherPaths?: PathTotals {requests, status4xx?, status5xx?}, referrers?: [ReferrerCount {host, requests ≥ 1}] (≤ 20, unique), otherReferrers?, browsers?, bots?, otherAgents?}`. Paths plus `otherPaths` add up to `requests`; referrer and agent counts don't exceed it. New scalar `RequestPath` (`/` + printable ASCII without `?` and `#`, ≤ 128 bytes): a normalised path with ids as `:id`. Older dashboards ignore the field; the dashboard reads it from any server and uses the feature only to explain missing paths. The edge Caddy now keeps the request URI in its access line, without the query string, plus `lr_referer` (host only) and `lr_agent` (one token) added by `log_append` and reduced by filter regexps inside Caddy. Fixture: `report.analytics.json`. Design: docs/15 §5.
+
+### Builds capability on small hosts (2026-10-22, D59)
+
+Additive, no daemon feature. The `builds` capability is `degraded` on a host under 4 GB of memory without swap, with a message that names the fix (the installers' swap step or the commands). Otherwise a `full` row may carry the applied build limits as its message. Design: docs/04 §5.2.
+
 ### Build CPU usage (2026-10-22)
 
 Additive, no daemon feature. `ReportMetrics.host[].buildCpuCores` is the managed BuildKit container's average CPU in cores (optional, 0–4096), sampled and aggregated with the existing host metrics. It includes build processes in that container and is not attributed to a workload. Older servers omit it and the dashboard leaves the Builds row out. Design: docs/15 §2.4.

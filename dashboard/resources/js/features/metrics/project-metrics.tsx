@@ -10,6 +10,7 @@ import { TimeSeriesChart } from '@/components/charts/time-series-chart';
 import type { TimeSeries } from '@/components/charts/time-series-chart';
 import { Logo } from '@/components/logo';
 import { EmptyState } from '@/components/patterns/empty-state';
+import { MetaLine } from '@/components/patterns/meta-line';
 import { PageHeader } from '@/components/patterns/page';
 import { Section } from '@/components/patterns/section';
 import {
@@ -435,7 +436,7 @@ export function ProjectMetrics({
         <>
             <PageHeader
                 title="Metrics"
-                description={`${environmentName} · ${RANGE_WORDS[range]} · ${services.length} ${services.length === 1 ? 'service' : 'services'}`}
+                description={`${services.length} ${services.length === 1 ? 'service' : 'services'} in ${environmentName}, ${RANGE_WORDS[range]}`}
                 actions={
                     <TimeRangeSelect<Range>
                         value={range}
@@ -447,7 +448,8 @@ export function ProjectMetrics({
 
             {isError && !data ? (
                 <EmptyState variant="framed">
-                    Metrics could not be loaded. They refresh every minute.
+                    Metrics could not be loaded. The page tries again every
+                    minute.
                 </EmptyState>
             ) : !data ? (
                 <div
@@ -506,7 +508,7 @@ export function ProjectMetrics({
 
                     <Section
                         title={active.label}
-                        description={`All services · ${RANGE_WORDS[range]}`}
+                        description={`All services, ${RANGE_WORDS[range]}`}
                     >
                         <div className="rounded-[14px] border bg-card p-5 shadow-[0_1px_2px_rgb(0_0_0/0.04)] dark:shadow-none">
                             <TimeSeriesChart
@@ -577,7 +579,7 @@ function ServiceRows({
                               cpu !== null ? `CPU ${formatCores(cpu)}` : null,
                               mem !== null ? formatMemory(mem) : null,
                           ];
-                    const line = facts.filter(Boolean).join(' · ');
+                    const hasFacts = facts.some(Boolean);
                     const trend = traffic
                         ? traffic.requestsPerSecond
                         : (u?.cpuCores ?? []);
@@ -606,7 +608,11 @@ function ServiceRows({
                                         {service.name}
                                     </span>
                                     <span className="truncate type-small text-muted-foreground tabular-nums">
-                                        {line || 'No metrics in this range'}
+                                        {hasFacts ? (
+                                            <MetaLine>{facts}</MetaLine>
+                                        ) : (
+                                            'No metrics in this range'
+                                        )}
                                     </span>
                                 </span>
                                 <span className="hidden sm:block">

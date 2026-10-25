@@ -301,7 +301,7 @@ test('destinations on private, loopback or unresolvable addresses are refused un
     expect($event->meta)->toMatchArray(['kind' => 'webhook', 'target' => 'internal.example.com', 'privateNetwork' => true]);
 });
 
-test('only instance owners see and manage destinations, with a recent password', function (): void {
+test('only instance owners see and manage destinations', function (): void {
     Http::fake();
     $team = Team::factory()->create();
     $admin = memberOf($team, TeamRole::Owner);
@@ -311,7 +311,6 @@ test('only instance owners see and manage destinations, with a recent password',
     $this->actingAs($admin)->post(route('audit-sinks.store'), $form)->assertForbidden();
 
     $owner = auditOwner();
-    $this->flushSession();
     $this->actingAs($owner)->post(route('audit-sinks.store'), $form)
         ->assertRedirect()->assertSessionHasNoErrors();
     $sink = AuditSink::query()->sole();

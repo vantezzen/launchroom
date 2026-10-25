@@ -48,6 +48,9 @@ const (
 	// PlanSpec.inspect with TaskCompletion.inspection, and RunOnceSpec.probe
 	// with RunOnceResult.probe (docs/20 §6, D48).
 	FeatureGeneratedDockerfile DaemonFeature = "generatedDockerfile"
+	// FeatureConfigFiles: WorkloadSpec.files (config files written into the
+	// container before it starts).
+	FeatureConfigFiles DaemonFeature = "configFiles"
 )
 
 // FeatureMongoClickHouse announces the mongodb and clickhouse engines in backup,
@@ -70,8 +73,35 @@ const FeatureDataTransfer DaemonFeature = "dataTransfer"
 // Older daemons only create volumes a workload mounts.
 const FeaturePreparedVolumes DaemonFeature = "preparedVolumes"
 
+// FeatureRequestAnalytics announces Report.metrics.analytics: top paths,
+// referrer hosts and client classes per route and 10 minutes (docs/15 §5).
+// Older edges report request counts only.
+const FeatureRequestAnalytics DaemonFeature = "requestAnalytics"
+
+// FeatureRemoteAccessSSH / FeatureRemoteAccessDatabase announce "access"
+// tasks of that kind and TaskHeartbeat.access (docs/03 §12, D61); announced
+// only when the local policy allows the kind on a host that can publish it.
+const (
+	FeatureRemoteAccessSSH      DaemonFeature = "remoteAccessSsh"
+	FeatureRemoteAccessDatabase DaemonFeature = "remoteAccessDatabase"
+	// FeatureRemoteAccessVolume: "Connect with SFTP" into a volume (D67).
+	FeatureRemoteAccessVolume DaemonFeature = "remoteAccessVolume"
+)
+
+// Security center features (docs/22, docs/03 §13). Defined with the
+// contract; launchroomd adds them to SupportedFeatures once it implements
+// them (the waf feature only when its pinned Caddy has the firewall module).
+const (
+	// FeatureInventory: the "inventory" task.
+	FeatureInventory DaemonFeature = "inventory"
+	// FeatureContainerInspection: the "inspect_container" task.
+	FeatureContainerInspection DaemonFeature = "containerInspection"
+	// FeatureWaf: RouteSpec.waf, IngressStatus.waf and ReportMetrics.waf.
+	FeatureWaf DaemonFeature = "waf"
+)
+
 // SupportedFeatures is what this launchroomd announces in every report.
-var SupportedFeatures = []DaemonFeature{FeatureDNSProviders, FeatureLinkProbe, FeatureShipLogs, FeaturePointInTime, FeatureVerifyRestore, FeatureStopSpec, FeatureGitProviders, FeatureControlPlaneURL, FeatureCronSchedule, FeatureGeneratedDockerfile, FeatureClientCertificates, FeatureMongoClickHouse, FeaturePreparedVolumes}
+var SupportedFeatures = []DaemonFeature{FeatureDNSProviders, FeatureLinkProbe, FeatureShipLogs, FeaturePointInTime, FeatureVerifyRestore, FeatureStopSpec, FeatureGitProviders, FeatureControlPlaneURL, FeatureCronSchedule, FeatureGeneratedDockerfile, FeatureClientCertificates, FeatureMongoClickHouse, FeaturePreparedVolumes, FeatureRequestAnalytics, FeatureContainerInspection, FeatureInventory, FeatureConfigFiles}
 
 // maxFeatures bounds Report.host.features.
 const maxFeatures = 64

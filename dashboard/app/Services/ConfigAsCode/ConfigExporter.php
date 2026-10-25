@@ -205,7 +205,8 @@ final readonly class ConfigExporter
         $current = Arrays::assoc($service->deploy->toArray());
         $default = Arrays::assoc($defaults->toArray());
         $health = $current['healthcheck'] ?? [];
-        unset($current['healthcheck'], $default['healthcheck']);
+        // Config files (D65) come from templates and Compose imports; the file keeps them as they are.
+        unset($current['healthcheck'], $default['healthcheck'], $current['files'], $default['files']);
 
         $out = $this->changed($current, $default);
         $healthcheck = $this->changed(Arrays::assoc($health), Arrays::assoc($defaults->healthcheck->toArray()));

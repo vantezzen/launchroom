@@ -6,6 +6,7 @@ import { TimeRangeSelect } from '@/components/charts/time-range-select';
 import type { TimeRange } from '@/components/charts/time-range-select';
 import { UsageMeter } from '@/components/charts/usage-meter';
 import { Logo } from '@/components/logo';
+import { MetaLine } from '@/components/patterns/meta-line';
 import { Section } from '@/components/patterns/section';
 import { Sparkline } from '@/components/charts/sparkline';
 import { formatMb } from '@/features/servers/format';
@@ -203,6 +204,8 @@ export function WhatRunsHere({
     // null): it stays grey whatever its size.
     const usedBy = (metrics?.usedBy ?? []).filter((item) => item.memMb > 0);
     const total = metrics?.current?.memTotalMb ?? 0;
+    // Build servers: the builder's CPU, beside the services it competes with.
+    const buildCpu = metrics?.current?.buildCpuCores ?? null;
     const reserved =
         placement.schedulableMemoryMb !== null
             ? `${formatMb(placement.allocatedMemoryMb)} of ${formatMb(placement.schedulableMemoryMb)} reserved`
@@ -213,37 +216,11 @@ export function WhatRunsHere({
             title="What runs here"
             description={
                 list.length > 0
-                    ? `${list.length} ${list.length === 1 ? 'service' : 'services'} · ${reserved}`
+                    ? `${list.length} ${list.length === 1 ? 'service' : 'services'}, ${reserved}`
                     : undefined
             }
         >
             <div className="overflow-hidden rounded-xl border bg-card shadow-card">
-                {metrics?.current?.buildCpuCores != null && (
-                    <div className="flex items-center gap-3 border-b px-6 py-4">
-                        <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-recessed">
-                            <Hammer
-                                className="size-4 text-muted-foreground"
-                                aria-hidden="true"
-                            />
-                        </span>
-                        <div className="min-w-0 flex-1">
-                            <p className="type-body font-medium">Builds</p>
-                            <p className="type-small text-muted-foreground">
-                                BuildKit · average CPU over the latest reported
-                                minute
-                            </p>
-                        </div>
-                        <span
-                            className="type-mono-small tabular-nums"
-                            title={`${metrics.current.buildCpuCores.toFixed(2)} CPU cores`}
-                        >
-                            {formatServiceCpu(
-                                metrics.current.buildCpuCores,
-                                cores,
-                            )}
-                        </span>
-                    </div>
-                )}
                 {usedBy.length > 0 && total > 0 && (
                     <div className="border-b px-6 py-5">
                         <UsageMeter
@@ -266,7 +243,7 @@ export function WhatRunsHere({
                 )}
                 {list.length === 0 ? (
                     <p className="px-6 py-8 text-center type-body text-muted-foreground">
-                        {metrics?.current?.buildCpuCores != null
+                        {buildCpu !== null
                             ? 'No app services run here.'
                             : 'Nothing runs here yet.'}
                     </p>
@@ -317,23 +294,16 @@ export function WhatRunsHere({
                                             <span className="flex min-w-0 flex-col">
                                                 <span className="truncate type-body font-medium">
                                                     {row.serviceName}
-                                                    <span className="font-normal text-muted-foreground">
-                                                        {' '}
-                                                        · {
-                                                            row.projectName
-                                                        } ·{' '}
-                                                        {row.environmentName}
-                                                    </span>
                                                 </span>
-                                                <span className="type-small text-muted-foreground">
+                                                <MetaLine className="type-small text-muted-foreground">
+                                                    {`${row.projectName} / ${row.environmentName}`}
                                                     {row.replicas === 1
                                                         ? '1 replica'
                                                         : `${row.replicas} replicas`}
                                                     {row.rollingOut &&
-                                                        ' · rolling out'}
-                                                    {row.draining &&
-                                                        ' · draining'}
-                                                </span>
+                                                        'Rolling out'}
+                                                    {row.draining && 'Draining'}
+                                                </MetaLine>
                                             </span>
                                             <span
                                                 className="hidden text-right type-small tabular-nums sm:block"
@@ -380,6 +350,31 @@ export function WhatRunsHere({
                             })}
                         </ul>
                     </>
+                )}
+                {buildCpu !== null && (
+                    <div className="grid grid-cols-[32px_minmax(0,1fr)_auto] items-center gap-x-4 border-t px-6 py-3.5 sm:grid-cols-[32px_minmax(0,1fr)_56px_120px_72px]">
+                        <span
+                            aria-hidden="true"
+                            className="flex size-8 items-center justify-center rounded-[9px] border bg-card"
+                        >
+                            <Hammer className="size-4 text-muted-foreground" />
+                        </span>
+                        <span className="flex min-w-0 flex-col">
+                            <span className="type-body font-medium">
+                                Builds
+                            </span>
+                            <span className="type-small text-muted-foreground">
+                                CPU over the last minute
+                            </span>
+                        </span>
+                        <span
+                            className="text-right type-small tabular-nums"
+                            title={`${buildCpu.toFixed(2)} cores`}
+                        >
+                            <span className="sm:hidden">CPU </span>
+                            {formatServiceCpu(buildCpu, cores)}
+                        </span>
+                    </div>
                 )}
                 {list.length > visible.length && (
                     <button

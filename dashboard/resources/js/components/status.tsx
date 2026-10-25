@@ -1,5 +1,6 @@
 import { LoaderCircle, TriangleAlert, X } from 'lucide-react';
 import type { ReactNode } from 'react';
+import { MetaDivider } from '@/components/patterns/meta-line';
 import { cn } from '@/lib/utils';
 
 /**
@@ -100,7 +101,7 @@ type StatusProps = {
     state: StatusState;
     /** The status word from §3.3 ("Live", "Deploying", "Unreachable"). */
     label: string;
-    /** Quiet detail after the word ("Building · 41s", "for 8 min"). */
+    /** Quiet detail after the word ("Building, 41s", "for 8 min"). */
     detail?: ReactNode;
     className?: string;
 };
@@ -120,9 +121,12 @@ export function Status({ state, label, detail, className }: StatusProps) {
             <StatusIcon state={state} />
             <span className="truncate">{label}</span>
             {detail && (
-                <span className="truncate text-muted-foreground">
-                    · {detail}
-                </span>
+                <>
+                    <MetaDivider />
+                    <span className="truncate text-muted-foreground">
+                        {detail}
+                    </span>
+                </>
             )}
         </span>
     );
@@ -143,7 +147,12 @@ export function StatusPill({ state, label, detail, className }: StatusProps) {
         >
             <StatusIcon state={state} className="size-3" />
             <span className="truncate">{label}</span>
-            {detail && <span className="truncate font-normal">· {detail}</span>}
+            {detail && (
+                <>
+                    <MetaDivider className="bg-current opacity-30" />
+                    <span className="truncate font-normal">{detail}</span>
+                </>
+            )}
         </span>
     );
 }

@@ -173,7 +173,7 @@ final readonly class ConfigFileValidator
 
         if ($existing !== null && $existing['kind']->value !== $kind) {
             $article = in_array($existing['kind']->value, ['app', 'image'], true) ? 'an' : 'a';
-            $errors[] = $problems->at($service->pointerFor('kind'), "{$slug} is already {$article} {$existing['kind']->value} service; its kind can't change.", 'Use a new name for a new service, or write "kind": "'.$existing['kind']->value.'".');
+            $errors[] = $problems->at($service->pointerFor('kind'), "{$slug} is already {$article} {$existing['kind']->value} service, and its kind can't change.", 'Use a new name for a new service, or write "kind": "'.$existing['kind']->value.'".');
         }
 
         // Existing services already have their source: only new ones need it.
@@ -203,7 +203,7 @@ final readonly class ConfigFileValidator
 
         if ($existing !== null && $kind === 'database' && $existing['engine'] !== null) {
             if ($service->get('engine') !== $existing['engine']) {
-                $errors[] = $problems->at($service->pointerFor('engine'), "{$slug} runs {$existing['engine']}; the engine can't change.", 'Add a new database service for another engine.');
+                $errors[] = $problems->at($service->pointerFor('engine'), "{$slug} runs {$existing['engine']}, and the engine can't change.", 'Add a new database service for another engine.');
             } elseif ($service->get('version') !== $existing['version']) {
                 $errors[] = $problems->at($service->pointerFor('version'), "{$slug} runs version {$existing['version']}.", 'Upgrades happen in the dashboard (they need a backup and a restore). Write "version": "'.$existing['version'].'".');
             }
@@ -371,7 +371,7 @@ final readonly class ConfigFileValidator
             $kind === 'database' && in_array($key, ['deploy', 'domains', 'volumes', 'build', 'connections'], true) => 'Databases are run by their engine driver: launchroom picks the command, port, health check and volume. Connect apps to the database instead.',
             in_array($kind, ['worker', 'cron'], true) && in_array($key, ['build', 'rootDirectory', 'image'], true) => 'Workers and crons run the image of their app ("of"): set the build there.',
             in_array($kind, ['worker', 'cron'], true) && $key === 'domains' => 'Workers and crons don\'t serve traffic.',
-            $kind === 'image' && in_array($key, ['build', 'rootDirectory', 'branch'], true) => 'Image services run a prebuilt image; there is nothing to build.',
+            $kind === 'image' && in_array($key, ['build', 'rootDirectory', 'branch'], true) => 'Image services run a prebuilt image, so there is nothing to build.',
             default => null,
         };
     }

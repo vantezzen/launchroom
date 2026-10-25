@@ -16,6 +16,7 @@ use App\Models\Sessions\DatabaseQuery;
 use App\Models\Sessions\InteractiveSession;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
@@ -71,6 +72,18 @@ final readonly class FinishSession
             $session->transitionTo(InteractiveSessionStatus::Ended);
 
             $this->recordCommands($session, is_array($result['commands'] ?? null) ? $result['commands'] : []);
+
+            if ($session->started_at === null || in_array($reason, [SessionEndReason::Error, SessionEndReason::Refused, SessionEndReason::NeverConnected], true)) {
+                // Why a session never started is otherwise only in the task (docs/03 §11.4).
+                Log::warning('Interactive session ended before it was used.', [
+                    'session' => $session->public_id,
+                    'kind' => $session->kind->value,
+                    'reason' => $reason->value,
+                    'task' => $task->public_id,
+                    'taskStatus' => $task->status->value,
+                    'error' => $task->error === null ? null : mb_substr($task->error, 0, 1000),
+                ]);
+            }
 
             $session->loadMissing('serviceInstance.service', 'server');
             $this->audit->handle(new AuditEntryData(

@@ -32,7 +32,7 @@ beforeEach(function (): void {
     $this->developer = memberOf($this->team, TeamRole::Developer);
     $this->viewer = memberOf($this->team, TeamRole::Viewer);
     $this->url = route('projects.destroy', $this->project);
-    $this->delete = fn (array $data = []) => $this->actingAs($this->developer)->withSession(passwordConfirmed())
+    $this->delete = fn (array $data = []) => $this->actingAs($this->developer)
         ->delete($this->url, ['confirmName' => $this->project->name, ...$data]);
 });
 
@@ -50,12 +50,12 @@ test('the danger zone shows what deleting would remove', function (): void {
 
 test('deleting needs the delete permission and the typed name', function (): void {
     $this->actingAs($this->developer)->delete($this->url, ['confirmName' => 'wrong'])->assertSessionHasErrors('confirmName');
-    $this->actingAs($this->viewer)->withSession(passwordConfirmed())->delete($this->url, ['confirmName' => $this->project->name])->assertForbidden();
+    $this->actingAs($this->viewer)->delete($this->url, ['confirmName' => $this->project->name])->assertForbidden();
     ($this->delete)(['confirmName' => 'shop'])->assertSessionHasErrors('confirmName');
     ($this->delete)(['confirmName' => ''])->assertSessionHasErrors('confirmName');
 
     $outsider = memberOf(Team::factory()->create(), TeamRole::Owner);
-    $this->actingAs($outsider)->withSession(passwordConfirmed())->delete($this->url, ['confirmName' => $this->project->name])->assertNotFound();
+    $this->actingAs($outsider)->delete($this->url, ['confirmName' => $this->project->name])->assertNotFound();
 
     expect(Project::query()->whereKey($this->project->id)->exists())->toBeTrue();
 });
@@ -119,12 +119,12 @@ test('a failed final backup blocks the deletion until an admin deletes without o
 
     $skip = route('deletions.skip', ['deletion' => $request->public_id]);
     $admin = memberOf($this->team, TeamRole::Admin);
-    $this->actingAs($this->developer)->withSession(passwordConfirmed())->post($skip)->assertForbidden();
+    $this->actingAs($this->developer)->post($skip)->assertForbidden();
     $this->flushSession();
     $outsider = memberOf(Team::factory()->create(), TeamRole::Owner);
-    $this->actingAs($outsider)->withSession(passwordConfirmed())->post($skip)->assertNotFound();
+    $this->actingAs($outsider)->post($skip)->assertNotFound();
 
-    $this->actingAs($admin)->withSession(passwordConfirmed())->post($skip)->assertRedirect(route('projects.index'));
+    $this->actingAs($admin)->post($skip)->assertRedirect(route('projects.index'));
 
     expect(Project::query()->whereKey($this->project->id)->exists())->toBeFalse()
         ->and($request->refresh()->status)->toBe(DeletionRequestStatus::Completed)

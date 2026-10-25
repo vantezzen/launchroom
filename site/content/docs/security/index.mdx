@@ -1,0 +1,26 @@
+---
+title: Security overview
+description: What runs in your services, which published vulnerabilities affect it, what the web firewall stops, and how to check a service after an alert.
+---
+
+Select **Security** in the sidebar. The page covers every project of your team and has five parts.
+
+<Screenshot id="security-page" />
+
+| Part | What it shows | Details |
+|---|---|---|
+| Status | How many vulnerabilities need you, which protections are on, packages watched, attacks blocked and how many public services block attacks | |
+| Action needed | Vulnerabilities you should fix now, one card per vulnerability with the fix and each affected service with what its investigation found | [Alert levels](/docs/security/alert-levels) |
+| Web firewall | Blocked requests per hour, the mix of attack kinds, services that only log attacks, the latest blocks and the most targeted services | [Web firewall](/docs/security/web-firewall) |
+| Worth knowing | Everything else: development dependencies, operating system packages, runtimes past their end of life | [Alert levels](/docs/security/alert-levels#worth-knowing) |
+| Inventory | Search for a package or runtime across all services, and the runtimes, engines and base images in use | [Inventory](/docs/security/inventory) |
+
+**Day**, **Week** and **Month** at the top right set the range of the firewall section. **How it works** sums up the data sources and rules. Owners and admins can select **Check now** to ask for new advisory data right away, at most once every 10 minutes.
+
+The sidebar entry shows the number of findings that need action. When something needs action, launchroom also sends a [notification](/docs/observability/alerts).
+
+## Next steps
+
+- [Vulnerability checks](/docs/security/vulnerability-checks): where the data comes from
+- [Responding to a vulnerability](/docs/security/responding-to-a-vulnerability): from the notification to a fixed deployment
+- [Privacy and data](/docs/security/privacy-and-data): what launchroom stores and what leaves your instance

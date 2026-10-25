@@ -23,6 +23,7 @@ func EnvHashKey(secretMaterial []byte) []byte {
 // SpecHash returns a digest of everything a container is created from. Env
 // values are replaced by a keyed HMAC so the hash changes when a value
 // changes but does not reveal it. The spec-hash label itself is excluded.
+// Config files count by path and content digest.
 func SpecHash(cc *docker.ContainerCreate, envKey []byte) (string, error) {
 	cfg := *cc.Config
 	cfg.Labels = make(map[string]string, len(cc.Config.Labels))
@@ -38,12 +39,21 @@ func SpecHash(cc *docker.ContainerCreate, envKey []byte) (string, error) {
 		m.Write([]byte(value))
 		cfg.Env[i] = name + "=" + hex.EncodeToString(m.Sum(nil))
 	}
+	// Config files by path and content digest (docs/03 §8): a changed file
+	// recreates the container. Omitted when there are none, so hashes of
+	// containers without files stay as they were.
+	var files []string
+	for _, f := range cc.Files {
+		sum := sha256.Sum256([]byte(f.Content))
+		files = append(files, string(f.Path)+"="+hex.EncodeToString(sum[:]))
+	}
 	data, err := json.Marshal(struct {
 		Name       string
 		Config     any
 		HostConfig any
 		Networking any
-	}{cc.Name, cfg, cc.HostConfig, cc.Networking})
+		Files      []string `json:",omitempty"`
+	}{cc.Name, cfg, cc.HostConfig, cc.Networking, files})
 	if err != nil {
 		return "", fmt.Errorf("reconcile: hash container spec: %w", err)
 	}

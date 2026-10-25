@@ -1,7 +1,7 @@
 schema: launchroom.template/v1
 id: umami
 name: Umami
-tagline: Simple, privacy-friendly website analytics.
+tagline: Privacy-friendly website analytics.
 description: >-
     See visitors, pages and referrers without cookies or tracking banners. Sign
     in with admin / umami the first time, then change the password.

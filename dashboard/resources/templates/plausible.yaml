@@ -3,7 +3,7 @@ id: plausible
 name: Plausible
 tagline: Lightweight, cookie-free web analytics.
 description: >-
-    Simple traffic dashboards without personal data. Events are stored in a
+    Traffic dashboards without personal data. Events are stored in a
     managed ClickHouse, accounts in a managed Postgres, both backed up.
     Registration is open for the first account, then invite-only.
 category: analytics

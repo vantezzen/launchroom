@@ -138,6 +138,27 @@ A service with a volume:
 
 Volumes start empty and are kept when a service is removed from an environment.
 
+The `⋯` menu on a volume card has two staged actions. Both apply with the next deploy, and the running containers keep
+the current setup until then:
+
+- **Change mount path**: the files stay in the volume and appear at the new path.
+- **Remove volume**: type the path to confirm. After the deploy the service runs without it. The volume stays on its
+  server for the retention period (7 days by default), then it is deleted. If it was backed up, an owner or admin
+  allows the deletion on the server page. Snapshots stay in your backup destination. A volume that was never deployed
+  is removed right away.
+
+Both are refused while a backup, restore, import, export or server move works with the volume. A database's volume is
+managed by launchroom and can't be changed here.
+
+## Change the image
+
+An image service shows **Change image** under **Settings → Source**. Enter a tag or an `@sha256:` digest from Docker Hub
+or GitHub Container Registry. The image is shared by every environment of the project, so each environment shows it as
+a staged change and runs it after its next deploy. Discard puts the old image back.
+
+An image service can't switch to building from a repository. Add the repository as a new service instead, then move
+the domains and variables over.
+
 ## Staged changes
 
 Most edits wait for a deploy. New services, settings, variables, connections and scaling collect as **staged

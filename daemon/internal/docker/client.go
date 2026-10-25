@@ -120,6 +120,13 @@ type Container struct {
 	Volumes []string
 	// StopTimeout is the container's own stop timeout (WorkloadSpec.stop), 0 if unset.
 	StopTimeout time.Duration
+	// ImageID is the id of the image it runs ("sha256:…"; inspect only).
+	ImageID string
+	// User and WorkingDir are the container's configured user and working
+	// directory (inspect only; empty: the image's defaults).
+	User, WorkingDir string
+	// Init: Docker runs its own init as PID 1 (HostConfig.Init; inspect only).
+	Init bool
 }
 
 // Network is a managed Docker network.

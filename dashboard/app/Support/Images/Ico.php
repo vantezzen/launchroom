@@ -85,7 +85,7 @@ final class Ico
         $bits = $info['bits'];
 
         if ($width < 1 || $width > 256 || $height < 1 || $height > 256 || $info['compression'] !== 0 || ! in_array($bits, [1, 4, 8, 24, 32], true)) {
-            throw InvalidImage::because('The ICO image uses features we do not support.');
+            throw InvalidImage::because('The ICO image uses features launchroom doesn’t support.');
         }
 
         $offset = $headerSize;

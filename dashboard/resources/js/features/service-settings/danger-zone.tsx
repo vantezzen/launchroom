@@ -38,7 +38,7 @@ export function DangerZone({ context }: { context: SettingsContext }) {
     return (
         <SettingsPage
             title="Danger zone"
-            description="Each of these is staged: nothing changes until you deploy."
+            description="These changes are staged and apply with the next deploy."
         >
             <SettingsCard>
                 {context.canUpdate && (
@@ -63,7 +63,7 @@ export function DangerZone({ context }: { context: SettingsContext }) {
                             }
                             consequence={
                                 settings.enabled
-                                    ? 'It stops with the next deploy and keeps everything.'
+                                    ? 'It stops with the next deploy. Its configuration, variables and data are kept.'
                                     : 'It starts with the next deploy.'
                             }
                             confirmLabel={

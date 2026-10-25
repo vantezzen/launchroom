@@ -1,0 +1,48 @@
+---
+title: Inventory
+description: Find which services run a package or runtime, and which runtimes, databases and base images are in use.
+---
+
+The inventory answers "do we run X version Y?" for every live service of your team.
+
+## Searching
+
+Type into **Search packages and runtimes** at the bottom of the Security page:
+
+| You type | It finds |
+|---|---|
+| `lodash` | Packages whose name contains the word |
+| `node 20` | A word and a version prefix |
+| `openssl 3.0.15` | One exact version |
+| `ecosystem:npm` | Only npm packages (also `pypi`, `go`, `deb`, `apk`, …) |
+| `service:api` | Only services whose name contains `api` |
+| `scope:runtime` | Only production dependencies (also `dev`, `client`, `unknown`) |
+
+Results are grouped by package, then version, with the services that run each version and their open findings. The address bar keeps the search (`/security/inventory?q=…`), so you can share it.
+
+From a terminal:
+
+```bash
+launchroom security inventory lodash 4.17
+```
+
+## Scope
+
+Each package has a scope:
+
+| Scope | Meaning |
+|---|---|
+| Runtime | Can run while the service handles requests |
+| Development | Only a development or test dependency |
+| Browser | Only in code sent to the browser |
+| Unknown | launchroom found no evidence either way |
+
+Only evidence sets a scope. A package is marked as running in production when the lockfile says so, or for Next.js apps when the server output references it.
+
+## Images launchroom didn't build
+
+Image services and databases are read the same way, but without lockfiles: their language packages have an unknown scope. Their maintainers ship fixes as new image versions, so only known exploited vulnerabilities in them need action.
+
+## Runtimes, engines and base images
+
+Without a search, the inventory shows the runtimes (Node.js, Python, PHP and others), database engines and base images in use, each with the number of services, how far it is through its supported life and whether a newer patch is available.

@@ -50,7 +50,7 @@ final class RecoveryController extends Controller
             ->orderByDesc('id')->first() : null;
 
         if (! $previous instanceof Server || ! $current instanceof Server) {
-            return back()->withErrors(['replace' => 'This server’s launchroomd hasn’t enrolled yet, or there is no previous control-plane server to replace.']);
+            return back()->withErrors(['replace' => 'This server hasn’t enrolled yet, or there is no previous control-plane server to replace.']);
         }
 
         $restore = [];

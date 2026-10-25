@@ -141,8 +141,8 @@ export function ServiceMetrics({
             <div className="flex items-center justify-between gap-3">
                 <span className="type-small text-muted-foreground">
                     {usage && usage.replicas.length > 1
-                        ? `${usage.replicas.length} replicas · ${RANGE_WORDS[range]}`
-                        : `All replicas · ${RANGE_WORDS[range]}`}
+                        ? `${usage.replicas.length} replicas, ${RANGE_WORDS[range]}`
+                        : `All replicas, ${RANGE_WORDS[range]}`}
                 </span>
                 <TimeRangeSelect<Range>
                     value={range}

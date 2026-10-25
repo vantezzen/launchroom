@@ -71,7 +71,7 @@ final class ProjectIconController extends Controller
 
         $resetIcon->handle($project, $mode, $this->auditActor($request, $user));
         Inertia::flash('toast', ['type' => 'success', 'message' => $mode === ProjectIconMode::Automatic
-            ? 'Icon reset. We use your app’s favicon when we find one.'
+            ? 'Icon reset. launchroom uses your app’s favicon if it finds one.'
             : 'Icon removed.']);
 
         return back();

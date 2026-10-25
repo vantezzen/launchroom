@@ -13,9 +13,12 @@ use App\Data\Blueprints\ProjectBlueprint;
 use App\Data\Services\HealthcheckSettings;
 use App\Enums\ServiceKind;
 use App\Enums\WorkloadCapability;
+use App\Support\Connections\ProvidedVariables;
 use App\Support\Hostname;
 use App\Support\Images\ImageReference;
+use App\Support\Services\ConfigFileRules;
 use App\Support\Slug;
+use App\Support\Variables\GeneratedValues;
 use App\Support\Variables\VariableReferences;
 
 /**
@@ -174,6 +177,32 @@ final class BlueprintValidator
             }
         }
 
+        if ($service->files !== []) {
+            if (! $web && $service->kind !== ServiceKind::Worker) {
+                $errors[] = "{$key}: managed databases have no config files.";
+            }
+
+            foreach (ConfigFileRules::errors($service->files, $service->volumes) as $problem) {
+                $errors[] = "{$key}: {$problem}";
+            }
+        }
+
+        if ($service->provides !== []) {
+            $provided = [];
+
+            foreach ($service->provides as $variable) {
+                $provided[$variable->key] = $variable->value;
+            }
+
+            if (! $web || count($provided) !== count($service->provides)) {
+                $errors[] = "{$key}: only app and image services provide variables to connections, each key once.";
+            }
+
+            foreach (ProvidedVariables::errors($provided) as $problem) {
+                $errors[] = "{$key}: {$problem}";
+            }
+        }
+
         if ($service->healthcheck instanceof HealthcheckSettings && ! $web) {
             $errors[] = "{$key}: only app and image services have a health check.";
         }
@@ -203,6 +232,19 @@ final class BlueprintValidator
                 if ($reference->scope === 'shared' ? ! isset($shared[$reference->key]) : ($reference->scope !== null && ! isset($byKey[$reference->scope]))) {
                     $errors[] = "{$key}: {$variable->key} references {$reference->name()}, which the blueprint doesn’t define.";
                 }
+            }
+        }
+
+        // jwt() is signed with a secret variable of the same service (D65).
+        foreach ($service->variables as $variable) {
+            $signingKey = GeneratedValues::signingKey(GeneratedValues::sole($variable->value));
+
+            if ($signingKey === null && preg_match('/\$\{\{\s*jwt\(/', $variable->value) === 1) {
+                $errors[] = "{$key}: {$variable->key} must be exactly one jwt() expression.";
+            }
+
+            if ($signingKey !== null && ! array_any($service->variables, static fn (BlueprintVariable $other): bool => $other->key === $signingKey && $other->secret && $other !== $variable)) {
+                $errors[] = "{$key}: {$variable->key} is signed with {$signingKey}, which must be a secret variable of the same service.";
             }
         }
 

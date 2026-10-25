@@ -1,11 +1,11 @@
 import { Head, Link, router } from '@inertiajs/react';
-import { Check, Globe, Zap } from 'lucide-react';
+import { Check } from 'lucide-react';
 import type { FormEvent, ReactNode } from 'react';
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import InputError from '@/components/input-error';
 import { Logo } from '@/components/logo';
-import { ChoiceTiles } from '@/components/patterns/choice-tiles';
 import { LiveWait } from '@/components/patterns/live-wait';
+import { MetaLine } from '@/components/patterns/meta-line';
 import { Page, PageHeader } from '@/components/patterns/page';
 import { TopBarActions } from '@/components/patterns/top-bar';
 import { Status } from '@/components/status';
@@ -13,8 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
-import { DnsCheckResult } from '@/features/domains/dns-check-result';
-import { PlatformDnsRecords } from '@/features/domains/platform-dns-records';
+import { AppsDomainPicker } from '@/features/domains/apps-domain-setup';
 import { GitHubSetupSteps } from '@/features/git/github-setup-steps';
 import { ManifestRedirect } from '@/features/git/manifest-redirect';
 import { WebhookReachabilityNote } from '@/features/git/webhook-reachability-note';
@@ -25,7 +24,6 @@ import {
 import { ProgressRing, StepCard } from '@/features/onboarding/step-card';
 import type { GuidedStepStatus } from '@/features/onboarding/step-card';
 import { TwoFactorRecommendation } from '@/features/onboarding/two-factor-recommendation';
-import { requestJson, RequestFailed } from '@/features/projects/http';
 import { SmallServerHint } from '@/features/servers/small-server-hint';
 import { cn } from '@/lib/utils';
 import { settings as backupSettings } from '@/routes/backups';
@@ -33,19 +31,12 @@ import { edit as gitSettings } from '@/routes/git';
 import { store as startManifest } from '@/routes/git/github/manifest';
 import onboardingRoutes from '@/routes/onboarding';
 import {
-    check as checkDomain,
-    confirm as confirmDomain,
-} from '@/routes/onboarding/domain';
-import {
     importMethod as importProject,
     index as projects,
 } from '@/routes/projects';
 
 type Onboarding = App.Data.Instance.OnboardingData;
 type Step = App.Data.Instance.OnboardingStepData;
-type DnsCheck = App.Data.Domains.DnsCheckData;
-
-const DNS_POLL_MS = 10_000;
 
 function update(data: Record<string, string | boolean>) {
     router.patch(onboardingRoutes.update().url, data, {
@@ -110,7 +101,7 @@ function serverView(data: Onboarding, step: Step): StepView {
     if (step.status === 'done' && server) {
         return {
             title: 'Your server is connected',
-            line: [server.name, ...serverFacts(server)].join(' · '),
+            line: <MetaLine>{[server.name, ...serverFacts(server)]}</MetaLine>,
             aside: <ServerDevice server={server} size={72} />,
             body: (
                 <div className="flex flex-col items-center gap-4 rounded-xl bg-recessed px-6 py-6 text-center sm:flex-row sm:text-left">
@@ -131,7 +122,7 @@ function serverView(data: Onboarding, step: Step): StepView {
 
     return {
         title: 'Connect this server',
-        line: 'The installer connects it by itself.',
+        line: 'The installer connects it to this dashboard.',
         body: (
             <LiveWait
                 media={<ServerDevice server={server} size={160} />}
@@ -140,7 +131,7 @@ function serverView(data: Onboarding, step: Step): StepView {
                         ? `Waiting for ${server.name} to come online`
                         : 'Waiting for this server'
                 }
-                hint="Usually under a minute after the install finishes. This page updates by itself."
+                hint="Usually under a minute after the install finishes. This page updates automatically."
                 fallback={
                     <span className="type-small text-muted-foreground">
                         Still waiting? Run{' '}
@@ -236,9 +227,18 @@ function githubView(
     if (step.status === 'done') {
         return {
             title: 'GitHub is connected',
-            line: data.githubAccount
-                ? `${data.githubAccount} · ${plural(data.githubRepositories, 'repository', 'repositories')}`
-                : (data.githubAppName ?? undefined),
+            line: data.githubAccount ? (
+                <MetaLine>
+                    {data.githubAccount}
+                    {plural(
+                        data.githubRepositories,
+                        'repository',
+                        'repositories',
+                    )}
+                </MetaLine>
+            ) : (
+                (data.githubAppName ?? undefined)
+            ),
             aside: <Logo kind="github" size={32} decorative />,
             body: (
                 <div className="flex flex-wrap gap-2">
@@ -266,7 +266,7 @@ function githubView(
                 ? 'Skipped'
                 : installOnly
                   ? 'Step 2 of 2: install the app and pick the repositories to deploy.'
-                  : 'Two steps: create the app, then install it. Pushes deploy by themselves.',
+                  : 'Create the GitHub App, then install it. After that, every push deploys.',
         aside: <Logo kind="github" size={32} decorative />,
         body: (
             <>
@@ -302,300 +302,29 @@ function githubView(
     };
 }
 
-function DnsRecord({ data, domain }: { data: Onboarding; domain: string }) {
-    const addresses =
-        data.edgeAddresses.length > 0
-            ? data.edgeAddresses
-            : data.serverAddress
-              ? [data.serverAddress]
-              : [];
-    return <PlatformDnsRecords domain={domain} addresses={addresses} />;
-}
-
-/**
- * Polls the wildcard check every 10 s while it isn't green (flows §1:
- * "DNS turns green by itself"); `run` is "Check now".
- */
-function useDnsWatch(domain: string | null) {
-    const [result, setResult] = useState<DnsCheck | null>(null);
-    const [error, setError] = useState<string | null>(null);
-    const [checking, setChecking] = useState(false);
-
-    const run = useCallback(async () => {
-        if (domain === null) {
-            return;
-        }
-
-        setChecking(true);
-
-        try {
-            setResult(
-                await requestJson<DnsCheck>('post', checkDomain().url, {
-                    domain,
-                }),
-            );
-            setError(null);
-        } catch (failure) {
-            setError(
-                failure instanceof RequestFailed
-                    ? failure.message
-                    : 'The DNS check failed.',
-            );
-        } finally {
-            setChecking(false);
-        }
-    }, [domain]);
-
-    useEffect(() => {
-        if (domain === null) {
-            return;
-        }
-
-        void run();
-    }, [domain, run]);
-
-    useEffect(() => {
-        if (domain === null || result?.status === 'ok') {
-            return;
-        }
-
-        const timer = window.setInterval(() => {
-            if (document.visibilityState === 'visible') {
-                void run();
-            }
-        }, DNS_POLL_MS);
-
-        return () => window.clearInterval(timer);
-    }, [domain, result?.status, run]);
-
-    return { result, error, checking, run };
-}
-
-/**
- * The address step after saving (docs/08 §3.1): the live check, "Check now",
- * and Continue once DNS reaches the server, or Continue anyway.
- */
-function DnsVerify({ domain, step }: { domain: string; step: Step }) {
-    const { result, error, checking, run } = useDnsWatch(domain);
-    const [confirming, setConfirming] = useState(false);
-    const [confirmError, setConfirmError] = useState<string | null>(null);
-    const verified = result?.status === 'ok';
-
-    const confirm = (anyway: boolean) => {
-        router.post(
-            confirmDomain().url,
-            { anyway },
-            {
-                preserveScroll: true,
-                onStart: () => setConfirming(true),
-                onFinish: () => setConfirming(false),
-                onError: (errors) =>
-                    setConfirmError(errors.appsDomain ?? 'Saving failed.'),
-                onSuccess: () => setConfirmError(null),
-            },
-        );
-    };
-
-    return (
-        <div className="flex flex-col gap-4">
-            <div aria-live="polite">
-                {error ? (
-                    <InputError message={error} />
-                ) : result === null || result.status === 'missing' ? (
-                    <Status
-                        state="progress"
-                        label="Waiting for DNS"
-                        detail="checking every 10 seconds, usually done in a few minutes"
-                    />
-                ) : (
-                    <DnsCheckResult result={result} compact wildcard />
-                )}
-            </div>
-            {step.status !== 'done' && (
-                <div className="flex flex-col gap-2">
-                    <div className="flex flex-wrap items-center gap-2">
-                        {verified ? (
-                            <Button
-                                onClick={() => confirm(false)}
-                                disabled={confirming}
-                            >
-                                {confirming && <Spinner />}
-                                Continue
-                            </Button>
-                        ) : (
-                            <Button
-                                variant="outline"
-                                onClick={() => void run()}
-                                disabled={checking}
-                            >
-                                {checking && <Spinner />}
-                                Check now
-                            </Button>
-                        )}
-                        {!verified && (
-                            <Button
-                                variant="ghost"
-                                onClick={() => confirm(true)}
-                                disabled={confirming}
-                            >
-                                Continue anyway
-                            </Button>
-                        )}
-                    </div>
-                    {!verified && (
-                        <p className="max-w-[65ch] type-small text-muted-foreground">
-                            Continuing anyway: new apps get addresses under{' '}
-                            <span className="type-mono-small">{domain}</span>{' '}
-                            right away, and they open once DNS reaches your
-                            server.
-                        </p>
-                    )}
-                    <InputError message={confirmError ?? undefined} />
-                </div>
-            )}
-        </div>
-    );
-}
-
-function DomainForm({ data }: { data: Onboarding }) {
-    const [domain, setDomain] = useState(data.appsDomain ?? '');
-    const [saving, setSaving] = useState(false);
-    const [error, setError] = useState<string | null>(null);
-    const normalized = domain.trim().replace(/^\*\./, '').toLowerCase();
-
-    const save = (event: FormEvent) => {
-        event.preventDefault();
-        router.put(
-            onboardingRoutes.domain().url,
-            { appsDomain: normalized === '' ? null : normalized },
-            {
-                preserveScroll: true,
-                preserveState: true,
-                onStart: () => setSaving(true),
-                onError: (errors) =>
-                    setError(errors.appsDomain ?? 'Saving failed.'),
-                onSuccess: () => setError(null),
-                onFinish: () => setSaving(false),
-            },
-        );
-    };
-
-    return (
-        <form onSubmit={save} className="flex flex-col gap-2">
-            <Label htmlFor="apps-domain">Domain for your apps</Label>
-            <div className="flex flex-wrap gap-2">
-                <Input
-                    id="apps-domain"
-                    value={domain}
-                    onChange={(event) => setDomain(event.target.value)}
-                    placeholder="apps.example.com"
-                    autoComplete="off"
-                    spellCheck={false}
-                    className="min-w-0 flex-1 basis-56 type-mono"
-                />
-                <Button
-                    type="submit"
-                    variant={data.appsDomain ? 'outline' : 'default'}
-                    disabled={
-                        saving ||
-                        normalized === '' ||
-                        normalized === (data.appsDomain ?? '')
-                    }
-                >
-                    {saving && <Spinner />}
-                    Save
-                </Button>
-            </div>
-            <p className="type-small text-muted-foreground">
-                A subdomain such as apps.example.com, not the dashboard’s{' '}
-                <span className="type-mono-small">{data.dashboardHost}</span>.
-            </p>
-            <InputError message={error ?? undefined} />
-        </form>
-    );
-}
-
 function DomainBody({ data, step }: { data: Onboarding; step: Step }) {
-    const free = freeWildcard(data);
-    const [choice, setChoice] = useState<'own' | 'free'>(
-        step.status === 'skipped' ? 'free' : 'own',
-    );
-    const appsDomain = data.appsDomain;
-
     return (
-        <>
-            <ChoiceTiles
-                label="Address for your apps"
-                columns={2}
-                value={choice}
-                onChange={setChoice}
-                options={[
-                    {
-                        value: 'own',
-                        label: 'Use my domain',
-                        description: appsDomain
-                            ? `${appsDomain} · one DNS record`
-                            : 'One DNS record, set up once',
-                        media: (
-                            <Globe
-                                className="size-5 text-muted-foreground"
-                                aria-hidden="true"
-                            />
-                        ),
-                    },
-                    {
-                        value: 'free',
-                        label: 'Use a free address for now',
-                        description: free
-                            ? `${free} · works instantly`
-                            : 'Works instantly',
-                        media: (
-                            <Zap
-                                className="size-5 text-muted-foreground"
-                                aria-hidden="true"
-                            />
-                        ),
-                    },
-                ]}
-            />
-
-            {choice === 'own' ? (
-                <>
-                    <DomainForm data={data} />
-                    {appsDomain && (
-                        <>
-                            <DnsRecord data={data} domain={appsDomain} />
-                            <DnsVerify
-                                key={appsDomain}
-                                domain={appsDomain}
-                                step={step}
-                            />
-                        </>
-                    )}
-                    {step.status === 'pending' && <SkipLink step={step} />}
-                </>
-            ) : (
-                <div className="flex flex-col gap-3">
-                    <p className="type-small text-muted-foreground">
-                        Good for trying things out. Switch to your own domain
-                        before going live: free addresses share certificate
-                        limits with everyone.
-                    </p>
-                    <div>
-                        {step.status === 'skipped' ? (
-                            <Status
-                                state="active"
-                                label="Using free addresses"
-                            />
-                        ) : (
-                            <Button onClick={() => update({ skip: 'domain' })}>
-                                Use free addresses
-                            </Button>
-                        )}
-                    </div>
-                </div>
-            )}
-        </>
+        <AppsDomainPicker
+            domain={data.appsDomain}
+            addresses={
+                data.edgeAddresses.length > 0
+                    ? data.edgeAddresses
+                    : data.serverAddress
+                      ? [data.serverAddress]
+                      : []
+            }
+            freeWildcard={freeWildcard(data)}
+            dashboardHost={data.dashboardHost}
+            usingFree={step.status === 'skipped'}
+            freeAction={
+                <Button onClick={() => update({ skip: 'domain' })}>
+                    Use free addresses
+                </Button>
+            }
+            mode="onboarding"
+            done={step.status === 'done'}
+            footer={step.status === 'pending' ? <SkipLink step={step} /> : null}
+        />
     );
 }
 
@@ -607,11 +336,16 @@ function domainView(data: Onboarding, step: Step): StepView {
         return {
             title: 'Your apps have an address',
             line:
-                data.appsDomainVerified === false
-                    ? `*.${data.appsDomain} · DNS not verified yet`
-                    : data.appsDomainVerified === true
-                      ? `*.${data.appsDomain} · DNS verified`
-                      : `*.${data.appsDomain}`,
+                data.appsDomainVerified === null ? (
+                    `*.${data.appsDomain}`
+                ) : (
+                    <MetaLine>
+                        {`*.${data.appsDomain}`}
+                        {data.appsDomainVerified
+                            ? 'DNS verified'
+                            : 'DNS not verified yet'}
+                    </MetaLine>
+                ),
             body,
         };
     }
@@ -628,7 +362,7 @@ function domainView(data: Onboarding, step: Step): StepView {
         title: 'Give your apps an address',
         line: data.appsDomain
             ? 'Create the DNS record, then continue once it reaches your server.'
-            : 'Every app gets a link under it. Custom domains per app come later.',
+            : 'Every app gets an address under this domain. You can add custom domains per app later.',
         body,
     };
 }
@@ -660,7 +394,7 @@ function projectView(data: Onboarding, step: Step): StepView {
 
     return {
         title: 'Deploy your first app',
-        line: 'Pick a repository; we detect the rest.',
+        line: 'Pick a repository and launchroom detects the rest.',
         aside: tiles,
         body: (
             <>

@@ -71,6 +71,15 @@ func TestCheck(t *testing.T) {
 		{"database stop without init", func(s *state.WorkloadSpec, _ *policy.Config) {
 			s.Stop = &state.StopSpec{Signal: state.SignalInt, Timeout: "60s", NoInit: true}
 		}, ""},
+		{"config file", func(s *state.WorkloadSpec, _ *policy.Config) {
+			s.Files = []state.ConfigFile{{Path: "/docker-entrypoint-initdb.d/99-roles.sql", Content: "select 1;"}}
+		}, ""},
+		{"config file inside a volume", func(s *state.WorkloadSpec, _ *policy.Config) {
+			s.Files = []state.ConfigFile{{Path: "/var/lib/postgresql/data/postgresql.auto.conf", Content: "x"}}
+		}, "files"},
+		{"config file under /proc", func(s *state.WorkloadSpec, _ *policy.Config) {
+			s.Files = []state.ConfigFile{{Path: "/proc/1/environ", Content: "x"}}
+		}, "files"},
 		{"stop with SIGKILL", func(s *state.WorkloadSpec, _ *policy.Config) {
 			s.Stop = &state.StopSpec{Signal: "SIGKILL", Timeout: "60s"}
 		}, "stop"},

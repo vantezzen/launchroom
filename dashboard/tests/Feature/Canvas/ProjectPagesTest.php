@@ -86,6 +86,27 @@ test('project settings: everyone in the team views, developers rename and add en
         ->assertNotFound();
 });
 
+test('project settings without a section show General and mark the list URL', function (): void {
+    $project = Projects::create($this->team, 'Shop');
+
+    $this->actingAs($this->viewer)->get(route('projects.settings', ['project' => $project]))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page->component('projects/settings')
+            ->where('section', 'general')
+            ->where('index', true)
+            ->where('configFile', null));
+
+    $this->actingAs($this->viewer)->get(route('projects.settings', ['project' => $project, 'section' => 'general']))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page->where('section', 'general')->where('index', false));
+
+    $this->actingAs($this->viewer)->get(route('projects.settings', ['project' => $project, 'section' => 'config-file']))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page->where('section', 'config-file')
+            ->where('index', false)
+            ->has('configFile.settings'));
+});
+
 test('projects of other teams are not found', function (): void {
     $foreign = Projects::create(Team::factory()->create(), 'Theirs');
     $production = $foreign->production()->sole();

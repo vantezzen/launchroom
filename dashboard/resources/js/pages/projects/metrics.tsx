@@ -15,7 +15,7 @@ export default function ProjectMetricsPage({
 }: Props) {
     return (
         <>
-            <Head title={`Metrics · ${project.name}`} />
+            <Head title={`Metrics - ${project.name}`} />
             <Page size="wide">
                 {environment && (
                     <ProjectMetrics

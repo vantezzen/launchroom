@@ -48,9 +48,9 @@ function cloudflareOk(): void
 
 test('only instance owners see and change ingress settings', function (): void {
     $this->actingAs($this->admin)->get(route('servers.ingress.show'))->assertForbidden();
-    $this->actingAs($this->admin)->withSession(passwordConfirmed())->put(route('servers.ingress.dns.update'), ['provider' => 'cloudflare', 'token' => 'x'])->assertForbidden();
+    $this->actingAs($this->admin)->put(route('servers.ingress.dns.update'), ['provider' => 'cloudflare', 'token' => 'x'])->assertForbidden();
     $this->actingAs($this->admin)->post(route('servers.ingress.dns.verify'))->assertForbidden();
-    $this->actingAs($this->admin)->withSession(passwordConfirmed())->delete(route('servers.ingress.dns.destroy'))->assertForbidden();
+    $this->actingAs($this->admin)->delete(route('servers.ingress.dns.destroy'))->assertForbidden();
 
     $this->actingAs($this->admin)->get(route('network-settings.edit'))->assertForbidden();
     $this->actingAs($this->owner)->get(route('servers.ingress.show'))
@@ -62,6 +62,32 @@ test('only instance owners see and change ingress settings', function (): void {
             ->where('ingress.appsDomain', 'apps.example.com')
             ->where('ingress.dnsProvider', null)
             ->where('ingress.hasToken', false));
+});
+
+test('the app domain picker gets the record addresses, the free wildcard and the verification', function (): void {
+    [$server] = Projects::server($this->team, ip: '203.0.113.7');
+    $server->forceFill(['is_control_plane' => true])->save();
+
+    $this->actingAs($this->owner)->get(route('network-settings.edit'))
+        ->assertInertia(fn ($page) => $page
+            ->where('appsDomain.domain', 'apps.example.com')
+            ->where('appsDomain.addresses', ['203.0.113.7'])
+            ->where('appsDomain.freeWildcard', '*.203-0-113-7.sslip.io')
+            ->where('appsDomain.dashboardHost', (string) parse_url(config()->string('app.url'), PHP_URL_HOST))
+            ->where('appsDomain.verified', null));
+
+    // Confirmed for another domain earlier: not this one's verification.
+    InstanceSettings::current()->forceFill(['onboarding' => [
+        'domainConfirmed' => ['domain' => 'old.example.com', 'verified' => true, 'at' => now()->toIso8601ZuluString()],
+    ]])->save();
+    $this->actingAs($this->owner)->get(route('network-settings.edit'))
+        ->assertInertia(fn ($page) => $page->where('appsDomain.verified', null));
+
+    InstanceSettings::current()->forceFill(['onboarding' => [
+        'domainConfirmed' => ['domain' => 'apps.example.com', 'verified' => false, 'at' => now()->toIso8601ZuluString()],
+    ]])->save();
+    $this->actingAs($this->owner)->get(route('network-settings.edit'))
+        ->assertInertia(fn ($page) => $page->where('appsDomain.verified', false));
 });
 
 test('setting the provider stores the token encrypted and checks it without another password', function (): void {
@@ -85,11 +111,11 @@ test('setting the provider stores the token encrypted and checks it without anot
         ->assertInertia(fn ($page) => $page->where('ingress.hasToken', true)->where('ingress.verification.ok', true));
 
     // Switching the provider needs new credentials.
-    $this->actingAs($this->owner)->withSession(passwordConfirmed())->from(route('network-settings.edit'))
+    $this->actingAs($this->owner)->from(route('network-settings.edit'))
         ->put(route('servers.ingress.dns.update'), ['provider' => 'hetzner'])
         ->assertSessionHasErrors('credentials.token');
 
-    $this->actingAs($this->owner)->withSession(passwordConfirmed())->delete(route('servers.ingress.dns.destroy'))->assertRedirect();
+    $this->actingAs($this->owner)->delete(route('servers.ingress.dns.destroy'))->assertRedirect();
     expect(InstanceSettings::current()->dns_provider)->toBeNull();
 });
 
@@ -136,7 +162,7 @@ test('the form saves a multi-field provider and only shows its non-secret values
         'eu.api.ovh.com/1.0/domain/zone/example.com' => Http::response(['name' => 'example.com']),
     ]);
 
-    $this->actingAs($this->owner)->withSession(passwordConfirmed())
+    $this->actingAs($this->owner)
         ->put(route('servers.ingress.dns.update'), ['provider' => 'ovh', 'credentials' => [
             'endpoint' => 'ovh-eu', 'applicationKey' => 'app-key', 'applicationSecret' => 'app-SECRET', 'consumerKey' => 'consumer-SECRET',
         ]])
@@ -154,10 +180,10 @@ test('the form saves a multi-field provider and only shows its non-secret values
             ->where('ingress.providers.7.fields.0.options', DnsProvider::OVH_ENDPOINTS));
 
     // Unknown fields and other grammars are refused.
-    $this->actingAs($this->owner)->withSession(passwordConfirmed())->from(route('network-settings.edit'))
+    $this->actingAs($this->owner)->from(route('network-settings.edit'))
         ->put(route('servers.ingress.dns.update'), ['provider' => 'ovh', 'credentials' => ['endpoint' => 'https://evil.example']])
         ->assertSessionHasErrors('credentials.endpoint');
-    $this->actingAs($this->owner)->withSession(passwordConfirmed())->from(route('network-settings.edit'))
+    $this->actingAs($this->owner)->from(route('network-settings.edit'))
         ->put(route('servers.ingress.dns.update'), ['provider' => 'ovh', 'credentials' => ['url' => 'x']])
         ->assertSessionHasErrors('credentials');
 });

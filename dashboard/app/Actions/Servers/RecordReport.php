@@ -7,6 +7,7 @@ namespace App\Actions\Servers;
 use App\Actions\Backups\RecordWalArchives;
 use App\Actions\Mesh\RecordMeshStatus;
 use App\Actions\Metrics\RecordMetrics;
+use App\Actions\Security\RecordWafReport;
 use App\Data\Protocol\V1\HardwareFacts;
 use App\Data\Protocol\V1\HostStatus;
 use App\Data\Protocol\V1\IngressStatus;
@@ -58,6 +59,7 @@ final readonly class RecordReport
         private RecordMetrics $metrics,
         private RecordLinkQuality $links,
         private RecordWalArchives $walArchives,
+        private RecordWafReport $waf,
     ) {}
 
     public function handle(Server $server, Report $report): bool
@@ -169,6 +171,9 @@ final readonly class RecordReport
         if (is_array($report->metrics)) {
             $this->metrics->handle($server, $report->metrics);
         }
+
+        // Web firewall state and samples (docs/22 §6.5), idempotent like metrics.
+        $this->waf->handle($server, $report);
 
         // Link measurements are idempotent too (one sample per measuredAt).
         if ($report->host instanceof HostStatus && is_array($report->host->links)) {

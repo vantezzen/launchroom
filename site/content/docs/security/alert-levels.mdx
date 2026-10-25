@@ -1,0 +1,55 @@
+---
+title: Alert levels
+description: When a finding needs action and sends a notification, and when it is only worth knowing.
+---
+
+Every advisory that matches a package of a live service becomes a finding. A finding has one of two levels:
+
+- **Action needed**: it sends a notification and leads the Security page.
+- **Worth knowing**: it is listed quietly and never notifies.
+
+When the data leaves doubt, launchroom chooses **Worth knowing**. An alert that turns out to be irrelevant costs more trust than a quiet entry.
+
+## When a finding needs action
+
+All of these must be true:
+
+1. The package is in the live deployment of a service outside preview environments.
+2. Its code can run while the service handles requests:
+   - in images launchroom built, the lockfile shows it as a production dependency;
+   - operating system packages count only when they run your app or serve requests: Node.js, Python, PHP, Ruby, Java, .NET, nginx, Apache, Caddy, and Go's standard library in Go programs;
+   - in images launchroom didn't build, and when the scope is unknown, only if the vulnerability is known to be exploited.
+3. The severity is high or critical, or the vulnerability is known to be exploited.
+4. A fixed version exists, or the vulnerability is known to be exploited.
+5. It can be triggered over the network, or the vulnerability is known to be exploited.
+6. The service has a public domain, or the vulnerability is known to be exploited.
+7. Nobody marked it as not affected.
+
+Known exploited vulnerabilities (CISA's catalogue) override rules 3 to 6 and the limits for images launchroom didn't build. They never override rule 1, development or browser-only dependencies, or operating system packages outside the list above.
+
+Open a finding to see each rule with the data behind it.
+
+## Worth knowing
+
+Every other finding shows the first rule it didn't meet:
+
+| Reason | Meaning |
+|---|---|
+| Development dependency | Only used in development or tests |
+| Only in browser code | Bundled for the browser, not run on the server |
+| In the app bundle | Bundled, and launchroom can't tell if the server runs it |
+| Scope unknown | No lockfile showed how the package is used |
+| Operating system package | A library of the image's operating system |
+| TLS ends at launchroom's edge | OpenSSL in your app only handles outgoing connections |
+| Part of the image | In an image launchroom didn't build; its maintainers ship the fix |
+| Low or medium severity | |
+| No severity published | |
+| No fixed version yet | |
+| Needs local access to the server | |
+| No public domain | Workers, databases and internal services |
+
+Release facts are listed here too: a runtime, database or distribution past its end of life, and a newer patch of the version you use that has been out for more than 30 days.
+
+## Marking a finding as not affected
+
+People with the Developer role or higher can open a finding and choose **Not affected…** with a reason and an optional note. The finding stays hidden from **Action needed** until it gets more urgent, for example when the vulnerability becomes known to be exploited. **Reopen** brings it back. Both are recorded in the audit log.

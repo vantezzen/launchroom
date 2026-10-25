@@ -19,6 +19,7 @@ const GROUPS: { key: string; label: string }[] = [
     { key: 'services', label: 'Services' },
     { key: 'servers', label: 'Servers' },
     { key: 'data', label: 'Domains and backups' },
+    { key: 'security', label: 'Security' },
 ];
 
 function NumberField({
@@ -154,7 +155,7 @@ export function RulesCard({
         <>
             <SettingsCard
                 title="What we tell you about"
-                description="Each alert arrives once, and again when it's resolved."
+                description="You get one message when an alert starts and one when it's resolved."
             >
                 {GROUPS.map((group) => (
                     <Fragment key={group.key}>

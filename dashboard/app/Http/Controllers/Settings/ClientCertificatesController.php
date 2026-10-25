@@ -35,7 +35,7 @@ final class ClientCertificatesController extends Controller
 
         return back()->with('success', match ($mode) {
             ClientCertificateMode::Off => 'Client certificates are off.',
-            ClientCertificateMode::Verify => 'Servers’ certificates are checked now. Nothing is refused yet.',
+            ClientCertificateMode::Verify => 'Server certificates are now checked, but no server is refused yet.',
             ClientCertificateMode::Require => 'Client certificates are required now.',
         });
     }

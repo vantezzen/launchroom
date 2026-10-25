@@ -7,6 +7,7 @@ import InputError from '@/components/input-error';
 import { ChoiceTiles } from '@/components/patterns/choice-tiles';
 import { ConfirmPopover } from '@/components/patterns/confirm-popover';
 import { EmptyState } from '@/components/patterns/empty-state';
+import { MetaLine } from '@/components/patterns/meta-line';
 import { TimeAgo } from '@/components/time-ago';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -86,6 +87,7 @@ export default function ApiTokens({
 
             <SettingsCard
                 title="Use the CLI"
+                setting="cli"
                 description="Deploy, follow logs and pull variables from your terminal."
                 footer={
                     <Link
@@ -99,7 +101,7 @@ export default function ApiTokens({
             >
                 <SettingsRow
                     label="Install"
-                    description="macOS and Linux. Checks the signed checksums."
+                    description="For macOS and Linux. The script verifies the signed checksums."
                     media={<IconTile icon={Terminal} />}
                 >
                     <CopyValue
@@ -110,7 +112,7 @@ export default function ApiTokens({
                 </SettingsRow>
                 <SettingsRow
                     label="Sign in"
-                    description="Opens this dashboard to approve. No token to copy."
+                    description="Opens this dashboard so you can approve the sign-in, with no token to copy."
                     media={<IconTile icon={KeyRound} />}
                 >
                     <CopyValue
@@ -123,7 +125,8 @@ export default function ApiTokens({
 
             <SettingsCard
                 title="Your tokens"
-                description="For scripts and CI. Each acts as you, in one team."
+                setting="tokens"
+                description="For scripts and CI. Each token acts as you in one team."
                 actions={
                     team && (
                         <Button
@@ -187,10 +190,10 @@ function TokenRow({ token }: { token: App.Data.Api.ApiTokenData }) {
             }
             description={
                 <span className="flex flex-col gap-2">
-                    <span>
-                        {token.teamName} ·{' '}
+                    <MetaLine>
+                        {token.teamName}
                         {token.lastUsedAt ? (
-                            <>
+                            <span>
                                 Last used <TimeAgo value={token.lastUsedAt} />
                                 {token.lastUsedIp && (
                                     <>
@@ -201,11 +204,10 @@ function TokenRow({ token }: { token: App.Data.Api.ApiTokenData }) {
                                         </span>
                                     </>
                                 )}
-                            </>
+                            </span>
                         ) : (
                             'Never used'
-                        )}{' '}
-                        ·{' '}
+                        )}
                         <span
                             className={
                                 expiry.soon ? 'text-status-progress' : undefined
@@ -219,7 +221,7 @@ function TokenRow({ token }: { token: App.Data.Api.ApiTokenData }) {
                             )}
                             {expiry.text}
                         </span>
-                    </span>
+                    </MetaLine>
                     <span className="flex flex-wrap gap-1.5">
                         {token.abilities.map((ability) => (
                             <Badge key={ability} variant="secondary">
@@ -343,7 +345,7 @@ function CreateTokenDialog({
                         <div className="flex flex-col gap-1.5">
                             <DialogTitle>Copy your token</DialogTitle>
                             <DialogDescription>
-                                You won't see it again. Store it in your CI's
+                                It's shown only once. Store it in your CI's
                                 secrets.
                             </DialogDescription>
                         </div>
@@ -368,8 +370,8 @@ function CreateTokenDialog({
                         <div className="flex flex-col gap-1.5">
                             <DialogTitle>Create token</DialogTitle>
                             <DialogDescription>
-                                It acts as you in {team.name} ({team.role}),
-                                never with more than your role allows.
+                                It acts as you in {team.name} ({team.role}) and
+                                can't do more than your role allows.
                             </DialogDescription>
                         </div>
 
@@ -439,7 +441,8 @@ function CreateTokenDialog({
                                                 {!option.available && (
                                                     <span className="font-normal text-muted-foreground">
                                                         {' '}
-                                                        · not with your role
+                                                        (not available with your
+                                                        role)
                                                     </span>
                                                 )}
                                             </span>

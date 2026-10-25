@@ -29,7 +29,7 @@ test('the team settings page lists members', function (): void {
 test('admins change roles up to their own and the change is audited', function (): void {
     $membership = membershipOf($this->developer, $this->team);
 
-    $this->actingAs($this->admin)->withSession(passwordConfirmed())
+    $this->actingAs($this->admin)
         ->patch(route('team.members.update', $membership->public_id), ['role' => 'admin'])
         ->assertSessionHasNoErrors();
 
@@ -38,11 +38,11 @@ test('admins change roles up to their own and the change is audited', function (
 });
 
 test('admins cannot promote to owner or touch owners', function (): void {
-    $this->actingAs($this->admin)->withSession(passwordConfirmed())
+    $this->actingAs($this->admin)
         ->patch(route('team.members.update', membershipOf($this->developer, $this->team)->public_id), ['role' => 'owner'])
         ->assertSessionHasErrors('role');
 
-    $this->actingAs($this->admin)->withSession(passwordConfirmed())
+    $this->actingAs($this->admin)
         ->patch(route('team.members.update', membershipOf($this->owner, $this->team)->public_id), ['role' => 'viewer'])
         ->assertForbidden();
 });
@@ -57,7 +57,7 @@ test('authorized role changes do not interrupt the form', function (): void {
 test('developers cannot change roles', function (): void {
     $viewer = memberOf($this->team, TeamRole::Viewer);
 
-    $this->actingAs($this->developer)->withSession(passwordConfirmed())
+    $this->actingAs($this->developer)
         ->patch(route('team.members.update', membershipOf($viewer, $this->team)->public_id), ['role' => 'developer'])
         ->assertForbidden();
 });
@@ -66,7 +66,7 @@ test('memberships of other teams are not found', function (): void {
     $other = Team::factory()->create();
     $outsider = memberOf($other, TeamRole::Developer);
 
-    $this->actingAs($this->owner)->withSession(passwordConfirmed())
+    $this->actingAs($this->owner)
         ->patch(route('team.members.update', membershipOf($outsider, $other)->public_id), ['role' => 'viewer'])
         ->assertNotFound();
 });

@@ -41,16 +41,23 @@ Open the service's **Settings → Network → Domains** and choose **Add a domai
 <Step>
 ### Enter the name
 
-Type the hostname, for example `shop.example.com`. launchroom tells you which record you need. A root domain needs an A
-record. A subdomain can use an A record or a CNAME.
+Type the hostname, for example `shop.example.com`. launchroom tells you which record you need.
 </Step>
 <Step>
 ### Create the DNS records
 
-The dialog lists the records to create at your DNS provider, each name and value with a copy button:
+The dialog lists the records to create at your DNS provider, each name and value with a copy button. Which one comes
+first depends on the name:
 
-- **A** records (and **AAAA** when your edges have IPv6) pointing at the public addresses of your edge servers
-- or, for a subdomain, a **CNAME** to the service's generated hostname
+| Domain | With a platform domain | Without one |
+| --- | --- | --- |
+| Subdomain (`shop.example.com`) | **CNAME** to the service's generated hostname (recommended), or A/AAAA records | A/AAAA records |
+| Root domain (`example.com`) | A/AAAA records; a hint for ALIAS, ANAME or CNAME flattening to the generated hostname | A/AAAA records |
+
+The A records (and AAAA records when your edges have IPv6) point at the public addresses of your edge servers. A CNAME
+points at the platform domain instead, so it keeps working when you add an edge server or move to another one: you
+don't touch DNS again. Most DNS hosts allow no CNAME on a root domain. Some offer ALIAS, ANAME or CNAME flattening
+there, which works the same way.
 </Step>
 <Step>
 ### Wait for the check

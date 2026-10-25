@@ -10,6 +10,7 @@ use App\Models\Deployment;
 use App\Models\EnvironmentRevision;
 use App\Models\Project;
 use App\Models\ProjectKey;
+use App\Models\Security\SecurityInvestigation;
 use App\Models\Variable;
 use App\Services\Crypto\ProjectKeyring;
 use Illuminate\Contracts\Database\Query\Builder;
@@ -75,6 +76,12 @@ final readonly class RotateProjectKey
                 $counts['revisions']++;
             }
 
+            // Investigation inspections (docs/22 §8) move to the new key too.
+            foreach (SecurityInvestigation::query()->where('project_id', $project->id)->whereNotNull('inspections')->orderBy('id')->lockForUpdate()->get() as $investigation) {
+                $plaintext = $this->keyring->decryptInspections($project, $investigation->public_id, (string) $investigation->inspections);
+                $investigation->forceFill(['inspections' => $this->keyring->encryptInspections($project, $investigation->public_id, $plaintext)])->saveQuietly();
+            }
+
             if ($prune) {
                 $counts['pruned'] = $this->prune($project, $version);
             }
@@ -104,6 +111,7 @@ final readonly class RotateProjectKey
     {
         $stale = Variable::query()->where('project_id', $project->id)->pluck('value')
             ->merge(Deployment::query()->whereNotNull('env_snapshot')->whereHas('environment', static fn (Builder $query) => $query->where('project_id', $project->id))->pluck('env_snapshot'))
+            ->merge(SecurityInvestigation::query()->where('project_id', $project->id)->whereNotNull('inspections')->pluck('inspections'))
             ->filter(static fn (mixed $ciphertext): bool => is_string($ciphertext) && ProjectKeyring::versionOf($ciphertext) !== $version);
 
         if ($stale->isNotEmpty()) {

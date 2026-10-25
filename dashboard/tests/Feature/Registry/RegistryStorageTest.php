@@ -55,7 +55,7 @@ function registryForm(array $overrides = []): array
 test('instance owners put the registry on S3; credentials are envelope-encrypted, hidden and never rendered', function (): void {
     $owner = registryInstanceOwner();
 
-    $this->actingAs($owner)->withSession(passwordConfirmed())
+    $this->actingAs($owner)
         ->put(route('registry-settings.update'), registryForm())
         ->assertRedirect()
         ->assertSessionHasNoErrors();
@@ -83,8 +83,8 @@ test('only instance owners see or change the registry storage', function (TeamRo
     $member = memberOf($team, $role);
 
     $this->actingAs($member)->get(route('registry-settings.edit'))->assertForbidden();
-    $this->actingAs($member)->withSession(passwordConfirmed())->put(route('registry-settings.update'), registryForm())->assertForbidden();
-    $this->actingAs($member)->withSession(passwordConfirmed())->delete(route('registry-settings.destroy'))->assertForbidden();
+    $this->actingAs($member)->put(route('registry-settings.update'), registryForm())->assertForbidden();
+    $this->actingAs($member)->delete(route('registry-settings.destroy'))->assertForbidden();
 
     expect(RegistryStorage::query()->count())->toBe(0);
 })->with(['team owner' => [TeamRole::Owner], 'admin' => [TeamRole::Admin], 'developer' => [TeamRole::Developer]]);
@@ -100,18 +100,18 @@ test('an instance owner can change registry storage without confirming again', f
 test('endpoints follow the backup destination rules; the private-network override is audited', function (): void {
     $owner = registryInstanceOwner();
 
-    $this->actingAs($owner)->withSession(passwordConfirmed())
+    $this->actingAs($owner)
         ->put(route('registry-settings.update'), registryForm(['endpoint' => 'http://versitygw:7070']))
         ->assertSessionHasErrors('endpoint');
-    $this->actingAs($owner)->withSession(passwordConfirmed())
+    $this->actingAs($owner)
         ->put(route('registry-settings.update'), registryForm(['endpoint' => 'https://internal.example.com']))
         ->assertSessionHasErrors('endpoint');
-    $this->actingAs($owner)->withSession(passwordConfirmed())
+    $this->actingAs($owner)
         ->put(route('registry-settings.update'), registryForm(['endpoint' => 'http://zot:5000', 'allowPrivateNetwork' => true]))
         ->assertSessionHasErrors('endpoint');
     expect(RegistryStorage::query()->count())->toBe(0);
 
-    $this->actingAs($owner)->withSession(passwordConfirmed())
+    $this->actingAs($owner)
         ->put(route('registry-settings.update'), registryForm(['endpoint' => 'http://versitygw:7070', 'allowPrivateNetwork' => true]))
         ->assertSessionHasNoErrors();
 
@@ -122,12 +122,12 @@ test('endpoints follow the backup destination rules; the private-network overrid
 test('blank credentials keep the stored ones; new ones are required the first time', function (): void {
     $owner = registryInstanceOwner();
 
-    $this->actingAs($owner)->withSession(passwordConfirmed())
+    $this->actingAs($owner)
         ->put(route('registry-settings.update'), registryForm(['accessKeyId' => '', 'secretAccessKey' => '']))
         ->assertSessionHasErrors('accessKeyId');
 
-    $this->actingAs($owner)->withSession(passwordConfirmed())->put(route('registry-settings.update'), registryForm())->assertSessionHasNoErrors();
-    $this->actingAs($owner)->withSession(passwordConfirmed())
+    $this->actingAs($owner)->put(route('registry-settings.update'), registryForm())->assertSessionHasNoErrors();
+    $this->actingAs($owner)
         ->put(route('registry-settings.update'), registryForm(['bucket' => 'other-bucket', 'accessKeyId' => '', 'secretAccessKey' => '']))
         ->assertSessionHasNoErrors();
 
@@ -150,7 +150,7 @@ test('local storage renders the installer template', function (): void {
 });
 
 test('S3 storage renders Zot\'s s3 driver without dedupe; display copies are redacted', function (): void {
-    $this->actingAs(registryInstanceOwner())->withSession(passwordConfirmed())
+    $this->actingAs(registryInstanceOwner())
         ->put(route('registry-settings.update'), registryForm(['endpoint' => 'http://versitygw:7070', 'allowPrivateNetwork' => true, 'prefix' => '', 'region' => '']));
 
     $config = resolve(ZotConfig::class);
@@ -178,7 +178,7 @@ test('S3 storage renders Zot\'s s3 driver without dedupe; display copies are red
 
 test('the config command prints a redacted config and writes the file once (0600), recording it as applied', function (): void {
     $owner = registryInstanceOwner();
-    $this->actingAs($owner)->withSession(passwordConfirmed())->put(route('registry-settings.update'), registryForm());
+    $this->actingAs($owner)->put(route('registry-settings.update'), registryForm());
 
     expect(Artisan::call('launchroom:registry:config'))->toBe(0)
         ->and(Artisan::output())->toContain('"bucket": "launchroom-registry"')->not->toContain('registry-secret-access-key');
@@ -203,7 +203,7 @@ test('the config command prints a redacted config and writes the file once (0600
         ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page->where('settings.applied', true));
 
     // Back to local storage: pending until written again.
-    $this->actingAs($owner)->withSession(passwordConfirmed())->delete(route('registry-settings.destroy'))->assertSessionHasNoErrors();
+    $this->actingAs($owner)->delete(route('registry-settings.destroy'))->assertSessionHasNoErrors();
     expect(RegistryStorage::query()->count())->toBe(0)
         ->and(AuditEvent::query()->where('action', AuditAction::RegistryStorageRemoved->value)->count())->toBe(1);
     $this->actingAs($owner)->get(route('registry-settings.edit'))
@@ -217,7 +217,7 @@ test('the config command prints a redacted config and writes the file once (0600
 });
 
 test('KEK rotation re-wraps the registry credentials', function (): void {
-    $this->actingAs(registryInstanceOwner())->withSession(passwordConfirmed())->put(route('registry-settings.update'), registryForm());
+    $this->actingAs(registryInstanceOwner())->put(route('registry-settings.update'), registryForm());
 
     $current = resolve(Envelope::class);
     $next = new Envelope(SecretKey::generate());

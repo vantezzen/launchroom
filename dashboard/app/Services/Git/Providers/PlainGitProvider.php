@@ -160,12 +160,12 @@ final readonly class PlainGitProvider implements GitProvider
 
     public function tree(RepositoryRef $repository, string $ref): RepositoryTree
     {
-        throw new RepositoryFileUnavailable('Plain git servers have no file API; launchroom looks at the files when it builds.');
+        throw new RepositoryFileUnavailable('Plain git servers have no file API, so launchroom reads the files when it builds.');
     }
 
     public function fileAtRef(RepositoryRef $repository, string $path, string $ref): ?string
     {
-        throw new RepositoryFileUnavailable('Plain git servers have no file API; launchroom looks at the files when it builds.');
+        throw new RepositoryFileUnavailable('Plain git servers have no file API, so launchroom reads the files when it builds.');
     }
 
     public function cloneUrl(RepositoryRef $repository): string

@@ -4,7 +4,9 @@
 // line is parsed, attributed to a route by its host and folded into the
 // current minute's counters and latency histogram. Nothing per request is
 // kept: completed minutes are buffered until a report carrying them was
-// accepted, like the usage metrics.
+// accepted, like the usage metrics. The same lines feed the request
+// analytics (analytics.go, docs/15 §5): normalised paths, referrer hosts and
+// client classes per route and 10-minute window.
 package traffic
 
 import (
@@ -58,6 +60,7 @@ type Collector struct {
 	minute  time.Time
 	acc     map[state.RouteID]*state.RequestMetricSample
 	pending []state.RequestMetricSample
+	an      analytics
 }
 
 // New returns a Collector without routes (every line is dropped until SetRoutes).
@@ -71,7 +74,7 @@ func New(o Options) *Collector {
 	if o.Log == nil {
 		o.Log = slog.New(slog.DiscardHandler)
 	}
-	return &Collector{o: o, acc: map[state.RouteID]*state.RequestMetricSample{}}
+	return &Collector{o: o, acc: map[state.RouteID]*state.RequestMetricSample{}, an: newAnalytics()}
 }
 
 // SetRoutes replaces the host → route table (the edge's current NodeState routes).
@@ -105,11 +108,16 @@ func normalizeHost(host string) string {
 }
 
 // accessLine is the subset of a Caddy access log line we read (the rest is
-// deleted by the filter encoder before it leaves Caddy, docs/15 §1.1).
+// deleted by the filter encoder before it leaves Caddy, docs/15 §1.1). The
+// URI arrives without its query string; lr_referer is only the referrer's
+// host and lr_agent one user agent token (docs/15 §5.1).
 type accessLine struct {
 	Request struct {
 		Host string `json:"host"`
+		URI  string `json:"uri"`
 	} `json:"request"`
+	Referer  string  `json:"lr_referer"`
+	Agent    string  `json:"lr_agent"`
 	Status   int     `json:"status"`
 	Duration float64 `json:"duration"` // seconds
 	Size     int64   `json:"size"`
@@ -130,6 +138,8 @@ func (c *Collector) Observe(line []byte) {
 	now := c.o.Now().UTC()
 	c.mu.Lock()
 	completed := c.rollLocked(now)
+	c.an.roll(now)
+	c.an.observe(now, route, &l, c.Route)
 	if c.minute.IsZero() {
 		c.minute = now.Truncate(time.Minute)
 	}
@@ -167,8 +177,10 @@ func (c *Collector) Observe(line []byte) {
 
 // Roll completes the minute before now (called on a tick).
 func (c *Collector) Roll() {
+	now := c.o.Now().UTC()
 	c.mu.Lock()
-	completed := c.rollLocked(c.o.Now().UTC())
+	completed := c.rollLocked(now)
+	completed = c.an.roll(now) || completed
 	c.mu.Unlock()
 	if completed && c.o.OnMinute != nil {
 		c.o.OnMinute()

@@ -181,7 +181,7 @@ final class ControlPlaneKeyBundle
             Sleep::usleep(200_000);
         }
 
-        throw new RuntimeException('Headscale kept writing its database while it was copied; try the backup again.');
+        throw new RuntimeException('Headscale kept writing its database while it was copied. Try the backup again.');
     }
 
     private static function meshRequiresState(): bool

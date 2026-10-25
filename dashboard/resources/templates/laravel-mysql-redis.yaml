@@ -5,7 +5,7 @@ tagline: 'The full Laravel setup: web, queue worker, scheduler, MySQL and Redis.
 description: >-
     Builds your repository once and runs it three ways: the web app, a queue
     worker and the scheduler. MySQL and Redis are managed and connected with
-    Laravel's variable names; APP_KEY is generated.
+    Laravel's variable names, and APP_KEY is generated.
 category: stacks
 logo: laravel
 inputs:

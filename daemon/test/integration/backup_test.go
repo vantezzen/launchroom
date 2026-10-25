@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/mount"
 
 	"github.com/vantezzen/launchroom/daemon/internal/backup"
 	"github.com/vantezzen/launchroom/daemon/internal/docker"
@@ -59,6 +60,12 @@ func (b *backupEnv) ensureNetwork(ctx context.Context, t *testing.T) string {
 // run starts a managed container (labelled like a workload) and returns its id.
 func (b *backupEnv) run(ctx context.Context, t *testing.T, wl state.WorkloadID, image string, env map[string]secret.Secret, cmd []string) string {
 	t.Helper()
+	return b.runMounted(ctx, t, wl, image, env, cmd, nil)
+}
+
+// runMounted is run with volume mounts.
+func (b *backupEnv) runMounted(ctx context.Context, t *testing.T, wl state.WorkloadID, image string, env map[string]secret.Secret, cmd []string, mounts []mount.Mount) string {
+	t.Helper()
 	if err := b.engine.PullImage(ctx, image); err != nil {
 		t.Fatalf("pull %s: %v", image, err)
 	}
@@ -79,6 +86,7 @@ func (b *backupEnv) run(ctx context.Context, t *testing.T, wl state.WorkloadID, 
 			SecurityOpt: []string{policy.NoNewPrivileges}, Init: &noInit, NetworkMode: container.NetworkMode(b.ensureNetwork(ctx, t)),
 			LogConfig: container.LogConfig{Type: policy.LogDriver, Config: map[string]string{"max-size": policy.LogMaxSize, "max-file": policy.LogMaxFile}},
 			Resources: container.Resources{Memory: 1 << 30, NanoCPUs: 2e9, PidsLimit: &pids},
+			Mounts:    mounts,
 		},
 	})
 	if err != nil {

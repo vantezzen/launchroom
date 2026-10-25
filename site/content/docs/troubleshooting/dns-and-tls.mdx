@@ -33,7 +33,7 @@ The DNS check is for information only and never changes routing. A domain whose 
 
 **Cause.** The record doesn't exist yet, was added to the wrong zone, or hasn't propagated. New records usually show up within minutes. Some providers take up to an hour. A cached "doesn't exist" answer from before you added the record can also linger for the zone's negative caching time.
 
-**Fix.** Add the records the card shows under **Point your DNS here**: an A record (and an AAAA record, if your edge has IPv6) per edge server. For a subdomain, a CNAME to the service's generated hostname works too. Check the record from your own machine:
+**Fix.** Add the records the card shows under **Point your DNS here**: with a platform domain, a CNAME to the service's generated hostname for a subdomain; otherwise an A record (and an AAAA record, if your edge has IPv6) per edge server. Check the record from your own machine:
 
 ```sh
 dig +short A shop.example.com @1.1.1.1

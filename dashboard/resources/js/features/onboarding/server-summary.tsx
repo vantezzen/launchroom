@@ -10,7 +10,7 @@ function memory(mb: number): string {
 }
 
 /**
- * "fra-1 · Hetzner Cloud · 4 cores · 8 GB": what a server is, in one line
+ * ["Hetzner Cloud", "4 cores", "8 GB"]: what a server is, for one line
  * (setup, get started). Unknown parts are left out.
  */
 export function serverFacts(server: Server): string[] {

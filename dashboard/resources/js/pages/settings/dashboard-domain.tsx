@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { CopyValue } from '@/components/copy-value';
 import InputError from '@/components/input-error';
+import { MetaLine } from '@/components/patterns/meta-line';
 import { StatusPill } from '@/components/status';
 import type { StatusState } from '@/components/status';
 import { TimeAgo } from '@/components/time-ago';
@@ -151,12 +152,12 @@ function CurrentAddress({ settings }: { settings: Settings }) {
                     </span>
                     <div className="flex min-w-0 flex-col gap-1">
                         <h2 className="type-stat break-all">{current.host}</h2>
-                        <p className="type-body text-muted-foreground">
+                        <MetaLine className="type-body text-muted-foreground">
                             {current.switched
                                 ? 'Your dashboard’s own domain'
                                 : 'The address launchroom was installed with'}
-                            {secure ? ' · HTTPS' : ' · no certificate'}
-                        </p>
+                            {secure ? 'HTTPS' : 'No certificate'}
+                        </MetaLine>
                     </div>
                 </div>
                 {settings.switchBackTo !== null && (
@@ -174,8 +175,7 @@ function CurrentAddress({ settings }: { settings: Settings }) {
                     </>
                 ) : (
                     <>
-                        Your apps keep their own domains. Only the dashboard
-                        moves.
+                        Changing this address doesn’t affect your apps’ domains.
                     </>
                 )}
             </div>
@@ -433,7 +433,13 @@ function DnsRecords({ settings }: { settings: Settings }) {
                 {settings.records.length === 1
                     ? 'this record'
                     : 'these records'}{' '}
-                at your DNS provider. Only the main server serves the dashboard.
+                at your DNS provider. They point at the main server, which
+                serves the dashboard.
+            </p>
+            <p className="type-small text-muted-foreground">
+                Use A records here, not a CNAME to your platform domain: that
+                name can lead to other edge servers, and only the main server
+                serves the dashboard.
             </p>
             {settings.records.map((record) => (
                 <div
@@ -495,8 +501,8 @@ function SwitchPlan({
         <div className="flex flex-col gap-5">
             <ol className="flex flex-col gap-4 rounded-lg bg-recessed p-4">
                 <PlanRow number={1} title="You sign in again">
-                    Sign-ins belong to one address. Everyone signs in once at{' '}
-                    {change.hostname}.
+                    Sign-ins are tied to one address, so everyone signs in again
+                    at {change.hostname}.
                 </PlanRow>
                 <PlanRow
                     number={2}
@@ -511,8 +517,8 @@ function SwitchPlan({
                         : `Passkeys are tied to ${settings.current.host}. Sign in with your password, then add a new passkey under Settings → Security${impact.yourPasskeysAffected > 0 ? ` (${impact.yourPasskeysAffected} of them are yours)` : ''}.`}
                 </PlanRow>
                 <PlanRow number={3} title="The old address forwards here">
-                    Browsers are sent to the new address. Servers move by
-                    themselves and keep the old address as a fallback.
+                    Browsers are redirected to the new address. Servers switch
+                    on their own and keep the old address as a fallback.
                 </PlanRow>
                 {apps > 0 && (
                     <PlanRow
@@ -597,9 +603,8 @@ function SwitchBack({ target }: { target: string }) {
             <DialogContent>
                 <DialogTitle>Switch back to {target}?</DialogTitle>
                 <DialogDescription>
-                    The dashboard moves back and everyone signs in there again.
-                    This domain keeps forwarding to it, so nothing breaks on the
-                    way.
+                    The dashboard moves back to {target} and everyone signs in
+                    there again. This domain keeps forwarding to it.
                 </DialogDescription>
                 <Form {...revert.form()}>
                     {({ processing }) => (
@@ -654,8 +659,8 @@ function EarlierAddresses({ settings }: { settings: Settings }) {
                             <span className="type-mono-small">
                                 {settings.meshLoginUrl}
                             </span>
-                            . Their network clients remember it, so it never
-                            moves.
+                            , because their network clients remember this
+                            address.
                         </>
                     }
                 />
@@ -706,7 +711,7 @@ function GitHubApps({ settings }: { settings: Settings }) {
     return (
         <SettingsCard
             title="GitHub Apps"
-            description="GitHub doesn’t learn the new address by itself. Set these URLs in each app’s settings."
+            description="GitHub doesn’t pick up the new address automatically. Set these URLs in each app’s settings."
             footer={
                 <>
                     Or create a new app from Settings → Git, which uses the new

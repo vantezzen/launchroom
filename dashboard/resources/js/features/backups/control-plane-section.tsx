@@ -2,6 +2,7 @@ import { Form, router } from '@inertiajs/react';
 import { Check, FileKey2, Shield } from 'lucide-react';
 import { useState } from 'react';
 import InputError from '@/components/input-error';
+import { MetaLine } from '@/components/patterns/meta-line';
 import { SidePanel, SheetSection } from '@/components/patterns/sheet';
 import { Status, StatusPill } from '@/components/status';
 import type { StatusState } from '@/components/status';
@@ -51,13 +52,14 @@ function RecentRuns({ runs }: { runs: App.Data.Backups.BackupRunData[] }) {
                             <div className="flex flex-wrap items-center justify-between gap-x-3">
                                 <Status
                                     state={runStates[item.status][0]}
-                                    label={`${runStates[item.status][1]} · ${item.reasonLabel}`}
+                                    label={runStates[item.status][1]}
+                                    detail={item.reasonLabel}
                                 />
-                                <span className="type-small text-muted-foreground tabular-nums">
+                                <MetaLine className="type-small text-muted-foreground tabular-nums">
                                     <TimeAgo value={item.createdAt} />
                                     {item.sizeBytes !== null &&
-                                        ` · ${formatBytes(item.sizeBytes)}`}
-                                </span>
+                                        formatBytes(item.sizeBytes)}
+                                </MetaLine>
                             </div>
                             {item.shortSnapshotId !== null && (
                                 <span className="pl-5 type-mono-small text-muted-foreground">
@@ -123,7 +125,12 @@ export function LaunchroomRow({
                 (item) => item.scheduleId === schedule.id,
             )}
             label="launchroom itself"
-            description={`Projects, settings and keys · ${schedule.cronDescription ?? 'custom schedule'}`}
+            description={
+                <MetaLine>
+                    Projects, settings and keys
+                    {schedule.cronDescription ?? 'Custom schedule'}
+                </MetaLine>
+            }
             actions={
                 <Button
                     variant="outline"
@@ -249,7 +256,8 @@ export function RecoveryKitCard({ instance }: { instance: InstanceBackups }) {
     return (
         <SettingsCard
             title="Recovery kit"
-            description="Brings everything back on a new server."
+            setting="recovery-kit"
+            description="Use it to restore everything on a new server."
             actions={
                 ready ? (
                     <StatusPill state="active" label="Stored safely" />
@@ -292,9 +300,9 @@ export function RecoveryKitCard({ instance }: { instance: InstanceBackups }) {
                             <TimeAgo value={recoveryKit.kitDownloadedAt} />
                         </>
                     ) : destination !== null && recoveryKit.passphraseSet ? (
-                        'Destination, credentials and repository password. Not the passphrase.'
+                        'Contains the destination, credentials and repository password, but not the passphrase.'
                     ) : (
-                        'Needs launchroom’s destination and the passphrase first.'
+                        'Add launchroom’s destination and set the passphrase first.'
                     )
                 }
             >

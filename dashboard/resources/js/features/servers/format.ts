@@ -34,7 +34,7 @@ export function formatUsedOf(usedMb: number, totalMb: number): string {
     return `${digits(scale(usedMb))} / ${digits(scale(totalMb))} ${unitGb ? 'GB' : 'MB'}`;
 }
 
-/** "12 cores · 11.7 GB · 366 GB" (the card footer and the hero chips). */
+/** ["12 cores", "11.7 GB", "366 GB"] (the card footer and the hero chips). */
 export function specParts(
     specs: App.Data.Servers.ServerSpecsData | null | undefined,
 ): string[] {
@@ -116,7 +116,7 @@ export function deviceKind(server: {
     return server.device?.kind ?? 'unknown';
 }
 
-/** "Hetzner · Frankfurt", "Berlin", "Hetzner" or null. */
+/** "Hetzner, Frankfurt", "Berlin", "Hetzner" or null. */
 export function placeLabel(server: {
     device?: App.Data.Servers.DeviceData | null;
     location?: App.Data.Servers.LocationData | null;
@@ -126,7 +126,7 @@ export function placeLabel(server: {
         server.location?.label ?? null,
     ].filter((part): part is string => part !== null && part !== '');
 
-    return parts.length > 0 ? parts.join(' · ') : null;
+    return parts.length > 0 ? parts.join(', ') : null;
 }
 
 /** The problem servers first, then the dashboard's server, then by name. */

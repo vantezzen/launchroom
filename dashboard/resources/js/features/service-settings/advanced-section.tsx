@@ -2,6 +2,7 @@ import { useForm } from '@inertiajs/react';
 import { Box, Plus, X } from 'lucide-react';
 import type { FormEvent } from 'react';
 import InputError from '@/components/input-error';
+import { MetaLine } from '@/components/patterns/meta-line';
 import { Status } from '@/components/status';
 import type { StatusState } from '@/components/status';
 import { Button } from '@/components/ui/button';
@@ -76,8 +77,8 @@ function ArgvList({
         <div className="flex flex-col gap-2">
             {value.length === 0 ? (
                 <p className="type-small text-muted-foreground">
-                    The image’s own entrypoint runs. Add arguments to replace
-                    it; the start command then follows as its arguments.
+                    The image’s own entrypoint is used. Add arguments to replace
+                    it. The start command is then passed as its arguments.
                 </p>
             ) : (
                 <ol className="flex flex-col gap-2">
@@ -270,6 +271,43 @@ function ContainerSettings({ context }: { context: SettingsContext }) {
     );
 }
 
+function byteSize(text: string): string {
+    const bytes = new TextEncoder().encode(text).length;
+
+    return bytes >= 1024 ? `${(bytes / 1024).toFixed(1)} KiB` : `${bytes} B`;
+}
+
+/**
+ * Config files (D65): written read-only into the container before it
+ * starts. Templates and Compose imports set them; shown here to read.
+ */
+function ConfigFiles({ files }: { files: App.Data.Services.ConfigFile[] }) {
+    return (
+        <SettingsCard
+            setting="config-files"
+            title="Config files"
+            description="Written into the container before it starts, read-only. They come from the template or Compose file this service was created from."
+        >
+            {files.map((file) => (
+                <SettingsRow
+                    key={file.path}
+                    label={<code className="type-mono-small">{file.path}</code>}
+                    description={byteSize(file.content)}
+                >
+                    <details className="w-full min-w-0">
+                        <summary className="cursor-pointer type-small text-muted-foreground">
+                            Show content
+                        </summary>
+                        <pre className="mt-2 max-h-80 overflow-auto rounded-lg border bg-recessed p-3 type-mono-small whitespace-pre">
+                            {file.content}
+                        </pre>
+                    </details>
+                </SettingsRow>
+            ))}
+        </SettingsCard>
+    );
+}
+
 /**
  * Advanced (docs/08 §3.7): how the container starts (entrypoint,
  * capabilities), then the raw view for debugging. Docker vocabulary appears
@@ -284,11 +322,15 @@ export function AdvancedSection({ context }: { context: SettingsContext }) {
             title="Advanced"
             description={
                 container
-                    ? 'How the container starts, and the ids and containers behind this service for debugging and support.'
-                    : 'The ids and containers behind this service, for debugging and support. Read-only.'
+                    ? 'Container start options, plus the ids and containers behind this service for debugging and support.'
+                    : 'The ids and containers behind this service, for debugging and support.'
             }
         >
             {container && <ContainerSettings context={context} />}
+
+            {container && context.settings.deploy.files.length > 0 && (
+                <ConfigFiles files={context.settings.deploy.files} />
+            )}
 
             <SettingsCard setting="identifiers" title="Identifiers">
                 <SettingsRow label="Service">
@@ -359,7 +401,13 @@ export function AdvancedSection({ context }: { context: SettingsContext }) {
                                     {workload.id}
                                 </code>
                             }
-                            description={`${workload.server} · container ${workload.containerId?.slice(0, 12) ?? 'not created'} · ${workload.restartCount} ${workload.restartCount === 1 ? 'restart' : 'restarts'}`}
+                            description={
+                                <MetaLine>
+                                    {workload.server}
+                                    {`container ${workload.containerId?.slice(0, 12) ?? 'not created'}`}
+                                    {`${workload.restartCount} ${workload.restartCount === 1 ? 'restart' : 'restarts'}`}
+                                </MetaLine>
+                            }
                             inline
                         >
                             <Status

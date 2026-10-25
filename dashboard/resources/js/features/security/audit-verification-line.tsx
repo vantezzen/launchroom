@@ -37,10 +37,13 @@ export function AuditVerificationLine({
                 )}
             >
                 <ShieldAlert aria-hidden="true" className="size-3.5" />
-                Audit log check failed
+                <span>
+                    Audit log check failed
+                    {verification.problem && ':'}
+                </span>
                 {verification.problem && (
                     <span className="text-muted-foreground">
-                        · {verification.problem}
+                        {verification.problem}
                     </span>
                 )}
             </span>
@@ -60,11 +63,11 @@ export function AuditVerificationLine({
             />
             {verification.verifiedUpTo ? (
                 <span>
-                    Audit log verified ✓ up to{' '}
+                    Audit log verified up to{' '}
                     <TimeAgo value={verification.verifiedUpTo} />
                 </span>
             ) : (
-                <span>Audit log intact ✓ · first checkpoint soon</span>
+                <span>Audit log intact, first checkpoint pending</span>
             )}
         </span>
     );

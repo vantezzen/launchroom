@@ -90,6 +90,11 @@ func (rt *daemonRuntime) features() []state.DaemonFeature {
 	if rt.dataTransfers() {
 		out = append(out, state.FeatureDataTransfer)
 	}
+	out = append(out, rt.accessFeatures()...)
+	if rt.ingress != nil && rt.ingress.WafSupport().Available() {
+		// Only while the running, pinned Caddy carries the firewall module (docs/22 §6.1).
+		out = append(out, state.FeatureWaf)
+	}
 	if _, ok := rt.docker.(session.Docker); !ok {
 		return out
 	}

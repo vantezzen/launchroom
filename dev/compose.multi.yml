@@ -47,6 +47,7 @@ services:
     restart: unless-stopped
     environment:
       LR_DEV_SERVER_NAME: server-2
+      LR_SYSTEM_IMAGE_DIGESTS: ${LR_DEV_SYSTEM_IMAGE_DIGESTS:-}
       # Pretend host time zone (suggests a location for the server map).
       LR_HOST_TIMEZONE: Europe/Helsinki
       # Dev never asks IP echo services (fake servers have no public address).
@@ -102,6 +103,7 @@ services:
         ipv4_address: 10.213.77.10
     environment:
       LR_DEV_SERVER_NAME: server-3
+      LR_SYSTEM_IMAGE_DIGESTS: ${LR_DEV_SYSTEM_IMAGE_DIGESTS:-}
       # Pretend host time zone (suggests a location for the server map).
       LR_HOST_TIMEZONE: America/New_York
       # Dev never asks IP echo services (fake servers have no public address).

@@ -9,6 +9,7 @@ import {
 import { useState } from 'react';
 import { ObjectCard, UrlCard } from '@/components/cards';
 import { EmptyState } from '@/components/patterns/empty-state';
+import { MetaLine } from '@/components/patterns/meta-line';
 import { Page, PageHeader } from '@/components/patterns/page';
 import { Section } from '@/components/patterns/section';
 import { Status } from '@/components/status';
@@ -38,7 +39,7 @@ function databaseLine(database: Preview['databases'][number]): {
 } {
     if (database.downgradedFrom) {
         return {
-            text: `${database.service}: new empty (${database.downgradeReason === 'production' ? 'production data stays out of previews' : 'forks never get base data'})`,
+            text: `${database.service}: new empty (${database.downgradeReason === 'production' ? 'production data is not copied into previews' : 'forks don’t get base data'})`,
             danger: false,
         };
     }
@@ -229,29 +230,29 @@ function ApprovalRow({
                         </span>{' '}
                         {preview.title || 'Untitled'}
                     </p>
-                    <p className="type-small text-muted-foreground">
-                        {preview.author} · commit{' '}
-                        <span className="type-mono-small">
-                            {preview.headSha}
+                    <MetaLine className="type-small text-muted-foreground">
+                        {preview.author}
+                        <span>
+                            Commit{' '}
+                            <span className="type-mono-small">
+                                {preview.headSha}
+                            </span>
                         </span>
                         {preview.pullRequestUrl && (
-                            <>
-                                {' · '}
-                                <a
-                                    href={`${preview.pullRequestUrl}/files`}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="inline-flex items-center gap-0.5 text-foreground underline underline-offset-4"
-                                >
-                                    View changes on GitHub
-                                    <ArrowUpRight
-                                        aria-hidden="true"
-                                        className="size-3"
-                                    />
-                                </a>
-                            </>
+                            <a
+                                href={`${preview.pullRequestUrl}/files`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex items-center gap-0.5 text-foreground underline underline-offset-4"
+                            >
+                                View changes on GitHub
+                                <ArrowUpRight
+                                    aria-hidden="true"
+                                    className="size-3"
+                                />
+                            </a>
                         )}
-                    </p>
+                    </MetaLine>
                 </div>
             </div>
             {canApprove ? (
@@ -310,7 +311,7 @@ export default function ProjectPreviews({
 
     return (
         <>
-            <Head title={`Previews · ${project.name}`} />
+            <Head title={`Previews - ${project.name}`} />
             <EnvironmentLiveUpdates
                 environments={environments}
                 only={['previews']}
@@ -319,17 +320,18 @@ export default function ProjectPreviews({
                 <PageHeader
                     title="Previews"
                     description={
-                        !enabled
-                            ? 'Off for this project.'
-                            : previews.length === 0
-                              ? 'One environment per pull request.'
-                              : [
-                                    plural(previews.length, 'pull request'),
-                                    `${live} live`,
-                                    ...(waiting.length > 0
-                                        ? [`${waiting.length} waiting for you`]
-                                        : []),
-                                ].join(' · ')
+                        !enabled ? (
+                            'Off for this project.'
+                        ) : previews.length === 0 ? (
+                            'Each pull request gets its own environment.'
+                        ) : (
+                            <MetaLine>
+                                {plural(previews.length, 'pull request')}
+                                {`${live} live`}
+                                {waiting.length > 0 &&
+                                    `${waiting.length} waiting for you`}
+                            </MetaLine>
+                        )
                     }
                     actions={
                         canManage &&
@@ -402,7 +404,7 @@ export default function ProjectPreviews({
                         >
                             {enabled
                                 ? 'Open a pull request to get a preview.'
-                                : 'Previews are off. Turn them on and every pull request gets its own environment.'}
+                                : 'Previews are off. When they’re on, every pull request gets its own environment.'}
                         </EmptyState>
                     )
                 )}

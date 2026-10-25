@@ -35,7 +35,7 @@ final readonly class SetAppsDomain
             }
 
             if (str_ends_with($domain, '.sslip.io') || $domain === 'sslip.io' || str_ends_with($domain, '.nip.io')) {
-                throw DomainRuleViolation::on('appsDomain', 'sslip.io is the fallback launchroom uses without a platform domain; enter a domain you own.');
+                throw DomainRuleViolation::on('appsDomain', 'sslip.io is the fallback launchroom uses without a platform domain. Enter a domain you own.');
             }
 
             $dashboardHost = parse_url(config()->string('app.url'), PHP_URL_HOST);

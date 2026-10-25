@@ -399,7 +399,7 @@ export function ScalingSection({ context }: { context: SettingsContext }) {
             : planError
               ? `${replicaWord(stateful ? 1 : draft.replicas)} don’t fit`
               : placed.length > 0
-                ? `${replicaWord(stateful ? 1 : draft.replicas)} · ${placed.map((server) => server.name).join(', ')}`
+                ? `${replicaWord(stateful ? 1 : draft.replicas)} on ${placed.map((server) => server.name).join(', ')}`
                 : replicaWord(stateful ? 1 : draft.replicas);
 
     return (
@@ -407,8 +407,8 @@ export function ScalingSection({ context }: { context: SettingsContext }) {
             title="Scaling"
             description={
                 stateful
-                    ? 'How much this service may use. It runs one copy, on the server that holds its data.'
-                    : 'How many copies run, how big each is and where. For this environment only.'
+                    ? 'How much this service may use. It runs as one replica on the server that holds its data.'
+                    : 'How many replicas run, how big each one is and where they run, for this environment.'
             }
         >
             {placement?.issue && (
@@ -468,7 +468,7 @@ export function ScalingSection({ context }: { context: SettingsContext }) {
                                         }
                                     />
                                     {form.isDirty
-                                        ? 'Fits · applies with the next deploy'
+                                        ? 'Fits, applies with the next deploy'
                                         : 'Fits'}
                                 </>
                             )}
@@ -558,15 +558,15 @@ export function ScalingSection({ context }: { context: SettingsContext }) {
                     <SettingsCard
                         setting="replicas"
                         title="Replicas"
-                        description="Copies run side by side; deploys replace them one at a time."
+                        description="Replicas run side by side. A deploy replaces them one at a time."
                     >
                         <SettingsRow
                             label="How many"
                             description={
                                 draft.replicas === 0
-                                    ? 'Stopped: nothing runs until you scale up.'
+                                    ? 'Stopped. Nothing runs until you scale up.'
                                     : draft.replicas === 1
-                                      ? 'One copy: a deploy or a server restart briefly interrupts it.'
+                                      ? 'With one replica, a deploy or a server restart briefly interrupts it.'
                                       : 'Requests are shared between them.'
                             }
                         >
@@ -601,7 +601,7 @@ export function ScalingSection({ context }: { context: SettingsContext }) {
                 <SettingsCard
                     setting="replica-size"
                     title="Size of each replica"
-                    description="Limits per copy. The sliders end at your biggest server that may run it."
+                    description="Limits for each replica. The sliders stop at the largest server that can run it."
                 >
                     <SettingsBody className="grid gap-8 @xl/page:grid-cols-2">
                         <ResourceSlider
@@ -651,7 +651,7 @@ export function ScalingSection({ context }: { context: SettingsContext }) {
                                 (biggestMemory !== null &&
                                 draft.memoryMb > biggestMemory
                                     ? 'More than any server can give it.'
-                                    : 'Over the limit, the replica restarts.')
+                                    : 'A replica that goes over the limit is restarted.')
                             }
                         />
                     </SettingsBody>
@@ -677,7 +677,7 @@ export function ScalingSection({ context }: { context: SettingsContext }) {
                                     value: 'spread',
                                     title: 'Spread',
                                     description:
-                                        'Across servers and zones, so one going down leaves the rest serving.',
+                                        'Across servers and zones, so the others keep serving if one goes down.',
                                     media: (
                                         <StrategyPicture strategy="spread" />
                                     ),
@@ -703,7 +703,7 @@ export function ScalingSection({ context }: { context: SettingsContext }) {
                     <SettingsRow
                         setting="labels"
                         label="Required labels"
-                        description="Only servers carrying every one of these."
+                        description="Only servers that have all of these labels."
                         align="start"
                     >
                         <LabelChips
@@ -724,8 +724,8 @@ export function ScalingSection({ context }: { context: SettingsContext }) {
                             }
                             description={
                                 envKind === 'production'
-                                    ? 'This is production: it only runs on servers that allow production.'
-                                    : 'This is a preview: it only runs on servers that allow previews.'
+                                    ? 'Production runs only on servers that allow production.'
+                                    : 'Previews run only on servers that allow previews.'
                             }
                         >
                             <span

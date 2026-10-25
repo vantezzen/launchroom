@@ -1,0 +1,134 @@
+---
+title: Supabase
+description: Run Supabase on your own server as a template, on its own or as the backend of an app you already deploy.
+---
+
+The Supabase template runs Supabase's self-hosted stack: a Postgres database with an instant REST API, sign-in,
+realtime subscriptions, file storage and the Studio dashboard. One gateway is public, everything else stays on the
+environment's private network.
+
+| Service | What it does | Reachable |
+|---|---|---|
+| Supabase | The API gateway (Kong). Your apps and Studio go through it | Public, with a generated domain or yours |
+| Studio | The dashboard | Only through the gateway, behind a sign-in |
+| Auth | Sign-up, sign-in and tokens | Private |
+| REST API | PostgREST on your database | Private |
+| Realtime | Subscriptions over WebSockets | Private |
+| Storage | File storage on its own volume | Private |
+| Postgres Meta | Database management for Studio | Private |
+| Postgres | Supabase's Postgres image, with its roles and extensions | Private |
+
+Plan for 3 to 4 GB of memory for the whole stack. Every image is pinned by digest and runs on amd64 and arm64.
+
+## Deploy Supabase
+
+<Steps>
+<Step>
+### Pick the template
+
+Open **New project**, choose **Template** and open **Supabase**. Enter a project name and, optionally, the domain the
+API and Studio are served on. Without one, the gateway gets a generated address.
+</Step>
+<Step>
+### Deploy
+
+Press **Deploy**. The first deploy downloads about 1.5 GB of images and initializes the database, which takes a few
+minutes.
+</Step>
+<Step>
+### Open Studio
+
+Open the gateway's address. Your browser asks for a user and password: the user is `supabase`, the password is
+`DASHBOARD_PASSWORD` in the **Supabase** service's variables. Revealing it needs the permission to reveal secrets.
+</Step>
+</Steps>
+
+### Generated keys
+
+The template generates everything it needs per environment and stores it in the **Supabase** service's variables:
+
+- `JWT_SECRET`: the secret all services sign and check tokens with.
+- `ANON_KEY`: the public API key, a token for the `anon` role signed with `JWT_SECRET`. It is meant for browsers, so it
+  is stored as a normal variable. Row level security decides what it can read.
+- `SERVICE_ROLE_KEY`: the admin key, a token for the `service_role` role, stored as a secret. It bypasses row level
+  security: use it only on the server.
+- `DASHBOARD_PASSWORD`: the Studio password. If you change it, use letters, digits and `-` or `_`: it is written into the gateway's configuration as is.
+
+Each environment and preview gets its own secret and keys. The other services reference these variables, so they always
+agree.
+
+To rotate the keys, set a new `JWT_SECRET`, then replace `ANON_KEY` and `SERVICE_ROLE_KEY` with
+`${{ jwt("anon", JWT_SECRET) }}` and `${{ jwt("service_role", JWT_SECRET) }}`. launchroom signs them again when you
+save. Deploy afterwards, and redeploy the apps that use the keys.
+
+### Email
+
+Until a mail server is configured, new accounts are confirmed right away. To send confirmation emails, add
+`GOTRUE_SMTP_HOST`, `GOTRUE_SMTP_PORT`, `GOTRUE_SMTP_USER`, `GOTRUE_SMTP_PASS` and `GOTRUE_SMTP_ADMIN_EMAIL` to the
+**Auth** service, and set `GOTRUE_MAILER_AUTOCONFIRM` to `false`. Set `GOTRUE_SITE_URL` to your app's address, so links in
+emails lead to it.
+
+## Add Supabase to an existing project
+
+On the canvas of your project, open **Add → From the catalog** and pick **Supabase**. Enter the optional domain and
+choose **Add to canvas**. The services are staged next to the ones you have and go live with **Review & deploy**. If a
+name is taken (for example you already have an `auth` service), the new service gets the next free name and the
+others follow it.
+
+## Connect a Next.js app
+
+Drag a connection from your app to the **Supabase** service. The connect popover shows what your app gets:
+
+| Variable | Value |
+|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL` | The gateway's public address |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | The anon key |
+| `SUPABASE_SERVICE_ROLE_KEY` | The service role key, a secret available at runtime only |
+
+The values are references to the Supabase service's variables, so each environment of your app uses its own Supabase.
+`NEXT_PUBLIC_*` variables are built into the browser bundle, so changing them needs a new build. Deploy to apply the
+connection.
+
+In the app, create the client as usual:
+
+```ts title="lib/supabase.ts"
+import { createClient } from '@supabase/supabase-js'
+
+export const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+)
+```
+
+For admin tasks in server code (route handlers, server actions), create a second client with
+`process.env.SUPABASE_SERVICE_ROLE_KEY`. Never import it into client components.
+
+## Backups
+
+Supabase's database is a service with volumes, not a managed database, so it is backed up as volumes: daily, with 7
+daily and 4 weekly snapshots, once a backup destination is set up. The template sets these volumes to **Pauses while
+reading**: Postgres is frozen for the few seconds it takes to read the volume, so each snapshot is consistent. Storage
+files are backed up the same way, from the Storage service's volume. See [Backups](/docs/databases/backups).
+
+Restore a volume from the **Backups** tab like any other volume. A restore replaces the whole database with the
+snapshot.
+
+## Limits
+
+- **No point-in-time recovery.** It needs a managed Postgres. Supabase's database restores to its daily snapshots.
+- **No logs or analytics in Studio.** They need Supabase's log collector, which reads the Docker socket of the server.
+  launchroom never gives a service the Docker socket. Use the service's **Logs** tab instead.
+- **No image transformations.** They need imgproxy reading the Storage volume, and in launchroom a volume belongs to one
+  service. Files upload and download normally.
+- **No Edge Functions or connection pooler.** Apps in the same environment connect to the database directly
+  (`postgres:5432`).
+- **Legacy API keys only.** The keys are the `anon` and `service_role` tokens. The newer publishable and secret keys
+  aren't set up.
+
+## Next steps
+
+<Cards>
+  <Card title="Templates and Compose import" href="/docs/projects/templates-and-compose" description="Other templates and how they become services." />
+  <Card title="Variables" href="/docs/projects/variables" description="References, secrets and generated values." />
+  <Card title="Backups" href="/docs/databases/backups" description="Destinations, schedules and volume consistency." />
+</Cards>

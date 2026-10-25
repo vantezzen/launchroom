@@ -77,6 +77,7 @@ export function ProjectIconRow({
 
     return (
         <SettingsRow
+            setting="icon"
             label="Icon"
             description={describe(icon)}
             media={

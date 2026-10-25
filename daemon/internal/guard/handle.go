@@ -87,6 +87,8 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request, q *request) erro
 			return deny("launchroomd may not remove %s", c.Name)
 		}
 		return s.forward(w, r, q, q.apiPath("/containers/"+c.ID), q.query, nil, "")
+	case opContainerChanges, opContainerTop:
+		return s.inspectWorkload(w, r, q)
 	case opArchiveHead, opArchiveGet, opArchivePut:
 		return s.archive(w, r, q)
 	case opExecCreate:
@@ -318,6 +320,29 @@ func (s *Server) inspectContainer(ctx context.Context, q *request, ref string) (
 		}
 	}
 	return c, raw, nil
+}
+
+// inspectWorkload forwards the read-only inspection routes (container
+// changes and processes, docs/22 §7.3) for a running workload container of
+// this server, addressed by its full id. System containers, the volume
+// helper and the update supervisor are refused; the query is always empty
+// (the route table refuses every key, top's ps_args included).
+func (s *Server) inspectWorkload(w http.ResponseWriter, r *http.Request, q *request) error {
+	if !reExecID.MatchString(q.id) {
+		return deny("container inspection needs the container's full id, not %q", truncate(q.id, 64))
+	}
+	c, err := s.managedContainer(r.Context(), q)
+	if err != nil {
+		return err
+	}
+	if c.kind() != kindServer || c.class() != classWorkload || c.Labels[labelSystem] != "" || c.Labels[labelHelper] != "" || c.ID != q.id {
+		return deny("container inspection is only allowed for workload containers, not %s", c.Name)
+	}
+	suffix := "/changes"
+	if q.op == opContainerTop {
+		suffix = "/top"
+	}
+	return s.forward(w, r, q, q.apiPath("/containers/"+c.ID+suffix), nil, nil, "")
 }
 
 func (s *Server) managedContainer(ctx context.Context, q *request) (*ctr, error) {

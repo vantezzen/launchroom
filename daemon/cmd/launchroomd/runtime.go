@@ -18,6 +18,7 @@ import (
 
 	bkclient "github.com/moby/buildkit/client"
 
+	"github.com/vantezzen/launchroom/daemon/internal/access"
 	"github.com/vantezzen/launchroom/daemon/internal/ambassadord"
 	"github.com/vantezzen/launchroom/daemon/internal/backup"
 	"github.com/vantezzen/launchroom/daemon/internal/build"
@@ -32,6 +33,8 @@ import (
 	"github.com/vantezzen/launchroom/daemon/internal/hostinfo"
 	"github.com/vantezzen/launchroom/daemon/internal/identity"
 	"github.com/vantezzen/launchroom/daemon/internal/ingress/caddy"
+	"github.com/vantezzen/launchroom/daemon/internal/inspect"
+	"github.com/vantezzen/launchroom/daemon/internal/inventory"
 	"github.com/vantezzen/launchroom/daemon/internal/linkprobe"
 	"github.com/vantezzen/launchroom/daemon/internal/logship"
 	"github.com/vantezzen/launchroom/daemon/internal/mesh"
@@ -46,6 +49,7 @@ import (
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 	"github.com/vantezzen/launchroom/daemon/internal/tasks"
 	"github.com/vantezzen/launchroom/daemon/internal/traffic"
+	"github.com/vantezzen/launchroom/daemon/internal/waf"
 )
 
 const (
@@ -94,6 +98,8 @@ type daemonRuntime struct {
 	metrics  *metrics.Collector
 	// traffic aggregates the edge Caddy's access log into request metrics (docs/15 §1).
 	traffic *traffic.Collector
+	// waf receives and aggregates the web firewall's audit records (docs/22 §6.5).
+	waf *waf.Collector
 
 	// Registry access and builds (docs/04 §5, docs/05 §6).
 	tokens         *registry.Tokens
@@ -111,6 +117,8 @@ type daemonRuntime struct {
 
 	// firewall is the nftables network isolation (docs/05 §1).
 	firewall *firewall.Manager
+	// access holds the running temporary accesses (docs/03 §12).
+	access *access.Manager
 	// hostRT is rootless Docker / dockerd-guard and the edge ports (D49).
 	hostRT hostRuntime
 
@@ -223,6 +231,7 @@ func newRuntime(ctx context.Context, cfg config.Config, id *identity.Identity, s
 		Log: log.With("component", "publicip"),
 	})
 	rt.traffic = traffic.New(traffic.Options{OnMinute: rt.kickReport, Now: rt.now, Log: log.With("component", "traffic")})
+	rt.waf = waf.New(waf.Options{OnWindow: rt.kickReport, Now: rt.now, Log: log.With("component", "waf")})
 	ingress := caddy.NewManager(caddy.ManagerOptions{
 		ServerID: string(serverID), Docker: dc, Admin: admin, Policy: pol, Ask: rt.ask,
 		CacheDir: filepath.Join(cfg.DataDir, caddyCacheDir), Log: log.With("component", "ingress"),
@@ -238,6 +247,8 @@ func newRuntime(ctx context.Context, cfg config.Config, id *identity.Identity, s
 		ForwardAuthOrigins: func() []string {
 			return forwardAuthOrigins(cfg.ControlPlaneURL, rt.follow.Adopted(), cfg.AllowedLocalUpstreams)
 		},
+		WafLogAddress: cfg.WafLogAddr.String(),
+		WafDropped:    rt.waf.Dropped,
 		Render: caddy.Options{
 			AdminListen: caddy.DefaultAdminListen, AskURL: "http://" + cfg.AskAddr.String() + caddy.AskPath,
 			HTTPPort: 80, HTTPSPort: 443, RedirectHTTPSPort: cfg.HTTPSRedirectPort,
@@ -246,11 +257,16 @@ func newRuntime(ctx context.Context, cfg config.Config, id *identity.Identity, s
 			ReachabilityDial:   reachabilityDial(cfg.AskAddr),
 		},
 	})
+	am, err := newAccessManager(rt, cfg.RemoteAccessPorts)
+	if err != nil {
+		return nil, err
+	}
+	rt.access = am
 	rt.firewall = firewall.New(firewall.Options{
 		Mode: firewall.Mode(cfg.Firewall), Backend: d.firewall, Networks: dc.ListNetworks,
 		BuildNetwork: buildkitd.NetworkName, BuildGateway: cfg.BuildSubnet.Addr().Next(), RegistryPort: buildkitd.RegistryPort,
 		AllowPrivate: cfg.FirewallAllowPrivate, MeshInterface: mesh.Interface, Log: log.With("component", "firewall"), Now: rt.now,
-		AmbassadorNetwork: ambassadord.NetworkName, Mesh: rt.meshRules,
+		AmbassadorNetwork: ambassadord.NetworkName, Mesh: rt.meshRules, Access: rt.access.Rules,
 	})
 	rt.ingress = ingress
 	rt.monitor = health.NewMonitor(ctx, health.MonitorOptions{OnChange: rt.kickReconcile})
@@ -322,6 +338,10 @@ func (rt *daemonRuntime) setupBuilds(ctx context.Context, dc docker.Client, pol 
 
 // planSlots bounds concurrent plan tasks (they run in launchroomd itself).
 const planSlots = 1
+
+// inventorySlots bounds concurrent inventory tasks; each also takes a
+// build slot while it runs (docs/22 §3.2, D59).
+const inventorySlots = 1
 
 // measureBuildHost is what buildkitd's limits are planned from (D59):
 // launchroomd's own reading of the host, never the dashboard's. In use =
@@ -509,7 +529,7 @@ func (rt *daemonRuntime) run(ctx context.Context, syncState func(context.Context
 	for _, pool := range []struct {
 		typ   state.TaskType
 		slots int
-	}{{state.TaskBuild, max(1, rt.cfg.BuildSlots)}, {state.TaskPlan, planSlots}} {
+	}{{state.TaskBuild, max(1, rt.cfg.BuildSlots)}, {state.TaskPlan, planSlots}, {state.TaskInventory, inventorySlots}} {
 		if handler, ok := handlers[pool.typ]; ok {
 			buildRunners = append(buildRunners, tasks.New(tasks.Options{
 				Client: rt.client, Interval: taskInterval, Log: rt.log.With("component", "tasks", "type", pool.typ),
@@ -533,6 +553,10 @@ func (rt *daemonRuntime) run(ctx context.Context, syncState func(context.Context
 		start(func() { sessions.Run(ctx) })
 		runners = append(runners, sessions)
 	}
+	if accesses := rt.accessRunner(taskInterval); accesses != nil {
+		start(func() { accesses.Run(ctx) })
+		runners = append(runners, accesses)
+	}
 	start(func() { rt.nudges(ctx, runners...) })
 	start(func() { rt.healthLoop(ctx) })
 	start(func() { rt.metrics.Run(ctx) })
@@ -542,6 +566,14 @@ func (rt *daemonRuntime) run(ctx context.Context, syncState func(context.Context
 		// its access lines (soft_start) and everything else runs as usual.
 		if err := rt.traffic.Serve(ctx, rt.cfg.AccessLogAddr.String()); err != nil {
 			rt.log.Warn("access log listener failed; no request metrics", "err", err, "addr", rt.cfg.AccessLogAddr.String())
+		}
+	})
+	start(func() { rt.waf.Run(ctx) })
+	start(func() {
+		// Without the listener Coraza's writes fail fast on the refused
+		// loopback connection; blocking keeps working (docs/22 §6.6).
+		if err := rt.waf.Serve(ctx, rt.cfg.WafLogAddr.String()); err != nil {
+			rt.log.Warn("web firewall record listener failed; no firewall events", "err", err, "addr", rt.cfg.WafLogAddr.String())
 		}
 	})
 	start(func() { rt.links.Run(ctx, rt.kickReport) })
@@ -607,10 +639,13 @@ func (rt *daemonRuntime) reconcileLoop(ctx context.Context) {
 		meshIP := rt.meshIP()
 		rt.follow.Want(cur.State.System.ControlPlane.URL)
 		rt.traffic.SetRoutes(cur.State.Routes)
+		rt.waf.SetRoutes(cur.State.Routes)
 		rt.syncRegistry(ctx, cur.State)
 		if err := rt.rec.Reconcile(ctx, cur.State); err != nil && ctx.Err() == nil {
 			rt.log.Warn("reconcile pass incomplete", "version", cur.State.Version, "err", err)
 		}
+		rt.sweepAccessRoles(ctx)
+		rt.sweepAccessHelpers(ctx)
 		rt.syncSystem(ctx, cur.State)
 		rt.logship.Sync(ctx, cur.State)
 		if rt.walArchive != nil {
@@ -674,6 +709,8 @@ func (rt *daemonRuntime) reportLoop(ctx context.Context) {
 		rt.metrics.Ack(rep.Metrics)
 		if rep.Metrics != nil {
 			rt.traffic.Ack(rep.Metrics.Requests)
+			rt.traffic.AckAnalytics(rep.Metrics.Analytics)
+			rt.waf.Ack(rep.Metrics.Waf)
 		}
 		if rep.Host != nil {
 			rt.hardware.Ack(rep.Host.Hardware, rt.now())
@@ -704,11 +741,14 @@ func (rt *daemonRuntime) buildReport(ctx context.Context) *state.Report {
 	}
 }
 
-// pendingMetrics merges the undelivered usage minutes and request minutes.
+// pendingMetrics merges the undelivered usage minutes, request minutes,
+// analytics windows and firewall windows.
 func (rt *daemonRuntime) pendingMetrics() *state.ReportMetrics {
 	m := rt.metrics.Pending()
 	reqs := rt.traffic.Pending()
-	if len(reqs) == 0 {
+	an := rt.traffic.PendingAnalytics()
+	fw := rt.waf.Pending()
+	if len(reqs) == 0 && len(an) == 0 && len(fw) == 0 {
 		return m
 	}
 	if m == nil {
@@ -717,7 +757,15 @@ func (rt *daemonRuntime) pendingMetrics() *state.ReportMetrics {
 	if over := len(reqs) - state.MaxRequestMetricSamples; over > 0 {
 		reqs = reqs[over:]
 	}
+	if over := len(an) - state.MaxAnalyticsSamples; over > 0 {
+		an = an[over:]
+	}
+	if over := len(fw) - state.MaxWafSamples; over > 0 {
+		fw = fw[over:]
+	}
 	m.Requests = reqs
+	m.Analytics = an
+	m.Waf = fw
 	return m
 }
 
@@ -971,10 +1019,39 @@ func (rt *daemonRuntime) handlers() map[state.TaskType]tasks.Handler {
 			ServerID: rt.serverID, SealingKey: rt.sealingKey, Builder: rt.builder, Client: rt.client,
 			Slots: rt.planSlots, Forget: rt.tokens.Forget,
 		})
+		h[state.TaskInventory] = inventory.Handler(inventory.Options{
+			ServerID: rt.serverID, SealingKey: rt.sealingKey, BuildKit: rt.buildkit.WaitClient, Tokens: rt.tokens,
+			RegistryHost: buildkitd.RegistryHost(), PublicRegistry: registry.DefaultAddress,
+			WorkDir: filepath.Join(rt.cfg.DataDir, buildsDir), InsecureGitHosts: rt.cfg.InsecureGitHosts,
+			Slots: rt.buildSlots, Isolate: rt.firewall.Sync, Forget: rt.tokens.Forget,
+			Log: rt.log.With("component", "inventory"), Now: rt.now,
+		})
 	}
 	rt.addBackupHandlers(h)
 	rt.addUpdateHandler(h)
+	if d, ok := rt.docker.(inspect.Docker); ok {
+		h[state.TaskInspectContainer] = inspect.Handler(inspect.Options{
+			Docker: d, Workload: rt.workloadSpec, Now: rt.now,
+			Env: func(s *state.WorkloadSpec) (map[string]secret.Secret, error) {
+				return sealed.OpenWorkloadEnv(s.Env, rt.sealingKey, rt.serverID, s.ID)
+			},
+		})
+	}
 	return h
+}
+
+// workloadSpec is a workload of the verified NodeState (nil when absent).
+func (rt *daemonRuntime) workloadSpec(id state.WorkloadID) *state.WorkloadSpec {
+	cur := rt.store.Current()
+	if cur == nil {
+		return nil
+	}
+	for i := range cur.State.Workloads {
+		if w := cur.State.Workloads[i]; w.ID == id {
+			return &w
+		}
+	}
+	return nil
 }
 
 // forwardAuthOrigins are the origins protected routes may use for forward auth

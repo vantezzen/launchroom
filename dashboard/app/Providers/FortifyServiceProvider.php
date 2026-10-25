@@ -45,7 +45,8 @@ final class FortifyServiceProvider extends ServiceProvider
     {
         Fortify::resetUserPasswordsUsing(ResetUserPassword::class);
 
-        // The legacy confirm-password endpoint allows 5 failures/min per user and IP.
+        // Fortify's confirm-password endpoint stays registered (unused since
+        // D60): 5 failures/min per user and IP (review L4).
         Fortify::confirmPasswordsUsing(static function (User $user, #[SensitiveParameter] ?string $password): bool {
             PasswordConfirmationThrottle::confirm(request(), $user, $password);
 

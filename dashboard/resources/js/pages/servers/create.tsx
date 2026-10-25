@@ -176,8 +176,9 @@ export default function CreateServer({ serverCount, roleHints }: Props) {
                                 />
                                 {serverCount === 1 && (
                                     <p className="type-small text-muted-foreground">
-                                        With a second server, your servers share
-                                        a private network by themselves.
+                                        When a second server joins, launchroom
+                                        connects your servers over a private
+                                        network.
                                     </p>
                                 )}
                             </div>

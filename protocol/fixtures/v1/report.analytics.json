@@ -1,0 +1,42 @@
+{
+  "apiVersion": "launchroom.vantezzen.io/v1",
+  "kind": "Report",
+  "serverId": "srv_01J9Z8X7W6V5T4S3R2Q1P0N9MK",
+  "observedAt": "2026-10-17T12:10:05Z",
+  "seq": 21,
+  "full": true,
+  "appliedVersion": 1842,
+  "workloads": [],
+  "metrics": {
+    "host": [],
+    "workloads": [],
+    "analytics": [
+      {
+        "route": "rt_01J9Z8X7W6V5T4S3R2Q1P0N9R1",
+        "at": "2026-10-17T12:00:00Z",
+        "requests": 412,
+        "paths": [
+          { "path": "/", "requests": 220 },
+          { "path": "/products/:id", "requests": 130, "status4xx": 6 },
+          { "path": "/api/cart", "requests": 40, "status5xx": 3 }
+        ],
+        "otherPaths": { "requests": 22, "status4xx": 3 },
+        "referrers": [
+          { "host": "news.ycombinator.com", "requests": 51 },
+          { "host": "www.google.com", "requests": 18 }
+        ],
+        "otherReferrers": 4,
+        "browsers": 370,
+        "bots": 35,
+        "otherAgents": 7
+      },
+      {
+        "route": "rt_01J9Z8X7W6V5T4S3R2Q1P0N9R2",
+        "at": "2026-10-17T12:00:00Z",
+        "requests": 1,
+        "paths": [{ "path": "/healthz", "requests": 1 }],
+        "otherAgents": 1
+      }
+    ]
+  }
+}

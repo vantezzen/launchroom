@@ -138,7 +138,7 @@ function ServiceStrategy({
                             value: 'new_empty',
                             title: 'New and empty',
                             description:
-                                'Fresh credentials; migrations and seeds run.',
+                                'New credentials. Migrations and seeds run against it.',
                         },
                         {
                             value: 'clone',
@@ -195,12 +195,13 @@ function ServiceStrategy({
                                             disabled={!candidate.allowed}
                                         >
                                             {candidate.environment} /{' '}
-                                            {candidate.service} ·{' '}
+                                            {candidate.service} (
                                             {candidate.backedUpAt
                                                 ? formatBytes(
                                                       candidate.sizeBytes,
                                                   )
                                                 : 'no backup'}
+                                            )
                                         </SelectItem>
                                     ))}
                                 </SelectContent>
@@ -458,7 +459,7 @@ export function PreviewSettingsSection({
                     </SettingsRow>
                     <SettingsRow
                         label="Target branches"
-                        description="Comma-separated globs. Empty: every branch."
+                        description="Comma-separated globs. Leave empty for every branch."
                         htmlFor="previews-branches"
                     >
                         <div className="flex w-full flex-col gap-1 sm:w-72">
@@ -477,7 +478,7 @@ export function PreviewSettingsSection({
                     </SettingsRow>
                     <SettingsRow
                         label="Required label"
-                        description="Only labelled pull requests. Empty: all."
+                        description="Only pull requests with this label get a preview. Leave empty for all."
                         htmlFor="previews-label"
                     >
                         <div className="flex w-full flex-col gap-1 sm:w-72">
@@ -520,7 +521,7 @@ export function PreviewSettingsSection({
                     </SettingsRow>
                     <SettingsRow
                         label="Remove after inactivity"
-                        description="Days without new commits. 0: never."
+                        description="Days without new commits. With 0, previews stay until the pull request closes."
                         htmlFor="previews-expiry"
                     >
                         <div className="flex flex-col gap-1">
@@ -566,7 +567,7 @@ export function PreviewSettingsSection({
                                 value: 'approval',
                                 title: 'After your approval',
                                 description:
-                                    'A maintainer approves each commit; secrets stay empty.',
+                                    'A maintainer approves each commit. Secrets stay empty.',
                             },
                         ]}
                     />
@@ -576,7 +577,7 @@ export function PreviewSettingsSection({
                 <SettingsCard title="Access">
                     <SettingsRow
                         label="Require a login"
-                        description="Team members sign in, others need a share link."
+                        description="Team members sign in. Anyone else needs a share link."
                         htmlFor="previews-protection"
                         inline
                     >
@@ -594,8 +595,9 @@ export function PreviewSettingsSection({
                         description={
                             current.canAllowProductionClone ? (
                                 <>
-                                    Databases may be copied from or shared with
-                                    production. Never for forks.
+                                    Previews may copy or share production
+                                    databases. Pull requests from forks never
+                                    get production data.
                                     <InputError
                                         message={errors.allowProductionClone}
                                     />

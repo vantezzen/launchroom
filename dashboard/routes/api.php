@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Enums\ApiAbility;
+use App\Http\Controllers\Api\V1\AnalyticsController;
 use App\Http\Controllers\Api\V1\CliSessionController;
 use App\Http\Controllers\Api\V1\ConfigController;
 use App\Http\Controllers\Api\V1\DeploymentController;
@@ -15,6 +16,7 @@ use App\Http\Controllers\Api\V1\LogController;
 use App\Http\Controllers\Api\V1\MeController;
 use App\Http\Controllers\Api\V1\OpenApiController;
 use App\Http\Controllers\Api\V1\ProjectController;
+use App\Http\Controllers\Api\V1\SecurityController;
 use App\Http\Controllers\Api\V1\ServerController;
 use App\Http\Controllers\Api\V1\TransferController;
 use App\Http\Controllers\Api\V1\VariableController;
@@ -58,6 +60,7 @@ Route::middleware(SubstituteBindings::class)->group(function () use ($ability): 
             'transfer' => PublicId::routePattern('dtr'),
             'import' => PublicId::routePattern('imp'),
             'export' => PublicId::routePattern('exp'),
+            'finding' => PublicId::routePattern('fnd'),
         ])
         ->name('api.')
         ->group(function () use ($ability): void {
@@ -79,6 +82,16 @@ Route::middleware(SubstituteBindings::class)->group(function () use ($ability): 
                 Route::get('servers', [ServerController::class, 'index'])->name('servers.index');
                 Route::get('servers/{server}', [ServerController::class, 'show'])->name('servers.show');
                 Route::get('environments/{environment}/services/{service}/domains', [DomainController::class, 'index'])->name('domains.index');
+                // Request analytics (docs/15 §5.4).
+                Route::get('analytics', [AnalyticsController::class, 'overview'])->name('analytics.team');
+                Route::get('environments/{environment}/analytics', [AnalyticsController::class, 'environment'])->name('analytics.environment');
+                Route::get('environments/{environment}/services/{service}/analytics', [AnalyticsController::class, 'service'])->name('analytics.service');
+                // Security center (docs/22 §11): read-only.
+                Route::get('security/findings', [SecurityController::class, 'findings'])->name('security.findings.index');
+                Route::get('security/findings/{finding}', [SecurityController::class, 'finding'])->name('security.findings.show');
+                Route::get('security/inventory', [SecurityController::class, 'inventory'])->name('security.inventory');
+                Route::get('security/waf', [SecurityController::class, 'waf'])->name('security.waf');
+                Route::get('environments/{environment}/services/{service}/inventory', [SecurityController::class, 'serviceInventory'])->name('security.service-inventory');
                 // launchroom.json (docs/18 §7): checks are dry runs, nothing is stored.
                 Route::get('environments/{environment}/config/status', [ConfigController::class, 'status'])->name('config.status');
                 Route::post('environments/{environment}/config/validate', [ConfigController::class, 'check'])->middleware('throttle:api-write')->name('config.validate');

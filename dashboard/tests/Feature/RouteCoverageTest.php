@@ -37,6 +37,8 @@ const PUBLIC_ROUTES = [
     'GET /',
     // Health check for the container orchestrator.
     'GET up',
+    // Build version for the client's reconnect probe (no session, throttled).
+    'GET up/version',
     // WebAuthn discovery document (static links only).
     'GET .well-known/passkey-endpoints',
 

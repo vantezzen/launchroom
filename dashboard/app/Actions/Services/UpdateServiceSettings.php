@@ -4,15 +4,18 @@ declare(strict_types=1);
 
 namespace App\Actions\Services;
 
+use App\Data\Services\ConfigFile;
 use App\Data\Services\ScheduleSettings;
 use App\Data\Services\UpdateServiceSettingsData;
 use App\Enums\ServiceKind;
 use App\Exceptions\DomainRuleViolation;
 use App\Jobs\PlanServiceJob;
 use App\Models\ServiceInstance;
+use App\Models\Volume;
 use App\Services\Deployments\PlacementConstraints;
 use App\Services\Dockerfiles\GeneratedDockerfiles;
 use App\Support\Cron\CronGrammar;
+use App\Support\Services\ConfigFileRules;
 use Illuminate\Support\Facades\DB;
 use Spatie\LaravelData\Optional;
 
@@ -38,6 +41,10 @@ final readonly class UpdateServiceSettings
 
             if (! $data->deploy instanceof Optional && $data->deploy->schedule instanceof ScheduleSettings) {
                 $this->checkSchedule($instance->service->kind, $data->deploy->schedule);
+            }
+
+            if (! $data->deploy instanceof Optional && $data->deploy->files !== []) {
+                $this->checkFiles($instance, $data->deploy->files);
             }
 
             // A generated Dockerfile (docs/20 §5) only from a verified run of this service.
@@ -68,6 +75,27 @@ final readonly class UpdateServiceSettings
 
             return $instance;
         });
+    }
+
+    /**
+     * Config files (D65): the rules launchroomd enforces, never into a
+     * volume of the instance; managed databases configure themselves.
+     *
+     * @param  list<ConfigFile>  $files
+     */
+    private function checkFiles(ServiceInstance $instance, array $files): void
+    {
+        if ($instance->service->kind === ServiceKind::Database) {
+            throw DomainRuleViolation::on('deploy.files', 'Managed databases have no config files: launchroom configures the engine.');
+        }
+
+        /** @var list<string> $mounts */
+        $mounts = Volume::query()->where('service_instance_id', $instance->id)->whereNull('removed_at')->pluck('mount_path')->all();
+        $errors = ConfigFileRules::errors($files, $mounts);
+
+        if ($errors !== []) {
+            throw DomainRuleViolation::on('deploy.files', $errors[0]);
+        }
     }
 
     /**

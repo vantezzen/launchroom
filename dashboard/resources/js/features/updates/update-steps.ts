@@ -106,7 +106,7 @@ export function updateSteps(
             summary:
                 update.status === 'updating'
                     ? (update.progress ??
-                      'The dashboard is away for a few minutes')
+                      'The dashboard is unavailable for a few minutes')
                     : stop === 2
                       ? reason(update)
                       : undefined,
@@ -120,7 +120,7 @@ export function updateSteps(
               }
             : {
                   id: 'check',
-                  name: 'Check it came up',
+                  name: 'Check that it started',
                   status: pick(3),
               },
     ];
@@ -142,7 +142,7 @@ export function updateSteps(
                       ? `Update ${serverCount} servers`
                       : 'Update servers',
             status: failed ? 'skipped' : 'pending',
-            summary: 'One at a time, edge servers last',
+            summary: 'Servers update one at a time, edge servers last',
         });
 
         return steps;

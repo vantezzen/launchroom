@@ -60,7 +60,7 @@ final readonly class SlackSender implements AlertSender
         }
 
         if ($message->context !== []) {
-            $blocks[] = ['type' => 'context', 'elements' => [['type' => 'mrkdwn', 'text' => self::escape(implode(' · ', $message->context))]]];
+            $blocks[] = ['type' => 'context', 'elements' => [['type' => 'mrkdwn', 'text' => self::escape(implode(' / ', $message->context))]]];
         }
 
         $blocks[] = ['type' => 'actions', 'elements' => [[

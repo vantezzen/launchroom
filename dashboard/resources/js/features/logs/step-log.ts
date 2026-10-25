@@ -1,5 +1,6 @@
 import type { StepStatus } from '@/components/steps/step-icon';
 import { STEP_STATUS_LABEL } from '@/components/steps/step-icon';
+import { elapsedSeconds, formatDuration } from '@/lib/duration';
 import { stripAnsi } from './ansi';
 import type { LogSection } from './sections';
 import { isSection, SECTION_LABELS, SECTION_ORDER } from './sections';
@@ -16,6 +17,9 @@ export type TimelineStep = {
     section: LogSection;
     status: StepStatus;
     duration: string | null;
+    /** A running step's header ticks from here (`finishedAt` null). */
+    startedAt?: string | null;
+    finishedAt?: string | null;
     message: string | null;
 };
 
@@ -344,7 +348,13 @@ export function logText(
 
     for (const step of steps) {
         const lines = bySection.get(step.section) ?? [];
-        const facts = [STEP_STATUS_LABEL[step.status], step.duration]
+        const duration =
+            step.startedAt && step.status === 'running'
+                ? formatDuration(
+                      elapsedSeconds(step.startedAt, step.finishedAt ?? null),
+                  )
+                : step.duration;
+        const facts = [STEP_STATUS_LABEL[step.status], duration]
             .filter(Boolean)
             .join(', ');
         out.push(`== ${SECTION_LABELS[step.section]} (${facts}) ==`);

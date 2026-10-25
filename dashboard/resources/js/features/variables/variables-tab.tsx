@@ -1,8 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-    AppWindow,
     ChevronRight,
-    Drill,
     FileCode2,
     Hammer,
     KeyRound,
@@ -90,40 +88,43 @@ function Hint({ label, children }: { label: string; children: ReactNode }) {
     );
 }
 
-function ExposureBadge({ exposure }: { exposure: App.Enums.VariableExposure }) {
+/** The build cue (direction §9.5): only build-time variables carry it. */
+function BuildHint({
+    exposure,
+    browserInlined = false,
+}: {
+    exposure: App.Enums.VariableExposure;
+    browserInlined?: boolean;
+}) {
+    if (exposure === 'runtime') {
+        return null;
+    }
+
     return (
-        <Badge variant="outline">
-            {(exposure === 'build' || exposure === 'both') && (
-                <Hint label="Available while building. Changing it requires a rebuild.">
-                    <Hammer
-                        aria-hidden="true"
-                        className="size-3.5 text-muted-foreground"
-                    />
-                </Hint>
-            )}
-            {(exposure === 'runtime' || exposure === 'both') && (
-                <Hint label="Available at runtime">
-                    <AppWindow
-                        aria-hidden="true"
-                        className="size-3.5 text-muted-foreground"
-                    />
-                </Hint>
-            )}
-        </Badge>
+        <Hint
+            label={
+                browserInlined
+                    ? 'Baked into the browser bundle at build time and visible to anyone. Changing it requires a rebuild.'
+                    : exposure === 'build'
+                      ? 'Only available while building. Changing it requires a rebuild.'
+                      : 'Available while building and at runtime. Changing it requires a rebuild.'
+            }
+        >
+            <Hammer aria-hidden="true" />
+        </Hint>
     );
 }
 
 /** Quiet icon cues with tooltips (direction §9.5): secret, reference, build, connection. */
 function Badges({ row }: { row: Row }) {
     return (
-        <span className="flex shrink-0 flex-wrap items-center gap-1">
-            <ExposureBadge exposure={row.exposure} />
+        <span className="flex shrink-0 items-center gap-0.5">
             {row.managedByFile && (
                 <Hint
                     label={
                         row.type === 'secret'
                             ? 'launchroom.json requires this secret. Its value stays here.'
-                            : 'Set in launchroom.json. Edit it there: the file wins on the next push.'
+                            : 'Set in launchroom.json. Edit it there, because the next push overwrites changes made here.'
                     }
                 >
                     <FileCode2 aria-hidden="true" />
@@ -141,19 +142,10 @@ function Badges({ row }: { row: Row }) {
                     <Link2 aria-hidden="true" />
                 </Hint>
             )}
-            {row.exposure !== 'runtime' && (
-                <Hint
-                    label={
-                        row.browserInlined
-                            ? 'Baked into the browser bundle at build time and visible to anyone. Changing it requires a rebuild.'
-                            : row.exposure === 'build'
-                              ? 'Only available while building. Changing it requires a rebuild.'
-                              : 'Available while building and at runtime. Changing it requires a rebuild.'
-                    }
-                >
-                    <Hammer aria-hidden="true" />
-                </Hint>
-            )}
+            <BuildHint
+                exposure={row.exposure}
+                browserInlined={row.browserInlined}
+            />
             {row.connection !== null && (
                 <Hint
                     label={`Added by the connection to ${row.connection}. Remove the connection on the canvas to remove it.`}
@@ -665,7 +657,7 @@ export function VariablesTab({
                                                     className="size-3.5 text-muted-foreground"
                                                 />
                                             )}
-                                            <ExposureBadge
+                                            <BuildHint
                                                 exposure={row.exposure}
                                             />
                                         </span>

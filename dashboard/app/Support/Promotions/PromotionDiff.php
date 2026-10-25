@@ -11,6 +11,7 @@ use App\Enums\ChangeEffect;
 use App\Enums\ChangeKind;
 use App\Enums\PromotionClass;
 use App\Enums\PromotionEntryType;
+use App\Support\Variables\GeneratedValues;
 
 /**
  * The three-way diff of Compare & promote (docs/06 §6.3). Pure: snapshots in,
@@ -148,7 +149,7 @@ final class PromotionDiff
             case PromotionEntryType::Volume:
                 if ($kind !== ChangeKind::Added) {
                     $selectable = false;
-                    $note = 'Volumes are never removed or moved by a promotion; change them in the target’s settings.';
+                    $note = 'A promotion never removes or moves volumes. Change them in the target’s settings.';
                 } else {
                     $note = 'A new empty volume: data is never promoted.';
                 }
@@ -263,6 +264,21 @@ final class PromotionDiff
                 }
 
                 $item->dependsOn = [...$item->dependsOn, $sharedPath];
+            }
+        }
+
+        // A new value signed with another variable (jwt()) is generated in the
+        // target after that variable, so it needs it when the target lacks it.
+        foreach ($items as $item) {
+            if ($item->type !== PromotionEntryType::Variable || $item->kind !== ChangeKind::Added) {
+                continue;
+            }
+
+            $key = GeneratedValues::signingKey($source->get($item->path)?->generator);
+            $signingPath = $key === null ? null : (string) preg_replace('/\.variables\.[^.]+$/', '.variables.'.$key, $item->path);
+
+            if ($signingPath !== null && ! $target->get($signingPath) instanceof PromotionEntry && isset($items[$signingPath])) {
+                $item->dependsOn = [...$item->dependsOn, $signingPath];
             }
         }
 

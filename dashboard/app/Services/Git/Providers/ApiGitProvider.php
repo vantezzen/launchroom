@@ -308,7 +308,7 @@ abstract class ApiGitProvider implements GitProvider, OpensPullRequests
         } catch (GitConnectionUnusable $e) {
             throw new GitHeadUnavailable($e->getMessage(), $e->getCode(), previous: $e);
         } catch (Throwable) {
-            throw new GitHeadUnavailable("{$label} did not answer for {$repository->fullName}; try again in a moment.");
+            throw new GitHeadUnavailable("{$label} did not answer for {$repository->fullName}. Try again in a moment.");
         }
 
         if ($response->status() === 404) {
@@ -499,7 +499,7 @@ abstract class ApiGitProvider implements GitProvider, OpensPullRequests
         $url = $this->webhookUrl($connection);
 
         if (! $connection->allow_private_network && ! WebhookReachability::isPublic($url)) {
-            $repository->forceFill(['hook_error' => 'The dashboard isn’t reachable from the internet; pushes arrive by polling.'])->save();
+            $repository->forceFill(['hook_error' => 'The dashboard isn’t reachable from the internet, so launchroom polls the repository for pushes.'])->save();
 
             return;
         }

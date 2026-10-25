@@ -9,7 +9,7 @@ export type Step = {
     id: string;
     name: string;
     status: StepStatus;
-    /** Quiet text right of the name ("Next.js 16.1 · pnpm 9.12"). */
+    /** Quiet text right of the name ("Next.js 16.1, pnpm 9.12"). */
     summary?: ReactNode;
     /** Compact duration ("41s"); right-aligned, tabular. */
     duration?: string | null;

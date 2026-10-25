@@ -36,14 +36,53 @@
             {
               "handle": [
                 {
-                  "body": "launchroom: there is no app at this address.\n",
-                  "handler": "static_response",
-                  "headers": {
-                    "Content-Type": [
-                      "text/plain; charset=utf-8"
-                    ]
-                  },
-                  "status_code": 404
+                  "handler": "subroute",
+                  "routes": [
+                    {
+                      "handle": [
+                        {
+                          "body": "\u003c!doctype html\u003e\u003chtml lang=\"en\"\u003e\u003chead\u003e\u003cmeta charset=\"utf-8\"\u003e\u003cmeta name=\"viewport\" content=\"width=device-width,initial-scale=1\"\u003e\u003cmeta name=\"robots\" content=\"noindex\"\u003e\u003ctitle\u003eNo app at this address\u003c/title\u003e\u003cstyle\u003e:root{color-scheme:light dark;--bg:#fff;--fg:#171717;--mu:#4d4d4d;--bd:#ebebeb;--rc:#fafafa}@media (prefers-color-scheme:dark){:root{--bg:#0a0a0a;--fg:#ededed;--mu:#a1a1a1;--bd:#1f1f1f;--rc:#111}}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:48px 16px;background:var(--bg);color:var(--fg);font:400 14px/20px Geist,\"Geist Sans\",ui-sans-serif,system-ui,-apple-system,\"Segoe UI\",Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}main{width:100%;max-width:420px}header{display:flex;align-items:center;gap:8px;margin-bottom:40px;font-size:15px;font-weight:600;letter-spacing:-.01em}svg{width:24px;height:24px;flex:none}.c,.h{font-family:\"Geist Mono\",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px}.c{margin:0 0 8px;color:var(--mu);font-variant-numeric:tabular-nums}h1{margin:0 0 8px;font-size:24px;line-height:30px;font-weight:600;letter-spacing:-.02em;text-wrap:balance}p{margin:0;color:var(--mu)}.h{margin-top:24px;padding:10px 12px;border:1px solid var(--bd);border-radius:8px;background:var(--rc);color:var(--fg);overflow-wrap:anywhere}\u003c/style\u003e\u003c/head\u003e\u003cbody\u003e\u003cmain\u003e\u003cheader\u003e\u003csvg viewBox=\"0 0 100 100\" aria-hidden=\"true\"\u003e\u003cpath fill=\"currentColor\" d=\"M93.75 53.12C93.75 68.66 81.16 81.25 65.62 81.25H56.25V62.5C56.25 59.05 53.45 56.25 50 56.25C46.55 56.25 43.75 59.05 43.75 62.5V81.25H25C14.64 81.25 6.25 72.86 6.25 62.5C6.25 52.14 14.64 43.75 25 43.75C29.96 43.75 34.47 45.68 37.83 48.82C39.9 35.33 51.55 25 65.62 25C81.16 25 93.75 37.59 93.75 53.12Z\"/\u003e\u003c/svg\u003elaunchroom\u003c/header\u003e\u003cp class=\"c\"\u003eError 404\u003c/p\u003e\u003ch1\u003eNo app at this address\u003c/h1\u003e\u003cp\u003eThis server has no app for this domain. Check the address, or add the domain to a project.\u003c/p\u003e\u003c/main\u003e\u003c/body\u003e\u003c/html\u003e",
+                          "handler": "static_response",
+                          "headers": {
+                            "Cache-Control": [
+                              "no-store"
+                            ],
+                            "Content-Type": [
+                              "text/html; charset=utf-8"
+                            ]
+                          },
+                          "status_code": 404
+                        }
+                      ],
+                      "match": [
+                        {
+                          "header": {
+                            "Accept": [
+                              "*text/html*"
+                            ]
+                          }
+                        }
+                      ],
+                      "terminal": true
+                    },
+                    {
+                      "handle": [
+                        {
+                          "body": "launchroom: there is no app at this address.\n",
+                          "handler": "static_response",
+                          "headers": {
+                            "Cache-Control": [
+                              "no-store"
+                            ],
+                            "Content-Type": [
+                              "text/plain; charset=utf-8"
+                            ]
+                          },
+                          "status_code": 404
+                        }
+                      ]
+                    }
+                  ]
                 }
               ],
               "terminal": true
@@ -53,6 +92,143 @@
         "lr-https": {
           "automatic_https": {
             "disable_redirects": true
+          },
+          "errors": {
+            "routes": [
+              {
+                "handle": [
+                  {
+                    "handler": "subroute",
+                    "routes": [
+                      {
+                        "handle": [
+                          {
+                            "body": "\u003c!doctype html\u003e\u003chtml lang=\"en\"\u003e\u003chead\u003e\u003cmeta charset=\"utf-8\"\u003e\u003cmeta name=\"viewport\" content=\"width=device-width,initial-scale=1\"\u003e\u003cmeta name=\"robots\" content=\"noindex\"\u003e\u003cmeta http-equiv=\"refresh\" content=\"10\"\u003e\u003ctitle\u003eThis app is not answering\u003c/title\u003e\u003cstyle\u003e:root{color-scheme:light dark;--bg:#fff;--fg:#171717;--mu:#4d4d4d;--bd:#ebebeb;--rc:#fafafa}@media (prefers-color-scheme:dark){:root{--bg:#0a0a0a;--fg:#ededed;--mu:#a1a1a1;--bd:#1f1f1f;--rc:#111}}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:48px 16px;background:var(--bg);color:var(--fg);font:400 14px/20px Geist,\"Geist Sans\",ui-sans-serif,system-ui,-apple-system,\"Segoe UI\",Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}main{width:100%;max-width:420px}header{display:flex;align-items:center;gap:8px;margin-bottom:40px;font-size:15px;font-weight:600;letter-spacing:-.01em}svg{width:24px;height:24px;flex:none}.c,.h{font-family:\"Geist Mono\",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px}.c{margin:0 0 8px;color:var(--mu);font-variant-numeric:tabular-nums}h1{margin:0 0 8px;font-size:24px;line-height:30px;font-weight:600;letter-spacing:-.02em;text-wrap:balance}p{margin:0;color:var(--mu)}.h{margin-top:24px;padding:10px 12px;border:1px solid var(--bd);border-radius:8px;background:var(--rc);color:var(--fg);overflow-wrap:anywhere}\u003c/style\u003e\u003c/head\u003e\u003cbody\u003e\u003cmain\u003e\u003cheader\u003e\u003csvg viewBox=\"0 0 100 100\" aria-hidden=\"true\"\u003e\u003cpath fill=\"currentColor\" d=\"M93.75 53.12C93.75 68.66 81.16 81.25 65.62 81.25H56.25V62.5C56.25 59.05 53.45 56.25 50 56.25C46.55 56.25 43.75 59.05 43.75 62.5V81.25H25C14.64 81.25 6.25 72.86 6.25 62.5C6.25 52.14 14.64 43.75 25 43.75C29.96 43.75 34.47 45.68 37.83 48.82C39.9 35.33 51.55 25 65.62 25C81.16 25 93.75 37.59 93.75 53.12Z\"/\u003e\u003c/svg\u003elaunchroom\u003c/header\u003e\u003cp class=\"c\"\u003eError {http.error.status_code}\u003c/p\u003e\u003ch1\u003eThis app is not answering\u003c/h1\u003e\u003cp\u003eThe app didn\u0026#39;t respond to the server. This page refreshes automatically.\u003c/p\u003e\u003cdiv class=\"h\"\u003e{http.request.host}\u003c/div\u003e\u003c/main\u003e\u003c/body\u003e\u003c/html\u003e",
+                            "handler": "static_response",
+                            "headers": {
+                              "Cache-Control": [
+                                "no-store"
+                              ],
+                              "Content-Type": [
+                                "text/html; charset=utf-8"
+                              ]
+                            },
+                            "status_code": "{http.error.status_code}"
+                          }
+                        ],
+                        "match": [
+                          {
+                            "header": {
+                              "Accept": [
+                                "*text/html*"
+                              ]
+                            }
+                          }
+                        ],
+                        "terminal": true
+                      },
+                      {
+                        "handle": [
+                          {
+                            "body": "launchroom: this app is not answering right now. Try again in a moment.\n",
+                            "handler": "static_response",
+                            "headers": {
+                              "Cache-Control": [
+                                "no-store"
+                              ],
+                              "Content-Type": [
+                                "text/plain; charset=utf-8"
+                              ]
+                            },
+                            "status_code": "{http.error.status_code}"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ],
+                "match": [
+                  {
+                    "host": [
+                      "pr-2.preview.example.com"
+                    ],
+                    "vars": {
+                      "{http.error.status_code}": [
+                        "502",
+                        "503",
+                        "504"
+                      ]
+                    }
+                  }
+                ],
+                "terminal": true
+              },
+              {
+                "handle": [
+                  {
+                    "handler": "subroute",
+                    "routes": [
+                      {
+                        "handle": [
+                          {
+                            "body": "\u003c!doctype html\u003e\u003chtml lang=\"en\"\u003e\u003chead\u003e\u003cmeta charset=\"utf-8\"\u003e\u003cmeta name=\"viewport\" content=\"width=device-width,initial-scale=1\"\u003e\u003cmeta name=\"robots\" content=\"noindex\"\u003e\u003cmeta http-equiv=\"refresh\" content=\"10\"\u003e\u003ctitle\u003eThis address is not answering\u003c/title\u003e\u003cstyle\u003e:root{color-scheme:light dark;--bg:#fff;--fg:#171717;--mu:#4d4d4d;--bd:#ebebeb;--rc:#fafafa}@media (prefers-color-scheme:dark){:root{--bg:#0a0a0a;--fg:#ededed;--mu:#a1a1a1;--bd:#1f1f1f;--rc:#111}}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:48px 16px;background:var(--bg);color:var(--fg);font:400 14px/20px Geist,\"Geist Sans\",ui-sans-serif,system-ui,-apple-system,\"Segoe UI\",Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}main{width:100%;max-width:420px}header{display:flex;align-items:center;gap:8px;margin-bottom:40px;font-size:15px;font-weight:600;letter-spacing:-.01em}svg{width:24px;height:24px;flex:none}.c,.h{font-family:\"Geist Mono\",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px}.c{margin:0 0 8px;color:var(--mu);font-variant-numeric:tabular-nums}h1{margin:0 0 8px;font-size:24px;line-height:30px;font-weight:600;letter-spacing:-.02em;text-wrap:balance}p{margin:0;color:var(--mu)}.h{margin-top:24px;padding:10px 12px;border:1px solid var(--bd);border-radius:8px;background:var(--rc);color:var(--fg);overflow-wrap:anywhere}\u003c/style\u003e\u003c/head\u003e\u003cbody\u003e\u003cmain\u003e\u003cheader\u003e\u003csvg viewBox=\"0 0 100 100\" aria-hidden=\"true\"\u003e\u003cpath fill=\"currentColor\" d=\"M93.75 53.12C93.75 68.66 81.16 81.25 65.62 81.25H56.25V62.5C56.25 59.05 53.45 56.25 50 56.25C46.55 56.25 43.75 59.05 43.75 62.5V81.25H25C14.64 81.25 6.25 72.86 6.25 62.5C6.25 52.14 14.64 43.75 25 43.75C29.96 43.75 34.47 45.68 37.83 48.82C39.9 35.33 51.55 25 65.62 25C81.16 25 93.75 37.59 93.75 53.12Z\"/\u003e\u003c/svg\u003elaunchroom\u003c/header\u003e\u003cp class=\"c\"\u003eError {http.error.status_code}\u003c/p\u003e\u003ch1\u003eThis address is not answering\u003c/h1\u003e\u003cp\u003eNothing responded at this address. This page refreshes automatically.\u003c/p\u003e\u003c/main\u003e\u003c/body\u003e\u003c/html\u003e",
+                            "handler": "static_response",
+                            "headers": {
+                              "Cache-Control": [
+                                "no-store"
+                              ],
+                              "Content-Type": [
+                                "text/html; charset=utf-8"
+                              ]
+                            },
+                            "status_code": "{http.error.status_code}"
+                          }
+                        ],
+                        "match": [
+                          {
+                            "header": {
+                              "Accept": [
+                                "*text/html*"
+                              ]
+                            }
+                          }
+                        ],
+                        "terminal": true
+                      },
+                      {
+                        "handle": [
+                          {
+                            "body": "launchroom: this address is not answering right now. Try again in a moment.\n",
+                            "handler": "static_response",
+                            "headers": {
+                              "Cache-Control": [
+                                "no-store"
+                              ],
+                              "Content-Type": [
+                                "text/plain; charset=utf-8"
+                              ]
+                            },
+                            "status_code": "{http.error.status_code}"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ],
+                "match": [
+                  {
+                    "vars": {
+                      "{http.error.status_code}": [
+                        "502",
+                        "503",
+                        "504"
+                      ]
+                    }
+                  }
+                ],
+                "terminal": true
+              }
+            ]
           },
           "listen": [
             ":443"
@@ -218,14 +394,53 @@
             {
               "handle": [
                 {
-                  "body": "launchroom: there is no app at this address.\n",
-                  "handler": "static_response",
-                  "headers": {
-                    "Content-Type": [
-                      "text/plain; charset=utf-8"
-                    ]
-                  },
-                  "status_code": 404
+                  "handler": "subroute",
+                  "routes": [
+                    {
+                      "handle": [
+                        {
+                          "body": "\u003c!doctype html\u003e\u003chtml lang=\"en\"\u003e\u003chead\u003e\u003cmeta charset=\"utf-8\"\u003e\u003cmeta name=\"viewport\" content=\"width=device-width,initial-scale=1\"\u003e\u003cmeta name=\"robots\" content=\"noindex\"\u003e\u003ctitle\u003eNo app at this address\u003c/title\u003e\u003cstyle\u003e:root{color-scheme:light dark;--bg:#fff;--fg:#171717;--mu:#4d4d4d;--bd:#ebebeb;--rc:#fafafa}@media (prefers-color-scheme:dark){:root{--bg:#0a0a0a;--fg:#ededed;--mu:#a1a1a1;--bd:#1f1f1f;--rc:#111}}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:48px 16px;background:var(--bg);color:var(--fg);font:400 14px/20px Geist,\"Geist Sans\",ui-sans-serif,system-ui,-apple-system,\"Segoe UI\",Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}main{width:100%;max-width:420px}header{display:flex;align-items:center;gap:8px;margin-bottom:40px;font-size:15px;font-weight:600;letter-spacing:-.01em}svg{width:24px;height:24px;flex:none}.c,.h{font-family:\"Geist Mono\",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px}.c{margin:0 0 8px;color:var(--mu);font-variant-numeric:tabular-nums}h1{margin:0 0 8px;font-size:24px;line-height:30px;font-weight:600;letter-spacing:-.02em;text-wrap:balance}p{margin:0;color:var(--mu)}.h{margin-top:24px;padding:10px 12px;border:1px solid var(--bd);border-radius:8px;background:var(--rc);color:var(--fg);overflow-wrap:anywhere}\u003c/style\u003e\u003c/head\u003e\u003cbody\u003e\u003cmain\u003e\u003cheader\u003e\u003csvg viewBox=\"0 0 100 100\" aria-hidden=\"true\"\u003e\u003cpath fill=\"currentColor\" d=\"M93.75 53.12C93.75 68.66 81.16 81.25 65.62 81.25H56.25V62.5C56.25 59.05 53.45 56.25 50 56.25C46.55 56.25 43.75 59.05 43.75 62.5V81.25H25C14.64 81.25 6.25 72.86 6.25 62.5C6.25 52.14 14.64 43.75 25 43.75C29.96 43.75 34.47 45.68 37.83 48.82C39.9 35.33 51.55 25 65.62 25C81.16 25 93.75 37.59 93.75 53.12Z\"/\u003e\u003c/svg\u003elaunchroom\u003c/header\u003e\u003cp class=\"c\"\u003eError 404\u003c/p\u003e\u003ch1\u003eNo app at this address\u003c/h1\u003e\u003cp\u003eThis server has no app for this domain. Check the address, or add the domain to a project.\u003c/p\u003e\u003c/main\u003e\u003c/body\u003e\u003c/html\u003e",
+                          "handler": "static_response",
+                          "headers": {
+                            "Cache-Control": [
+                              "no-store"
+                            ],
+                            "Content-Type": [
+                              "text/html; charset=utf-8"
+                            ]
+                          },
+                          "status_code": 404
+                        }
+                      ],
+                      "match": [
+                        {
+                          "header": {
+                            "Accept": [
+                              "*text/html*"
+                            ]
+                          }
+                        }
+                      ],
+                      "terminal": true
+                    },
+                    {
+                      "handle": [
+                        {
+                          "body": "launchroom: there is no app at this address.\n",
+                          "handler": "static_response",
+                          "headers": {
+                            "Cache-Control": [
+                              "no-store"
+                            ],
+                            "Content-Type": [
+                              "text/plain; charset=utf-8"
+                            ]
+                          },
+                          "status_code": 404
+                        }
+                      ]
+                    }
+                  ]
                 }
               ],
               "terminal": true

@@ -11,7 +11,9 @@ use App\Data\Blueprints\BlueprintNote;
 use App\Data\Blueprints\BlueprintScaling;
 use App\Data\Blueprints\BlueprintService;
 use App\Data\Blueprints\BlueprintVariable;
+use App\Data\Services\ConfigFile;
 use App\Data\Services\HealthcheckSettings;
+use App\Enums\Backups\VolumeConsistency;
 use App\Enums\BlueprintNoteKind;
 use App\Enums\ConnectionStyle;
 use App\Enums\DatabaseEngine;
@@ -93,6 +95,15 @@ final class ServiceDraft
     /** @var list<string>|null raw command words (redis `--requirepass`) */
     public ?array $rawCommand = null;
 
+    /** @var list<ConfigFile> Compose `configs` with inline content (D65) */
+    public array $files = [];
+
+    /** @var array<string, string> templates' `x-launchroom.provides`: what a connection to it injects (D65) */
+    public array $provides = [];
+
+    /** Templates' `x-launchroom.backup`: how backups read its volumes (`pause` for databases kept as images). */
+    public ?VolumeConsistency $backupConsistency = null;
+
     /**
      * @param  array<array-key, mixed>  $definition
      */
@@ -147,6 +158,13 @@ final class ServiceDraft
                 $this->connections,
             ),
             notes: $notes,
+            files: in_array($this->kind, [ServiceKind::App, ServiceKind::Image, ServiceKind::Worker], true) ? $this->files : [],
+            provides: in_array($this->kind, [ServiceKind::App, ServiceKind::Image], true) ? array_map(
+                static fn (string $key, string $value): BlueprintVariable => new BlueprintVariable($key, $value),
+                array_keys($this->provides),
+                $this->provides,
+            ) : [],
+            backupConsistency: in_array($this->kind, [ServiceKind::App, ServiceKind::Image], true) && $this->volumes !== [] ? $this->backupConsistency : null,
         );
     }
 

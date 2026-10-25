@@ -1,0 +1,75 @@
+{
+  "apiVersion": "launchroom.vantezzen.io/v1",
+  "kind": "TaskLease",
+  "tasks": [
+    {
+      "id": "tsk_01J9Z8X7W6V5T4S3R2Q1P0N9S5",
+      "type": "access",
+      "leaseExpiresAt": "2026-10-17T12:01:00Z",
+      "attempt": 1,
+      "deadline": "2026-10-17T14:00:00Z",
+      "spec": {
+        "access": "acc_01J9Z8X7W6V5T4S3R2Q1P0N9A1",
+        "kind": "ssh",
+        "workload": "wl_01J9Z8X7W6V5T4S3R2Q1P0N9N8",
+        "user": "lr-k3x9q2mfa7",
+        "authorizedKeys": [
+          "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAABAgMEBQYHCAkKCwwNDg8QERITFBUWFxgZGhscHR4f"
+        ],
+        "allowFrom": [
+          "203.0.113.7/32"
+        ],
+        "idleTimeout": "15m"
+      }
+    },
+    {
+      "id": "tsk_01J9Z8X7W6V5T4S3R2Q1P0N9S6",
+      "type": "access",
+      "leaseExpiresAt": "2026-10-17T12:01:00Z",
+      "attempt": 1,
+      "deadline": "2026-10-17T14:00:00Z",
+      "spec": {
+        "access": "acc_01J9Z8X7W6V5T4S3R2Q1P0N9A2",
+        "kind": "database",
+        "workload": "wl_01J9Z8X7W6V5T4S3R2Q1P0N9N9",
+        "engine": "postgres",
+        "user": "lr_tmp_k3x9q2mfa7b1",
+        "password": {
+          "sealed": "aEd1s08pS3O5azgHS/RIgRCwcTKob0z7+re83Fwam/F7JsEo6tehDt5Quxs/Zll9EZCIqVTnFNjlnPH6mnUoanih+Nj89h6MkawEMi6Zjgdkni3v1t+6Q9wVzRNRkfpO"
+        },
+        "allowFrom": [
+          "203.0.113.7/32",
+          "2001:db8::/48"
+        ],
+        "hosts": [
+          "203.0.113.10"
+        ],
+        "allowWrites": true,
+        "idleTimeout": "15m"
+      }
+    },
+    {
+      "id": "tsk_01J9Z8X7W6V5T4S3R2Q1P0N9S7",
+      "type": "access",
+      "leaseExpiresAt": "2026-10-17T12:01:00Z",
+      "attempt": 1,
+      "deadline": "2026-10-17T14:00:00Z",
+      "spec": {
+        "access": "acc_01J9Z8X7W6V5T4S3R2Q1P0N9A3",
+        "kind": "volume",
+        "workload": "wl_01J9Z8X7W6V5T4S3R2Q1P0N9N8",
+        "user": "lr-p4w8n2c6x0",
+        "authorizedKeys": [
+          "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAABAgMEBQYHCAkKCwwNDg8QERITFBUWFxgZGhscHR4f"
+        ],
+        "allowFrom": [
+          "203.0.113.7/32"
+        ],
+        "allowWrites": true,
+        "volume": "vol_01J9Z8X7W6V5T4S3R2Q1P0N9V1",
+        "image": "docker.io/library/busybox@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e",
+        "idleTimeout": "15m"
+      }
+    }
+  ]
+}

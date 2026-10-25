@@ -250,6 +250,8 @@ type TaskHeartbeat struct {
 	Attempt int `json:"attempt" jsonschema:"minimum=1"`
 	// Progress is an optional short status line for the UI.
 	Progress string `json:"progress,omitzero" jsonschema:"maxLength=256"`
+	// Access is the state of a running access task (docs/03 §12).
+	Access *AccessStatus `json:"access,omitzero" jsonschema:"nullable"`
 }
 
 // Validate checks the heartbeat.
@@ -260,6 +262,9 @@ func (h *TaskHeartbeat) Validate() error {
 		e.addf("attempt", "must be >= 1")
 	}
 	checkText(&e, "progress", h.Progress, 256)
+	if h.Access != nil {
+		h.Access.validate(&e, "access")
+	}
 	return e.err()
 }
 
@@ -318,6 +323,12 @@ type TaskCompletion struct {
 	DataImport *DataImportResult `json:"dataImport,omitzero" jsonschema:"nullable"`
 	// DataExport is set for db_export and volume_export tasks that succeeded (D55).
 	DataExport *DataExportResult `json:"dataExport,omitzero" jsonschema:"nullable"`
+	// Access is set for finished access tasks, also when they failed (docs/03 §12).
+	Access *AccessResult `json:"access,omitzero" jsonschema:"nullable"`
+	// Inventory is set for succeeded inventory tasks (docs/03 §13.1).
+	Inventory *InventoryResult `json:"inventory,omitzero" jsonschema:"nullable"`
+	// ContainerInspection is set for succeeded inspect_container tasks (docs/03 §13.2).
+	ContainerInspection *ContainerInspectionResult `json:"containerInspection,omitzero" jsonschema:"nullable"`
 }
 
 // SelfUpdateResult describes a finished self_update (docs/11 §4).
@@ -445,6 +456,15 @@ func (c *TaskCompletion) Validate() error {
 	}
 	if c.DataExport != nil {
 		c.DataExport.validate(&e)
+	}
+	if c.Access != nil {
+		c.Access.validate(&e)
+	}
+	if c.Inventory != nil {
+		c.Inventory.validate(&e)
+	}
+	if c.ContainerInspection != nil {
+		c.ContainerInspection.validate(&e)
 	}
 	return e.err()
 }
@@ -582,6 +602,9 @@ type IngressStatus struct {
 	Certificates []CertificateStatus `json:"certificates,omitzero" jsonschema:"nullable,maxItems=4096"`
 	// Storage reports where certificates are kept (shared storage, local, degraded).
 	Storage *CertStorageStatus `json:"storage,omitzero" jsonschema:"nullable"`
+	// Waf is the web firewall's state at this edge (docs/03 §13.4); sent by
+	// edges announcing the daemon feature "waf".
+	Waf *WafStatus `json:"waf,omitzero" jsonschema:"nullable"`
 }
 
 // ProbeStatus is the result of the daemon's external health probe.
@@ -715,6 +738,9 @@ func (r *Report) Validate() error {
 		}
 		checkText(&e, "ingress.message", in.Message, maxMessageLen)
 		in.validateCerts(&e)
+		if in.Waf != nil {
+			in.Waf.validate(&e, "ingress.waf")
+		}
 	}
 	if sr := r.StateRejected; sr != nil {
 		if sr.Version < 0 {

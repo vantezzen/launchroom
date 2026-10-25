@@ -131,6 +131,6 @@ final class UpdatesController extends Controller
 
         $update = $start->handle($user, $this->auditActor($request, $user));
 
-        return back()->with('success', "Updating launchroomd to {$update->to_version}, one server at a time.");
+        return back()->with('success', "Updating your servers to {$update->to_version}, one at a time.");
     }
 }

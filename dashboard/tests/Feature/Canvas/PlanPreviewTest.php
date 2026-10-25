@@ -195,7 +195,7 @@ test('a preview past its deadline is reported as failed and can be retried', fun
 
     $this->actingAs($this->developer)->getJson(($this->url)())
         ->assertJsonPath('status', 'failed')
-        ->assertJsonPath('message', 'Detection did not finish in time. Retry, or add the service: the first build detects again.');
+        ->assertJsonPath('message', 'Detection did not finish in time. Retry, or add the service and let the first build detect it.');
 
     $this->actingAs($this->developer)->getJson(($this->url)().'&retry=1')->assertJsonPath('status', 'pending');
     expect(DaemonTask::query()->count())->toBe(2)

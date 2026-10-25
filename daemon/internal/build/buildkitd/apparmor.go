@@ -77,14 +77,14 @@ func (m *Manager) ensureProfiled(ctx context.Context, image state.ImageRef) (str
 		return "", err
 	}
 	profile := m.wantProfile(cs, image)
-	id, err := m.ensureContainer(ctx, image, profile)
+	id, err := m.ensureWeighted(ctx, image, profile)
 	if err != nil && profile == AppArmorProfile && appArmorRefused(err) {
 		m.o.Log.Warn("AppArmor profile "+AppArmorProfile+" is not loaded on this host; builds need it while kernel.apparmor_restrict_unprivileged_userns=1 (re-run the installer)", "err", err)
 		m.mu.Lock()
 		m.profileMissing = time.Now()
 		m.mu.Unlock()
 		profile = appArmorUnconfined
-		id, err = m.ensureContainer(ctx, image, profile)
+		id, err = m.ensureWeighted(ctx, image, profile)
 	} else if err == nil && profile == AppArmorProfile {
 		m.mu.Lock()
 		m.profileMissing = time.Time{}

@@ -1,11 +1,14 @@
 import { Link, useForm } from '@inertiajs/react';
 import {
     ArrowRight,
+    FolderInput,
     HardDrive,
+    MoreHorizontal,
     Plus,
     ShieldAlert,
     ShieldCheck,
     ShieldQuestion,
+    Trash2,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
@@ -20,11 +23,18 @@ import {
     DialogDescription,
     DialogTitle,
 } from '@/components/ui/dialog';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
+import { RemoteAccessButton } from '@/features/remote-access/remote-access';
 import { deviceStatus } from '@/features/servers/format';
 import { cn } from '@/lib/utils';
 import services from '@/routes/projects/services';
-import { store } from '@/routes/projects/services/volumes';
+import { destroy, store, update } from '@/routes/projects/services/volumes';
 import { CopyButton } from './general-section';
 import { DeviceStage } from './scaling-visuals';
 import { SettingsPage } from './section';
@@ -119,9 +129,15 @@ function protection(backup: App.Data.Backups.ServiceBackupStatusData | null): {
 function VolumeCard({
     volume,
     context,
+    canChange,
+    onChange,
+    onRemove,
 }: {
     volume: Volume;
     context: SettingsContext;
+    canChange: boolean;
+    onChange: () => void;
+    onRemove: () => void;
 }) {
     const placed = volume.server !== null;
     const guard = protection(context.node.backup);
@@ -172,15 +188,43 @@ function VolumeCard({
                                 />
                             </span>
                         </div>
-                        {placed ? (
-                            <StatusPill state="active" label="In use" />
-                        ) : (
-                            <StatusPill
-                                state="staged"
-                                label="With the next deploy"
-                            />
-                        )}
+                        <div className="flex shrink-0 items-center gap-1">
+                            <VolumeState volume={volume} />
+                            {canChange && !volume.removing && (
+                                <DropdownMenu>
+                                    <DropdownMenuTrigger asChild>
+                                        <Button
+                                            variant="ghost"
+                                            size="icon-sm"
+                                            aria-label={`Options for ${volume.mountPath}`}
+                                        >
+                                            <MoreHorizontal />
+                                        </Button>
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent align="end">
+                                        <DropdownMenuItem onSelect={onChange}>
+                                            <FolderInput /> Change mount path
+                                        </DropdownMenuItem>
+                                        <DropdownMenuItem
+                                            variant="destructive"
+                                            onSelect={onRemove}
+                                        >
+                                            <Trash2 /> Remove volume
+                                        </DropdownMenuItem>
+                                    </DropdownMenuContent>
+                                </DropdownMenu>
+                            )}
+                        </div>
                     </div>
+                    {volume.deployedMountPath && !volume.removing && (
+                        <p className="-mt-1 px-5 pb-3 type-small text-muted-foreground">
+                            Running containers still use{' '}
+                            <code className="type-mono-small">
+                                {volume.deployedMountPath}
+                            </code>{' '}
+                            until you deploy.
+                        </p>
+                    )}
                     <dl className="grid flex-1 divide-y border-t @md/page:grid-cols-2 @md/page:divide-x @md/page:divide-y-0">
                         <div className="flex flex-col gap-1 px-5 py-3.5">
                             <dt className="type-small text-muted-foreground">
@@ -217,29 +261,291 @@ function VolumeCard({
                             </dd>
                         </div>
                     </dl>
-                    <div className="flex items-center justify-between gap-3 border-t px-5 py-2.5">
+                    <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 border-t px-5 py-2.5">
                         <span className="type-small text-muted-foreground">
-                            {placed
-                                ? `Kept on ${volume.server} across deploys.`
-                                : 'Created on the server the next deploy picks.'}
+                            {volume.removing
+                                ? `The next deploy stops mounting it. The files stay on ${volume.server} until the volume is deleted.`
+                                : placed
+                                  ? `Kept on ${volume.server} across deploys.`
+                                  : 'Created on the server the next deploy picks.'}
                         </span>
-                        <Link
-                            href={backupsHref}
-                            only={['panel']}
-                            preserveState
-                            preserveScroll
-                            className="inline-flex shrink-0 items-center gap-1 type-small font-medium text-signal underline-offset-4 hover:underline"
-                        >
-                            Backups
-                            <ArrowRight
-                                aria-hidden="true"
-                                className="size-3.5"
-                            />
-                        </Link>
+                        <span className="flex shrink-0 items-center gap-3">
+                            {placed && !volume.removing && (
+                                <RemoteAccessButton
+                                    serviceRef={{
+                                        project: context.route[0],
+                                        environment: context.route[1],
+                                        service: context.route[2],
+                                    }}
+                                    kind="volume"
+                                    volume={volume.id}
+                                    variant="ghost"
+                                    size="sm"
+                                    className="-my-1 h-7 px-2 type-small"
+                                />
+                            )}
+                            <Link
+                                href={backupsHref}
+                                only={['panel']}
+                                preserveState
+                                preserveScroll
+                                className="inline-flex shrink-0 items-center gap-1 type-small font-medium text-signal underline-offset-4 hover:underline"
+                            >
+                                Backups
+                                <ArrowRight
+                                    aria-hidden="true"
+                                    className="size-3.5"
+                                />
+                            </Link>
+                        </span>
                     </div>
                 </div>
             </div>
         </li>
+    );
+}
+
+/** In use, staged (new, moved, removed) as a pill with a word. */
+function VolumeState({ volume }: { volume: Volume }) {
+    if (volume.removing) {
+        return (
+            <StatusPill state="staged" label="Removed with the next deploy" />
+        );
+    }
+
+    if (volume.server === null) {
+        return <StatusPill state="staged" label="With the next deploy" />;
+    }
+
+    if (volume.deployedMountPath) {
+        return <StatusPill state="staged" label="Moves with the next deploy" />;
+    }
+
+    return <StatusPill state="active" label="In use" />;
+}
+
+/**
+ * A new mount path for a volume. The files stay in the volume; the next
+ * deploy mounts it at the new path (staged, docs/14 §9.12).
+ */
+function ChangeVolumeDialog({
+    context,
+    volume,
+    onOpenChange,
+}: {
+    context: SettingsContext;
+    volume: Volume | null;
+    onOpenChange: (open: boolean) => void;
+}) {
+    // Keyed by the volume: the form starts from its current path.
+    const form = useForm({ mountPath: volume?.mountPath ?? '' });
+    const path = form.data.mountPath.trim();
+    const valid = PATH.test(path);
+
+    const submit = (event: FormEvent) => {
+        event.preventDefault();
+
+        if (!volume) {
+            return;
+        }
+
+        form.transform((data) => ({ mountPath: data.mountPath.trim() }));
+        form.patch(update([...context.route, volume.id]).url, {
+            preserveScroll: true,
+            preserveState: true,
+            onSuccess: () => onOpenChange(false),
+        });
+    };
+
+    return (
+        <Dialog open={volume !== null} onOpenChange={onOpenChange}>
+            <DialogContent className="gap-6 sm:max-w-lg">
+                <form onSubmit={submit} className="flex flex-col gap-6">
+                    <div className="flex flex-col gap-1.5">
+                        <DialogTitle>Change mount path</DialogTitle>
+                        <DialogDescription>
+                            The files stay in the volume. After the next deploy,{' '}
+                            {context.node.name} finds them at the new path.
+                        </DialogDescription>
+                    </div>
+                    <div className="flex flex-col gap-2">
+                        <label
+                            htmlFor="volume-new-mount-path"
+                            className="type-label"
+                        >
+                            Mount path
+                        </label>
+                        <Input
+                            id="volume-new-mount-path"
+                            autoFocus
+                            value={form.data.mountPath}
+                            onChange={(event) =>
+                                form.setData('mountPath', event.target.value)
+                            }
+                            autoComplete="off"
+                            spellCheck={false}
+                            className="h-11 font-mono text-[15px]"
+                            aria-invalid={
+                                path !== '' && !valid ? true : undefined
+                            }
+                        />
+                        <InputError message={form.errors.mountPath} />
+                        {path !== '' && !valid && !form.errors.mountPath && (
+                            <p className="type-small text-status-progress">
+                                An absolute path inside the container, like
+                                /app/data.
+                            </p>
+                        )}
+                    </div>
+                    <div className="flex items-center justify-between gap-3">
+                        <span className="type-small text-muted-foreground">
+                            Applies with the next deploy.
+                        </span>
+                        <div className="flex gap-2">
+                            <Button
+                                type="button"
+                                variant="ghost"
+                                onClick={() => onOpenChange(false)}
+                            >
+                                Cancel
+                            </Button>
+                            <Button
+                                type="submit"
+                                disabled={
+                                    form.processing ||
+                                    !valid ||
+                                    path === volume?.mountPath
+                                }
+                            >
+                                Save for next deploy
+                            </Button>
+                        </div>
+                    </div>
+                </form>
+            </DialogContent>
+        </Dialog>
+    );
+}
+
+/**
+ * Removes a volume. One that was never created goes right away; one that
+ * holds files is removed with the next deploy, after typing its path, and
+ * then kept on its server until it is deleted (docs/05 §1.1).
+ */
+function RemoveVolumeDialog({
+    context,
+    volume,
+    onOpenChange,
+}: {
+    context: SettingsContext;
+    volume: Volume | null;
+    onOpenChange: (open: boolean) => void;
+}) {
+    const form = useForm({ confirm: '' });
+    const placed = volume?.server != null;
+    const ready = !placed || form.data.confirm.trim() === volume?.mountPath;
+
+    const submit = (event: FormEvent) => {
+        event.preventDefault();
+
+        if (!volume) {
+            return;
+        }
+
+        form.transform((data) => ({ confirm: data.confirm.trim() }));
+        form.delete(destroy([...context.route, volume.id]).url, {
+            preserveScroll: true,
+            preserveState: true,
+            onSuccess: () => onOpenChange(false),
+        });
+    };
+
+    const error =
+        form.errors.confirm ??
+        (form.errors as Record<string, string | undefined>).volume;
+
+    return (
+        <Dialog open={volume !== null} onOpenChange={onOpenChange}>
+            <DialogContent className="gap-6 sm:max-w-lg">
+                <form onSubmit={submit} className="flex flex-col gap-6">
+                    <div className="flex flex-col gap-1.5">
+                        <DialogTitle>
+                            Remove{' '}
+                            <code className="type-mono">
+                                {volume?.mountPath}
+                            </code>
+                            ?
+                        </DialogTitle>
+                        <DialogDescription>
+                            {placed
+                                ? `${context.node.name} keeps it until you deploy. You can discard the change before that.`
+                                : 'It was never created, so no files are lost.'}
+                        </DialogDescription>
+                    </div>
+                    {placed && (
+                        <ul className="flex flex-col gap-2 rounded-xl bg-recessed p-4 type-small text-muted-foreground">
+                            <li>
+                                After the deploy, files written to{' '}
+                                <code className="type-mono-small">
+                                    {volume?.mountPath}
+                                </code>{' '}
+                                are reset with each deploy.
+                            </li>
+                            <li>
+                                The volume stays on {volume?.server} for the
+                                retention period (7 days by default), then it is
+                                deleted. If it was backed up, an owner or admin
+                                allows the deletion on the server page.
+                            </li>
+                            <li>Snapshots stay in your backup destination.</li>
+                        </ul>
+                    )}
+                    {placed && (
+                        <div className="flex flex-col gap-2">
+                            <label
+                                htmlFor="volume-remove-confirm"
+                                className="type-label"
+                            >
+                                Type{' '}
+                                <span className="type-mono-small">
+                                    {volume?.mountPath}
+                                </span>{' '}
+                                to confirm
+                            </label>
+                            <Input
+                                id="volume-remove-confirm"
+                                value={form.data.confirm}
+                                onChange={(event) =>
+                                    form.setData('confirm', event.target.value)
+                                }
+                                autoComplete="off"
+                                spellCheck={false}
+                                className="font-mono"
+                            />
+                        </div>
+                    )}
+                    <InputError message={error} />
+                    <div className="flex justify-end gap-2">
+                        <Button
+                            type="button"
+                            variant="ghost"
+                            onClick={() => onOpenChange(false)}
+                        >
+                            Cancel
+                        </Button>
+                        <Button
+                            type="submit"
+                            variant="destructive"
+                            disabled={form.processing || !ready}
+                        >
+                            {placed
+                                ? 'Remove with next deploy'
+                                : 'Remove volume'}
+                        </Button>
+                    </div>
+                </form>
+            </DialogContent>
+        </Dialog>
     );
 }
 
@@ -321,18 +627,18 @@ function AddVolumeDialog({
             title: 'One replica, next to its data',
             detail:
                 replicas > 1
-                    ? `${context.node.name} runs ${replicas} replicas today; with a volume it runs one.`
+                    ? `${context.node.name} runs ${replicas} replicas now. With a volume it runs as one.`
                     : `${context.node.name} keeps running as one replica.`,
             warn: replicas > 1,
         },
         {
             title: 'Stays on one server',
-            detail: 'The next deploy picks the server; after that the service doesn’t move.',
+            detail: 'The next deploy picks a server, and the service stays there.',
             warn: false,
         },
         {
             title: 'Backed up as snapshots',
-            detail: 'With your backup destination, on the same schedule as databases.',
+            detail: 'Sent to your backup destination on the same schedule as databases.',
             warn: false,
         },
     ];
@@ -344,8 +650,9 @@ function AddVolumeDialog({
                     <div className="flex flex-col gap-1.5">
                         <DialogTitle>Add a volume</DialogTitle>
                         <DialogDescription>
-                            For files that must survive deploys: uploads,
-                            SQLite, caches you can’t rebuild.
+                            For files that need to survive deploys, such as
+                            uploads, SQLite databases or caches you can’t
+                            rebuild.
                         </DialogDescription>
                     </div>
                     <div className="flex flex-col gap-2">
@@ -470,6 +777,8 @@ function AddVolumeDialog({
 export function VolumesSection({ context }: { context: SettingsContext }) {
     const { node, settings } = context;
     const [adding, setAdding] = useState(false);
+    const [changing, setChanging] = useState<Volume | null>(null);
+    const [removing, setRemoving] = useState<Volume | null>(null);
     const canAdd =
         context.canUpdate && (node.kind === 'app' || node.kind === 'image');
 
@@ -478,8 +787,8 @@ export function VolumesSection({ context }: { context: SettingsContext }) {
             title="Volumes"
             description={
                 node.kind === 'database'
-                    ? 'Where the database keeps its data. launchroom manages it for you.'
-                    : 'Files that survive deploys. A service with a volume runs one replica next to it.'
+                    ? 'Where the database keeps its data, managed by launchroom.'
+                    : 'Storage that keeps files across deploys. A service with a volume runs as one replica on the server that holds it.'
             }
             actions={
                 canAdd &&
@@ -509,8 +818,8 @@ export function VolumesSection({ context }: { context: SettingsContext }) {
                         )
                     }
                 >
-                    Everything outside a volume resets with each deploy, which
-                    keeps services easy to move.
+                    Files outside a volume are reset with each deploy. Add a
+                    volume for files that need to stay.
                 </EmptyState>
             ) : (
                 <ul data-setting="volumes-list" className="flex flex-col gap-4">
@@ -519,16 +828,40 @@ export function VolumesSection({ context }: { context: SettingsContext }) {
                             key={volume.id}
                             volume={volume}
                             context={context}
+                            canChange={canAdd}
+                            onChange={() => setChanging(volume)}
+                            onRemove={() => setRemoving(volume)}
                         />
                     ))}
                 </ul>
             )}
             {canAdd && (
-                <AddVolumeDialog
-                    context={context}
-                    open={adding}
-                    onOpenChange={setAdding}
-                />
+                <>
+                    <AddVolumeDialog
+                        context={context}
+                        open={adding}
+                        onOpenChange={setAdding}
+                    />
+                    <ChangeVolumeDialog
+                        key={`change-${changing?.id ?? ''}`}
+                        context={context}
+                        volume={changing}
+                        onOpenChange={(open) => !open && setChanging(null)}
+                    />
+                    <RemoveVolumeDialog
+                        key={`remove-${removing?.id ?? ''}`}
+                        context={context}
+                        volume={removing}
+                        onOpenChange={(open) => !open && setRemoving(null)}
+                    />
+                </>
+            )}
+            {node.kind === 'database' && settings.volumes.length > 0 && (
+                <p className="type-small text-muted-foreground">
+                    launchroom manages where the database keeps its data, so
+                    this volume can’t be moved or removed here. Removing the
+                    database keeps its volume on the server.
+                </p>
             )}
         </SettingsPage>
     );

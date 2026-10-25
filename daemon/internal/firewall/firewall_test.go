@@ -307,3 +307,54 @@ func TestBuildRulesetLinkProbe(t *testing.T) {
 		t.Fatalf("mesh-host without peers = %q", host)
 	}
 }
+
+func TestBuildRulesetAccess(t *testing.T) {
+	without := Build(Spec{Bridges: []string{"br-aaaaaaaaaaaa"}})
+	for _, c := range without.Chains {
+		if c.Name == ChainAccess {
+			t.Fatal("an access chain without a running access")
+		}
+	}
+	rs := Build(Spec{Bridges: []string{"br-aaaaaaaaaaaa"}, Access: []AccessRule{
+		{Port: 40150, From: []netip.Prefix{netip.MustParsePrefix("2001:db8::/48"), netip.MustParsePrefix("203.0.113.7/32")}},
+		{Port: 40101, From: []netip.Prefix{netip.MustParsePrefix("198.51.100.0/24")}},
+	}})
+	want := []string{
+		"ip saddr 198.51.100.0/24 tcp dport 40101 accept",
+		"tcp dport 40101 drop",
+		"ip saddr 203.0.113.7/32 tcp dport 40150 accept",
+		"ip6 saddr 2001:db8::/48 tcp dport 40150 accept",
+		"tcp dport 40150 drop",
+	}
+	if got := chain(rs, ChainAccess); !slices.Equal(got, want) {
+		t.Fatalf("access chain:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+	in := chain(rs, ChainInput)
+	if in[len(in)-1] != "jump access" || index(in, `iifname "br-aaaaaaaaaaaa" jump host`) > len(in)-2 {
+		t.Fatalf("input chain:\n%s", strings.Join(in, "\n"))
+	}
+	// Deterministic: the same input renders the same table (drift detection).
+	if Build(Spec{Bridges: []string{"br-aaaaaaaaaaaa"}, Access: []AccessRule{{Port: 40101, From: []netip.Prefix{netip.MustParsePrefix("198.51.100.0/24")}}, {Port: 40150, From: []netip.Prefix{netip.MustParsePrefix("203.0.113.7/32"), netip.MustParsePrefix("2001:db8::/48")}}}}).String() != rs.String() {
+		t.Fatal("rendering depends on input order")
+	}
+}
+
+func TestManagerRendersAccessRules(t *testing.T) {
+	be := &FakeBackend{}
+	var rules []AccessRule
+	m := New(Options{Backend: be, Networks: func(context.Context) ([]docker.Network, error) { return nil, nil }, Access: func() []AccessRule { return rules }})
+	rules = []AccessRule{{Port: 40100, From: []netip.Prefix{netip.MustParsePrefix("203.0.113.7/32")}}}
+	if err := m.Sync(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(be.Live, "ip saddr 203.0.113.7/32 tcp dport 40100 accept") {
+		t.Fatalf("not applied:\n%s", be.Live)
+	}
+	rules = nil
+	if err := m.Sync(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(be.Live, "40100") {
+		t.Fatalf("rule left after the access ended:\n%s", be.Live)
+	}
+}

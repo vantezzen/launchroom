@@ -1,7 +1,20 @@
 import { Head, router, useForm } from '@inertiajs/react';
-import { Page, PageHeader } from '@/components/patterns/page';
-import { SettingsNav } from '@/components/patterns/settings-nav';
+import {
+    FileCode2,
+    GitPullRequest,
+    Layers,
+    ScrollText,
+    SlidersHorizontal,
+    TriangleAlert,
+} from 'lucide-react';
+import { useState } from 'react';
+import { Page } from '@/components/patterns/page';
 import { UnsavedBar } from '@/components/patterns/unsaved-bar';
+import { buildSettingsIndex } from '@/components/settings/search';
+import type { SettingDraft } from '@/components/settings/search';
+import { SettingsPage } from '@/components/settings/settings-page';
+import { SettingsShell } from '@/components/settings/settings-shell';
+import type { SettingsNavGroup } from '@/components/settings/types';
 import InputError from '@/components/input-error';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -15,7 +28,6 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { useState } from 'react';
 import { PendingDeletion } from '@/features/backups/pending-deletion';
 import { EnvironmentsSettings } from '@/features/environments/environments-settings';
 import { ConfigFileSettings } from '@/features/config-as-code/config-file-settings';
@@ -37,8 +49,18 @@ type Deletion = {
     canSkipFinalBackup: boolean;
 };
 
+type Section =
+    | 'general'
+    | 'environments'
+    | 'previews'
+    | 'config-file'
+    | 'logs'
+    | 'danger';
+
 type Props = ProjectShellProps & {
-    section: 'general' | 'environments' | 'previews' | 'logs' | 'danger';
+    section: Section;
+    /** `/p/{project}/settings` without a section: the list on phones. */
+    index: boolean;
     icon: App.Data.Projects.ProjectIconData;
     previewSettings: App.Data.Previews.PreviewSettingsData | null;
     allEnvironments: App.Data.Canvas.EnvironmentData[];
@@ -52,13 +74,206 @@ type Props = ProjectShellProps & {
     deletion: Deletion | null;
 };
 
-const sections = [
-    ['general', 'General'],
-    ['environments', 'Environments'],
-    ['previews', 'Previews'],
-    ['logs', 'Logs'],
-    ['danger', 'Danger zone'],
-] as const;
+/**
+ * Project settings pages (docs/08 §2): General on top, then Environments
+ * (environments, previews), Configuration (config file, log retention) and
+ * the Danger zone.
+ */
+function projectGroups(
+    project: App.Data.Canvas.ProjectData,
+    environments: App.Data.Canvas.EnvironmentData[],
+): SettingsNavGroup<Section>[] {
+    const lasting = environments.filter(
+        (environment) => environment.kind !== 'preview',
+    );
+    const previews = environments.length - lasting.length;
+
+    return [
+        {
+            id: 'general',
+            label: null,
+            pages: [
+                {
+                    id: 'general',
+                    label: 'General',
+                    icon: SlidersHorizontal,
+                    summary: project.name,
+                    keywords: ['name', 'icon', 'slug', 'secrets'],
+                },
+            ],
+        },
+        {
+            id: 'environments',
+            label: 'Environments',
+            pages: [
+                {
+                    id: 'environments',
+                    label: 'Environments',
+                    icon: Layers,
+                    summary: lasting
+                        .map((environment) => environment.name)
+                        .join(', '),
+                    keywords: ['staging', 'production', 'branch', 'triggers'],
+                },
+                {
+                    id: 'previews',
+                    label: 'Previews',
+                    icon: GitPullRequest,
+                    summary:
+                        previews === 0
+                            ? 'An environment per pull request'
+                            : plural(
+                                  previews,
+                                  'preview environment',
+                                  'preview environments',
+                              ),
+                    keywords: ['pull request', 'pr', 'preview environments'],
+                },
+            ],
+        },
+        {
+            id: 'configuration',
+            label: 'Configuration',
+            pages: [
+                {
+                    id: 'config-file',
+                    label: 'Config file',
+                    icon: FileCode2,
+                    summary: 'Settings from launchroom.json',
+                    keywords: ['launchroom.json', 'config as code', 'json'],
+                },
+                {
+                    id: 'logs',
+                    label: 'Logs',
+                    icon: ScrollText,
+                    summary: 'How long runtime logs are kept',
+                    keywords: ['retention', 'keep logs', 'runtime logs'],
+                },
+            ],
+        },
+        {
+            id: 'danger',
+            label: null,
+            pages: [
+                {
+                    id: 'danger',
+                    label: 'Danger zone',
+                    icon: TriangleAlert,
+                    summary: 'Delete the project',
+                    keywords: ['delete', 'remove'],
+                },
+            ],
+        },
+    ];
+}
+
+/** The rows search finds besides the pages (`setting` anchors). */
+const drafts: SettingDraft<Section>[] = [
+    {
+        target: 'general',
+        label: 'Name',
+        hint: 'Rename the project',
+        keywords: ['rename', 'title'],
+        anchor: 'name',
+    },
+    {
+        target: 'general',
+        label: 'Icon',
+        hint: 'The app’s favicon or an upload',
+        keywords: ['favicon', 'logo', 'image', 'upload'],
+        anchor: 'icon',
+    },
+    {
+        target: 'general',
+        label: 'Slug',
+        hint: 'Used in generated domains',
+        keywords: ['identifier', 'url'],
+        anchor: 'slug',
+    },
+    {
+        target: 'general',
+        label: 'Production secrets must differ',
+        hint: 'Previews can’t reuse production secrets',
+        keywords: ['secrets', 'policy', 'variables'],
+        anchor: 'secrets',
+    },
+    {
+        target: 'environments',
+        label: 'New environment',
+        hint: 'A full copy with its own variables and data',
+        keywords: ['add environment', 'create', 'staging'],
+    },
+    {
+        target: 'previews',
+        label: 'Preview environments',
+        hint: 'Turn previews on or off',
+        keywords: ['enable', 'disable', 'pull requests'],
+    },
+    {
+        target: 'previews',
+        label: 'Which pull requests',
+        hint: 'Base environment, branches, label, limits',
+        keywords: ['label', 'target branch', 'concurrent', 'expiry'],
+    },
+    {
+        target: 'previews',
+        label: 'Pull requests from forks',
+        hint: 'No previews, or after your approval',
+        keywords: ['fork', 'approval', 'external'],
+    },
+    {
+        target: 'previews',
+        label: 'Access',
+        hint: 'Who can open a preview',
+        keywords: ['protection', 'login', 'password', 'production data'],
+    },
+    {
+        target: 'previews',
+        label: 'Databases in previews',
+        hint: 'Empty, a copy, or shared',
+        keywords: ['database', 'clone', 'seed', 'data'],
+    },
+    {
+        target: 'previews',
+        label: 'Automated tests',
+        hint: 'Bypass secret for CI',
+        keywords: ['ci', 'bypass', 'secret', 'playwright'],
+    },
+    {
+        target: 'config-file',
+        label: 'Read the config file',
+        hint: 'Path and repository of launchroom.json',
+        keywords: ['path', 'repository', 'schema'],
+    },
+    {
+        target: 'config-file',
+        label: 'Last read',
+        hint: 'Per environment, with Download and Check now',
+        keywords: ['download', 'check now', 'problems'],
+    },
+    {
+        target: 'logs',
+        label: 'Keep runtime logs',
+        hint: 'Days and size per environment',
+        keywords: ['retention', 'days', 'size', 'storage'],
+    },
+    {
+        target: 'danger',
+        label: 'Delete project',
+        hint: 'Stop every service and remove the project',
+        keywords: ['delete', 'remove', 'destroy'],
+        anchor: 'delete-project',
+    },
+];
+
+/** One sentence under the page title, where the page has no intro of its own. */
+const descriptions: Partial<Record<Section, string>> = {
+    general: 'The project’s name, icon and secrets policy.',
+    previews:
+        'Pull request previews: which ones run, who can open them and their data.',
+    'config-file': 'Read settings from launchroom.json in your repository.',
+    danger: 'Deleting a project can’t be undone.',
+};
 
 function plural(count: number, one: string, many: string): string {
     return `${count} ${count === 1 ? one : many}`;
@@ -120,7 +335,7 @@ function DeleteProjectDialog({
                 >
                     <p className="type-small text-muted-foreground">
                         {backedUp > 0
-                            ? `${plural(backedUp, 'service has', 'services have')} backups: a final backup of their data is taken first, and the project is deleted once it succeeded. Snapshots stay in your backup destination; data volumes are deleted after the retention period.`
+                            ? `${plural(backedUp, 'service has', 'services have')} backups. A final backup of their data is taken before the project is deleted. Snapshots stay in your backup destination, and data volumes are deleted after the retention period.`
                             : 'Data volumes stay on their servers for the retention period, then are deleted.'}
                     </p>
                     {backedUp > 0 && deletion.canSkipFinalBackup && (
@@ -204,6 +419,7 @@ function DangerZone({
             )}
             <SettingsCard>
                 <SettingsRow
+                    setting="delete-project"
                     label="Delete project"
                     description={
                         deletion.pending !== null
@@ -264,6 +480,7 @@ function General({
         >
             <SettingsCard title="Project">
                 <SettingsRow
+                    setting="name"
                     label="Name"
                     description="Shown in launchroom only."
                     htmlFor="project-name"
@@ -288,8 +505,9 @@ function General({
                     canManage={canManage}
                 />
                 <SettingsRow
+                    setting="slug"
                     label="Slug"
-                    description="Used in generated domains; it never changes, so links stay stable."
+                    description="Used in generated domains. It can’t be changed, so links keep working."
                 >
                     <span className="type-mono text-muted-foreground">
                         {project.slug}
@@ -309,6 +527,7 @@ function General({
 export default function ProjectSettings({
     project,
     section,
+    index,
     icon,
     environmentSettings,
     logRetention,
@@ -320,85 +539,84 @@ export default function ProjectSettings({
     deletion,
     abilities,
     previewSettings,
+    allEnvironments,
 }: Props) {
+    const groups = projectGroups(project, allEnvironments);
+    const page = groups
+        .flatMap((group) => group.pages)
+        .find((entry) => entry.id === section);
+
     return (
         <>
-            <Head title={`Settings · ${project.name}`} />
-            <Page
-                size="settings"
-                nav={
-                    <SettingsNav
-                        label="Project settings"
-                        groups={[
-                            {
-                                items: sections.map(([id, label]) => ({
-                                    title: label,
-                                    href: settings({
-                                        project: project.id,
-                                        section: id,
-                                    }),
-                                    active: section === id,
-                                })),
-                            },
-                        ]}
-                    />
-                }
-            >
-                <PageHeader
-                    title={
-                        sections.find(([id]) => id === section)?.[1] ??
-                        'Settings'
+            <Head title={`Settings - ${project.name}`} />
+            <Page size="settings">
+                <SettingsShell
+                    label="Project settings"
+                    groups={groups}
+                    current={section}
+                    requested={index ? null : section}
+                    hrefFor={(id) =>
+                        settings({
+                            project: project.id,
+                            section: id ?? undefined,
+                        }).url
                     }
-                />
-                <div className="w-full">
-                    {section === 'general' && (
-                        <div className="flex flex-col gap-10">
-                            <General
-                                project={project}
-                                icon={icon}
-                                canManage={abilities.manage}
-                            />
-                            <SecretsPolicy
-                                project={project.id}
-                                policy={secretsPolicy}
-                                canManage={abilities.manage}
-                            />
-                            {configFile && (
-                                <ConfigFileSettings
-                                    project={project.id}
-                                    page={configFile}
+                    index={buildSettingsIndex(drafts, groups, { pages: true })}
+                    emptyHint="Try “environment”, “preview” or “delete”."
+                >
+                    <SettingsPage
+                        title={page?.label ?? 'Settings'}
+                        description={descriptions[section]}
+                    >
+                        {section === 'general' && (
+                            <div className="flex flex-col gap-10">
+                                <General
+                                    project={project}
+                                    icon={icon}
+                                    canManage={abilities.manage}
                                 />
-                            )}
-                        </div>
-                    )}
-                    {section === 'danger' && (
-                        <DangerZone
-                            project={project}
-                            canDelete={canDelete}
-                            deletion={deletion}
-                        />
-                    )}
-                    {section === 'environments' && (
-                        <EnvironmentsSettings
-                            project={project}
-                            environments={environmentSettings}
-                            canCreate={canCreateEnvironment}
-                        />
-                    )}
-                    {section === 'logs' && (
-                        <LogRetentionSettings
-                            project={project.id}
-                            environments={logRetention}
-                            options={logRetentionOptions}
-                        />
-                    )}
-                    {section === 'previews' && previewSettings && (
-                        <PreviewSettingsSection
-                            project={project.id}
-                            settings={previewSettings}
-                        />
-                    )}
-                </div>
+                                <SecretsPolicy
+                                    project={project.id}
+                                    policy={secretsPolicy}
+                                    canManage={abilities.manage}
+                                />
+                            </div>
+                        )}
+                        {section === 'config-file' && configFile && (
+                            <ConfigFileSettings
+                                project={project.id}
+                                page={configFile}
+                            />
+                        )}
+                        {section === 'danger' && (
+                            <DangerZone
+                                project={project}
+                                canDelete={canDelete}
+                                deletion={deletion}
+                            />
+                        )}
+                        {section === 'environments' && (
+                            <EnvironmentsSettings
+                                project={project}
+                                environments={environmentSettings}
+                                canCreate={canCreateEnvironment}
+                            />
+                        )}
+                        {section === 'logs' && (
+                            <LogRetentionSettings
+                                project={project.id}
+                                environments={logRetention}
+                                options={logRetentionOptions}
+                            />
+                        )}
+                        {section === 'previews' && previewSettings && (
+                            <PreviewSettingsSection
+                                project={project.id}
+                                settings={previewSettings}
+                            />
+                        )}
+                    </SettingsPage>
+                </SettingsShell>
             </Page>
         </>
     );

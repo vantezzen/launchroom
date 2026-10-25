@@ -11,8 +11,7 @@ use App\Models\User;
 /**
  * Deletions waiting for their final backup (docs/14 §9.13): members see
  * them; whoever may delete projects retries the final backup; only owners
- * and admins (ManageBackups) delete
- * without one.
+ * and admins (ManageBackups) delete without one.
  */
 final class DeletionRequestPolicy
 {

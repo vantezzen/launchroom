@@ -34,7 +34,7 @@ beforeEach(function (): void {
 
 function pcConnect(object $test, array $input, ?object $user = null): TestResponse
 {
-    return $test->actingAs($user ?? $test->admin)->withSession(passwordConfirmed())->post(route('git.connections.store'), $input);
+    return $test->actingAs($user ?? $test->admin)->post(route('git.connections.store'), $input);
 }
 
 test('GitLab OAuth: a pending connection, a single-use state and an S256 code challenge in the authorize URL', function (): void {
@@ -119,7 +119,7 @@ test('a Forgejo access token connects right away; Forgejo is told apart from Git
         ->server_kind->toBe(GitServerKind::Forgejo)
         ->auth_method->toBe(GitAuthMethod::Token)
         ->status->toBe(GitConnectionStatus::Active)
-        ->name->toBe('git.example.com · ada');
+        ->name->toBe('git.example.com (ada)');
     Http::assertSent(fn (Request $request): bool => str_ends_with($request->url(), '/user') && $request->header('Authorization')[0] === 'Bearer gitea-token');
 });
 
@@ -170,9 +170,9 @@ test('disconnecting removes the connection, its secrets and repositories (anothe
     Http::fake([GitProviderFake::GITEA.'/api/v1/repos/acme/api/hooks/5' => Http::response(null, 204)]);
 
     $foreign = GitProviderFake::connection(Team::factory()->create(), GitProviderKind::Gitea, accountId: 9);
-    $this->actingAs($this->admin)->withSession(passwordConfirmed())->delete(route('git.connections.destroy', $foreign))->assertNotFound();
+    $this->actingAs($this->admin)->delete(route('git.connections.destroy', $foreign))->assertNotFound();
 
-    $this->actingAs($this->admin)->withSession(passwordConfirmed())->delete(route('git.connections.destroy', $connection))->assertRedirect(route('git.edit'));
+    $this->actingAs($this->admin)->delete(route('git.connections.destroy', $connection))->assertRedirect(route('git.edit'));
 
     expect(GitConnection::query()->whereKey($connection->id)->exists())->toBeFalse()
         ->and(GitRepository::query()->whereKey($repository->id)->exists())->toBeFalse();
@@ -183,7 +183,7 @@ test('a plain git server: host keys are read, a deploy key generated, nothing tr
     $key = GitProviderFake::hostKey();
     $ssh = GitProviderFake::ssh([$key], ['HEAD' => str_repeat('a', 40), 'refs/heads/main' => str_repeat('a', 40), 'refs/heads/dev' => str_repeat('b', 40)]);
 
-    $this->actingAs($this->admin)->withSession(passwordConfirmed())->post(route('git.servers.store'), ['url' => 'git@git.example.com:team/app.git'])
+    $this->actingAs($this->admin)->post(route('git.servers.store'), ['url' => 'git@git.example.com:team/app.git'])
         ->assertRedirect();
 
     $connection = GitConnection::query()->sole();
@@ -219,7 +219,7 @@ test('a plain git server: host keys are read, a deploy key generated, nothing tr
 
 test('a refused deploy key keeps the server pending with the reason', function (): void {
     GitProviderFake::ssh([GitProviderFake::hostKey()], refuse: 'git.example.com refused the deploy key. Add it as a deploy key of the repository.');
-    $this->actingAs($this->admin)->withSession(passwordConfirmed())->post(route('git.servers.store'), ['url' => 'ssh://git@git.example.com:2222/srv/app.git']);
+    $this->actingAs($this->admin)->post(route('git.servers.store'), ['url' => 'ssh://git@git.example.com:2222/srv/app.git']);
     $connection = GitConnection::query()->sole();
 
     $this->post(route('git.servers.confirm', $connection), ['fingerprints' => [GitProviderFake::hostKey()->fingerprint()]])->assertSessionHasErrors('access');
@@ -242,7 +242,7 @@ test('a changed host key is never accepted silently', function (): void {
 test('plain git URLs are checked by grammar', function (string $url): void {
     GitProviderFake::ssh([GitProviderFake::hostKey()]);
 
-    $this->actingAs($this->admin)->withSession(passwordConfirmed())->post(route('git.servers.store'), ['url' => $url])->assertSessionHasErrors('url');
+    $this->actingAs($this->admin)->post(route('git.servers.store'), ['url' => $url])->assertSessionHasErrors('url');
     expect(GitConnection::query()->count())->toBe(0);
 })->with([
     "git@git.example.com:team/app'; rm -rf /.git",

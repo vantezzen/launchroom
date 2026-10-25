@@ -72,7 +72,8 @@ export function AddGitServerForm({
                         </Label>
                         <p className="type-small text-muted-foreground">
                             Allows LAN addresses. Only instance owners can turn
-                            this on; it is recorded in the audit log.
+                            this on, and the change is recorded in the audit
+                            log.
                         </p>
                         <InputError message={form.errors.allowPrivateNetwork} />
                     </div>

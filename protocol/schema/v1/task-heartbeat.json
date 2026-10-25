@@ -1,6 +1,211 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://launchroom.vantezzen.io/schema/v1/task-heartbeat.json",
+  "$defs": {
+    "AccessCertificate": {
+      "properties": {
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "SHA256 is the lowercase hex SHA-256 of the DER certificate."
+        },
+        "pem": {
+          "type": "string",
+          "maxLength": 4096
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "sha256",
+        "pem"
+      ],
+      "description": "AccessCertificate is the TLS certificate of a database access."
+    },
+    "AccessEvent": {
+      "properties": {
+        "at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "connected",
+            "auth_failed",
+            "locked"
+          ]
+        },
+        "remote": {
+          "type": "string",
+          "pattern": "^(?:[0-9]{1,3}(?:\\.[0-9]{1,3}){3}|[0-9a-f:.]{2,45})$"
+        },
+        "method": {
+          "type": "string",
+          "enum": [
+            "password",
+            "publickey"
+          ]
+        },
+        "channel": {
+          "type": "string",
+          "enum": [
+            "shell",
+            "exec",
+            "sftp",
+            "database"
+          ],
+          "description": "Channel is set for connected events once the client opened one (ssh) or\nauthenticated (database)."
+        },
+        "count": {
+          "type": "integer",
+          "maximum": 1000000,
+          "minimum": 0,
+          "description": "Count aggregates auth_failed events of one address."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "at",
+        "type"
+      ],
+      "description": "AccessEvent is reported for the audit log (never credentials or contents)."
+    },
+    "AccessHostKey": {
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "ssh-ed25519"
+          ]
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^SHA256:[A-Za-z0-9+/]{43}$"
+        },
+        "publicKey": {
+          "type": "string",
+          "maxLength": 256
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "type",
+        "sha256",
+        "publicKey"
+      ],
+      "description": "AccessHostKey is the SSH host key of an access (generated per access)."
+    },
+    "AccessStatus": {
+      "properties": {
+        "port": {
+          "type": "integer",
+          "maximum": 65535,
+          "minimum": 1024
+        },
+        "hostKey": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/AccessHostKey"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "certificate": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/AccessCertificate"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "privateAddresses": {
+          "items": {
+            "type": "string",
+            "pattern": "^(?:[0-9]{1,3}(?:\\.[0-9]{1,3}){3}|[0-9a-f:.]{2,45})$"
+          },
+          "type": "array",
+          "maxItems": 4,
+          "description": "PrivateAddresses are private interface addresses for clients on the same network."
+        },
+        "database": {
+          "type": "string",
+          "maxLength": 63,
+          "pattern": "^[^\\x00-\\x1f\\x7f\"`]{1,63}$",
+          "description": "Database is the database a Postgres role connects to (for the connection URL)."
+        },
+        "behindNat": {
+          "type": "boolean",
+          "description": "BehindNat: the detected public IPv4 is on no interface of this server."
+        },
+        "activeConnections": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "lastActivityAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "events": {
+          "items": {
+            "$ref": "#/$defs/AccessEvent"
+          },
+          "type": "array",
+          "maxItems": 50
+        },
+        "dropped": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Dropped counts events that did not fit."
+        },
+        "owner": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/FileOwner",
+              "description": "Owner is who SFTP reads and writes as in a volume access: the owner of\nthe volume's top folder (D67)."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "port",
+        "activeConnections"
+      ],
+      "description": "AccessStatus is reported with every heartbeat of an access task."
+    },
+    "FileOwner": {
+      "properties": {
+        "uid": {
+          "type": "integer",
+          "maximum": 2147483647,
+          "minimum": 0
+        },
+        "gid": {
+          "type": "integer",
+          "maximum": 2147483647,
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "uid",
+        "gid"
+      ],
+      "description": "FileOwner is a numeric owner for imported files."
+    }
+  },
   "properties": {
     "apiVersion": {
       "type": "string",
@@ -18,6 +223,17 @@
       "type": "string",
       "maxLength": 256,
       "description": "Progress is an optional short status line for the UI."
+    },
+    "access": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/AccessStatus",
+          "description": "Access is the state of a running access task (docs/03 §12)."
+        },
+        {
+          "type": "null"
+        }
+      ]
     }
   },
   "additionalProperties": false,

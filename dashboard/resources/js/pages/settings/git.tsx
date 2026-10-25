@@ -26,7 +26,7 @@ import {
 import { edit } from '@/routes/git';
 import { destroy as destroyConnection } from '@/routes/git/connections';
 import { destroy } from '@/routes/git/github';
-import { edit as teamSettings } from '@/routes/team';
+import { index as settingsHome } from '@/routes/settings';
 
 type Props = {
     apps: App.Data.Git.GitHubAppData[];
@@ -106,8 +106,8 @@ export default function GitSettings({
                         : 'Where does your code live?'}
                 </h2>
                 <p className="type-body text-muted-foreground">
-                    launchroom reads your code to build it and tells your git
-                    host how each deploy went. Nothing else.
+                    launchroom only reads your code to build it and reports each
+                    deploy’s status back to your git host.
                 </p>
             </div>
             <ChoiceTiles<ProviderChoice>
@@ -286,7 +286,7 @@ export default function GitSettings({
                                 label={`${item.connection.status === 'pending' ? 'Remove' : 'Disconnect'} ${item.connection.name}`}
                                 description={
                                     item.connection.status === 'pending'
-                                        ? 'It was never finished; nothing uses it yet.'
+                                        ? 'Its setup was never finished, so nothing uses it yet.'
                                         : 'Services from it stop receiving pushes and can’t build until it is connected again.'
                                 }
                             >
@@ -319,7 +319,7 @@ export default function GitSettings({
 
 GitSettings.layout = {
     breadcrumbs: [
-        { title: 'Settings', href: teamSettings() },
+        { title: 'Settings', href: settingsHome() },
         {
             title: 'Git',
             href: edit(),

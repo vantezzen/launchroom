@@ -73,7 +73,7 @@ function ddFakeProbe(bool $valid = true): void
 
 function ddStart(User $owner, string $hostname = 'dash.example.com'): DashboardDomainChange
 {
-    test()->actingAs($owner)->withSession(passwordConfirmed())
+    test()->actingAs($owner)
         ->post(route('dashboard-domain.store'), ['hostname' => $hostname])
         ->assertRedirect()
         ->assertSessionHasNoErrors();
@@ -94,7 +94,7 @@ function ddReady(User $owner, string $hostname = 'dash.example.com'): DashboardD
 
 function ddSwitch(User $owner): void
 {
-    test()->actingAs($owner)->withSession(passwordConfirmed())
+    test()->actingAs($owner)
         ->post(route('dashboard-domain.activate'))
         ->assertRedirect('https://dash.example.com/settings/dashboard-domain');
 }
@@ -116,10 +116,10 @@ test('only instance owners reach Settings → Dashboard domain', function (): vo
     $admin = memberOf($this->team, TeamRole::Admin);
 
     $this->actingAs($admin)->get(route('dashboard-domain.edit'))->assertForbidden();
-    $this->actingAs($admin)->withSession(passwordConfirmed())->post(route('dashboard-domain.store'), ['hostname' => 'dash.example.com'])->assertForbidden();
-    $this->actingAs($admin)->withSession(passwordConfirmed())->post(route('dashboard-domain.activate'))->assertForbidden();
-    $this->actingAs($admin)->withSession(passwordConfirmed())->post(route('dashboard-domain.revert'))->assertForbidden();
-    $this->actingAs($admin)->withSession(passwordConfirmed())->delete(route('dashboard-domain.destroy'))->assertForbidden();
+    $this->actingAs($admin)->post(route('dashboard-domain.store'), ['hostname' => 'dash.example.com'])->assertForbidden();
+    $this->actingAs($admin)->post(route('dashboard-domain.activate'))->assertForbidden();
+    $this->actingAs($admin)->post(route('dashboard-domain.revert'))->assertForbidden();
+    $this->actingAs($admin)->delete(route('dashboard-domain.destroy'))->assertForbidden();
     $this->actingAs($admin)->post(route('dashboard-domain.check'))->assertForbidden();
 
     expect(DashboardDomainChange::query()->count())->toBe(0);
@@ -143,7 +143,7 @@ test('names the dashboard can’t use are refused', function (string $hostname, 
     resolve(AddDomain::class)->handle($instance, 'shop.example.com', AuditActor::system());
     expect(Domain::query()->where('hostname', 'shop.example.com')->exists())->toBeTrue();
 
-    $this->actingAs($this->owner)->withSession(passwordConfirmed())
+    $this->actingAs($this->owner)
         ->post(route('dashboard-domain.store'), ['hostname' => $hostname])
         ->assertSessionHasErrors(['hostname' => $message]);
 
@@ -210,7 +210,7 @@ test('an answer that isn’t this dashboard never passes the HTTPS test', functi
         ->and($change->probe['ok'])->toBeFalse()
         ->and($change->probe['message'])->toBe('Something else answered at this address, not this dashboard.');
 
-    $this->actingAs($this->owner)->withSession(passwordConfirmed())
+    $this->actingAs($this->owner)
         ->post(route('dashboard-domain.activate'))
         ->assertSessionHasErrors('hostname');
     expect(InstanceSettings::current()->dashboard_url)->toBeNull();
@@ -233,7 +233,7 @@ test('switching makes the domain canonical, keeps the old origin and tells every
 
     ddReady($this->owner);
 
-    $this->actingAs($this->owner)->withSession(passwordConfirmed())
+    $this->actingAs($this->owner)
         ->post(route('dashboard-domain.activate'), [], ['X-Inertia' => 'true'])
         ->assertStatus(409)
         ->assertHeader('X-Inertia-Location', 'https://dash.example.com/settings/dashboard-domain');
@@ -306,7 +306,7 @@ test('switching back returns to the previous origin; the domain keeps forwarding
     ddReady($this->owner);
     ddSwitch($this->owner);
 
-    $this->actingAs($this->owner)->withSession(passwordConfirmed())
+    $this->actingAs($this->owner)
         ->post('https://dash.example.com/settings/dashboard-domain/switch-back', [], ['X-Inertia' => 'true'])
         ->assertStatus(409)
         ->assertHeader('X-Inertia-Location', 'https://1-2-3-4.sslip.io/settings/dashboard-domain');
@@ -357,7 +357,7 @@ test('passkeys keep their relying party when the new host is under it, and are c
     expect(InstanceSettings::current()->passkey_rp_id)->toBe('example.com');
 
     FakeDns::set('dashboard.other.dev', ['1.2.3.4']);
-    $this->actingAs($this->owner)->withSession(passwordConfirmed())
+    $this->actingAs($this->owner)
         ->post('https://dash.example.com/settings/dashboard-domain', ['hostname' => 'dashboard.other.dev']);
 
     $this->actingAs($this->owner)->get('https://dash.example.com/settings/dashboard-domain')
@@ -412,7 +412,7 @@ test('cancelling drops the domain from the routes', function (): void {
     resolve(DashboardOrigin::class)->refresh();
     expect(resolve(DashboardRoute::class)->hosts())->toContain('dash.example.com');
 
-    $this->actingAs($this->owner)->withSession(passwordConfirmed())->delete(route('dashboard-domain.destroy'))->assertRedirect();
+    $this->actingAs($this->owner)->delete(route('dashboard-domain.destroy'))->assertRedirect();
 
     resolve(DashboardOrigin::class)->refresh();
     expect(DashboardDomainChange::query()->sole()->status)->toBe(DashboardDomainStatus::Cancelled)

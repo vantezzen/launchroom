@@ -2,6 +2,7 @@ import { router } from '@inertiajs/react';
 import { MoreHorizontal } from 'lucide-react';
 import { useState } from 'react';
 import { Logo } from '@/components/logo';
+import { MetaLine } from '@/components/patterns/meta-line';
 import { Status } from '@/components/status';
 import { TimeAgo } from '@/components/time-ago';
 import { Button } from '@/components/ui/button';
@@ -42,19 +43,20 @@ function Delivery({ channel }: { channel: Channel }) {
 
     if (channel.lastDeliveryAt) {
         return (
-            <span>
-                Delivered <TimeAgo value={channel.lastDeliveryAt} />
-                {channel.minSeverity === 'critical' &&
-                    ' · critical alerts only'}
-            </span>
+            <MetaLine>
+                <span>
+                    Delivered <TimeAgo value={channel.lastDeliveryAt} />
+                </span>
+                {channel.minSeverity === 'critical' && 'Critical alerts only'}
+            </MetaLine>
         );
     }
 
     return (
-        <span>
+        <MetaLine>
             Nothing sent yet
-            {channel.minSeverity === 'critical' && ' · critical alerts only'}
-        </span>
+            {channel.minSeverity === 'critical' && 'Critical alerts only'}
+        </MetaLine>
     );
 }
 

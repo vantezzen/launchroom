@@ -15,7 +15,7 @@ final readonly class AlertMessage
 {
     /**
      * @param  array<string, string>  $facts
-     * @param  list<string>  $context  "shop · production · fra-1"
+     * @param  list<string>  $context  "shop / production / fra-1"
      * @param  array<string, mixed>  $payload
      */
     public function __construct(

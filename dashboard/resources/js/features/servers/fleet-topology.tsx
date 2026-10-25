@@ -32,7 +32,7 @@ type Edge = {
     to: string;
     kind: 'public' | 'direct' | 'relay' | 'idle';
     label: string;
-    /** Measured quality shown on the line, e.g. "12 ms · 480 Mbit/s". */
+    /** Measured quality shown on the line, e.g. "12 ms, 480 Mbit/s". */
     measured?: string | null;
     /** The round trip alone, for lines without room for the whole label. */
     short?: string | null;
@@ -119,7 +119,7 @@ const pathWords: Record<'direct' | 'relay' | 'idle', string> = {
  * the dashboard and image registry, and the private-network links between
  * servers as their launchroomd reported them (solid direct, dashed
  * relayed, dotted idle), labelled with what launchroomd measured: the round
- * trip and the slower direction's transfer rate ("12 ms · 480 Mbit/s",
+ * trip and the slower direction's transfer rate ("12 ms, 480 Mbit/s",
  * both directions on hover). Status per node is the device LED and one
  * word. Tiers run left to right (internet → edges → the rest) and stack on
  * narrow screens, where the labels move to the line's tooltip.
@@ -193,7 +193,7 @@ export function FleetTopology({
                 ),
             ]
                 .filter(Boolean)
-                .join(' · '),
+                .join(', '),
             measured: linkLabel(link),
             short:
                 link.latencyMs !== null ? formatLatency(link.latencyMs) : null,
@@ -731,7 +731,7 @@ function TopologyNode({ node, dim }: { node: Node; dim: boolean }) {
                 frame,
                 'outline-none hover:border-border-strong focus-visible:ring-2 focus-visible:ring-signal',
             )}
-            title={`${server.name} · ${label}`}
+            title={`${server.name}: ${label}`}
             aria-label={`${server.name}, ${label}. ${node.duties.map((duty) => duty.label).join(', ')}`}
         >
             <DeviceImage

@@ -111,9 +111,9 @@ export function deployMarkers(
                 t: Date.parse(deploy.at),
                 label: deploy.sha ?? (failed ? 'failed' : 'deploy'),
                 tone: failed ? 'error' : 'signal',
-                detail: [deploy.serviceName, deploy.sha, outcome]
+                detail: `${[deploy.serviceName, deploy.sha]
                     .filter(Boolean)
-                    .join(' · '),
+                    .join(' ')}: ${outcome}`,
             };
         });
 }

@@ -101,7 +101,7 @@ final readonly class GitHubProvider implements GitProvider, OpensPullRequests
                 accept: [404, 422],
             );
         } catch (Throwable) {
-            throw new GitHeadUnavailable("GitHub did not answer for {$repository->fullName}; try again in a moment.");
+            throw new GitHeadUnavailable("GitHub did not answer for {$repository->fullName}. Try again in a moment.");
         }
 
         if ($response->status() !== 200) {

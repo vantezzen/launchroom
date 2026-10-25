@@ -134,10 +134,7 @@ export function ServerRuntime({ runtime }: { runtime: Runtime | null }) {
     const limited = capabilities.filter((c) => c.state !== 'full');
 
     return (
-        <Section
-            title="Capabilities"
-            description="What launchroom can do on this server."
-        >
+        <Section title="Capabilities">
             {limited.length > 0 && (
                 <LimitedCallout
                     rootless={rootless}

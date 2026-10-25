@@ -19,7 +19,7 @@ use App\Support\ConfigAsCode\ConfigSchema;
 use Illuminate\Support\Facades\Gate;
 
 /**
- * Settings → General → Config file (docs/18 §3.1): where launchroom.json is
+ * Settings → Config file (docs/18 §3.1): where launchroom.json is
  * read from and what each persistent environment's last read said.
  */
 final readonly class ConfigFilePage

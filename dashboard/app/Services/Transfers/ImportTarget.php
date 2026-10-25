@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Transfers;
 
 use App\Data\Services\DatabaseSource;
+use App\Data\Transfers\DatabasePreparationData;
 use App\Enums\Backups\BackupSubject;
 use App\Enums\DaemonFeature;
 use App\Enums\DatabaseEngine;
@@ -58,10 +59,13 @@ final readonly class ImportTarget
      */
     public function placement(string $doing = 'import data'): Placement
     {
-        $placement = DatabaseWorkloads::servingPlacement($this->instance);
+        // Also a database started alone for an import before its first deploy (docs/14 §12.9).
+        $placement = DatabasePreparations::importPlacement($this->instance);
 
         if (! $placement instanceof Placement || ! $this->database instanceof DatabaseSource) {
-            throw DomainRuleViolation::on('service', "{$this->instance->service->name} isn’t running. Deploy it first, then {$doing}.");
+            throw DomainRuleViolation::on('service', DatabasePreparations::preparable($this->instance)
+                ? "{$this->instance->service->name} isn’t running yet. Start it for the import first."
+                : "{$this->instance->service->name} isn’t running. Deploy it first, then {$doing}.");
         }
 
         $this->assertServer($placement->server, $doing);
@@ -98,6 +102,11 @@ final readonly class ImportTarget
     public function unavailableReason(): ?string
     {
         try {
+            // A database never deployed is started alone for the import (docs/14 §12.9).
+            if ($this->subject === DataSubject::Database && DatabasePreparations::view($this->instance) instanceof DatabasePreparationData) {
+                return null;
+            }
+
             if ($this->subject === DataSubject::Database) {
                 $this->placement();
             } elseif ($this->subject === DataSubject::Volume) {
@@ -156,7 +165,7 @@ final readonly class ImportTarget
     private function assertServer(Server $server, string $doing): void
     {
         if (! $server->supportsDaemonFeature(DaemonFeature::DataTransfer)) {
-            throw DomainRuleViolation::on('server', "Update launchroomd on {$server->name} to {$doing}.");
+            throw DomainRuleViolation::on('server', "Update {$server->name} in Settings → Updates to {$doing}.");
         }
 
         if ($server->status !== ServerStatus::Online) {

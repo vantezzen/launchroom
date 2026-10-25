@@ -1,0 +1,40 @@
+{
+  "apiVersion": "launchroom.vantezzen.io/v1",
+  "kind": "TaskLease",
+  "tasks": [
+    {
+      "id": "tsk_01J9Z8X7W6V5T4S3R2Q1P0N9P5",
+      "type": "inventory",
+      "leaseExpiresAt": "2026-10-17T12:01:00Z",
+      "attempt": 1,
+      "deadline": "2026-10-17T12:15:00Z",
+      "spec": {
+        "image": "127.0.0.1:5000/apps/svc_01j9z8x7w6v5t4s3r2q1p0n9n2@sha256:4b5e57f6eb2f42b9039b3d1e13929295f231749c510cbe341cd68036d9af97e2",
+        "platform": "linux/amd64",
+        "service": "svc_01J9Z8X7W6V5T4S3R2Q1P0N9N2",
+        "source": {
+          "repo": {
+            "provider": "github",
+            "cloneUrl": "https://github.com/example/shop.git",
+            "sha": "4015b57a143aec5156fd1444a017a32137a3fd0f"
+          },
+          "cloneToken": {
+            "sealed": "qbzMnvHxfZlIkASN+YWti1p59V6GK80ssZ2hGerDQuwfkoyX1SabEjn4JboJt+qfd5FL7cn8ndnYwTww3vnN8bXWHciaNdLJJLKMl2B2XalAOelBhMUPh93lRTLxJrSs"
+          },
+          "rootDir": "apps/web"
+        }
+      }
+    },
+    {
+      "id": "tsk_01J9Z8X7W6V5T4S3R2Q1P0N9P6",
+      "type": "inventory",
+      "leaseExpiresAt": "2026-10-17T12:01:00Z",
+      "attempt": 1,
+      "deadline": "2026-10-17T12:15:00Z",
+      "spec": {
+        "image": "127.0.0.1:5000/mirror/docker.io/library/postgres@sha256:a942b37ccfaf5a813b1432caa209a43b9d144e47ad0de1549c289c253e556cd5",
+        "platform": "linux/amd64"
+      }
+    }
+  ]
+}

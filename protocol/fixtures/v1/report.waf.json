@@ -1,0 +1,154 @@
+{
+  "apiVersion": "launchroom.vantezzen.io/v1",
+  "kind": "Report",
+  "serverId": "srv_01J9Z8X7W6V5T4S3R2Q1P0N9MK",
+  "observedAt": "2026-10-17T12:10:05Z",
+  "seq": 22,
+  "full": true,
+  "appliedVersion": 1843,
+  "workloads": [],
+  "ingress": {
+    "state": "applied",
+    "routes": 2,
+    "waf": {
+      "state": "on",
+      "engine": "coraza 3.8.1",
+      "ruleSet": "OWASP CRS 4.25.0",
+      "routes": 2
+    }
+  },
+  "metrics": {
+    "host": [],
+    "workloads": [],
+    "waf": [
+      {
+        "route": "rt_01J9Z8X7W6V5T4S3R2Q1P0N9N9",
+        "at": "2026-10-17T12:00:00Z",
+        "blocked": 14,
+        "categories": [
+          {
+            "category": "sqli",
+            "blocked": 2
+          },
+          {
+            "category": "scanner",
+            "blocked": 11
+          },
+          {
+            "category": "lfi",
+            "blocked": 1
+          }
+        ],
+        "rules": [
+          {
+            "rule": 913100,
+            "blocked": 11
+          },
+          {
+            "rule": 942100,
+            "blocked": 2
+          },
+          {
+            "rule": 930120,
+            "blocked": 1
+          }
+        ],
+        "paths": [
+          {
+            "path": "/wp-login.php",
+            "blocked": 9
+          },
+          {
+            "path": "/api/products/:id",
+            "blocked": 2
+          }
+        ],
+        "otherPaths": {
+          "blocked": 3
+        },
+        "events": [
+          {
+            "at": "2026-10-17T12:03:12Z",
+            "action": "blocked",
+            "method": "GET",
+            "path": "/api/products/:id",
+            "rules": [
+              942100
+            ],
+            "categories": [
+              "sqli"
+            ],
+            "targets": [
+              "ARGS:id"
+            ],
+            "clientNetwork": "203.0.113.0/24",
+            "score": 5,
+            "reference": "kJ3x9QpL2mN8vR4t"
+          },
+          {
+            "at": "2026-10-17T12:05:40Z",
+            "action": "blocked",
+            "method": "GET",
+            "path": "/wp-login.php",
+            "rules": [
+              913100
+            ],
+            "categories": [
+              "scanner"
+            ],
+            "targets": [
+              "REQUEST_HEADERS:User-Agent"
+            ],
+            "clientNetwork": "2001:db8::/48",
+            "score": 5,
+            "reference": "Zt7cW2bQ9xL1kP0s"
+          }
+        ]
+      },
+      {
+        "route": "rt_01J9Z8X7W6V5T4S3R2Q1P0N9NA",
+        "at": "2026-10-17T12:00:00Z",
+        "detected": 1,
+        "categories": [
+          {
+            "category": "xss",
+            "detected": 1
+          }
+        ],
+        "rules": [
+          {
+            "rule": 941100,
+            "detected": 1
+          }
+        ],
+        "paths": [
+          {
+            "path": "/search",
+            "detected": 1
+          }
+        ],
+        "events": [
+          {
+            "at": "2026-10-17T12:08:01Z",
+            "action": "detected",
+            "method": "POST",
+            "path": "/search",
+            "rules": [
+              941100,
+              941160
+            ],
+            "categories": [
+              "xss"
+            ],
+            "targets": [
+              "ARGS:q"
+            ],
+            "clientNetwork": "198.51.100.0/24",
+            "score": 10,
+            "reference": "Hq8sN4cV1bX6mT2r"
+          }
+        ]
+      }
+    ]
+  }
+}

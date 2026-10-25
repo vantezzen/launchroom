@@ -30,12 +30,12 @@ PHP Data objects mirror the Go types by hand. CI validates both sides: Go decode
 | `registry-token.json` | CP → daemon | response to registry-token (`200`; `403` when any scope is denied) | **yes** |
 | `client-certificate-request.json` | daemon → CP | `POST /daemon/v1/client-certificate` (mTLS, D50) | request |
 | `client-certificate.json` | CP → daemon | response to client-certificate (`200`; `403` re-issue refused while certificates are required, `429`) | **yes** |
-| `task-token.json` | CP → daemon, sealed | plaintext inside a task credential (`BuildInputs.cloneToken`) | sealed to the launchroomd key |
+| `task-token.json` | CP → daemon, sealed | plaintext inside a task credential (`BuildInputs.cloneToken`, `InventorySource.cloneToken`) | sealed to the launchroomd key |
 | `task-env.json` | CP → daemon, sealed | plaintext inside `BuildInputs.env`, `RunOnceSpec.env`, `BackupDestination.credentials` (exactly `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `RESTIC_PASSWORD`; local: `RESTIC_PASSWORD`) and `DbImportSource.url` (exactly `SOURCE_URL`) | sealed to the launchroomd key |
 | (raw bytes) | CP → daemon | `GET /daemon/v1/transfers/{dtr}/chunks/{n}`: chunk *n* (0-based) of an upload, `application/octet-stream` (`200`; `404` not this server's leased import, `410` transfer gone, `422` bad index) | **yes**, over the exact bytes |
 | (raw bytes) | daemon → CP | `PUT /daemon/v1/transfers/{dtr}/chunks/{n}`: chunk *n* of an export, `application/octet-stream`, exactly `chunkBytes` except the last (`204`) | request (content-digest) |
 
-Task types: `build`, `plan`, `run_once`, `backup`, `restore`, `backup_maintenance`, `backup_snapshots`, `verify_restore`, `session`, `logs`, `self_update`, `db_import`, `volume_import`, `db_export`, `volume_export` (spec types `BuildSpec`, `PlanSpec`, `BackupSnapshotsSpec`, … in `task.json` `$defs`).
+Task types: `build`, `plan`, `run_once`, `backup`, `restore`, `backup_maintenance`, `backup_snapshots`, `verify_restore`, `session`, `logs`, `self_update`, `db_import`, `volume_import`, `db_export`, `volume_export`, `access`, `inventory`, `inspect_container` (spec types `BuildSpec`, `PlanSpec`, `BackupSnapshotsSpec`, … in `task.json` `$defs`).
 
 ## Conventions
 

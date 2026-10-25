@@ -36,6 +36,7 @@ export default function ManagePasskeys(props: Props) {
     return (
         <SettingsCard
             title="Passkeys"
+            setting="passkeys"
             description="Sign in with your fingerprint or face instead of a password."
         >
             {passkeys.length > 0 ? (

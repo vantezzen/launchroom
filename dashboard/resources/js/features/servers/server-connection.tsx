@@ -92,10 +92,7 @@ export function ServerConnection({
     replacedBy: string | null;
 }) {
     return (
-        <Section
-            title="Connection"
-            description="What this server reports about itself."
-        >
+        <Section title="Connection">
             <div className="rounded-xl border bg-card shadow-card">
                 <dl className="grid grid-cols-2 gap-x-6 gap-y-5 p-6 md:grid-cols-4">
                     <Fact label="Server version">

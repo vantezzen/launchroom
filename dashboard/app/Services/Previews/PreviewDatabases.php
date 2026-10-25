@@ -327,7 +327,7 @@ final readonly class PreviewDatabases
         }
 
         if ($run->size_bytes !== null && $run->size_bytes > $limit) {
-            return [false, sprintf('Its latest backup is %s MB; this team’s limit for preview clones is %s MB.', number_format($run->size_bytes / 1048576, 1), number_format($limit / 1048576))];
+            return [false, sprintf('Its latest backup is %s MB, but this team’s limit for preview clones is %s MB.', number_format($run->size_bytes / 1048576, 1), number_format($limit / 1048576))];
         }
 
         return [true, null];

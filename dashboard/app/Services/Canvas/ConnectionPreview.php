@@ -12,11 +12,13 @@ use App\Enums\ConnectionMode;
 use App\Enums\ConnectionStyle;
 use App\Models\Connection;
 use App\Models\Service;
+use App\Support\Connections\ProvidedVariables;
 
 /**
  * Previews the variables a connection would inject (docs/06 §3.2), with the
  * same naming as App\Actions\Connections\CreateConnection: framework-aware
- * names for databases, `<SLUG>_URL` for app → app. Values are reference
+ * names for databases, `<SLUG>_URL` for app → app, or what the provider
+ * declares (ProvidedVariables, D65). Values are reference
  * templates, never resolved secrets.
  */
 final readonly class ConnectionPreview
@@ -29,7 +31,9 @@ final readonly class ConnectionPreview
     {
         $source = $to->source;
         $database = $source instanceof DatabaseSource;
-        $modes = $database ? [ConnectionMode::Private] : [ConnectionMode::Private, ConnectionMode::Public];
+        $provided = $database ? null : ProvidedVariables::of($to);
+        // Provided variables say themselves which address they use.
+        $modes = $database || $provided !== null ? [ConnectionMode::Private] : [ConnectionMode::Private, ConnectionMode::Public];
         $styles = $database ? ConnectionStyle::cases() : [ConnectionStyle::Url];
         $mode = in_array($mode, $modes, true) ? $mode : ConnectionMode::Private;
         $style = in_array($style, $styles, true) ? $style : $this->defaultStyle($from, $styles);
@@ -47,7 +51,7 @@ final readonly class ConnectionPreview
         if ($error === null) {
             $injected = $source instanceof DatabaseSource
                 ? $this->engines->for($source->engine)->connectionVariables($style, $to->slug)
-                : [strtoupper(str_replace('-', '_', $to->slug)).'_URL' => '${{'.$to->slug.'.'.($mode === ConnectionMode::Public ? 'PUBLIC_URL' : 'PRIVATE_URL').'}}'];
+                : $provided ?? [strtoupper(str_replace('-', '_', $to->slug)).'_URL' => '${{'.$to->slug.'.'.($mode === ConnectionMode::Public ? 'PUBLIC_URL' : 'PRIVATE_URL').'}}'];
 
             foreach ($injected as $key => $value) {
                 $variables[] = new ConnectionVariableData($key, $value);

@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { ConfirmAction } from '@/components/confirm-action';
 import { CopyValue } from '@/components/copy-value';
 import InputError from '@/components/input-error';
+import { MetaLine } from '@/components/patterns/meta-line';
 import type { StatusState } from '@/components/status';
 import { Status } from '@/components/status';
 import { TimeAgo } from '@/components/time-ago';
@@ -32,7 +33,7 @@ import {
     start,
     workloads,
 } from '@/routes/move';
-import { edit as teamSettings } from '@/routes/team';
+import { index as settingsHome } from '@/routes/settings';
 
 type Move = App.Data.Moves.ControlPlaneMoveData;
 type MoveStatus = App.Enums.Moves.ControlPlaneMoveStatus;
@@ -210,8 +211,8 @@ function MoveSteps({
 
             <p className="max-w-[65ch] type-body text-muted-foreground">
                 Move the dashboard and everything it runs to another machine,
-                without losing data. Apps keep serving while they move; each
-                database and volume stops for a short copy.
+                without losing data. Apps keep serving while they move, and each
+                database and volume stops briefly while it is copied.
             </p>
 
             {move?.status === 'cancelled' && (
@@ -441,9 +442,9 @@ function MoveSteps({
             {status !== null && CANCELLABLE.includes(status) && (
                 <div className="flex flex-col gap-3 rounded-xl border bg-card p-5 shadow-card sm:flex-row sm:items-center">
                     <p className="min-w-0 flex-1 type-small text-muted-foreground">
-                        Cancelling keeps launchroom here. Services that already
-                        run on the new server stay there; it stays a regular
-                        server.
+                        If you cancel, launchroom stays on this server. Services
+                        that already moved stay on the new server, which then
+                        works as a regular server.
                     </p>
                     <ConfirmAction
                         trigger="Cancel move"
@@ -468,12 +469,11 @@ function ClaimApproval({ move }: { move: Move }) {
                 <span className="type-small text-muted-foreground">
                     A new machine claimed this move
                 </span>
-                <span className="type-body break-words">
+                <MetaLine className="type-body break-words">
                     {move.receiverHostname ?? 'Unknown host'}
-                    {move.receiverArch !== null && ` · ${move.receiverArch}`}
-                    {move.receiverAddress !== null &&
-                        ` · ${move.receiverAddress}`}
-                </span>
+                    {move.receiverArch}
+                    {move.receiverAddress}
+                </MetaLine>
             </div>
             <p className="max-w-[65ch] type-body">
                 Type the code the new server’s terminal shows. It only matches
@@ -547,8 +547,7 @@ function WorkloadPlan({ plan }: { plan: App.Data.Moves.MovePlanData }) {
                                         Back up each database and volume first
                                     </span>
                                     <span className="type-small text-muted-foreground">
-                                        The move doesn’t need it: data is copied
-                                        directly.
+                                        Optional. The move copies data directly.
                                     </span>
                                 </Label>
                             </div>
@@ -585,7 +584,9 @@ function HandOver({
                     Changes pause on this dashboard while it takes a final copy
                     of itself (usually under a minute).
                 </li>
-                <li>Apps keep serving: they already run on the new server.</li>
+                <li>
+                    Apps keep serving, since they already run on the new server.
+                </li>
                 <li>
                     The new server restores the copy and starts the dashboard.
                     Then switch DNS for the dashboard’s address.
@@ -622,8 +623,8 @@ function HandOver({
                                 new dashboard is the one to use.
                             </span>
                             <span>
-                                Keep this machine until the new dashboard runs:
-                                it is your way back.
+                                Keep this machine until the new dashboard runs,
+                                so you can go back if needed.
                             </span>
                         </>
                     }
@@ -775,9 +776,9 @@ function MoveChecklist({ checklist }: { checklist: Checklist }) {
                     onOpen={() => setOpenId('images')}
                 >
                     <p className="max-w-[65ch] type-body text-muted-foreground">
-                        Images weren’t copied. Running apps keep theirs; each
-                        app builds again from its commit on its next deploy.
-                        Rebuild now to have them ready.
+                        Images weren’t copied. Running apps keep their current
+                        image, and each app builds again from its commit on its
+                        next deploy. Rebuild now to have them ready.
                     </p>
                     {checklist.images === null ? (
                         <div>
@@ -878,8 +879,8 @@ function MoveChecklist({ checklist }: { checklist: Checklist }) {
                 >
                     <p className="max-w-[65ch] type-body">
                         {checklist.previous?.name ?? 'The old server'} is
-                        retired: it runs nothing for launchroom any more and its
-                        key is revoked. Once DNS points here, delete the
+                        retired. It no longer runs anything for launchroom, and
+                        its key is revoked. Once DNS points here, delete the
                         machine, or run{' '}
                         <code className="type-mono-small">
                             ./launchroom uninstall
@@ -921,7 +922,7 @@ function MoveChecklist({ checklist }: { checklist: Checklist }) {
                         </Button>
                         {open.length > 0 && (
                             <span className="type-small text-muted-foreground">
-                                Some steps are still open; finishing records
+                                Some steps are still open. Finishing now records
                                 that in the audit log.
                             </span>
                         )}
@@ -934,7 +935,7 @@ function MoveChecklist({ checklist }: { checklist: Checklist }) {
 
 MoveLaunchroom.layout = {
     breadcrumbs: [
-        { title: 'Settings', href: teamSettings() },
+        { title: 'Settings', href: settingsHome() },
         { title: 'Move launchroom', href: edit() },
     ],
 };

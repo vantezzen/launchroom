@@ -1,0 +1,14 @@
+{
+  "title": "Security",
+  "pages": [
+    "index",
+    "vulnerability-checks",
+    "alert-levels",
+    "inventory",
+    "web-firewall",
+    "firewall-exceptions",
+    "investigations",
+    "responding-to-a-vulnerability",
+    "privacy-and-data"
+  ]
+}

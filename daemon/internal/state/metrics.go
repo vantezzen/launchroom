@@ -37,6 +37,13 @@ type ReportMetrics struct {
 	// Requests are per-minute traffic aggregates of the routes this edge
 	// serves, from Caddy's access log (docs/15 §1); omitted when there are none.
 	Requests []RequestMetricSample `json:"requests,omitempty" jsonschema:"maxItems=8192"`
+	// Analytics are per-10-minute top paths, referrer hosts and client
+	// classes of the routes this edge serves (docs/15 §5); omitted when
+	// there are none.
+	Analytics []RequestAnalyticsSample `json:"analytics,omitempty" jsonschema:"maxItems=1024"`
+	// Waf are per-10-minute web firewall results of the routes this edge
+	// serves (docs/03 §13.4); omitted when there are none.
+	Waf []WafSample `json:"waf,omitempty" jsonschema:"maxItems=1024"`
 }
 
 // RequestMetricSample is one minute of one route's traffic at this edge.
@@ -206,4 +213,6 @@ func (m *ReportMetrics) validate(e *errs, p string) {
 		}
 	}
 	unique(e, p+".requests[].(route,at)", rkeys)
+	validateAnalytics(e, p+".analytics", m.Analytics)
+	validateWafSamples(e, p+".waf", m.Waf)
 }

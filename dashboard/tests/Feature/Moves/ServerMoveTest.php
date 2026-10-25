@@ -190,7 +190,7 @@ test('a move is refused onto a server that can’t take it', function (): void {
 
     // An old launchroomd that can't receive data.
     $this->target->forceFill(['host_status' => null, 'daemon_features' => []])->save();
-    expect(implode(' ', $planner->plan($this->source, $this->target->refresh())->blockers))->toContain('Update launchroomd on netcup');
+    expect(implode(' ', $planner->plan($this->source, $this->target->refresh())->blockers))->toContain('netcup runs an older version');
 
     // The dashboard's own server moves through Settings → Move launchroom.
     movable($this->target);

@@ -3,6 +3,7 @@ import { ArrowRight } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { DeviceImage } from '@/components/devices/device-image';
 import { ChoiceTiles } from '@/components/patterns/choice-tiles';
+import { MetaDivider, MetaLine } from '@/components/patterns/meta-line';
 import { Page, PageHeader } from '@/components/patterns/page';
 import { Section } from '@/components/patterns/section';
 import { ConfirmAction } from '@/components/confirm-action';
@@ -31,16 +32,17 @@ type Props = {
     canEnroll: boolean;
 };
 
-function describe(server: App.Data.Moves.MoveServerData): string {
+/** ["Runtime and Edge", "linux/amd64", "40 GB free"]. */
+function describe(server: App.Data.Moves.MoveServerData): string[] {
     return [
-        server.roles.map((role) => roleLabels[role]).join(', '),
+        new Intl.ListFormat('en', { type: 'conjunction' }).format(
+            server.roles.map((role) => roleLabels[role]),
+        ),
         server.platform,
         server.diskFreeMb !== null
             ? `${Math.round(server.diskFreeMb / 1024)} GB free`
             : null,
-    ]
-        .filter(Boolean)
-        .join(' · ');
+    ].filter((part): part is string => part !== null && part !== '');
 }
 
 /**
@@ -104,10 +106,10 @@ export default function MoveServer({
                         </div>
                     }
                     description={
-                        <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                        <MetaLine>
                             <ServerStatus status={server.status} />
-                            <span>{describe(server)}</span>
-                        </span>
+                            {describe(server)}
+                        </MetaLine>
                     }
                 />
 
@@ -171,10 +173,10 @@ export default function MoveServer({
                                     <div className="flex flex-col gap-4 rounded-xl border bg-card p-5 shadow-card sm:flex-row sm:items-center">
                                         <p className="min-w-0 flex-1 type-small text-muted-foreground">
                                             {move.status === 'ready'
-                                                ? `Everything runs on ${move.target.name}. Retiring hands it ${server.name}’s roles and labels and stops ${server.name}; its disk isn’t touched.`
+                                                ? `Everything runs on ${move.target.name}. Retiring gives it ${server.name}’s roles and labels and stops ${server.name}. Its disk isn’t touched.`
                                                 : move.status === 'cancelling'
                                                   ? 'Cancelling. Services that already moved stay on the new server.'
-                                                  : `Cancel puts back the service that is being copied. Services that already moved stay on ${move.target.name}.`}
+                                                  : `Cancelling moves the service that is being copied back. Services that already moved stay on ${move.target.name}.`}
                                         </p>
                                         <div className="flex flex-wrap gap-2">
                                             {move.status === 'running' && (
@@ -272,7 +274,8 @@ export default function MoveServer({
                                     options={candidates.map((candidate) => ({
                                         value: candidate.id,
                                         label: candidate.name,
-                                        description: describe(candidate),
+                                        description:
+                                            describe(candidate).join(', '),
                                         media: (
                                             <DeviceImage
                                                 device={candidate.device}
@@ -345,10 +348,10 @@ export default function MoveServer({
                                                     volume first
                                                 </span>
                                                 <span className="type-small text-muted-foreground">
-                                                    A fresh backup right before
-                                                    each one stops. The move
-                                                    doesn’t need it: data is
-                                                    copied directly.
+                                                    Takes a fresh backup right
+                                                    before each one stops.
+                                                    Optional, since the move
+                                                    copies data directly.
                                                 </span>
                                             </Label>
                                         </div>
@@ -361,11 +364,11 @@ export default function MoveServer({
                                                 className="size-3.5"
                                             />
                                             <span>{plan.target.name}</span>
+                                            <MetaDivider />
                                             <span>
-                                                ·{' '}
                                                 {plan.downtimeSeconds === 0
-                                                    ? 'no downtime'
-                                                    : `downtime ${formatDuration(plan.downtimeSeconds)}`}
+                                                    ? 'No downtime'
+                                                    : `Downtime ${formatDuration(plan.downtimeSeconds)}`}
                                             </span>
                                         </p>
                                         <TypedConfirm

@@ -13,7 +13,7 @@ import { ChannelRow } from '@/features/alerts/channel-row';
 import { RulesCard } from '@/features/alerts/rules-card';
 import { SettingsCard, SettingsRow } from '@/features/settings/settings-card';
 import { edit } from '@/routes/notifications';
-import { edit as teamSettings } from '@/routes/team';
+import { index as settingsHome } from '@/routes/settings';
 
 type Props = {
     channels: App.Data.Alerts.AlertChannelData[];
@@ -168,8 +168,8 @@ export default function NotificationSettings({
                     </Section>
                 ) : (
                     <EmptyState icon={BellOff}>
-                        Nobody is told about problems yet. Owners and admins
-                        choose where alerts go.
+                        Alerts aren’t sent anywhere yet. Owners and admins can
+                        choose where they go.
                     </EmptyState>
                 )
             ) : (
@@ -230,7 +230,7 @@ export default function NotificationSettings({
 
 NotificationSettings.layout = {
     breadcrumbs: [
-        { title: 'Settings', href: teamSettings() },
+        { title: 'Settings', href: settingsHome() },
         { title: 'Notifications', href: edit() },
     ],
 };

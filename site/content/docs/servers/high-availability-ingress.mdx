@@ -96,8 +96,9 @@ edges. TLS still ends at Caddy on the edges, so certificates and on-demand HTTPS
 </Tab>
 </Tabs>
 
-Custom domains need the same setup. Use A/AAAA records to all edges (the domain list shows the addresses), or a CNAME
-to the service's generated hostname. A CNAME follows whatever the platform wildcard does.
+Custom domains need the same setup. A CNAME to the service's generated hostname (the domain card recommends it for
+subdomains) follows whatever the platform wildcard does, so adding an edge needs no DNS change. Root domains use A/AAAA
+records to all edges (the domain list shows the addresses), or ALIAS/ANAME/CNAME flattening where the DNS host offers it.
 
 ## What it does not cover
 

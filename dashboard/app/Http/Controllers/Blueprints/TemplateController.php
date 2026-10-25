@@ -54,13 +54,11 @@ final class TemplateController extends Controller
         $production = $project->production()->sole();
 
         if (! $data->deploy) {
-            Inertia::flash('toast', ['type' => 'success', 'message' => "{$project->name} is ready. Configure it before deploying."]);
-        }
-
-        if ($data->deploy && Gate::allows('deploy', $production)) {
+            Inertia::flash('toast', ['type' => 'success', 'message' => "{$project->name} is ready. Set its variables, then deploy."]);
+        } elseif (Gate::allows('deploy', $production)) {
             try {
                 $deploy->handle($production, $user, $actor, "Created from the {$definition->name} template", DeploymentTrigger::Config);
-                Inertia::flash('toast', ['type' => 'success', 'message' => "{$project->name} is deploying. Watch it go live here."]);
+                Inertia::flash('toast', ['type' => 'success', 'message' => "{$project->name} is deploying."]);
             } catch (DomainRuleViolation|UnresolvedReferences $e) {
                 Inertia::flash('toast', ['type' => 'warning', 'message' => "{$project->name} is ready but didn’t deploy: {$e->getMessage()}"]);
             }

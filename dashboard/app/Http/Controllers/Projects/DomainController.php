@@ -37,7 +37,7 @@ final class DomainController extends Controller
         $domain = $addDomain->handle($instance, $data->hostname, $this->auditActor($request, $user), $data->redirectTo);
         dispatch(new VerifyDomainJob($domain->id));
 
-        Inertia::flash('toast', ['type' => 'success', 'message' => "{$domain->hostname} added. Point its DNS at your server and it goes live with a certificate."]);
+        Inertia::flash('toast', ['type' => 'success', 'message' => "{$domain->hostname} added. It goes live with a certificate once its DNS points at your server."]);
 
         return back();
     }
@@ -105,7 +105,7 @@ final class DomainController extends Controller
 
         $removeDomain->handle($domain, $this->auditActor($request, $user));
 
-        Inertia::flash('toast', ['type' => 'success', 'message' => "{$domain->hostname} removed. It stops routing right away."]);
+        Inertia::flash('toast', ['type' => 'success', 'message' => "{$domain->hostname} removed. It no longer routes traffic."]);
 
         return back();
     }

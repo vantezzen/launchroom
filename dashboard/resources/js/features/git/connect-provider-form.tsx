@@ -206,8 +206,8 @@ export function ConnectProviderForm({
                                 </Label>
                                 <p className="type-small text-muted-foreground">
                                     Allows LAN addresses and plain http. Only
-                                    instance owners can turn this on; it is
-                                    recorded in the audit log.
+                                    instance owners can turn this on, and the
+                                    change is recorded in the audit log.
                                 </p>
                                 <InputError
                                     message={form.errors.allowPrivateNetwork}
@@ -355,7 +355,7 @@ export function ConnectProviderForm({
                 >
                     <p className="max-w-prose type-body text-muted-foreground">
                         {oauth
-                            ? `You approve launchroom on ${host} and come right back. Your repositories then show up when you import a project.`
+                            ? `You’ll approve launchroom on ${host} and return here. Your repositories then appear when you import a project.`
                             : 'launchroom checks the token and lists your repositories when you import a project.'}
                     </p>
                     <div className="flex flex-wrap items-center gap-3">

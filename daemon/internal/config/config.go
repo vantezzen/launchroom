@@ -19,6 +19,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -42,6 +43,9 @@ const (
 	// EnvAccessLogAddr is where the edge Caddy writes its access log for
 	// request metrics (loopback only, docs/15 §1.1).
 	EnvAccessLogAddr = "LR_INGRESS_ACCESS_LOG_ADDR"
+	// EnvWafLogAddr is where the edge Caddy's web firewall posts its audit
+	// records (loopback only, docs/22 §6.5).
+	EnvWafLogAddr = "LR_INGRESS_WAF_LOG_ADDR"
 	// EnvHTTPSRedirectPort is the public HTTPS port used in HTTP→HTTPS redirects
 	// (443 in production; the host-mapped port in local dev, e.g. 8443).
 	EnvHTTPSRedirectPort = "LR_INGRESS_HTTPS_PORT"
@@ -66,6 +70,12 @@ const (
 	// EnvDataTransfers is the local switch for data imports and exports
 	// (D55): "on" (default) or "off".
 	EnvDataTransfers = "LR_DATA_TRANSFERS"
+	// EnvRemoteAccess is the local policy for temporary remote access
+	// (docs/09 R39): on (default), off, or a comma-separated list of the
+	// kinds allowed (ssh, database, volume).
+	EnvRemoteAccess = "LR_REMOTE_ACCESS"
+	// EnvRemoteAccessPorts is the port range of temporary access (default 40100-40199).
+	EnvRemoteAccessPorts = "LR_REMOTE_ACCESS_PORTS"
 	// EnvBackupInsecureHosts lists S3 endpoint hosts that may be reached over plain http (dev MinIO only).
 	EnvBackupInsecureHosts = "LR_BACKUP_INSECURE_HOSTS"
 	// EnvAllowedLocalUpstreams lists ip:port route address upstreams allowed
@@ -134,6 +144,8 @@ const (
 	DefaultAskAddr = "127.0.0.1:2021"
 	// DefaultAccessLogAddr is the default loopback address of the access log listener.
 	DefaultAccessLogAddr = "127.0.0.1:2022"
+	// DefaultWafLogAddr is the default loopback address of the firewall record receiver.
+	DefaultWafLogAddr = "127.0.0.1:2023"
 
 	// DefaultDataDir is where ./data/daemon is mounted inside the daemon container.
 	DefaultDataDir = "/data"
@@ -158,6 +170,8 @@ type Config struct {
 	AskAddr netip.AddrPort
 	// AccessLogAddr is the loopback ip:port the edge Caddy's access log is read from.
 	AccessLogAddr netip.AddrPort
+	// WafLogAddr is the loopback ip:port the web firewall's audit records are received on.
+	WafLogAddr netip.AddrPort
 	// HTTPSRedirectPort is the public HTTPS port used in HTTP→HTTPS redirects.
 	HTTPSRedirectPort int
 	// RegistryUpstream is the registry forwarder target when the NodeState sets none ("" = none).
@@ -178,6 +192,10 @@ type Config struct {
 	// DataTransfers is LR_DATA_TRANSFERS: data imports and exports are
 	// leased (and announced) only when it is true (default).
 	DataTransfers bool
+	// RemoteAccess is LR_REMOTE_ACCESS: "on", "off" or a list of kinds ("ssh,volume").
+	RemoteAccess string
+	// RemoteAccessPorts is LR_REMOTE_ACCESS_PORTS ("lo-hi", checked by internal/access).
+	RemoteAccessPorts string
 	// BackupInsecureHosts may be used as plain-http S3 endpoints.
 	BackupInsecureHosts []string
 	// AllowedLocalUpstreams are route address upstreams allowed outside the mesh range.
@@ -239,6 +257,7 @@ func Load(args []string, env Lookup, readFile func(string) ([]byte, error)) (Con
 	cpKey := fs.String("cp-key", get(EnvCPKey), "pinned control-plane signing key ed25519:<base64> ($"+EnvCPKey+")")
 	cpKeyFile := fs.String("cp-key-file", get(EnvCPKeyFile), "file containing the pinned control-plane key ($"+EnvCPKeyFile+")")
 	accessLogAddr := fs.String("ingress-access-log-addr", orDefault(get(EnvAccessLogAddr), DefaultAccessLogAddr), "loopback ip:port for Caddy's access log, read for request metrics ($"+EnvAccessLogAddr+")")
+	wafLogAddr := fs.String("ingress-waf-log-addr", orDefault(get(EnvWafLogAddr), DefaultWafLogAddr), "loopback ip:port for the web firewall's audit records ($"+EnvWafLogAddr+")")
 	askAddr := fs.String("ingress-ask-addr", orDefault(get(EnvAskAddr), DefaultAskAddr), "loopback ip:port for Caddy's on-demand TLS ask ($"+EnvAskAddr+")")
 	httpsPort := fs.String("ingress-https-port", orDefault(get(EnvHTTPSRedirectPort), "443"), "public HTTPS port for redirects ($"+EnvHTTPSRedirectPort+")")
 	logLevel := fs.String("log-level", orDefault(get(EnvLogLevel), "info"), "debug|info|warn|error ($"+EnvLogLevel+")")
@@ -285,6 +304,11 @@ func Load(args []string, env Lookup, readFile func(string) ([]byte, error)) (Con
 		errs = append(errs, fmt.Errorf("config: %s must be a loopback ip:port, got %q", EnvAccessLogAddr, *accessLogAddr))
 	}
 	cfg.AccessLogAddr = lap
+	wap, err := netip.ParseAddrPort(*wafLogAddr)
+	if err != nil || !wap.Addr().IsLoopback() || wap.Port() == 0 {
+		errs = append(errs, fmt.Errorf("config: %s must be a loopback ip:port, got %q", EnvWafLogAddr, *wafLogAddr))
+	}
+	cfg.WafLogAddr = wap
 	port, err := strconv.Atoi(*httpsPort)
 	if err != nil || port < 1 || port > 65535 {
 		errs = append(errs, fmt.Errorf("config: %s must be a port number, got %q", EnvHTTPSRedirectPort, *httpsPort))
@@ -554,6 +578,15 @@ func loadBuildConfig(cfg *Config, get func(string) string) []error {
 			errs = append(errs, fmt.Errorf("config: %s must be on or off, got %q", EnvDataTransfers, v))
 		}
 	}
+	cfg.RemoteAccess = "on"
+	if v := strings.ToLower(strings.TrimSpace(get(EnvRemoteAccess))); v != "" {
+		if remoteAccessValue(v) {
+			cfg.RemoteAccess = v
+		} else {
+			errs = append(errs, fmt.Errorf("config: %s must be on, off or a comma-separated list of ssh, database and volume, got %q", EnvRemoteAccess, v))
+		}
+	}
+	cfg.RemoteAccessPorts = strings.TrimSpace(get(EnvRemoteAccessPorts))
 	cfg.BuildSlots = max(1, runtime.NumCPU()/4)
 	if v := get(EnvBuildSlots); v != "" {
 		n, err := strconv.Atoi(v)
@@ -633,6 +666,46 @@ func loadBuildConfig(cfg *Config, get func(string) string) []error {
 		cfg.BuildkitCPUs = f
 	}
 	return errs
+}
+
+// RemoteAccessAllowed reports whether the local policy allows temporary
+// access of kind ("ssh" or "database"): LR_REMOTE_ACCESS allows it and
+// LR_INTERACTIVE_SESSIONS allows the matching session kind (consoles for
+// SSH, data sessions for databases).
+func (c Config) RemoteAccessAllowed(kind string) bool {
+	switch c.RemoteAccess {
+	case "", "on":
+	case "off":
+		return false
+	default:
+		if !slices.Contains(strings.Split(c.RemoteAccess, ","), kind) {
+			return false
+		}
+	}
+	switch kind {
+	case "ssh":
+		return c.SessionAllowed("console")
+	case "volume":
+		// SFTP into a volume runs no shell and no session (D67).
+		return true
+	}
+	return c.SessionAllowed("data")
+}
+
+// remoteAccessValue reports whether v is a valid LR_REMOTE_ACCESS: on, off
+// or a list of kinds (ssh, database, volume).
+func remoteAccessValue(v string) bool {
+	if v == "on" || v == "off" {
+		return true
+	}
+	seen := map[string]bool{}
+	for _, k := range strings.Split(v, ",") {
+		if k != "ssh" && k != "database" && k != "volume" || seen[k] {
+			return false
+		}
+		seen[k] = true
+	}
+	return true
 }
 
 // SessionAllowed reports whether the local policy (LR_INTERACTIVE_SESSIONS)

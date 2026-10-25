@@ -43,7 +43,7 @@ test('stateful services run one replica pinned to their volume server, never mov
 
     expect(Scheduler::place($servers, new PlacementRequest(3, 512, stateful: true, pinnedServerId: 2))->serverIds)->toBe([2])
         ->and(fn (): PlacementPlan => Scheduler::place([runtimeServer(1), runtimeServer(2, online: false)], new PlacementRequest(1, 512, stateful: true, pinnedServerId: 2)))
-        ->toThrow(PlacementFailed::class, 'never moved');
+        ->toThrow(PlacementFailed::class, 'not moved automatically');
 });
 
 test('an unpinned stateful service is placed like any other', function (): void {

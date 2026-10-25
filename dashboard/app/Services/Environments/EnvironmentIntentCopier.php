@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Environments;
 
+use App\Enums\Backups\VolumeConsistency;
 use App\Models\CanvasLayout;
 use App\Models\Environment;
 use App\Models\Project;
@@ -59,16 +60,16 @@ final readonly class EnvironmentIntentCopier
         }
 
         foreach ($from->volumes as $volume) {
-            $this->addVolume($instance, $volume->mount_path);
+            $this->addVolume($instance, $volume->mount_path, $volume->backup_consistency);
         }
 
         return $instance;
     }
 
-    public function addVolume(ServiceInstance $instance, string $mountPath): void
+    public function addVolume(ServiceInstance $instance, string $mountPath, VolumeConsistency $consistency = VolumeConsistency::Live): void
     {
-        if (! Volume::query()->where('service_instance_id', $instance->id)->where('mount_path', $mountPath)->exists()) {
-            Volume::query()->create(['team_id' => $instance->team_id, 'service_instance_id' => $instance->id, 'mount_path' => $mountPath]);
+        if (! Volume::query()->where('service_instance_id', $instance->id)->where('mount_path', $mountPath)->whereNull('removed_at')->exists()) {
+            Volume::query()->create(['team_id' => $instance->team_id, 'service_instance_id' => $instance->id, 'mount_path' => $mountPath, 'backup_consistency' => $consistency]);
         }
     }
 

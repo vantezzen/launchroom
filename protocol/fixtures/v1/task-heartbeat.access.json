@@ -1,0 +1,38 @@
+{
+  "apiVersion": "launchroom.vantezzen.io/v1",
+  "kind": "TaskHeartbeat",
+  "attempt": 1,
+  "access": {
+    "port": 40123,
+    "hostKey": {
+      "type": "ssh-ed25519",
+      "sha256": "SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "publicKey": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAABAgMEBQYHCAkKCwwNDg8QERITFBUWFxgZGhscHR4f"
+    },
+    "privateAddresses": [
+      "192.168.1.20"
+    ],
+    "behindNat": true,
+    "activeConnections": 1,
+    "lastActivityAt": "2026-10-17T12:05:00Z",
+    "events": [
+      {
+        "at": "2026-10-17T12:04:00Z",
+        "type": "connected",
+        "remote": "203.0.113.7",
+        "method": "publickey",
+        "channel": "sftp"
+      },
+      {
+        "at": "2026-10-17T12:04:30Z",
+        "type": "auth_failed",
+        "remote": "203.0.113.7",
+        "count": 2
+      }
+    ],
+    "owner": {
+      "uid": 1000,
+      "gid": 1000
+    }
+  }
+}

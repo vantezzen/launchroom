@@ -198,7 +198,7 @@ test('a push deploys the file with its commit when nothing else is staged', func
     $web = $deployments->first(fn (Deployment $deployment): bool => $deployment->serviceInstance->service_id === $this->web->id);
 
     expect($instance->build->buildCommand)->toBe('pnpm build')
-        ->and($revision?->message)->toBe('launchroom.json · 4444444')
+        ->and($revision?->message)->toBe('launchroom.json at 4444444')
         ->and($revision?->spec->serviceBySlug('redis'))->not->toBeNull()
         ->and($deployments)->toHaveCount(2)
         ->and($web?->commit_sha)->toBe(CF_SHA)
@@ -267,7 +267,7 @@ test('a change of launchroom.json alone deploys services whose watch paths it mi
     cfPush($this->team, files: ['launchroom.json']);
 
     expect(cfInstance($this->production, $this->web)->deploy->port)->toBe(4000)
-        ->and($this->production->refresh()->lastAppliedRevision?->message)->toBe('launchroom.json · 4444444');
+        ->and($this->production->refresh()->lastAppliedRevision?->message)->toBe('launchroom.json at 4444444');
 });
 
 test('required secrets must exist in the environment', function (): void {

@@ -72,8 +72,8 @@ export function PointInTimeCard({
                     <span className="type-heading">Point-in-time recovery</span>
                     <p className="type-small text-muted-foreground">
                         {pitr.enabled
-                            ? 'Every change is kept, so you can restore to any second inside the window, not just to a snapshot.'
-                            : 'Restore to any second, not just to the last snapshot. Postgres restarts once to turn it on.'}
+                            ? 'Every change is kept, so you can restore to any second inside the window.'
+                            : 'Restore to any second instead of only the last snapshot. Postgres restarts once to turn it on.'}
                     </p>
                 </div>
                 {pitr.canConfigure && (
@@ -93,8 +93,7 @@ export function PointInTimeCard({
 
             {!pitr.serverReady && (
                 <p className="border-t px-5 py-3 type-small text-muted-foreground">
-                    The server running this database needs a newer launchroomd
-                    first.
+                    Update the server running this database to turn this on.
                 </p>
             )}
 

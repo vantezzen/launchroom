@@ -30,10 +30,12 @@ BlueprintService {
   variables      {key, value, secret} in launchroom's own syntax: ${{ secret(32) }}, ${{db.DATABASE_URL}}
   connections    {to: key, style: url | laravel | parts}  (canvas edges; inject variables, docs/06 §3.2)
   notes          what the source said and what became of it (§3.4); shown, never applied
+  files          config files {path, content}: written read-only into the container before it starts (D65)
+  provides       {key, value} a connection to this service injects, referencing its own variables (D65)
 }
 ```
 
-- **Validation** (`App\Support\Blueprints\BlueprintValidator`, pure): key grammar and uniqueness, kinds vs. sources (image xor build xor database), parents are apps of the same blueprint, connections point at existing keys (databases and web services only), references `${{key.VAR}}` point at blueprint keys, commands are argv (≤ 256 items of ≤ 4 KiB), mount paths pass the volume rules (`AddServiceVolume`: clean, outside `/proc`, `/sys`, `/dev`, never the Docker socket), capabilities ⊆ the allow-list, databases have one replica. A blueprint that fails validation is never applied (the translator only emits valid blueprints; the test suite proves it with fuzzing, §5).
+- **Validation** (`App\Support\Blueprints\BlueprintValidator`, pure): config files pass `ConfigFileRules` (launchroomd's rules, docs/03 §8, and never inside one of the service's volumes), a `jwt()` value is signed with a secret variable of the same service, provided variables only reference the service's own variables; key grammar and uniqueness, kinds vs. sources (image xor build xor database), parents are apps of the same blueprint, connections point at existing keys (databases and web services only), references `${{key.VAR}}` point at blueprint keys, commands are argv (≤ 256 items of ≤ 4 KiB), mount paths pass the volume rules (`AddServiceVolume`: clean, outside `/proc`, `/sys`, `/dev`, never the Docker socket), capabilities ⊆ the allow-list, databases have one replica. A blueprint that fails validation is never applied (the translator only emits valid blueprints; the test suite proves it with fuzzing, §5).
 - **Applying** (`ApplyBlueprint`, one transaction): services in dependency order (databases, then apps/images, then workers) through `AddService`/`CreateService` (so slugs, generated domains, database credentials and plan previews behave exactly as when added by hand), then settings (`UpdateServiceSettings`), volumes (`AddServiceVolume`), connections (`CreateConnection`), variables (`CreateVariable`, generators evaluated once per environment, generated values typed `secret`), custom domains (`AddDomain`), private image services lose their generated domain. When a key is taken in an existing environment (catalog on the canvas) the service gets the next free slug and every `${{key.…}}` reference is rewritten. Positions are laid out as Public → App → Data columns.
 - **Where it lands**: a new project defaults to deploying its production environment right away (`DeployEnvironment`, trigger config, "Imported from compose.yml" / "Created from the Umami template"), like a repository import; **Create without deploying** skips that first deployment. Adding from the catalog on a canvas is **staged** like every other addition (docs/06 §4): it shows as "3 new services · Deploy".
 
@@ -58,7 +60,7 @@ Pure PHP, no framework, no I/O. Never passes anything to `docker compose` (docs/
 
 ### 2.3 Translation table
 
-Top level: `services` (required), `volumes` (named volumes; `external`, `driver`, `driver_opts` refused), `name` (project name suggestion), `x-*` (anchors; ignored silently), `version` (ignored, obsolete), `networks` (ignored: an environment is one private network where services reach each other by name), `secrets`, `configs`, `include` (refused). Services with `profiles` are skipped (listed, "only started with a profile").
+Top level: `services` (required), `volumes` (named volumes; `external`, `driver`, `driver_opts` refused), `configs` (inline `content` only, see the table; `file`, `environment` and `external` configs refused), `name` (project name suggestion), `x-*` (anchors; ignored silently), `version` (ignored, obsolete), `networks` (ignored: an environment is one private network where services reach each other by name), `secrets`, `include` (refused). Services with `profiles` are skipped (listed, "only started with a profile").
 
 | Compose | launchroom | Notes |
 |---|---|---|
@@ -66,8 +68,9 @@ Top level: `services` (required), `volumes` (named volumes; `external`, `driver`
 | `build` (string or `{context, dockerfile}`) | app service from the repository, root = context, builder = Dockerfile | `..`, URLs, `dockerfile_inline`, `args`, `target` refused/ignored with a note; pasted files: needs a repository |
 | same build + different `command` | worker of the first such service (one build feeds both, docs/04 §1) | the service with ports is the parent |
 | well-known DB images `postgres`, `mysql`, `mariadb`, `redis`, `valkey`, `mongo` (also `mongodb/mongodb-community-server`), `clickhouse/clickhouse-server` (also `yandex/…`) (also `bitnami/*`, `*-alpine` tags) | **managed database** (version from the tag, else the nearest supported; D47 added MongoDB and ClickHouse: `MONGO_INITDB_*` / `CLICKHOUSE_USER/PASSWORD` become references, `CLICKHOUSE_DB` maps to `CLICKHOUSE_DATABASE` (the managed engine uses `default`), `mongodb://` URLs gain `authSource=admin`, `clickhouse://`/`tcp://` URLs use `CLICKHOUSE_NATIVE_PORT`) | option: keep as a plain container (image service, private, volume, TCP health). MariaDB defaults to a container (managed MySQL is offered) |
-| `ports` (short and long syntax) | the container port → service port, **public** with a generated domain | host ports are never published (traffic enters through the edge); only one port per service is routed, others are noted; UDP and port ranges refused |
-| `expose` | service port, private | |
+| `ports` (short and long syntax) | the container port → service port, **public** with a generated domain | host ports are never published (traffic enters through the edge); only one port per service is routed, others are noted; UDP and port ranges refused; published non-HTTP ports refused |
+| `expose` | service port, private | non-HTTP ports (5432, 6379, …) too: the port gives a TCP health check and cross-server reachability, never a domain |
+| `configs` (short `- name` or long `{source, target}`) | **config files** (D65): the top-level config's inline `content` (interpolated like Compose does), written read-only (0444, root) at `target` (default `/<name>`) before the service starts | `uid`, `gid`, `mode` ignored; a target inside one of the service's volumes, under `/proc`, `/sys`, `/dev` or Docker's `/etc/hosts`-like files refused; at most 32 files, 64 KiB each, 256 KiB per service; secret-shaped content refused (keep secrets in variables, the program reads them from its environment) |
 | `environment` (list or map), `env_file` | variables of the service | secret-looking keys or values → `secret` (`EnvFileParser::suggestType`); values pointing at another service's host are rewritten to its slug (`db_1:5432` → `db-1:5432`) |
 | `depends_on` (list or map) | connections (canvas edges) to databases and web services | conditions ignored: databases deploy first |
 | credentials of a converted database | references | `POSTGRES_PASSWORD`/`MYSQL_*`/`--requirepass` values the consumers repeat become `${{db.PGPASSWORD}}` etc.; URLs to the database (`postgres://u:p@db:5432/x?…`) become a URL built from the managed database's parts (scheme and query kept) |
@@ -82,7 +85,7 @@ Top level: `services` (required), `volumes` (named volumes; `external`, `driver`
 | `container_name`, `hostname`, `networks.*.aliases`, `links` | (none) | ignored; still recognised as host names for the rewrite above |
 | `labels` | (none) | ignored; Traefik-style labels that route a service make it public, and their Host rules are listed as domains to add. Reverse proxies in the file (traefik, caddy, nginx-proxy, haproxy) get a note that the edge already does their job |
 | `restart`, `logging`, `stop_signal`, `stop_grace_period`, `tty`, `stdin_open`, `init`, `pull_policy`, `platform`, `working_dir`, `user`, `read_only`, `shm_size`, `ulimits`, `tmpfs`, `domainname`, `dns*`, `cpu_*`, `mem_reservation`, `memswap_limit`, `blkio_config`, `oom_score_adj`, `develop`, `annotations` | (none) | ignored with a note (launchroom always restarts, routes with its own domains, rotates logs, runs the image's user and working directory) |
-| `privileged`, `network_mode: host`, `network_mode: service:/container:`, `pid`, `ipc`, `uts`, `userns_mode`, `cgroup`, `cgroup_parent`, `devices`, `device_cgroup_rules`, `gpus`, `sysctls`, `security_opt`, `extra_hosts`, `external_links`, `volumes_from`, `isolation`, `runtime`, `storage_opt`, `group_add`, `mac_address`, `oom_kill_disable`, `secrets`, `configs`, `extends`, `post_start`, `pre_stop` | (none) | **refused** with a reason (host access, or not something launchroom runs); the service is still imported without it |
+| `privileged`, `network_mode: host`, `network_mode: service:/container:`, `pid`, `ipc`, `uts`, `userns_mode`, `cgroup`, `cgroup_parent`, `devices`, `device_cgroup_rules`, `gpus`, `sysctls`, `security_opt`, `extra_hosts`, `external_links`, `volumes_from`, `isolation`, `runtime`, `storage_opt`, `group_add`, `mac_address`, `oom_kill_disable`, `secrets`, `extends`, `post_start`, `pre_stop` | (none) | **refused** with a reason (host access, or not something launchroom runs); the service is still imported without it |
 
 Anything not in the table is ignored with "launchroom doesn't use `<key>`". A refusal never makes launchroom run something less safe: refused fields are simply not applied, and launchroomd's policy floor (docs/03 §8) would refuse them anyway.
 
@@ -106,6 +109,8 @@ category: analytics             # stacks | analytics | automation | content | de
 logo: umami                     # glyph key
 website: https://umami.is
 license: MIT                    # the app's licence (shown)
+notes:                          # optional, ≤ 6 lines on the detail sheet: requirements and limits
+  - Plan for 1 GB of memory.
 inputs:                         # only what matters; everything else is generated
   - {id: domain, label: Domain, type: domain, optional: true}
 services:                       # the Compose subset of §2.3, translated by the same parser
@@ -120,25 +125,50 @@ services:                       # the Compose subset of §2.3, translated by the
     x-launchroom: {name: Umami, logo: umami, domain: "${input.domain}"}
   db:
     x-launchroom: {database: {engine: postgres, version: "17"}}
+configs:                        # optional: Compose configs with inline content become config files (literal, no expressions)
+  init:
+    content: |
+      CREATE EXTENSION IF NOT EXISTS pg_trgm;
 ```
 
 - `services` is a Compose `services` map; the template compiler (`App\Support\Templates\TemplateCompiler`) turns it into a blueprint **through the Compose translator** in strict mode, so a template is valid only if the allow-list parser accepts every line (no refusals, no ignored keys).
-- `x-launchroom` per service: `name`, `logo`, `database {engine, version}` (a managed database; no image), `source: repository` (an app built from the repository input; `build.context` is its root directory), `parent` (worker of another service), `public` (override), `domain`, `connect {to: style}` (connection style per target; default `laravel` when the service's variables look like Laravel's `DB_*`, else `url`). Connection-injected variables that equal a template variable are stored once.
+- `x-launchroom` per service: `name`, `logo`, `database {engine, version}` (a managed database; no image), `source: repository` (an app built from the repository input; `build.context` is its root directory), `parent` (worker of another service), `public` (override), `domain`, `connect {to: style}` (connection style per target; default `laravel` when the service's variables look like Laravel's `DB_*`, else `url`), `backup: pause` (volume backups freeze the service while reading its volumes, for data written in place such as a database kept as an image; kept on environment copies), `provides {KEY: value}` (what a connection to this service injects instead of `<SLUG>_URL`, values from `${self.public_url}` and `${self.env.VAR}`, ≤ 16; D65, docs/06 §3.2). Connection-injected variables that equal a template variable are stored once.
 - Expressions (resolved before Compose interpolation, so they never collide with `${VAR}`):
-  - `${generate:password:N}` → `${{ secret(N) }}` (alphanumeric), `${generate:hex:N}`, `${generate:base64:N}`, `${generate:base64url:N}` (N random bytes), `${generate:uuid}` → `${{ uuid() }}`. Generated per environment when the variable is created (docs/06 §3.1), always `secret`, never shown in the preview, never logged or audited.
-  - `${service.<key>.url}` (databases: `DATABASE_URL`/`REDIS_URL`/`MONGO_URL`/`CLICKHOUSE_URL`; web: `PRIVATE_URL`), `.public_url`, `.host`, `.port`, `.user`, `.password`, `.database`, `.env.<VAR>` → the matching `${{<key>.…}}` reference; `${self.public_url}`, `${self.domain}` → `${{PUBLIC_URL}}`, `${{DOMAIN}}`.
+  - `${generate:password:N}` → `${{ secret(N) }}` (alphanumeric), `${generate:hex:N}`, `${generate:base64:N}`, `${generate:base64url:N}` (N random bytes), `${generate:uuid}` → `${{ uuid() }}`, `${generate:jwt:<role>:<KEY>}` → `${{ jwt("<role>", KEY) }}` (an HS256 JWT signed with the variable KEY of the same service, D65). Generated per environment when the variable is created (docs/06 §3.1), `secret`, never shown in the preview, never logged or audited. Exception: a JWT for the role `anon` is config, because it is public by design (Supabase's anon key goes into browser bundles) and has to feed `NEXT_PUBLIC_*` variables, which can't carry secrets (docs/06 §3.3).
+  - `${service.<key>.url}` (databases: `DATABASE_URL`/`REDIS_URL`/`MONGO_URL`/`CLICKHOUSE_URL`; web: `PRIVATE_URL`), `.public_url`, `.host`, `.port`, `.user`, `.password`, `.database`, `.env.<VAR>` → the matching `${{<key>.…}}` reference; `${self.public_url}`, `${self.domain}`, `${self.env.VAR}` → `${{PUBLIC_URL}}`, `${{DOMAIN}}`, `${{VAR}}`.
   - `${input.<id>}` → the guided input's value (validated by its type: `text`, `email`, `domain`; `repository` is the picker for stacks). Text inputs start with their placeholder (Celery's `config`).
 - **Resources** shown on the card are summed from the services' scaling (database defaults 1 CPU / 512 MB) plus volume count.
 
 ### 3.2 Catalog
 
-Stacks (repository + databases, built from your code): **Next.js + Postgres**, **Laravel + MySQL + Redis** (web, queue worker, scheduler), **Django + Postgres + Celery** (web, Celery worker, Redis broker), **Rails + Postgres + Sidekiq** (web, Sidekiq, Redis). One-click apps: **Plausible** (+ managed ClickHouse + Postgres; D47, `CLICKHOUSE_DATABASE_URL: ${service.events.url}`), **Umami**, **Uptime Kuma**, **n8n**, **Ghost** (+ MySQL), **Gitea** (rootless), **versitygw** (S3-compatible storage), **Meilisearch**, **PocketBase**, **Metabase**. Forgejo is left out while its images live only on Codeberg's registry, which the mirror doesn't serve.
+Backends: **Supabase** (§3.5). Stacks (repository + databases, built from your code): **Next.js + Postgres**, **Laravel + MySQL + Redis** (web, queue worker, scheduler), **Django + Postgres + Celery** (web, Celery worker, Redis broker), **Rails + Postgres + Sidekiq** (web, Sidekiq, Redis). One-click apps: **Plausible** (+ managed ClickHouse + Postgres; D47, `CLICKHOUSE_DATABASE_URL: ${service.events.url}`), **Umami**, **Uptime Kuma**, **n8n**, **Ghost** (+ MySQL), **Gitea** (rootless), **versitygw** (S3-compatible storage), **Meilisearch**, **PocketBase**, **Metabase**. Forgejo is left out while its images live only on Codeberg's registry, which the mirror doesn't serve.
 
-Logos are simple-icons glyphs (CC0 data; the marks are their owners' trademarks, used nominatively to identify the app), monochrome on the `Logo` tile. Apps without a simple-icon get a lucide glyph (versitygw: `HardDrive`).
+Logos are simple-icons glyphs (CC0 data; the marks are their owners' trademarks, used nominatively to identify the app), monochrome on the `Logo` tile. Apps without a simple-icon get a lucide glyph (versitygw: `HardDrive`). Parts of a stack without a mark of their own use the generic glyphs `auth`, `api`, `realtime`, `storage` (Supabase).
 
 ### 3.3 Validation in CI
 
 `make lint-templates` (`php artisan launchroom:templates:lint`) and a Pest test over the same code: schema and field grammar, id = file name, known category and logo, every `image:` digest-pinned (`@sha256:` + 64 hex) and from a mirrored registry, inputs used and declared, expressions well-formed and pointing at existing services, the Compose translation without a refusal or ignored key, and the resulting blueprint valid. Digests are bumped deliberately (like the database engine pins).
+
+### 3.5 Supabase (D65)
+
+`resources/templates/supabase.yaml` follows Supabase's official `docker/docker-compose.yml` with its Kong gateway (`docker-compose.kong.yml`) at self-hosted release 0.8.3 (supabase/supabase@bc27d26, 2026-10-16), every image digest-pinned and multi-arch (amd64, arm64).
+
+| Service (slug) | Image | Role |
+|---|---|---|
+| Supabase (`supabase`) | `kong/kong:3.9.3` | the only public service: API gateway, routes from the official `volumes/api/kong.yml` (legacy API keys) passed as `KONG_DECLARATIVE_CONFIG_STRING` with references to the keys; Studio is its basic-auth catch-all route |
+| Studio | `supabase/studio` | private, reached only through the gateway's basic auth (`DASHBOARD_USERNAME`/`DASHBOARD_PASSWORD`) |
+| Auth | `supabase/gotrue` | private; sign-ups confirmed right away until SMTP is configured |
+| REST API | `postgrest/postgrest` | private |
+| Realtime | `supabase/realtime` | private; `SELF_HOST_TENANT_NAME` is its own slug, the host name the gateway calls it by |
+| Storage | `supabase/storage-api` | private, file backend on its own volume |
+| Postgres Meta | `supabase/postgres-meta` | private |
+| Postgres | `supabase/postgres` | an **image service** with volumes (`/var/lib/postgresql/data`, `/etc/postgresql-custom`) and the official init SQL (`roles.sql`, `jwt.sql`, `realtime.sql`, `webhooks.sql`) as config files; not a managed database (Supabase's own image, roles and extensions) |
+
+- **Keys:** `JWT_SECRET` (48 characters), `ANON_KEY` and `SERVICE_ROLE_KEY` are variables of the gateway; the keys are `jwt()` generators signed with `JWT_SECRET` (docs/06 §3.1), so every environment has its own secret and keys. The other services reference them (`${{supabase.JWT_SECRET}}`).
+- **Connecting an app:** the gateway provides `NEXT_PUBLIC_SUPABASE_URL` (`${{PUBLIC_URL}}`), `NEXT_PUBLIC_SUPABASE_ANON_KEY` and `SUPABASE_SERVICE_ROLE_KEY` (docs/06 §3.2).
+- **Left out:** analytics (Logflare) and Vector, because Vector reads the Docker socket, which launchroom never gives a service; Studio's logs views are off (`ENABLED_FEATURES_LOGS_ALL=false`). imgproxy, because it reads originals from storage's volume and a volume belongs to one service; image transformations are off. Edge Functions (code is deployed into a volume, no launchroom path for that yet) and Supavisor (apps on the environment's network reach Postgres directly).
+- **Backups:** the database is backed up as volumes (docs/14 §9.12); point-in-time recovery needs a managed Postgres and isn't available. Template notes say both.
+- **Resources:** limits add up to about 3.3 GB of memory; the template's notes say 3 to 4 GB.
 
 ## 4. UI
 
@@ -156,4 +186,5 @@ Logos are simple-icons glyphs (CC0 data; the marks are their owners' trademarks,
 
 ## 6. Decisions
 
+- **D65** (2026-10-25): Supabase as a template. Config files on services (`DeploySettings.files`, Compose `configs` with inline content, `WorkloadSpec.files`), `jwt()` generators signed with another variable, and provided connection variables. See the decision log.
 - **D44** (2026-10-19): Compose files and templates both translate into one `ProjectBlueprint` applied by one Action; there is no compose source or stack object. The parser is an allow-list (§2.3): everything else is refused or ignored with a line-numbered note, never passed through. Templates are versioned YAML files in-repo whose services are a strict Compose subset validated by the same parser; generated secrets are launchroom generator expressions evaluated per environment. `DeploySettings` has `entrypoint` and `capabilities` (allow-list only) so translated services keep their entrypoint and the few capabilities common images need. Rejected: passing a validated file to `docker compose` on the server (a second orchestrator and a shell-adjacent surface), storing templates in the database (no review, no CI validation), a compose service source (would split every feature into two paths).

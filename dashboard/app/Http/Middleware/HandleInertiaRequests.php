@@ -7,11 +7,17 @@ namespace App\Http\Middleware;
 use App\Data\Backups\RecoveryKitStatusData;
 use App\Data\Instance\OnboardingProgressData;
 use App\Data\Instance\RealtimeConfigData;
+use App\Data\Servers\ControlPlaneLoadData;
 use App\Data\Teams\TeamContextData;
 use App\Data\Teams\TeamData;
+use App\Enums\Permission;
+use App\Enums\Security\FindingLevel;
+use App\Enums\Security\SecurityFindingStatus;
 use App\Models\InstanceSettings;
+use App\Models\Security\SecurityFinding;
 use App\Models\Team;
 use App\Models\User;
+use App\Queries\ControlPlaneLoad;
 use App\Queries\OnboardingChecklist;
 use App\Services\Instance\RecoveryMode;
 use App\Services\Updates\ReleaseChecker;
@@ -79,10 +85,30 @@ final class HandleInertiaRequests extends Middleware
             // "Get started" in the sidebar until the first-run checklist is done (instance owners).
             'onboardingProgress' => fn (): ?OnboardingProgressData => $this->onboarding->progressFor($request->user()),
             // Quiet dot on Settings in the sidebar when a release is ready (instance owners, cached check only).
+            // Calm "heavy load" notice in the sidebar for people who manage the
+            // control-plane server (docs/08 §4); one cache read per page.
+            'controlPlaneLoad' => fn (): ?ControlPlaneLoadData => resolve(ControlPlaneLoad::class)->forUser($request->user()),
+            // The Security entry's badge: open "Action needed" findings of the current team (docs/22 §9.1).
+            'securityActionNeeded' => fn (): int => $this->securityActionNeeded($request->user()),
             'updateAvailable' => fn (): bool => $request->user() instanceof User
                 && $request->user()->is_instance_owner
                 && resolve(ReleaseChecker::class)->cached()->available !== null,
         ];
+    }
+
+    private function securityActionNeeded(mixed $user): int
+    {
+        $teamId = $user instanceof User ? ($user->getAttributes()['current_team_id'] ?? null) : null;
+
+        if (! $user instanceof User || ! is_int($teamId) || ! $user->hasTeamPermission($teamId, Permission::View)) {
+            return 0;
+        }
+
+        return SecurityFinding::query()
+            ->where('team_id', $teamId)
+            ->where('status', SecurityFindingStatus::Open->value)
+            ->where('level', FindingLevel::ActionNeeded->value)
+            ->count();
     }
 
     /**

@@ -35,14 +35,14 @@ final class ChannelUrls
 
     /**
      * The clear-text trace of a secret URL: host and the last 4 characters
-     * ("hooks.slack.com · …x7Qa").
+     * ("hooks.slack.com/…x7Qa").
      */
     public static function hint(string $url): string
     {
         $host = parse_url($url, PHP_URL_HOST);
         $tail = substr(rtrim($url, '/'), -4);
 
-        return (is_string($host) ? strtolower($host) : 'webhook').' · …'.$tail;
+        return (is_string($host) ? strtolower($host) : 'webhook').'/…'.$tail;
     }
 
     /**

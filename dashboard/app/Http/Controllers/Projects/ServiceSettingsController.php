@@ -5,12 +5,18 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Projects;
 
 use App\Actions\Services\AddServiceVolume;
+use App\Actions\Services\ChangeServiceImage;
+use App\Actions\Services\RemoveServiceVolume;
 use App\Actions\Services\RenameService;
 use App\Actions\Services\UpdateServiceSettings;
+use App\Actions\Services\UpdateServiceVolume;
 use App\Data\Services\AddVolumeData;
+use App\Data\Services\ChangeImageData;
 use App\Data\Services\PreviewScalingData;
+use App\Data\Services\RemoveVolumeData;
 use App\Data\Services\RenameServiceData;
 use App\Data\Services\UpdateServiceSettingsData;
+use App\Data\Services\UpdateVolumeData;
 use App\Enums\ServiceKind;
 use App\Events\CanvasChanged;
 use App\Http\Controllers\Controller;
@@ -71,6 +77,60 @@ final class ServiceSettingsController extends Controller
 
         broadcast(new CanvasChanged($environment->public_id, $service->public_id))->toOthers();
         Inertia::flash('toast', ['type' => 'success', 'message' => "Volume {$volume->mount_path} added. Deploy to create it."]);
+
+        return back();
+    }
+
+    /**
+     * Mount a volume at another path (staged; docs/14 §9.12).
+     */
+    public function updateVolume(Request $request, Project $project, Environment $environment, Service $service, string $volume, UpdateVolumeData $data, #[CurrentUser] User $user, UpdateServiceVolume $updateVolume): RedirectResponse
+    {
+        $instance = ProjectScope::instance($project, $environment, $service);
+        Gate::authorize('update', $instance);
+        abort_if($instance->removed_at !== null, 409, 'This service is staged for removal.');
+        $model = $instance->volumes()->where('public_id', $volume)->firstOrFail();
+
+        $updated = $updateVolume->handle($instance, $model, $data, $this->auditActor($request, $user));
+
+        broadcast(new CanvasChanged($environment->public_id, $service->public_id))->toOthers();
+        Inertia::flash('toast', ['type' => 'success', 'message' => "Volume moves to {$updated->mount_path} with the next deploy."]);
+
+        return back();
+    }
+
+    /**
+     * Remove a volume (staged when it holds files; docs/14 §9.12).
+     */
+    public function removeVolume(Request $request, Project $project, Environment $environment, Service $service, string $volume, RemoveVolumeData $data, #[CurrentUser] User $user, RemoveServiceVolume $removeVolume): RedirectResponse
+    {
+        $instance = ProjectScope::instance($project, $environment, $service);
+        Gate::authorize('update', $instance);
+        abort_if($instance->removed_at !== null, 409, 'This service is staged for removal.');
+        $model = $instance->volumes()->where('public_id', $volume)->firstOrFail();
+
+        $staged = $removeVolume->handle($instance, $model, $data, $this->auditActor($request, $user));
+
+        broadcast(new CanvasChanged($environment->public_id, $service->public_id))->toOthers();
+        Inertia::flash('toast', ['type' => 'success', 'message' => $staged
+            ? "Volume {$model->mount_path} is removed with the next deploy."
+            : "Volume {$model->mount_path} removed."]);
+
+        return back();
+    }
+
+    /**
+     * Run another image (project-wide like the name; staged, docs/04 §1).
+     */
+    public function changeImage(Request $request, Project $project, Environment $environment, Service $service, ChangeImageData $data, #[CurrentUser] User $user, ChangeServiceImage $changeImage): RedirectResponse
+    {
+        ProjectScope::instance($project, $environment, $service);
+        Gate::authorize('update', $service);
+
+        $changeImage->handle($service, $data, $this->auditActor($request, $user));
+
+        broadcast(new CanvasChanged($environment->public_id, $service->public_id))->toOthers();
+        Inertia::flash('toast', ['type' => 'success', 'message' => 'Image changed. Deploy to run it.']);
 
         return back();
     }

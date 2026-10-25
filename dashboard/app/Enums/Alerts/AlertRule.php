@@ -20,6 +20,10 @@ enum AlertRule: string
     case DiskFull = 'disk_full';
     case CertificateExpiring = 'certificate_expiring';
     case BackupFailed = 'backup_failed';
+    /** A finding of a service instance became "Action needed" (docs/22 §10). */
+    case Vulnerability = 'vulnerability';
+    /** An edge serves its routes without the web firewall it was asked to run (docs/22 §6.6). */
+    case WafUnavailable = 'waf_unavailable';
 
     /** Minutes a resolved alert can reopen without a new notification (flap guard). */
     public const int COOLDOWN_MINUTES = 10;
@@ -36,6 +40,8 @@ enum AlertRule: string
             self::DiskFull => 'A disk is nearly full',
             self::CertificateExpiring => 'A certificate is about to expire',
             self::BackupFailed => 'A backup fails',
+            self::Vulnerability => 'A service needs a security update',
+            self::WafUnavailable => 'The web firewall stops working on a server',
         };
     }
 
@@ -46,15 +52,17 @@ enum AlertRule: string
     public function description(): string
     {
         return match ($this) {
-            self::DeployFailed => 'Production and other lasting environments. Previews never alert.',
+            self::DeployFailed => 'Production and other persistent environments. Previews don’t send alerts.',
             self::ServiceUnhealthy => 'A replica is down, unhealthy or restarting again and again for 3 minutes.',
             self::ErrorRateHigh => 'Server errors (5xx) out of all requests, once there are at least 50.',
-            self::ServerOffline => 'No contact for 5 minutes. You hear again when it is back.',
+            self::ServerOffline => 'No contact for 5 minutes. You get another message when it is back.',
             self::CpuHigh => 'Average over the whole server.',
             self::MemoryHigh => 'Memory in use out of what the server has.',
             self::DiskFull => 'The disk Docker stores images, volumes and builds on.',
-            self::CertificateExpiring => 'Renewal starts 30 days ahead, so this means it keeps failing.',
+            self::CertificateExpiring => 'Renewal starts 30 days before expiry, so this alert means renewal keeps failing.',
             self::BackupFailed => 'Database, volume and launchroom backups.',
+            self::Vulnerability => 'Only for findings marked Action needed on the Security page.',
+            self::WafUnavailable => 'The server keeps serving requests without the firewall for 5 minutes.',
         };
     }
 
@@ -65,6 +73,7 @@ enum AlertRule: string
             self::DeployFailed, self::ServiceUnhealthy, self::ErrorRateHigh => 'services',
             self::ServerOffline, self::CpuHigh, self::MemoryHigh, self::DiskFull => 'servers',
             self::CertificateExpiring, self::BackupFailed => 'data',
+            self::Vulnerability, self::WafUnavailable => 'security',
         };
     }
 
@@ -116,6 +125,8 @@ enum AlertRule: string
         return match ($this) {
             self::DeployFailed => 10,
             self::BackupFailed => 360,
+            // A second advisory for the same service notifies again (docs/22 §10).
+            self::Vulnerability => 60,
             default => null,
         };
     }
@@ -126,6 +137,6 @@ enum AlertRule: string
      */
     public function isCondition(): bool
     {
-        return in_array($this, [self::ServiceUnhealthy, self::ErrorRateHigh, self::CpuHigh, self::MemoryHigh, self::DiskFull, self::CertificateExpiring], true);
+        return in_array($this, [self::ServiceUnhealthy, self::ErrorRateHigh, self::CpuHigh, self::MemoryHigh, self::DiskFull, self::CertificateExpiring, self::WafUnavailable], true);
     }
 }

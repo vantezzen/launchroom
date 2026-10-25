@@ -32,5 +32,7 @@ final class IngressStatus extends Data
         #[Max(4096)]
         public array|null|Optional $certificates = new Optional,
         public CertStorageStatus|null|Optional $storage = new Optional,
+        /** The web firewall (docs/03 §13.4), edges with the `waf` feature. */
+        public WafStatus|null|Optional $waf = new Optional,
     ) {}
 }

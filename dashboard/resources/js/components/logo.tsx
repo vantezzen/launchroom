@@ -1,13 +1,16 @@
 import type { LucideIcon } from 'lucide-react';
 import {
     Box,
+    Braces,
     Clock,
     Cloud,
     Cog,
     DatabaseZap,
     Globe,
     HardDrive,
+    KeyRound,
     Mail,
+    Radio,
     Server,
     Webhook,
 } from 'lucide-react';
@@ -28,6 +31,7 @@ import {
     siPocketbase,
     siPorkbun,
     siSidekiq,
+    siSupabase,
     siUmami,
     siUptimekuma,
     siWordpress,
@@ -145,6 +149,12 @@ const marks: Record<string, Mark> = {
     nextcloud: { icon: siNextcloud, label: 'Nextcloud' },
     celery: { icon: siCelery, label: 'Celery' },
     sidekiq: { icon: siSidekiq, label: 'Sidekiq' },
+    supabase: { icon: siSupabase, label: 'Supabase' },
+    // Parts of a stack without a mark of their own (Supabase's services)
+    auth: { lucide: KeyRound, label: 'Auth' },
+    api: { lucide: Braces, label: 'API' },
+    realtime: { lucide: Radio, label: 'Realtime' },
+    storage: { lucide: HardDrive, label: 'Storage' },
     // Sources
     docker: { icon: siDocker, label: 'Image' },
     github: { icon: siGithub, label: 'GitHub repository' },

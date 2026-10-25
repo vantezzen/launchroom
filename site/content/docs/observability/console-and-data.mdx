@@ -5,6 +5,8 @@ description: Open a shell inside a running container, or browse and query a mana
 
 Use these tabs to check a file, run a one-off script or read a few rows. The **Console** tab opens a shell inside one of your service's containers. The **Data** tab is a table browser and query editor for your managed databases. Both work in the browser, without SSH and without opening a port.
 
+To use your own SSH, SFTP or database client instead, see [Temporary access](/docs/observability/temporary-access).
+
 <Screenshot id="console" />
 
 ## What a session is
@@ -48,7 +50,7 @@ If the service runs several replicas, choose one ("Replica 1 · fra-1"). Only ru
 <Step>
 ### Pick a shell
 
-**Automatic** uses the first of bash, ash or sh that exists in the image. You can also choose sh or bash. An image without any shell says "This image has no shell".
+**Automatic** uses the first of bash, ash or sh that exists in the image, so Alpine-based images such as Umami get ash. You can also choose sh or bash. An image without any shell says "This image has no shell".
 </Step>
 <Step>
 ### Open console
@@ -56,6 +58,21 @@ If the service runs several replicas, choose one ("Replica 1 · fra-1"). Only ru
 The terminal connects within a second or two.
 </Step>
 </Steps>
+
+If the console can't open, the tab says why instead of waiting, with **Try again**:
+
+| Message | What to do |
+|---|---|
+| This image has no shell | The image ships no bash, ash or sh (distroless images). Look at the app's logs instead, or use the Data tab for a database. |
+| This image has no /bin/bash | Pick **Automatic** or sh. |
+| The server refused | The server doesn't allow consoles (`LR_INTERACTIVE_SESSIONS`, below), or its Docker guard refused the shell. The message names the reason. |
+| The container isn't running | The replica restarted or stopped. Try again once it runs. |
+| The server couldn't reach the live connection | launchroomd on that server can't connect to the dashboard's realtime server. Check its logs. |
+| fra-1 didn't answer within 25 seconds | launchroomd on that server is offline or busy. |
+
+**Recent sessions** shows the same reason for a session that never started.
+
+On a database, the Console tab points at the **Data** tab: browsing tables and running queries there needs no shell.
 
 The status line under the terminal shows the shell, the user and how long the session has been open. **End session** closes it. Switching tabs or closing the panel ends it too.
 
@@ -115,7 +132,7 @@ Read-only mode protects you from accidents. Access is controlled by the Data per
 | Open sessions per person | 3 |
 | Open sessions per server | 8 |
 
-A session also ends when your browser goes quiet for 45 seconds, when launchroomd can't reach the dashboard for about 30 seconds, or when your access changes. Removing a member or changing their role ends their open sessions at once. You can't reconnect to a running shell. Open a new one instead.
+A session also ends when your browser goes quiet for 45 seconds, when launchroomd can't reach the dashboard for about 30 seconds, or when your access changes. Removing a member or changing their role ends their open sessions at once. You can't reconnect to a running shell. Open a new one instead: a new session replaces your open one of the same kind on the same service, so reconnecting never counts against the limit.
 
 ## Audit
 

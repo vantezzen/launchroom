@@ -1,6 +1,7 @@
 import { Link } from '@inertiajs/react';
 import { ArrowDown, ArrowUp } from 'lucide-react';
 import { Sparkline } from '@/components/charts/sparkline';
+import { MetaLine } from '@/components/patterns/meta-line';
 import { Section } from '@/components/patterns/section';
 import { StatusIcon } from '@/components/status';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -114,7 +115,7 @@ function Footnote({ peer }: { peer: Peer }) {
     const parts: string[] = [];
 
     if (q?.throughputAt) {
-        parts.push(`speed test ${relativeTime(q.throughputAt)}`);
+        parts.push(`Speed test ${relativeTime(q.throughputAt)}`);
     }
 
     if (q && q.failedProbes > 0) {
@@ -128,9 +129,9 @@ function Footnote({ peer }: { peer: Peer }) {
     }
 
     return parts.length > 0 ? (
-        <span className="type-small text-muted-foreground">
-            {parts.join(' · ')}
-        </span>
+        <MetaLine className="type-small text-muted-foreground">
+            {parts}
+        </MetaLine>
     ) : null;
 }
 
@@ -191,7 +192,7 @@ export function ServerLinks({
                     <p className="rounded-xl border bg-card px-6 py-5 type-body text-muted-foreground shadow-card">
                         {mesh.message ??
                             (mesh.state === 'off'
-                                ? 'Turns on by itself when a second server joins. Servers then talk to each other privately, encrypted end to end.'
+                                ? 'Turns on when a second server joins. Your servers then reach each other over an encrypted private network.'
                                 : 'No other servers on the private network yet.')}
                     </p>
                 )}
@@ -228,17 +229,16 @@ export function ServerLinks({
                                         {name}
                                     </span>
                                 )}
-                                <span className="type-small text-muted-foreground">
-                                    {pathLabels[peer.path]}
-                                    {peer.path === 'relay' &&
-                                        peer.relay !== null &&
-                                        ` via ${peer.relay}`}
-                                    {!peer.online && ' · offline'}
-                                    <span className="font-mono">
-                                        {' · '}
-                                        {peer.ip}
-                                    </span>
-                                </span>
+                                <MetaLine className="type-small text-muted-foreground">
+                                    {`${pathLabels[peer.path]}${
+                                        peer.path === 'relay' &&
+                                        peer.relay !== null
+                                            ? ` via ${peer.relay}`
+                                            : ''
+                                    }`}
+                                    {!peer.online && 'Offline'}
+                                    <span className="font-mono">{peer.ip}</span>
+                                </MetaLine>
                                 <Footnote peer={peer} />
                             </span>
                             <span className="hidden sm:block">

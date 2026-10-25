@@ -1,17 +1,85 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useSyncExternalStore } from 'react';
 
-/** A one-second clock while an operation is running. */
-export function useNow(running: boolean): number {
-    const [now, setNow] = useState(Date.now);
+/**
+ * One clock for the whole page: a single one-second interval shared by every
+ * running timer, started by the first subscriber and paused while the tab is
+ * hidden (it ticks once on return, so timers jump to the right value).
+ */
+const listeners = new Set<() => void>();
+let current = Date.now();
+let timer: number | null = null;
 
-    useEffect(() => {
-        if (!running) {
-            return;
+function tick(): void {
+    current = Date.now();
+    listeners.forEach((listener) => listener());
+}
+
+function hidden(): boolean {
+    return (
+        typeof document !== 'undefined' && document.visibilityState === 'hidden'
+    );
+}
+
+function start(): void {
+    if (timer !== null || listeners.size === 0 || hidden()) {
+        return;
+    }
+
+    tick();
+    timer = window.setInterval(tick, 1000);
+}
+
+function stop(): void {
+    if (timer !== null) {
+        window.clearInterval(timer);
+        timer = null;
+    }
+}
+
+function onVisibility(): void {
+    if (hidden()) {
+        stop();
+    } else {
+        start();
+    }
+}
+
+/** Subscribes to the shared clock; exported for tests. */
+export function subscribe(listener: () => void): () => void {
+    if (listeners.size === 0 && typeof document !== 'undefined') {
+        document.addEventListener('visibilitychange', onVisibility);
+    }
+
+    listeners.add(listener);
+    start();
+
+    return () => {
+        listeners.delete(listener);
+
+        if (listeners.size === 0) {
+            stop();
+            document.removeEventListener('visibilitychange', onVisibility);
         }
+    };
+}
 
-        const timer = window.setInterval(() => setNow(Date.now()), 1000);
-        return () => window.clearInterval(timer);
-    }, [running]);
+const idle = () => () => {};
 
-    return now;
+/**
+ * The current time in milliseconds, re-rendering every `every` ms while
+ * `active` (default one second). Inactive callers read the clock without
+ * subscribing, so a finished timer stays fixed and costs nothing.
+ */
+export function useNow(active: boolean = true, every: number = 1000): number {
+    const snapshot = useCallback(
+        () => Math.floor(current / every) * every,
+        [every],
+    );
+
+    return useSyncExternalStore(active ? subscribe : idle, snapshot, snapshot);
+}
+
+/** For tests: the number of subscribed timers and whether the interval runs. */
+export function tickerState(): { listeners: number; running: boolean } {
+    return { listeners: listeners.size, running: timer !== null };
 }

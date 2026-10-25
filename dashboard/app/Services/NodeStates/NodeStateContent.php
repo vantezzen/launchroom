@@ -11,6 +11,7 @@ use App\Data\Protocol\V1\NetworkSpec;
 use App\Data\Protocol\V1\RouteSpec;
 use App\Data\Protocol\V1\VolumeSpec;
 use App\Data\Protocol\V1\WorkloadSpec;
+use App\Data\Services\ConfigFile;
 use App\Data\Services\DatabaseSource;
 use App\Data\Services\ScheduleSettings;
 use App\Data\Specs\DomainSpec;
@@ -38,6 +39,7 @@ use App\Services\Crypto\ProjectKeyring;
 use App\Services\Moves\MoveHolds;
 use App\Services\Previews\PreviewRoutes;
 use App\Services\Previews\PreviewUrls;
+use App\Services\Security\WafRoutes;
 use App\Support\Blueprints\BlueprintValidator;
 use App\Support\Crypto\WorkloadEnvSealer;
 use App\Support\Deployments\EffectiveDeploy;
@@ -77,6 +79,7 @@ final readonly class NodeStateContent
         private MeshLinks $meshLinks,
         private MeshReadiness $meshReadiness,
         private PointInTimeRecovery $pointInTime,
+        private WafRoutes $waf,
     ) {}
 
     /**
@@ -90,7 +93,7 @@ final readonly class NodeStateContent
                 'deployment.revision',
                 'deployment.environment.project',
                 'serviceInstance.service',
-                'serviceInstance.volumes',
+                'serviceInstance.allVolumes',
                 'serviceInstance.environment.lastAppliedRevision',
             ])
             ->orderBy('id')
@@ -126,8 +129,10 @@ final readonly class NodeStateContent
                 $networks[$shared['network']->id] ??= $shared['network'];
             }
 
-            foreach ($placement->serviceInstance->volumes as $volume) {
-                if ($volume->server_id === $server->id) {
+            // Declared when a workload here mounts it (a staged removal stays
+            // while the deployment that mounts it runs, docs/14 §9.12).
+            foreach ($placement->serviceInstance->allVolumes as $volume) {
+                if ($volume->server_id === $server->id && in_array($volume->public_id, array_column($workload->mounts ?? [], 'volume'), true)) {
                     $volumes[$volume->public_id] = new VolumeSpec($volume->public_id, $volume->dockerName());
                 }
             }
@@ -145,7 +150,8 @@ final readonly class NodeStateContent
             'networks' => array_values($networks),
             'volumes' => array_values($volumes),
             'workloads' => $workloads,
-            'routes' => $server->hasRole(ServerRole::Edge) ? $this->edgeRouting->apply($this->routes($server, array_values($placements->all()), $workloads, $previews), $server) : [],
+            // The web firewall's settings per route (docs/22 §6.3) for edges with the `waf` feature.
+            'routes' => $server->hasRole(ServerRole::Edge) ? $this->waf->apply($this->edgeRouting->apply($this->routes($server, array_values($placements->all()), $workloads, $previews), $server), $server) : [],
             // Only listeners on networks this state declares (a workload that
             // can't be rendered yet doesn't declare its network).
             'ambassadors' => array_values(array_filter($links['ambassadors'], static fn (AmbassadorSpec $ambassador): bool => isset($networks[$ambassador->network]))),
@@ -171,10 +177,18 @@ final readonly class NodeStateContent
 
         $mounts = [];
 
-        foreach ($instance->volumes as $volume) {
-            if ($volume->server_id === $server->id) {
-                $mounts[] = ['volume' => $volume->public_id, 'target' => $volume->mount_path];
+        // Mount paths come from the deployment's revision, so a changed path
+        // or a removal applies with the next deploy (staged, docs/14 §9.12).
+        // A volume the revision doesn't know (added after it) keeps its
+        // current path; a removed one it doesn't know is left out.
+        foreach ($instance->allVolumes as $volume) {
+            $recorded = $spec->volumes[$volume->public_id] ?? null;
+
+            if ($volume->server_id !== $server->id || ($recorded === null && $volume->removed_at !== null)) {
+                continue;
             }
+
+            $mounts[] = ['volume' => $volume->public_id, 'target' => $recorded->mountPath ?? $volume->mount_path];
         }
 
         $argv = $effective->argv($effective->startCommand);
@@ -238,7 +252,31 @@ final readonly class NodeStateContent
             walArchiveFingerprint: $wal['fingerprint'] ?? null,
             stop: $stop,
             schedule: $schedule,
+            files: $this->files($server, $spec->deploy->files, $source),
         );
+    }
+
+    /**
+     * Config files (D65) for daemons that announced the feature. Managed
+     * databases have none; an older launchroomd gets the workload without
+     * them (and a warning here), as with the other optional features.
+     *
+     * @param  list<ConfigFile>  $files
+     * @return list<array{path: string, content: string}>|null
+     */
+    private function files(Server $server, array $files, mixed $source): ?array
+    {
+        if ($files === [] || $source instanceof DatabaseSource) {
+            return null;
+        }
+
+        if (! $server->supportsDaemonFeature(DaemonFeature::ConfigFiles)) {
+            Log::warning('launchroomd on this server does not support config files; update it', ['server' => $server->public_id]);
+
+            return null;
+        }
+
+        return array_map(static fn (ConfigFile $file): array => ['path' => $file->path, 'content' => $file->content], $files);
     }
 
     /**

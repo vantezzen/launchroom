@@ -19,7 +19,7 @@ final class ServiceTransfersData extends Data
      * @param  list<DependentServiceData>  $dependents
      * @param  list<ImportRunData>  $imports
      * @param  list<ExportRunData>  $exports
-     * @param  array{self: string, transfers: string, inspect: string, imports: string, exports: string}  $urls
+     * @param  array{self: string, transfers: string, inspect: string, imports: string, exports: string, prepare: string}  $urls
      */
     public function __construct(
         public string $serviceInstanceId,
@@ -44,5 +44,7 @@ final class ServiceTransfersData extends Data
         public array $urls,
         public int $chunkBytes,
         public int $maxBytes,
+        /** A database never deployed: imported into after starting it alone (docs/14 §12.9); null once deployed. */
+        public ?DatabasePreparationData $preparation = null,
     ) {}
 }

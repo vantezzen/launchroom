@@ -51,6 +51,7 @@ use App\Scheduling\SchedulableServer;
 use App\Scheduling\Scheduler;
 use App\Services\Deployments\Placer;
 use App\Services\Dns\EdgeAddresses;
+use App\Services\Volumes\StagedVolumes;
 use App\Support\Servers\ServerLocations;
 use Illuminate\Support\Facades\Gate;
 
@@ -118,8 +119,11 @@ final readonly class ServiceSettings
                     canDelete: $gate->allows('delete', $domain),
                     verification: $custom ? DnsCheckData::fromStored($domain->verification) : null,
                     wwwRedirect: in_array('www.'.$domain->hostname, $hostnames, true),
-                    // A CNAME can't sit at a zone apex; offer it for subdomains only.
-                    cnameTarget: $custom && substr_count($domain->hostname, '.') >= 2 ? $cnameTarget : null,
+                    // Pointing at the generated name follows the edges by itself
+                    // (docs/05 §5); the UI recommends it, except at a zone apex,
+                    // where most DNS hosts allow no CNAME (ALIAS/flattening only).
+                    cnameTarget: $custom ? $cnameTarget : null,
+                    apex: $custom && substr_count($domain->hostname, '.') < 2,
                     canRedirectWww: $custom && $domain->redirect_to === null && ! str_starts_with($domain->hostname, 'www.'),
                     hsts: $custom && $domain->hsts,
                     canSetHsts: $custom && $domain->redirect_to === null,
@@ -146,7 +150,7 @@ final readonly class ServiceSettings
             enabled: $instance->enabled,
             domains: $domains,
             privateHost: $service->slug,
-            volumes: array_values($instance->volumes->map(static fn (Volume $volume): VolumeData => new VolumeData($volume->public_id, $volume->mount_path, $volume->size_bytes, $volume->server?->name, $volume->dockerName(), $volume->server?->public_id, $volume->server instanceof Server ? DeviceData::fromServer($volume->server) : null, $volume->server?->status))->all()),
+            volumes: $this->volumes($instance),
             advanced: new AdvancedServiceData(
                 serviceId: $service->public_id,
                 instanceId: $instance->public_id,
@@ -164,6 +168,32 @@ final readonly class ServiceSettings
             configFile: ManagedByFileData::for(EnvironmentConfigFile::query()->where('environment_id', $environment->id)->first(), $service->public_id),
             dockerfileGeneration: $service->kind === ServiceKind::App ? $this->dockerfiles->panel($instance, $user) : null,
         );
+    }
+
+    /**
+     * The volumes now, then the ones removed with the next deploy (docs/14
+     * §9.12), each with the path the running deployment uses when a move
+     * to another path is staged.
+     *
+     * @return list<VolumeData>
+     */
+    private function volumes(ServiceInstance $instance): array
+    {
+        $applied = StagedVolumes::appliedPaths($instance);
+        $removing = StagedVolumes::pendingRemovals($instance)->load('server');
+
+        return array_values($instance->volumes->concat($removing)->map(static fn (Volume $volume): VolumeData => new VolumeData(
+            id: $volume->public_id,
+            mountPath: $volume->mount_path,
+            sizeBytes: $volume->size_bytes,
+            server: $volume->server?->name,
+            dockerName: $volume->dockerName(),
+            serverId: $volume->server?->public_id,
+            serverDevice: $volume->server instanceof Server ? DeviceData::fromServer($volume->server) : null,
+            serverStatus: $volume->server?->status,
+            removing: $volume->removed_at !== null,
+            deployedMountPath: isset($applied[$volume->public_id]) && $applied[$volume->public_id] !== $volume->mount_path ? $applied[$volume->public_id] : null,
+        ))->all());
     }
 
     /**

@@ -291,3 +291,38 @@ func TestLoadPublicIP(t *testing.T) {
 		}
 	}
 }
+
+// LR_REMOTE_ACCESS: on, off or a list of kinds (D61, D67). Volume SFTP runs
+// no shell or session, so LR_INTERACTIVE_SESSIONS doesn't gate it.
+func TestRemoteAccessKinds(t *testing.T) {
+	for v, want := range map[string][3]bool{
+		"":                    {true, true, true},
+		"on":                  {true, true, true},
+		"off":                 {false, false, false},
+		"ssh":                 {true, false, false},
+		"volume":              {false, false, true},
+		"ssh,volume":          {true, false, true},
+		" Database , Volume ": {false, true, true},
+	} {
+		cfg, err := Load(nil, envOf(map[string]string{EnvControlPlaneURL: "https://dash.example.com", EnvRemoteAccess: strings.ReplaceAll(v, " ", "")}), noFile)
+		if err != nil {
+			t.Fatalf("%q: %v", v, err)
+		}
+		got := [3]bool{cfg.RemoteAccessAllowed("ssh"), cfg.RemoteAccessAllowed("database"), cfg.RemoteAccessAllowed("volume")}
+		if got != want {
+			t.Errorf("LR_REMOTE_ACCESS=%q: %v, want %v", v, got, want)
+		}
+	}
+	for _, bad := range []string{"all", "ssh,ssh", "ssh,", "shell"} {
+		if _, err := Load(nil, envOf(map[string]string{EnvControlPlaneURL: "https://dash.example.com", EnvRemoteAccess: bad}), noFile); err == nil {
+			t.Errorf("LR_REMOTE_ACCESS=%q accepted", bad)
+		}
+	}
+	cfg, err := Load(nil, envOf(map[string]string{EnvControlPlaneURL: "https://dash.example.com", EnvInteractiveSessions: "off"}), noFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.RemoteAccessAllowed("ssh") || cfg.RemoteAccessAllowed("database") || !cfg.RemoteAccessAllowed("volume") {
+		t.Error("LR_INTERACTIVE_SESSIONS=off: only volume access stays")
+	}
+}

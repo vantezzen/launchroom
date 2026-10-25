@@ -1,1 +1,1 @@
-{ "title": "Projects and services", "pages": ["canvas-and-services", "environments", "previews", "variables", "domains-and-tls", "scaling", "cron-jobs", "templates-and-compose"] }
+{ "title": "Projects and services", "pages": ["canvas-and-services", "environments", "previews", "variables", "domains-and-tls", "scaling", "cron-jobs", "templates-and-compose", "supabase"] }

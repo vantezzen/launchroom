@@ -103,7 +103,7 @@ final class ControlPlaneMoveController extends Controller
     {
         Gate::authorize('manageInstance');
         $abort->handle($this->open(), 'aborted from the dashboard', $this->auditActor($request, $user));
-        Inertia::flash('toast', ['type' => 'success', 'message' => 'The hand-over was aborted. This dashboard takes changes again.']);
+        Inertia::flash('toast', ['type' => 'success', 'message' => 'The hand-over was cancelled. You can make changes in this dashboard again.']);
 
         return to_route('move.edit');
     }

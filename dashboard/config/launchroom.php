@@ -150,6 +150,9 @@ return [
             'buildkit' => env('LAUNCHROOM_BUILDKIT_IMAGE', 'docker.io/moby/buildkit@sha256:65eca3c01cd1180c8f64565c4e3c5983af5145818b0e6fa863385d099eb73855'),
             // tailscale/tailscale v1.104.1 (multi-arch index), the mesh client (docs/05 §2).
             'tailscale' => env('LAUNCHROOM_TAILSCALE_IMAGE', 'docker.io/tailscale/tailscale@sha256:87c55d6be56ad85b3d8bceca5f87f73de288c609131460dd1be1874c250cc41d'),
+            // busybox 1.37.0-glibc (multi-arch index): the SFTP helper of volume
+            // access (D67, daemon policy.FilesImageDigest).
+            'files' => env('LAUNCHROOM_FILES_IMAGE', 'docker.io/library/busybox@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e'),
         ],
     ],
 
@@ -853,6 +856,56 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Request analytics: retention (docs/15 §5.3)
+    |--------------------------------------------------------------------------
+    |
+    | Top paths, referrer hosts and client classes arrive per 10 minutes and
+    | are kept 48 hours at that resolution, then as hourly rows for
+    | `hourly_retention_days` and as daily rows for `daily_retention_days`.
+    | Request counts themselves are usage metrics with their own retention.
+    |
+    */
+
+    'analytics' => [
+        'hourly_retention_days' => max(1, (int) env('LAUNCHROOM_ANALYTICS_HOURLY_RETENTION_DAYS', 7)),
+        'daily_retention_days' => max(1, (int) env('LAUNCHROOM_ANALYTICS_DAILY_RETENTION_DAYS', 90)),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Security center (D63, docs/22)
+    |--------------------------------------------------------------------------
+    |
+    | Advisory sources are switched in Settings → Security (`advisory_feeds`);
+    | these are timings and limits. Firewall results: 10-minute rows and
+    | event samples (client networks) for 7 days, hourly rows for 90 days.
+    |
+    */
+
+    'security' => [
+        // OSV is asked again for a component after this many hours (docs/22 §4.3).
+        'osv_refresh_hours' => 6,
+        // "Check now" at most this often per instance.
+        'check_now_minutes' => 10,
+        // Investigations per service instance and hour (manual starts).
+        'investigations_per_hour' => 6,
+        // Pending backfill inventory tasks per build server.
+        'backfill_per_server' => 2,
+        'inventory_timeout_seconds' => 900,
+        'inspection_timeout_seconds' => 180,
+        'investigation_retention_days' => 90,
+        'resolved_retention_days' => 90,
+        'advisory_retention_days' => 30,
+    ],
+
+    'waf' => [
+        'sample_retention_days' => max(1, (int) env('LAUNCHROOM_WAF_SAMPLE_RETENTION_DAYS', 7)),
+        'hourly_retention_days' => max(1, (int) env('LAUNCHROOM_WAF_HOURLY_RETENTION_DAYS', 90)),
+        'event_retention_days' => max(1, min(7, (int) env('LAUNCHROOM_WAF_EVENT_RETENTION_DAYS', 7))),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Interactive sessions: Console and Data tabs (docs/03 §11, docs/09 R33)
     |--------------------------------------------------------------------------
     |
@@ -861,6 +914,20 @@ return [
     | switch (LR_INTERACTIVE_SESSIONS in the server's .env).
     |
     */
+
+    /*
+    | Temporary remote access (D61, docs/09 R39): Connect via SSH and
+    | temporary database access. LAUNCHROOM_REMOTE_ACCESS=false refuses new
+    | ones and ends open ones on their next heartbeat.
+    */
+    'remote_access' => [
+        'enabled' => (bool) env('LAUNCHROOM_REMOTE_ACCESS', true),
+        'idle_minutes' => min(60, max(5, (int) env('LAUNCHROOM_REMOTE_ACCESS_IDLE_MINUTES', 15))),
+        'max_minutes' => min(240, max(30, (int) env('LAUNCHROOM_REMOTE_ACCESS_MAX_MINUTES', 120))),
+        'max_open_per_user' => 2,
+        'max_open_per_server' => 6,
+        'pickup_seconds' => 120,
+    ],
 
     'sessions' => [
         'enabled' => (bool) env('LAUNCHROOM_INTERACTIVE_SESSIONS', true),
@@ -892,6 +959,10 @@ return [
         'task_timeout_seconds' => 21600,
         'inspect_timeout_seconds' => 600,
         'inspection_ttl_seconds' => 600,
+        // A database import waits this long for the services it stops; one
+        // still running then (or a run that can't start) fails honestly and
+        // they start again (docs/14 §12.5).
+        'hold_timeout_seconds' => 300,
         // The throwaway container of database imports.
         'resources' => ['cpus' => 1.0, 'memory_mb' => 1024, 'pids' => 512],
     ],

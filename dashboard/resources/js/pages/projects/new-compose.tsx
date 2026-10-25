@@ -3,6 +3,7 @@ import { FileUp, KeyRound, TriangleAlert } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Logo } from '@/components/logo';
+import { MetaLine } from '@/components/patterns/meta-line';
 import { OptionCards } from '@/components/patterns/option-cards';
 import { Page, PageHeader } from '@/components/patterns/page';
 import { Section } from '@/components/patterns/section';
@@ -217,7 +218,7 @@ export default function ImportCompose() {
             <Page size="narrow">
                 <PageHeader
                     title="Import a Compose file"
-                    description="Paste your compose.yml. You see what it becomes before anything is created."
+                    description="Paste your compose.yml to see what it becomes before anything is created."
                 />
                 <NewProjectTabs current="compose" />
 
@@ -231,7 +232,7 @@ export default function ImportCompose() {
                                 value: 'paste',
                                 title: 'Paste or upload',
                                 description:
-                                    'Images run as they are; services that build need a repository.',
+                                    'Images run as they are. Services with a build section need a repository.',
                             },
                             {
                                 value: 'repository',
@@ -321,7 +322,7 @@ export default function ImportCompose() {
                             />
                             Values for {'${…}'}
                             <span className="ml-auto type-small font-normal text-muted-foreground">
-                                Optional · your .env
+                                Optional
                             </span>
                         </summary>
                         <div className="flex flex-col gap-2 border-t px-4 py-3">
@@ -348,9 +349,14 @@ export default function ImportCompose() {
                     <Section
                         title="Here’s your project"
                         description={
-                            preview?.preview
-                                ? `${plural(services.length, 'service')} · ${resourcesLine(preview.preview)}${refused > 0 ? ` · ${refused} ${refused === 1 ? 'line' : 'lines'} not imported` : ''}`
-                                : undefined
+                            preview?.preview ? (
+                                <MetaLine>
+                                    {plural(services.length, 'service')}
+                                    {resourcesLine(preview.preview)}
+                                    {refused > 0 &&
+                                        `${refused} ${refused === 1 ? 'line' : 'lines'} not imported`}
+                                </MetaLine>
+                            ) : undefined
                         }
                         actions={loading ? <Spinner /> : undefined}
                     >
@@ -361,7 +367,7 @@ export default function ImportCompose() {
                                 {preview.errorLine !== null && (
                                     <span className="type-mono-small">
                                         {' '}
-                                        · line {preview.errorLine}
+                                        (line {preview.errorLine})
                                     </span>
                                 )}
                             </Callout>
@@ -505,10 +511,11 @@ export default function ImportCompose() {
                                             {input.required && (
                                                 <span className="font-sans text-muted-foreground">
                                                     {' '}
-                                                    · required
+                                                    (required
                                                     {input.message
                                                         ? `: ${input.message}`
                                                         : ''}
+                                                    )
                                                 </span>
                                             )}
                                         </Label>
@@ -592,13 +599,12 @@ export default function ImportCompose() {
                                     {serverError}
                                 </p>
                             )}
-                            <div className="flex flex-col-reverse gap-3 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
+                            <div className="flex flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
                                 <p className="type-small text-muted-foreground">
                                     {plural(services.length, 'service')} in
-                                    production. Configure variables before
-                                    deploying if needed.
+                                    production.
                                 </p>
-                                <div className="flex flex-wrap justify-end gap-2">
+                                <div className="flex shrink-0 flex-wrap gap-2 sm:justify-end">
                                     <Button
                                         variant="outline"
                                         onClick={() => deploy(false)}
@@ -687,14 +693,14 @@ function ServiceCard({
                 />
                 <div className="flex min-w-0 flex-1 flex-col">
                     <h3 className="truncate type-heading">{service.name}</h3>
-                    <p className="truncate type-small text-muted-foreground">
+                    <MetaLine className="type-small text-muted-foreground">
                         {service.subtitle}
                         {service.public &&
                             service.port !== null &&
-                            ' · gets a domain'}
+                            'Gets a domain'}
                         {service.variables.length > 0 &&
-                            ` · ${plural(service.variables.length, 'variable')}`}
-                    </p>
+                            plural(service.variables.length, 'variable')}
+                    </MetaLine>
                 </div>
                 {counts.map(([kind, count]) => (
                     <Badge

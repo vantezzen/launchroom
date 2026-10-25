@@ -422,8 +422,8 @@ export function AddAuditSink({
                             </Label>
                             <p className="type-small text-muted-foreground">
                                 Allows private addresses (10.x, 192.168.x, your
-                                servers' private network). Recorded in the audit
-                                log.
+                                servers' private network). This choice is
+                                recorded in the audit log.
                             </p>
                         </div>
                     </div>

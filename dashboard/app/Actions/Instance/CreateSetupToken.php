@@ -30,7 +30,7 @@ final readonly class CreateSetupToken
             $settings = InstanceSettings::lockedForUpdate();
 
             if ($settings->setup_completed_at !== null || User::query()->exists()) {
-                throw DomainRuleViolation::conflict('Setup is already complete; invite people from the team settings instead.');
+                throw DomainRuleViolation::conflict('Setup is already complete. Invite people from the team settings instead.');
             }
 
             $token = OpaqueToken::generate('lr_setup_');

@@ -66,7 +66,7 @@ final readonly class RunControlPlaneBackup
         } catch (Throwable $e) {
             $message = $e instanceof ProcessFailed || $e instanceof DomainRuleViolation || $e instanceof RuntimeException
                 ? $e->getMessage()
-                : 'The control-plane backup failed unexpectedly; see the dashboard logs.';
+                : 'The control-plane backup failed unexpectedly. See the dashboard logs.';
             $run->transitionTo(BackupRunStatus::Failed, $message);
 
             if (! $e instanceof ProcessFailed && ! $e instanceof RuntimeException) {

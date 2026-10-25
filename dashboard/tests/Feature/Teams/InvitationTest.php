@@ -24,7 +24,7 @@ beforeEach(function (): void {
  */
 function inviteAndCaptureToken(object $test, User $inviter, string $email, TeamRole $role): string
 {
-    $test->actingAs($inviter)->withSession(passwordConfirmed())
+    $test->actingAs($inviter)
         ->post(route('team.invitations.store'), ['email' => $email, 'role' => $role->value])
         ->assertSessionHasNoErrors();
 
@@ -58,7 +58,7 @@ test('authorized invitations do not require another password', function (): void
 });
 
 test('an inviter cannot grant a role above their own', function (): void {
-    $this->actingAs($this->admin)->withSession(passwordConfirmed())
+    $this->actingAs($this->admin)
         ->post(route('team.invitations.store'), ['email' => 'boss@example.com', 'role' => 'owner'])
         ->assertSessionHasErrors('role');
 
@@ -68,7 +68,7 @@ test('an inviter cannot grant a role above their own', function (): void {
 test('developers and viewers cannot invite', function (TeamRole $role): void {
     $member = memberOf($this->team, $role);
 
-    $this->actingAs($member)->withSession(passwordConfirmed())
+    $this->actingAs($member)
         ->post(route('team.invitations.store'), ['email' => 'x@example.com', 'role' => 'viewer'])
         ->assertForbidden();
 })->with([[TeamRole::Developer], [TeamRole::Viewer]]);
@@ -160,7 +160,7 @@ test('a new invitation for the same e-mail replaces the previous token', functio
 test('existing members cannot be invited again', function (): void {
     $member = memberOf($this->team, TeamRole::Viewer);
 
-    $this->actingAs($this->admin)->withSession(passwordConfirmed())
+    $this->actingAs($this->admin)
         ->post(route('team.invitations.store'), ['email' => $member->email, 'role' => 'viewer'])
         ->assertSessionHasErrors('email');
     expect(Membership::query()->where('user_id', $member->id)->count())->toBe(1);
@@ -169,7 +169,7 @@ test('existing members cannot be invited again', function (): void {
 test('several people can be invited at once, members are skipped and named', function (): void {
     $member = memberOf($this->team, TeamRole::Viewer);
 
-    $this->actingAs($this->admin)->withSession(passwordConfirmed())
+    $this->actingAs($this->admin)
         ->post(route('team.invitations.store'), ['emails' => "a@example.com, B@example.com\n{$member->email}; a@example.com", 'role' => 'developer'])
         ->assertSessionHasNoErrors()
         ->assertRedirect();
@@ -180,7 +180,7 @@ test('several people can be invited at once, members are skipped and named', fun
 });
 
 test('a malformed address in the list invites nobody', function (): void {
-    $this->actingAs($this->admin)->withSession(passwordConfirmed())
+    $this->actingAs($this->admin)
         ->post(route('team.invitations.store'), ['emails' => 'a@example.com, not-an-address', 'role' => 'viewer'])
         ->assertSessionHasErrors('emails');
 
@@ -190,7 +190,7 @@ test('a malformed address in the list invites nobody', function (): void {
 test('a list of only existing members is refused', function (): void {
     $member = memberOf($this->team, TeamRole::Viewer);
 
-    $this->actingAs($this->admin)->withSession(passwordConfirmed())
+    $this->actingAs($this->admin)
         ->post(route('team.invitations.store'), ['emails' => $member->email, 'role' => 'viewer'])
         ->assertSessionHasErrors('emails');
 });

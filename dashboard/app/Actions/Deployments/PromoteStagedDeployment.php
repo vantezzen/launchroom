@@ -14,6 +14,7 @@ use App\Exceptions\DomainRuleViolation;
 use App\Jobs\AdvanceDeploymentJob;
 use App\Models\Deployment;
 use App\Models\DeploymentStep;
+use App\Services\Transfers\DatabasePreparations;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -35,6 +36,10 @@ final readonly class PromoteStagedDeployment
 
             if ($deployment->status !== DeploymentStatus::Ready) {
                 throw DomainRuleViolation::on('deployment', 'Only a staged deployment that is ready can be promoted.');
+            }
+
+            if (DatabasePreparations::is($deployment)) {
+                throw DomainRuleViolation::on('deployment', 'This database only runs for an import. Deploy the environment to start it for real.');
             }
 
             DeploymentStep::begin($deployment, DeploymentStepName::Route);

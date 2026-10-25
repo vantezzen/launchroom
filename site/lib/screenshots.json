@@ -1,16 +1,16 @@
 {
   "activity": {
-    "alt": "Activity page with filters for deploys, promotions, changes, team and alerts, an 'Audit log verified' badge, and entries such as a project created, an image deploying and resolved server-busy alerts.",
+    "alt": "Activity page with filters for deploys, promotions, changes, team and alerts, an 'Audit log verified' badge, and entries such as vulnerability alerts, a deploy to production, a service added to a project and a resolved server-busy alert.",
     "caption": "Every deploy, change and alert in one verified timeline.",
     "light": {
       "width": 1440,
       "height": 900,
-      "blur": "data:image/webp;base64,UklGRiwAAABXRUJQVlA4ICAAAABwAQCdASoQAAoAAsBMJaWVuAGIAAD+9y57h5yjFoAAAA=="
+      "blur": "data:image/webp;base64,UklGRi4AAABXRUJQVlA4ICIAAABwAQCdASoQAAoAAsBMJaWM+AGIAAD+9uCNo/hDzS4gKgAA"
     },
     "dark": {
       "width": 1440,
       "height": 900,
-      "blur": "data:image/webp;base64,UklGRi4AAABXRUJQVlA4ICIAAACQAQCdASoQAAoAAsBMJaQAAudYugAA/vpmHK8VrNg4AAAA"
+      "blur": "data:image/webp;base64,UklGRjAAAABXRUJQVlA4ICQAAAAwAQCdASoQAAoAAsBMJaQAA3AA/vYasEfnlSY98n9JDkKq4AA="
     }
   },
   "add-database": {
@@ -19,7 +19,7 @@
     "light": {
       "width": 1440,
       "height": 1000,
-      "blur": "data:image/webp;base64,UklGRjYAAABXRUJQVlA4ICoAAADQAQCdASoQAAsAAsBMJaQAAud+VyKCgAD+7f2R84n2/0nwgSCgGCz6gAA="
+      "blur": "data:image/webp;base64,UklGRjYAAABXRUJQVlA4ICoAAADQAQCdASoQAAsAAsBMJaQAAud+VyJzAAD+7f2R84n2/0nwgSCgGNOjAAA="
     },
     "dark": {
       "width": 1440,
@@ -32,13 +32,13 @@
     "caption": "One command on any Linux machine. It connects out, so there is nothing to open.",
     "light": {
       "width": 1440,
-      "height": 998,
-      "blur": "data:image/webp;base64,UklGRkQAAABXRUJQVlA4IDgAAACwAQCdASoQAAsAAsBMJaQAAud9E+AAAP75neKmbSuMi//xIkPFFJLCk1A57/fgIEUnkpauM4AAAA=="
+      "height": 1081,
+      "blur": "data:image/webp;base64,UklGRkIAAABXRUJQVlA4IDYAAADQAQCdASoQAAwAAsBMJaQAAueAOSzQAAD++kJVqZtKvw//wM/vFd+//Kl2M3ZoM0DBnSNoAAA="
     },
     "dark": {
       "width": 1440,
-      "height": 998,
-      "blur": "data:image/webp;base64,UklGRkAAAABXRUJQVlA4IDQAAACwAQCdASoQAAsAAsBMJaQAAud+JsvgAP76f1D3qB/bX2M/4F//GUTxcdVKNjv/4vFSgAAA"
+      "height": 1081,
+      "blur": "data:image/webp;base64,UklGRkAAAABXRUJQVlA4IDQAAADQAQCdASoQAAwAAsBMJaQAAueH8S6LQAD++vCIolyhanAQ/gX/72aDJ9PLOWuWW0jdAAAA"
     }
   },
   "add-server-roles": {
@@ -47,12 +47,12 @@
     "light": {
       "width": 1440,
       "height": 900,
-      "blur": "data:image/webp;base64,UklGRjQAAABXRUJQVlA4ICgAAABwAQCdASoQAAoAAsBMJaV2AAGIAAD+9yxeGyXdTURNp/sAMVVS3MAA"
+      "blur": "data:image/webp;base64,UklGRjQAAABXRUJQVlA4ICgAAABwAQCdASoQAAoAAsBMJaV2AAGIAAD+9wXb9U3R7YVb49GcX6ei04AA"
     },
     "dark": {
       "width": 1440,
       "height": 900,
-      "blur": "data:image/webp;base64,UklGRjQAAABXRUJQVlA4ICgAAAAwAQCdASoQAAoAAsBMJaQAA3AA/vbybccy1wDMm7+tD4Y5Qip1QAAA"
+      "blur": "data:image/webp;base64,UklGRjQAAABXRUJQVlA4ICgAAAAwAQCdASoQAAoAAsBMJaQAA3AA/vbyczcTAoJJnwo8pi5FQ/FoSgAA"
     }
   },
   "ai-dockerfile": {
@@ -61,26 +61,26 @@
     "light": {
       "width": 1440,
       "height": 900,
-      "blur": "data:image/webp;base64,UklGRi4AAABXRUJQVlA4ICIAAAAwAQCdASoQAAoAAsBMJaQAA3AA/vJd//owuWwCLy7VYhwA"
+      "blur": "data:image/webp;base64,UklGRjAAAABXRUJQVlA4ICQAAAAwAQCdASoQAAoAAsBMJaQAA3AA/vJd//ovprwBqSYcFAEgAAA="
     },
     "dark": {
       "width": 1440,
       "height": 900,
-      "blur": "data:image/webp;base64,UklGRioAAABXRUJQVlA4IB4AAAAwAQCdASoQAAoAAsBMJaQAA3AA/vak85JNgjQAAAA="
+      "blur": "data:image/webp;base64,UklGRioAAABXRUJQVlA4IB4AAAAwAQCdASoQAAoAAsBMJaQAA3AA/vak85MAsEaAAAA="
     }
   },
   "alerts": {
-    "alt": "Notifications settings: two open problems, email and Slack destinations with Send test, and alert rules for failed deploys, crashing services, request errors, offline servers, high CPU and memory, full disks, expiring certificates and failed backups.",
+    "alt": "Notifications settings: open problems such as vulnerable packages and failed deploys and backups, email and Slack destinations with Send test, and alert rules for failed deploys, crashing services, request errors, offline servers, high CPU and memory, full disks, expiring certificates, failed backups and security findings.",
     "caption": "Alerts arrive once, and again when resolved, wherever your team already looks.",
     "light": {
       "width": 1440,
-      "height": 1694,
-      "blur": "data:image/webp;base64,UklGRjYAAABXRUJQVlA4ICoAAACwAgCdASoQABMAPtFWo0uoJKMhsAgBABoJaQAAeyAA/vIR79Ge3HY6AAA="
+      "height": 2657,
+      "blur": "data:image/webp;base64,UklGRkYAAABXRUJQVlA4IDoAAABwAwCdASoQAB4APtFWo0uoJKMhsAgBABoJaQAAetYne6yP4oAA/vG/SMTF4uS3hmzoTHSy8Qf0gwAA"
     },
     "dark": {
       "width": 1440,
-      "height": 1623,
-      "blur": "data:image/webp;base64,UklGRkAAAABXRUJQVlA4IDQAAABQAwCdASoQABIAPtFUpEuoJKOhsAgBABoJaWHgADc40GqYgAD+8a13nlvYXGaqnRJgAAAA"
+      "height": 2657,
+      "blur": "data:image/webp;base64,UklGRk4AAABXRUJQVlA4IEIAAABQAwCdASoQAB4APtFUo0uoJKMhsAgBABoJaQAAesnPiqgbAAD+8WaJ5ixInHYuw9YZBamemTsMrhyNjgM0r/gAAAA="
     }
   },
   "api-tokens": {
@@ -89,26 +89,26 @@
     "light": {
       "width": 1440,
       "height": 1000,
-      "blur": "data:image/webp;base64,UklGRigAAABXRUJQVlA4IBwAAAAwAQCdASoQAAsAAsBMJaQAA3AA/vcsewrsMpQA"
+      "blur": "data:image/webp;base64,UklGRiwAAABXRUJQVlA4ICAAAABwAQCdASoQAAsAAsBMJaWR5AGIAAD+9yxTem2m8ApAAA=="
     },
     "dark": {
       "width": 1440,
       "height": 1000,
-      "blur": "data:image/webp;base64,UklGRjAAAABXRUJQVlA4ICQAAADQAQCdASoQAAsAAsBMJaQAAueJ8JWbgAD++vCBbE3Z7oZEAAA="
+      "blur": "data:image/webp;base64,UklGRi4AAABXRUJQVlA4ICIAAAAwAQCdASoQAAsAAsBMJaQAA3AA/vbybccOMoZUwZkYugAA"
     }
   },
   "backup-settings": {
-    "alt": "Backups settings: two S3 destinations, a list of protected databases with schedules, and a Recovery kit section with passphrase set, kit file downloaded and stored safely.",
+    "alt": "Backups settings: two S3 destinations with the size of their latest copy, a list of protected databases with schedules and retention, and a Recovery kit section with passphrase set, kit file downloaded and stored safely.",
     "caption": "One place for backup destinations, what they protect and the kit that brings it all back.",
     "light": {
       "width": 1440,
-      "height": 1694,
-      "blur": "data:image/webp;base64,UklGRjgAAABXRUJQVlA4ICwAAACwAgCdASoQABMAPtFUo0uoJKMhsAgBABoJaQAAeyAA/vICdu2zOjZcDLgAAA=="
+      "height": 2474,
+      "blur": "data:image/webp;base64,UklGRj4AAABXRUJQVlA4IDIAAABQAwCdASoQABsAPtFUpEuoJKOhsAgBABoJaWVuADc3ul/zgAD+8gUcGCr8CveMOgAAAA=="
     },
     "dark": {
       "width": 1440,
-      "height": 1694,
-      "blur": "data:image/webp;base64,UklGRkIAAABXRUJQVlA4IDYAAABQAwCdASoQABMAPtFUo0uoJKMhsAgBABoJaWHgADc5BWfhEAD+8a13k+FqOCThA3wtbkAAAAA="
+      "height": 2616,
+      "blur": "data:image/webp;base64,UklGRkoAAABXRUJQVlA4ID4AAABQAwCdASoQAB0APtFUo0uoJKMhsAgBABoJaWM+ADcqMj5AAAD+8a13ns8ghwWEo1H+h0fTiT0c+OE1fwoAAA=="
     }
   },
   "canvas": {
@@ -122,7 +122,7 @@
     "dark": {
       "width": 2880,
       "height": 1800,
-      "blur": "data:image/webp;base64,UklGRi4AAABXRUJQVlA4ICIAAADQAQCdASoQAAoAAsBMJaQAAueF7n/+AAD++vB1yYO4AAAA"
+      "blur": "data:image/webp;base64,UklGRioAAABXRUJQVlA4IB4AAAAwAQCdASoQAAoAAsBMJaQAA3AA/vcYPgMKkrEhgAA="
     }
   },
   "canvas-alt": {
@@ -136,7 +136,7 @@
     "dark": {
       "width": 1440,
       "height": 900,
-      "blur": "data:image/webp;base64,UklGRjYAAABXRUJQVlA4ICoAAABwAQCdASoQAAoAAsBMJaWDrAGIAAD+9svvYJxBAwjondB+X9tSPxSUAAA="
+      "blur": "data:image/webp;base64,UklGRjQAAABXRUJQVlA4ICgAAABwAQCdASoQAAoAAsBMJaWHgAGIAAD+9svvYJ45Wfu7Gv503a+NAAAA"
     }
   },
   "capabilities": {
@@ -145,26 +145,26 @@
     "light": {
       "width": 1440,
       "height": 900,
-      "blur": "data:image/webp;base64,UklGRj4AAABXRUJQVlA4IDIAAADQAQCdASoQAAoAAsBMJaQAAueBh5WmwAD++kJO0OTI4bIt7UAgjVaUfoaHGUrXjAAAAA=="
+      "blur": "data:image/webp;base64,UklGRj4AAABXRUJQVlA4IDIAAACwAQCdASoQAAoAAsBMJaQAAudVUocQAP76Qk8GyH+udc1SdahUrYU3cTq60MsMVoAAAA=="
     },
     "dark": {
       "width": 1440,
       "height": 900,
-      "blur": "data:image/webp;base64,UklGRjoAAABXRUJQVlA4IC4AAADQAQCdASoQAAoAAsBMJaQAAudfJZlSAAD++mYCVrioemu/VpwSP6Scg2r7LgAA"
+      "blur": "data:image/webp;base64,UklGRjoAAABXRUJQVlA4IC4AAADQAQCdASoQAAoAAsBMJaQAAudF9ez6gAD++mYCVrioeowYAyiJj+omsDFZ3TAA"
     }
   },
   "cli-sign-in": {
-    "alt": "Sign in to the launchroom CLI: a device code WBXH-NDSZ from bennett-mbp, a team picker, permission checkboxes, a session length and Deny and Approve buttons.",
+    "alt": "Sign in to the launchroom CLI: a device code from bennett-mbp, permission checkboxes for deploys, variables, secrets, domains and data, a session length and Deny and Approve buttons.",
     "caption": "Approve the CLI in your browser and choose exactly what it may do.",
     "light": {
       "width": 1440,
       "height": 1010,
-      "blur": "data:image/webp;base64,UklGRjAAAABXRUJQVlA4ICQAAAAwAQCdASoQAAsAAsBMJaQAA3AA/vdMUdnm0Ie3AVju0pAAAAA="
+      "blur": "data:image/webp;base64,UklGRjAAAABXRUJQVlA4ICQAAAAwAQCdASoQAAsAAsBMJaQAA3AA/vdMUdo761gqzvgbZf7QAAA="
     },
     "dark": {
       "width": 1440,
       "height": 1010,
-      "blur": "data:image/webp;base64,UklGRjAAAABXRUJQVlA4ICQAAAAwAQCdASoQAAsAAsBMJaQAA3AA/vbC5uc4RdyodZPXefgAAAA="
+      "blur": "data:image/webp;base64,UklGRjAAAABXRUJQVlA4ICQAAAAwAQCdASoQAAsAAsBMJaQAA3AA/vbC5uernrStQWFG7vPwAAA="
     }
   },
   "command-palette": {
@@ -173,12 +173,12 @@
     "light": {
       "width": 1440,
       "height": 900,
-      "blur": "data:image/webp;base64,UklGRkAAAABXRUJQVlA4IDQAAADQAQCdASoQAAoAAsBMJaQAAqH2CplTMAD+w/99ZKXNNp3jHg29RqMMthx32roYBjmAgAAA"
+      "blur": "data:image/webp;base64,UklGRkAAAABXRUJQVlA4IDQAAADwAQCdASoQAAoAAsBMJaQAAxPDRZw3dvgA/sP/Tgmx456YuZWWJNjGgyksmuO7kXS0AAAA"
     },
     "dark": {
       "width": 1440,
       "height": 900,
-      "blur": "data:image/webp;base64,UklGRiwAAABXRUJQVlA4ICAAAAAwAQCdASoQAAoAAsBMJaQAA3AA/veJGyNzE6eh45SgAA=="
+      "blur": "data:image/webp;base64,UklGRi4AAABXRUJQVlA4ICIAAAAwAQCdASoQAAoAAsBMJaQAA3AA/veJGyNz9J09DxylAAAA"
     }
   },
   "compose-import": {
@@ -186,8 +186,8 @@
     "caption": "Paste a Compose file and see what it becomes, line by line, before anything is created.",
     "light": {
       "width": 1440,
-      "height": 2046,
-      "blur": "data:image/webp;base64,UklGRkAAAABXRUJQVlA4IDQAAAAQAwCdASoQABcAPtFUo0uoJKMhsAgBABoJaQAAesIGFkAA/vISmHikBfS+ZjtMtu1gAAAA"
+      "height": 2090,
+      "blur": "data:image/webp;base64,UklGRkoAAABXRUJQVlA4ID4AAABQAwCdASoQABcAPtFUo0uoJKMhsAgBABoJaQAAesIJS8yQAAD+8hKYeKQsynS+ZqYW3nXGdf3TEy0orwAAAA=="
     }
   },
   "config-managed": {
@@ -196,12 +196,12 @@
     "light": {
       "width": 1440,
       "height": 900,
-      "blur": "data:image/webp;base64,UklGRjwAAABXRUJQVlA4IDAAAACwAQCdASoQAAoAAsBMJaQAAudGLuwAAP76Qk8GdUsXNVKwICh+7iKcKRCOQWAAAAA="
+      "blur": "data:image/webp;base64,UklGRjoAAABXRUJQVlA4IC4AAADQAQCdASoQAAoAAsBMJaQAAueBPR/LmAD++kJOvKg/Drn4Y85HO4nGBY4UUAAA"
     },
     "dark": {
       "width": 1440,
       "height": 900,
-      "blur": "data:image/webp;base64,UklGRjoAAABXRUJQVlA4IC4AAACwAQCdASoQAAoAAsBMJaQAAudQDTgAAP76ZgJWoMwwYA1yp7/bCFmhVIfoAAAA"
+      "blur": "data:image/webp;base64,UklGRjgAAABXRUJQVlA4ICwAAACwAQCdASoQAAoAAsBMJaQAAudF8w8AAP76ZgJWoMwwWAvvkzkcVD7t5lKAAA=="
     }
   },
   "config-problems": {
@@ -209,27 +209,27 @@
     "caption": "A broken launchroom.json never deploys. You get each problem with its line and the fix.",
     "light": {
       "width": 1440,
-      "height": 1739,
-      "blur": "data:image/webp;base64,UklGRjoAAABXRUJQVlA4IC4AAACwAgCdASoQABMAPtFUo0uoJKMhsAgBABoJaQAAeyAA/vHOfgXPA2WjLb+46TAA"
+      "height": 1689,
+      "blur": "data:image/webp;base64,UklGRj4AAABXRUJQVlA4IDIAAADwAgCdASoQABMAPtFUo0uoJKMhsAgBABoJaQAAerHYAAD+8cMyO/gNloy3ASpnugAAAA=="
     },
     "dark": {
       "width": 1440,
-      "height": 1739,
-      "blur": "data:image/webp;base64,UklGRkQAAABXRUJQVlA4IDgAAAAwAwCdASoQABMAPtFWo0uoJKMhsAgBABoJaWM+ADctEVmAAP7xYzgxp4ayg2R+FQWjETg8iAAAAA=="
+      "height": 1689,
+      "blur": "data:image/webp;base64,UklGRkgAAABXRUJQVlA4IDwAAAAwAwCdASoQABMAPtFUo0uoJKMhsAgBABoJaQAAewUYRhwAAP7xYzg8T4kmOLvtHLHrw/2tKz3FyGAAAAA="
     }
   },
   "config-settings": {
-    "alt": "Project General settings with a Config file section: Read launchroom.json on, path launchroom.json, a schema line for editor autocompletion, and the last read showing changes staged.",
+    "alt": "Project settings, Config file page: Follow launchroom.json on, path launchroom.json, a schema line for editor autocompletion, and the last read in production showing changes staged.",
     "caption": "Turn on the config file per project and get autocompletion in your editor.",
     "light": {
       "width": 1440,
-      "height": 1142,
-      "blur": "data:image/webp;base64,UklGRi4AAABXRUJQVlA4ICIAAABwAQCdASoQAA0AAsBMJaWM+AGIAAD+9yY3HzME0qfwAAAA"
+      "height": 900,
+      "blur": "data:image/webp;base64,UklGRi4AAABXRUJQVlA4ICIAAACQAQCdASoQAAoAAsBMJaQAAuguSGAA/vpCT107j/UsAAAA"
     },
     "dark": {
       "width": 1440,
-      "height": 1142,
-      "blur": "data:image/webp;base64,UklGRjAAAABXRUJQVlA4ICQAAACwAQCdASoQAA0AAsBMJaQAAug1U5pAAP768HZImTW3xoAAAAA="
+      "height": 900,
+      "blur": "data:image/webp;base64,UklGRiwAAABXRUJQVlA4ICAAAAAwAQCdASoQAAoAAsBMJaQAA3AA/vbybccKwSXYVJIAAA=="
     }
   },
   "console": {
@@ -238,12 +238,12 @@
     "light": {
       "width": 1440,
       "height": 1000,
-      "blur": "data:image/webp;base64,UklGRi4AAABXRUJQVlA4ICIAAABwAQCdASoQAAsAAsBMJaVuWAGIAAD+9tqZEF/L7NhvWQAA"
+      "blur": "data:image/webp;base64,UklGRi4AAABXRUJQVlA4ICIAAABwAQCdASoQAAsAAsBMJaV9qAGIAAD+9tqZEF/bMUCWTUAA"
     },
     "dark": {
       "width": 1440,
       "height": 1000,
-      "blur": "data:image/webp;base64,UklGRjIAAABXRUJQVlA4ICYAAABwAQCdASoQAAsAAsBMJaWHgAGIAAD+9qR/qFsWUqAxGFqxgAAAAA=="
+      "blur": "data:image/webp;base64,UklGRjAAAABXRUJQVlA4ICQAAAAwAQCdASoQAAsAAsBMJaQAA3AA/vakf6iMvLBJMLxlmSLUAAA="
     }
   },
   "cron": {
@@ -252,40 +252,40 @@
     "light": {
       "width": 1440,
       "height": 900,
-      "blur": "data:image/webp;base64,UklGRj4AAABXRUJQVlA4IDIAAADwAQCdASoQAAoAAsBMJaQAAueBiZGvUAAA/vpCTtDk3xut9upbszGx6VnuptBxguXwAA=="
+      "blur": "data:image/webp;base64,UklGRjwAAABXRUJQVlA4IDAAAADQAQCdASoQAAoAAsBMJaQAAud7aWDNAAD++kJOzlmGn4fRi4J/LDPy6PBljt8gAAA="
     },
     "dark": {
       "width": 1440,
       "height": 900,
-      "blur": "data:image/webp;base64,UklGRjAAAABXRUJQVlA4ICQAAAAwAQCdASoQAAoAAsBMJaQAA3AA/vZ4jzRD+0GeUtePF9FAAAA="
+      "blur": "data:image/webp;base64,UklGRkAAAABXRUJQVlA4IDQAAADQAQCdASoQAAoAAsBMJaQAAt0Af6fC+AD++mYLbN4vSJlEYIzC7FWth5MYn6aKjYVvwwAA"
     }
   },
   "dashboard-domain": {
-    "alt": "Dashboard domain settings moving from localhost to dash.acme.dev: DNS points at the server, certificate issued and HTTPS tested, with what changes on switch and a Switch button.",
+    "alt": "Dashboard domain settings: the dashboard answers on localhost, a field to use your own domain with HTTPS from Let's Encrypt, and the reset command for when you're locked out.",
     "caption": "Move the dashboard to its own domain once DNS, certificate and HTTPS check out.",
     "light": {
       "width": 1440,
-      "height": 1246,
-      "blur": "data:image/webp;base64,UklGRjgAAABXRUJQVlA4ICwAAAAwAQCdASoQAA4AAsBMJaQAA3AA/vcFGKOyhW6b8vp/oB+gl38zxpps6AAAAA=="
+      "height": 900,
+      "blur": "data:image/webp;base64,UklGRjAAAABXRUJQVlA4ICQAAACwAQCdASoQAAoAAsBMJaQAAueBPMYAAP76QRj4DBrSnetAAAA="
     },
     "dark": {
       "width": 1440,
-      "height": 1246,
-      "blur": "data:image/webp;base64,UklGRj4AAABXRUJQVlA4IDIAAADQAQCdASoQAA4AAsBMJaQAAud7gGEQAAD++mYkC8Ufn95rvryFtTxNA4ZJ4ABC0yeAAA=="
+      "height": 900,
+      "blur": "data:image/webp;base64,UklGRjAAAABXRUJQVlA4ICQAAAAwAQCdASoQAAoAAsBMJaQAA3AA/vbybccy2tOGeDzynWlwAAA="
     }
   },
   "database-backups": {
-    "alt": "Backups tab of orders-db: backed up 7 minutes ago, daily schedule, retention 7 daily, 4 weekly, 3 monthly, last verified 19 minutes ago, point-in-time recovery on with a 7-day window, and a snapshot list.",
+    "alt": "Backups tab of orders-db: backed up 6 hours ago, daily schedule, retention 7 daily, 4 weekly, 3 monthly, last verified 6 days ago, point-in-time recovery on with a 7-day window, and a snapshot list.",
     "caption": "Scheduled, verified backups with point-in-time recovery, right on the database.",
     "light": {
       "width": 2880,
       "height": 2000,
-      "blur": "data:image/webp;base64,UklGRioAAABXRUJQVlA4IB4AAABwAQCdASoQAAsAAsBMJaWZAAGIAAD+9t/SBsZqgAA="
+      "blur": "data:image/webp;base64,UklGRioAAABXRUJQVlA4IB4AAABwAQCdASoQAAsAAsBMJaWR5AGIAAD+9tP5P/FGgAA="
     },
     "dark": {
       "width": 2880,
       "height": 2000,
-      "blur": "data:image/webp;base64,UklGRi4AAABXRUJQVlA4ICIAAAAwAQCdASoQAAsAAsBMJaQAA3AA/vZ3yeu6ak3f95QsTEAA"
+      "blur": "data:image/webp;base64,UklGRjIAAABXRUJQVlA4ICYAAACwAQCdASoQAAsAAsBMJaQAAujfV/qAAP768HmsK8TanqT11ZAAAA=="
     }
   },
   "database-browse": {
@@ -317,17 +317,17 @@
     }
   },
   "deployment": {
-    "alt": "Deployment 'fix: order totals with discounts' of the web service in production: Live, 1m 51s, built on vps-fra-1, with the steps Plan, Build, Roll out, Health check and Switch traffic all finished.",
+    "alt": "Deployment 'fix: order totals with discounts' of the web service in production: Live, 1m 51s, built on control plane, with the steps Plan, Build, Roll out, Health check and Switch traffic all done.",
     "caption": "Every step of a deployment, with its duration and logs.",
     "light": {
       "width": 2880,
       "height": 1800,
-      "blur": "data:image/webp;base64,UklGRi4AAABXRUJQVlA4ICIAAABwAQCdASoQAAoAAsBMJaWR5AGIAAD+9t3+TKbZujTyjAAA"
+      "blur": "data:image/webp;base64,UklGRi4AAABXRUJQVlA4ICIAAABwAQCdASoQAAoAAsBMJaWR5AGIAAD+9t37MhR4R8nvoAAA"
     },
     "dark": {
       "width": 2880,
       "height": 1800,
-      "blur": "data:image/webp;base64,UklGRjIAAABXRUJQVlA4ICYAAACwAQCdASoQAAoAAsBMJaQAAu0dViYAAP768IhhNbxtPB6Q+MYYAA=="
+      "blur": "data:image/webp;base64,UklGRjIAAABXRUJQVlA4ICYAAABwAQCdASoQAAoAAsBMJaVnyAGIAAD+9nj8Ehj83dCue97khwNoAA=="
     }
   },
   "deployment-failed": {
@@ -335,13 +335,13 @@
     "caption": "When a build fails, you get the cause, the fix and the exact log line. Your site keeps serving the last good version.",
     "light": {
       "width": 1440,
-      "height": 1472,
-      "blur": "data:image/webp;base64,UklGRjQAAABXRUJQVlA4ICgAAABwAQCdASoQABAAAsBMJaWDrAGIAAD+9t950Ez6E9w2u49Jfo0QAAAA"
+      "height": 1423,
+      "blur": "data:image/webp;base64,UklGRjAAAABXRUJQVlA4ICQAAAAwAQCdASoQABAAAsBMJaQAA3AA/vbc6ylbTmyywjm/PGcAAAA="
     },
     "dark": {
       "width": 1440,
-      "height": 1472,
-      "blur": "data:image/webp;base64,UklGRjYAAABXRUJQVlA4ICoAAAAwAQCdASoQABAAAsBMJaQAA3AA/vZ3ydGqK0mOOSn+oxHAOPFsd40gAAA="
+      "height": 1423,
+      "blur": "data:image/webp;base64,UklGRjoAAABXRUJQVlA4IC4AAAAwAQCdASoQABAAAsBMJaQAA3AA/vZ3ydGS2kxxyU/1GI4Bx4usiA1r5RGEAAAA"
     }
   },
   "domains": {
@@ -350,26 +350,26 @@
     "light": {
       "width": 1440,
       "height": 960,
-      "blur": "data:image/webp;base64,UklGRjAAAABXRUJQVlA4ICQAAABwAQCdASoQAAsAAsBMJaVsKAGIAAD+9tXc9gRWXYdH3r+eUAA="
+      "blur": "data:image/webp;base64,UklGRjIAAABXRUJQVlA4ICYAAABwAQCdASoQAAsAAsBMJaV/2AGIAAD+9q3dhl4Lg1AWKlKZgaAAAA=="
     },
     "dark": {
       "width": 1440,
       "height": 960,
-      "blur": "data:image/webp;base64,UklGRjQAAABXRUJQVlA4ICgAAACQAQCdASoQAAsAAsBMJaQAAu18LYAA/vpmFuCowBOs0UhL7Zz6qAAA"
+      "blur": "data:image/webp;base64,UklGRjQAAABXRUJQVlA4ICgAAAAwAQCdASoQAAsAAsBMJaQAA3AA/vZ6pc4sjBJvBo5zPQLbrAzOSAAA"
     }
   },
   "domains-edges": {
-    "alt": "Domain settings scrolled to the generated domain, Live, with DNS managed, a local certificate and traffic served by 5 servers, and edge server cards for control plane, server-2, home-nas, pi-edge and office-tower.",
+    "alt": "Domain settings scrolled to the generated domain, Live, with DNS managed, a local certificate and traffic served by 2 servers, and edge server cards for control plane and server-2.",
     "caption": "Every edge server answers for your domains, so traffic keeps flowing if one is down.",
     "light": {
       "width": 1440,
       "height": 960,
-      "blur": "data:image/webp;base64,UklGRiwAAABXRUJQVlA4ICAAAABwAQCdASoQAAsAAsBMJaWZAAGIAAD+9wR5jExZJAAAAA=="
+      "blur": "data:image/webp;base64,UklGRiwAAABXRUJQVlA4ICAAAABwAQCdASoQAAsAAsBMJaWR5AGIAAD+9wSPD5eB37AAAA=="
     },
     "dark": {
       "width": 1440,
       "height": 960,
-      "blur": "data:image/webp;base64,UklGRjAAAABXRUJQVlA4ICQAAADQAQCdASoQAAsAAsBMJaQAAu0dihqLUAD++mYLAezgZhIAAAA="
+      "blur": "data:image/webp;base64,UklGRjAAAABXRUJQVlA4ICQAAAAwAQCdASoQAAsAAsBMJaQAA3AA/vZ4r8bZhhhJYyoM/BbAAAA="
     }
   },
   "env-switcher": {
@@ -378,12 +378,12 @@
     "light": {
       "width": 2880,
       "height": 1800,
-      "blur": "data:image/webp;base64,UklGRiwAAABXRUJQVlA4ICAAAAAwAQCdASoQAAoAAsBMJaQAA3AA/vcE/0MtrcSzvAAAAA=="
+      "blur": "data:image/webp;base64,UklGRioAAABXRUJQVlA4IB4AAAAwAQCdASoQAAoAAsBMJaQAA3AA/vcE/z9m3sS/SAA="
     },
     "dark": {
       "width": 2880,
       "height": 1800,
-      "blur": "data:image/webp;base64,UklGRiwAAABXRUJQVlA4ICAAAAAwAQCdASoQAAoAAsBMJaQAA3AA/vbxSDzCBJM+E5ZIAA=="
+      "blur": "data:image/webp;base64,UklGRiwAAABXRUJQVlA4ICAAAAAwAQCdASoQAAoAAsBMJaQAA3AA/vbxJQ+z0GZN2oYAAA=="
     }
   },
   "git-providers": {
@@ -391,13 +391,13 @@
     "caption": "Connect GitHub, GitLab, Gitea, Forgejo or any git server.",
     "light": {
       "width": 1440,
-      "height": 1845,
-      "blur": "data:image/webp;base64,UklGRkQAAABXRUJQVlA4IDgAAACwAgCdASoQABQAPtFWo0uoJKMhsAgBABoJaQAAeyAA/vIF4HEnumqE3wIbHAZYPzHQzZPE0UIAAA=="
+      "height": 1855,
+      "blur": "data:image/webp;base64,UklGRkQAAABXRUJQVlA4IDgAAAAQAwCdASoQABUAPtFWo0uoJKMhsAgBABoJaQAAexat8AAA/vIGDKAnsUrLB6k2EJf69DjSMUAAAA=="
     },
     "dark": {
       "width": 1440,
-      "height": 1845,
-      "blur": "data:image/webp;base64,UklGRkgAAABXRUJQVlA4IDwAAACQAwCdASoQABQAPtFUo0uoJKMhsAgBABoJaQAAW/Cqi+qKcpZQAP71fU9Dsnk1I/pKGbz0z0/o9heAAAA="
+      "height": 1855,
+      "blur": "data:image/webp;base64,UklGRkwAAABXRUJQVlA4IEAAAABQAwCdASoQABUAPtFUo0uoJKMhsAgBABoJaWM+ADc2qjt4AAD+8a2hSX4Nkvlc9c1bmI8x+44akjK7UUcQOAAA"
     }
   },
   "git-source": {
@@ -406,68 +406,68 @@
     "light": {
       "width": 1440,
       "height": 1000,
-      "blur": "data:image/webp;base64,UklGRj4AAABXRUJQVlA4IDIAAACwAQCdASoQAAsAAsBMJaQAAudJ4TAAAP76Qk9SagomOcXTxFLMgDrBg9ZHUqls2oAAAA=="
+      "blur": "data:image/webp;base64,UklGRjwAAABXRUJQVlA4IDAAAADQAQCdASoQAAsAAsBMJaQAAudleSv5AAD++hSr/JCUAZEhLcJfRK1yYs3srBieAAA="
     },
     "dark": {
       "width": 1440,
       "height": 1000,
-      "blur": "data:image/webp;base64,UklGRjwAAABXRUJQVlA4IDAAAACwAQCdASoQAAsAAsBMJaQAAudF8w8AAP76ZhWQ65DUjPbZIdFgdsbRSqT0u0HAAAA="
+      "blur": "data:image/webp;base64,UklGRj4AAABXRUJQVlA4IDIAAACQAQCdASoQAAsAAsBMJaQAAudVMbgA/vpmFZDrkNSBi8Ar7uj9iMrWOe1iolYGNAAAAA=="
     }
   },
   "logs": {
-    "alt": "Logs for the shop project searching 'timeout' across all environments: a red error histogram over the last hour, facets for level, environment, service, deployment and server, and matching error lines with the term highlighted.",
+    "alt": "Logs for the shop project searching 'health' across all environments over 30 days: a histogram with deploy markers, facets for level, environment, service and deployment, and matching lines with the term highlighted, including a failed health check.",
     "caption": "Search logs across services and environments, with a histogram that shows when it started.",
     "light": {
       "width": 1440,
       "height": 1000,
-      "blur": "data:image/webp;base64,UklGRjIAAABXRUJQVlA4ICYAAABwAQCdASoQAAsAAsBMJaV2AAGIAAD+9l54He4VMpocKcSINOAAAA=="
+      "blur": "data:image/webp;base64,UklGRjAAAABXRUJQVlA4ICQAAABwAQCdASoQAAsAAsBMJaWR5AGIAAD+9t583DfEJKY7GwyYAAA="
     },
     "dark": {
       "width": 1440,
       "height": 1000,
-      "blur": "data:image/webp;base64,UklGRjQAAABXRUJQVlA4ICgAAADQAQCdASoQAAsAAsBMJaQAAujc3ERewAD++vCIYSejz7LMuUpYAAAA"
+      "blur": "data:image/webp;base64,UklGRjIAAABXRUJQVlA4ICYAAABwAQCdASoQAAsAAsBMJaWDrAGIAAD+9sptvMMJTtyBfs0nOcgAAA=="
     }
   },
   "metrics": {
-    "alt": "Metrics for shop production over 24 hours: requests, error rate, p95 latency and bandwidth tiles with per-service sparklines, CPU and memory by service, a requests chart with deploy markers, and a services list.",
+    "alt": "Metrics for shop production over a week: requests, error rate, p95 latency and bandwidth tiles with per-service sparklines, CPU and memory by service, a requests chart with deploy markers, and a services list.",
     "caption": "Requests, errors, latency and resources for every service, with deploys marked on the chart.",
     "light": {
       "width": 1440,
-      "height": 1408,
-      "blur": "data:image/webp;base64,UklGRiwAAABXRUJQVlA4ICAAAABwAQCdASoQABAAAsBMJaWVuAGIAAD+9wXR9iem3yAAAA=="
+      "height": 1430,
+      "blur": "data:image/webp;base64,UklGRioAAABXRUJQVlA4IB4AAAAwAQCdASoQABAAAsBMJaQAA3AA/vcsew7bIewAAAA="
     },
     "dark": {
       "width": 1440,
-      "height": 1408,
-      "blur": "data:image/webp;base64,UklGRjIAAABXRUJQVlA4ICYAAADQAQCdASoQABAAAsBMJaQAAudH0oAAAAD++o3XhXMgz6zq3GgAAA=="
+      "height": 1430,
+      "blur": "data:image/webp;base64,UklGRi4AAABXRUJQVlA4ICIAAACwAQCdASoQABAAAsBMJaQAAude1cCAAP76jToDTE4692AA"
     }
   },
   "mtls": {
-    "alt": "Team security settings: server certificates set to Check, readiness for control plane, server-2 and server-3, an audit log verified with 614 chained entries and its signing key, and destinations for copies outside launchroom.",
+    "alt": "Team security settings: server certificates Off, Check or Require, readiness for control plane, server-2 and server-3, an audit log verified with over a thousand chained entries and its signing key, destinations for copies outside launchroom, and vulnerability data sources.",
     "caption": "Servers prove who they are with certificates, and the audit log is chained and signed.",
     "light": {
       "width": 1440,
-      "height": 1401,
-      "blur": "data:image/webp;base64,UklGRioAAABXRUJQVlA4IB4AAABwAQCdASoQABAAAsBMJaWR5AGIAAD+9vtmBRSAAAA="
+      "height": 1722,
+      "blur": "data:image/webp;base64,UklGRjwAAABXRUJQVlA4IDAAAAAwAwCdASoQABMAPtFUo0uoJKMhsAgBABoJaQAAetkuEoIAAP7yAfhXmevGKOYAAAA="
     },
     "dark": {
       "width": 1440,
-      "height": 1401,
-      "blur": "data:image/webp;base64,UklGRjIAAABXRUJQVlA4ICYAAACwAQCdASoQABAAAsBMJaQAAujfnjyAAP76ZgQ12Q9oPxnFNtwAAA=="
+      "height": 1722,
+      "blur": "data:image/webp;base64,UklGRkoAAABXRUJQVlA4ID4AAADwAgCdASoQABMAPtFUo0uoJKMhsAgBABoJaWapADdYAAD+8a1l7jVUSxNGzdy8qojRQVIIVUrptbzJZzaAAA=="
     }
   },
   "onboarding": {
-    "alt": "Get started page: 'Your launchroom is up', 3 of 5 steps done, with Connect GitHub as the current step and steps for server, address, first app and backups.",
+    "alt": "Get started page: 'You're all set', 5 of 5 with the server connected, GitHub skipped, a free address for apps, the first app set up and backups off the server.",
     "caption": "A short checklist from first server to first backup. Nothing here is urgent.",
     "light": {
       "width": 1440,
       "height": 900,
-      "blur": "data:image/webp;base64,UklGRjQAAABXRUJQVlA4ICgAAAAwAQCdASoQAAoAAsBMJaQAA3AA/vcHklRjzFd8MSVEm6BHmPI6aoAA"
+      "blur": "data:image/webp;base64,UklGRjIAAABXRUJQVlA4ICYAAABwAQCdASoQAAoAAsBMJaV/2AGIAAD+9y2XIt1r8MSDHcipxoAAAA=="
     },
     "dark": {
       "width": 1440,
       "height": 900,
-      "blur": "data:image/webp;base64,UklGRjYAAABXRUJQVlA4ICoAAAAwAQCdASoQAAoAAsBMJaQAA3AA/vbElpTQ3pDkCOqwMixCxYZq/ucTAAA="
+      "blur": "data:image/webp;base64,UklGRjQAAABXRUJQVlA4ICgAAACwAQCdASoQAAoAAsBMJaQAAueJS9cgAP768IiiXKSeoBnHgXB8YAAA"
     }
   },
   "pitr": {
@@ -476,26 +476,26 @@
     "light": {
       "width": 2880,
       "height": 2000,
-      "blur": "data:image/webp;base64,UklGRi4AAABXRUJQVlA4ICIAAABwAQCdASoQAAsAAsBMJaV/2AGIAAD+9t2R+hYDzt/OAAAA"
+      "blur": "data:image/webp;base64,UklGRi4AAABXRUJQVlA4ICIAAACwAQCdASoQAAsAAsBMJaQAAud/CvqAAP76QXuf66vQAAAA"
     },
     "dark": {
       "width": 2880,
       "height": 2000,
-      "blur": "data:image/webp;base64,UklGRjAAAABXRUJQVlA4ICQAAAAwAQCdASoQAAsAAsBMJaQAA3AA/vZ3yerH9+THFmjSjyuIEAA="
+      "blur": "data:image/webp;base64,UklGRjIAAABXRUJQVlA4ICYAAACwAQCdASoQAAsAAsBMJaQAAujfV/qAAP768HmsK8TanqT11ZAAAA=="
     }
   },
   "previews": {
-    "alt": "Previews page: a fork pull request #128 waiting for approval, and cards for PR #124 (Live, new empty database) and PR #119 (Deploying, database cloned from staging) with their preview URLs and expiry.",
+    "alt": "Previews page with a live preview for pull request #1, its preview URL, author, commit, branch and expiry.",
     "caption": "Every pull request gets its own environment. Fork previews wait for your approval.",
     "light": {
       "width": 1440,
       "height": 900,
-      "blur": "data:image/webp;base64,UklGRi4AAABXRUJQVlA4ICIAAACQAQCdASoQAAoAAsBMJaQAAud7XZAA/vmiSNDTzcJDuYAA"
+      "blur": "data:image/webp;base64,UklGRioAAABXRUJQVlA4IB4AAAAwAQCdASoQAAoAAsBMJaQAA3AA/vctuMg5sWd4AAA="
     },
     "dark": {
       "width": 1440,
       "height": 900,
-      "blur": "data:image/webp;base64,UklGRjIAAABXRUJQVlA4ICYAAABwAQCdASoQAAoAAsBMJaWR5AGIAAD+9vKHACjT5tKyXdkKndgAAA=="
+      "blur": "data:image/webp;base64,UklGRioAAABXRUJQVlA4IB4AAAAwAQCdASoQAAoAAsBMJaQAA3AA/vcSGKmFDHYwAAA="
     }
   },
   "private-network": {
@@ -503,27 +503,27 @@
     "caption": "A private network between your servers is built in, even behind NAT.",
     "light": {
       "width": 1440,
-      "height": 1186,
-      "blur": "data:image/webp;base64,UklGRioAAABXRUJQVlA4IB4AAAAwAQCdASoQAA0AAsBMJaQAA3AA/vcsStPovZgAAAA="
+      "height": 1525,
+      "blur": "data:image/webp;base64,UklGRjgAAABXRUJQVlA4ICwAAADwAgCdASoQABEAPtFUo0uoJKMhsAgBABoJaQAAerHYAAD+8hSR10igyAAAAA=="
     },
     "dark": {
       "width": 1440,
-      "height": 1186,
-      "blur": "data:image/webp;base64,UklGRjQAAABXRUJQVlA4ICgAAABwAQCdASoQAA0AAsBMJaWDrAGIAAD+9svSXIUS4o95ttT6q/n0AAAA"
+      "height": 1525,
+      "blur": "data:image/webp;base64,UklGRj4AAABXRUJQVlA4IDIAAAAQAwCdASoQABEAPtFUo0uoJKMhsAgBABoJaWbvADdQzIgA/vGtZfivj499UdSqwwAAAA=="
     }
   },
   "projects": {
-    "alt": "Projects page with six project cards, each with a small service diagram, its domain, latest commit and a deploy sparkline, plus a New project card.",
+    "alt": "Projects page with project cards, each with a small service diagram, its domain, latest commit and a deploy sparkline, plus a New project button.",
     "caption": "All your projects at a glance, with what changed last and what needs attention.",
     "light": {
       "width": 1440,
       "height": 1211,
-      "blur": "data:image/webp;base64,UklGRi4AAABXRUJQVlA4ICIAAAAwAQCdASoQAA0AAsBMJaQAA3AA/vcARIyZ7mzbhn9pAAAA"
+      "blur": "data:image/webp;base64,UklGRi4AAABXRUJQVlA4ICIAAAAwAQCdASoQAA0AAsBMJaQAA3AA/vbX8pgizWyVOoJSgAAA"
     },
     "dark": {
       "width": 1440,
       "height": 1211,
-      "blur": "data:image/webp;base64,UklGRjYAAABXRUJQVlA4ICoAAACwAQCdASoQAA0AAsBMJaQAAudJ6R4AAP76bXO+MvhmUkYUTGQZ46LQAAA="
+      "blur": "data:image/webp;base64,UklGRjYAAABXRUJQVlA4ICoAAACwAQCdASoQAA0AAsBMJaQAAudcGMfAAP76Zh1XQUw9tqU9Nc8bJieAAAA="
     }
   },
   "promote": {
@@ -532,12 +532,12 @@
     "light": {
       "width": 1440,
       "height": 900,
-      "blur": "data:image/webp;base64,UklGRjQAAABXRUJQVlA4ICgAAABwAQCdASoQAAoAAsBMJaV/2AGIAAD+9wXSTwgm3DLwqCGvTfbmgAAA"
+      "blur": "data:image/webp;base64,UklGRjQAAABXRUJQVlA4ICgAAABwAQCdASoQAAoAAsBMJaV/2AGIAAD+9wXcHKEpZoMCQCvhLyLLgAAA"
     },
     "dark": {
       "width": 1440,
       "height": 900,
-      "blur": "data:image/webp;base64,UklGRjoAAABXRUJQVlA4IC4AAABwAQCdASoQAAoAAsBMJaWDrAGIAAD+9sqHk1QfhXuS2Ge1YWwJC9A9c4wcAAAA"
+      "blur": "data:image/webp;base64,UklGRjgAAABXRUJQVlA4ICwAAACwAQCdASoQAAoAAsBMJaQAAu054zAAAP76Zg30Z0PSCzQmxzWJ8oIOMAAAAA=="
     }
   },
   "restore-dialog": {
@@ -546,12 +546,12 @@
     "light": {
       "width": 2880,
       "height": 2000,
-      "blur": "data:image/webp;base64,UklGRjQAAABXRUJQVlA4ICgAAACQAQCdASoQAAsAAsBMJaQAAudPn4AA/sNB9ilZZ2jr8RPb2sWVgAAA"
+      "blur": "data:image/webp;base64,UklGRjQAAABXRUJQVlA4ICgAAACwAQCdASoQAAsAAsBMJaQAAud7YVAAAP7H1dbX9yDJTa1whYEQkQAA"
     },
     "dark": {
       "width": 2880,
       "height": 2000,
-      "blur": "data:image/webp;base64,UklGRi4AAABXRUJQVlA4ICIAAAAwAQCdASoQAAsAAsBMJaQAA3AA/veC54JzknF2Ns/f6cAA"
+      "blur": "data:image/webp;base64,UklGRjAAAABXRUJQVlA4ICQAAACwAQCdASoQAAsAAsBMJaQAAudljXAAAP77aNUodoSUm4AAAAA="
     }
   },
   "scaling": {
@@ -560,12 +560,54 @@
     "light": {
       "width": 1440,
       "height": 960,
-      "blur": "data:image/webp;base64,UklGRj4AAABXRUJQVlA4IDIAAACwAQCdASoQAAsAAsBMJaQAAudF8w8AAP76Qk8Gk642wtbglWgSO1YstMAw3MAPnJQAAA=="
+      "blur": "data:image/webp;base64,UklGRj4AAABXRUJQVlA4IDIAAACwAQCdASoQAAsAAsBMJaQAAud9GNaAAP76Qk7OWEn8GQGlBzTKzFTqYvajyWHXfAAAAA=="
     },
     "dark": {
       "width": 1440,
       "height": 960,
-      "blur": "data:image/webp;base64,UklGRkAAAABXRUJQVlA4IDQAAADwAQCdASoQAAsAAsBMJaQAAudlBX+zhwAA/vpmFcu/m1u2/ptsD8FLAS+HFOtYnmUtKiAA"
+      "blur": "data:image/webp;base64,UklGRkQAAABXRUJQVlA4IDgAAACwAQCdASoQAAsAAsBMJaQAAu18sl4AAP76ZhcqVBDz5JA8quJNy0qGqN4Bba0tURl023ftB/cAAA=="
+    }
+  },
+  "security-finding": {
+    "alt": "A finding for command injection in lodash 4.17.20: fixed in 4.17.21, a runtime dependency from package-lock.json, the rules it meets, an investigation that found nothing unusual in the container and 3 matching firewall requests, and the npm command to update it",
+    "caption": "A finding with its investigation report",
+    "light": {
+      "width": 1440,
+      "height": 1700,
+      "blur": "data:image/webp;base64,UklGRkAAAABXRUJQVlA4IDQAAAAQAwCdASoQABMAPtFUo0uoJKMhsAgBABoJaQAAewEpxNAA/vISmHikeld+N4v9GaNAAAAA"
+    },
+    "dark": {
+      "width": 1440,
+      "height": 1700,
+      "blur": "data:image/webp;base64,UklGRkQAAABXRUJQVlA4IDgAAAAwAwCdASoQABMAPtFUo0uoJKMhsAgBABoJaQAAetVZqxAAAP7xYenV4rARYVQiy4ykJguiYAAAAA=="
+    }
+  },
+  "security-firewall-settings": {
+    "alt": "Web firewall settings of a service in Block: mode tiles Off, Log only and Block, 11 blocked and 4 logged requests in the last 7 days, an exception for rule 942100 on ARGS:id, and the stricter rules and request body settings",
+    "caption": "Web firewall settings of a service in Block",
+    "light": {
+      "width": 1440,
+      "height": 1000,
+      "blur": "data:image/webp;base64,UklGRjAAAABXRUJQVlA4ICQAAABwAQCdASoQAAsAAsBMJaWDrAGIAAD+9rX+joSbWXTehEZqwAA="
+    },
+    "dark": {
+      "width": 1440,
+      "height": 1000,
+      "blur": "data:image/webp;base64,UklGRjQAAABXRUJQVlA4ICgAAABwAQCdASoQAAsAAsBMJaV2AAGIAAD+9k7cMNANZRrxhIuWBs48wAAA"
+    }
+  },
+  "security-page": {
+    "alt": "Security page: a status card saying 4 vulnerabilities need you, with vulnerability checks, the known exploited list, release cycles and the web firewall on, 424 packages watched, 14.2K attacks blocked this week and 16 of 17 services protected, then one Action needed card per vulnerability with the fix and each affected service with what its investigation found",
+    "caption": "The Security page of a team with vulnerable packages",
+    "light": {
+      "width": 1440,
+      "height": 1700,
+      "blur": "data:image/webp;base64,UklGRkgAAABXRUJQVlA4IDwAAAAwAwCdASoQABMAPtFUpEuoJKOhsAgBABoJaQAAexQlGtVoAP7xvCfKnxQQxDjJNx/3Dm4PufDTV1OAAAA="
+    },
+    "dark": {
+      "width": 1440,
+      "height": 1700,
+      "blur": "data:image/webp;base64,UklGRkwAAABXRUJQVlA4IEAAAABwAwCdASoQABMAPtFWo0uoJKMhsAgBABoJaQAAXfTyXrFFvgAA/vV9XG1ds64U122fAmKoByoBdNG+LwXIAAAA"
     }
   },
   "server-detail": {
@@ -573,13 +615,13 @@
     "caption": "Each server shows its load, what runs on it and whether it is healthy.",
     "light": {
       "width": 1440,
-      "height": 1380,
-      "blur": "data:image/webp;base64,UklGRjAAAABXRUJQVlA4ICQAAAAwAQCdASoQAA8AAsBMJaQAA3AA/vcF82x7/s/uDCvB9IoCwAA="
+      "height": 1679,
+      "blur": "data:image/webp;base64,UklGRj4AAABXRUJQVlA4IDIAAADwAgCdASoQABMAPtFUo0uoJKMhsAgBABoJaQAAerHYAAD+8hJPV4ZPn3w19LE9AAAAAA=="
     },
     "dark": {
       "width": 1440,
-      "height": 1380,
-      "blur": "data:image/webp;base64,UklGRjYAAABXRUJQVlA4ICoAAAAwAQCdASoQAA8AAsBMJaQAA3AA/vahMO0hnEjoCe97Qn/OlvArlrgZIAA="
+      "height": 1679,
+      "blur": "data:image/webp;base64,UklGRkYAAABXRUJQVlA4IDoAAAAQAwCdASoQABMAPtFUo0uoJKMhsAgBABoJaQAAewQG/wAA/vGpHsqrhtyCJuvq5mgUVZCI/RSRwgAA"
     }
   },
   "server-network": {
@@ -587,13 +629,13 @@
     "caption": "See every private link between servers, with latency and speed measured.",
     "light": {
       "width": 1440,
-      "height": 1200,
-      "blur": "data:image/webp;base64,UklGRjAAAABXRUJQVlA4ICQAAAAwAQCdASoQAA0AAsBMJaQAA3AA/vcHdi1PlvZ/cGFd4sAAAAA="
+      "height": 1807,
+      "blur": "data:image/webp;base64,UklGRjwAAABXRUJQVlA4IDAAAADwAgCdASoQABQAPtFUpEuoJKOhsAgBABoJaQAAerHYAAD+8hSXGQZPn347X9AAAAA="
     },
     "dark": {
       "width": 1440,
-      "height": 1200,
-      "blur": "data:image/webp;base64,UklGRjYAAABXRUJQVlA4ICoAAADQAQCdASoQAA0AAsBMJaQAAu18dviaAAD++mdMd6woJuQZhknART0YIAA="
+      "height": 1807,
+      "blur": "data:image/webp;base64,UklGRkQAAABXRUJQVlA4IDgAAABQAwCdASoQABQAPtFUo0uoJKMhsAgBABoJaQAAXBtsz4Bi4AD+9X0xTtCpVvXbcrC0OaPCAAAAAA=="
     }
   },
   "server-topology": {
@@ -602,12 +644,12 @@
     "light": {
       "width": 1440,
       "height": 1000,
-      "blur": "data:image/webp;base64,UklGRioAAABXRUJQVlA4IB4AAAAwAQCdASoQAAsAAsBMJaQAA3AA/vcEtjzoqocAAAA="
+      "blur": "data:image/webp;base64,UklGRi4AAABXRUJQVlA4ICIAAABwAQCdASoQAAsAAsBMJaV9qAGIAAD+9wSy7Je6LJhTMAAA"
     },
     "dark": {
       "width": 1440,
       "height": 1000,
-      "blur": "data:image/webp;base64,UklGRjIAAABXRUJQVlA4ICYAAACQAQCdASoQAAsAAsBMJaQAAudFw0AA/vpnSaJgEFE6dmSGbAAAAA=="
+      "blur": "data:image/webp;base64,UklGRjYAAABXRUJQVlA4ICoAAABwAQCdASoQAAsAAsBMJaVefAGIAAD+9k1rkwglUhPRdRmzTWvUpfwAAAA="
     }
   },
   "servers": {
@@ -615,13 +657,13 @@
     "caption": "Your servers, where they are, what they do and how they connect.",
     "light": {
       "width": 1440,
-      "height": 1645,
-      "blur": "data:image/webp;base64,UklGRjwAAABXRUJQVlA4IDAAAACwAgCdASoQABIAPtFUo0uoJKMhsAgBABoJaQAAeyAA/vHEFMwtqvDIZU14n7jgAAA="
+      "height": 1744,
+      "blur": "data:image/webp;base64,UklGRkAAAABXRUJQVlA4IDQAAADwAgCdASoQABMAPtFUo0uoJKMhsAgBABoJaQAAerKKwAD+8cQUzC2q8MhlTXhhjV5FcAAA"
     },
     "dark": {
       "width": 1440,
-      "height": 1645,
-      "blur": "data:image/webp;base64,UklGRkgAAABXRUJQVlA4IDwAAABwAwCdASoQABIAPtFUo0uoJKMhsAgBABoJaQAAW+i2dPJmyAAA/vV9MUnQVLA0sL1y4WncOj2rZWwAAAA="
+      "height": 1744,
+      "blur": "data:image/webp;base64,UklGRk4AAABXRUJQVlA4IEIAAABQAwCdASoQABMAPtFUo0uoJKMhsAgBABoJaWDrAFIb9vFgAAD+8WZPI8ya6dC8/i9EPV6cuyOqd4Zp4pUCRkAAAAA="
     }
   },
   "service-panel": {
@@ -630,12 +672,12 @@
     "light": {
       "width": 1440,
       "height": 900,
-      "blur": "data:image/webp;base64,UklGRiwAAABXRUJQVlA4ICAAAABwAQCdASoQAAoAAsBMJaWM+AGIAAD+9wTXo/S9SEhIAA=="
+      "blur": "data:image/webp;base64,UklGRiwAAABXRUJQVlA4ICAAAABwAQCdASoQAAoAAsBMJaWM+AGIAAD+9wTXoHdo1XwAAA=="
     },
     "dark": {
       "width": 1440,
       "height": 900,
-      "blur": "data:image/webp;base64,UklGRjAAAABXRUJQVlA4ICQAAABwAQCdASoQAAoAAsBMJaWDrAGIAAD+9qSNM8FfhqUe5eBAAAA="
+      "blur": "data:image/webp;base64,UklGRiwAAABXRUJQVlA4ICAAAAAwAQCdASoQAAoAAsBMJaQAA3AA/vakjTPEIZSDTcNgAA=="
     }
   },
   "service-settings": {
@@ -644,12 +686,12 @@
     "light": {
       "width": 1440,
       "height": 960,
-      "blur": "data:image/webp;base64,UklGRioAAABXRUJQVlA4IB4AAAAwAQCdASoQAAsAAsBMJaQAA3AA/vcFJgRv15DgAAA="
+      "blur": "data:image/webp;base64,UklGRiwAAABXRUJQVlA4ICAAAAAwAQCdASoQAAsAAsBMJaQAA3AA/vcG/r4048QUPIQAAA=="
     },
     "dark": {
       "width": 1440,
       "height": 960,
-      "blur": "data:image/webp;base64,UklGRi4AAABXRUJQVlA4ICIAAAAwAQCdASoQAAsAAsBMJaQAA3AA/vZ4jzREgnpN3/eUKcAA"
+      "blur": "data:image/webp;base64,UklGRjAAAABXRUJQVlA4ICQAAAAwAQCdASoQAAsAAsBMJaQAA3AA/vZ4jzRD+0GeVMnRBxyAAAA="
     }
   },
   "settings-search": {
@@ -658,12 +700,12 @@
     "light": {
       "width": 1440,
       "height": 960,
-      "blur": "data:image/webp;base64,UklGRjIAAABXRUJQVlA4ICYAAABwAQCdASoQAAsAAsBMJaWDrAGIAAD+9t2Sw3eEjCeSaAn8FaAAAA=="
+      "blur": "data:image/webp;base64,UklGRiwAAABXRUJQVlA4ICAAAABwAQCdASoQAAsAAsBMJaV9qAGIAAD+9tzeDNSL+hvgAA=="
     },
     "dark": {
       "width": 1440,
       "height": 960,
-      "blur": "data:image/webp;base64,UklGRjYAAABXRUJQVlA4ICoAAAAwAQCdASoQAAsAAsBMJaQAA3AA/vZM/brTiJN686F7nJ5l0eYsPrhwAAA="
+      "blur": "data:image/webp;base64,UklGRjYAAABXRUJQVlA4ICoAAADQAQCdASoQAAsAAsBMJaQAAudlxaHYmAD++mYXKkkB7SCklANmzWsAAAA="
     }
   },
   "setup": {
@@ -686,12 +728,12 @@
     "light": {
       "width": 1440,
       "height": 900,
-      "blur": "data:image/webp;base64,UklGRjgAAABXRUJQVlA4ICwAAADQAQCdASoQAAoAAsBMJaQAAud9FsoYKAD+7gcLAhWZeHA/RHuBkO2t+AAAAA=="
+      "blur": "data:image/webp;base64,UklGRjYAAABXRUJQVlA4ICoAAADQAQCdASoQAAoAAsBMJaQAAud+STJW4AD+7gcLAgA5qEezezMPjIfAAAA="
     },
     "dark": {
       "width": 1440,
       "height": 900,
-      "blur": "data:image/webp;base64,UklGRjQAAABXRUJQVlA4ICgAAADQAQCdASoQAAoAAsBMJZwAAudcDpPLAAD++2tBr9qZYNU2XgOowAAA"
+      "blur": "data:image/webp;base64,UklGRjQAAABXRUJQVlA4ICgAAADQAQCdASoQAAoAAsBMJZwAAudcDpPLAAD++2tBtKOUatzAb0kekAAA"
     }
   },
   "staged-changes-blocked": {
@@ -700,12 +742,12 @@
     "light": {
       "width": 1440,
       "height": 900,
-      "blur": "data:image/webp;base64,UklGRjQAAABXRUJQVlA4ICgAAADQAQCdASoQAAoAAsBMJaQAAud9G4AtAAD+7f2RoQW+U0ksV9Q5ggAA"
+      "blur": "data:image/webp;base64,UklGRjIAAABXRUJQVlA4ICYAAADQAQCdASoQAAoAAsBMJaQAAud9G4LcAAD+7gcQ24tnI5X9JaAAAA=="
     },
     "dark": {
       "width": 1440,
       "height": 900,
-      "blur": "data:image/webp;base64,UklGRi4AAABXRUJQVlA4ICIAAAAwAQCdASoQAAoAAsBMJaQAA3AA/vb08zHSXBKEydVUuwAA"
+      "blur": "data:image/webp;base64,UklGRi4AAABXRUJQVlA4ICIAAACwAQCdASoQAAoAAsBMJaQAAudZBb8AAP77az/yh3TkAAAA"
     }
   },
   "team-invite": {
@@ -714,12 +756,12 @@
     "light": {
       "width": 1440,
       "height": 900,
-      "blur": "data:image/webp;base64,UklGRjQAAABXRUJQVlA4ICgAAACwAQCdASoQAAoAAsBMJaQAAud9GKSAAP7uBvwsHR5dZtqm+skqIAAA"
+      "blur": "data:image/webp;base64,UklGRjgAAABXRUJQVlA4ICwAAADQAQCdASoQAAoAAsBMJaQAAud9u9qXQAD+7gb9Am5bqfjhxEDEk5bpngrgAA=="
     },
     "dark": {
       "width": 1440,
       "height": 900,
-      "blur": "data:image/webp;base64,UklGRjAAAABXRUJQVlA4ICQAAACwAQCdASoQAAoAAsBMJaQAAudickzQAP766lkoLg6YE+AAAAA="
+      "blur": "data:image/webp;base64,UklGRjQAAABXRUJQVlA4ICgAAADQAQCdASoQAAoAAsBMJaQAAuddTMv+AAD++2sTEUFaUJD2RwIQAAAA"
     }
   },
   "template-detail": {
@@ -728,12 +770,12 @@
     "light": {
       "width": 1440,
       "height": 960,
-      "blur": "data:image/webp;base64,UklGRjAAAABXRUJQVlA4ICQAAABwAQCdASoQAAsAAsBMJaV/2AGIAAD+8qD/+mO+yFrj493wAAA="
+      "blur": "data:image/webp;base64,UklGRjIAAABXRUJQVlA4ICYAAABwAQCdASoQAAsAAsBMJaV/2AGIAAD+8qD/+mO/EkrVDIt+ggAAAA=="
     },
     "dark": {
       "width": 1440,
       "height": 960,
-      "blur": "data:image/webp;base64,UklGRioAAABXRUJQVlA4IB4AAAAwAQCdASoQAAsAAsBMJaQAA3AA/vbM6TpI4sIAAAA="
+      "blur": "data:image/webp;base64,UklGRioAAABXRUJQVlA4IB4AAAAwAQCdASoQAAsAAsBMJaQAA3AA/vak5ro3smYAAAA="
     }
   },
   "templates": {
@@ -742,12 +784,12 @@
     "light": {
       "width": 1440,
       "height": 960,
-      "blur": "data:image/webp;base64,UklGRi4AAABXRUJQVlA4ICIAAABwAQCdASoQAAsAAsBMJaWHgAGIAAD+9t4xkraRGH2E0AAA"
+      "blur": "data:image/webp;base64,UklGRi4AAABXRUJQVlA4ICIAAABwAQCdASoQAAsAAsBMJaV2AAGIAAD+9t4xkpN9bXHeIIAA"
     },
     "dark": {
       "width": 1440,
       "height": 960,
-      "blur": "data:image/webp;base64,UklGRjIAAABXRUJQVlA4ICYAAACwAQCdASoQAAsAAsBMJaQAAu19ySDAAP76bWeyLMDjJKfM+3dAAA=="
+      "blur": "data:image/webp;base64,UklGRjQAAABXRUJQVlA4ICgAAAAwAQCdASoQAAsAAsBMJaQAA3AA/vZMq8TU0dADlhlzrIHto4sUKwAA"
     }
   },
   "two-factor": {
@@ -755,27 +797,27 @@
     "caption": "Two-factor sign-in and passkeys for every account.",
     "light": {
       "width": 1440,
-      "height": 1063,
-      "blur": "data:image/webp;base64,UklGRjAAAABXRUJQVlA4ICQAAAAwAQCdASoQAAwAAsBMJaQAA3AA/vct+tFqU7N/Z/a5logAAAA="
+      "height": 1101,
+      "blur": "data:image/webp;base64,UklGRjAAAABXRUJQVlA4ICQAAAAwAQCdASoQAAwAAsBMJaQAA3AA/vcHdie+I6vji6cy4CjDgAA="
     },
     "dark": {
       "width": 1440,
-      "height": 1063,
-      "blur": "data:image/webp;base64,UklGRjQAAABXRUJQVlA4ICgAAADQAQCdASoQAAwAAsBMJaQAAueG84dcAAD++mYd3FTs3L42TJZKAAAA"
+      "height": 1101,
+      "blur": "data:image/webp;base64,UklGRjQAAABXRUJQVlA4ICgAAAAwAQCdASoQAAwAAsBMJaQAA3AA/vbJ/O7Ald6hnhMOEjjD6CIkgAAA"
     }
   },
   "updates": {
-    "alt": "Updates settings: launchroom 0.2.0 is ready with what's new and the three steps it takes, server versions for control plane, server-2 and server-3, channel and automatic update settings, and earlier updates.",
+    "alt": "Updates settings: launchroom is up to date on the stable channel, server versions for control plane, server-2 and server-3, and channel and automatic update settings.",
     "caption": "Updates back up first, then roll through your servers one at a time.",
     "light": {
       "width": 1440,
-      "height": 1399,
-      "blur": "data:image/webp;base64,UklGRjQAAABXRUJQVlA4ICgAAABwAQCdASoQABAAAsBMJaV/2AGIAAD+9wARQs8T19hjW14Wnf38MWAA"
+      "height": 900,
+      "blur": "data:image/webp;base64,UklGRiwAAABXRUJQVlA4ICAAAACwAQCdASoQAAoAAsBMJaQAAud+86QAAP76QQmHxgAAAA=="
     },
     "dark": {
       "width": 1440,
-      "height": 1399,
-      "blur": "data:image/webp;base64,UklGRjYAAABXRUJQVlA4ICoAAADQAQCdASoQABAAAsBMJaQAAueKqacgAAD++mYENvlPZk3O85rxVSz4AAA="
+      "height": 900,
+      "blur": "data:image/webp;base64,UklGRjIAAABXRUJQVlA4ICYAAACwAQCdASoQAAoAAsBMJaQAAup6TOsAAP768HxK+7iSTTb50AAAAA=="
     }
   },
   "variables": {
@@ -784,12 +826,12 @@
     "light": {
       "width": 1440,
       "height": 900,
-      "blur": "data:image/webp;base64,UklGRkIAAABXRUJQVlA4IDYAAADQAQCdASoQAAoAAsBMJaQAAud7Z9/ZwAD++Z2XNasyX/4L0T/Ztzq2sGfhGJldbnH9DqgAAAA="
+      "blur": "data:image/webp;base64,UklGRkYAAABXRUJQVlA4IDoAAADQAQCdASoQAAoAAsBMJaQAAud7aYA8QAD++kGJBpa3SPpoLTeJyFanG0QoWJp0e7+sEnLc4qJLu0AA"
     },
     "dark": {
       "width": 1440,
       "height": 900,
-      "blur": "data:image/webp;base64,UklGRkgAAABXRUJQVlA4IDwAAADQAQCdASoQAAoAAsBMJaQAAueJH4KIgAD++mYe50XuRTcgYvpV0Rzh6Aoz4Pe79x72bTYl6D8yyWfAAAA="
+      "blur": "data:image/webp;base64,UklGRkwAAABXRUJQVlA4IEAAAADQAQCdASoQAAoAAsBMJaQAAueHMh2ZAAD++vB+EzrnXtpMzryNCoqKe7beWJIa0TA0n72bTYl6DCDfLyVmAAAA"
     }
   }
 }

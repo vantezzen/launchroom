@@ -10,18 +10,9 @@ use Laravel\Fortify\Features;
 test('security page is displayed', function (): void {
     $this->skipUnlessFortifyHas(Features::twoFactorAuthentication());
 
-    Features::twoFactorAuthentication([
-        'confirm' => true,
-        'confirmPassword' => true,
-    ]);
-    Features::passkeys([
-        'confirmPassword' => true,
-    ]);
-
     $user = User::factory()->create();
 
     $this->actingAs($user)
-        ->withSession(['auth.password_confirmed_at' => time()])
         ->get(route('security.edit'))
         ->assertInertia(fn (Assert $page): Assert => $page
             ->component('settings/security')
@@ -37,11 +28,6 @@ test('security page stays accessible without password confirmation', function ()
 
     $user = User::factory()->create();
 
-    Features::twoFactorAuthentication([
-        'confirm' => true,
-        'confirmPassword' => true,
-    ]);
-
     $this->actingAs($user)
         ->get(route('security.edit'))
         ->assertOk();
@@ -55,7 +41,6 @@ test('security page renders without two factor when feature is disabled', functi
     $user = User::factory()->create();
 
     $this->actingAs($user)
-        ->withSession(['auth.password_confirmed_at' => time()])
         ->get(route('security.edit'))
         ->assertOk()
         ->assertInertia(fn (Assert $page): Assert => $page

@@ -16,6 +16,7 @@ use App\Models\Volume;
 use App\Models\VolumeRetirement;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Volume lifecycle after a deletion (docs/05 §1.1). Volumes are never
@@ -31,6 +32,9 @@ use Illuminate\Database\Eloquent\Collection;
  *    overridden ("delete without final backup", recorded as
  *    `confirmed_at/by`; the server page's "Allow deletion" is the same
  *    override for volumes retired before final backups existed).
+ *    retireRemoved() does the same for volumes removed from a service
+ *    (docs/14 §9.12) once the deploy applied the removal and no
+ *    deployment mounts them any more.
  * 2. requestDue() (scheduled, App\Console\Commands\RetireVolumesCommand):
  *    due retirements become `requested`; their servers re-render.
  * 3. deletions(): requested ones are rendered into NodeState.deleteVolumes.
@@ -43,8 +47,9 @@ final readonly class VolumeRetirements
      * @param  Collection<int, ServiceInstance>  $instances
      * @param  array<int, string>  $finalBackups  volume id => final backup snapshot id
      * @param  bool  $overridden  "delete without final backup" was chosen (by $overriddenBy, null: the system)
+     * @param  list<int>|null  $only  just these volumes (null: every placed volume of the instances)
      */
-    public function retire(Collection $instances, string $reason, array $finalBackups = [], bool $overridden = false, ?int $overriddenBy = null): void
+    public function retire(Collection $instances, string $reason, array $finalBackups = [], bool $overridden = false, ?int $overriddenBy = null, ?array $only = null): void
     {
         if ($instances->isEmpty()) {
             return;
@@ -61,7 +66,7 @@ final readonly class VolumeRetirements
             $withBackups[is_numeric($id) ? (int) $id : 0] = true;
         }
 
-        $volumes = Volume::query()->whereIn('service_instance_id', $ids)->whereNotNull('server_id')->orderBy('id')->get();
+        $volumes = Volume::query()->whereIn('service_instance_id', $ids)->whereNotNull('server_id')->when($only !== null, static fn ($query) => $query->whereIn('id', $only ?? []))->orderBy('id')->get();
         $byId = $instances->keyBy('id');
 
         foreach ($volumes as $volume) {
@@ -88,6 +93,41 @@ final readonly class VolumeRetirements
                 'confirmed_by' => $backups && $overridden ? $overriddenBy : null,
             ]);
         }
+    }
+
+    /**
+     * Volumes removed from a service (staged, docs/14 §9.12) whose removal
+     * is deployed and that no deployment mounts any more: placed ones are
+     * retired (reason `volume_removed`), then the rows go. One that is
+     * still busy (a backup, restore, import, export or move) waits.
+     *
+     * @return int how many were retired or dropped
+     */
+    public function retireRemoved(): int
+    {
+        $done = 0;
+        $volumes = Volume::query()
+            ->whereNotNull('removed_at')
+            ->with(['serviceInstance.service', 'serviceInstance.environment.lastAppliedRevision'])
+            ->orderBy('id')
+            ->limit(200)
+            ->get();
+
+        foreach ($volumes as $volume) {
+            $instance = $volume->serviceInstance;
+
+            if (isset(StagedVolumes::appliedPaths($instance)[$volume->public_id]) || StagedVolumes::mounted($volume) || StagedVolumes::busy($volume) !== null) {
+                continue;
+            }
+
+            DB::transaction(function () use ($volume, $instance): void {
+                $this->retire(new Collection([$instance]), 'volume_removed', only: [$volume->id]);
+                $volume->delete();
+            });
+            $done++;
+        }
+
+        return $done;
     }
 
     /**

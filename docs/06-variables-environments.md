@@ -102,8 +102,9 @@ final env for (service instance S in environment E, branch B) =
 - `${{ secret(n) }}`: n alphanumeric characters (URL-safe).
 - `${{ secret(n, "base64"|"base64url"|"hex") }}`: n random bytes in that encoding.
 - `${{ uuid() }}`: UUID v4.
+- `${{ jwt("anon", JWT_SECRET) }}` (D65): an HS256 JWT `{"role": "anon", "iss": "supabase", "iat", "exp": iat + 10 years}` signed with the plaintext of `JWT_SECRET`, the row of the same key and service (or shared, without a service) that applies to every target of the new row. The role is a Postgres role name; the signing value has at least 32 characters; a `jwt()` is the whole value, never part of a longer one. Without its signing variable the save fails ("create JWT_SECRET … first"), it never stores an unsigned value. These are Supabase's `anon` and `service_role` API keys.
 - n is 8–1024. The resolver treats a leftover function as a broken expression.
-- `variables.generator` keeps the generator of a value that was exactly one generator expression; copies into another environment re-evaluate it, so generated values are fresh per environment. Rows without a recorded generator are copied as they are.
+- `variables.generator` keeps the generator of a value that was exactly one generator expression; copies into another environment re-evaluate it, so generated values are fresh per environment. Rows without a recorded generator are copied as they are. Generators signed with another variable are evaluated after it: environment copies order them last, blueprints create them after the service's other variables, and Compare & promote makes such an item depend on its signing variable and applies it after it. A copy without secrets (fork previews) gets an empty value for them, like the secret they are signed with.
 
 **System variables** (read-only, shown collapsed in the editor):
 - `LAUNCHROOM`, `LAUNCHROOM_PROJECT_ID`, `LAUNCHROOM_ENVIRONMENT(_ID|_KIND)`, `LAUNCHROOM_SERVICE(_ID)`.
@@ -121,6 +122,8 @@ Dragging an edge from `api` to `postgres` opens a **Connect** popover that previ
 - Prisma/Node: `DATABASE_URL`
 - Django: `DATABASE_URL` (dj-database-url)
 - Redis: `REDIS_URL` or `REDIS_HOST`/`REDIS_PORT`/`REDIS_PASSWORD`
+
+A service can say itself what a connection to it injects (`services.connection_variables`, D65): a list of `{key, value}` whose values reference its own variables (`${{PUBLIC_URL}}`, `${{ANON_KEY}}`), stored on the consumer as references to it (`${{supabase.ANON_KEY}}`). Templates set them (`x-launchroom.provides`, [17](17-templates-and-compose.md) §3.1); Supabase's gateway provides `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` and `SUPABASE_SERVICE_ROLE_KEY`. The popover then offers only these (no private/public choice). At most 16, references only to the provider, no generators.
 
 Accepting stores a **connection** row plus the injected references. These are ordinary reference variables, marked as connection-owned (deleting the edge removes them, after confirmation). An app → app edge (`web` → `api`) offers `API_URL` as private (`http://api:8000`) or public (`https://api…`). Browser-facing (`NEXT_PUBLIC_*`) variables are forced to public, with a warning explaining why.
 

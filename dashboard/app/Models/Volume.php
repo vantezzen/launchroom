@@ -22,6 +22,7 @@ use Illuminate\Support\Carbon;
  * @property int|null $server_id
  * @property int|null $size_bytes
  * @property VolumeConsistency $backup_consistency how backups read it (docs/14 §2)
+ * @property Carbon|null $removed_at staged removal: leaves the service with the next deploy, then retired (docs/14 §9.12)
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property-read ServiceInstance $serviceInstance
@@ -70,6 +71,6 @@ final class Volume extends Model
      */
     protected function casts(): array
     {
-        return ['size_bytes' => 'integer', 'backup_consistency' => VolumeConsistency::class];
+        return ['size_bytes' => 'integer', 'backup_consistency' => VolumeConsistency::class, 'removed_at' => 'datetime'];
     }
 }

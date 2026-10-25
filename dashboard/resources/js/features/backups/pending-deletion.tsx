@@ -71,7 +71,7 @@ export function PendingDeletion({
                 {request.status === 'blocked'
                     ? `${what} is blocked: nothing was deleted. Retry the final backup, or delete without one.`
                     : request.status === 'backing_up'
-                      ? `${what} waits for a final backup of its data and continues by itself once it succeeded.`
+                      ? `${what} waits for a final backup of its data and continues once the backup succeeds.`
                       : `${what} continues.`}
             </p>
 

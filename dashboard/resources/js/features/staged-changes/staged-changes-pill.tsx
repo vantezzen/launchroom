@@ -169,7 +169,7 @@ export function StagedToolbarButton({
                 type="button"
                 onClick={openStagedChanges}
                 aria-keyshortcuts="Shift+D"
-                title={`${count} staged · ${action} (Shift+D)`}
+                title={`${action}: ${count} staged (Shift+D)`}
                 className={cn(
                     'inline-flex h-8 animate-enter items-center gap-2 rounded-lg pr-1 pl-2.5 type-label text-signal transition-colors duration-fast hover:bg-signal-soft focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
                     className,

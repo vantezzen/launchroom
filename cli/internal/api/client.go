@@ -475,3 +475,31 @@ func (c *Client) CheckConfig(ctx context.Context, envID, content string, diff bo
 	var r ConfigCheck
 	return r, c.do(ctx, request{method: http.MethodPost, path: "/environments/" + seg(envID) + "/config/" + action, body: map[string]string{"content": content}}, &r, nil)
 }
+
+// SecurityFindings lists findings of the token's team (all pages);
+// level is "action_needed", "worth_knowing" or "" for both.
+func (c *Client) SecurityFindings(ctx context.Context, level string) ([]SecurityFinding, error) {
+	var all []SecurityFinding
+	q := url.Values{"limit": {"100"}}
+	if level != "" {
+		q.Set("level", level)
+	}
+	for {
+		var page []SecurityFinding
+		var meta ListMeta
+		if err := get(ctx, c, "/security/findings", q, &page, &meta); err != nil {
+			return nil, err
+		}
+		all = append(all, page...)
+		if meta.NextCursor == nil || *meta.NextCursor == "" {
+			return all, nil
+		}
+		q.Set("cursor", *meta.NextCursor)
+	}
+}
+
+// SecurityInventory is GET /security/inventory?q=.
+func (c *Client) SecurityInventory(ctx context.Context, query string) (InventorySearch, error) {
+	var s InventorySearch
+	return s, get(ctx, c, "/security/inventory", url.Values{"q": {query}}, &s, nil)
+}

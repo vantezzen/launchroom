@@ -27,7 +27,7 @@ export function slowest(
         : Math.min(...speeds.map((speed) => speed.mbps));
 }
 
-/** "12 ms · 480 Mbit/s", or null when nothing was measured. */
+/** "12 ms, 480 Mbit/s", or null when nothing was measured. */
 export function linkLabel(link: App.Data.Servers.MeshLinkData): string | null {
     const rate = slowest(link.speeds);
     const parts = [
@@ -35,5 +35,5 @@ export function linkLabel(link: App.Data.Servers.MeshLinkData): string | null {
         rate !== null ? formatRate(rate) : null,
     ].filter((part): part is string => part !== null);
 
-    return parts.length > 0 ? parts.join(' · ') : null;
+    return parts.length > 0 ? parts.join(', ') : null;
 }

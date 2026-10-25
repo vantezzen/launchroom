@@ -8,6 +8,7 @@ use App\Data\Blueprints\BlueprintService;
 use App\Data\Blueprints\BlueprintVariable;
 use App\Data\Blueprints\ComposeInputData;
 use App\Data\Blueprints\SkippedServiceData;
+use App\Data\Services\ConfigFile;
 use App\Enums\BlueprintNoteKind;
 use App\Enums\ConnectionStyle;
 use App\Enums\DatabaseEngine;
@@ -331,4 +332,48 @@ test('MongoDB and ClickHouse images become managed databases and consumers use t
     expect(bpService($kept, 'mongo')->kind)->toBe(ServiceKind::Image)
         ->and(bpService($kept, 'mongo')->port)->toBe(27017)
         ->and(bpService($kept, 'analytics')->port)->toBe(8123);
+});
+
+test('configs with inline content become read-only config files (D65)', function (): void {
+    $translation = bpCompose(<<<'YAML'
+        services:
+          db:
+            image: supabase/postgres:17.6.1.136
+            expose: ["5432"]
+            volumes: [data:/var/lib/postgresql/data]
+            configs:
+              - source: roles
+                target: /docker-entrypoint-initdb.d/init-scripts/99-roles.sql
+              - source: settings
+                target: /var/lib/postgresql/data/extra.conf
+              - source: from_file
+              - source: roles
+                target: /etc/roles.sql
+                mode: 0400
+              - nope
+        configs:
+          roles:
+            content: |
+              \set pgpass `echo "$$POSTGRES_PASSWORD"`
+              ALTER USER authenticator WITH PASSWORD :'pgpass';
+          settings:
+            content: "max_connections = 50"
+          from_file:
+            file: ./config.json
+        volumes:
+          data:
+        YAML);
+    $db = bpService($translation, 'db');
+
+    expect(array_map(static fn (ConfigFile $file): string => $file->path, $db->files))->toBe(['/docker-entrypoint-initdb.d/init-scripts/99-roles.sql', '/etc/roles.sql'])
+        // Compose interpolation: $$ is a literal $.
+        ->and($db->files[0]->content)->toContain('echo "$POSTGRES_PASSWORD"')
+        ->and(bpNotes($db, BlueprintNoteKind::Refused))->toHaveCount(3)
+        ->and(implode(' ', bpNotes($db, BlueprintNoteKind::Refused)))->toContain('inside the volume')
+        ->and(bpNotes($db, BlueprintNoteKind::Ignored)[0] ?? '')->toContain('mode is ignored')
+        ->and(implode(' ', array_map(static fn (BlueprintNote $note): string => $note->message, $translation->notes)))->toContain('Config from_file is read from a file')
+        // A private non-HTTP port stays the service's port (TCP health, reachable as db:5432).
+        ->and($db->port)->toBe(5432)
+        ->and($db->public)->toBeFalse()
+        ->and(BlueprintValidator::errors($translation->blueprint))->toBe([]);
 });

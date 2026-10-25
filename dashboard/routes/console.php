@@ -12,6 +12,10 @@ use Illuminate\Support\Facades\Schedule;
 // after a server's last contact.
 Schedule::command('launchroom:servers:check-liveness')->everyFifteenSeconds()->withoutOverlapping();
 
+// System image pins and other instance-wide NodeState inputs change with an
+// update: re-render every NodeState once when they differ (RefreshNodeStates).
+Schedule::command('launchroom:node-states:refresh')->everyMinute()->withoutOverlapping();
+
 // GitHub polling fallback for tracked refs when webhooks are stale (docs/06 §2).
 Schedule::job(new PollTrackedRefsJob)->everyMinute()->name('github:poll-tracked-refs')->withoutOverlapping();
 
@@ -20,6 +24,7 @@ Schedule::command('launchroom:deployments:sweep')->everyMinute()->withoutOverlap
 
 // Interactive sessions no server picked up (docs/03 §11.3).
 Schedule::command('launchroom:sessions:sweep')->everyMinute()->withoutOverlapping();
+Schedule::command('launchroom:remote-access:sweep')->everyMinute()->withoutOverlapping();
 
 // Backups: due schedules, retention, task follow-up, restores (docs/14 §3).
 Schedule::command('launchroom:backups:tick')->everyMinute()->withoutOverlapping();
@@ -58,7 +63,9 @@ Schedule::command('launchroom:mesh:maintain')->everyFiveMinutes()->withoutOverla
 // Automatic shared certificate storage: the Valkey ACL user lives in memory only (docs/05 §5).
 Schedule::command('launchroom:ingress:cert-storage-user')->everyMinute()->withoutOverlapping();
 
-// Usage metrics: 10-minute and daily rollups, retention 48 h / 30 days / 1 year (docs/07).
+// Usage metrics: 10-minute and daily rollups, retention 48 h / 30 days / 1 year (docs/07);
+// request analytics: hourly and daily rollups, retention 48 h / 7 days / 90 days (docs/15 §5.3);
+// web firewall: hourly rollups, retention 7 / 90 days, events 7 days (docs/22 §6.5).
 Schedule::command('launchroom:metrics:rollup')->everyTenMinutes()->withoutOverlapping();
 
 // Runtime logs past their retention period or size cap; live-tail lines after 24 h (docs/08 §12).
@@ -81,6 +88,13 @@ Schedule::command('launchroom:audit:checkpoint')->everyTenMinutes()->withoutOver
     ->after(static fn () => Artisan::call('launchroom:audit:verify', ['--from-checkpoint' => true]));
 Schedule::command('launchroom:audit:verify')->dailyAt('03:41')->withoutOverlapping();
 Schedule::command('launchroom:audit:deliver')->everyMinute()->withoutOverlapping();
+
+// Security center (docs/22 §3–4): OSV every 6 hours (jittered), KEV and
+// endoflife.date daily, backfill and re-evaluation hourly, retention daily.
+Schedule::command('launchroom:security:sync')->everySixHours()->withoutOverlapping();
+Schedule::command('launchroom:security:feeds')->dailyAt('05:11')->withoutOverlapping();
+Schedule::command('launchroom:security:backfill')->hourlyAt(23)->withoutOverlapping();
+Schedule::command('launchroom:security:prune')->dailyAt('04:29')->withoutOverlapping();
 
 // Generate a Dockerfile (docs/20 §5): timeouts and missed task events, then housekeeping.
 Schedule::command('launchroom:dockerfile-generations:sweep')->everyMinute()->withoutOverlapping();

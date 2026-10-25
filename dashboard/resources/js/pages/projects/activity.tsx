@@ -16,7 +16,7 @@ type Props = ProjectShellProps & {
 export default function ProjectActivity({ project, entries, filters }: Props) {
     return (
         <>
-            <Head title={`Activity · ${project.name}`} />
+            <Head title={`Activity - ${project.name}`} />
             <Page>
                 <PageHeader
                     title="Activity"

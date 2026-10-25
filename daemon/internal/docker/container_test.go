@@ -203,3 +203,32 @@ func TestBuildContainerStop(t *testing.T) {
 		t.Errorf("stop set without a spec: %q %v", cc.Config.StopSignal, cc.Config.StopTimeout)
 	}
 }
+
+func TestBuildContainerFiles(t *testing.T) {
+	in := webInput()
+	in.Spec.Files = []state.ConfigFile{{Path: "/etc/app/app.conf", Content: "a=1\n"}}
+	cc, err := BuildContainer(in, policy.DefaultConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cc.Files) != 1 || cc.Files[0].Path != "/etc/app/app.conf" || cc.Files[0].Content != "a=1\n" {
+		t.Fatalf("files %+v", cc.Files)
+	}
+	// Files never land in a volume (policy floor).
+	in.Spec.Files = []state.ConfigFile{{Path: "/app/uploads/x.conf", Content: "a"}}
+	if _, err := BuildContainer(in, policy.DefaultConfig()); err == nil {
+		t.Fatal("file inside a mount accepted")
+	}
+}
+
+// fromInspect carries HostConfig.Init, so an inspection can tell Docker's
+// own init mount from a file the container wrote (docs/22 §7.2).
+func TestFromInspectInit(t *testing.T) {
+	on := true
+	if c := fromInspect(container.InspectResponse{ID: "x", HostConfig: &container.HostConfig{Init: &on}}); !c.Init {
+		t.Error("Init not read")
+	}
+	if c := fromInspect(container.InspectResponse{ID: "x"}); c.Init {
+		t.Error("Init without HostConfig")
+	}
+}

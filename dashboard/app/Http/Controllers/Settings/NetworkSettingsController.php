@@ -10,9 +10,9 @@ use App\Http\Controllers\Controller;
 use App\Http\Controllers\Teams\TeamSettingsController;
 use App\Models\Server;
 use App\Models\User;
+use App\Queries\AppsDomainSetup;
 use App\Queries\IngressSettingsView;
 use App\Queries\ServerMesh;
-use App\Services\Dns\EdgeAddresses;
 use App\Services\Mesh\MeshPolicy;
 use Illuminate\Container\Attributes\CurrentUser;
 use Illuminate\Support\Facades\Gate;
@@ -27,7 +27,7 @@ use Inertia\Response;
  */
 final class NetworkSettingsController extends Controller
 {
-    public function edit(#[CurrentUser] User $user, ServerMesh $mesh, IngressSettingsView $ingress, EdgeAddresses $edges): Response
+    public function edit(#[CurrentUser] User $user, ServerMesh $mesh, IngressSettingsView $ingress, AppsDomainSetup $appsDomain): Response
     {
         Gate::authorize('manageInstance');
 
@@ -52,7 +52,7 @@ final class NetworkSettingsController extends Controller
             'recommendedPolicy' => (string) json_encode(MeshPolicy::document('autogroup:admin'), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES),
             'tags' => MeshPolicy::allTags(),
             'ingress' => $ingress->get(),
-            'edgeAddresses' => $edges->addresses(null),
+            'appsDomain' => $appsDomain->get(),
         ]);
     }
 }

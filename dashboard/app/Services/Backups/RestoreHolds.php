@@ -11,6 +11,7 @@ use App\Enums\WorkloadPhase;
 use App\Models\Backups\RestoreRun;
 use App\Models\Connection;
 use App\Models\Placement;
+use App\Models\Service;
 use App\Models\ServiceInstance;
 use App\Services\Moves\MoveHolds;
 use App\Services\Transfers\ImportHolds;
@@ -24,7 +25,8 @@ use Illuminate\Contracts\Database\Query\Builder;
  *
  * - Volume restores hold the service whose volume is replaced.
  * - In-place database restores hold the database's dependents: the current
- *   instances in the same environment of every service connected to it.
+ *   instances in the same environment of every service connected to it,
+ *   and of those services' workers and crons.
  *   The database itself keeps running (the restore runs inside it).
  * - Point-in-time restores (subject base_backup) hold the database itself
  *   (its volume is replaced) and, in place, its dependents (docs/14 §10.3).
@@ -93,19 +95,22 @@ final class RestoreHolds
 
     /**
      * Current instances in the database's environment of the services that
-     * are connected to it (canvas edges into the database).
+     * are connected to it (canvas edges into the database), and of the
+     * workers and crons of those services: they run the same code with the
+     * same data, whether or not they have an edge of their own.
      *
      * @return list<int>
      */
     public static function dependentIds(ServiceInstance $database): array
     {
         $consumers = Connection::query()->where('to_service_id', $database->service_id)->select('from_service_id');
+        $processes = Service::query()->whereIn('parent_service_id', $consumers)->select('id');
 
         /** @var list<int> $ids */
         $ids = ServiceInstance::query()
             ->current()
             ->where('environment_id', $database->environment_id)
-            ->whereIn('service_id', $consumers)
+            ->where(static fn (Builder $query) => $query->whereIn('service_id', $consumers)->orWhereIn('service_id', $processes))
             ->whereKeyNot($database->id)
             ->orderBy('id')
             ->pluck('id')
@@ -143,21 +148,41 @@ final class RestoreHolds
 
     /**
      * Whether no workload of the given instances is still up (all stopped,
-     * removed, or never started) — the held services have let go.
+     * removed, or never started) — the held services have let go. A service
+     * whose deployment failed before it ran has no workload up and counts as
+     * stopped.
      *
      * @param  list<int>  $instanceIds
      */
     public static function released(array $instanceIds): bool
     {
+        return self::running($instanceIds) === [];
+    }
+
+    /**
+     * The given instances that still have a workload up on some server.
+     *
+     * @param  list<int>  $instanceIds
+     * @return list<int>
+     */
+    public static function running(array $instanceIds): array
+    {
         if ($instanceIds === []) {
-            return true;
+            return [];
         }
 
         $up = [WorkloadPhase::Starting->value, WorkloadPhase::Running->value, WorkloadPhase::Healthy->value, WorkloadPhase::Unhealthy->value, WorkloadPhase::Draining->value];
 
-        return ! Placement::query()
+        /** @var list<int> $ids */
+        $ids = Placement::query()
             ->whereIn('service_instance_id', $instanceIds)
             ->whereIn('phase', $up)
-            ->exists();
+            ->distinct()
+            ->orderBy('service_instance_id')
+            ->pluck('service_instance_id')
+            ->map(static fn (mixed $id): int => is_numeric($id) ? (int) $id : 0)
+            ->all();
+
+        return $ids;
     }
 }

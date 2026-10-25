@@ -32,7 +32,7 @@ export function StagedChip({ effect }: { effect: App.Enums.ChangeEffect }) {
     );
 }
 
-/** "×2 · fra-1, hel-1", "Scaled to zero". */
+/** "×2 on fra-1, hel-1", "Scaled to zero". */
 export function placementLine(
     node: App.Data.Canvas.CanvasNodeData,
 ): string | null {
@@ -42,7 +42,7 @@ export function placementLine(
 
     if (node.server) {
         return node.replicas > 1
-            ? `×${node.replicas} · ${node.server}`
+            ? `×${node.replicas} on ${node.server}`
             : node.server;
     }
 

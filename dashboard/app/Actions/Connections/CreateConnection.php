@@ -18,6 +18,7 @@ use App\Models\Connection;
 use App\Models\Service;
 use App\Models\User;
 use App\Services\Variables\VariableStore;
+use App\Support\Connections\ProvidedVariables;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 
@@ -25,7 +26,8 @@ use Illuminate\Support\Facades\DB;
  * A canvas edge from a consumer to a provider (docs/06 §3.2). It injects
  * framework-aware reference variables into the consumer, owned by the
  * connection: Laravel `DB_*`, `DATABASE_URL`, `REDIS_*`, or `<SLUG>_URL`
- * (private `http://api:8000` or public URL) for app → app. References are
+ * (private `http://api:8000` or public URL) for app → app, or what the
+ * provider declares itself (ProvidedVariables, D65). References are
  * environment-relative, so one connection works in every environment.
  */
 final readonly class CreateConnection
@@ -95,6 +97,13 @@ final readonly class CreateConnection
 
         if (! $to->kind->isWeb()) {
             throw DomainRuleViolation::on('to', 'Workers and crons have no address to connect to.');
+        }
+
+        // A service that says what connecting to it gives (Supabase's gateway, D65).
+        $provided = ProvidedVariables::of($to);
+
+        if ($provided !== null) {
+            return $provided;
         }
 
         $key = strtoupper(str_replace('-', '_', $to->slug)).'_URL';

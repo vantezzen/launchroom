@@ -5,7 +5,7 @@ tagline: Git hosting with pull requests, issues and packages.
 description: >-
     A lightweight forge for your repositories, code review and CI runners. The
     first account you register becomes the administrator. Git over HTTPS works
-    right away; SSH stays private.
+    right away, while SSH stays on the private network.
 category: developer
 logo: gitea
 website: https://about.gitea.com

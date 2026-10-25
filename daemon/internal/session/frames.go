@@ -74,6 +74,8 @@ type Payload struct {
 	Part   int        `json:"part,omitzero"`
 	Parts  int        `json:"parts,omitzero"`
 	Reason string     `json:"reason,omitzero"`
+	// Message says why a session ended when it couldn't start (end frames).
+	Message string `json:"message,omitzero"`
 }
 
 var b64 = base64.RawURLEncoding

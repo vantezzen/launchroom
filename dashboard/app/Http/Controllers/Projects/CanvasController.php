@@ -11,11 +11,14 @@ use App\Data\Canvas\ServicePanelData;
 use App\Drivers\DatabaseEngines\DatabaseEngines;
 use App\Enums\DatabaseEngine;
 use App\Enums\EnvironmentKind;
+use App\Enums\Security\FindingLevel;
+use App\Enums\Security\SecurityFindingStatus;
 use App\Enums\ServiceKind;
 use App\Enums\Sessions\InteractiveSessionKind;
 use App\Http\Controllers\Controller;
 use App\Models\Environment;
 use App\Models\Project;
+use App\Models\Security\SecurityFinding;
 use App\Models\Service;
 use App\Models\Sessions\InteractiveSession;
 use App\Models\User;
@@ -43,7 +46,7 @@ final class CanvasController extends Controller
     public const array TABS = ['deployments', 'variables', 'metrics', 'logs', 'console', 'data', 'backups', 'settings'];
 
     /** Pages of the Settings tab (`/s/{service}/settings/{section}`, docs/08 §16). */
-    public const array SETTINGS_SECTIONS = ['general', 'source', 'build', 'deploy', 'schedule', 'domains', 'networking', 'scaling', 'volumes', 'advanced', 'danger'];
+    public const array SETTINGS_SECTIONS = ['general', 'source', 'build', 'deploy', 'schedule', 'domains', 'networking', 'firewall', 'scaling', 'volumes', 'advanced', 'danger'];
 
     public function show(Project $project, Environment $environment, CanvasGraph $graph): Response
     {
@@ -62,6 +65,15 @@ final class CanvasController extends Controller
         $canData = $service->kind === ServiceKind::Database && Gate::allows('viewAny', [InteractiveSession::class, $instance, InteractiveSessionKind::Data]);
         abort_if(($tab === 'console' && ! $canConsole) || ($tab === 'data' && ! $canData), 404);
 
+        // The header chip (docs/22 §9.1): open "Action needed" findings of this instance.
+        $findings = array_values(array_filter(SecurityFinding::query()
+            ->where('team_id', $project->team_id)
+            ->where('service_instance_id', $instance->id)
+            ->where('level', FindingLevel::ActionNeeded->value)
+            ->where('status', SecurityFindingStatus::Open->value)
+            ->pluck('public_id')
+            ->all(), is_string(...)));
+
         $panel = new ServicePanelData(
             serviceId: $service->public_id,
             tab: $tab,
@@ -71,6 +83,8 @@ final class CanvasController extends Controller
             canConsole: $canConsole,
             canData: $canData,
             section: $tab === 'settings' ? $section : null,
+            actionNeeded: count($findings),
+            actionNeededFinding: count($findings) === 1 ? $findings[0] : null,
         );
 
         return $this->render($project, $environment, $graph, $panel);

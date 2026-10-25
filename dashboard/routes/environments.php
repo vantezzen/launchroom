@@ -26,7 +26,7 @@ Route::middleware(['web', 'auth', 'verified'])
     ->group(function (): void {
         Route::patch('p/{project}/environments/{environment}', [EnvironmentController::class, 'update'])->name('environments.update');
         Route::delete('p/{project}/environments/{environment}', [EnvironmentController::class, 'destroy'])
-
+            ->middleware('throttle:20,1')
             ->name('environments.destroy');
         Route::post('p/{project}/environments/{environment}/resume', [EnvironmentController::class, 'resume'])->name('environments.resume');
         Route::put('p/{project}/settings/secrets-policy', [EnvironmentController::class, 'secretsPolicy'])->name('environments.secrets-policy');

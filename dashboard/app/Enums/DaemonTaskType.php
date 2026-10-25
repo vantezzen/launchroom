@@ -30,4 +30,10 @@ enum DaemonTaskType: string
     case DbExport = 'db_export';
     /** A volume's files as a .tar.gz, for download (D55). */
     case VolumeExport = 'volume_export';
+    /** Temporary remote access: SSH into a container or a database endpoint (D61, docs/03 §12). */
+    case Access = 'access';
+    /** List the packages and runtimes of an image (docs/22 §3.2, docs/03 §13.1). */
+    case Inventory = 'inventory';
+    /** Read a workload container's changes and processes for an investigation (docs/22 §7.2, docs/03 §13.2). */
+    case InspectContainer = 'inspect_container';
 }

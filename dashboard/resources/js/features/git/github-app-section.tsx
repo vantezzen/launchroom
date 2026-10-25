@@ -1,6 +1,7 @@
 import { router } from '@inertiajs/react';
 import { ArrowUpRight, RefreshCw } from 'lucide-react';
 import { Logo } from '@/components/logo';
+import { MetaLine } from '@/components/patterns/meta-line';
 import { TimeAgo } from '@/components/time-ago';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -32,21 +33,19 @@ function InstallationRow({
                 installation.suspended ? (
                     'Suspended on GitHub: pushes from here are ignored'
                 ) : (
-                    <>
+                    <MetaLine>
                         {installation.repositorySelection === 'all'
                             ? `All ${repos}`
                             : `${repos} selected`}
-                        {' · '}
                         {installation.accountType === 'Organization'
-                            ? 'organization'
-                            : 'personal account'}
+                            ? 'Organization'
+                            : 'Personal account'}
                         {installation.syncedAt !== null && (
-                            <>
-                                {' · synced '}
-                                <TimeAgo value={installation.syncedAt} />
-                            </>
+                            <span>
+                                Synced <TimeAgo value={installation.syncedAt} />
+                            </span>
                         )}
-                    </>
+                    </MetaLine>
                 )
             }
         >

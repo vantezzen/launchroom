@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Projects;
 
+use App\Actions\Alerts\DetachAlerts;
 use App\Actions\Audit\RecordAuditEvent;
 use App\Data\Audit\AuditActor;
 use App\Data\Audit\AuditEntryData;
@@ -55,6 +56,7 @@ final readonly class DeleteProject
         private VolumeRetirements $retirements,
         private FinalBackups $finalBackups,
         private ProjectIconStore $icons,
+        private DetachAlerts $alerts,
     ) {}
 
     /**
@@ -134,6 +136,10 @@ final readonly class DeleteProject
                 ],
             ));
 
+            // Alerts let go first: the cascade would trip over them (DetachAlerts).
+            /** @var list<int> $environmentIds */
+            $environmentIds = $project->environments()->pluck('id')->all();
+            $this->alerts->handle('The project was deleted.', $project->id, $environmentIds, $instances->modelKeys());
             $project->delete();
             $request?->transitionTo(DeletionRequestStatus::Completed);
 

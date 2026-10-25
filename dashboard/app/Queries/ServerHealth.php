@@ -60,7 +60,7 @@ final readonly class ServerHealth
     private function freshness(?CarbonImmutable $collectedAt, bool $stale): HealthCheckData
     {
         if (! $collectedAt instanceof CarbonImmutable) {
-            return new HealthCheckData('report', 'Health report', HealthCheckState::Unknown, 'Not reported yet', 'The server reports host health a few minutes after it connects. Servers running an older launchroomd than this dashboard do not report it.');
+            return new HealthCheckData('report', 'Health report', HealthCheckState::Unknown, 'Not reported yet', 'The server reports host health a few minutes after it connects. Servers on an older version than the dashboard don’t report it.');
         }
 
         return new HealthCheckData(
@@ -90,7 +90,7 @@ final readonly class ServerHealth
         $state = $this->below($percent, 'disk_free_warning_percent', 'disk_free_critical_percent');
 
         return new HealthCheckData('disk', $label, $state, sprintf('%s free of %s (%d%%)', $this->size($free), $this->size($total), (int) round($percent)),
-            $state === HealthCheckState::Ok ? null : 'Free up space: launchroom removes unused images daily and when the disk is 85% full; old databases, volumes and other software on the server are not touched.');
+            $state === HealthCheckState::Ok ? null : 'Free up space. launchroom removes unused images daily and when the disk is 85% full, but it doesn’t touch old databases, volumes or other software on the server.');
     }
 
     /**
@@ -260,12 +260,12 @@ final readonly class ServerHealth
         if (is_array($render)) {
             return new HealthCheckData('desired_state', 'Desired state', HealthCheckState::Critical,
                 'Not rendered: the previous version stays applied',
-                $render['message'].' Deployments that caused it were failed; fix the configuration and deploy again.');
+                $render['message'].' The deployments that caused it were marked as failed. Fix the configuration and deploy again.');
         }
 
         if (is_array($rejected)) {
             return new HealthCheckData('desired_state', 'Desired state', HealthCheckState::Critical,
-                sprintf('Server refused v%d; it keeps running v%d', $rejected['version'], $server->observed_version),
+                sprintf('Server refused v%d and keeps running v%d', $rejected['version'], $server->observed_version),
                 'launchroomd: '.$rejected['error']);
         }
 

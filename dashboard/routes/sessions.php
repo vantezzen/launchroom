@@ -48,9 +48,9 @@ Route::middleware(['web', 'auth', 'verified'])->group(function (): void {
 
     // Team settings: developers' Console/Data access, opt-in transcripts.
     Route::put('settings/team/members/{membership}/permissions', [MembershipController::class, 'permissions'])
-
+        ->middleware('throttle:20,1')
         ->name('team.members.permissions');
     Route::put('settings/team/console-recording', [TeamSettingsController::class, 'recording'])
-
+        ->middleware('throttle:20,1')
         ->name('team.console-recording');
 });

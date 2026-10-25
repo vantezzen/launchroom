@@ -90,7 +90,7 @@ export function RelatedCards({ detail }: { detail: Detail }) {
                 </button>
                 <span className="type-small text-muted-foreground">
                     {detail.config.length > 0
-                        ? `${detail.revision !== null ? `Revision ${detail.revision} · ` : ''}${detail.env.length} variable names`
+                        ? `${detail.revision !== null ? `Revision ${detail.revision}, ` : ''}${detail.env.length} variable names`
                         : 'Resolved settings and variable names'}
                 </span>
             </div>

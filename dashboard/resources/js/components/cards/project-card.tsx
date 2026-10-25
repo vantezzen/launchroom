@@ -60,12 +60,10 @@ export function ProjectCard({
             {lastDeploy && (
                 <p className="flex min-w-0 items-center gap-2 type-small text-muted-foreground">
                     {lastDeploy.avatar}
-                    <span className="min-w-0 truncate">
-                        <span className="text-foreground">
-                            {lastDeploy.message}
-                        </span>{' '}
-                        · {lastDeploy.author}
+                    <span className="min-w-0 truncate text-foreground">
+                        {lastDeploy.message}
                     </span>
+                    <span className="shrink-0">{lastDeploy.author}</span>
                     <span className="ml-auto shrink-0 tabular-nums">
                         {lastDeploy.age}
                     </span>

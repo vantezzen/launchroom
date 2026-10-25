@@ -1,5 +1,6 @@
 import { Head, Link, router } from '@inertiajs/react';
 import { EmptyState } from '@/components/patterns/empty-state';
+import { MetaLine } from '@/components/patterns/meta-line';
 import { Page, PageHeader } from '@/components/patterns/page';
 import { TimeAgo } from '@/components/time-ago';
 import { ArrowLeftRight, ArrowRight, TriangleAlert } from 'lucide-react';
@@ -200,8 +201,8 @@ function ItemRow({
                 <ValueChange item={item} from={from} to={to} />
                 {item.conflict && (
                     <span className="type-small text-muted-foreground">
-                        Both changed it. Check to take {from}’s side; leave
-                        unchecked to keep {to}’s.
+                        Changed in both. Check it to take {from}’s value, or
+                        leave it unchecked to keep {to}’s.
                     </span>
                 )}
                 {item.warning && (
@@ -524,9 +525,9 @@ function Comparison({
                                 Also promote images
                             </h2>
                             <p className="type-small text-muted-foreground">
-                                {to} deploys exactly the commit running in{' '}
-                                {from}. Same build inputs reuse the image;
-                                otherwise it is rebuilt with {to}’s values.
+                                {to} deploys the commit that runs in {from}. If
+                                the build inputs match, the image is reused.
+                                Otherwise it’s rebuilt with {to}’s values.
                             </p>
                         </div>
                         <ul className="flex flex-col gap-3">
@@ -568,7 +569,7 @@ function Comparison({
                                         </span>
                                         <span className="type-small text-muted-foreground">
                                             {image.sameInputs
-                                                ? 'Same build inputs: the image is reused.'
+                                                ? 'Build inputs match, so the image is reused.'
                                                 : `Rebuilt in ${to}: ${image.differences.join(', ')} differ.`}
                                         </span>
                                     </Label>
@@ -640,7 +641,7 @@ function Comparison({
                             <p className="type-small text-muted-foreground">
                                 {canDeploy
                                     ? `Stage only adds them to ${to}’s staged changes for review.`
-                                    : `They join ${to}’s staged changes; someone who can deploy ships them.`}
+                                    : `They’re added to ${to}’s staged changes for someone who can deploy.`}
                             </p>
                         </div>
                     ) : (
@@ -700,12 +701,14 @@ function EnvironmentCard({
                 <span className="truncate type-heading">{card.name}</span>
                 <span className="type-small text-muted-foreground">
                     {card.revision !== null ? (
-                        <>
-                            Revision {card.revision} · deployed{' '}
+                        <MetaLine>
+                            <span>Revision {card.revision}</span>
                             {card.deployedAt && (
-                                <TimeAgo value={card.deployedAt} />
+                                <span>
+                                    Deployed <TimeAgo value={card.deployedAt} />
+                                </span>
                             )}
-                        </>
+                        </MetaLine>
                     ) : (
                         'Not deployed yet'
                     )}
@@ -740,7 +743,7 @@ export default function PromotePage({
 
     return (
         <>
-            <Head title={`Compare & promote · ${project.name}`} />
+            <Head title={`Compare & promote - ${project.name}`} />
             <Page>
                 <PageHeader
                     title="Compare & promote"

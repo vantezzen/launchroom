@@ -14,7 +14,7 @@ const consequence: Partial<Record<App.Enums.ChangeEffect, string>> = {
 
 /**
  * The panel's floating bar for this service's staged changes (flows §8):
- * "2 changes · api will restart · Discard · Deploy". Discard drops this
+ * "2 changes", "api will restart", Discard, Deploy. Discard drops this
  * service's changes; Deploy deploys everything staged in the environment
  * and keeps you on the canvas.
  */
@@ -46,7 +46,7 @@ export function ServiceStagedBar({
             summary={[
                 `${name} ${consequence[group.effect] ?? effectLabel(group.effect)}`,
                 ...(others > 0 ? [`${others} more elsewhere`] : []),
-            ].join(' · ')}
+            ].join(', ')}
             onDiscard={() =>
                 void discardStaged(
                     project,

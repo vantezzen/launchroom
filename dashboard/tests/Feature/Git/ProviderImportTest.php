@@ -115,6 +115,6 @@ test('the webhook is not registered on gitlab.com-style public servers when the 
 
     new EnsureRepositoryWebhookJob($repository->id, $this->team->id)->handle(resolve(EnsureRepositoryWebhook::class));
 
-    expect($repository->refresh()->hook_id)->toBeNull()->and($repository->hook_error)->toContain('polling');
+    expect($repository->refresh()->hook_id)->toBeNull()->and($repository->hook_error)->toContain('polls the repository');
     Http::assertNotSent(fn (Request $request): bool => str_ends_with($request->url(), '/hooks'));
 });

@@ -11,6 +11,7 @@ import {
 import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Logo } from '@/components/logo';
+import { MetaDivider, MetaLine } from '@/components/patterns/meta-line';
 import { Page, PageHeader } from '@/components/patterns/page';
 import { Section } from '@/components/patterns/section';
 import { Status, StatusIcon } from '@/components/status';
@@ -31,7 +32,10 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import { Spinner } from '@/components/ui/spinner';
-import { frameworkLogo, planLine } from '@/features/add-service/framework-logo';
+import {
+    frameworkLogo,
+    planParts,
+} from '@/features/add-service/framework-logo';
 import { providerLabel, providerLogo } from '@/features/git/providers';
 import { NewProjectTabs } from '@/features/blueprints/new-project-tabs';
 import { compactAge, plural } from '@/features/canvas/format';
@@ -185,8 +189,8 @@ function RepositoryPicker({
                 <div className="flex flex-col gap-1">
                     <p className="type-heading">Connect your git first</p>
                     <p className="type-body text-muted-foreground">
-                        GitHub, GitLab, Gitea, Forgejo or any git server.
-                        launchroom deploys the repositories you give it.
+                        Connect GitHub, GitLab, Gitea, Forgejo or another git
+                        server to pick a repository to deploy.
                     </p>
                 </div>
                 <Button asChild>
@@ -302,19 +306,29 @@ function RepositoryPicker({
                                                 </span>
                                                 {name}
                                             </span>
-                                            <span className="truncate type-small text-muted-foreground">
-                                                {repository.archived
-                                                    ? 'Archived'
-                                                    : repository.pushedAt
-                                                      ? `Pushed ${compactAge(repository.pushedAt)} ago`
-                                                      : (repository.defaultBranch ??
-                                                        'main')}
+                                            <span className="flex min-w-0 items-center gap-2 type-small text-muted-foreground">
+                                                <span className="truncate">
+                                                    {repository.archived
+                                                        ? 'Archived'
+                                                        : repository.pushedAt
+                                                          ? `Pushed ${compactAge(repository.pushedAt)} ago`
+                                                          : (repository.defaultBranch ??
+                                                            'main')}
+                                                </span>
                                                 {providers.length > 1 &&
                                                     repository.provider !==
                                                         'git' &&
                                                     repository.connectionName !==
-                                                        null &&
-                                                    ` · ${repository.connectionName}`}
+                                                        null && (
+                                                        <>
+                                                            <MetaDivider />
+                                                            <span className="truncate">
+                                                                {
+                                                                    repository.connectionName
+                                                                }
+                                                            </span>
+                                                        </>
+                                                    )}
                                             </span>
                                         </span>
                                         {repository.private && (
@@ -491,7 +505,11 @@ function AppCard({
     } else if (preview.status === 'ready' && plan) {
         detection = (
             <span className="text-muted-foreground">
-                {planLine(plan) || 'Detected'}
+                {planParts(plan).length > 0 ? (
+                    <MetaLine>{planParts(plan)}</MetaLine>
+                ) : (
+                    'Detected'
+                )}
             </span>
         );
     } else if (preview.status === 'unavailable' || !buildServerOnline) {
@@ -505,7 +523,7 @@ function AppCard({
             <DetectionFailed
                 message={
                     preview.message ??
-                    'We couldn’t detect it yet. The first build tries again.'
+                    'Couldn’t detect how to build it. The first build will try again.'
                 }
                 onRetry={retryPreview}
             />
@@ -589,8 +607,7 @@ function AppCard({
                                     {plural(app.envKeys.length, 'variable')}
                                     {covered > 0 && (
                                         <span className="text-muted-foreground">
-                                            {' '}
-                                            · {covered} from databases
+                                            , {covered} from databases
                                         </span>
                                     )}
                                 </dd>
@@ -662,12 +679,12 @@ function DatabaseRow({
             <Logo kind={database.engine} size={32} name={label} />
             <div className="flex min-w-0 flex-1 flex-col">
                 <span className="truncate type-label">{label}</span>
-                <span className="truncate type-small text-muted-foreground">
+                <MetaLine className="type-small text-muted-foreground">
                     {targets.length > 0
                         ? `Connects to ${targets.map((app) => app.name).join(', ')}`
                         : 'Not connected yet'}
-                    {database.reason && ` · ${database.reason}`}
-                </span>
+                    {database.reason}
+                </MetaLine>
             </div>
             {onRemove ? (
                 <Button
@@ -973,7 +990,7 @@ export default function ImportRepository({
                 <Page size="narrow">
                     <PageHeader
                         title="Import a repository"
-                        description="Pick a repository. launchroom detects the rest and deploys it."
+                        description="Pick a repository. launchroom detects how to build and run it."
                     />
                     <NewProjectTabs current="repository" />
                     <RepositoryPicker
@@ -1170,7 +1187,7 @@ export default function ImportRepository({
                         title="Databases"
                         description={
                             databases.some((db) => db.reason)
-                                ? 'Suggested from .env.example and connected for you.'
+                                ? 'Suggested from .env.example and connected to your apps.'
                                 : undefined
                         }
                         actions={
@@ -1256,7 +1273,7 @@ export default function ImportRepository({
                 )}
 
                 {inspection && (
-                    <Section title="Create your project">
+                    <Section title="Name and deploy">
                         <div className="flex flex-col gap-5 rounded-[14px] border bg-card p-5 shadow-card">
                             <div className="flex flex-col gap-1.5">
                                 <Label htmlFor="project-name">
@@ -1288,7 +1305,7 @@ export default function ImportRepository({
                                         errors.branch}
                                 </p>
                             )}
-                            <div className="flex flex-col gap-3 border-t pt-4">
+                            <div className="flex flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
                                 <p className="type-small text-muted-foreground">
                                     {summary} in production, tracking{' '}
                                     <span className="type-mono-small text-foreground">
@@ -1296,7 +1313,7 @@ export default function ImportRepository({
                                     </span>
                                     .
                                 </p>
-                                <div className="flex flex-wrap justify-end gap-2">
+                                <div className="flex shrink-0 flex-wrap gap-2 sm:justify-end">
                                     <Button
                                         variant="outline"
                                         onClick={() => deploy(false)}

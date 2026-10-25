@@ -10,6 +10,8 @@ import {
     Search,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Elapsed } from '@/components/elapsed';
+import { MetaDivider } from '@/components/patterns/meta-line';
 import { StepChip } from '@/components/steps/step-list';
 import { StepIcon, STEP_STATUS_LABEL } from '@/components/steps/step-icon';
 import { Button } from '@/components/ui/button';
@@ -488,7 +490,7 @@ export function LogViewer({
     return (
         <div
             className={cn(
-                'flex min-h-0 flex-col overflow-hidden rounded-[14px] border bg-card shadow-[0_1px_2px_rgb(0_0_0/0.04)] dark:shadow-none',
+                'flex min-h-0 flex-col overflow-hidden rounded-xl border bg-card shadow-card',
                 className,
             )}
         >
@@ -659,7 +661,7 @@ export function LogViewer({
                     ref={scrollRef}
                     onScroll={onScroll}
                     tabIndex={0}
-                    className="max-h-[70vh] overflow-auto focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-(--signal)"
+                    className="max-h-[70vh] overflow-auto focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-signal"
                     style={{ height: totalSize }}
                     role="log"
                     aria-label="Step logs"
@@ -706,7 +708,7 @@ export function LogViewer({
                                         />
                                     )}
                                     {row.type === 'substep' && (
-                                        <div className="flex h-5 items-center bg-(--recessed) pl-[4.75rem] type-mono-small text-muted-foreground">
+                                        <div className="flex h-5 items-center bg-recessed pl-[4.75rem] type-mono-small text-muted-foreground">
                                             {row.name}
                                         </div>
                                     )}
@@ -821,8 +823,9 @@ function StepHeader({
                 {STEP_STATUS_LABEL[step.status]}
             </span>
             {step.message && (
-                <span className="hidden min-w-0 truncate type-small text-muted-foreground sm:inline">
-                    · {step.message}
+                <span className="hidden min-w-0 items-center gap-2 type-small text-muted-foreground sm:inline-flex">
+                    <MetaDivider />
+                    <span className="truncate">{step.message}</span>
                 </span>
             )}
             <span className="ml-auto flex shrink-0 items-center gap-3 type-small text-muted-foreground tabular-nums">
@@ -837,7 +840,11 @@ function StepHeader({
                         {row.count === 1 ? 'line' : 'lines'}
                     </span>
                 )}
-                {step.duration && <span>{step.duration}</span>}
+                {step.startedAt && step.status === 'running' ? (
+                    <Elapsed since={step.startedAt} until={step.finishedAt} />
+                ) : (
+                    step.duration && <span>{step.duration}</span>
+                )}
             </span>
         </>
     );
@@ -855,7 +862,7 @@ function StepHeader({
             aria-expanded={row.expanded}
             className={cn(
                 className,
-                'hover:bg-(--hover) focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-(--signal)',
+                'hover:bg-hover focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-signal',
             )}
         >
             {content}
@@ -890,8 +897,8 @@ function LogLineRow({
             aria-current={isFirstError ? 'true' : undefined}
             className={cn(
                 'flex border-l-2 border-transparent type-mono-small',
-                isError && 'border-(--status-error) bg-(--status-error-soft)',
-                isSelected && 'bg-accent',
+                isError && 'border-status-error bg-status-error-soft',
+                isSelected && 'bg-signal-soft',
                 isMatch && 'bg-status-progress/10',
                 line.stream === 'system' && 'text-muted-foreground',
             )}
@@ -904,7 +911,11 @@ function LogLineRow({
                 }}
                 className={cn(
                     'sticky left-0 w-14 shrink-0 pr-3 text-right text-muted-foreground tabular-nums select-none hover:text-foreground',
-                    isError ? 'bg-(--status-error-soft)' : 'bg-card',
+                    isError
+                        ? 'bg-status-error-soft'
+                        : isSelected
+                          ? 'bg-signal-soft'
+                          : 'bg-card',
                 )}
                 aria-label={`Line ${line.number}`}
             >

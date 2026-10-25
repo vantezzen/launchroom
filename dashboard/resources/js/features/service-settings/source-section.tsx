@@ -1,7 +1,17 @@
 import { useForm } from '@inertiajs/react';
 import { FolderTree, GitBranch, Package } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
+import InputError from '@/components/input-error';
 import { Logo } from '@/components/logo';
+import { Button } from '@/components/ui/button';
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogTitle,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
 import { providerLabel, providerLogo } from '@/features/git/providers';
 import { ServiceGlyph } from '@/features/canvas/service-glyph';
 import { SettingsCard, SettingsRow } from '@/features/settings/settings-card';
@@ -19,6 +29,7 @@ function SourceHero({
     title,
     chips,
     copy,
+    action,
 }: {
     media: ReactNode;
     /** Where it comes from, above the name ("GitLab"). */
@@ -26,9 +37,10 @@ function SourceHero({
     title: string;
     chips: { icon?: ReactNode; label: string; mono?: boolean }[];
     copy?: string;
+    action?: ReactNode;
 }) {
     return (
-        <div className="flex items-center gap-4 rounded-xl border bg-card p-5 shadow-card">
+        <div className="flex flex-wrap items-center gap-4 rounded-xl border bg-card p-5 shadow-card">
             {media}
             <div className="flex min-w-0 flex-1 flex-col gap-2">
                 {eyebrow && (
@@ -57,7 +69,105 @@ function SourceHero({
                     ))}
                 </div>
             </div>
+            {action}
         </div>
+    );
+}
+
+/**
+ * Another image for an image service: project-wide like the name, staged
+ * until each environment deploys (docs/04 §1). Tags resolve to a digest
+ * when the deploy starts.
+ */
+function ChangeImageDialog({
+    context,
+    open,
+    onOpenChange,
+}: {
+    context: SettingsContext;
+    open: boolean;
+    onOpenChange: (open: boolean) => void;
+}) {
+    const current = context.settings.source.image ?? '';
+    const form = useForm({ image: current });
+    const image = form.data.image.trim();
+
+    useEffect(() => {
+        if (open) {
+            form.setDefaults({ image: current });
+            form.reset();
+            form.clearErrors();
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [open]);
+
+    const submit = (event: FormEvent) => {
+        event.preventDefault();
+        form.transform((data) => ({ image: data.image.trim() }));
+        form.patch(services.image(context.route).url, {
+            preserveScroll: true,
+            preserveState: true,
+            onSuccess: () => onOpenChange(false),
+        });
+    };
+
+    return (
+        <Dialog open={open} onOpenChange={onOpenChange}>
+            <DialogContent className="gap-6 sm:max-w-lg">
+                <form onSubmit={submit} className="flex flex-col gap-6">
+                    <div className="flex flex-col gap-1.5">
+                        <DialogTitle>Change image</DialogTitle>
+                        <DialogDescription>
+                            Every environment of this project runs the new image
+                            after its next deploy. Until then, the current one
+                            keeps running.
+                        </DialogDescription>
+                    </div>
+                    <div className="flex flex-col gap-2">
+                        <label htmlFor="service-image" className="type-label">
+                            Image
+                        </label>
+                        <Input
+                            id="service-image"
+                            autoFocus
+                            value={form.data.image}
+                            onChange={(event) =>
+                                form.setData('image', event.target.value)
+                            }
+                            placeholder="ghcr.io/org/app:1.2"
+                            autoComplete="off"
+                            spellCheck={false}
+                            className="h-11 font-mono text-[15px]"
+                        />
+                        <InputError message={form.errors.image} />
+                        <p className="type-small text-muted-foreground">
+                            A tag or a <code>@sha256:</code> digest from Docker
+                            Hub or GitHub Container Registry. Tags are pinned to
+                            a digest when the deploy starts.
+                        </p>
+                    </div>
+                    <div className="flex justify-end gap-2">
+                        <Button
+                            type="button"
+                            variant="ghost"
+                            onClick={() => onOpenChange(false)}
+                        >
+                            Cancel
+                        </Button>
+                        <Button
+                            type="submit"
+                            disabled={
+                                form.processing ||
+                                image === '' ||
+                                image === current
+                            }
+                        >
+                            Save for next deploy
+                        </Button>
+                    </div>
+                </form>
+            </DialogContent>
+        </Dialog>
     );
 }
 
@@ -69,6 +179,7 @@ function SourceHero({
 export function SourceSection({ context }: { context: SettingsContext }) {
     const { settings, canUpdate, node } = context;
     const source = settings.source;
+    const [changingImage, setChangingImage] = useState(false);
     const form = useForm<{ branchOverride: string | null }>({
         branchOverride: source.branchOverride,
     });
@@ -105,6 +216,17 @@ export function SourceSection({ context }: { context: SettingsContext }) {
                         { icon: <Package />, label: name || 'image' },
                         ...(tag ? [{ label: tag, mono: true }] : []),
                     ]}
+                    action={
+                        canUpdate && (
+                            <Button
+                                variant="outline"
+                                data-setting="image"
+                                onClick={() => setChangingImage(true)}
+                            >
+                                Change image
+                            </Button>
+                        )
+                    }
                 />
                 <SettingsCard>
                     <SettingsRow
@@ -113,9 +235,20 @@ export function SourceSection({ context }: { context: SettingsContext }) {
                     />
                     <SettingsRow
                         label="Pinned per deploy"
-                        description="A deploy runs the exact digest it resolved, so restarts never pick up a new image."
+                        description="Each deploy runs the digest it resolved, so a restart doesn’t pick up a newer image."
+                    />
+                    <SettingsRow
+                        label="Build from a repository instead"
+                        description="An image service always runs a published image. To build from your code, add the repository as a new service, then move the domains and variables over."
                     />
                 </SettingsCard>
+                {canUpdate && (
+                    <ChangeImageDialog
+                        context={context}
+                        open={changingImage}
+                        onOpenChange={setChangingImage}
+                    />
+                )}
             </SettingsPage>
         );
     }
@@ -132,11 +265,7 @@ export function SourceSection({ context }: { context: SettingsContext }) {
                     chips={[{ label: `Version ${source.version ?? 'latest'}` }]}
                 />
                 {source.versions.length > 0 && (
-                    <SettingsCard
-                        setting="versions"
-                        title="Versions"
-                        description="The engine versions launchroom runs."
-                    >
+                    <SettingsCard setting="versions" title="Versions">
                         <div className="flex flex-wrap gap-2 px-5 py-4">
                             {source.versions.map((version) => {
                                 const current = version === source.version;
@@ -172,7 +301,7 @@ export function SourceSection({ context }: { context: SettingsContext }) {
             title="Source"
             description={
                 source.parentName
-                    ? `Runs the image built for ${source.parentName}: same repository and commit, its own command.`
+                    ? `Runs the image built for ${source.parentName}, from the same repository and commit, with its own command.`
                     : 'Pushes to the branch deploy this service in this environment.'
             }
         >
@@ -224,7 +353,7 @@ export function SourceSection({ context }: { context: SettingsContext }) {
                         <SettingsRow
                             setting="root-directory"
                             label="Root directory"
-                            description="Where the app lives in the repository; set when the service was added."
+                            description="Where the app lives in the repository. Set when the service was added."
                         >
                             <code className="type-mono text-muted-foreground">
                                 {source.rootDirectory || '/'}

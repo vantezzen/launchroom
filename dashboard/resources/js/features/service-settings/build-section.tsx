@@ -12,6 +12,7 @@ import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import InputError from '@/components/input-error';
 import { ServiceGlyph } from '@/features/canvas/service-glyph';
+import { MetaLine } from '@/components/patterns/meta-line';
 import { OptionCards } from '@/components/patterns/option-cards';
 import { Status } from '@/components/status';
 import { TimeAgo } from '@/components/time-ago';
@@ -131,7 +132,7 @@ function usePlanPolling(planning: boolean) {
 }
 
 /**
- * "Detected: Next.js 16 · npm · Node 22": the plan as an object, with its
+ * "Detected: Next.js 16, npm, Node 22": the plan as an object, with its
  * state (inspecting, detected at a commit, failed) and "Detect again".
  */
 function DetectedHero({
@@ -217,7 +218,7 @@ function DetectedHero({
             </div>
             {detected?.next && (
                 <div className="border-t px-5 py-3 type-small text-muted-foreground">
-                    {nextHeadline(detected.next).join(' · ')}
+                    <MetaLine>{nextHeadline(detected.next)}</MetaLine>
                 </div>
             )}
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t bg-recessed px-5 py-3 type-small text-muted-foreground">
@@ -249,8 +250,7 @@ function DetectedHero({
                         </code>
                         {plan.finishedAt && (
                             <>
-                                {' · '}
-                                <TimeAgo value={plan.finishedAt} />
+                                , <TimeAgo value={plan.finishedAt} />
                             </>
                         )}
                     </span>
@@ -332,7 +332,7 @@ function GenerateCard({
                     ? 'This service builds with a Dockerfile launchroom generated and verified.'
                     : panel.available
                       ? 'launchroom suggests one from your manifest files, then builds and starts it to make sure it works.'
-                      : 'launchroom can suggest a Dockerfile, verified by an actual build.'
+                      : 'launchroom can suggest a Dockerfile and test it with a build.'
             }
         >
             <SettingsRow
@@ -480,7 +480,7 @@ export function BuildSection({ context }: { context: SettingsContext }) {
     return (
         <SettingsPage
             title="Build"
-            description="How your code becomes an image. Overrides live here, not in your repository."
+            description="How your code is built into an image. Changes here are saved in launchroom and don’t touch your repository."
         >
             <DetectedHero
                 context={context}
@@ -512,14 +512,14 @@ export function BuildSection({ context }: { context: SettingsContext }) {
 
                 <SettingsCard
                     title="Commands"
-                    description="Detected from your repository. Override only what needs to differ."
+                    description="Detected from your repository. Fill in a field to override it."
                 >
                     {build.builder === 'dockerfile' &&
                         build.generatedDockerfile !== null && (
                             <SettingsRow
                                 setting="dockerfile"
                                 label="Dockerfile"
-                                description="The Dockerfile launchroom generated and verified, stored in launchroom."
+                                description="Generated and verified by launchroom."
                             >
                                 <Button
                                     type="button"
@@ -654,7 +654,7 @@ export function BuildSection({ context }: { context: SettingsContext }) {
                     <SettingsRow
                         setting="watch-paths"
                         label="Watch paths"
-                        description="Only pushes that touch these paths deploy. Comma-separated globs."
+                        description="Deploy only when a push changes one of these paths. Separate globs with commas."
                         htmlFor="build-watch"
                     >
                         <div className="flex w-full flex-col gap-1 sm:w-72">
@@ -728,7 +728,7 @@ export function BuildSection({ context }: { context: SettingsContext }) {
                             </span>
                         }
                         label="railpack.json"
-                        description={`Commit it to ${settings.source.rootDirectory ? `${settings.source.rootDirectory}/` : 'the root of your repository'} so the build settings travel with your code.`}
+                        description={`Commit it to ${settings.source.rootDirectory ? `${settings.source.rootDirectory}/` : 'the root of your repository'} to keep the build settings in your repository.`}
                     >
                         <Button
                             type="button"

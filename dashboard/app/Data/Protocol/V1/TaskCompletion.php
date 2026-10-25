@@ -46,5 +46,32 @@ final class TaskCompletion extends Data
         public DataImportResult|null|Optional $dataImport = new Optional,
         /** db_export / volume_export tasks that succeeded (D55). */
         public DataExportResult|null|Optional $dataExport = new Optional,
+        /** access tasks, also failed ones (docs/03 §12.1). */
+        public AccessResult|null|Optional $access = new Optional,
+        /**
+         * inventory tasks that succeeded (docs/03 §13.1): read by hand with
+         * InventoryResult::fromWire() (up to 20,000 components).
+         *
+         * @var array<string, mixed>|null|Optional
+         */
+        public array|null|Optional $inventory = new Optional,
+        /**
+         * inspect_container tasks that succeeded (docs/03 §13.2): read with
+         * ContainerInspectionResult::fromWire().
+         *
+         * @var array<string, mixed>|null|Optional
+         */
+        public array|null|Optional $containerInspection = new Optional,
     ) {}
+
+    /**
+     * @return array<string, list<string>>
+     */
+    public static function rules(): array
+    {
+        return [
+            'inventory' => ['sometimes', 'nullable', 'array'],
+            'containerInspection' => ['sometimes', 'nullable', 'array'],
+        ];
+    }
 }

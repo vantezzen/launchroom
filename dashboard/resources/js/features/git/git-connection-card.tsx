@@ -2,6 +2,7 @@ import { Link, router } from '@inertiajs/react';
 import { RefreshCw } from 'lucide-react';
 import { useState } from 'react';
 import { CopyValue } from '@/components/copy-value';
+import { MetaLine } from '@/components/patterns/meta-line';
 import { Logo } from '@/components/logo';
 import { Status } from '@/components/status';
 import type { StatusState } from '@/components/status';
@@ -85,13 +86,13 @@ export function GitConnectionCard({
                                     {connection.url}
                                 </span>
                             ) : (
-                                <>
+                                <MetaLine>
                                     {connection.host}
                                     {connection.accountLogin !== null &&
-                                        ` · signed in as ${connection.accountLogin}`}
+                                        `Signed in as ${connection.accountLogin}`}
                                     {connection.status === 'active' &&
-                                        ` · ${repos} seen`}
-                                </>
+                                        `${repos} seen`}
+                                </MetaLine>
                             )}
                         </p>
                     </div>
@@ -194,8 +195,8 @@ function PollWebhook({ id }: { id: string }) {
         return (
             <div className="flex flex-wrap items-center gap-3 border-t px-5 py-3">
                 <p className="type-small text-muted-foreground">
-                    Faster than polling: let your server call launchroom after
-                    each push.
+                    Let your git server notify launchroom after each push
+                    instead of waiting for the next check.
                 </p>
                 <Button variant="ghost" size="sm" onClick={reveal}>
                     Set up a webhook

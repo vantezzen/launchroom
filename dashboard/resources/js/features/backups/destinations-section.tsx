@@ -53,7 +53,7 @@ export function DestinationPanel({
             description={
                 destination
                     ? 'Moving the endpoint, bucket or folder starts a new backup repository there.'
-                    : 'Any S3-compatible bucket. Backups are encrypted before they leave your servers.'
+                    : 'Use any S3-compatible bucket. Backups are encrypted before they leave your servers.'
             }
         >
             <SheetSection>
@@ -226,7 +226,7 @@ export function DestinationCard({
                                     </p>
                                     <p className="type-body text-muted-foreground">
                                         Its schedules stop. Snapshots already in
-                                        the bucket stay there.
+                                        the bucket are kept.
                                     </p>
                                 </div>
                                 <div className="flex justify-end gap-2">
@@ -293,7 +293,7 @@ export function DestinationsSection({
     return (
         <Section
             title="Where backups go"
-            description="Encrypted on your servers before anything leaves."
+            description="Backups are encrypted on your servers before they are uploaded."
             actions={
                 canManage &&
                 destinations.length > 0 && (

@@ -48,7 +48,7 @@ final readonly class UpdateVariable
             $project = $variable->project;
 
             if ($variable->connection_id !== null) {
-                throw DomainRuleViolation::on('variable', 'This variable belongs to a connection; change or remove the connection instead.');
+                throw DomainRuleViolation::on('variable', 'This variable belongs to a connection. Change or remove the connection instead.');
             }
 
             if (! $update->onlyEnvironment instanceof Optional && $variable->targets()->count() > 1) {

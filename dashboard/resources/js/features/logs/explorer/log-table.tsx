@@ -104,7 +104,7 @@ const LogRow = memo(function LogRow({
                     {entry.replica && (
                         <span className="text-muted-foreground">
                             {' '}
-                            ·{entry.replica}
+                            #{entry.replica}
                         </span>
                     )}
                 </span>
@@ -122,12 +122,12 @@ const LogRow = memo(function LogRow({
     );
 });
 
-/** Where a line is from in wide searches: its environment, or project · environment, before the service. */
+/** Where a line is from in wide searches: its environment, or project / environment, before the service. */
 export type LogContext = 'environment' | 'project' | null;
 
 function contextOf(entry: LogEntry, context: LogContext): string {
     if (context === 'project') {
-        return [entry.project, entry.environment].filter(Boolean).join(' · ');
+        return [entry.project, entry.environment].filter(Boolean).join(' / ');
     }
 
     return entry.environment ?? '';

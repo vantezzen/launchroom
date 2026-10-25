@@ -98,7 +98,7 @@ test('an enrolment a server already used is not removed here; the server keeps i
         ->and($server->refresh()->status)->toBe(ServerStatus::Online);
 
     // Enrolled servers still leave through Revoke and stay listed under "Revoked".
-    $this->actingAs($this->admin)->withSession(passwordConfirmed())->post(route('servers.revoke', $server->public_id))->assertRedirect();
+    $this->actingAs($this->admin)->post(route('servers.revoke', $server->public_id))->assertRedirect();
     $this->actingAs($this->admin)->get(route('servers.index'))
         ->assertInertia(fn ($page) => $page->where('servers.0.status', 'revoked'));
 });
@@ -107,8 +107,8 @@ test('a connected server still waiting for approval is removed by revoking its k
     $pending = Server::factory()->create(['team_id' => $this->team->id, 'name' => 'stranger']);
     expect($pending->status)->toBe(ServerStatus::PendingApproval);
 
-    $this->actingAs($this->viewer)->withSession(passwordConfirmed())->post(route('servers.revoke', $pending->public_id))->assertForbidden();
-    $this->actingAs($this->admin)->withSession(passwordConfirmed())->post(route('servers.revoke', $pending->public_id))
+    $this->actingAs($this->viewer)->post(route('servers.revoke', $pending->public_id))->assertForbidden();
+    $this->actingAs($this->admin)->post(route('servers.revoke', $pending->public_id))
         ->assertRedirect(route('servers.index'));
 
     expect($pending->refresh()->status)->toBe(ServerStatus::Revoked)

@@ -77,11 +77,11 @@ export function BackupTrend({ points }: { points: Point[] }) {
                     return (
                         <div
                             key={point.id}
-                            title={`${new Date(point.at).toLocaleString()} · ${
+                            title={`${new Date(point.at).toLocaleString()}: ${
                                 failed
                                     ? 'Failed'
                                     : `${formatBytes(point.sizeBytes)} in ${formatDuration(point.durationMs)}`
-                            }${point.subject === 'base_backup' ? ' · base backup' : ''}`}
+                            }${point.subject === 'base_backup' ? ' (base backup)' : ''}`}
                             className="relative flex w-2.5 shrink-0 flex-col items-center justify-end"
                             style={{ height: '100%' }}
                         >

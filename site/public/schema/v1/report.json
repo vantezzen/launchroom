@@ -596,6 +596,19 @@
             }
           ]
         },
+        "buildCpuCores": {
+          "oneOf": [
+            {
+              "type": "number",
+              "maximum": 4096,
+              "minimum": 0,
+              "description": "BuildCPUCores is the managed BuildKit container's CPU, including builds."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "memUsedMb": {
           "oneOf": [
             {
@@ -946,6 +959,17 @@
               "type": "null"
             }
           ]
+        },
+        "waf": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/WafStatus",
+              "description": "Waf is the web firewall's state at this edge (docs/03 §13.4); sent by\nedges announcing the daemon feature \"waf\"."
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "additionalProperties": false,
@@ -1206,6 +1230,56 @@
       ],
       "description": "NetworkUsage counts Docker networks: all of them (Docker's default address pools run out at about 30 networks) and those launchroom manages (with subnets from launchroom's own range, docs/05 §1)."
     },
+    "PathCount": {
+      "properties": {
+        "path": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^/[!\"$-\u003e@-~]{0,127}$"
+        },
+        "requests": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "status4xx": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "status5xx": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "path",
+        "requests"
+      ],
+      "description": "PathCount is one normalised path's requests in a window."
+    },
+    "PathTotals": {
+      "properties": {
+        "requests": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "status4xx": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "status5xx": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "requests"
+      ],
+      "description": "PathTotals are request counts of one path (or of the \"other\" bucket)."
+    },
     "ProbeStatus": {
       "properties": {
         "state": {
@@ -1296,6 +1370,26 @@
       ],
       "description": "PullProgress is an in-flight image pull: compressed layer bytes downloaded of the total (0 while the total is not known, e.g."
     },
+    "ReferrerCount": {
+      "properties": {
+        "host": {
+          "type": "string",
+          "maxLength": 253,
+          "pattern": "^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+        },
+        "requests": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "host",
+        "requests"
+      ],
+      "description": "ReferrerCount is one referrer host's requests in a window."
+    },
     "Rejection": {
       "properties": {
         "version": {
@@ -1347,6 +1441,22 @@
           "type": "array",
           "maxItems": 8192,
           "description": "Requests are per-minute traffic aggregates of the routes this edge\nserves, from Caddy's access log (docs/15 §1); omitted when there are none."
+        },
+        "analytics": {
+          "items": {
+            "$ref": "#/$defs/RequestAnalyticsSample"
+          },
+          "type": "array",
+          "maxItems": 1024,
+          "description": "Analytics are per-10-minute top paths, referrer hosts and client\nclasses of the routes this edge serves (docs/15 §5); omitted when\nthere are none."
+        },
+        "waf": {
+          "items": {
+            "$ref": "#/$defs/WafSample"
+          },
+          "type": "array",
+          "maxItems": 1024,
+          "description": "Waf are per-10-minute web firewall results of the routes this edge\nserves (docs/03 §13.4); omitted when there are none."
         }
       },
       "additionalProperties": false,
@@ -1356,6 +1466,71 @@
         "workloads"
       ],
       "description": "ReportMetrics carries per-minute usage aggregates."
+    },
+    "RequestAnalyticsSample": {
+      "properties": {
+        "route": {
+          "type": "string",
+          "pattern": "^rt_[0-9A-HJKMNP-TV-Z]{26}$",
+          "description": "Route is the NodeState route the request's host belongs to."
+        },
+        "at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "At is the start of the window (UTC, a multiple of 10 minutes)."
+        },
+        "requests": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Requests is the number of requests in the window."
+        },
+        "paths": {
+          "items": {
+            "$ref": "#/$defs/PathCount"
+          },
+          "type": "array",
+          "maxItems": 50,
+          "description": "Paths are the most requested normalised paths, most requested first."
+        },
+        "otherPaths": {
+          "$ref": "#/$defs/PathTotals",
+          "description": "OtherPaths sums every path outside Paths."
+        },
+        "referrers": {
+          "items": {
+            "$ref": "#/$defs/ReferrerCount"
+          },
+          "type": "array",
+          "maxItems": 20,
+          "description": "Referrers are the most frequent referrer hosts (other than the route's own hosts)."
+        },
+        "otherReferrers": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "OtherReferrers sums the referrer hosts outside Referrers."
+        },
+        "browsers": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Browsers, Bots and OtherAgents classify the user agent coarsely\n(Caddy reduces it to one token before the line leaves it)."
+        },
+        "bots": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "otherAgents": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "route",
+        "at",
+        "requests"
+      ],
+      "description": "RequestAnalyticsSample is one 10-minute window of one route at this edge."
     },
     "RequestMetricSample": {
       "properties": {
@@ -1456,6 +1631,345 @@
         "at"
       ],
       "description": "VolumeDeletionResult is the outcome of one NodeState.deleteVolumes entry."
+    },
+    "WafCategoryCount": {
+      "properties": {
+        "category": {
+          "type": "string",
+          "enum": [
+            "method",
+            "scanner",
+            "protocol",
+            "lfi",
+            "rfi",
+            "rce",
+            "php",
+            "generic",
+            "xss",
+            "sqli",
+            "session_fixation",
+            "java",
+            "other"
+          ]
+        },
+        "blocked": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "detected": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "category"
+      ],
+      "description": "WafCategoryCount is one category's requests in a window."
+    },
+    "WafCounts": {
+      "properties": {
+        "blocked": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "detected": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "WafCounts are blocked and detected requests."
+    },
+    "WafEvent": {
+      "properties": {
+        "at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "action": {
+          "type": "string",
+          "enum": [
+            "blocked",
+            "detected"
+          ]
+        },
+        "method": {
+          "type": "string",
+          "maxLength": 16,
+          "pattern": "^[A-Z]{1,16}$"
+        },
+        "path": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^/[!\"$-\u003e@-~]{0,127}$",
+          "description": "Path is the normalised request path (analytics rules, docs/15 §5.1)."
+        },
+        "rules": {
+          "items": {
+            "type": "integer",
+            "maximum": 999999,
+            "minimum": 900000
+          },
+          "type": "array",
+          "maxItems": 8,
+          "minItems": 1,
+          "description": "Rules are the matched detection rules, 1–8."
+        },
+        "categories": {
+          "items": {
+            "type": "string",
+            "enum": [
+              "method",
+              "scanner",
+              "protocol",
+              "lfi",
+              "rfi",
+              "rce",
+              "php",
+              "generic",
+              "xss",
+              "sqli",
+              "session_fixation",
+              "java",
+              "other"
+            ]
+          },
+          "type": "array",
+          "maxItems": 13,
+          "minItems": 1
+        },
+        "targets": {
+          "oneOf": [
+            {
+              "items": {
+                "type": "string",
+                "maxLength": 105,
+                "pattern": "^[A-Z][A-Z_]{0,39}(?::[A-Za-z0-9_.\\[\\]-]{1,64})?$"
+              },
+              "type": "array",
+              "maxItems": 8,
+              "description": "Targets are the matched parts of the request: variable and key name\nonly (\"ARGS:q\", \"REQUEST_HEADERS:User-Agent\"), ≤ 8."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "clientNetwork": {
+          "type": "string",
+          "maxLength": 43,
+          "pattern": "^(?:[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.0/24|[0-9a-f:]{2,39}/48)$",
+          "description": "ClientNetwork is the network of the TCP peer the edge saw (a proxy's\nbehind a proxy), cut on the edge to /24 (IPv4) or /48 (IPv6). The full\naddress never leaves launchroomd."
+        },
+        "score": {
+          "type": "integer",
+          "maximum": 10000,
+          "minimum": 0,
+          "description": "Score is CRS's inbound (or outbound) anomaly score."
+        },
+        "reference": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_.-]{1,128}$",
+          "description": "Reference is the transaction id shown on the 403 page."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "at",
+        "action",
+        "method",
+        "path",
+        "rules",
+        "categories",
+        "clientNetwork",
+        "reference"
+      ],
+      "description": "WafEvent is one request that reached the anomaly threshold."
+    },
+    "WafPathCount": {
+      "properties": {
+        "path": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^/[!\"$-\u003e@-~]{0,127}$"
+        },
+        "blocked": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "detected": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "path"
+      ],
+      "description": "WafPathCount is one normalised path's requests in a window."
+    },
+    "WafRuleCount": {
+      "properties": {
+        "rule": {
+          "type": "integer",
+          "maximum": 999999,
+          "minimum": 900000
+        },
+        "blocked": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "detected": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "rule"
+      ],
+      "description": "WafRuleCount is one rule's requests in a window."
+    },
+    "WafSample": {
+      "properties": {
+        "route": {
+          "type": "string",
+          "pattern": "^rt_[0-9A-HJKMNP-TV-Z]{26}$",
+          "description": "Route is the NodeState route the request's host belongs to."
+        },
+        "at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "At is the start of the window (UTC, a multiple of 10 minutes)."
+        },
+        "blocked": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Blocked requests were refused (mode block); Detected requests would\nhave been (mode log). Together at least 1."
+        },
+        "detected": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "categories": {
+          "items": {
+            "$ref": "#/$defs/WafCategoryCount"
+          },
+          "type": "array",
+          "maxItems": 13,
+          "minItems": 1,
+          "description": "Categories count requests per attack category; a request with rules of\nseveral categories counts in each."
+        },
+        "rules": {
+          "oneOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/WafRuleCount"
+              },
+              "type": "array",
+              "maxItems": 20,
+              "description": "Rules are the most matched detection rules (requests per rule), ≤ 20."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "paths": {
+          "oneOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/WafPathCount"
+              },
+              "type": "array",
+              "maxItems": 10,
+              "description": "Paths are the most affected normalised paths, ≤ 10; with OtherPaths\nthey add up to Blocked and Detected."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "otherPaths": {
+          "$ref": "#/$defs/WafCounts"
+        },
+        "events": {
+          "oneOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/WafEvent"
+              },
+              "type": "array",
+              "maxItems": 20,
+              "description": "Events are individual requests of the window, ≤ 20 (docs/22 §6.5)."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "route",
+        "at",
+        "categories"
+      ],
+      "description": "WafSample is one 10-minute window of one route's firewall results at this edge."
+    },
+    "WafStatus": {
+      "properties": {
+        "state": {
+          "type": "string",
+          "enum": [
+            "on",
+            "off",
+            "error",
+            "unsupported"
+          ]
+        },
+        "engine": {
+          "type": "string",
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9 ._/+-]{0,63}$",
+          "description": "Engine and RuleSet name the compiled-in versions (\"coraza 3.8.1\",\n\"OWASP CRS 4.25.0\"); omitted with state unsupported."
+        },
+        "ruleSet": {
+          "type": "string",
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9 ._/+-]{0,63}$"
+        },
+        "routes": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Routes is the number of routes with the firewall in the applied config."
+        },
+        "droppedRecords": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "DroppedRecords counts audit records launchroomd could not queue since it started."
+        },
+        "message": {
+          "type": "string",
+          "maxLength": 1024,
+          "description": "Message explains error and unsupported (secret-free)."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "state",
+        "routes"
+      ],
+      "description": "WafStatus is the firewall's state at this edge."
     },
     "WalArchiveStatus": {
       "properties": {

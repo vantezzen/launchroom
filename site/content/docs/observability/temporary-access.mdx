@@ -1,0 +1,117 @@
+---
+title: Temporary access
+description: Connect your own SSH, SFTP or database client to one container or volume for a limited time. Limited to your address, with its own credentials, and closed automatically.
+---
+
+Sometimes the browser isn't enough: you want to `scp` a file into a container, copy uploads out of a volume, run a migration from your laptop, or open a database in TablePlus or DBeaver. **Temporary access** opens a port on the server for you alone, for a limited time, with credentials made for this access.
+
+- **Connect via SSH** (Console tab): SSH and SFTP into one replica's container.
+- **Connect with SFTP** (a volume in **Settings → Volumes** or on the **Backups** tab): SFTP into one volume, nothing else.
+- **Temporary access** (Data tab): a temporary user on a PostgreSQL, Redis or Valkey database, for your own client.
+
+## What it is
+
+Connect via SSH is **not SSH to the server**. launchroomd answers the SSH protocol itself and runs every session inside the container, as the container's own user, exactly like the Console. There is no host shell, and the server's own SSH is untouched.
+
+- A shell gets a terminal (resizing works).
+- `ssh … 'command'` runs the command with the container's shell.
+- SFTP uses the container's own file tools (`ls`, `stat`, `cat`, `dd`). Images without them, such as distroless images, have no SFTP. `/proc`, `/sys` and `/dev` are not served.
+- Port forwarding, agent forwarding and X11 are refused.
+
+Connect with SFTP opens **only the volume**. launchroomd starts a small helper container that mounts just that volume, with no network and no shell, and serves the volume's top folder as `/`. Shells and commands are refused. Files you upload belong to the owner of the volume's top folder, the same user your service writes as.
+
+Database access creates a **temporary database user** that exists only while the access runs. Your app's own credentials are never shown or used.
+
+## Who can use it
+
+The same people who can use the Console (SSH and volumes) or the Data tab (databases): owners and admins, and developers an owner or admin granted access. API tokens can't start one.
+
+## Start an access
+
+<Steps>
+<Step>
+### Open the dialog
+
+Open a service and choose **Console**, then **Connect via SSH**. For a volume, open **Settings → Volumes** and choose **Connect with SFTP** on the volume. For a database, choose **Data**, then **Temporary access**.
+</Step>
+<Step>
+### Choose who can connect
+
+The address the dashboard sees you coming from is filled in. Add more addresses or ranges (`203.0.113.0/24`) if you connect from elsewhere. Nothing else can reach the port.
+</Step>
+<Step>
+### Choose how to sign in
+
+For SSH and volumes, paste your **public key** (recommended; no password exists then) or use a **generated password**. The dialog remembers your key in this browser. Databases always get a generated password.
+
+For databases, the user is **read-only** unless you switch on **Allow writes**. Writes cover rows (insert, update, delete), never the schema, roles or settings.
+
+Volumes also open **read-only** unless you switch on **Allow changes**.
+</Step>
+<Step>
+### Start access
+
+After a few seconds the dialog shows the host, port, user and password, each with a copy button, and ready-made commands for `ssh`, `sftp` and `scp`, a `~/.ssh/config` block, or the database's connection URL. It counts down until the access ends.
+</Step>
+</Steps>
+
+## Connect
+
+```bash
+ssh -p 40123 lr-k3x9q2mfa7@203.0.113.10
+sftp -P 40123 lr-k3x9q2mfa7@203.0.113.10
+scp -P 40123 ./backup.tar lr-k3x9q2mfa7@203.0.113.10:/
+```
+
+With the `~/.ssh/config` block from the dialog, `sftp launchroom-api-files` is enough. Remove the block when the access ends.
+
+```text
+postgresql://lr_tmp_k3x9q2mfa7b1:PASSWORD@203.0.113.10:40187/app?sslmode=require
+```
+
+Database connections are always encrypted. Clients that verify the server can download the certificate from the dialog and use it as the root, for example `sslmode=verify-full sslrootcert=launchroom-access.crt` with `psql`, or `--tls --cacert launchroom-access.crt` with `redis-cli`. Connections without TLS are refused.
+
+On first connect, your SSH client shows the server's **host key fingerprint**. Compare it with the one under **Verify the host key**, or add the shown `known_hosts` line before connecting.
+
+## Volumes and a running service
+
+Your service keeps running while you're connected, and it can write to the same files at the same time. Changes you make are visible to it right away.
+
+- For larger changes, stop the service first, or take a backup on the **Backups** tab.
+- A **database's volume** opens read-only only. The database changes its files while it runs, so writing to them corrupts it, and a copy taken this way may not restore. Use **Backups** for a copy and **Temporary access** or the Data tab for the data itself.
+
+## How long it lasts
+
+An access ends:
+
+- after **15 minutes** without any data through it,
+- at the time you chose (30 minutes to 4 hours, 2 hours by default),
+- when you choose **End now**,
+- after 5 wrong passwords,
+- when you lose the permission, the replica moves, the volume is removed or restored, or the server loses its connection to the dashboard for more than a few seconds.
+
+When it ends, the port closes, the volume's helper container is removed, the temporary database user is removed and its connections end. Nothing stays behind when launchroomd restarts: the port, keys and firewall rules exist only while it runs, and temporary database users left by a crash are removed on its next start. PostgreSQL users also expire on their own shortly after the time limit.
+
+## Network
+
+The port is picked from **40100–40199**. launchroom's firewall on the server lets only your addresses reach it.
+
+<Callout type="warn" title="Cloud and host firewalls">
+launchroom can narrow access but can't open a port your provider's firewall or the server's own firewall (ufw, firewalld) blocks. If connections time out, allow TCP 40100–40199 there.
+</Callout>
+
+If the server sits behind a router (a machine at home), the dialog says so and shows its private address. Connect from the same network, through your own VPN, or forward the port on the router.
+
+Rootless Docker and macOS servers don't offer temporary access.
+
+## Audit
+
+The audit log records when an access starts (who, which replica or volume, the allowed addresses, how you sign in), every connection (address, SSH or SFTP or database), failed sign-ins, and when it ends (why, how long, how many connections). Commands, files, statements and passwords are never recorded.
+
+## Turn it off
+
+- For the whole launchroom: `LAUNCHROOM_REMOTE_ACCESS=false` in the control plane's `.env`.
+- On one server: `LR_REMOTE_ACCESS=off` in that server's `.env`, or a list of the kinds to allow: `ssh`, `volume`, `database` (for example `ssh,volume`). SSH also needs consoles allowed (`LR_INTERACTIVE_SESSIONS`), database access needs the Data tab allowed. SFTP into volumes runs no shell and isn't affected by it.
+- Change the port range with `LR_REMOTE_ACCESS_PORTS` (for example `41000-41049`).
+
+MySQL, MariaDB, MongoDB and ClickHouse don't have temporary access yet. Use the [Data tab](/docs/observability/console-and-data) for them.

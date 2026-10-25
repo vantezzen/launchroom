@@ -1,5 +1,6 @@
 import { ChevronDown, ChevronUp, Copy, X } from 'lucide-react';
 import type { ReactNode } from 'react';
+import { MetaLine } from '@/components/patterns/meta-line';
 import { cn } from '@/lib/utils';
 import { stripAnsi } from '../ansi';
 import { AnsiText } from '../ansi-text';
@@ -65,14 +66,10 @@ export function LogDetail({
                 <LevelBadge level={entry.level} />
                 <span className="type-label">{entry.service}</span>
                 {(entry.replica || entry.server) && (
-                    <span className="truncate type-small text-muted-foreground">
-                        {[
-                            entry.replica && `replica ${entry.replica}`,
-                            entry.server,
-                        ]
-                            .filter(Boolean)
-                            .join(' · ')}
-                    </span>
+                    <MetaLine className="type-small text-muted-foreground">
+                        {entry.replica && `replica ${entry.replica}`}
+                        {entry.server && `on ${entry.server}`}
+                    </MetaLine>
                 )}
                 <span className="ml-auto flex items-center">
                     {onPrevious && (

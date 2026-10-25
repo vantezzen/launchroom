@@ -24,10 +24,11 @@ export function WebhookReachabilityNote({
             <AlertTitle>GitHub can’t reach this dashboard</AlertTitle>
             <AlertDescription>
                 <p>
-                    <span className="type-mono-small">{host}</span> isn’t on the
-                    public internet, so the app gets no webhook: launchroom
-                    checks your branches every minute and pull request previews
-                    stay off. For instant deploys, set{' '}
+                    <span className="type-mono-small">{host}</span> isn’t
+                    reachable from the public internet, so GitHub can’t send
+                    webhooks. launchroom checks your branches every minute
+                    instead, and pull request previews stay off. For instant
+                    deploys, set{' '}
                     <code className="type-mono-small">APP_URL</code> to a public
                     address first.
                 </p>

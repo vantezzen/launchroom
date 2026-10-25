@@ -35,7 +35,7 @@ export function Section({
         >
             {(title || actions) && (
                 <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2">
-                    <div className="flex min-w-0 flex-col gap-0.5 sm:flex-row sm:items-baseline sm:gap-3">
+                    <div className="flex min-w-0 flex-col gap-0.5">
                         {title && (
                             <Heading className="type-heading">{title}</Heading>
                         )}

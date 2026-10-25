@@ -1,4 +1,5 @@
 import { Head, Link, router } from '@inertiajs/react';
+import { MetaDivider } from '@/components/patterns/meta-line';
 import { Page } from '@/components/patterns/page';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -73,9 +74,18 @@ function Revisions({
                         <span className="w-24 shrink-0 type-label tabular-nums">
                             Revision {revision.number}
                         </span>
-                        <span className="min-w-0 flex-1 truncate type-body text-muted-foreground">
-                            {revision.message ?? 'No message'}
-                            {revision.author && ` · ${revision.author}`}
+                        <span className="flex min-w-0 flex-1 items-center gap-2 type-body text-muted-foreground">
+                            <span className="truncate">
+                                {revision.message ?? 'No message'}
+                            </span>
+                            {revision.author && (
+                                <>
+                                    <MetaDivider />
+                                    <span className="shrink-0">
+                                        {revision.author}
+                                    </span>
+                                </>
+                            )}
                         </span>
                         <span className="type-small text-muted-foreground">
                             <TimeAgo value={revision.createdAt} />
@@ -179,7 +189,7 @@ export default function StagedChangesPage({
 
     return (
         <>
-            <Head title={`Staged changes · ${changes.environmentName}`} />
+            <Head title={`Staged changes - ${changes.environmentName}`} />
             <Page className="gap-8">
                 <header className="flex flex-col gap-2">
                     <h1 className="type-title">Staged changes</h1>
@@ -230,8 +240,7 @@ export default function StagedChangesPage({
                     <section className="flex flex-col items-start gap-3">
                         <p className="max-w-[65ch] type-body text-muted-foreground">
                             Edits to services, variables, domains and settings
-                            collect here until you deploy them, so several
-                            changes go live together.
+                            are collected here until you deploy them together.
                         </p>
                         <Button variant="outline" size="sm" asChild>
                             <Link

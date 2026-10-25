@@ -1,43 +1,21 @@
+import { buildSettingsIndex } from '@/components/settings/search';
+import type { SettingDraft, SettingResult } from '@/components/settings/search';
 import type { SectionId, SettingsArea } from './sections';
-import { allPages } from './sections';
 import type { SettingsContext } from './settings-context';
 
 /** Where a result leads: a settings page, or the panel's Variables tab. */
 export type SettingTarget = SectionId | 'variables';
 
 /**
- * One searchable setting (docs/08 §16): its row title, one quiet hint, and
- * the words people type for it. `anchor` is the `data-setting` of the row
- * or card on the page (`SettingsRow`/`SettingsCard`/`OverrideRow`
- * `setting` prop); when that row isn't rendered right now (a Dockerfile
- * row while Railpack builds), `fallback` is tried, then the page's top.
- */
-export type SettingEntry = {
-    key: string;
-    target: SettingTarget;
-    label: string;
-    hint: string;
-    keywords: string[];
-    anchor?: string;
-    fallback?: string;
-};
-
-export type SettingResult = SettingEntry & {
-    /** The page (or tab) name the result is grouped under. */
-    group: string;
-};
-
-type Draft = Omit<SettingEntry, 'key'> & { when?: boolean };
-
-/**
- * Every setting of the Settings tab for this service, in sidebar order,
- * filtered by kind and permissions the same way `settingsAreas` builds
- * the sidebar. The only list: add a row here when a page gains one.
+ * Every setting of the Settings tab for this service (docs/08 §16), in
+ * sidebar order, filtered by kind and permissions the same way
+ * `settingsAreas` builds the sidebar. The only list: add a row here when a
+ * page gains one (`anchor` is its `setting` prop).
  */
 export function settingsIndex(
     context: SettingsContext,
     areas: SettingsArea[],
-): SettingResult[] {
+): SettingResult<SettingTarget>[] {
     const { node, settings, canUpdate, canDelete } = context;
     const kind = node.kind;
     const web = kind === 'app' || kind === 'image';
@@ -50,7 +28,7 @@ export function settingsIndex(
         (preset) => preset.decisions.length > 0,
     );
 
-    const drafts: Draft[] = [
+    const drafts: SettingDraft<SettingTarget>[] = [
         // General
         {
             target: 'general',
@@ -62,7 +40,7 @@ export function settingsIndex(
         {
             target: 'general',
             label: 'Slug',
-            hint: 'Private hostname, never changes',
+            hint: 'Private hostname, fixed once created',
             keywords: ['identifier', 'handle', 'hostname'],
             anchor: 'slug',
         },
@@ -93,7 +71,12 @@ export function settingsIndex(
                 'tag',
                 'registry',
                 'engine',
+                'change image',
             ],
+            anchor:
+                settings.source.type === 'image' && canUpdate
+                    ? 'image'
+                    : undefined,
         },
         {
             target: 'source',
@@ -349,7 +332,7 @@ export function settingsIndex(
         {
             target: 'domains',
             label: 'HTTPS and certificates',
-            hint: 'Issued and renewed by themselves',
+            hint: 'Issued and renewed automatically',
             keywords: ['ssl', 'tls', 'https', 'certificate', 'cert'],
             anchor: 'domain-https',
             fallback: 'domains-list',
@@ -377,6 +360,24 @@ export function settingsIndex(
             keywords: ['edge', 'traffic', 'proxy', 'load balancer', 'ingress'],
             anchor: 'domain-edges',
             fallback: 'domains-list',
+        },
+
+        // Web firewall (docs/22 §9.6)
+        {
+            target: 'firewall',
+            label: 'Web firewall',
+            hint: 'Block or log attacks on this service',
+            keywords: [
+                'waf',
+                'firewall',
+                'attack',
+                'block',
+                'security',
+                'exception',
+                'sql injection',
+                'xss',
+                'owasp',
+            ],
         },
 
         // Private network
@@ -445,7 +446,7 @@ export function settingsIndex(
         {
             target: 'scaling',
             label: 'Required labels',
-            hint: 'Only servers carrying these labels',
+            hint: 'Only servers with these labels',
             keywords: ['labels', 'constraints', 'tags', 'placement'],
             anchor: 'labels',
         },
@@ -511,6 +512,22 @@ export function settingsIndex(
         },
         {
             target: 'advanced',
+            label: 'Config files',
+            hint: 'Files written into the container before it starts',
+            keywords: [
+                'config',
+                'configs',
+                'files',
+                'init',
+                'sql',
+                'compose',
+                'template',
+            ],
+            anchor: 'config-files',
+            when: kind !== 'database',
+        },
+        {
+            target: 'advanced',
             label: 'Identifiers',
             hint: 'Service, instance and deployment ids',
             keywords: ['id', 'ids', 'debug', 'instance'],
@@ -568,90 +585,7 @@ export function settingsIndex(
         },
     ];
 
-    const pages = new Map(
-        allPages(areas).map((page) => [page.id, page.label] as const),
-    );
-
-    return drafts
-        .filter((draft) => draft.when !== false)
-        .flatMap(({ when: _when, ...entry }) => {
-            const group =
-                entry.target === 'variables'
-                    ? 'Variables tab'
-                    : pages.get(entry.target);
-
-            return group === undefined
-                ? []
-                : [{ ...entry, key: `${entry.target}:${entry.label}`, group }];
-        });
-}
-
-function normalize(value: string): string {
-    return value
-        .toLowerCase()
-        .normalize('NFKD')
-        .replace(/[̀-ͯ]/g, '')
-        .replace(/[^a-z0-9./]+/g, ' ')
-        .trim();
-}
-
-/**
- * Every word of the query must start a word of the label, page name or
- * keywords (prefix match, so "health" finds "Health check" and "env"
- * finds Variables). Ranked: label matches first, then page, then keywords;
- * the index order breaks ties.
- */
-export function searchSettings(
-    index: SettingResult[],
-    query: string,
-): SettingResult[] {
-    const terms = normalize(query).split(' ').filter(Boolean);
-
-    if (terms.length === 0) {
-        return [];
-    }
-
-    const score = (entry: SettingResult): number => {
-        const label = normalize(entry.label);
-        const group = normalize(entry.group);
-        const keywords = entry.keywords.map(normalize).join(' ');
-        const words = (text: string) => text.split(' ');
-        const hit = (text: string, term: string) =>
-            words(text).some((word) => word.startsWith(term)) ||
-            (term.length > 2 && text.includes(term));
-        let total = 0;
-
-        for (const term of terms) {
-            if (hit(label, term)) {
-                total += label.startsWith(term) ? 4 : 3;
-            } else if (hit(group, term)) {
-                total += 2;
-            } else if (hit(keywords, term)) {
-                total += 1;
-            } else {
-                return 0;
-            }
-        }
-
-        return total;
-    };
-
-    return index
-        .map((entry, order) => ({ entry, order, score: score(entry) }))
-        .filter((item) => item.score > 0)
-        .sort((a, b) => b.score - a.score || a.order - b.order)
-        .map((item) => item.entry);
-}
-
-/** Results grouped by page, groups in the order of their best result. */
-export function groupResults(
-    results: SettingResult[],
-): { group: string; items: SettingResult[] }[] {
-    const groups = new Map<string, SettingResult[]>();
-
-    results.forEach((result) => {
-        groups.set(result.group, [...(groups.get(result.group) ?? []), result]);
+    return buildSettingsIndex<SettingTarget>(drafts, areas, {
+        extra: { variables: 'Variables tab' },
     });
-
-    return Array.from(groups, ([group, items]) => ({ group, items }));
 }

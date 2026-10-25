@@ -13,6 +13,7 @@ use App\Drivers\DatabaseEngines\DatabaseEngineDriver;
 use App\Drivers\DatabaseEngines\DatabaseEngines;
 use App\Enums\DomainKind;
 use App\Enums\PreviewStrategy;
+use App\Enums\Security\WafMode;
 use App\Enums\ServiceKind;
 use App\Models\Domain;
 use App\Models\Environment;
@@ -67,6 +68,10 @@ final readonly class ServiceProvisioner
             'deploy' => $deploy,
             'scaling' => $template->scaling ?? new ScalingSettings,
             'preview_strategy' => $template->preview_strategy ?? ($service->kind->isStateful() ? PreviewStrategy::NewEmpty : null),
+            // Previews copy the base instance's firewall (docs/22 §6.2); new instances block.
+            'waf_mode' => $template->waf_mode ?? WafMode::Block,
+            'waf_paranoia' => $template->waf_paranoia ?? 1,
+            'waf_inspect_body_kib' => $template->waf_inspect_body_kib ?? 32,
         ]);
 
         if ($driver instanceof DatabaseEngineDriver) {

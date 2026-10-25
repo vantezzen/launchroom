@@ -66,6 +66,12 @@ func newSpec(t TaskType) (TaskSpec, error) {
 		return &DbExportSpec{}, nil
 	case TaskVolumeExport:
 		return &VolumeExportSpec{}, nil
+	case TaskAccess:
+		return &AccessSpec{}, nil
+	case TaskInventory:
+		return &InventorySpec{}, nil
+	case TaskInspectContainer:
+		return &InspectContainerSpec{}, nil
 	default:
 		return nil, fmt.Errorf("unknown task type %q", truncate(string(t)))
 	}
@@ -288,36 +294,7 @@ func (b *BuildInputs) validate(e *errs) {
 	if b.Deployment != "" {
 		e.check("deployment", b.Deployment)
 	}
-	e.check("repo.provider", b.Repo.Provider)
-	e.check("repo.cloneUrl", b.Repo.CloneURL)
-	e.check("repo.sha", b.Repo.SHA)
-	if b.Repo.Ref != "" {
-		e.check("repo.ref", b.Repo.Ref)
-	}
-	isSSH := b.Repo.CloneURL.IsSSH()
-	checkCount(e, "repo.knownHosts", len(b.Repo.KnownHosts), 0, maxKnownHosts)
-	switch {
-	case isSSH && len(b.Repo.KnownHosts) == 0:
-		e.addf("repo.knownHosts", "is required for ssh clone URLs")
-	case !isSSH && len(b.Repo.KnownHosts) > 0:
-		e.addf("repo.knownHosts", "is only valid for ssh clone URLs")
-	}
-	for i, k := range b.Repo.KnownHosts {
-		e.check(idx("repo.knownHosts", i), k)
-	}
-	unique(e, "repo.knownHosts", b.Repo.KnownHosts)
-	if b.CloneToken != nil {
-		e.check("cloneToken", *b.CloneToken)
-		if isSSH {
-			e.addf("cloneToken", "is only valid for http(s) clone URLs (use sshKey)")
-		}
-	}
-	if b.SSHKey != nil {
-		e.check("sshKey", *b.SSHKey)
-		if !isSSH {
-			e.addf("sshKey", "is only valid for ssh clone URLs")
-		}
-	}
+	validateRepoAccess(e, "", b.Repo, b.CloneToken, b.SSHKey)
 	if b.RootDir != "" {
 		e.check("rootDir", b.RootDir)
 	}
@@ -385,6 +362,41 @@ func (b *BuildInputs) validate(e *errs) {
 	unique(e, "buildArgs", b.BuildArgs)
 	e.check("platform", b.Platform)
 	e.check("cacheKey", b.CacheKey)
+}
+
+// validateRepoAccess checks a repository and its clone credential (build,
+// plan and inventory tasks). p prefixes the paths ("" or "source.").
+func validateRepoAccess(e *errs, p string, repo RepoSpec, cloneToken, sshKey *Sealed) {
+	e.check(p+"repo.provider", repo.Provider)
+	e.check(p+"repo.cloneUrl", repo.CloneURL)
+	e.check(p+"repo.sha", repo.SHA)
+	if repo.Ref != "" {
+		e.check(p+"repo.ref", repo.Ref)
+	}
+	isSSH := repo.CloneURL.IsSSH()
+	checkCount(e, p+"repo.knownHosts", len(repo.KnownHosts), 0, maxKnownHosts)
+	switch {
+	case isSSH && len(repo.KnownHosts) == 0:
+		e.addf(p+"repo.knownHosts", "is required for ssh clone URLs")
+	case !isSSH && len(repo.KnownHosts) > 0:
+		e.addf(p+"repo.knownHosts", "is only valid for ssh clone URLs")
+	}
+	for i, k := range repo.KnownHosts {
+		e.check(idx(p+"repo.knownHosts", i), k)
+	}
+	unique(e, p+"repo.knownHosts", repo.KnownHosts)
+	if cloneToken != nil {
+		e.check(p+"cloneToken", *cloneToken)
+		if isSSH {
+			e.addf(p+"cloneToken", "is only valid for http(s) clone URLs (use sshKey)")
+		}
+	}
+	if sshKey != nil {
+		e.check(p+"sshKey", *sshKey)
+		if !isSSH {
+			e.addf(p+"sshKey", "is only valid for ssh clone URLs")
+		}
+	}
 }
 
 // AppRepository is the registry repository builds of a service push to:

@@ -29,6 +29,8 @@ const (
 	opContainerRemove
 	opContainerLogs
 	opContainerStats
+	opContainerChanges
+	opContainerTop
 	opArchiveHead
 	opArchiveGet
 	opArchivePut
@@ -167,6 +169,11 @@ var routes = []route{
 		"tail": qRe(reTail), "since": qRe(reTimestamp), "until": qRe(reTimestamp),
 	}},
 	{http.MethodGet, "/containers/:id/stats", opContainerStats, map[string]qrule{"stream": qBool(), "one-shot": qBool()}},
+	// Container inspection (docs/22 §7.3, docs/09 §6.2): read-only, workload
+	// containers only, by full id. No query at all: dockerd hands top's
+	// ps_args to the host's ps, so it is never accepted.
+	{http.MethodGet, "/containers/:id/changes", opContainerChanges, nil},
+	{http.MethodGet, "/containers/:id/top", opContainerTop, nil},
 	{http.MethodHead, "/containers/:id/archive", opArchiveHead, map[string]qrule{"path": qRe(reCtrPath)}},
 	{http.MethodGet, "/containers/:id/archive", opArchiveGet, map[string]qrule{"path": qRe(reCtrPath)}},
 	{http.MethodPut, "/containers/:id/archive", opArchivePut, map[string]qrule{

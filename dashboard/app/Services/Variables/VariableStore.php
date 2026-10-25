@@ -19,6 +19,7 @@ use App\Services\Crypto\ProjectKeyring;
 use App\Support\PublicId;
 use App\Support\Variables\GeneratedValues;
 use App\Support\Variables\VariableReferences;
+use Closure;
 use InvalidArgumentException;
 use SensitiveParameter;
 
@@ -55,7 +56,7 @@ final readonly class VariableStore
 
         $generated = GeneratedValues::contains($value);
         $generator = GeneratedValues::sole($value);
-        $value = $this->evaluate($value);
+        $value = $this->evaluate($value, $this->signingSecrets($project, $service, $targets));
         $publicId = PublicId::generate(Variable::publicIdPrefix());
 
         $variable = new Variable;
@@ -88,7 +89,13 @@ final readonly class VariableStore
 
         $generated = GeneratedValues::contains($value);
         $generator = GeneratedValues::sole($value);
-        $value = $this->evaluate($value);
+        $variable->loadMissing(['targets', 'service']);
+        $targets = $variable->targets->map(static fn (VariableTarget $target): array => [
+            'environment_id' => $target->environment_id,
+            'all_previews' => $target->all_previews,
+            'branch_pattern' => $target->branch_pattern,
+        ])->values()->all();
+        $value = $this->evaluate($value, $this->signingSecrets($project, $variable->service, array_values($targets), $variable->id));
         $version = $variable->version + 1;
 
         $variable->forceFill([
@@ -222,19 +229,73 @@ final readonly class VariableStore
             throw DomainRuleViolation::on('exposureOverride', "{$key} is read by the framework at build time; it can't be runtime-only.");
         }
 
+        // A JWT is regenerated per environment from its generator, so it is the whole value.
+        if (preg_match('/\$\{\{\s*jwt\(/', $value) === 1 && GeneratedValues::signingKey(GeneratedValues::sole($value)) === null) {
+            throw DomainRuleViolation::on('value', 'A jwt() expression must be the whole value, like ${{ jwt("anon", JWT_SECRET) }}.');
+        }
+
         $invalid = VariableReferences::invalid($value);
 
         if ($invalid !== []) {
-            throw DomainRuleViolation::on('value', 'Not a valid reference: '.implode(', ', $invalid).'. Use ${{service.KEY}}, ${{shared.KEY}}, ${{KEY}}, ${{ secret(32) }} or ${{ uuid() }}.');
+            throw DomainRuleViolation::on('value', 'Not a valid reference: '.implode(', ', $invalid).'. Use ${{service.KEY}}, ${{shared.KEY}}, ${{KEY}}, ${{ secret(32) }}, ${{ uuid() }} or ${{ jwt("anon", JWT_SECRET) }}.');
         }
     }
 
-    private function evaluate(#[SensitiveParameter] string $value): string
+    /**
+     * @param  (Closure(string): ?string)|null  $secretOf
+     */
+    private function evaluate(#[SensitiveParameter] string $value, ?Closure $secretOf = null): string
     {
         try {
-            return GeneratedValues::evaluate($value);
+            return GeneratedValues::evaluate($value, $secretOf);
         } catch (InvalidArgumentException $e) {
             throw DomainRuleViolation::on('value', $e->getMessage());
         }
+    }
+
+    /**
+     * Looks up what `jwt("role", KEY)` is signed with: the plaintext of the
+     * one row of KEY of the same service (or shared, without a service) that
+     * applies to every target of the row being written, so the token is
+     * signed with the secret its environment uses. Null when there is no
+     * such row (the caller reports it).
+     *
+     * @param  list<array{environment_id: int|null, all_previews: bool, branch_pattern: string|null}>  $targets
+     * @return Closure(string): ?string
+     */
+    private function signingSecrets(Project $project, ?Service $service, array $targets, ?int $except = null): Closure
+    {
+        return function (string $key) use ($project, $service, $targets, $except): ?string {
+            if ($targets === []) {
+                return null;
+            }
+
+            $query = Variable::query()
+                ->where('project_id', $project->id)
+                ->where('service_id', $service?->id)
+                ->whereNull('connection_id')
+                ->where('key', $key)
+                ->with('targets');
+
+            if ($except !== null) {
+                $query->whereKeyNot($except);
+            }
+
+            $rows = $query->get();
+
+            foreach ($rows as $row) {
+                $covers = array_all($targets, static fn (array $target): bool => $row->targets->contains(
+                    static fn (VariableTarget $own): bool => $target['environment_id'] !== null
+                        ? $own->environment_id === $target['environment_id']
+                        : $own->all_previews && $target['all_previews'] && $own->branch_pattern === $target['branch_pattern'],
+                ));
+
+                if ($covers) {
+                    return $this->plaintext($project, $row);
+                }
+            }
+
+            return null;
+        };
     }
 }

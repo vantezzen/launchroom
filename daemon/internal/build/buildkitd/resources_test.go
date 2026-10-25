@@ -145,6 +145,14 @@ func TestPlanResourcesWaitsForBuilds(t *testing.T) {
 		t.Fatal("limits changed under a running build")
 	}
 	busy = false
+	cpus := 4
+	m.o.Measure = func(context.Context) HostFacts { return HostFacts{CPUs: cpus, MemoryMB: 8192, InUseMB: inUse} }
+	cpus = 0 // Docker's info failed: keep the plan instead of dropping the limits.
+	m.planResources(t.Context())
+	if m.Resources() != first {
+		t.Fatalf("incomplete reading changed the limits: %+v", m.Resources())
+	}
+	cpus = 4
 	m.planResources(t.Context())
 	if m.Resources().MemoryMB >= first.MemoryMB || m.SpecHash(image, appArmorUnconfined) == h1 {
 		t.Fatalf("limits not re-planned when idle: %+v", m.Resources())

@@ -9,7 +9,7 @@ use App\Enums\EnvironmentKind;
 use Spatie\LaravelData\Data;
 
 /**
- * One environment on Settings → General → Config file (docs/18 §3.1): the
+ * One environment on Settings → Config file (docs/18 §3.1): the
  * last read of its launchroom.json.
  */
 final class ConfigFileEnvironmentData extends Data

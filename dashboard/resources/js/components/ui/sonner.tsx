@@ -14,7 +14,7 @@ import { useFlashToast } from '@/hooks/use-flash-toast';
  * line + optional action ("Open", "Undo"). Only for async outcomes or
  * undo, never for saves that are visible anyway:
  *
- *     toast.success('web is live · 1m 12s', { action: { label: 'Open', onClick } })
+ *     toast.success('web is live after 1m 12s', { action: { label: 'Open', onClick } })
  */
 function Toaster({ ...props }: ToasterProps) {
     const { appearance } = useAppearance();

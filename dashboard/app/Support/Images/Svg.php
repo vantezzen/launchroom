@@ -64,7 +64,7 @@ final class Svg
         }
 
         if (preg_match('/<!(DOCTYPE|ENTITY)/i', $svg) === 1 || ! mb_check_encoding($svg, 'UTF-8')) {
-            throw InvalidImage::because('The SVG image uses features we do not support.');
+            throw InvalidImage::because('The SVG image uses features launchroom doesn’t support.');
         }
 
         $source = new DOMDocument;

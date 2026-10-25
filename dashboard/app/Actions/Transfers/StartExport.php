@@ -41,8 +41,8 @@ use Illuminate\Support\Facades\DB;
  * Starts an export (docs/14 §12.5): a fresh dump or tarball of the data as it
  * is now, or a stored backup, decrypted. launchroomd uploads it in chunks
  * into a download transfer; {@see SyncTransferTasks} checks it and makes it
- * ready. The controller has confirmed the password (decrypted data leaves
- * the platform).
+ * ready. The controller has authorized the user; decrypted data leaves the
+ * platform, so the start is audited.
  */
 final readonly class StartExport
 {
@@ -180,7 +180,7 @@ final readonly class StartExport
             }
 
             throw DomainRuleViolation::on('server', $preferred->status === ServerStatus::Online
-                ? "Update launchroomd on {$preferred->name} to download data."
+                ? "Update {$preferred->name} in Settings → Updates to download data."
                 : "{$preferred->name} is offline. Try again once it is back.");
         }
 
@@ -191,7 +191,7 @@ final readonly class StartExport
         $any = Server::query()->where('team_id', $instance->team_id)->where('status', ServerStatus::Online->value)->orderBy('id')->get()->first($usable);
 
         if ($any === null) {
-            throw DomainRuleViolation::on('server', 'No online server can read the backup. Update launchroomd on one of your servers.');
+            throw DomainRuleViolation::on('server', 'No online server can read the backup. Update your servers in Settings → Updates.');
         }
 
         return $any;

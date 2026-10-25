@@ -29,7 +29,7 @@ test('off by default; the page never shows the key', function (): void {
     expect(AiProviderSettings::current()->enabled)->toBeFalse()
         ->and($this->team->settings->generateDockerfiles)->toBeFalse();
 
-    $this->actingAs($this->owner)->withSession(passwordConfirmed())->put(route('dockerfile-generation.update'), ['apiKey' => DS_KEY, 'enabled' => true, 'model' => 'claude-sonnet-5'])->assertRedirect();
+    $this->actingAs($this->owner)->put(route('dockerfile-generation.update'), ['apiKey' => DS_KEY, 'enabled' => true, 'model' => 'claude-sonnet-5'])->assertRedirect();
 
     $settings = AiProviderSettings::current();
     expect($settings->enabled)->toBeTrue()
@@ -54,11 +54,11 @@ test('off by default; the page never shows the key', function (): void {
 test('only instance owners change the provider; turning it on needs a key', function (): void {
     foreach ([$this->admin, $this->developer] as $user) {
         /** @var User $user */
-        $this->actingAs($user)->withSession(passwordConfirmed())->put(route('dockerfile-generation.update'), ['enabled' => true])->assertForbidden();
+        $this->actingAs($user)->put(route('dockerfile-generation.update'), ['enabled' => true])->assertForbidden();
     }
 
-    $this->actingAs($this->owner)->withSession(passwordConfirmed())->put(route('dockerfile-generation.update'), ['enabled' => true])->assertSessionHasErrors('apiKey');
-    $this->actingAs($this->owner)->withSession(passwordConfirmed())->put(route('dockerfile-generation.update'), ['model' => 'gpt-5'])->assertSessionHasErrors('model');
+    $this->actingAs($this->owner)->put(route('dockerfile-generation.update'), ['enabled' => true])->assertSessionHasErrors('apiKey');
+    $this->actingAs($this->owner)->put(route('dockerfile-generation.update'), ['model' => 'gpt-5'])->assertSessionHasErrors('model');
 });
 
 test('an instance owner can set the provider without confirming again', function (): void {

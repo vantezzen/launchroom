@@ -4,6 +4,7 @@ import { DEVICE_RENDER, DeviceImage } from '@/components/devices';
 import type { DeviceKind, DeviceStatus } from '@/components/devices';
 import { DEVICE_ART } from '@/components/devices/device-art.generated';
 import { Logo } from '@/components/logo';
+import { MetaDivider } from '@/components/patterns/meta-line';
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -142,7 +143,7 @@ export function CapacityBar({
                     {mine > 0 && (
                         <span className="text-foreground">{format(mine)}</span>
                     )}
-                    {mine > 0 ? ' · ' : ''}
+                    {mine > 0 && <MetaDivider className="mx-1.5" />}
                     {format(Math.max(0, total - used - mine))} free
                 </span>
             </div>
@@ -329,13 +330,26 @@ export function ServerPlacementCard({
                         )}
                     </span>
                     <span className="truncate type-small text-muted-foreground">
-                        {pinned
-                            ? 'Holds its data'
-                            : eligible
-                              ? planned > 0
-                                  ? `${planned} ${planned === 1 ? 'replica' : 'replicas'}${place ? ` · ${place}` : ''}`
-                                  : (place ?? 'Has room')
-                              : (server.draftReason ?? 'Not eligible')}
+                        {pinned ? (
+                            'Holds its data'
+                        ) : eligible ? (
+                            planned > 0 ? (
+                                <>
+                                    {planned}{' '}
+                                    {planned === 1 ? 'replica' : 'replicas'}
+                                    {place && (
+                                        <>
+                                            <MetaDivider className="mx-1.5" />
+                                            {place}
+                                        </>
+                                    )}
+                                </>
+                            ) : (
+                                (place ?? 'Has room')
+                            )
+                        ) : (
+                            (server.draftReason ?? 'Not eligible')
+                        )}
                     </span>
                 </div>
                 <div className="flex flex-col gap-2.5">

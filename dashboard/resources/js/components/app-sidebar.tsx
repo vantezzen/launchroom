@@ -2,12 +2,15 @@ import { Link, usePage } from '@inertiajs/react';
 import {
     Activity,
     BookOpen,
+    ChartColumnStacked,
     FolderKanban,
     ListChecks,
     ScrollText,
     Search,
     Server,
     Settings,
+    ShieldAlert,
+    ShieldCheck,
 } from 'lucide-react';
 import AppLogoIcon from '@/components/app-logo-icon';
 import { NavMain } from '@/components/nav-main';
@@ -25,14 +28,18 @@ import {
     SidebarMenuItem,
 } from '@/components/ui/sidebar';
 import { openCommandPalette } from '@/features/command-palette/command-palette';
+import { ControlPlaneLoadNotice } from '@/features/servers/control-plane-load-notice';
 import { dashboard } from '@/routes';
 import { index as activity } from '@/routes/activity';
+import { index as analytics } from '@/routes/analytics';
 import { index as teamLogs } from '@/routes/logs';
 import { show as onboarding } from '@/routes/onboarding';
 import { index as projects } from '@/routes/projects';
+import { index as security } from '@/routes/security';
 import { index as servers } from '@/routes/servers';
-import { edit as teamSettings } from '@/routes/team';
+import { index as settingsHome } from '@/routes/settings';
 import { useDocsUrl } from '@/features/settings/settings-card';
+import { useCurrentUrl } from '@/hooks/use-current-url';
 
 const isMac =
     typeof navigator !== 'undefined' &&
@@ -90,10 +97,12 @@ export function AppSidebar() {
         onboardingProgress: progress,
         updateAvailable,
         teams,
+        securityActionNeeded,
     } = usePage().props;
     // Team-wide log search is for owners and admins (TeamPolicy::searchLogs).
     const canSearchLogs =
         teams?.permissions.includes('servers.manage') ?? false;
+    const { isCurrentOrParentUrl } = useCurrentUrl();
 
     const items: NavMainItem[] = [
         // The first-run checklist stays reachable until every step is
@@ -110,13 +119,22 @@ export function AppSidebar() {
             : []),
         { title: 'Projects', href: projects(), icon: FolderKanban },
         { title: 'Servers', href: servers(), icon: Server },
-        { title: 'Activity', href: activity(), icon: Activity },
+        { title: 'Analytics', href: analytics(), icon: ChartColumnStacked },
+        {
+            title: 'Security',
+            href: security(),
+            icon: securityActionNeeded ? ShieldAlert : ShieldCheck,
+            // The number is the non-colour cue (docs/22 §9.1).
+            meta: securityActionNeeded
+                ? String(securityActionNeeded)
+                : undefined,
+        },
         ...(canSearchLogs
             ? [{ title: 'Logs', href: teamLogs(), icon: ScrollText }]
             : []),
         {
             title: 'Settings',
-            href: teamSettings(),
+            href: settingsHome(),
             icon: Settings,
             // Settings pages live under /settings/*; any of them is "here".
             activePrefix: '/settings',
@@ -149,7 +167,20 @@ export function AppSidebar() {
             </SidebarContent>
 
             <SidebarFooter className="gap-1">
+                <ControlPlaneLoadNotice />
                 <SidebarMenu>
+                    <SidebarMenuItem>
+                        <SidebarMenuButton
+                            asChild
+                            tooltip="Activity"
+                            isActive={isCurrentOrParentUrl(activity())}
+                        >
+                            <Link href={activity()} prefetch>
+                                <Activity aria-hidden="true" />
+                                <span>Activity</span>
+                            </Link>
+                        </SidebarMenuButton>
+                    </SidebarMenuItem>
                     <SidebarMenuItem>
                         <SidebarMenuButton asChild tooltip="Docs">
                             <a

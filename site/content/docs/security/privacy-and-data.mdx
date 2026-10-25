@@ -1,0 +1,32 @@
+---
+title: Privacy and data
+description: What the security center stores about requests and packages, for how long, and what leaves your instance.
+---
+
+## Requests
+
+| Data | Stored | Kept for |
+|---|---|---|
+| Counts of blocked and logged requests per service, kind of attack, rule and path | Yes | 7 days per 10 minutes, 90 days per hour |
+| Up to 20 sample requests per service and 10 minutes: time, method, path without query string, rules, matched part of the request, score, reference | Yes | 7 days |
+| The client's network (`203.0.113.0/24` for IPv4, a /48 for IPv6) of a sample request | Yes, never the full address | 7 days |
+| Query strings, header and cookie values, request bodies, matched data | No | |
+
+The edge server cuts the client's address to its network before anything is sent to the dashboard. Only owners and admins see client networks. A network can still narrow a small office or a home connection down to a few people.
+
+Paths are reduced like in [Analytics](/docs/observability/analytics#how-paths-are-grouped): ids and tokens become `:id`.
+
+## Packages
+
+launchroom stores the list of packages of each live image: name, version, ecosystem and scope. Lists of images no kept deployment uses are deleted daily. Resolved findings and investigations are kept 90 days.
+
+## What leaves your instance
+
+| Destination | What it receives |
+|---|---|
+| osv.dev | Ecosystem, name and version of each package |
+| cisa.gov | A request for the public catalogue |
+| endoflife.date | A request per runtime, database or distribution in use |
+| Your notification channels | The service, package, fix and a summary of the investigation. Never process commands, file paths from containers or client networks |
+
+Instance owners can switch each source off in **Settings → Security → Vulnerability data**.

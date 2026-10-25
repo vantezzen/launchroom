@@ -63,7 +63,7 @@ final class EnvironmentController extends Controller
         Inertia::flash('toast', match ($outcome) {
             DeletionOutcome::Deleted => ['type' => 'success', 'message' => "{$name} deleted. Its services are being stopped."],
             DeletionOutcome::Blocked => ['type' => 'error', 'message' => "{$name} was not deleted: its final backup failed."],
-            DeletionOutcome::WaitingForFinalBackup => ['type' => 'info', 'message' => "Taking a final backup of {$name}'s data first. The environment is deleted as soon as it succeeded."],
+            DeletionOutcome::WaitingForFinalBackup => ['type' => 'info', 'message' => "Taking a final backup of {$name}'s data first. The environment is deleted once the backup succeeds."],
         });
 
         return to_route('projects.settings', ['project' => $project->public_id, 'section' => 'environments']);

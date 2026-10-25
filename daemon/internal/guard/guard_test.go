@@ -514,6 +514,7 @@ func TestBuildkitResourceShape(t *testing.T) {
 		"higher CPU weight":             func(hc *container.HostConfig) { hc.CPUShares = 4096 },
 		"invalid I/O weight":            func(hc *container.HostConfig) { hc.BlkioWeight = 5 },
 		"memory reservation":            func(hc *container.HostConfig) { hc.MemoryReservation = 1 << 30 },
+		"unlimited swap":                func(hc *container.HostConfig) { hc.MemorySwap = -1 },
 		"I/O device weight": func(hc *container.HostConfig) {
 			hc.BlkioWeightDevice = []*blkiodev.WeightDevice{{Path: "/dev/sda", Weight: 1000}}
 		},
@@ -661,6 +662,16 @@ func TestExecRules(t *testing.T) {
 	h2.fake.addContainer(strings.Repeat("1", 64), "lr-wl_x", managed())
 	ok(t, h2.do(http.MethodPost, "/v1.52/containers/lr-wl_x/exec", map[string]any{"Cmd": []string{"sh"}, "Tty": true}))
 	refused(t, h2.do(http.MethodPost, "/v1.52/containers/lr-wl_x/exec", map[string]any{"Cmd": []string{"sh"}, "Tty": true, "User": "root"}), "own user")
+	// Temporary SSH access (D61, R39) uses exactly these shapes: a TTY shell
+	// as the container's user, "<shell> -c <command>" and the SFTP file
+	// tools with stdin; no new route or field.
+	// The shell runs inside the workload container (R39), never on the host
+	// (R1); built like sshfront.go builds it, from the detected shell.
+	containerShell := "/bin/sh"
+	ok(t, h2.do(http.MethodPost, "/v1.52/containers/lr-wl_x/exec", map[string]any{"Cmd": []string{containerShell, "-c", "ls -la"}, "AttachStdin": true, "AttachStdout": true, "AttachStderr": true}))
+	ok(t, h2.do(http.MethodPost, "/v1.52/containers/lr-wl_x/exec", map[string]any{"Cmd": []string{"dd", "of=/srv/x", "bs=65536"}, "AttachStdin": true, "AttachStdout": true}))
+	ok(t, h2.do(http.MethodPost, "/v1.52/containers/lr-wl_x/exec", map[string]any{"Cmd": []string{"/bin/bash"}, "Tty": true, "Env": []string{"TERM=xterm-256color"}, "ConsoleSize": []uint{24, 80}}))
+	refused(t, h2.do(http.MethodPost, "/v1.52/containers/"+strings.Repeat("4", 64)+"/exec", map[string]any{"Cmd": []string{"/bin/sh"}, "Tty": true}), "")
 	// Execs are known only when the guard created them.
 	refused(t, h2.do(http.MethodGet, "/v1.52/exec/"+strings.Repeat("9", 64)+"/json", nil), "no such exec")
 	ok(t, h2.do(http.MethodGet, "/v1.52/exec/"+strings.Repeat("e", 64)+"/json", nil))
@@ -730,4 +741,47 @@ func tarOf(t *testing.T, name string) *bytes.Buffer {
 	_, _ = tw.Write([]byte("x"))
 	_ = tw.Close()
 	return &buf
+}
+
+// docs/22 §7.3: container changes and processes, workload containers only,
+// by full id, no query (ps_args refused).
+func TestInspectionRoutes(t *testing.T) {
+	h := newHarness(t)
+	wl := strings.Repeat("1", 64)
+	h.fake.addContainer(wl, "lr-wl_x", managed())
+	sys := managed()
+	sys[labelSystem] = policy.SystemCaddy
+	caddy := strings.Repeat("5", 64)
+	h.fake.addContainer(caddy, caddyName, sys)
+	helper := managed()
+	helper[labelHelper] = "volume"
+	h.fake.addContainer(strings.Repeat("6", 64), "lr-vol-0123456789ab", helper)
+	upd := map[string]string{labelManaged: "true", labelRole: roleUpdater, "launchroom.update-task": "tsk_01J9Z8X7W6V5T4S3R2Q1P0N9MK"}
+	h.fake.addContainer(strings.Repeat("7", 64), "lr-system-update-01j9z8x7w6v5t4s3r2q1p0n9mk", upd)
+	h.fake.addContainer(strings.Repeat("2", 64), "postgres", map[string]string{"com.docker.compose.service": "postgres"})
+	other := map[string]string{labelManaged: "true", labelServer: "srv_OTHER"}
+	h.fake.addContainer(strings.Repeat("8", 64), "lr-wl_other", other)
+
+	for _, suffix := range []string{"/changes", "/top"} {
+		ok(t, h.do(http.MethodGet, "/v1.52/containers/"+wl+suffix, nil))
+		if r, _ := h.fake.last(); r.URL.Path != "/v1.52/containers/"+wl+suffix || r.URL.RawQuery != "" {
+			t.Fatalf("forwarded %s", r.URL)
+		}
+		// A name instead of the full id.
+		refused(t, h.do(http.MethodGet, "/v1.52/containers/lr-wl_x"+suffix, nil), "full id")
+		refused(t, h.do(http.MethodGet, "/v1.52/containers/"+wl[:12]+suffix, nil), "full id")
+		// Other classes and foreign containers.
+		refused(t, h.do(http.MethodGet, "/v1.52/containers/"+caddy+suffix, nil), "workload")
+		refused(t, h.do(http.MethodGet, "/v1.52/containers/"+strings.Repeat("6", 64)+suffix, nil), "workload")
+		refused(t, h.do(http.MethodGet, "/v1.52/containers/"+strings.Repeat("7", 64)+suffix, nil), "workload")
+		refused(t, h.do(http.MethodGet, "/v1.52/containers/"+strings.Repeat("2", 64)+suffix, nil), NotManagedMarker)
+		refused(t, h.do(http.MethodGet, "/v1.52/containers/"+strings.Repeat("8", 64)+suffix, nil), "")
+		refused(t, h.do(http.MethodGet, "/v1.52/containers/"+strings.Repeat("9", 64)+suffix, nil), "no such container")
+		// Extra query keys, writes.
+		refused(t, h.do(http.MethodGet, "/v1.52/containers/"+wl+suffix+"?x=1", nil), "not allowed")
+		refused(t, h.do(http.MethodPost, "/v1.52/containers/"+wl+suffix, nil), "not an allowed")
+	}
+	for _, args := range []string{"aux", "-ef", "", "-o%20pid", "--pid%201", "-e%20-o%20args"} {
+		refused(t, h.do(http.MethodGet, "/v1.52/containers/"+wl+"/top?ps_args="+args, nil), "ps_args")
+	}
 }

@@ -341,13 +341,13 @@ test('instance-wide certificate secrets reach only edges an instance owner admit
         ->and(collect($state['routes'])->pluck('tls')->unique()->all())->not->toContain('wildcard');
 
     $admin = memberOf($team, TeamRole::Admin);
-    $this->actingAs($admin)->withSession(['auth.password_confirmed_at' => time()])
+    $this->actingAs($admin)
         ->put(route('servers.ingress.edges.update', $edge), ['shared' => true])->assertForbidden();
     expect($edge->refresh()->shared_edge_approved_at)->toBeNull();
 
     $owner = memberOf($team, TeamRole::Owner);
     $owner->forceFill(['is_instance_owner' => true])->save();
-    $this->actingAs($owner)->withSession(['auth.password_confirmed_at' => time()])
+    $this->actingAs($owner)
         ->put(route('servers.ingress.edges.update', $edge), ['shared' => true])->assertRedirect()->assertSessionHasNoErrors();
 
     $state = renderFor($edge->refresh());
@@ -355,7 +355,7 @@ test('instance-wide certificate secrets reach only edges an instance owner admit
         ->and($state['ingress'])->toHaveKeys(['storage', 'dns'])
         ->and(AuditEvent::query()->where('action', AuditAction::SharedEdgeChanged->value)->count())->toBe(1);
 
-    $this->actingAs($owner)->withSession(['auth.password_confirmed_at' => time()])
+    $this->actingAs($owner)
         ->put(route('servers.ingress.edges.update', $edge), ['shared' => false])->assertRedirect();
     expect(renderFor($edge->refresh()))->not->toHaveKey('ingress');
 });

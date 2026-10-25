@@ -24,6 +24,7 @@ use App\Data\Services\ScalingSettings;
 use App\Data\Services\UpdateServiceSettingsData;
 use App\Data\Variables\VariableInput;
 use App\Data\Variables\VariableTargetData;
+use App\Enums\Backups\VolumeConsistency;
 use App\Enums\ConnectionMode;
 use App\Enums\DomainKind;
 use App\Enums\ServiceKind;
@@ -41,6 +42,7 @@ use App\Models\Variable;
 use App\Services\Variables\VariableStore;
 use App\Support\Blueprints\BlueprintValidator;
 use App\Support\Canvas\ServiceGlyph;
+use App\Support\Variables\GeneratedValues;
 use App\Support\Variables\VariableReference;
 use App\Support\Variables\VariableReferences;
 use Illuminate\Support\Facades\DB;
@@ -122,8 +124,11 @@ final readonly class ApplyBlueprint
                 }
 
                 $injected = $this->injected($project, $services[$service->key]);
+                // Values signed with another variable of the service (jwt()) are generated after it.
+                $variables = $service->variables;
+                usort($variables, static fn (BlueprintVariable $a, BlueprintVariable $b): int => (GeneratedValues::signingKey(GeneratedValues::sole($a->value)) !== null) <=> (GeneratedValues::signingKey(GeneratedValues::sole($b->value)) !== null));
 
-                foreach ($service->variables as $variable) {
+                foreach ($variables as $variable) {
                     $this->variable($project, $services[$service->key], $environment, $variable, $slugs, $user, $actor, 'services.'.$service->key, $injected);
                 }
             }
@@ -162,6 +167,13 @@ final readonly class ApplyBlueprint
             $model->forceFill(['icon' => $service->logo])->save();
         }
 
+        if ($service->provides !== []) {
+            $model->forceFill(['connection_variables' => array_map(
+                static fn (BlueprintVariable $variable): array => ['key' => $variable->key, 'value' => $variable->value],
+                $service->provides,
+            )])->save();
+        }
+
         return $model;
     }
 
@@ -190,6 +202,8 @@ final readonly class ApplyBlueprint
                 drainSeconds: $deploy->drainSeconds,
                 entrypoint: $service->entrypoint,
                 capabilities: $service->capabilities,
+                schedule: $deploy->schedule,
+                files: $service->files,
             ),
             scaling: $service->scaling instanceof BlueprintScaling && ! $service->scaling->isEmpty()
                 ? new ScalingSettings(
@@ -204,7 +218,11 @@ final readonly class ApplyBlueprint
             $this->updateSettings->handle($instance, $settings);
 
             foreach ($service->volumes as $path) {
-                $this->addVolume->handle($instance, new AddVolumeData($path), $actor);
+                $volume = $this->addVolume->handle($instance, new AddVolumeData($path), $actor);
+
+                if ($service->backupConsistency instanceof VolumeConsistency) {
+                    $volume->forceFill(['backup_consistency' => $service->backupConsistency])->save();
+                }
             }
 
             // Private services keep only their slug: no generated address.

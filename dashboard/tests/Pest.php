@@ -41,13 +41,3 @@ function memberOf(Team $team, TeamRole $role): User
 
     return $user->refresh();
 }
-
-/**
- * Session state for a recently confirmed password (docs/09 R10).
- *
- * @return array<string, int>
- */
-function passwordConfirmed(): array
-{
-    return ['auth.password_confirmed_at' => time()];
-}

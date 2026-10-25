@@ -32,7 +32,7 @@ final class PlacementFailed extends DomainException
 
     public static function pinnedUnavailable(): self
     {
-        return new self('The server holding this service\'s volume is not available. Stateful services are never moved automatically; bring the server back or restore from a backup on another server.');
+        return new self('The server holding this service\'s volume is not available. Services with data are not moved automatically. Bring the server back online, or restore from a backup on another server.');
     }
 
     public static function insufficientCapacity(int $memoryMb, float $cpus): self

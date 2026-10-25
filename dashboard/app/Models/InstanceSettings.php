@@ -42,6 +42,7 @@ use Illuminate\Support\Carbon;
  * @property array{ok: bool, message: string, zone?: string|null, checkedAt: string}|null $dns_verification last token check (no secrets)
  * @property string|null $registry_config_hash sha256 of the last Zot config written by `launchroom:registry:config --write` (docs/14 §9.11)
  * @property Carbon|null $registry_config_written_at
+ * @property string|null $node_state_config_hash sha256 of the configuration every NodeState was last rendered with (RefreshNodeStates)
  * @property array{startedAt: string, previousControlPlaneServerId?: int|null, replacementId?: int|null}|null $recovery_state recovery mode after `install --restore` (docs/14 §5.2)
  * @property string|null $update_channel stable|beta chosen in Settings → Updates; null = config `launchroom.updates.channel`, else beta on a pre-release version, stable otherwise (ReleaseChecker::channel)
  * @property bool $auto_update install new releases automatically at night (docs/11 §4; off by default)

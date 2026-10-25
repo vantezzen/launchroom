@@ -22,8 +22,8 @@ use Inertia\Response;
 
 /**
  * Settings → Dockerfile generation (docs/20 §1): the instance's provider
- * (instance owners) and the current team's switch (team
- * owners). Everyone in the team can read what is shared and why.
+ * (instance owners) and the current team's switch (team owners). Everyone
+ * in the team can read what is shared and why.
  */
 final class DockerfileGenerationSettingsController extends Controller
 {

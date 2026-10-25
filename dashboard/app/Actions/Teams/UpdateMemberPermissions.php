@@ -39,7 +39,7 @@ final readonly class UpdateMemberPermissions
 
             foreach ($permissions as $permission) {
                 if (! $membership->role->acceptsGrant($permission)) {
-                    throw DomainRuleViolation::on('permissions', 'Only developers can be given this access; owners and admins have it already.');
+                    throw DomainRuleViolation::on('permissions', 'Only developers can be given this access. Owners and admins already have it.');
                 }
 
                 $next[$permission->value] = $permission->value;

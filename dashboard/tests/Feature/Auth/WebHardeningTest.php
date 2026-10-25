@@ -16,8 +16,9 @@ use Tests\Support\Projects;
 
 /**
  * Web findings of the 2026-10 security review: M3 (CSP/HSTS), L3 (secrets
- * flashed as old input), L4 (reveal as a password oracle), L5 (open
- * redirect after password confirmation) and the Info item on log redaction.
+ * flashed as old input), L4 (the confirm-password endpoint as a password
+ * oracle) and the Info item on log redaction. L5 (open redirect after a
+ * password confirmation) went away with the gates (D60).
  */
 test('every page carries a nonce-based CSP and the security headers (M3)', function (): void {
     $response = $this->get(route('login'))->assertOk();
@@ -77,7 +78,7 @@ test('secrets are never flashed to the session as old input (L3)', function (): 
     $admin = memberOf($team, TeamRole::Admin);
 
     // A domain-rule refusal (invalid bucket) …
-    $this->actingAs($admin)->withSession(passwordConfirmed())
+    $this->actingAs($admin)
         ->post(route('backups.destinations.store'), [
             'name' => 'R2', 'endpoint' => 'https://s3.example.com', 'bucket' => 'Invalid_Bucket', 'prefix' => 'p',
             'accessKeyId' => 'AKIA-FLASH-ME-NOT', 'secretAccessKey' => 'super-secret-access-key', 'repositoryPassword' => 'repository-password-123',
@@ -92,7 +93,7 @@ test('secrets are never flashed to the session as old input (L3)', function (): 
 
     // … and a validation error (passphrase confirmation mismatch).
     $owner = User::factory()->instanceOwner()->withTwoFactor()->create();
-    $this->actingAs($owner)->withSession(passwordConfirmed())
+    $this->actingAs($owner)
         ->post(route('backups.recovery.passphrase'), ['passphrase' => 'correct horse battery', 'passphrase_confirmation' => 'typo', 'nested' => ['api_token' => 'x', 'keep' => 'y']])
         ->assertSessionHasErrors('passphrase');
 

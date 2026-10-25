@@ -288,11 +288,7 @@ export function ServerSettings({
 
     return (
         <>
-            <SettingsCard
-                id="appearance"
-                title="Appearance"
-                description="How this server shows up in the fleet."
-            >
+            <SettingsCard id="appearance" title="Appearance">
                 <LooksLike server={server} />
                 <Location server={server} />
             </SettingsCard>
@@ -303,7 +299,7 @@ export function ServerSettings({
             >
                 <SettingsRow
                     label="Production"
-                    description="Off keeps production away from this server, for a test or home box."
+                    description="Turn off to keep production away from this server, for example on a test or home machine."
                     htmlFor="allow-production"
                 >
                     <Switch
@@ -331,7 +327,7 @@ export function ServerSettings({
                 </SettingsRow>
                 <SettingsRow
                     label="Labels"
-                    description="Services can require them; replicas spread across zone, then provider."
+                    description="Services can require labels. Replicas spread across zones first, then providers."
                     align="start"
                 >
                     {editable ? (

@@ -124,6 +124,16 @@ const (
 	TaskVolumeImport TaskType = "volume_import"
 	TaskDbExport     TaskType = "db_export"
 	TaskVolumeExport TaskType = "volume_export"
+	// TaskAccess runs temporary remote access: SSH into a container or a
+	// database endpoint (docs/03 §12, D61).
+	TaskAccess TaskType = "access"
+	// TaskInventory lists the packages and runtimes of an image (docs/22 §3,
+	// docs/03 §13.1; daemon feature "inventory").
+	TaskInventory TaskType = "inventory"
+	// TaskInspectContainer reads a workload container's filesystem changes
+	// and processes for an investigation (docs/22 §7, docs/03 §13.2; daemon
+	// feature "containerInspection").
+	TaskInspectContainer TaskType = "inspect_container"
 )
 
 var taskTypes = []string{
@@ -132,6 +142,8 @@ var taskTypes = []string{
 	string(TaskBackupSnapshots), string(TaskVerifyRestore),
 	string(TaskSession),
 	string(TaskDbImport), string(TaskVolumeImport), string(TaskDbExport), string(TaskVolumeExport),
+	string(TaskAccess),
+	string(TaskInventory), string(TaskInspectContainer),
 }
 
 // TaskTypes returns all task types in protocol order.
@@ -612,9 +624,11 @@ const (
 	PurposeSSHKey TokenPurpose = "ssh_key"
 	// PurposeSession is the key of an interactive session (SessionSpec.key).
 	PurposeSession TokenPurpose = "session"
+	// PurposeAccess is the password of a temporary access (AccessSpec.password).
+	PurposeAccess TokenPurpose = "access"
 )
 
-var tokenPurposes = []string{string(PurposeClone), string(PurposeSSHKey), string(PurposeSession)}
+var tokenPurposes = []string{string(PurposeClone), string(PurposeSSHKey), string(PurposeSession), string(PurposeAccess)}
 
 // ProtocolSchema implements SchemaDescriber.
 func (TokenPurpose) ProtocolSchema() ScalarSchema { return enumSchema(tokenPurposes) }

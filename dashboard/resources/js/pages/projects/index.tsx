@@ -2,10 +2,13 @@ import { Form, Head, Link, router } from '@inertiajs/react';
 import { Plus, Search } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { ObjectCard } from '@/components/cards/object-card';
+import { formatCompact } from '@/components/charts/format';
 import { MiniBars } from '@/components/charts/mini-bars';
+import { Sparkline } from '@/components/charts/sparkline';
 import InputError from '@/components/input-error';
 import { CommitAvatar } from '@/components/commit-avatar';
 import { Logo } from '@/components/logo';
+import { MetaLine } from '@/components/patterns/meta-line';
 import { Page, PageHeader } from '@/components/patterns/page';
 import { ProjectIcon } from '@/components/project-icon';
 import { Status } from '@/components/status';
@@ -47,7 +50,8 @@ function StartEmptyDialog({
             <DialogContent className="sm:max-w-md">
                 <DialogTitle>Start an empty project</DialogTitle>
                 <DialogDescription>
-                    You add repositories, images and databases on its canvas.
+                    Add repositories, images and databases on its canvas
+                    afterwards.
                 </DialogDescription>
                 <Form {...store.form()} className="flex flex-col gap-6">
                     {({ processing, errors }) => (
@@ -129,9 +133,13 @@ function Card({ project }: { project: Summary }) {
             }
             footer={
                 <>
-                    <span className="min-w-0 truncate">
-                        {environments.join(' · ')}
-                    </span>
+                    <MetaLine className="min-w-0 flex-nowrap overflow-hidden">
+                        {environments.map((name) => (
+                            <span key={name} className="truncate">
+                                {name}
+                            </span>
+                        ))}
+                    </MetaLine>
                     <MiniBars
                         height={18}
                         className="w-[84px] shrink-0"
@@ -153,9 +161,27 @@ function Card({ project }: { project: Summary }) {
             }
         >
             <div className="-mt-2 flex min-w-0 flex-col gap-3">
-                <p className="truncate type-mono-small text-muted-foreground">
-                    {project.primaryDomain ?? 'No domain yet'}
-                </p>
+                <div className="flex min-w-0 items-center gap-3">
+                    <p className="min-w-0 flex-1 truncate type-mono-small text-muted-foreground">
+                        {project.primaryDomain ?? 'No domain yet'}
+                    </p>
+                    {project.requests && (
+                        <span className="flex shrink-0 items-center gap-2 type-small text-muted-foreground tabular-nums">
+                            <span className="w-14">
+                                <Sparkline
+                                    values={project.requests}
+                                    height={16}
+                                    min={0}
+                                    label={`${project.name} requests per hour, last 24 hours`}
+                                />
+                            </span>
+                            {formatCompact(
+                                project.requests.reduce((sum, v) => sum + v, 0),
+                            )}{' '}
+                            req in 24h
+                        </span>
+                    )}
+                </div>
                 {last && (
                     <p className="flex min-w-0 items-center gap-2 type-small">
                         <CommitAvatar
@@ -167,8 +193,8 @@ function Card({ project }: { project: Summary }) {
                             {last.message?.split('\n')[0] ??
                                 `${last.serviceName} deployed`}
                         </span>
-                        <span className="shrink-0 text-muted-foreground">
-                            {last.author ? `${last.author} · ` : ''}
+                        <MetaLine className="shrink-0 flex-nowrap text-muted-foreground">
+                            {last.author}
                             <time
                                 dateTime={last.createdAt}
                                 title={new Date(
@@ -177,7 +203,7 @@ function Card({ project }: { project: Summary }) {
                             >
                                 {compactAge(last.createdAt)}
                             </time>
-                        </span>
+                        </MetaLine>
                     </p>
                 )}
             </div>
@@ -212,7 +238,7 @@ function NewProjectCard({ onStartEmpty }: { onStartEmpty: () => void }) {
                     </Link>
                 </h3>
                 <p className="type-body text-muted-foreground">
-                    Import a repository and deploy it in one go.
+                    Import a repository and deploy it.
                 </p>
                 <button
                     type="button"
@@ -264,15 +290,13 @@ export default function ProjectsIndex({ projects, canCreate }: Props) {
         0,
     );
     const description =
-        projects.length === 0
-            ? undefined
-            : [
-                  plural(projects.length, 'project'),
-                  plural(services, 'service'),
-                  ...(deploysToday > 0
-                      ? [`${plural(deploysToday, 'deploy')} today`]
-                      : []),
-              ].join(' · ');
+        projects.length === 0 ? undefined : (
+            <MetaLine>
+                {plural(projects.length, 'project')}
+                {plural(services, 'service')}
+                {deploysToday > 0 && `${plural(deploysToday, 'deploy')} today`}
+            </MetaLine>
+        );
 
     return (
         <>
@@ -338,12 +362,10 @@ export default function ProjectsIndex({ projects, canCreate }: Props) {
                             ))}
                         </div>
                         <div className="flex flex-col gap-1">
-                            <p className="type-heading">
-                                Your projects will live here.
-                            </p>
+                            <p className="type-heading">No projects yet</p>
                             <p className="type-body text-muted-foreground">
                                 {canCreate
-                                    ? 'Import a repository: launchroom detects the rest and deploys it.'
+                                    ? 'Import a repository and launchroom works out how to build and run it.'
                                     : 'Ask a team admin or developer to create one.'}
                             </p>
                         </div>

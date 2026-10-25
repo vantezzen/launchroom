@@ -17,7 +17,7 @@ test('a pg_dump custom file carries the source server and pg_dump versions', fun
         ->and($result->family)->toBe('postgres')
         ->and($result->serverVersion)->toBe('15.8')
         ->and($result->toolVersion)->toBe('15.8')
-        ->and($result->detail())->toBe('PostgreSQL custom dump · from PostgreSQL 15.8')
+        ->and($result->detail())->toBe('PostgreSQL custom dump from PostgreSQL 15.8')
         ->and(FileSniffer::refusal($result, 'postgres', '17', 'postgres'))->toBeNull();
 });
 
@@ -43,7 +43,7 @@ test('plain SQL dumps, gzipped or not, are recognised by their header', function
     expect($gz->format)->toBe('postgres_sql')
         ->and($gz->compressed)->toBeTrue()
         ->and($gz->serverVersion)->toBe('16.4')
-        ->and($gz->detail())->toBe('PostgreSQL SQL dump, gzipped · from PostgreSQL 16.4')
+        ->and($gz->detail())->toBe('Gzipped PostgreSQL SQL dump from PostgreSQL 16.4')
         ->and($sniffer->database($mysql)->family)->toBe('mysql')
         ->and($sniffer->database($mysql)->serverVersion)->toBe('8.0.36')
         ->and(FileSniffer::refusal($sniffer->database($mysql), 'mysql', '8.4', 'mysql'))->toBeNull()

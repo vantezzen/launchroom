@@ -129,7 +129,7 @@ function DangerZone({ server }: { server: App.Data.Servers.ServerDetailData }) {
             <SettingsCard title="Danger zone">
                 <SettingsRow
                     label={`Remove ${server.name}`}
-                    description="It was never approved and runs nothing; its key stops working."
+                    description="It was never approved and runs nothing. Its key stops working."
                 >
                     <RemovePendingButton
                         target={{
@@ -148,7 +148,7 @@ function DangerZone({ server }: { server: App.Data.Servers.ServerDetailData }) {
             <MoveRow server={server} />
             <SettingsRow
                 label={`Revoke ${server.name}`}
-                description="Its key is rejected immediately; it needs a new install command to come back."
+                description="Its key is rejected immediately. To bring it back, add it again with a new install command."
             >
                 <ConfirmAction
                     trigger="Revoke"
@@ -190,7 +190,7 @@ function MoveRow({ server }: { server: App.Data.Servers.ServerDetailData }) {
     return (
         <SettingsRow
             label="Move to another server"
-            description="Everything on it moves to another server while it keeps running; databases and volumes stop briefly while they are copied."
+            description="Moves everything on this server to another one. Apps keep running, and databases and volumes stop briefly while they are copied."
         >
             <Button asChild variant="outline">
                 <Link href={moveRoute(server.id)}>Move</Link>
@@ -262,7 +262,7 @@ export default function ShowServer({
 
     return (
         <>
-            <Head title={`${server.name} · ${TAB_LABELS[tab]}`} />
+            <Head title={`${TAB_LABELS[tab]} - ${server.name}`} />
             <ServerMetricsLiveUpdates team={teamId} />
 
             <TopBarActions>

@@ -65,9 +65,11 @@ final class ServiceTransfersView
                 'inspect' => route('transfers.services.inspect', $instance),
                 'imports' => route('transfers.services.imports.store', $instance),
                 'exports' => route('transfers.services.exports.store', $instance),
+                'prepare' => route('transfers.services.prepare', $instance),
             ],
             config()->integer('launchroom.transfers.chunk_bytes'),
             config()->integer('launchroom.transfers.max_bytes'),
+            $target->subject === DataSubject::Database && $target->importSupported() ? DatabasePreparations::view($instance) : null,
         );
     }
 }

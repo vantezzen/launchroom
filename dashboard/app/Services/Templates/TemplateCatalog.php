@@ -150,6 +150,7 @@ final class TemplateCatalog
             inputs: $template->inputs,
             preview: BlueprintPreview::of($translation->blueprint),
             needsRepository: $template->needsRepository(),
+            notes: $template->notes,
         );
     }
 }

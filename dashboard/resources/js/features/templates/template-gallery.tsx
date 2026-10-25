@@ -177,7 +177,7 @@ function TemplateCard({
                     ))}
                 </span>
                 <span className="truncate">
-                    {plural(template.preview.services.length, 'service')} ·{' '}
+                    {plural(template.preview.services.length, 'service')},{' '}
                     {resourcesLine(template.preview)}
                 </span>
             </span>

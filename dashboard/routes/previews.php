@@ -41,6 +41,6 @@ Route::middleware(['web', 'auth', 'verified'])
         Route::put('p/{project}/previews/settings', [PreviewSettingsController::class, 'update'])->name('projects.previews.settings');
         Route::put('p/{project}/previews/services/{service}', [PreviewSettingsController::class, 'strategy'])->name('projects.previews.strategy');
         Route::post('p/{project}/previews/bypass-secret', [PreviewSettingsController::class, 'rotateBypass'])
-
+            ->middleware('throttle:20,1')
             ->name('projects.previews.bypass');
     });

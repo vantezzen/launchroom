@@ -140,7 +140,7 @@ final readonly class MovePlanner
 
         // Everyone involved must be able to copy data.
         if ($stateful !== [] && ! $source->supportsDaemonFeature(DaemonFeature::DataTransfer)) {
-            $blockers[] = "Update launchroomd on {$source->name} first: it can’t copy data off the server yet.";
+            $blockers[] = "{$source->name} runs an older version that can’t copy data off the server. Update it in Settings → Updates first.";
         }
 
         foreach ($stateful as $entry) {
@@ -234,7 +234,7 @@ final readonly class MovePlanner
         }
 
         if ($unknown) {
-            $warnings[] = 'Some data has never been backed up, so its size is unknown and the downtime estimate is missing for it. It still moves; a backup first makes the estimate exact.';
+            $warnings[] = 'Some data has never been backed up, so its size is unknown and the downtime estimate is missing for it. It still moves. Back it up first for an exact estimate.';
         }
 
         $sslip = $this->sslipDomains($source);
@@ -292,9 +292,9 @@ final readonly class MovePlanner
     {
         return array_values(array_filter([
             match (true) {
-                $source->status === ServerStatus::Revoked => "{$source->name} was revoked; there is nothing left to move.",
+                $source->status === ServerStatus::Revoked => "{$source->name} was revoked, so there is nothing left to move.",
                 $source->status === ServerStatus::PendingApproval => "{$source->name} was never approved.",
-                $source->status !== ServerStatus::Online => "{$source->name} is {$source->status->value}. A move copies data off a running server; for a server that is gone, use Replace server.",
+                $source->status !== ServerStatus::Online => "{$source->name} is {$source->status->value}. A move copies data off a running server. For a server that is gone, use Replace server.",
                 default => null,
             },
             $source->is_control_plane && ! $controlPlane ? "{$source->name} runs the dashboard. Move it with Settings → Move launchroom, which also moves the dashboard." : null,
@@ -316,8 +316,8 @@ final readonly class MovePlanner
             $this->openMove($target) instanceof ServerMove ? "{$target->name} is already part of a move." : null,
             $hasServices && HostRoleLimits::refusal($target, ServerRole::Runtime) !== null ? "{$target->name} can’t run apps: ".HostRoleLimits::refusal($target, ServerRole::Runtime) : null,
             $hasServices && ! $target->hasRole(ServerRole::Runtime) ? "{$target->name} doesn’t run apps. Turn on Run apps in its settings first." : null,
-            $hasStateful && ! $target->supportsDaemonFeature(DaemonFeature::DataTransfer) ? "Update launchroomd on {$target->name} first: it can’t receive data yet." : null,
-            $hasFiles && ! $target->supportsDaemonFeature(DaemonFeature::PreparedVolumes) ? "Update launchroomd on {$target->name} first: it can’t receive volumes yet." : null,
+            $hasStateful && ! $target->supportsDaemonFeature(DaemonFeature::DataTransfer) ? "{$target->name} runs an older version that can’t receive data. Update it in Settings → Updates first." : null,
+            $hasFiles && ! $target->supportsDaemonFeature(DaemonFeature::PreparedVolumes) ? "{$target->name} runs an older version that can’t receive volumes. Update it in Settings → Updates first." : null,
             $hasServices && ! $mesh ? 'The private network between your servers is off. Turn it on in Servers → Private network first.' : null,
             $hasServices && $mesh && ($target->mesh_ip === null || $source->mesh_ip === null) ? ($target->mesh_ip === null ? "{$target->name}" : "{$source->name}").' hasn’t joined the private network yet. Wait a minute and check again.' : null,
         ]));
@@ -407,7 +407,7 @@ final readonly class MovePlanner
     private function note(MoveItemKind $kind, bool $rebuild, ?string $platform): string
     {
         return match ($kind) {
-            MoveItemKind::Stateless => $rebuild ? "Built for {$platform}, then switched over without downtime." : 'Starts on the new server, then the old copy stops. No downtime.',
+            MoveItemKind::Stateless => $rebuild ? "Built for {$platform}, then switched over without downtime." : 'Starts on the new server before the old copy stops, so there is no downtime.',
             MoveItemKind::Dump => 'Its apps stop, a final dump is copied over and loaded, then they start against the new server.',
             MoveItemKind::Files => ($rebuild ? "Built for {$platform} first, while it still runs. " : '').'It stops, its files are copied over, then it starts on the new server.',
         };

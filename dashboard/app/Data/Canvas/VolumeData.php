@@ -21,5 +21,9 @@ final class VolumeData extends Data
         public ?string $serverId = null,
         public ?DeviceData $serverDevice = null,
         public ?ServerStatus $serverStatus = null,
+        /** Removed with the next deploy (the running containers still mount it). */
+        public bool $removing = false,
+        /** Where the running deployment mounts it, when that differs from $mountPath (a staged move). */
+        public ?string $deployedMountPath = null,
     ) {}
 }

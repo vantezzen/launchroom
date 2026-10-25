@@ -54,16 +54,16 @@ test('lifetimes and abilities are checked', function (): void {
     $world = DeploymentUi::make(false);
     $viewer = $world->member(TeamRole::Viewer);
 
-    $this->actingAs($viewer)->withSession(passwordConfirmed())
+    $this->actingAs($viewer)
         ->postJson('/settings/api-tokens', ['name' => 'x', 'expiresInDays' => 1000, 'abilities' => ['read']])
         ->assertUnprocessable();
 
-    $this->actingAs($viewer)->withSession(passwordConfirmed())
+    $this->actingAs($viewer)
         ->postJson('/settings/api-tokens', ['name' => 'x', 'expiresInDays' => 30, 'abilities' => ['deploy']])
         ->assertUnprocessable()
         ->assertJsonValidationErrors('abilities');
 
-    $this->actingAs($viewer)->withSession(passwordConfirmed())
+    $this->actingAs($viewer)
         ->postJson('/settings/api-tokens', ['name' => 'x', 'expiresInDays' => 30, 'abilities' => ['*']])
         ->assertUnprocessable();
 });

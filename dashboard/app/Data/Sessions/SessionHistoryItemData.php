@@ -30,5 +30,7 @@ final class SessionHistoryItemData extends Data
         public ?int $exitCode,
         public bool $canEnd,
         public bool $hasRecording,
+        /** Why the server couldn't start it ("This image has no shell…"), else null. */
+        public ?string $failure = null,
     ) {}
 }

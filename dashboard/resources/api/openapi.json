@@ -19,6 +19,9 @@
     ],
     "tags": [
         {
+            "name": "Analytics"
+        },
+        {
             "name": "CLI sign-in"
         },
         {
@@ -46,6 +49,9 @@
             "name": "Variables"
         },
         {
+            "name": "Security"
+        },
+        {
             "name": "Account"
         },
         {
@@ -59,6 +65,67 @@
         }
     ],
     "paths": {
+        "/analytics": {
+            "get": {
+                "operationId": "getTeamAnalytics",
+                "summary": "Request analytics of every project of the token's team",
+                "description": "Requests per project and hour (per day for `30d`) over all environments, totals against the previous period, the split by server and the top paths across projects.\n\nRequires the `read` ability.",
+                "tags": [
+                    "Analytics"
+                ],
+                "x-launchroom-ability": "read",
+                "security": [
+                    {
+                        "token": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "range",
+                        "in": "query",
+                        "schema": {
+                            "$ref": "#/components/schemas/AnalyticsRange",
+                            "default": "7d"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [
+                                        "data"
+                                    ],
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/TeamAnalyticsData"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthenticated"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Invalid"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimited"
+                    }
+                }
+            }
+        },
         "/cli/sessions": {
             "post": {
                 "operationId": "startCliSession",
@@ -657,6 +724,76 @@
                                     "properties": {
                                         "data": {
                                             "$ref": "#/components/schemas/EnvironmentResource"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthenticated"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Invalid"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimited"
+                    }
+                }
+            }
+        },
+        "/environments/{environment}/analytics": {
+            "get": {
+                "operationId": "getEnvironmentAnalytics",
+                "summary": "Request analytics of an environment",
+                "description": "Requests per hour (per day for `30d`) by status class, totals against the previous period, the split by server and service, and the top paths (ids as `:id`, no query strings), referrer hosts and client classes. No addresses or user agents are stored.\n\nRequires the `read` ability.",
+                "tags": [
+                    "Analytics"
+                ],
+                "x-launchroom-ability": "read",
+                "security": [
+                    {
+                        "token": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "environment",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^env_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+                        }
+                    },
+                    {
+                        "name": "range",
+                        "in": "query",
+                        "schema": {
+                            "$ref": "#/components/schemas/AnalyticsRange",
+                            "default": "7d"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [
+                                        "data"
+                                    ],
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/AnalyticsData"
                                         }
                                     }
                                 }
@@ -1672,6 +1809,85 @@
                 }
             }
         },
+        "/environments/{environment}/services/{service}/analytics": {
+            "get": {
+                "operationId": "getServiceAnalytics",
+                "summary": "Request analytics of one service in an environment",
+                "description": "Requests per hour (per day for `30d`) by status class, totals against the previous period, the split by server and service, and the top paths (ids as `:id`, no query strings), referrer hosts and client classes. No addresses or user agents are stored.\n\nRequires the `read` ability.",
+                "tags": [
+                    "Analytics"
+                ],
+                "x-launchroom-ability": "read",
+                "security": [
+                    {
+                        "token": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "environment",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^env_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+                        }
+                    },
+                    {
+                        "name": "service",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^svc_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+                        }
+                    },
+                    {
+                        "name": "range",
+                        "in": "query",
+                        "schema": {
+                            "$ref": "#/components/schemas/AnalyticsRange",
+                            "default": "7d"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [
+                                        "data"
+                                    ],
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/AnalyticsData"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthenticated"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Invalid"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimited"
+                    }
+                }
+            }
+        },
         "/environments/{environment}/services/{service}/domains": {
             "get": {
                 "operationId": "listDomains",
@@ -2076,6 +2292,77 @@
                                     "properties": {
                                         "data": {
                                             "$ref": "#/components/schemas/ImportRunData"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthenticated"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Invalid"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimited"
+                    }
+                }
+            }
+        },
+        "/environments/{environment}/services/{service}/inventory": {
+            "get": {
+                "operationId": "getServiceInventory",
+                "summary": "The components of a service's live image",
+                "description": "Requires the `read` ability.",
+                "tags": [
+                    "Security"
+                ],
+                "x-launchroom-ability": "read",
+                "security": [
+                    {
+                        "token": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "environment",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^env_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+                        }
+                    },
+                    {
+                        "name": "service",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^svc_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [
+                                        "data"
+                                    ],
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/ServiceInventoryResource"
                                         }
                                     }
                                 }
@@ -3040,6 +3327,326 @@
                 }
             }
         },
+        "/security/findings": {
+            "get": {
+                "operationId": "listSecurityFindings",
+                "summary": "Findings of the token's team",
+                "description": "Open findings by default, \"Action needed\" first. `level` is `action_needed` or `worth_knowing`; `reasons` are the codes of the rules that kept a finding from \"Action needed\".\n\nRequires the `read` ability.",
+                "tags": [
+                    "Security"
+                ],
+                "x-launchroom-ability": "read",
+                "security": [
+                    {
+                        "token": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "level",
+                        "in": "query",
+                        "schema": {
+                            "oneOf": [
+                                {
+                                    "type": "string",
+                                    "enum": [
+                                        "action_needed",
+                                        "worth_knowing"
+                                    ]
+                                },
+                                {
+                                    "type": "null"
+                                }
+                            ]
+                        }
+                    },
+                    {
+                        "name": "status",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "open",
+                                "dismissed",
+                                "resolved"
+                            ],
+                            "default": "open"
+                        }
+                    },
+                    {
+                        "name": "project",
+                        "in": "query",
+                        "schema": {
+                            "type": [
+                                "string",
+                                "null"
+                            ],
+                            "pattern": "^prj_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+                        }
+                    },
+                    {
+                        "name": "service",
+                        "in": "query",
+                        "schema": {
+                            "type": [
+                                "string",
+                                "null"
+                            ],
+                            "pattern": "^svc_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+                        }
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 100,
+                            "default": 50
+                        }
+                    },
+                    {
+                        "name": "cursor",
+                        "in": "query",
+                        "schema": {
+                            "type": [
+                                "string",
+                                "null"
+                            ],
+                            "maxLength": 200,
+                            "pattern": "^[A-Za-z0-9_-]+$"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [
+                                        "data",
+                                        "meta"
+                                    ],
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/components/schemas/FindingCardData"
+                                            }
+                                        },
+                                        "meta": {
+                                            "$ref": "#/components/schemas/ListMeta"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthenticated"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Invalid"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimited"
+                    }
+                }
+            }
+        },
+        "/security/findings/{finding}": {
+            "get": {
+                "operationId": "getSecurityFinding",
+                "summary": "One finding with its advisory and latest investigation report",
+                "description": "The report has sentences and next steps, never process commands or client networks.\n\nRequires the `read` ability.",
+                "tags": [
+                    "Security"
+                ],
+                "x-launchroom-ability": "read",
+                "security": [
+                    {
+                        "token": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "finding",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^fnd_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [
+                                        "data"
+                                    ],
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/FindingDetailData"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthenticated"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Invalid"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimited"
+                    }
+                }
+            }
+        },
+        "/security/inventory": {
+            "get": {
+                "operationId": "searchSecurityInventory",
+                "summary": "Packages and runtimes matching a query, with versions and where they run",
+                "description": "Requires the `read` ability.",
+                "tags": [
+                    "Security"
+                ],
+                "x-launchroom-ability": "read",
+                "security": [
+                    {
+                        "token": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "q",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "maxLength": 200,
+                            "default": ""
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [
+                                        "data"
+                                    ],
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/InventorySearchData"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthenticated"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Invalid"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimited"
+                    }
+                }
+            }
+        },
+        "/security/waf": {
+            "get": {
+                "operationId": "getSecurityWaf",
+                "summary": "Web firewall totals per category and service",
+                "description": "Requires the `read` ability.",
+                "tags": [
+                    "Security"
+                ],
+                "x-launchroom-ability": "read",
+                "security": [
+                    {
+                        "token": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "range",
+                        "in": "query",
+                        "schema": {
+                            "$ref": "#/components/schemas/AnalyticsRange",
+                            "default": "7d"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [
+                                        "data"
+                                    ],
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/WafSummaryResource"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthenticated"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Invalid"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimited"
+                    }
+                }
+            }
+        },
         "/servers": {
             "get": {
                 "operationId": "listServers",
@@ -3423,6 +4030,459 @@
     },
     "components": {
         "schemas": {
+            "AdvisoryDetailData": {
+                "type": "object",
+                "description": "An advisory group's public record: plain text only (rendered as paragraphs and https links), references and the source.",
+                "properties": {
+                    "ids": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "summary": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "details": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "published": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "modified": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "cvssV3": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "cvssV4": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "cwe": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "references": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/InvestigationLinkData"
+                        }
+                    },
+                    "source": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "ids",
+                    "summary",
+                    "details",
+                    "published",
+                    "modified",
+                    "cvssV3",
+                    "cvssV4",
+                    "cwe",
+                    "references",
+                    "source"
+                ],
+                "additionalProperties": false
+            },
+            "AnalyticsAgentsData": {
+                "type": "object",
+                "description": "Coarse client classes: browsers (a \"Mozilla\" user agent without a bot keyword), bots and crawlers, everything else.",
+                "properties": {
+                    "browsers": {
+                        "type": "integer"
+                    },
+                    "bots": {
+                        "type": "integer"
+                    },
+                    "other": {
+                        "type": "integer"
+                    }
+                },
+                "required": [
+                    "browsers",
+                    "bots",
+                    "other"
+                ],
+                "additionalProperties": false
+            },
+            "AnalyticsData": {
+                "type": "object",
+                "description": "Request analytics of an environment or one service. Status series are request counts per bucket, aligned with `timestamps` (bucket starts, UTC). `paths`, `referrers` and `agents` come from the edges' analytics windows; `pathRequests` is the traffic they cover, so the \"other\" row of the top routes is `pathRequests` minus the listed paths. `serversWithoutPaths` names edges that served traffic in the range but don't send paths yet (older servers).",
+                "properties": {
+                    "range": {
+                        "type": "string"
+                    },
+                    "bucketSeconds": {
+                        "type": "integer"
+                    },
+                    "timestamps": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "status2xx": {
+                        "type": "array",
+                        "items": {
+                            "type": "integer"
+                        }
+                    },
+                    "status3xx": {
+                        "type": "array",
+                        "items": {
+                            "type": "integer"
+                        }
+                    },
+                    "status4xx": {
+                        "type": "array",
+                        "items": {
+                            "type": "integer"
+                        }
+                    },
+                    "status5xx": {
+                        "type": "array",
+                        "items": {
+                            "type": "integer"
+                        }
+                    },
+                    "statusOther": {
+                        "type": "array",
+                        "items": {
+                            "type": "integer"
+                        }
+                    },
+                    "totals": {
+                        "$ref": "#/components/schemas/AnalyticsTotalsData"
+                    },
+                    "servers": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/AnalyticsSplitData"
+                        }
+                    },
+                    "services": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/AnalyticsSplitData"
+                        }
+                    },
+                    "paths": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/AnalyticsPathData"
+                        }
+                    },
+                    "pathRequests": {
+                        "type": "integer"
+                    },
+                    "referrers": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/AnalyticsReferrerData"
+                        }
+                    },
+                    "referrerRequests": {
+                        "type": "integer"
+                    },
+                    "agents": {
+                        "oneOf": [
+                            {
+                                "$ref": "#/components/schemas/AnalyticsAgentsData"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "serversWithoutPaths": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    }
+                },
+                "required": [
+                    "range",
+                    "bucketSeconds",
+                    "timestamps",
+                    "status2xx",
+                    "status3xx",
+                    "status4xx",
+                    "status5xx",
+                    "statusOther",
+                    "totals",
+                    "servers",
+                    "services",
+                    "paths",
+                    "pathRequests",
+                    "referrers",
+                    "referrerRequests",
+                    "agents",
+                    "serversWithoutPaths"
+                ],
+                "additionalProperties": false
+            },
+            "AnalyticsPathData": {
+                "type": "object",
+                "description": "One normalised path of the top routes: ids appear as `:id`, there is never a query string.",
+                "properties": {
+                    "path": {
+                        "type": "string"
+                    },
+                    "requests": {
+                        "type": "integer"
+                    },
+                    "status4xx": {
+                        "type": "integer"
+                    },
+                    "status5xx": {
+                        "type": "integer"
+                    }
+                },
+                "required": [
+                    "path",
+                    "requests",
+                    "status4xx",
+                    "status5xx"
+                ],
+                "additionalProperties": false
+            },
+            "AnalyticsProjectData": {
+                "type": "object",
+                "description": "One project of the team analytics overview: requests of all its environments over the range and per bucket, the previous period's requests, error shares, and its production environment for the drill-down link.",
+                "properties": {
+                    "id": {
+                        "type": "string"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "colorSlot": {
+                        "description": "Slot 0–7 of the data palette (colour follows the project).",
+                        "type": "integer"
+                    },
+                    "environmentId": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "requests": {
+                        "type": "integer"
+                    },
+                    "previousRequests": {
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "errorRatePct": {
+                        "description": "5xx share in percent.",
+                        "type": [
+                            "number",
+                            "null"
+                        ]
+                    },
+                    "clientErrorPct": {
+                        "description": "4xx share in percent.",
+                        "type": [
+                            "number",
+                            "null"
+                        ]
+                    },
+                    "requestsSeries": {
+                        "type": "array",
+                        "items": {
+                            "type": "integer"
+                        }
+                    }
+                },
+                "required": [
+                    "id",
+                    "name",
+                    "colorSlot",
+                    "environmentId",
+                    "requests",
+                    "previousRequests",
+                    "errorRatePct",
+                    "clientErrorPct",
+                    "requestsSeries"
+                ],
+                "additionalProperties": false
+            },
+            "AnalyticsRange": {
+                "type": "string",
+                "enum": [
+                    "24h",
+                    "7d",
+                    "30d"
+                ],
+                "description": "Time ranges of the request analytics: the last 24 hours and 7 days in hourly buckets, the last 30 days in daily buckets (from the daily rollups)."
+            },
+            "AnalyticsReferrerData": {
+                "type": "object",
+                "description": "A referrer host (never a full URL) and the requests it sent.",
+                "properties": {
+                    "host": {
+                        "type": "string"
+                    },
+                    "requests": {
+                        "type": "integer"
+                    }
+                },
+                "required": [
+                    "host",
+                    "requests"
+                ],
+                "additionalProperties": false
+            },
+            "AnalyticsSplitData": {
+                "type": "object",
+                "description": "One server or service of the analytics split: its requests over the range, error rate and requests per bucket.",
+                "properties": {
+                    "id": {
+                        "type": "string"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "requests": {
+                        "type": "integer"
+                    },
+                    "errorRatePct": {
+                        "type": [
+                            "number",
+                            "null"
+                        ]
+                    },
+                    "requestsSeries": {
+                        "type": "array",
+                        "items": {
+                            "type": "integer"
+                        }
+                    },
+                    "removed": {
+                        "description": "A server that was removed (revoked) since; its name may now belong to another server.",
+                        "type": "boolean",
+                        "default": false
+                    }
+                },
+                "required": [
+                    "id",
+                    "name",
+                    "requests",
+                    "errorRatePct",
+                    "requestsSeries"
+                ],
+                "additionalProperties": false
+            },
+            "AnalyticsTeamPathData": {
+                "type": "object",
+                "description": "One normalised path of one project, for the team overview's top paths.",
+                "properties": {
+                    "projectId": {
+                        "type": "string"
+                    },
+                    "projectName": {
+                        "type": "string"
+                    },
+                    "path": {
+                        "type": "string"
+                    },
+                    "requests": {
+                        "type": "integer"
+                    },
+                    "status4xx": {
+                        "type": "integer"
+                    },
+                    "status5xx": {
+                        "type": "integer"
+                    }
+                },
+                "required": [
+                    "projectId",
+                    "projectName",
+                    "path",
+                    "requests",
+                    "status4xx",
+                    "status5xx"
+                ],
+                "additionalProperties": false
+            },
+            "AnalyticsTotalsData": {
+                "type": "object",
+                "description": "Request counts over the range and the same length of time before it. Requests include 1xx (WebSocket upgrades), which are in no status class.",
+                "properties": {
+                    "requests": {
+                        "type": "integer"
+                    },
+                    "status2xx": {
+                        "type": "integer"
+                    },
+                    "status3xx": {
+                        "type": "integer"
+                    },
+                    "status4xx": {
+                        "type": "integer"
+                    },
+                    "status5xx": {
+                        "type": "integer"
+                    },
+                    "errorRatePct": {
+                        "description": "5xx share in percent; null without requests.",
+                        "type": [
+                            "number",
+                            "null"
+                        ]
+                    },
+                    "previousRequests": {
+                        "description": "Requests of the previous period; null without any.",
+                        "type": [
+                            "integer",
+                            "null"
+                        ]
+                    },
+                    "previousErrorRatePct": {
+                        "type": [
+                            "number",
+                            "null"
+                        ]
+                    }
+                },
+                "required": [
+                    "requests",
+                    "status2xx",
+                    "status3xx",
+                    "status4xx",
+                    "status5xx",
+                    "errorRatePct",
+                    "previousRequests",
+                    "previousErrorRatePct"
+                ],
+                "additionalProperties": false
+            },
             "ApiAbility": {
                 "type": "string",
                 "enum": [
@@ -3883,7 +4943,7 @@
             },
             "ConfigFileEnvironmentData": {
                 "type": "object",
-                "description": "One environment on Settings → General → Config file: the last read of its launchroom.json.",
+                "description": "One environment on Settings → Config file: the last read of its launchroom.json.",
                 "properties": {
                     "id": {
                         "type": "string"
@@ -4579,6 +5639,300 @@
                 ],
                 "description": "What an export reads: the data as it is now, or a stored backup."
             },
+            "FindingCardData": {
+                "type": "object",
+                "description": "One finding on the Security page: the service, the package and its fix, the advisory and its severity, the investigation line.",
+                "properties": {
+                    "id": {
+                        "type": "string"
+                    },
+                    "href": {
+                        "type": "string"
+                    },
+                    "advisory": {
+                        "type": "string"
+                    },
+                    "title": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "severity": {
+                        "description": "`critical`, `high`, `medium`, `low` or `unknown`.",
+                        "type": "string"
+                    },
+                    "cvss": {
+                        "type": [
+                            "number",
+                            "null"
+                        ]
+                    },
+                    "knownExploited": {
+                        "type": "boolean"
+                    },
+                    "knownExploitedSince": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "public": {
+                        "type": "boolean"
+                    },
+                    "ecosystem": {
+                        "type": "string"
+                    },
+                    "package": {
+                        "type": "string"
+                    },
+                    "version": {
+                        "type": "string"
+                    },
+                    "fixedVersion": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "level": {
+                        "description": "`action_needed` or `worth_knowing`.",
+                        "type": "string"
+                    },
+                    "reasons": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "status": {
+                        "description": "`open` or `dismissed`.",
+                        "type": "string"
+                    },
+                    "firstSeenAt": {
+                        "type": "string"
+                    },
+                    "service": {
+                        "$ref": "#/components/schemas/SecurityServiceRefData"
+                    },
+                    "investigation": {
+                        "oneOf": [
+                            {
+                                "$ref": "#/components/schemas/FindingInvestigationData"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    }
+                },
+                "required": [
+                    "id",
+                    "href",
+                    "advisory",
+                    "title",
+                    "severity",
+                    "cvss",
+                    "knownExploited",
+                    "knownExploitedSince",
+                    "public",
+                    "ecosystem",
+                    "package",
+                    "version",
+                    "fixedVersion",
+                    "level",
+                    "reasons",
+                    "status",
+                    "firstSeenAt",
+                    "service",
+                    "investigation"
+                ],
+                "additionalProperties": false
+            },
+            "FindingCheckData": {
+                "type": "object",
+                "description": "One evaluated rule (A1–A6) of a finding, as a checklist line.",
+                "properties": {
+                    "rule": {
+                        "type": "string"
+                    },
+                    "passed": {
+                        "type": "boolean"
+                    },
+                    "label": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "rule",
+                    "passed",
+                    "label"
+                ],
+                "additionalProperties": false
+            },
+            "FindingDetailData": {
+                "type": "object",
+                "description": "A finding's page or sheet.",
+                "properties": {
+                    "finding": {
+                        "$ref": "#/components/schemas/FindingCardData"
+                    },
+                    "kind": {
+                        "type": "string"
+                    },
+                    "scope": {
+                        "type": "string"
+                    },
+                    "presence": {
+                        "type": "string"
+                    },
+                    "direct": {
+                        "type": "boolean"
+                    },
+                    "lockfile": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "otherServices": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/SecurityServiceRefData"
+                        }
+                    },
+                    "domains": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "checks": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/FindingCheckData"
+                        }
+                    },
+                    "dismissedReason": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "dismissedNote": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "dismissedBy": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "dismissedAt": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "advisory": {
+                        "oneOf": [
+                            {
+                                "$ref": "#/components/schemas/AdvisoryDetailData"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "investigation": {
+                        "oneOf": [
+                            {
+                                "$ref": "#/components/schemas/InvestigationDetailData"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    },
+                    "wafMode": {
+                        "type": "string"
+                    },
+                    "canDismiss": {
+                        "type": "boolean"
+                    },
+                    "canInvestigate": {
+                        "type": "boolean"
+                    },
+                    "canChangeFirewall": {
+                        "type": "boolean"
+                    },
+                    "firewallUrl": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "finding",
+                    "kind",
+                    "scope",
+                    "presence",
+                    "direct",
+                    "lockfile",
+                    "otherServices",
+                    "domains",
+                    "checks",
+                    "dismissedReason",
+                    "dismissedNote",
+                    "dismissedBy",
+                    "dismissedAt",
+                    "advisory",
+                    "investigation",
+                    "wafMode",
+                    "canDismiss",
+                    "canInvestigate",
+                    "canChangeFirewall",
+                    "firewallUrl"
+                ],
+                "additionalProperties": false
+            },
+            "FindingInvestigationData": {
+                "type": "object",
+                "description": "The latest investigation of a finding, as a line on a card.",
+                "properties": {
+                    "id": {
+                        "type": "string"
+                    },
+                    "status": {
+                        "description": "`running`, `completed`, `partial` or `failed`.",
+                        "type": "string"
+                    },
+                    "startedAt": {
+                        "type": "string"
+                    },
+                    "finishedAt": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "summary": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    }
+                },
+                "required": [
+                    "id",
+                    "status",
+                    "startedAt",
+                    "finishedAt",
+                    "summary"
+                ],
+                "additionalProperties": false
+            },
             "ImportResultData": {
                 "type": "object",
                 "description": "What an import left behind (from the task's DataImportResult).",
@@ -4719,6 +6073,13 @@
                             "string",
                             "null"
                         ]
+                    },
+                    "waitingFor": {
+                        "description": "While holding: the services it waits for, still running.",
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
                     }
                 },
                 "required": [
@@ -4758,6 +6119,366 @@
                     "url"
                 ],
                 "description": "Where an import reads from (protocol ImportSourceKind)."
+            },
+            "InventoryComponentResource": {
+                "type": "object",
+                "description": "One component of a service's live image.",
+                "properties": {
+                    "ecosystem": {
+                        "type": "string"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "version": {
+                        "type": "string"
+                    },
+                    "purl": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "kind": {
+                        "description": "`os`, `library` or `runtime`.",
+                        "type": "string"
+                    },
+                    "scope": {
+                        "description": "`runtime`, `dev`, `client` or `unknown`.",
+                        "type": "string"
+                    },
+                    "presence": {
+                        "description": "`installed` or `bundled`.",
+                        "type": "string"
+                    },
+                    "direct": {
+                        "type": "boolean"
+                    }
+                },
+                "required": [
+                    "ecosystem",
+                    "name",
+                    "version",
+                    "purl",
+                    "kind",
+                    "scope",
+                    "presence",
+                    "direct"
+                ],
+                "additionalProperties": false
+            },
+            "InventoryPackageData": {
+                "type": "object",
+                "description": "Search results grouped by package name.",
+                "properties": {
+                    "name": {
+                        "type": "string"
+                    },
+                    "ecosystem": {
+                        "type": "string"
+                    },
+                    "versions": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/InventoryUseData"
+                        }
+                    }
+                },
+                "required": [
+                    "name",
+                    "ecosystem",
+                    "versions"
+                ],
+                "additionalProperties": false
+            },
+            "InventorySearchData": {
+                "type": "object",
+                "description": "\"Search packages and runtimes\".",
+                "properties": {
+                    "query": {
+                        "type": "string"
+                    },
+                    "packages": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/InventoryPackageData"
+                        }
+                    },
+                    "truncated": {
+                        "type": "boolean"
+                    }
+                },
+                "required": [
+                    "query",
+                    "packages",
+                    "truncated"
+                ],
+                "additionalProperties": false
+            },
+            "InventoryUseData": {
+                "type": "object",
+                "description": "One version of a package and where it runs.",
+                "properties": {
+                    "version": {
+                        "type": "string"
+                    },
+                    "scope": {
+                        "description": "`runtime`, `dev`, `client` or `unknown` (the widest seen).",
+                        "type": "string"
+                    },
+                    "kind": {
+                        "type": "string"
+                    },
+                    "services": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/SecurityServiceRefData"
+                        }
+                    },
+                    "findings": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/FindingCardData"
+                        }
+                    }
+                },
+                "required": [
+                    "version",
+                    "scope",
+                    "kind",
+                    "services",
+                    "findings"
+                ],
+                "additionalProperties": false
+            },
+            "InvestigationCheckData": {
+                "type": "object",
+                "description": "\"What we checked\": one signal and its window.",
+                "properties": {
+                    "label": {
+                        "type": "string"
+                    },
+                    "window": {
+                        "type": "string"
+                    },
+                    "state": {
+                        "description": "`checked`, `partial` (couldn't check, e.g. a server offline) or `skipped`.",
+                        "type": "string",
+                        "default": "checked"
+                    },
+                    "note": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    }
+                },
+                "required": [
+                    "label",
+                    "window"
+                ],
+                "additionalProperties": false
+            },
+            "InvestigationDetailData": {
+                "type": "object",
+                "description": "An investigation with its report.",
+                "properties": {
+                    "id": {
+                        "type": "string"
+                    },
+                    "status": {
+                        "type": "string"
+                    },
+                    "automatic": {
+                        "type": "boolean"
+                    },
+                    "startedBy": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "startedAt": {
+                        "type": "string"
+                    },
+                    "finishedAt": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "replicas": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/InvestigationReplicaData"
+                        }
+                    },
+                    "report": {
+                        "oneOf": [
+                            {
+                                "$ref": "#/components/schemas/InvestigationReportData"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
+                    }
+                },
+                "required": [
+                    "id",
+                    "status",
+                    "automatic",
+                    "startedBy",
+                    "startedAt",
+                    "finishedAt",
+                    "replicas",
+                    "report"
+                ],
+                "additionalProperties": false
+            },
+            "InvestigationLineData": {
+                "type": "object",
+                "description": "One sentence of \"What we found\". `network` is the client network a firewall line is about; only owners and admins get it.",
+                "properties": {
+                    "level": {
+                        "description": "`concerning`, `notable` or `clear`.",
+                        "type": "string"
+                    },
+                    "text": {
+                        "type": "string"
+                    },
+                    "network": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    }
+                },
+                "required": [
+                    "level",
+                    "text"
+                ],
+                "additionalProperties": false
+            },
+            "InvestigationLinkData": {
+                "type": "object",
+                "properties": {
+                    "label": {
+                        "type": "string"
+                    },
+                    "href": {
+                        "type": "string"
+                    },
+                    "external": {
+                        "type": "boolean",
+                        "default": false
+                    }
+                },
+                "required": [
+                    "label",
+                    "href"
+                ],
+                "additionalProperties": false
+            },
+            "InvestigationReplicaData": {
+                "type": "object",
+                "description": "One replica of an investigation in progress.",
+                "properties": {
+                    "server": {
+                        "type": "string"
+                    },
+                    "state": {
+                        "description": "`pending`, `done`, `failed`, `offline` or `unsupported`.",
+                        "type": "string"
+                    },
+                    "message": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    }
+                },
+                "required": [
+                    "server",
+                    "state",
+                    "message"
+                ],
+                "additionalProperties": false
+            },
+            "InvestigationReportData": {
+                "type": "object",
+                "description": "An investigation's report: what was checked, what was found (sentences with a level), the next steps and the honesty line. Stored as `security_investigations.report`; no process commands, only program paths, and client networks only in `network` (owners/admins).",
+                "properties": {
+                    "checked": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/InvestigationCheckData"
+                        }
+                    },
+                    "found": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/InvestigationLineData"
+                        }
+                    },
+                    "steps": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/InvestigationStepData"
+                        }
+                    },
+                    "partial": {
+                        "type": "boolean"
+                    },
+                    "summary": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "honesty": {
+                        "type": "string",
+                        "default": "Someone who got in can remove their traces, so a clean result doesn’t prove nothing happened. The firewall only sees requests that match its rules, and launchroom keeps request details for 7 days."
+                    }
+                },
+                "required": [
+                    "checked",
+                    "found",
+                    "steps",
+                    "partial",
+                    "summary"
+                ],
+                "additionalProperties": false
+            },
+            "InvestigationStepData": {
+                "type": "object",
+                "description": "One of \"What to do now\", mapped to an existing action.",
+                "properties": {
+                    "kind": {
+                        "description": "`update_package`, `change_image`, `redeploy`, `restore`, `rotate_secrets`, `database_password`, `block`, `advisory`.",
+                        "type": "string"
+                    },
+                    "text": {
+                        "type": "string"
+                    },
+                    "command": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "links": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/InvestigationLinkData"
+                        }
+                    }
+                },
+                "required": [
+                    "kind",
+                    "text"
+                ],
+                "additionalProperties": false
             },
             "LogEntryData": {
                 "type": "object",
@@ -5001,6 +6722,55 @@
                 ],
                 "additionalProperties": false
             },
+            "SecurityServiceRefData": {
+                "type": "object",
+                "description": "Where something runs: a service in a project's environment, with the link to its panel.",
+                "properties": {
+                    "id": {
+                        "type": "string"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "logo": {
+                        "description": "Logo key of the service (`nextjs`, `postgres`, …) or null.",
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "kind": {
+                        "type": "string"
+                    },
+                    "projectId": {
+                        "type": "string"
+                    },
+                    "projectName": {
+                        "type": "string"
+                    },
+                    "environmentId": {
+                        "type": "string"
+                    },
+                    "environmentName": {
+                        "type": "string"
+                    },
+                    "href": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "id",
+                    "name",
+                    "logo",
+                    "kind",
+                    "projectId",
+                    "projectName",
+                    "environmentId",
+                    "environmentName",
+                    "href"
+                ],
+                "additionalProperties": false
+            },
             "ServerResource": {
                 "type": "object",
                 "properties": {
@@ -5094,6 +6864,79 @@
                     "revoked"
                 ],
                 "description": "Lifecycle of an enrolled server. pending_approval → online (approved) | revoked online ⇄ unreachable → offline → online revoked is terminal: the key is denied immediately."
+            },
+            "ServiceInventoryResource": {
+                "type": "object",
+                "description": "The inventory of a service's live image.",
+                "properties": {
+                    "id": {
+                        "type": "string"
+                    },
+                    "image": {
+                        "type": "string"
+                    },
+                    "platform": {
+                        "type": "string"
+                    },
+                    "status": {
+                        "description": "`pending`, `ready` or `failed`.",
+                        "type": "string"
+                    },
+                    "source": {
+                        "description": "`built` (lockfiles set scopes) or `registry`.",
+                        "type": "string"
+                    },
+                    "distro": {
+                        "type": [
+                            "object",
+                            "null"
+                        ],
+                        "additionalProperties": {
+                            "type": "string"
+                        }
+                    },
+                    "scannedAt": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "truncated": {
+                        "type": "boolean"
+                    },
+                    "notes": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "error": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "components": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/InventoryComponentResource"
+                        }
+                    }
+                },
+                "required": [
+                    "id",
+                    "image",
+                    "platform",
+                    "status",
+                    "source",
+                    "distro",
+                    "scannedAt",
+                    "truncated",
+                    "notes",
+                    "error",
+                    "components"
+                ],
+                "additionalProperties": false
             },
             "ServiceKind": {
                 "type": "string",
@@ -5286,6 +7129,59 @@
                         ]
                     }
                 },
+                "additionalProperties": false
+            },
+            "TeamAnalyticsData": {
+                "type": "object",
+                "description": "Request analytics of every project of a team: totals against the previous period, requests per project and bucket (aligned with `timestamps`), the split by server and the top paths across all projects (`pathRequests` is the traffic the path data covers).",
+                "properties": {
+                    "range": {
+                        "type": "string"
+                    },
+                    "bucketSeconds": {
+                        "type": "integer"
+                    },
+                    "timestamps": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "totals": {
+                        "$ref": "#/components/schemas/AnalyticsTotalsData"
+                    },
+                    "projects": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/AnalyticsProjectData"
+                        }
+                    },
+                    "servers": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/AnalyticsSplitData"
+                        }
+                    },
+                    "paths": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/AnalyticsTeamPathData"
+                        }
+                    },
+                    "pathRequests": {
+                        "type": "integer"
+                    }
+                },
+                "required": [
+                    "range",
+                    "bucketSeconds",
+                    "timestamps",
+                    "totals",
+                    "projects",
+                    "servers",
+                    "paths",
+                    "pathRequests"
+                ],
                 "additionalProperties": false
             },
             "TeamRole": {
@@ -5559,6 +7455,108 @@
                 "required": [
                     "key",
                     "value"
+                ],
+                "additionalProperties": false
+            },
+            "WafCategoryCountData": {
+                "type": "object",
+                "properties": {
+                    "category": {
+                        "type": "string"
+                    },
+                    "label": {
+                        "type": "string"
+                    },
+                    "blocked": {
+                        "type": "integer"
+                    },
+                    "detected": {
+                        "type": "integer"
+                    }
+                },
+                "required": [
+                    "category",
+                    "label",
+                    "blocked",
+                    "detected"
+                ],
+                "additionalProperties": false
+            },
+            "WafServiceCountData": {
+                "type": "object",
+                "description": "A service in \"Most targeted\" or \"Watching, not blocking yet\".",
+                "properties": {
+                    "service": {
+                        "$ref": "#/components/schemas/SecurityServiceRefData"
+                    },
+                    "blocked": {
+                        "type": "integer"
+                    },
+                    "detected": {
+                        "type": "integer"
+                    },
+                    "categories": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "topPath": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "settingsUrl": {
+                        "description": "POST target of \"Turn on blocking\" (Log only services).",
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    }
+                },
+                "required": [
+                    "service",
+                    "blocked",
+                    "detected",
+                    "categories",
+                    "topPath",
+                    "settingsUrl"
+                ],
+                "additionalProperties": false
+            },
+            "WafSummaryResource": {
+                "type": "object",
+                "description": "`GET /api/v1/security/waf?range=`: firewall totals, per category and per service. No client networks.",
+                "properties": {
+                    "range": {
+                        "type": "string"
+                    },
+                    "blocked": {
+                        "type": "integer"
+                    },
+                    "detected": {
+                        "type": "integer"
+                    },
+                    "categories": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/WafCategoryCountData"
+                        }
+                    },
+                    "services": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/WafServiceCountData"
+                        }
+                    }
+                },
+                "required": [
+                    "range",
+                    "blocked",
+                    "detected",
+                    "categories",
+                    "services"
                 ],
                 "additionalProperties": false
             },

@@ -130,7 +130,7 @@ test('a NodeState the daemon refused is shown until it applies a newer one', fun
     [$state, $value, $detail] = desiredStateCheck($server);
     expect($server->state_rejection)->toEqual(['version' => 2, 'error' => 'invalid document: networks.name[1]: duplicate value lr-e_x', 'rejectedAt' => '2026-10-17T12:00:04Z'])
         ->and($state)->toBe(HealthCheckState::Critical)
-        ->and($value)->toBe('Server refused v2; it keeps running v1')
+        ->and($value)->toBe('Server refused v2 and keeps running v1')
         ->and($detail)->toContain('duplicate value lr-e_x');
 
     $report([]);

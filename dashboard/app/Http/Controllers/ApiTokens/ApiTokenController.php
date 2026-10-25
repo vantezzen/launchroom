@@ -59,7 +59,7 @@ final class ApiTokenController extends Controller
         Gate::authorize('delete', $apiToken);
 
         $revoke->handle($apiToken, $this->auditActor($request, $user));
-        Inertia::flash('toast', ['type' => 'success', 'message' => "{$apiToken->name} revoked. Requests with it stop working now."]);
+        Inertia::flash('toast', ['type' => 'success', 'message' => "{$apiToken->name} revoked. Requests that use it are refused from now on."]);
 
         return back();
     }

@@ -77,7 +77,7 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
 const statuses: { state: StatusState; label: string; detail?: string }[] = [
     { state: 'active', label: 'Live' },
     { state: 'active', label: 'Online' },
-    { state: 'progress', label: 'Deploying', detail: 'Building · 41s' },
+    { state: 'progress', label: 'Deploying', detail: 'Building, 41s' },
     { state: 'staged', label: 'Ready to promote' },
     {
         state: 'warning',
@@ -181,27 +181,27 @@ export default function DesignSheet() {
                 <Section title="Type roles">
                     <Card>
                         <CardContent className="flex flex-col gap-3">
-                            <p className="type-display">Display 32 · heroes</p>
-                            <p className="type-title">Title 28 · page titles</p>
-                            <p className="type-stat">34% · stat 24</p>
+                            <p className="type-display">Display 32: heroes</p>
+                            <p className="type-title">Title 28: page titles</p>
+                            <p className="type-stat">34%: stat 24</p>
                             <p className="type-heading">
-                                Heading 16 · sections and cards
+                                Heading 16: sections and cards
                             </p>
                             <p className="type-body">
-                                Body 14 · default UI text, one sentence per
+                                Body 14: default UI text, one sentence per
                                 description.
                             </p>
                             <p className="type-label">
-                                Label 13 · forms, tabs, chips
+                                Label 13: forms, tabs, chips
                             </p>
                             <p className="type-small text-muted-foreground">
-                                Small 12 · meta text and legends
+                                Small 12: meta text and legends
                             </p>
                             <p className="type-mono">
-                                mono 13 · api.shop.internal:8080
+                                mono 13: api.shop.internal:8080
                             </p>
                             <p className="type-mono-small text-muted-foreground">
-                                mono-small 12 · 3b7d5e1
+                                mono-small 12: 3b7d5e1
                             </p>
                         </CardContent>
                     </Card>
@@ -369,7 +369,7 @@ export default function DesignSheet() {
                                 </span>
                                 <span className="type-stat">34%</span>
                                 <span className="type-small text-muted-foreground">
-                                    avg 29% · last hour
+                                    avg 29% over the last hour
                                 </span>
                             </CardContent>
                         </Card>
@@ -482,7 +482,7 @@ export default function DesignSheet() {
                                 {
                                     id: 'does',
                                     title: 'What it does',
-                                    summary: 'Runtime · Build',
+                                    summary: 'Runtime and build',
                                 },
                                 { id: 'connect', title: 'Connect' },
                             ]}
@@ -569,12 +569,15 @@ export default function DesignSheet() {
                                 <Button
                                     variant="outline"
                                     onClick={() =>
-                                        toast.success('web is live · 1m 12s', {
-                                            action: {
-                                                label: 'Open',
-                                                onClick: () => undefined,
+                                        toast.success(
+                                            'web is live after 1m 12s',
+                                            {
+                                                action: {
+                                                    label: 'Open',
+                                                    onClick: () => undefined,
+                                                },
                                             },
-                                        })
+                                        )
                                     }
                                 >
                                     Success
@@ -648,7 +651,7 @@ export default function DesignSheet() {
                 media={<Logo kind="nextjs" size={32} decorative />}
                 title="web"
                 status={<StatusPill state="active" label="Live" />}
-                description="Next.js 16 · acme/shop"
+                description="Next.js 16 from acme/shop"
             >
                 <SheetSection
                     title="Public networking"

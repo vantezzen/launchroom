@@ -9,6 +9,8 @@ use App\Data\Attributes\Promotion;
 use App\Enums\ChangeEffect;
 use App\Enums\PromotionClass;
 use App\Support\Blueprints\BlueprintValidator;
+use App\Support\Services\ConfigFileRules;
+use Spatie\LaravelData\Attributes\DataCollectionOf;
 use Spatie\LaravelData\Attributes\Validation\Max;
 use Spatie\LaravelData\Attributes\Validation\Min;
 use Spatie\LaravelData\Data;
@@ -27,6 +29,7 @@ final class DeploySettings extends Data
      * @param  list<string>|null  $entrypoint  overrides the image's ENTRYPOINT (argv; Compose imports, docs/17)
      * @param  list<string>  $capabilities  added to cap-drop ALL, within launchroomd's allow-list (docs/03 §8)
      * @param  ScheduleSettings|null  $schedule  cron services only: when the job runs; null runs the command continuously
+     * @param  list<ConfigFile>  $files  written read-only into the container before it starts (D65, App\Support\Services\ConfigFileRules)
      */
     public function __construct(
         /** Port the process listens on; null for workers or to use the engine default. */
@@ -48,6 +51,8 @@ final class DeploySettings extends Data
         public array $capabilities = [],
         #[ChangeAffects(ChangeEffect::Restart), Promotion(PromotionClass::Structural)]
         public ?ScheduleSettings $schedule = null,
+        #[ChangeAffects(ChangeEffect::Restart), Promotion(PromotionClass::Structural), DataCollectionOf(ConfigFile::class)]
+        public array $files = [],
     ) {}
 
     /**
@@ -66,6 +71,9 @@ final class DeploySettings extends Data
             'entrypoint.*' => ['string', 'max:4096'],
             'capabilities' => ['sometimes', 'array', 'max:6'],
             'capabilities.*' => ['string', 'distinct', 'in:'.implode(',', BlueprintValidator::CAPABILITIES)],
+            'files' => ['sometimes', 'array', 'max:'.ConfigFileRules::MAX_FILES],
+            'files.*.path' => ['required', 'string', 'max:255'],
+            'files.*.content' => ['present', 'string', 'max:'.ConfigFileRules::MAX_BYTES],
         ];
     }
 }

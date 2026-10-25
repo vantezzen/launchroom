@@ -5,6 +5,7 @@ import { CardChip, ObjectCard } from '@/components/cards';
 import { colorForSlot } from '@/components/charts/palette';
 import { Sparkline } from '@/components/charts/sparkline';
 import { DeviceImage } from '@/components/devices/device-image';
+import { MetaLine } from '@/components/patterns/meta-line';
 import { Status } from '@/components/status';
 import { Button } from '@/components/ui/button';
 import {
@@ -199,7 +200,7 @@ export function FleetCard({
         current?.memUsedMb != null && current.memTotalMb
             ? formatUsedOf(current.memUsedMb, current.memTotalMb)
             : null;
-    const specs = specParts(server.specs).join(' · ');
+    const specs = specParts(server.specs);
 
     return (
         <ObjectCard
@@ -255,9 +256,11 @@ export function FleetCard({
                 </CardChip>
             ))}
             footer={
-                specs || disk !== null ? (
+                specs.length > 0 || disk !== null ? (
                     <>
-                        <span className="truncate">{specs}</span>
+                        <MetaLine className="flex-nowrap overflow-hidden whitespace-nowrap">
+                            {specs}
+                        </MetaLine>
                         {disk !== null && disk >= 80 && (
                             <span className="shrink-0 text-status-progress">
                                 Disk {Math.round(disk)}%

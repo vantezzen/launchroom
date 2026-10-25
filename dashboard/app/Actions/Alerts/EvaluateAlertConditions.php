@@ -89,6 +89,7 @@ final readonly class EvaluateAlertConditions
                 AlertRule::CpuHigh, AlertRule::MemoryHigh => $this->serverLoad($rule, $rules, $firing, $now),
                 AlertRule::DiskFull => $this->disks($rules, $firing, $now),
                 AlertRule::CertificateExpiring => $this->certificates($rules, $now),
+                AlertRule::WafUnavailable => $this->wafUnavailable($now),
                 default => [],
             };
 
@@ -129,6 +130,7 @@ final readonly class EvaluateAlertConditions
             AlertRule::MemoryHigh => 'Memory use is back to normal.',
             AlertRule::DiskFull => 'There is enough free disk space again.',
             AlertRule::CertificateExpiring => 'The certificate was renewed.',
+            AlertRule::WafUnavailable => 'The web firewall runs again.',
             default => 'It is back to normal.',
         };
     }
@@ -216,7 +218,7 @@ final readonly class EvaluateAlertConditions
                         ? "It restarted {$state['restarts']} times in the last ".self::CRASH_WINDOW_MINUTES.' minutes. Its logs usually say why.'
                         : ($state['down'] === $state['total']
                             ? 'No replica is passing its health check. Its logs usually say why.'
-                            : "{$state['down']} of {$state['total']} replicas are down; the others keep serving."),
+                            : "{$state['down']} of {$state['total']} replicas are down. The others keep serving."),
                     severity: $environment->kind === EnvironmentKind::Production ? AlertSeverity::Critical : AlertSeverity::Warning,
                     href: "/p/{$environment->project->public_id}/{$environment->public_id}/s/{$instance->service->public_id}/logs",
                     project: $environment->project,
@@ -475,7 +477,7 @@ final readonly class EvaluateAlertConditions
                 rule: AlertRule::DiskFull,
                 subject: 'server:'.$server->public_id,
                 title: "{$server->name} is running out of disk space",
-                summary: $this->gigabytes($used).' of '.$this->gigabytes($total).' used. Old images and build cache are cleaned up automatically; unused volumes and backups on the server are not.',
+                summary: $this->gigabytes($used).' of '.$this->gigabytes($total).' used. launchroom removes old images and build cache automatically, but not unused volumes or backups on the server.',
                 severity: $pct >= 95 ? AlertSeverity::Critical : AlertSeverity::Warning,
                 href: "/servers/{$server->public_id}",
                 server: $server,
@@ -545,6 +547,38 @@ final readonly class EvaluateAlertConditions
                     facts: $facts,
                 );
             };
+        }
+
+        return $out;
+    }
+
+    /**
+     * Edges whose Caddy refused the firewall and serve their routes without
+     * it (Report.ingress.waf.state `error`, docs/22 §6.6) for 5 minutes.
+     *
+     * @return array<string, Closure(): AlertSignal>
+     */
+    private function wafUnavailable(CarbonImmutable $now): array
+    {
+        $out = [];
+
+        foreach ($this->activeServers() as $server) {
+            $status = $server->waf_status;
+
+            if ($status === null || $status['state'] !== 'error' || CarbonImmutable::parse($status['since'])->greaterThan($now->subMinutes(5))) {
+                continue;
+            }
+
+            $message = is_string($status['message'] ?? null) ? mb_substr($status['message'], 0, 300) : null;
+            $out[$server->team_id.'|server:'.$server->public_id] = fn (): AlertSignal => new AlertSignal(
+                team: $this->team($server->team_id),
+                rule: AlertRule::WafUnavailable,
+                subject: 'server:'.$server->public_id,
+                title: "The web firewall is off on {$server->name}",
+                summary: 'Its routes keep serving requests without the firewall until the server accepts the firewall settings again.'.($message === null ? '' : " The server said: {$message}"),
+                href: '/security',
+                server: $server,
+            );
         }
 
         return $out;

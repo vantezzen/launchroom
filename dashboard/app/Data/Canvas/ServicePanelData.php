@@ -25,5 +25,9 @@ final class ServicePanelData extends Data
         public bool $canData = false,
         /** Settings tab: the open page (`general`, `domains`, `scaling`…; null = the default). */
         public ?string $section = null,
+        /** Open "Action needed" findings of this service instance (docs/22 §9.1): the header chip. */
+        public int $actionNeeded = 0,
+        /** The finding the chip opens when there is exactly one (`fnd_…`); with more it opens the Security page for this service. */
+        public ?string $actionNeededFinding = null,
     ) {}
 }

@@ -2,6 +2,116 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://launchroom.vantezzen.io/schema/v1/task.json",
   "$defs": {
+    "AccessSpec": {
+      "properties": {
+        "access": {
+          "type": "string",
+          "pattern": "^acc_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "ssh",
+            "database",
+            "volume"
+          ]
+        },
+        "workload": {
+          "type": "string",
+          "pattern": "^wl_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "engine": {
+          "type": "string",
+          "enum": [
+            "postgres",
+            "mysql",
+            "mariadb",
+            "redis",
+            "mongodb",
+            "valkey",
+            "clickhouse"
+          ],
+          "description": "Engine is the database engine (database only: postgres, redis, valkey)."
+        },
+        "user": {
+          "type": "string",
+          "pattern": "^(lr-[a-z0-9]{10}|lr_tmp_[a-z0-9]{12})$",
+          "description": "User is the generated SSH user or database role."
+        },
+        "authorizedKeys": {
+          "items": {
+            "type": "string",
+            "maxLength": 2048,
+            "pattern": "^(ssh-ed25519|ecdsa-sha2-nistp256|ecdsa-sha2-nistp384|ecdsa-sha2-nistp521|ssh-rsa) [A-Za-z0-9+/]+={0,2}$"
+          },
+          "type": "array",
+          "maxItems": 4,
+          "description": "AuthorizedKeys are the only keys SSH accepts (no password then)."
+        },
+        "password": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Sealed",
+              "description": "Password is a sealed TaskToken (purpose \"access\"): the SSH password\n(without keys) or the database role's password."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "allowFrom": {
+          "items": {
+            "type": "string",
+            "pattern": "^[0-9a-f.:]{2,45}/[0-9]{1,3}$"
+          },
+          "type": "array",
+          "maxItems": 16,
+          "minItems": 1,
+          "description": "AllowFrom are the source ranges that may connect."
+        },
+        "hosts": {
+          "items": {
+            "type": "string",
+            "maxLength": 253,
+            "pattern": "^[a-z0-9.:-]{1,253}$"
+          },
+          "type": "array",
+          "maxItems": 4,
+          "description": "Hosts are the addresses and names the dashboard shows (certificate SANs)."
+        },
+        "allowWrites": {
+          "type": "boolean",
+          "description": "AllowWrites lets the database role change rows (never DDL or roles);\nfor a volume it mounts the volume writable (else read-only)."
+        },
+        "volume": {
+          "type": "string",
+          "pattern": "^vol_[0-9A-HJKMNP-TV-Z]{26}$",
+          "description": "Volume is the volume a volume access serves (volume only). The\nworkload must mount it in the verified NodeState."
+        },
+        "image": {
+          "type": "string",
+          "maxLength": 512,
+          "pattern": "^(?:localhost|[a-z0-9-]+(?:\\.[a-z0-9-]+)+|[a-z0-9-]+(?:\\.[a-z0-9-]+)*:[0-9]{1,5})(?:/[a-z0-9]+(?:(?:\\.|_|__|-+)[a-z0-9]+)*)+@sha256:[a-f0-9]{64}$",
+          "description": "Image is the SFTP helper image (volume only): digest-pinned, its digest\none this launchroomd pins for the \"files\" system component."
+        },
+        "idleTimeout": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]{0,5}(?:ms|s|m|h)$",
+          "description": "IdleTimeout ends the access after this long without a connection or traffic."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "access",
+        "kind",
+        "workload",
+        "user",
+        "allowFrom",
+        "idleTimeout"
+      ],
+      "description": "AccessSpec is the spec of an \"access\" task (docs/03 §12.1)."
+    },
     "BackupDestination": {
       "properties": {
         "kind": {
@@ -569,6 +679,117 @@
         "key"
       ],
       "description": "HostKey is one pinned SSH host key."
+    },
+    "InspectContainerSpec": {
+      "properties": {
+        "workload": {
+          "type": "string",
+          "pattern": "^wl_[0-9A-HJKMNP-TV-Z]{26}$",
+          "description": "Workload is the replica's workload id; it must be in the server's\nverified NodeState."
+        },
+        "maskEnv": {
+          "oneOf": [
+            {
+              "items": {
+                "type": "string",
+                "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,255}$"
+              },
+              "type": "array",
+              "maxItems": 1024,
+              "description": "MaskEnv names variables of the workload's env whose values (and their\nencodings, and the password of URL values) are replaced by \"***\" in\nprocess commands (docs/09 R16). Names missing from the env are ignored."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "workload"
+      ],
+      "description": "InspectContainerSpec asks for the changes and processes of one workload's running container (task \"inspect_container\", daemon feature \"containerInspection\")."
+    },
+    "InventorySource": {
+      "properties": {
+        "repo": {
+          "$ref": "#/$defs/RepoSpec"
+        },
+        "cloneToken": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Sealed",
+              "description": "CloneToken / SSHKey: sealed clone credential, exactly as for builds\n(TaskToken purpose \"clone\" / \"ssh_key\", sealed at lease time)."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sshKey": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Sealed"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rootDir": {
+          "type": "string",
+          "maxLength": 1024,
+          "pattern": "^[A-Za-z0-9._@+=,-]+(?:/[A-Za-z0-9._@+=,-]+)*$",
+          "description": "RootDir is the repo-relative app directory. Omitted: repo root."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "repo"
+      ],
+      "description": "InventorySource is the repository and commit an image was built from."
+    },
+    "InventorySpec": {
+      "properties": {
+        "image": {
+          "type": "string",
+          "maxLength": 512,
+          "pattern": "^(?:localhost|[a-z0-9-]+(?:\\.[a-z0-9-]+)+|[a-z0-9-]+(?:\\.[a-z0-9-]+)*:[0-9]{1,5})(?:/[a-z0-9]+(?:(?:\\.|_|__|-+)[a-z0-9]+)*)+@sha256:[a-f0-9]{64}$",
+          "description": "Image is the digest-pinned image to scan: a built image\n(\"\u003cregistry\u003e/apps/\u003cservice\u003e@sha256:…\") or a mirrored one\n(\"\u003cregistry\u003e/mirror/…@sha256:…\"). For a multi-platform index the\nmanifest of Platform is scanned."
+        },
+        "platform": {
+          "type": "string",
+          "enum": [
+            "linux/amd64",
+            "linux/arm64"
+          ]
+        },
+        "service": {
+          "type": "string",
+          "pattern": "^svc_[0-9A-HJKMNP-TV-Z]{26}$",
+          "description": "Service is required for images in an apps/ repository and must be\nthat repository's service: the task's registry pull token covers\nexactly it (docs/03 §4.5). Omitted for mirrored images."
+        },
+        "source": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/InventorySource",
+              "description": "Source is the commit the image was built from. With it launchroomd\nclones the repository and reads manifests and lockfiles to set\ndependency scopes (docs/22 §3.3); without it language packages have\nscope \"unknown\"."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "image",
+        "platform"
+      ],
+      "description": "InventorySpec asks for the inventory of one image (task \"inventory\", daemon feature \"inventory\")."
     },
     "LogsSpec": {
       "properties": {
@@ -1472,6 +1693,25 @@
       "if": {
         "properties": {
           "type": {
+            "const": "access"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "spec": {
+            "$ref": "#/$defs/AccessSpec"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
             "const": "backup"
           }
         },
@@ -1578,6 +1818,44 @@
         "properties": {
           "spec": {
             "$ref": "#/$defs/DbImportSpec"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "inspect_container"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "spec": {
+            "$ref": "#/$defs/InspectContainerSpec"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "inventory"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "spec": {
+            "$ref": "#/$defs/InventorySpec"
           }
         }
       }
@@ -1776,7 +2054,10 @@
         "db_import",
         "volume_import",
         "db_export",
-        "volume_export"
+        "volume_export",
+        "access",
+        "inventory",
+        "inspect_container"
       ]
     },
     "leaseExpiresAt": {

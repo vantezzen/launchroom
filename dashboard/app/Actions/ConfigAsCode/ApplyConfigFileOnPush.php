@@ -39,7 +39,7 @@ use RuntimeException;
  *   deploy gets a failed deployment with the file's errors (GitHub shows a
  *   failed status). Nothing is staged.
  * - Changes and nothing else was staged: one Deploy (revision
- *   "launchroom.json · 3b7d5e1") with the pushed commit pinned on the pushed
+ *   "launchroom.json at 3b7d5e1") with the pushed commit pinned on the pushed
  *   services; returns no instances.
  * - Otherwise (no changes, or someone's dashboard edit is staged): the
  *   changes stay staged and the push deploys the code with the last
@@ -101,7 +101,7 @@ final readonly class ApplyConfigFileOnPush
         }
 
         try {
-            $result = $this->deploy->handle($environment, null, AuditActor::system(), "{$path} · ".substr($commit->sha, 0, 7), $trigger, commits: $commits);
+            $result = $this->deploy->handle($environment, null, AuditActor::system(), "{$path} at ".substr($commit->sha, 0, 7), $trigger, commits: $commits);
         } catch (DomainRuleViolation|UnresolvedReferences $e) {
             // Broken references or the secrets policy: the changes stay staged
             // and the review page shows why; the code deploys as before.

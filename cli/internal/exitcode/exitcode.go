@@ -20,7 +20,10 @@ const (
 	DeploymentFailed = 10
 	// TransferFailed: an import or export ran and failed (docs/14 §12).
 	TransferFailed = 11
-	Interrupted    = 130
+	// SecurityActionNeeded: `launchroom security --fail-on action-needed`
+	// found open "Action needed" findings (docs/22 §11).
+	SecurityActionNeeded = 12
+	Interrupted          = 130
 )
 
 // Err is an error with the exit code the process should end with.

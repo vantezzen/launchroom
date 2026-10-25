@@ -88,7 +88,11 @@ enum AuditAction: string
     // Data import and export (D55, docs/14 §12.5).
     case DataImportStarted = 'data.import_started';
     case DataImportFinished = 'data.import_finished';
+    /** Cancelled before its task started (docs/14 §12.5). */
+    case DataImportCancelled = 'data.import_cancelled';
     case DataImportSourceChecked = 'data.import_source_checked';
+    /** A never-deployed database started alone for an import (docs/14 §12.9). */
+    case DataImportPrepared = 'data.import_prepared';
     case DataExportStarted = 'data.export_started';
     case DataExportDownloaded = 'data.export_downloaded';
     case RestoreSwapped = 'backup.restore_swapped';
@@ -97,6 +101,9 @@ enum AuditAction: string
     case PointInTimeRecoveryUpdated = 'backup.point_in_time_updated';
     case BackupVerificationStarted = 'backup.verification_started';
     case ServiceVolumeAdded = 'service.volume_added';
+    case ServiceVolumeChanged = 'service.volume_changed';
+    case ServiceVolumeRemoved = 'service.volume_removed';
+    case ServiceImageChanged = 'service.image_changed';
     case ServerReplaced = 'server.replaced';
     case RecoveryFinished = 'instance.recovery_finished';
     case RecoveryPassphraseSet = 'backup.recovery_passphrase_set';
@@ -181,4 +188,24 @@ enum AuditAction: string
     case ControlPlaneHandedOver = 'instance.control_plane_handed_over';
     case ControlPlaneTakenOver = 'instance.control_plane_taken_over';
     case ControlPlaneMoveFinished = 'instance.control_plane_move_finished';
+    // Temporary remote access (D61, docs/09 R39).
+    case SshAccessStarted = 'access.ssh_started';
+    case SshAccessEnded = 'access.ssh_ended';
+    case DatabaseAccessStarted = 'access.database_started';
+    case DatabaseAccessEnded = 'access.database_ended';
+    case VolumeAccessStarted = 'access.volume_started';
+    case VolumeAccessEnded = 'access.volume_ended';
+    case AccessConnected = 'access.connected';
+    case AccessAuthFailed = 'access.auth_failed';
+    case AccessLocked = 'access.locked';
+    // Security center (docs/22 §12).
+    case WafModeChanged = 'waf.mode_changed';
+    case WafParanoiaChanged = 'waf.paranoia_changed';
+    case WafInspectBodyChanged = 'waf.inspect_body_changed';
+    case WafExclusionAdded = 'waf.exclusion_added';
+    case WafExclusionRemoved = 'waf.exclusion_removed';
+    case SecurityFindingDismissed = 'security.finding_dismissed';
+    case SecurityFindingReopened = 'security.finding_reopened';
+    case SecurityInvestigationStarted = 'security.investigation_started';
+    case SecuritySourcesChanged = 'instance.security_sources_changed';
 }

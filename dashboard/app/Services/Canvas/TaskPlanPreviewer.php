@@ -113,7 +113,7 @@ final readonly class TaskPlanPreviewer implements PlanPreviewer
         $failure = is_array($result['failure'] ?? null) ? $result['failure'] : [];
 
         if ($this->pastDeadline($task)) {
-            return new PlanPreviewData('failed', null, 'Detection did not finish in time. Retry, or add the service: the first build detects again.');
+            return new PlanPreviewData('failed', null, 'Detection did not finish in time. Retry, or add the service and let the first build detect it.');
         }
 
         return match ($task->status) {

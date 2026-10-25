@@ -25,7 +25,7 @@ final readonly class DeleteVariable
     public function handle(Variable $variable, AuditActor $actor): void
     {
         if ($variable->connection_id !== null) {
-            throw DomainRuleViolation::on('variable', 'This variable belongs to a connection; remove the connection instead.');
+            throw DomainRuleViolation::on('variable', 'This variable belongs to a connection. Remove the connection instead.');
         }
 
         DB::transaction(function () use ($variable, $actor): void {

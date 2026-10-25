@@ -62,8 +62,10 @@ type Options struct {
 	// certificate storage peers, ambassador upstreams), already filtered by
 	// the local policy floor. nil = none.
 	Mesh func() MeshRules
-	Log  *slog.Logger
-	Now  func() time.Time
+	// Access returns the running temporary accesses (docs/05 §8). nil = none.
+	Access func() []AccessRule
+	Log    *slog.Logger
+	Now    func() time.Time
 }
 
 // MeshRules are the cross-server parts of the ruleset (docs/05 §3, §5).
@@ -121,6 +123,9 @@ func (m *Manager) Spec(nets []docker.Network) Spec {
 			continue
 		}
 		s.Bridges = append(s.Bridges, n.Bridge)
+	}
+	if m.o.Access != nil {
+		s.Access = m.o.Access()
 	}
 	if m.o.Mesh != nil {
 		r := m.o.Mesh()
@@ -184,6 +189,9 @@ func (m *Manager) failed(now time.Time, err error) error {
 	m.o.Log.Error("firewall rules could not be applied; workloads and builds are held back", "err", err)
 	return fmt.Errorf("%w: %w", ErrNotApplied, err)
 }
+
+// Enforced reports whether this manager applies rules (not LR_FIREWALL=off).
+func (m *Manager) Enforced() bool { return m.o.Mode != ModeOff }
 
 // Status returns the last result (nil before the first Sync).
 func (m *Manager) Status() *state.FirewallStatus {

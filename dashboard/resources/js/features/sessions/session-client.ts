@@ -20,9 +20,15 @@ export type SessionEvents = {
     onExit?: (code: number | null) => void;
     /** A data result, reassembled from its parts. */
     onResult?: (op: string, result: unknown) => void;
-    /** The session is over: launchroomd said why, or the connection is gone. */
-    onEnd?: (reason: string) => void;
+    /**
+     * The session is over: launchroomd said why (with a message when it
+     * couldn't start), or the connection is gone.
+     */
+    onEnd?: (reason: string, message?: string) => void;
 };
+
+/** The dashboard's signed `session.end` server event (docs/03 §11.3). */
+const SERVER_END_EVENT = 'session.end';
 
 const PING_MS = 15_000;
 
@@ -133,20 +139,31 @@ export class SessionClient {
         this.pusher.connection.bind(
             'state_change',
             (states: { current: string }) => {
-                if (
-                    authorized &&
-                    ['disconnected', 'unavailable', 'failed'].includes(
-                        states.current,
-                    )
-                ) {
+                // Unreachable before joining is a failure too, not a wait:
+                // the tab would otherwise say "Connecting…" forever.
+                if (['unavailable', 'failed'].includes(states.current)) {
+                    this.finish(
+                        authorized
+                            ? 'The live connection was lost.'
+                            : 'The browser couldn’t reach the live connection (Reverb).',
+                    );
+                } else if (authorized && states.current === 'disconnected') {
                     this.finish('The live connection was lost.');
                 }
             },
         );
 
         this.channel = this.pusher.subscribe(`private-${this.opened.channel}`);
-        this.channel.bind('pusher:subscription_error', () =>
-            this.finish('Couldn’t join the session. Open a new one.'),
+        this.channel.bind(
+            'pusher:subscription_error',
+            (error: { error?: unknown; status?: unknown } | undefined) =>
+                this.finish(
+                    `Couldn’t join the session${typeof error?.status === 'number' ? ` (HTTP ${error.status})` : ''}. Open a new one.`,
+                ),
+        );
+        // The dashboard ended it (replaced, never picked up, ended by an admin).
+        this.channel.bind(SERVER_END_EVENT, (data: unknown) =>
+            this.finish('ended', serverEndReason(data)),
         );
         this.channel.bind(FRAME_EVENT, (data: unknown) => {
             this.receiving = this.receiving.then(() => this.receive(data));
@@ -224,7 +241,10 @@ export class SessionClient {
                 this.collect(payload);
                 break;
             case 'end':
-                this.finish(payload.reason ?? 'The session ended.');
+                this.finish(
+                    payload.reason ?? 'The session ended.',
+                    payload.message,
+                );
                 break;
             default:
                 break;
@@ -286,14 +306,14 @@ export class SessionClient {
         }
     }
 
-    private finish(reason: string): void {
+    private finish(reason: string, message?: string): void {
         if (this.closed) {
             return;
         }
 
         this.closed = true;
         this.teardown();
-        this.events.onEnd?.(reason);
+        this.events.onEnd?.(reason, message || undefined);
     }
 
     private teardown(): void {
@@ -305,5 +325,25 @@ export class SessionClient {
         this.pusher?.disconnect();
         this.pusher = null;
         this.channel = null;
+    }
+}
+
+/** The reason in a `session.end` event's signed payload, if it has one. */
+export function serverEndReason(data: unknown): string | undefined {
+    try {
+        const outer = (typeof data === 'string' ? JSON.parse(data) : data) as {
+            payload?: unknown;
+        };
+        const payload = (
+            typeof outer.payload === 'string'
+                ? JSON.parse(outer.payload)
+                : outer.payload
+        ) as { reason?: unknown } | undefined;
+
+        return typeof payload?.reason === 'string' && payload.reason !== ''
+            ? payload.reason
+            : undefined;
+    } catch {
+        return undefined;
     }
 }

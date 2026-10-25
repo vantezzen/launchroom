@@ -54,7 +54,7 @@ export function CreateGitHubAppForm({ primary }: { primary: boolean }) {
                                     className="type-mono"
                                 />
                                 <p className="type-small text-muted-foreground">
-                                    Empty: your personal account.
+                                    Leave empty for your personal account.
                                 </p>
                                 <InputError message={errors.organization} />
                             </div>

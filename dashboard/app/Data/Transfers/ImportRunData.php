@@ -7,7 +7,10 @@ namespace App\Data\Transfers;
 use App\Enums\Transfers\DataSubject;
 use App\Enums\Transfers\ImportRunStatus;
 use App\Enums\Transfers\ImportSourceKind;
+use App\Models\ServiceInstance;
 use App\Models\Transfers\DataImportRun;
+use App\Services\Backups\RestoreHolds;
+use App\Services\Transfers\ImportHolds;
 use Spatie\LaravelData\Data;
 
 /**
@@ -16,6 +19,9 @@ use Spatie\LaravelData\Data;
  */
 final class ImportRunData extends Data
 {
+    /**
+     * @param  list<string>  $waitingFor
+     */
     public function __construct(
         public string $id,
         public DataSubject $subject,
@@ -36,6 +42,8 @@ final class ImportRunData extends Data
         public bool $safetySnapshot = false,
         /** The transfer the file came from (to try again without uploading). */
         public ?string $transferId = null,
+        /** While holding: the services it waits for, still running. */
+        public array $waitingFor = [],
     ) {}
 
     public static function fromRun(DataImportRun $run): self
@@ -60,6 +68,22 @@ final class ImportRunData extends Data
             $run->finished_at?->toIso8601String(),
             $run->safety_backup_run_id !== null,
             $run->transfer?->public_id,
+            $run->status === ImportRunStatus::Holding ? self::waitingFor($run) : [],
         );
+    }
+
+    /**
+     * @return list<string>
+     */
+    private static function waitingFor(DataImportRun $run): array
+    {
+        $running = RestoreHolds::running(ImportHolds::heldBy($run));
+
+        /** @var list<string> $names */
+        $names = $running === [] ? [] : ServiceInstance::query()->whereKey($running)->with('service')->get()
+            ->map(static fn (ServiceInstance $instance): string => $instance->service->name)
+            ->unique()->sort()->values()->all();
+
+        return $names;
     }
 }

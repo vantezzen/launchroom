@@ -1,5 +1,5 @@
 import { Link } from '@inertiajs/react';
-import { Info } from 'lucide-react';
+import { Callout } from '@/components/patterns/callout';
 import type { StatusState } from '@/components/status';
 import { Status } from '@/components/status';
 import { TimeAgo } from '@/components/time-ago';
@@ -44,73 +44,116 @@ export function dnsCheckLabel(check: Check): string {
 }
 
 /**
- * What a proxy in front of the domain means for TLS (docs/05 §5). For
- * Cloudflare: Full (strict), certificates over HTTP-01 through the proxy or
- * DNS-01 with an API token, and the one-level limit of its free edge
- * certificate (generated app addresses are deeper than that).
+ * What a proxy in front of the domain means for TLS (docs/05 §5): for
+ * Cloudflare, Full (strict), and certificates over HTTP-01 through the proxy
+ * or DNS-01 with an API token.
  */
-export function ProxyNote({
-    proxy,
-    wildcard = false,
-}: {
-    proxy: string;
-    wildcard?: boolean;
-}) {
+export function ProxyNote({ proxy }: { proxy: string }) {
     const docsUrl = useDocsUrl();
     const cloudflare = proxy === 'Cloudflare';
 
     return (
-        <div className="flex gap-3 rounded-lg border bg-recessed px-4 py-3">
-            <Info
-                aria-hidden="true"
-                className="mt-0.5 size-4 shrink-0 text-muted-foreground"
-            />
-            <div className="flex min-w-0 flex-col gap-2 type-small text-muted-foreground">
-                <p className="font-medium text-foreground">
-                    Visitors connect to {proxy}, which connects to your server.
-                </p>
-                <ul className="flex list-disc flex-col gap-1 pl-4">
-                    {cloudflare && (
-                        <li>
-                            Set SSL/TLS to <strong>Full (strict)</strong> in
-                            Cloudflare. Flexible loops between HTTP and HTTPS.
-                        </li>
-                    )}
-                    <li>
-                        Your server gets its certificates over HTTP through the
-                        proxy.
-                        {cloudflare && (
-                            <>
-                                {' '}
-                                For wildcard certificates, add a Cloudflare API
-                                token in{' '}
-                                <Link
-                                    href={networkSettings()}
-                                    className="text-signal underline-offset-4 hover:underline"
-                                >
-                                    Settings → Network
-                                </Link>
-                                .
-                            </>
-                        )}
-                    </li>
-                    {cloudflare && wildcard && (
-                        <li>
-                            Cloudflare’s free edge certificate covers one
-                            subdomain level. App addresses are deeper
-                            (web-production.shop.apps.example.com), so set this
-                            record to <strong>DNS only</strong>, or use a
-                            Cloudflare certificate that covers them.
-                        </li>
-                    )}
-                </ul>
+        <Callout
+            title={`Visitors connect to ${proxy}, which connects to your server`}
+            actions={
                 <LearnMore
                     href={docsUrl('troubleshooting/dns-and-tls#behind-a-proxy')}
                 >
                     DNS behind a proxy
                 </LearnMore>
-            </div>
-        </div>
+            }
+        >
+            <ul className="flex list-disc flex-col gap-1 pl-4">
+                {cloudflare && (
+                    <li>
+                        Set SSL/TLS to{' '}
+                        <strong className="text-foreground">
+                            Full (strict)
+                        </strong>{' '}
+                        in Cloudflare. With Flexible, requests loop between HTTP
+                        and HTTPS.
+                    </li>
+                )}
+                <li>
+                    Your server gets its certificates over HTTP through the
+                    proxy.
+                    {cloudflare && (
+                        <>
+                            {' '}
+                            For wildcard certificates, add a Cloudflare API
+                            token in{' '}
+                            <Link
+                                href={networkSettings()}
+                                className="text-signal underline-offset-4 hover:underline"
+                            >
+                                Settings → Network
+                            </Link>
+                            .
+                        </>
+                    )}
+                </li>
+            </ul>
+        </Callout>
+    );
+}
+
+/**
+ * The platform wildcard behind Cloudflare's proxy (docs/05 §5): its free
+ * edge certificate covers the zone and one level below it, and generated app
+ * addresses are deeper, so visitors get a certificate error. Amber, not red:
+ * nothing is broken until an app is opened, and the fix is one click.
+ */
+export function CloudflareWildcardCallout({ domain }: { domain: string }) {
+    const docsUrl = useDocsUrl();
+    const example = `web-production.shop.${domain}`;
+
+    return (
+        <Callout
+            tone="warning"
+            title="Turn off Cloudflare’s proxy for this record"
+            actions={
+                <>
+                    <LearnMore
+                        href={docsUrl(
+                            'troubleshooting/dns-and-tls#behind-a-proxy',
+                        )}
+                    />
+                    <LearnMore href="https://developers.cloudflare.com/ssl/edge-certificates/universal-ssl/limitations/">
+                        Cloudflare certificate limits
+                    </LearnMore>
+                </>
+            }
+        >
+            <p>
+                Cloudflare’s free certificate covers your domain and one level
+                below it. App addresses such as{' '}
+                <code className="type-mono-small text-foreground">
+                    {example}
+                </code>{' '}
+                are deeper, so visitors get a certificate error while the proxy
+                is on.
+            </p>
+            <ol className="flex list-decimal flex-col gap-1 pl-4">
+                <li>
+                    Recommended: in Cloudflare’s DNS settings, set{' '}
+                    <code className="type-mono-small text-foreground">
+                        *.{domain}
+                    </code>{' '}
+                    to <strong className="text-foreground">DNS only</strong>{' '}
+                    (grey cloud). Your server then gets a certificate for every
+                    app address.
+                </li>
+                <li>
+                    Or keep the proxy: add an advanced certificate for each
+                    project (
+                    <code className="type-mono-small text-foreground">
+                        *.shop.{domain}
+                    </code>
+                    ) and set SSL/TLS to{' '}
+                    <strong className="text-foreground">Full (strict)</strong>.
+                </li>
+            </ol>
+        </Callout>
     );
 }
 
@@ -121,18 +164,28 @@ export function ProxyNote({
 export function DnsCheckResult({
     result,
     compact = false,
-    wildcard = false,
+    wildcard,
 }: {
     result: Check;
     compact?: boolean;
-    wildcard?: boolean;
+    /** The platform domain when this checks its wildcard record. */
+    wildcard?: string;
 }) {
+    // Reaching the server over HTTP isn't enough here: app addresses would
+    // fail TLS at Cloudflare's edge, so the check reads as a warning.
+    const cloudflareWildcard =
+        result.proxy === 'Cloudflare' && wildcard !== undefined;
+
     return (
-        <div className="flex flex-col gap-2" role="status">
+        <div className="flex flex-col gap-3" role="status">
             <div className="flex flex-col gap-1">
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                     <Status
-                        state={dnsCheckState(result)}
+                        state={
+                            cloudflareWildcard
+                                ? 'warning'
+                                : dnsCheckState(result)
+                        }
                         label={dnsCheckLabel(result)}
                     />
                     <span className="type-small text-muted-foreground">
@@ -155,8 +208,10 @@ export function DnsCheckResult({
                     </p>
                 ) : null}
             </div>
-            {result.proxy && (
-                <ProxyNote proxy={result.proxy} wildcard={wildcard} />
+            {cloudflareWildcard ? (
+                <CloudflareWildcardCallout domain={wildcard} />
+            ) : (
+                result.proxy && <ProxyNote proxy={result.proxy} />
             )}
         </div>
     );

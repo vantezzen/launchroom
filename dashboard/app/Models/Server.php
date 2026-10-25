@@ -60,6 +60,7 @@ use Illuminate\Support\Collection;
  * @property Carbon|null $host_status_at
  * @property array{state?: string, routes?: int, storage?: array{state: string, mirrored: int, message?: string}}|null $ingress_status latest Report.ingress summary (App\Actions\Servers\RecordCertificates)
  * @property Carbon|null $ingress_status_at
+ * @property array{state: string, since: string, engine?: string, ruleSet?: string, routes: int, droppedRecords?: int, message?: string, reportedAt: string}|null $waf_status latest Report.ingress.waf (docs/03 §13.4) and since when its state holds
  * @property array{message: string, problems: list<string>, deployments: list<string>, at: string}|null $render_error the latest NodeState render failed validation (the previous version stays published)
  * @property array{version: int, error: string, rejectedAt: string}|null $state_rejection the daemon refused a NodeState (Report.stateRejected)
  * @property Carbon|null $last_seen_at
@@ -221,6 +222,7 @@ final class Server extends Model
             'last_report_at' => 'datetime',
             'host_status' => 'array',
             'ingress_status' => 'array',
+            'waf_status' => 'array',
             'ingress_status_at' => 'datetime',
             'host_status_at' => 'datetime',
             'mesh_status' => 'array',

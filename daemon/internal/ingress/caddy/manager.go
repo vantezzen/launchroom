@@ -10,8 +10,10 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
@@ -58,6 +60,11 @@ type ManagerOptions struct {
 	// every Sync (the allow-list follows an adopted control-plane origin,
 	// docs/03 §4.2, §8).
 	ForwardAuthOrigins func() []string
+	// WafLogAddress is the loopback ip:port of launchroomd's firewall record
+	// receiver (internal/waf); "" never renders the firewall.
+	WafLogAddress string
+	// WafDropped returns the firewall records lost since start (IngressStatus.waf.droppedRecords).
+	WafDropped func() int64
 }
 
 // Manager runs the system Caddy container and keeps its config in sync.
@@ -94,6 +101,16 @@ type Manager struct {
 	// keptImage is the running image kept instead of an unpinned requested
 	// one (logged on change; "" when the requested image runs).
 	keptImage state.ImageRef
+
+	// Web firewall (docs/22 §6): what the running Caddy carries, the routes
+	// with the firewall in the applied config, and Caddy's refusal of a
+	// config with the firewall (its key, so the same config isn't tried on
+	// every pass, and the message).
+	wafSupport WafSupport
+	wafAsked   bool
+	wafRoutes  int
+	wafFailed  string
+	wafErr     string
 }
 
 // logRefusedAuth logs protected routes whose forward-auth URL the local policy
@@ -195,7 +212,53 @@ func (m *Manager) status(st state.IngressState, routes int, appliedAt *time.Time
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return &state.IngressStatus{State: st, Routes: routes, AppliedAt: appliedAt, Message: truncate(msg),
-		Certificates: slices.Clone(m.certs), Storage: cloneStorage(m.storage)}
+		Certificates: slices.Clone(m.certs), Storage: cloneStorage(m.storage), Waf: m.wafStatusLocked()}
+}
+
+// WafSupport is the firewall module of the running Caddy (zero: none, or
+// Caddy isn't running yet). launchroomd announces the daemon feature "waf"
+// only while it is available.
+func (m *Manager) WafSupport() WafSupport {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.wafSupport
+}
+
+// wafStatusLocked is IngressStatus.waf: nil without the module unless a
+// route asks for the firewall (then unsupported).
+func (m *Manager) wafStatusLocked() *state.WafStatus {
+	if !m.wafSupport.Available() {
+		if !m.wafAsked {
+			return nil
+		}
+		return &state.WafStatus{State: state.WafStateUnsupported, Message: "The edge's Caddy has no web firewall module."}
+	}
+	st := &state.WafStatus{State: state.WafStateOff, Engine: m.wafSupport.Engine, RuleSet: m.wafSupport.RuleSet}
+	switch {
+	case m.wafErr != "":
+		st.State, st.Message = state.WafStateError, plainText(m.wafErr, 1024)
+	case m.wafRoutes > 0:
+		st.State, st.Routes = state.WafStateOn, m.wafRoutes
+	}
+	if m.o.WafDropped != nil {
+		st.DroppedRecords = max(m.o.WafDropped(), 0)
+	}
+	return st
+}
+
+// plainText makes s a single line of printable text of at most n bytes.
+func plainText(s string, n int) string {
+	s = strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f || r == utf8.RuneError {
+			return ' '
+		}
+		return r
+	}, s)
+	for len(s) > n {
+		_, size := utf8.DecodeLastRuneInString(s)
+		s = s[:len(s)-size]
+	}
+	return s
 }
 
 func cloneStorage(s *state.CertStorageStatus) *state.CertStorageStatus {
@@ -229,6 +292,7 @@ func (m *Manager) Sync(ctx context.Context, sys state.SystemContainer, routes []
 		}
 		m.mu.Lock()
 		m.appliedKey, m.containerID, m.certs, m.storage = "", "", nil, nil
+		m.wafSupport, m.wafRoutes, m.wafErr, m.wafFailed = WafSupport{}, 0, "", ""
 		m.mu.Unlock()
 		return nil
 	}
@@ -261,8 +325,13 @@ func (m *Manager) Sync(ctx context.Context, sys state.SystemContainer, routes []
 	if err != nil {
 		return fail("system caddy: %v", err)
 	}
-	sum := sha256.Sum256(cfg)
 	files := plan.fingerprint()
+	fallback := cfg
+	cfg, wafKey, wafRoutes, wafErr := m.wafConfig(routes, plan.tls, render, c)
+	if cfg == nil {
+		cfg = fallback
+	}
+	sum := sha256.Sum256(cfg)
 	key := hex.EncodeToString(sum[:]) + "|" + files + "|" + c.ID + "|" + c.StartedAt.String()
 
 	m.mu.Lock()
@@ -297,7 +366,22 @@ func (m *Manager) Sync(ctx context.Context, sys state.SystemContainer, routes []
 		load = r.Reload
 	}
 	if err := load(ctx, cfg); err != nil {
-		return fail("load config: %v", err)
+		if wafKey == "" {
+			return fail("load config: %v", err)
+		}
+		// Caddy refused the config with the firewall: serve the same routes
+		// without it (availability wins, docs/22 §6.6) and don't try this
+		// config again until something changes.
+		m.o.Log.Warn("caddy refused the config with the web firewall; serving the routes without it", "err", err)
+		m.mu.Lock()
+		m.wafFailed, m.wafErr = wafKey, "Caddy refused the firewall config: "+err.Error()
+		m.mu.Unlock()
+		cfg, wafRoutes, wafErr = fallback, 0, m.wafErr
+		sum = sha256.Sum256(cfg)
+		key = hex.EncodeToString(sum[:]) + "|" + files + "|" + c.ID + "|" + c.StartedAt.String()
+		if err := load(ctx, cfg); err != nil {
+			return fail("load config: %v", err)
+		}
 	}
 	if m.o.CacheDir != "" {
 		if err := os.MkdirAll(m.o.CacheDir, 0o700); err == nil {
@@ -309,6 +393,7 @@ func (m *Manager) Sync(ctx context.Context, sys state.SystemContainer, routes []
 	now := m.o.Now().UTC()
 	m.mu.Lock()
 	m.appliedKey, m.appliedFiles, m.appliedAt, m.routes = key, files, now, len(routes)
+	m.wafRoutes, m.wafErr = wafRoutes, wafErr
 	m.mu.Unlock()
 	m.o.Log.Info("ingress config applied", "routes", len(routes))
 	select { // certificate statuses for the new route table
@@ -316,6 +401,46 @@ func (m *Manager) Sync(ctx context.Context, sys state.SystemContainer, routes []
 	default:
 	}
 	return m.status(state.IngressApplied, len(routes), ptr(now), "")
+}
+
+// wafConfig renders the config with the web firewall when the running
+// Caddy carries the module and a route asks for it. It returns nil (use
+// the config without it) otherwise, or when Caddy already refused this
+// exact config; key identifies the config with the firewall ("" when not
+// tried), routes counts the firewalled routes, errMsg is the state's
+// message for the config that will be loaded.
+func (m *Manager) wafConfig(routes []Route, t TLS, render Options, c docker.Container) (cfg []byte, key string, n int, errMsg string) {
+	support := WafSupportOf(c.Labels)
+	asked := false
+	for _, r := range routes {
+		asked = asked || r.Spec.Waf != nil
+	}
+	m.mu.Lock()
+	if support != m.wafSupport {
+		m.wafFailed = "" // another Caddy: try again
+	}
+	m.wafSupport, m.wafAsked = support, asked
+	failed, failedErr := m.wafFailed, m.wafErr
+	m.mu.Unlock()
+	if !support.Available() || m.o.WafLogAddress == "" {
+		return nil, "", 0, ""
+	}
+	render.Waf = &WafOptions{LogAddress: m.o.WafLogAddress}
+	n = len(WafRoutes(routes, render))
+	if n == 0 {
+		return nil, "", 0, ""
+	}
+	cfg, err := RenderTLS(routes, t, render)
+	if err != nil {
+		m.o.Log.Warn("web firewall config not rendered; serving the routes without it", "err", err)
+		return nil, "", 0, "The firewall config could not be rendered: " + err.Error()
+	}
+	sum := sha256.Sum256(cfg)
+	key = hex.EncodeToString(sum[:]) + "|" + c.ID + "|" + c.StartedAt.String()
+	if key == failed {
+		return nil, "", 0, failedErr
+	}
+	return cfg, key, n, ""
 }
 
 // image returns the Caddy image to run for the requested one. Each release

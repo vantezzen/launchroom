@@ -34,9 +34,9 @@ final readonly class ServerReplacementPage
         $running = $replacement?->status === ServerReplacementStatus::Running;
 
         $blocked = match (true) {
-            $server->status === ServerStatus::Revoked => $server->replaced_at !== null ? "{$server->name} was replaced." : "{$server->name} was revoked; there is nothing left to replace.",
+            $server->status === ServerStatus::Revoked => $server->replaced_at !== null ? "{$server->name} was replaced." : "{$server->name} was revoked, so there is nothing left to replace.",
             $server->status === ServerStatus::PendingApproval => "{$server->name} was never approved.",
-            $server->is_control_plane => 'This server runs the dashboard. If it is gone, restore the control plane on a new server with `install.sh --restore`; the dashboard then opens in recovery mode and replaces it from there.',
+            $server->is_control_plane => 'This server runs the dashboard. If it is gone, restore the control plane on a new server with `install.sh --restore`. The dashboard then opens in recovery mode, where you can replace it.',
             $server->status === ServerStatus::Online => "{$server->name} is online. Replace a server once it is unreachable or offline (or revoke it if you retire it on purpose).",
             $running => 'A replacement is in progress.',
             default => null,

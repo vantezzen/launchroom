@@ -1,11 +1,13 @@
 import { createInertiaApp } from '@inertiajs/react';
 import { QueryClientProvider } from '@tanstack/react-query';
+import { ReconnectBanner } from '@/components/reconnect-banner';
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { initializeTheme } from '@/hooks/use-appearance';
 import AppLayout from '@/layouts/app-layout';
 import ProjectLayout from '@/layouts/project-layout';
 import SettingsLayout from '@/layouts/settings/layout';
+import { initializeConnection } from '@/lib/connection';
 import { initializeEcho } from '@/lib/echo';
 import { pageVisitOptions } from '@/lib/motion';
 import { queryClient } from '@/lib/query-client';
@@ -51,11 +53,15 @@ void createInertiaApp({
     withApp(app, { page }) {
         // Realtime settings arrive with the first page's shared props.
         initializeEcho(page.props.realtime);
+        // One "Reconnecting" banner instead of stacked error dialogs, and a
+        // full reload when a new build answers (lib/connection.ts).
+        initializeConnection(page.version ?? null);
 
         return (
             <QueryClientProvider client={queryClient}>
                 <TooltipProvider delayDuration={0}>
                     {app}
+                    <ReconnectBanner />
                     <Toaster />
                 </TooltipProvider>
             </QueryClientProvider>

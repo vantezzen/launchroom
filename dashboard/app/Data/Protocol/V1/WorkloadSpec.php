@@ -70,6 +70,13 @@ final class WorkloadSpec extends Data
          * @var array{cron: string, timeZone: string}|null
          */
         public ?array $schedule = null,
+        /**
+         * Config files written read-only into the container before it
+         * starts (daemon feature `configFiles`, D65).
+         *
+         * @var list<array{path: string, content: string}>|null
+         */
+        public ?array $files = null,
     ) {}
 
     public static function fromProtocol(object $wire): self
@@ -111,6 +118,9 @@ final class WorkloadSpec extends Data
                 'cron' => Wire::string($schedule, 'cron'),
                 'timeZone' => Wire::string($schedule, 'timeZone'),
             ],
+            files: is_array($wire->files ?? null)
+                ? array_map(static fn (object $file): array => ['path' => Wire::string($file, 'path'), 'content' => Wire::string($file, 'content')], Wire::objects($wire, 'files'))
+                : null,
         );
     }
 
@@ -216,6 +226,10 @@ final class WorkloadSpec extends Data
 
         if ($this->stop !== null) {
             $wire['stop'] = $this->stop;
+        }
+
+        if ($this->files !== null) {
+            $wire['files'] = $this->files;
         }
 
         if ($this->schedule !== null) {

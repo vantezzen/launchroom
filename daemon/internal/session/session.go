@@ -1,6 +1,7 @@
 package session
 
 import (
+	"cmp"
 	"context"
 	"crypto/ecdh"
 	"encoding/base64"
@@ -155,7 +156,9 @@ func Handler(o Options) tasks.Handler {
 		s.guard = newCommandGuard(trusted, spec.Session, o.Now)
 		s.loop(ctx)
 		s.log.Info("session ended", "reason", res.EndReason)
-		return out, nil
+		// A session that couldn't start fails its task with the reason, so
+		// the dashboard can show and log it (the browser got it in the end frame).
+		return out, s.failure
 	}
 }
 
@@ -169,6 +172,8 @@ type run struct {
 	guard *commandGuard
 	relay *Relay
 	log   *slog.Logger
+	// failure is why the session couldn't start (nil otherwise).
+	failure error
 
 	sendMu sync.Mutex
 
@@ -233,14 +238,20 @@ func (s *run) target(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	stopped := false
 	for _, c := range cs {
 		if !eligible(c, wl) {
 			continue
 		}
-		if !c.Running {
-			return "", fmt.Errorf("the container of %s is not running", wl)
+		// A stopped duplicate (a restart or a recreate in progress) never
+		// hides the running container.
+		if c.Running {
+			return c.ID, nil
 		}
-		return c.ID, nil
+		stopped = true
+	}
+	if stopped {
+		return "", fmt.Errorf("the container of %s is not running", wl)
 	}
 	return "", fmt.Errorf("%w: no workload container for %s on this server", ErrRefused, wl)
 }
@@ -253,8 +264,12 @@ func eligible(c docker.Container, wl state.WorkloadID) bool {
 		!strings.HasPrefix(c.Name, "lr-system-")
 }
 
-// autoShells is the automatic order (docs/03 §11.4).
+// autoShells is the automatic order (docs/03 §11.4): bash, then the
+// busybox/Alpine ash, then plain sh.
 var autoShells = []state.ShellPath{state.ShellBash, state.ShellAsh, state.ShellSh}
+
+// errNoShell is the start failure of an image without any shell.
+var errNoShell = errors.New("this image has no shell (looked for /bin/bash, /bin/ash and /bin/sh)")
 
 func (s *run) pickShell(ctx context.Context) (string, error) {
 	if s.spec.Shell != "" {
@@ -263,23 +278,31 @@ func (s *run) pickShell(ctx context.Context) (string, error) {
 		}
 		ok, err := s.o.Docker.PathExists(ctx, s.container, string(s.spec.Shell))
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("checking for %s in the container: %w", s.spec.Shell, err)
 		}
 		if !ok {
 			return "", fmt.Errorf("this image has no %s", s.spec.Shell)
 		}
 		return string(s.spec.Shell), nil
 	}
+	// A failed stat of one candidate (an engine quirk, a refusal) doesn't
+	// stop the search: the next shell may still be found.
+	var statErr error
 	for _, sh := range autoShells {
 		ok, err := s.o.Docker.PathExists(ctx, s.container, string(sh))
 		if err != nil {
-			return "", err
+			s.logger().Warn("checking for a shell failed", "shell", sh, "err", err)
+			statErr = cmp.Or(statErr, err)
+			continue
 		}
 		if ok {
 			return string(sh), nil
 		}
 	}
-	return "", errors.New("this image has no shell (/bin/sh)")
+	if statErr != nil {
+		return "", fmt.Errorf("checking for a shell in the container: %w", statErr)
+	}
+	return "", errNoShell
 }
 
 func (s *run) cleanup() {
@@ -311,11 +334,24 @@ func (s *run) send(ctx context.Context, p Payload) error {
 }
 
 func (s *run) end(ctx context.Context, reason state.SessionEndReason) {
+	s.endWith(ctx, reason, "")
+}
+
+// endWith ends the session and tells the browser why, with an optional
+// human-readable message (start failures).
+func (s *run) endWith(ctx context.Context, reason state.SessionEndReason, message string) {
 	s.res.EndReason = reason
 	sctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
 	defer cancel()
 	s.flushOutput(sctx)
-	_ = s.send(sctx, Payload{T: TEnd, Reason: string(reason)})
+	_ = s.send(sctx, Payload{T: TEnd, Reason: string(reason), Message: clip(message)})
+}
+
+func (s *run) logger() *slog.Logger {
+	if s.log != nil {
+		return s.log
+	}
+	return slog.New(slog.DiscardHandler)
 }
 
 // loop runs the session until it ends; it sets res.EndReason.
@@ -377,7 +413,8 @@ func (s *run) loop(ctx context.Context) {
 					helloed = true
 					if err := s.start(ctx, p); err != nil {
 						s.log.Warn("session could not start", "err", err)
-						s.end(ctx, state.EndError)
+						s.failure = fmt.Errorf("starting the session: %w", err)
+						s.endWith(ctx, state.EndError, s.failure.Error())
 						return
 					}
 				case TIn:
@@ -461,6 +498,11 @@ func (s *run) loop(ctx context.Context) {
 				s.res.ExitCode = &code
 				_ = s.send(ctx, Payload{T: TExit, Code: &code})
 			}
+			if err == nil && shellFailedToStart(code, now().Sub(s.res.StartedAt)) {
+				s.failure = fmt.Errorf("%s couldn't start in the container (exit code %d)", s.shell, code)
+				s.endWith(ctx, state.EndExited, s.failure.Error())
+				return
+			}
 			s.end(ctx, state.EndExited)
 			return
 		case <-s.activity:
@@ -485,6 +527,12 @@ func (s *run) loop(ctx context.Context) {
 			}
 		}
 	}
+}
+
+// shellFailedToStart: the runtime couldn't run the shell (126: not
+// executable, 127: not found), seen as an exit right after the start.
+func shellFailedToStart(code int, after time.Duration) bool {
+	return (code == 126 || code == 127) && after < 3*time.Second
 }
 
 func validSize(cols, rows int) bool { return cols >= 2 && cols <= 500 && rows >= 2 && rows <= 200 }

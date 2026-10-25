@@ -77,7 +77,7 @@ export function DockerfileDiff({
             <figcaption className="type-small text-muted-foreground">
                 {previous === null
                     ? `${added} lines`
-                    : `${added} added · ${removed} removed`}
+                    : `${added} added, ${removed} removed`}
             </figcaption>
         </figure>
     );

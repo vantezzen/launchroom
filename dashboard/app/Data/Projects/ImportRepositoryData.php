@@ -11,7 +11,9 @@ use Spatie\LaravelData\Data;
 /**
  * "Import a repository" (`POST /projects/import`, flows.md §3): a new project
  * with one service per picked app, the picked databases connected to their
- * apps, and the first deploy started right away.
+ * apps, and the first deploy started right away ("Create and deploy"), or
+ * none with `deploy` false ("Create without deploying", to set variables
+ * first).
  */
 final class ImportRepositoryData extends Data
 {

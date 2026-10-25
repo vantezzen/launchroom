@@ -75,7 +75,7 @@ test('an owner uploads a dump in chunks, resumes it, and it is recognised and en
         ->assertJsonPath('status', 'ready')
         ->assertJsonPath('format', 'postgres_custom')
         ->assertJsonPath('sourceVersion', 'PostgreSQL 15.8')
-        ->assertJsonPath('detail', 'PostgreSQL custom dump · from PostgreSQL 15.8')
+        ->assertJsonPath('detail', 'PostgreSQL custom dump from PostgreSQL 15.8')
         ->assertJsonPath('receivedChunks', []);
 
     $transfer = DataTransfer::query()->where('public_id', $id)->sole();
@@ -123,11 +123,11 @@ test('servers without dataTransfer are refused with an update hint', function ()
 
     $this->actingAs($owner)->postJson(route('transfers.services.inspect', $postgres), [])
         ->assertStatus(422)
-        ->assertJsonPath('message', "Update launchroomd on {$server->name} to import data.");
+        ->assertJsonPath('message', "Update {$server->name} in Settings → Updates to import data.");
     $this->getJson(route('transfers.services.show', $postgres))
         ->assertOk()
         ->assertJsonPath('importSupported', true)
-        ->assertJsonPath('unavailableReason', "Update launchroomd on {$server->name} to import data.");
+        ->assertJsonPath('unavailableReason', "Update {$server->name} in Settings → Updates to import data.");
 });
 
 test('replacing needs the typed slug, takes a safety snapshot, then launchroomd fetches signed chunks', function (): void {

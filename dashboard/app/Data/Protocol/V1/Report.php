@@ -66,6 +66,10 @@ final class Report extends Data
             'metrics.workloads' => ['sometimes', 'array', 'max:8192'],
             // Request metrics of edges (docs/15 §1.2).
             'metrics.requests' => ['sometimes', 'array', 'max:8192'],
+            // Request analytics of edges (docs/15 §5.2).
+            'metrics.analytics' => ['sometimes', 'array', 'max:1024'],
+            // Web firewall samples of edges (docs/03 §13.4), checked by App\Support\Security\WafSamples.
+            'metrics.waf' => ['sometimes', 'array', 'max:1024'],
             'walArchives' => ['sometimes', 'nullable', 'array', 'max:256'],
             'walArchives.*.workload' => ['required', 'string', 'regex:/^wl_[0-9A-HJKMNP-TV-Z]{26}$/D'],
             'walArchives.*.state' => ['required', 'string', 'in:active,waiting,failing'],

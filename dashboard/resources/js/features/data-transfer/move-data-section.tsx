@@ -1,6 +1,15 @@
-import { Download, FileDown, FileUp, FolderUp, RotateCcw } from 'lucide-react';
+import {
+    DatabaseZap,
+    Download,
+    FileDown,
+    FileUp,
+    FolderUp,
+    RotateCcw,
+    X,
+} from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
+import { MetaLine } from '@/components/patterns/meta-line';
 import { Section } from '@/components/patterns/section';
 import { Status } from '@/components/status';
 import type { StatusState } from '@/components/status';
@@ -9,6 +18,7 @@ import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import { show as showSection } from '@/routes/transfers/services';
 import { link as linkRoute } from '@/routes/transfers/services/exports';
+import { cancel as cancelImportRoute } from '@/routes/transfers/services/imports';
 import { transfersApi } from './api';
 import type { ExportRun, ImportRun, ServiceTransfers } from './api';
 import { formatBytes, formatDuration } from './format';
@@ -60,20 +70,19 @@ function isBusy(data: ServiceTransfers): boolean {
     );
 }
 
-function outcome(run: ImportRun): string | null {
+function outcome(run: ImportRun): (string | null)[] {
     if (run.result === null) {
-        return null;
+        return [];
     }
 
-    const parts = [
+    return [
         run.subject === 'volume'
             ? `${run.result.files} files`
             : `${run.result.tables} ${run.result.tables === 1 ? 'table' : 'tables'}`,
         run.result.sizeBytes > 0 ? formatBytes(run.result.sizeBytes) : null,
         `in ${formatDuration(run.result.durationMs)}`,
+        run.result.sourceVersion ? `from ${run.result.sourceVersion}` : null,
     ];
-
-    return parts.filter(Boolean).join(' · ');
 }
 
 /**
@@ -93,6 +102,9 @@ export function MoveDataSection({
     const [data, setData] = useState<ServiceTransfers | null>(null);
     const [target, setTarget] = useState<ImportTarget | null>(null);
     const [busy, setBusy] = useState<string | null>(null);
+    // Failed polls in a row: polling goes on (slower) instead of freezing
+    // the last status on screen.
+    const [failures, setFailures] = useState(0);
     const abort = useRef<AbortController | null>(null);
     const url = showSection(serviceInstanceId).url;
 
@@ -110,8 +122,12 @@ export function MoveDataSection({
                     controller.signal,
                 ),
             );
+            setFailures(0);
         } catch {
             // The Backups tab around it shows connection problems.
+            if (!controller.signal.aborted) {
+                setFailures((count) => count + 1);
+            }
         }
     }, [url]);
 
@@ -122,14 +138,43 @@ export function MoveDataSection({
     }, [load]);
 
     useEffect(() => {
-        if (data === null || !isBusy(data)) {
+        if (failures === 0 && (data === null || !isBusy(data))) {
             return;
         }
 
-        const timer = window.setTimeout(() => void load(), 3000);
+        const timer = window.setTimeout(
+            () => void load(),
+            failures === 0 ? 3000 : Math.min(30000, 3000 * 2 ** failures),
+        );
 
         return () => window.clearTimeout(timer);
-    }, [data, load]);
+    }, [data, failures, load]);
+
+    const cancelImport = async (run: ImportRun) => {
+        setBusy(`cancel:${run.id}`);
+        try {
+            setData(
+                await transfersApi<ServiceTransfers>(
+                    'post',
+                    cancelImportRoute({
+                        serviceInstance: serviceInstanceId,
+                        import: run.id,
+                    }).url,
+                    {},
+                ),
+            );
+            toast.success('Import cancelled. Nothing was imported.');
+        } catch (error) {
+            toast.error(
+                error instanceof Error
+                    ? error.message
+                    : 'The import couldn’t be cancelled.',
+            );
+            void load();
+        } finally {
+            setBusy(null);
+        }
+    };
 
     const startExport = useCallback(
         async (body: Record<string, unknown>, label: string) => {
@@ -230,7 +275,14 @@ export function MoveDataSection({
                     <Status state="warning" label={data.unavailableReason} />
                 )}
 
-            {!volumes && (
+            {!volumes && data.preparation !== null && data.canImport && (
+                <PrepareCard
+                    data={data}
+                    onImport={() => setTarget({ volume: null })}
+                />
+            )}
+
+            {!volumes && data.preparation === null && (
                 <div className="flex flex-wrap items-center gap-2">
                     {data.canImport && (
                         <Button
@@ -328,6 +380,8 @@ export function MoveDataSection({
                                 key={entry.run.id}
                                 run={entry.run}
                                 data={data}
+                                cancelling={busy === `cancel:${entry.run.id}`}
+                                onCancel={() => void cancelImport(entry.run)}
                                 onRetry={() =>
                                     setTarget({
                                         volume: entry.run.volume,
@@ -361,15 +415,80 @@ export function MoveDataSection({
     );
 }
 
+/**
+ * A database that was never deployed (docs/14 §12.9): import into it before
+ * the first deploy. The sheet starts it alone and it stops again after.
+ */
+function PrepareCard({
+    data,
+    onImport,
+}: {
+    data: ServiceTransfers;
+    onImport: () => void;
+}) {
+    const preparation = data.preparation;
+
+    return (
+        <div className="flex flex-col gap-3 rounded-xl border bg-card p-5 shadow-card">
+            <div className="flex items-start gap-3">
+                <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-recessed text-muted-foreground">
+                    <DatabaseZap aria-hidden="true" className="size-4" />
+                </span>
+                <div className="flex flex-col gap-0.5">
+                    <p className="type-heading">
+                        Import data before the first deploy
+                    </p>
+                    <p className="type-small text-muted-foreground">
+                        launchroom starts {data.serviceName} on its own, imports
+                        your dump and stops it again. Your apps stay off, and
+                        the first deploy starts with the imported data.
+                    </p>
+                </div>
+            </div>
+            {preparation?.state === 'starting' && (
+                <Status
+                    state="progress"
+                    label={`Starting ${data.serviceName}${preparation.serverName ? ` on ${preparation.serverName}` : ''}`}
+                />
+            )}
+            {preparation?.state === 'ready' && (
+                <Status
+                    state="active"
+                    label={`${data.serviceName} runs on its own for the import${preparation.serverName ? ` on ${preparation.serverName}` : ''}`}
+                />
+            )}
+            {preparation?.state === 'failed' && preparation.message && (
+                <p className="type-mono-small break-words text-muted-foreground">
+                    {preparation.message}
+                </p>
+            )}
+            <div>
+                <Button variant="outline" onClick={onImport}>
+                    <FileUp aria-hidden="true" />
+                    Import data…
+                </Button>
+            </div>
+        </div>
+    );
+}
+
 function ImportRow({
     run,
     data,
+    cancelling,
+    onCancel,
     onRetry,
 }: {
     run: ImportRun;
     data: ServiceTransfers;
+    cancelling: boolean;
+    onCancel: () => void;
     onRetry: () => void;
 }) {
+    const cancellable =
+        data.canImport &&
+        (run.status === 'waiting_for_safety_backup' ||
+            run.status === 'holding');
     const into = run.volume !== null ? run.volume.mountPath : data.serviceName;
     const label =
         run.status === 'holding' && run.subject === 'volume'
@@ -383,7 +502,8 @@ function ImportRow({
             <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
                 <Status
                     state={importState(run.status)}
-                    label={`${label} · ${run.sourceLabel} into ${into}`}
+                    label={label}
+                    detail={`${run.sourceLabel} into ${into}`}
                 />
                 <span className="type-small text-muted-foreground">
                     {run.createdAt !== null && (
@@ -391,6 +511,14 @@ function ImportRow({
                     )}
                 </span>
             </div>
+            {run.status === 'holding' && run.waitingFor.length > 0 && (
+                <p
+                    className="type-small text-muted-foreground"
+                    aria-live="polite"
+                >
+                    Waiting for {listNames(run.waitingFor)} to stop
+                </p>
+            )}
             {run.status === 'importing' && run.step !== null && (
                 <p
                     className="type-small text-muted-foreground tabular-nums"
@@ -400,12 +528,9 @@ function ImportRow({
                 </p>
             )}
             {run.status === 'succeeded' && (
-                <p className="type-small text-muted-foreground tabular-nums">
+                <MetaLine className="type-small text-muted-foreground tabular-nums">
                     {outcome(run)}
-                    {run.result?.sourceVersion
-                        ? ` · from ${run.result.sourceVersion}`
-                        : ''}
-                </p>
+                </MetaLine>
             )}
             {run.result !== null && run.result.warnings.length > 0 && (
                 <ul className="flex flex-col gap-0.5">
@@ -432,8 +557,27 @@ function ImportRow({
                     </Button>
                 </div>
             )}
+            {cancellable && (
+                <div>
+                    <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={cancelling}
+                        onClick={onCancel}
+                    >
+                        {cancelling ? <Spinner /> : <X aria-hidden="true" />}
+                        Cancel import
+                    </Button>
+                </div>
+            )}
         </li>
     );
+}
+
+function listNames(names: string[]): string {
+    return names.length < 2
+        ? (names[0] ?? '')
+        : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
 }
 
 function ExportRow({
@@ -455,17 +599,21 @@ function ExportRow({
               : 'Data as it is now';
     const label =
         run.status === 'preparing'
-            ? `Preparing download · ${what}`
+            ? 'Preparing download'
             : run.status === 'ready'
-              ? `Ready to download · ${what}`
+              ? 'Ready to download'
               : run.status === 'failed'
-                ? `Download failed · ${what}`
-                : `Download expired · ${what}`;
+                ? 'Download failed'
+                : 'Download expired';
 
     return (
         <li className="flex flex-col gap-1 px-4 py-3">
             <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-                <Status state={exportState(run.status)} label={label} />
+                <Status
+                    state={exportState(run.status)}
+                    label={label}
+                    detail={what}
+                />
                 <span className="type-small text-muted-foreground">
                     {run.createdAt !== null && (
                         <TimeAgo value={run.createdAt} />

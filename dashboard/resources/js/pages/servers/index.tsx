@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { ServerMap } from '@/components/map';
 import type { MapLink, MapLocation } from '@/components/map';
 import { EmptyState } from '@/components/patterns/empty-state';
+import { MetaLine } from '@/components/patterns/meta-line';
 import { Page, PageHeader } from '@/components/patterns/page';
 import { Section } from '@/components/patterns/section';
 import { StatusIcon } from '@/components/status';
@@ -46,7 +47,7 @@ function plural(count: number, one: string, many = `${one}s`): string {
     return `${count} ${count === 1 ? one : many}`;
 }
 
-function summary(servers: Server[], places: number): string {
+function summary(servers: Server[], places: number): string[] {
     const online = servers.filter((s) => s.status === 'online').length;
     const down = servers.filter(
         (s) => s.status === 'unreachable' || s.status === 'offline',
@@ -60,12 +61,10 @@ function summary(servers: Server[], places: number): string {
             ? `${plural(servers.length, 'server')} in ${places} places`
             : plural(servers.length, 'server'),
         online > 0 && online < servers.length ? `${online} online` : null,
-        online === servers.length && servers.length > 0 ? 'all online' : null,
+        online === servers.length && servers.length > 0 ? 'All online' : null,
         down > 0 ? `${down} unreachable` : null,
         waiting > 0 ? `${waiting} waiting for approval` : null,
-    ]
-        .filter(Boolean)
-        .join(' · ');
+    ].filter((part): part is string => part !== null);
 }
 
 /** One bubble per place; links follow each server's path to the dashboard's server. */
@@ -334,7 +333,7 @@ function AtAGlance({
                                     : null,
                             ]
                                 .filter(Boolean)
-                                .join(' · ')}
+                                .join(', ')}
                 </Fact>
             </ul>
         </section>
@@ -431,9 +430,13 @@ export default function ServersIndex({
                 <PageHeader
                     title="Servers"
                     description={
-                        active.length > 0
-                            ? summary(active, locations.length)
-                            : 'Where your apps run.'
+                        active.length > 0 ? (
+                            <MetaLine>
+                                {summary(active, locations.length)}
+                            </MetaLine>
+                        ) : (
+                            'Where your apps run.'
+                        )
                     }
                     actions={
                         <>
@@ -520,15 +523,7 @@ export default function ServersIndex({
                 )}
 
                 {active.length > 0 && (
-                    <Section
-                        title="Overview"
-                        className="gap-5"
-                        description={
-                            mesh.enabled && active.length > 1
-                                ? 'Your private network connects them, wherever they are.'
-                                : undefined
-                        }
-                    >
+                    <Section title="Overview" className="gap-5">
                         <div className="grid gap-6 lg:grid-cols-3">
                             <div className="min-w-0 lg:col-span-2">
                                 <FleetLoad

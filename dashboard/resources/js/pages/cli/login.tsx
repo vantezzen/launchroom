@@ -3,6 +3,7 @@ import { CircleCheck, CircleX, Clock, Laptop } from 'lucide-react';
 import { useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
 import InputError from '@/components/input-error';
+import { MetaDivider } from '@/components/patterns/meta-line';
 import { TimeAgo } from '@/components/time-ago';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -102,7 +103,7 @@ export default function CliLogin({
                     />
                 }
             >
-                Nothing was granted. The terminal stops waiting.
+                Nothing was granted, and the terminal has stopped waiting.
             </Outcome>
         );
     }
@@ -233,8 +234,10 @@ function Approve({
                         </p>
                         <div className="flex items-center gap-2 type-small text-muted-foreground">
                             <Laptop className="size-4" aria-hidden="true" />
+                            <span>{machine}</span>
+                            <MetaDivider />
                             <span>
-                                {machine} · {login.clientName}
+                                {login.clientName}
                                 {login.version && ` ${login.version}`}
                             </span>
                         </div>

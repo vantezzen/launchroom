@@ -35,7 +35,7 @@ test('the gallery lists the catalog for people who can create projects', functio
     $this->actingAs($this->developer)->get(route('projects.templates'))
         ->assertInertia(fn ($page) => $page
             ->component('projects/templates')
-            ->has('templates', 14)
+            ->has('templates', 15)
             ->where('categories.stacks', 'Stacks')
             ->where('templates.0.id', 'django-postgres-celery')
             ->where('templates.0.needsRepository', true));
@@ -127,7 +127,7 @@ test('adding from the catalog on a canvas stages the services next to the existi
     $environment = $project->production()->sole();
 
     $this->actingAs($this->viewer)->getJson(route('projects.catalog', [$project, $environment]))->assertForbidden();
-    $this->actingAs($this->developer)->getJson(route('projects.catalog', [$project, $environment]))->assertOk()->assertJsonCount(14, 'templates');
+    $this->actingAs($this->developer)->getJson(route('projects.catalog', [$project, $environment]))->assertOk()->assertJsonCount(15, 'templates');
 
     $this->actingAs($this->viewer)->post(route('projects.catalog.store', [$project, $environment, 'umami']))->assertForbidden();
     $this->actingAs($this->developer)->post(route('projects.catalog.store', [$project, $environment, 'umami']))

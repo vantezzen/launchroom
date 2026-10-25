@@ -509,7 +509,8 @@ func TestRenderAccessLog(t *testing.T) {
 	if acc.Writer["output"] != "net" || acc.Writer["address"] != "tcp/127.0.0.1:2022" || acc.Writer["soft_start"] != true {
 		t.Errorf("access writer = %v", acc.Writer)
 	}
-	if acc.Encoder.Format != "filter" || acc.Encoder.Fields["request>headers"]["filter"] != "delete" || acc.Encoder.Fields["request>remote_ip"]["filter"] != "delete" || acc.Encoder.Fields["request>uri"]["filter"] != "delete" {
+	if acc.Encoder.Format != "filter" || acc.Encoder.Fields["request>headers"]["filter"] != "delete" || acc.Encoder.Fields["request>remote_ip"]["filter"] != "delete" || acc.Encoder.Fields["request>uri"]["filter"] != "regexp" ||
+		acc.Encoder.Fields[AccessFieldReferer]["filter"] != "regexp" || acc.Encoder.Fields[AccessFieldAgent]["filter"] != "regexp" {
 		t.Errorf("access encoder = %+v", acc.Encoder)
 	}
 	if !slices.Equal(acc.Include, []string{"http.log.access.lr-access"}) || !slices.Equal(def.Exclude, acc.Include) || def.Writer["output"] != "stderr" {
@@ -521,10 +522,16 @@ func TestRenderAccessLog(t *testing.T) {
 	if _, ok := parsed.Apps.HTTP.Servers[serverHTTP]["logs"]; ok {
 		t.Error("the plain HTTP redirect server must not be logged")
 	}
+	// The first HTTPS route only appends the referrer and user agent (no
+	// matcher, not terminal), so every request carries them.
+	first, _ := parsed.Apps.HTTP.Servers[serverHTTPS]["routes"].([]any)[0].(map[string]any)
+	if _, ok := first["match"]; ok || first["terminal"] == true || !bytes.Contains(cfg, []byte(`"handler": "log_append"`)) {
+		t.Errorf("first https route = %v", first)
+	}
 
 	// Without the address the config is unchanged (no logging section).
 	plain, _ := Render(routes, renderOpts)
-	if bytes.Contains(plain, []byte(`"logging"`)) {
+	if bytes.Contains(plain, []byte(`"logging"`)) || bytes.Contains(plain, []byte("log_append")) {
 		t.Error("logging rendered without an access log address")
 	}
 	o.AccessLogAddress = "0.0.0.0:2022"
@@ -548,7 +555,9 @@ func TestRenderDashboardRoutes(t *testing.T) {
 		},
 	}
 	routes := ResolveRoutes(specs, resolver(nil))
-	cfg, err := Render(routes, renderOpts)
+	o := renderOpts
+	o.LocalUpstreams = []string{"127.0.0.1:8000"}
+	cfg, err := Render(routes, o)
 	if err != nil {
 		t.Fatal(err)
 	}

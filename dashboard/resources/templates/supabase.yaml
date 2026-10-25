@@ -1,0 +1,568 @@
+schema: launchroom.template/v1
+id: supabase
+name: Supabase
+tagline: Postgres with auth, a REST API, realtime, storage and Studio.
+description: >-
+    The open source backend: a Postgres database with an instant REST API,
+    sign-in, realtime subscriptions, file storage and the Studio dashboard,
+    all behind one gateway. Add it next to an app and connect them to hand
+    the app its URL and keys.
+category: data
+logo: supabase
+website: https://supabase.com
+license: Apache-2.0
+notes:
+    - Plan for 3 to 4 GB of memory for the whole stack.
+    - Studio sits behind the gateway's sign-in. The user is supabase, the password is DASHBOARD_PASSWORD in the gateway's variables.
+    - The database is backed up as a volume. Point-in-time recovery isn't available for it.
+    - Logs and analytics in Studio, Edge Functions, image transformations and the connection pooler aren't included.
+inputs:
+    - id: domain
+      label: Domain
+      type: domain
+      optional: true
+      description: The API and Studio are served here. Leave empty to use the generated address.
+services:
+    kong:
+        # Supabase's API gateway: the only public service. Its routes come from
+        # the official volumes/api/kong.yml (legacy API keys), passed as an
+        # environment value so the keys are references, not a file.
+        image: docker.io/kong/kong:3.9.3@sha256:9a2ae6699a2ce0d60592eb176555d3594a22782c20cc6557a61ff3a7e8b559a3
+        ports: ['8000']
+        environment:
+            JWT_SECRET: ${generate:password:48}
+            ANON_KEY: ${generate:jwt:anon:JWT_SECRET}
+            SERVICE_ROLE_KEY: ${generate:jwt:service_role:JWT_SECRET}
+            DASHBOARD_USERNAME: supabase
+            DASHBOARD_PASSWORD: ${generate:password:32}
+            KONG_DATABASE: 'off'
+            KONG_ROUTER_FLAVOR: expressions
+            KONG_DNS_ORDER: LAST,A,CNAME
+            KONG_DNS_NOT_FOUND_TTL: '1'
+            KONG_DNS_VALID_TTL: '5'
+            KONG_PLUGINS: request-transformer,cors,key-auth,acl,basic-auth,request-termination,ip-restriction,post-function
+            KONG_NGINX_WORKER_PROCESSES: '2'
+            KONG_NGINX_PROXY_PROXY_BUFFER_SIZE: 160k
+            KONG_NGINX_PROXY_PROXY_BUFFERS: 64 160k
+            KONG_PROXY_ACCESS_LOG: /dev/stdout combined
+            # Requests arrive through launchroom's edge: keep its X-Forwarded-* headers.
+            KONG_TRUSTED_IPS: 0.0.0.0/0,::/0
+            KONG_REAL_IP_HEADER: X-Forwarded-For
+            # One line of JSON (folded): Kong passes its settings through a line-based
+            # file, so a value with line breaks would be cut after its first line.
+            KONG_DECLARATIVE_CONFIG_STRING: >-
+                {"_format_version":"2.1","_transform":true,"consumers":[{"username":"DASHBOARD"},{"username":"anon","keyauth_credentials":[{"key":"${self.env.ANON_KEY}"}]},{"username":"service_role","keyauth_credentials":[{"key":"${self.env.SERVICE_ROLE_KEY}"}]}],"acls":[{"consumer":"anon","group":"anon"},{"consumer":"service_role","group":"admin"}],"basicauth_credentials":[{"consumer":"DASHBOARD","username":"${self.env.DASHBOARD_USERNAME}","password":"${self.env.DASHBOARD_PASSWORD}"}], "services": [
+                {"name":"auth-v1-open","url":"http://${service.auth.host}:9999/verify","routes":[{"name":"auth-v1-open","strip_path":true,"paths":["/auth/v1/verify"]}],"plugins":[{"name":"cors"}]},
+                {"name":"auth-v1-open-callback","url":"http://${service.auth.host}:9999/callback","routes":[{"name":"auth-v1-open-callback","strip_path":true,"paths":["/auth/v1/callback"]}],"plugins":[{"name":"cors"}]},
+                {"name":"auth-v1-open-authorize","url":"http://${service.auth.host}:9999/authorize","routes":[{"name":"auth-v1-open-authorize","strip_path":true,"paths":["/auth/v1/authorize"]}],"plugins":[{"name":"cors"}]},
+                {"name":"auth-v1-open-jwks","url":"http://${service.auth.host}:9999/.well-known/jwks.json","routes":[{"name":"auth-v1-open-jwks","strip_path":true,"paths":["/auth/v1/.well-known/jwks.json"]}],"plugins":[{"name":"cors"}]},
+                {"name":"auth-v1-open-well-known-oauth","url":"http://${service.auth.host}:9999/.well-known/oauth-authorization-server","routes":[{"name":"auth-v1-open-well-known-oauth","strip_path":true,"paths":["/auth/v1/.well-known/oauth-authorization-server"]}],"plugins":[{"name":"cors"}]},
+                {"name":"auth-v1-open-well-known-openid","url":"http://${service.auth.host}:9999/.well-known/openid-configuration","routes":[{"name":"auth-v1-open-well-known-openid","strip_path":true,"paths":["/auth/v1/.well-known/openid-configuration"]}],"plugins":[{"name":"cors"}]},
+                {"name":"auth-v1-open-sso-acs","url":"http://${service.auth.host}:9999/sso/saml/acs","routes":[{"name":"auth-v1-open-sso-acs","strip_path":true,"paths":["/auth/v1/sso/saml/acs"]}],"plugins":[{"name":"cors"}]},
+                {"name":"auth-v1-open-sso-metadata","url":"http://${service.auth.host}:9999/sso/saml/metadata","routes":[{"name":"auth-v1-open-sso-metadata","strip_path":true,"paths":["/auth/v1/sso/saml/metadata"]}],"plugins":[{"name":"cors"}]},
+                {"name":"auth-v1","url":"http://${service.auth.host}:9999/","routes":[{"name":"auth-v1-all","strip_path":true,"paths":["/auth/v1/"]}],"plugins":[{"name":"cors"},{"name":"key-auth","config":{"hide_credentials":false}},{"name":"request-transformer","config":{"add":{"headers":["Authorization: $$((headers.authorization ~= nil and headers.authorization:sub(1, 10) ~= 'Bearer sb_' and headers.authorization) or headers.apikey)"]},"replace":{"headers":["Authorization: $$((headers.authorization ~= nil and headers.authorization:sub(1, 10) ~= 'Bearer sb_' and headers.authorization) or headers.apikey)"]}}},{"name":"acl","config":{"hide_groups_header":true,"allow":["admin","anon"]}}]},
+                {"name":"rest-v1-openapi","url":"http://${service.rest.host}:3000/","routes":[{"name":"rest-v1-openapi-root","strip_path":true,"expression":"http.path == \"/rest/v1/\""}],"plugins":[{"name":"cors"},{"name":"key-auth","config":{"hide_credentials":false}},{"name":"request-transformer","config":{"add":{"headers":["Authorization: $$((headers.authorization ~= nil and headers.authorization:sub(1, 10) ~= 'Bearer sb_' and headers.authorization) or headers.apikey)"]},"replace":{"headers":["Authorization: $$((headers.authorization ~= nil and headers.authorization:sub(1, 10) ~= 'Bearer sb_' and headers.authorization) or headers.apikey)"]}}},{"name":"acl","config":{"hide_groups_header":true,"allow":["admin"]}}]},
+                {"name":"rest-v1","url":"http://${service.rest.host}:3000/","routes":[{"name":"rest-v1-all","strip_path":true,"paths":["/rest/v1/"]}],"plugins":[{"name":"cors"},{"name":"key-auth","config":{"hide_credentials":false}},{"name":"request-transformer","config":{"add":{"headers":["Authorization: $$((headers.authorization ~= nil and headers.authorization:sub(1, 10) ~= 'Bearer sb_' and headers.authorization) or headers.apikey)"]},"replace":{"headers":["Authorization: $$((headers.authorization ~= nil and headers.authorization:sub(1, 10) ~= 'Bearer sb_' and headers.authorization) or headers.apikey)"]}}},{"name":"acl","config":{"hide_groups_header":true,"allow":["admin","anon"]}}]},
+                {"name":"graphql-v1","url":"http://${service.rest.host}:3000/rpc/graphql","routes":[{"name":"graphql-v1-all","strip_path":true,"paths":["/graphql/v1"]}],"plugins":[{"name":"cors"},{"name":"key-auth","config":{"hide_credentials":false}},{"name":"request-transformer","config":{"add":{"headers":["Content-Profile: graphql_public","Authorization: $$((headers.authorization ~= nil and headers.authorization:sub(1, 10) ~= 'Bearer sb_' and headers.authorization) or headers.apikey)"]},"replace":{"headers":["Authorization: $$((headers.authorization ~= nil and headers.authorization:sub(1, 10) ~= 'Bearer sb_' and headers.authorization) or headers.apikey)"]}}},{"name":"acl","config":{"hide_groups_header":true,"allow":["admin","anon"]}}]},
+                {"name":"realtime-v1-ws","url":"http://${service.realtime.host}:4000/socket","protocol":"ws","routes":[{"name":"realtime-v1-ws","strip_path":true,"paths":["/realtime/v1/"]}],"plugins":[{"name":"cors"},{"name":"key-auth","config":{"hide_credentials":false}},{"name":"request-transformer","config":{"add":{"headers":["x-api-key:$$(query_params.apikey)"]},"replace":{"querystring":["apikey:$$(query_params.apikey)"]}}},{"name":"acl","config":{"hide_groups_header":true,"allow":["admin","anon"]}}]},
+                {"name":"realtime-v1-rest-openapi","url":"http://${service.realtime.host}:4000/api/openapi","protocol":"http","routes":[{"name":"realtime-v1-rest-openapi","strip_path":true,"paths":["/realtime/v1/api/openapi"]}],"plugins":[{"name":"request-termination","config":{"status_code":403,"message":"Access is forbidden."}}]},
+                {"name":"realtime-v1-rest-tenants","url":"http://${service.realtime.host}:4000/api/tenants","protocol":"http","routes":[{"name":"realtime-v1-rest-tenants","strip_path":true,"paths":["/realtime/v1/api/tenants"]}],"plugins":[{"name":"request-termination","config":{"status_code":403,"message":"Access is forbidden."}}]},
+                {"name":"realtime-v1-rest","url":"http://${service.realtime.host}:4000/api","protocol":"http","routes":[{"name":"realtime-v1-rest","strip_path":true,"paths":["/realtime/v1/api"]}],"plugins":[{"name":"cors"},{"name":"key-auth","config":{"hide_credentials":false}},{"name":"request-transformer","config":{"add":{"headers":["Authorization: $$((headers.authorization ~= nil and headers.authorization:sub(1, 10) ~= 'Bearer sb_' and headers.authorization) or headers.apikey)"]},"replace":{"headers":["Authorization: $$((headers.authorization ~= nil and headers.authorization:sub(1, 10) ~= 'Bearer sb_' and headers.authorization) or headers.apikey)"]}}},{"name":"acl","config":{"hide_groups_header":true,"allow":["admin","anon"]}}]},
+                {"name":"storage-v1","url":"http://${service.storage.host}:5000/","routes":[{"name":"storage-v1-all","strip_path":true,"paths":["/storage/v1/"]}],"plugins":[{"name":"cors"},{"name":"request-transformer","config":{"add":{"headers":["Authorization: $$((headers.authorization ~= nil and headers.authorization:sub(1, 10) ~= 'Bearer sb_' and headers.authorization) or headers.apikey)"]},"replace":{"headers":["Authorization: $$((headers.authorization ~= nil and headers.authorization:sub(1, 10) ~= 'Bearer sb_' and headers.authorization) or headers.apikey)"]}}},{"name":"post-function","config":{"access":["local auth = kong.request.get_header(\"authorization\")\nif auth == nil or auth == \"\" or auth:find(\"^%s*$$\") then\n  kong.service.request.clear_header(\"authorization\")\nend\n"]}}]},
+                {"name":"well-known-oauth","url":"http://${service.auth.host}:9999/.well-known/oauth-authorization-server","routes":[{"name":"well-known-oauth","strip_path":true,"paths":["/.well-known/oauth-authorization-server/auth/v1"]}],"plugins":[{"name":"cors"}]},
+                {"name":"meta","url":"http://${service.meta.host}:8080/","routes":[{"name":"meta-all","strip_path":true,"paths":["/pg/"]}],"plugins":[{"name":"key-auth","config":{"hide_credentials":false}},{"name":"acl","config":{"hide_groups_header":true,"allow":["admin"]}}]},
+                {"name":"mcp-blocker","url":"http://${service.studio.host}:3000/api/mcp","routes":[{"name":"mcp-blocker-route","strip_path":true,"paths":["/api/mcp"]}],"plugins":[{"name":"request-termination","config":{"status_code":403,"message":"Access is forbidden."}}]},
+                {"name":"mcp","url":"http://${service.studio.host}:3000/api/mcp","routes":[{"name":"mcp","strip_path":true,"paths":["/mcp"]}],"plugins":[{"name":"request-termination","config":{"status_code":403,"message":"Access is forbidden."}}]},
+                {"name":"dashboard","url":"http://${service.studio.host}:3000/","routes":[{"name":"dashboard-all","strip_path":true,"paths":["/"]}],"plugins":[{"name":"cors"},{"name":"basic-auth","config":{"hide_credentials":true}}]}
+                ]}
+        depends_on: [auth, rest, realtime, storage, meta, studio]
+        healthcheck:
+            test: ['CMD', 'kong', 'health']
+        deploy:
+            resources:
+                limits: { cpus: '1', memory: 512m }
+        x-launchroom:
+            name: Supabase
+            logo: supabase
+            domain: ${input.domain}
+            provides:
+                NEXT_PUBLIC_SUPABASE_URL: ${self.public_url}
+                NEXT_PUBLIC_SUPABASE_ANON_KEY: ${self.env.ANON_KEY}
+                SUPABASE_SERVICE_ROLE_KEY: ${self.env.SERVICE_ROLE_KEY}
+    studio:
+        image: docker.io/supabase/studio:2026.10.12-sha-3699278@sha256:948770ec467f00e6ae34c35018ef7cb23d7b30eb806b42c2cc0d7bcfdcf8a7a8
+        expose: ['3000']
+        environment:
+            STUDIO_PG_META_URL: http://${service.meta.host}:8080
+            POSTGRES_HOST: ${service.db.host}
+            POSTGRES_PORT: '5432'
+            POSTGRES_DB: postgres
+            POSTGRES_PASSWORD: ${service.db.env.POSTGRES_PASSWORD}
+            POSTGRES_USER_READ_WRITE: postgres
+            PG_META_CRYPTO_KEY: ${service.meta.env.CRYPTO_KEY}
+            PGRST_DB_SCHEMAS: public,graphql_public
+            PGRST_DB_MAX_ROWS: '1000'
+            PGRST_DB_EXTRA_SEARCH_PATH: public
+            DEFAULT_ORGANIZATION_NAME: Default Organization
+            DEFAULT_PROJECT_NAME: Default Project
+            SUPABASE_URL: http://${service.kong.host}:8000
+            SUPABASE_PUBLIC_URL: ${service.kong.public_url}
+            SUPABASE_ANON_KEY: ${service.kong.env.ANON_KEY}
+            SUPABASE_SERVICE_KEY: ${service.kong.env.SERVICE_ROLE_KEY}
+            AUTH_JWT_SECRET: ${service.kong.env.JWT_SECRET}
+            # Logs and analytics need Logflare and Vector, which aren't part of this stack.
+            ENABLED_FEATURES_LOGS_ALL: 'false'
+            SNIPPETS_MANAGEMENT_FOLDER: /app/snippets
+        volumes:
+            - snippets:/app/snippets
+        depends_on: [meta]
+        healthcheck:
+            test:
+                [
+                    'CMD',
+                    'wget',
+                    '-qO-',
+                    'http://localhost:3000/api/platform/profile',
+                ]
+            start_period: 60s
+        deploy:
+            resources:
+                limits: { cpus: '1', memory: 512m }
+        x-launchroom: { name: Studio, logo: supabase }
+    auth:
+        image: docker.io/supabase/gotrue:v2.197.0@sha256:1736a63078f5922b198c4cbe50f80ab9a2d3b54fe8b7b6cfb2e9dc5dbbc12c6b
+        expose: ['9999']
+        environment:
+            GOTRUE_API_HOST: 0.0.0.0
+            GOTRUE_API_PORT: '9999'
+            API_EXTERNAL_URL: ${service.kong.public_url}/auth/v1
+            GOTRUE_DB_DRIVER: postgres
+            GOTRUE_DB_DATABASE_URL: postgres://supabase_auth_admin:${service.db.env.POSTGRES_PASSWORD}@${service.db.host}:5432/postgres
+            # Where sign-in emails send people: set it to your app's address.
+            GOTRUE_SITE_URL: ${service.kong.public_url}
+            GOTRUE_URI_ALLOW_LIST: ''
+            GOTRUE_DISABLE_SIGNUP: 'false'
+            GOTRUE_JWT_ADMIN_ROLES: service_role
+            GOTRUE_JWT_AUD: authenticated
+            GOTRUE_JWT_DEFAULT_GROUP_NAME: authenticated
+            GOTRUE_JWT_EXP: '3600'
+            GOTRUE_JWT_SECRET: ${service.kong.env.JWT_SECRET}
+            GOTRUE_JWT_ISSUER: ${service.kong.public_url}/auth/v1
+            GOTRUE_EXTERNAL_EMAIL_ENABLED: 'true'
+            GOTRUE_EXTERNAL_ANONYMOUS_USERS_ENABLED: 'false'
+            # No mail server is configured yet: sign-ups are confirmed right away.
+            # Add GOTRUE_SMTP_* variables and set this to false to verify addresses.
+            GOTRUE_MAILER_AUTOCONFIRM: 'true'
+            GOTRUE_MAILER_URLPATHS_INVITE: /auth/v1/verify
+            GOTRUE_MAILER_URLPATHS_CONFIRMATION: /auth/v1/verify
+            GOTRUE_MAILER_URLPATHS_RECOVERY: /auth/v1/verify
+            GOTRUE_MAILER_URLPATHS_EMAIL_CHANGE: /auth/v1/verify
+            GOTRUE_EXTERNAL_PHONE_ENABLED: 'false'
+            GOTRUE_SMS_AUTOCONFIRM: 'false'
+        depends_on: [db]
+        healthcheck:
+            test:
+                [
+                    'CMD',
+                    'wget',
+                    '--no-verbose',
+                    '--tries=1',
+                    '--spider',
+                    'http://localhost:9999/health',
+                ]
+        deploy:
+            resources:
+                limits: { cpus: '0.5', memory: 128m }
+        x-launchroom: { name: Auth, logo: auth }
+    rest:
+        image: docker.io/postgrest/postgrest:v14.18@sha256:c7cd7e265a85b05248abf53f4473fcec7e327c282d0bd0cf60f1551996d09fcf
+        expose: ['3000']
+        environment:
+            PGRST_DB_URI: postgres://authenticator:${service.db.env.POSTGRES_PASSWORD}@${service.db.host}:5432/postgres
+            PGRST_DB_SCHEMAS: public,graphql_public
+            PGRST_DB_MAX_ROWS: '1000'
+            PGRST_DB_EXTRA_SEARCH_PATH: public
+            PGRST_DB_ANON_ROLE: anon
+            PGRST_JWT_SECRET: ${service.kong.env.JWT_SECRET}
+            PGRST_DB_USE_LEGACY_GUCS: 'false'
+            PGRST_APP_SETTINGS_JWT_EXP: '3600'
+        depends_on: [db]
+        healthcheck:
+            test: ['CMD', 'postgrest', '--ready']
+        deploy:
+            resources:
+                limits: { cpus: '0.5', memory: 128m }
+        x-launchroom: { name: REST API, logo: api }
+    realtime:
+        image: docker.io/supabase/realtime:v2.143.3@sha256:768b559241dd234c4e8852c5c0f504e598b80f1df2ad4dd78d5486fbed2f17a2
+        expose: ['4000']
+        environment:
+            DB_HOST: ${service.db.host}
+            DB_PORT: '5432'
+            DB_USER: supabase_admin
+            DB_PASSWORD: ${service.db.env.POSTGRES_PASSWORD}
+            DB_NAME: postgres
+            DB_AFTER_CONNECT_QUERY: SET search_path TO _realtime
+            DB_ENC_KEY: ${generate:password:16}
+            API_JWT_SECRET: ${service.kong.env.JWT_SECRET}
+            METRICS_JWT_SECRET: ${service.kong.env.JWT_SECRET}
+            SECRET_KEY_BASE: ${generate:base64:48}
+            ERL_AFLAGS: -proto_dist inet_tcp
+            DNS_NODES: "''"
+            RLIMIT_NOFILE: '10000'
+            APP_NAME: realtime
+            SEED_SELF_HOST: 'true'
+            # Realtime finds its tenant by the host name the gateway calls it by.
+            SELF_HOST_TENANT_NAME: ${self.host}
+            RUN_JANITOR: 'true'
+            DISABLE_HEALTHCHECK_LOGGING: 'true'
+        depends_on: [db]
+        healthcheck:
+            test: ['CMD', 'curl', '-sSf', 'http://localhost:4000/healthcheck']
+            start_period: 60s
+        deploy:
+            resources:
+                limits: { cpus: '1', memory: 512m }
+        x-launchroom: { name: Realtime, logo: realtime }
+    storage:
+        image: docker.io/supabase/storage-api:v1.81.0@sha256:98ffec5d0678803783c30e404c27f4ec65e97efbe014088f2a86b4b8b54b9f54
+        expose: ['5000']
+        environment:
+            ANON_KEY: ${service.kong.env.ANON_KEY}
+            SERVICE_KEY: ${service.kong.env.SERVICE_ROLE_KEY}
+            POSTGREST_URL: http://${service.rest.host}:3000
+            AUTH_JWT_SECRET: ${service.kong.env.JWT_SECRET}
+            DATABASE_URL: postgres://supabase_storage_admin:${service.db.env.POSTGRES_PASSWORD}@${service.db.host}:5432/postgres
+            STORAGE_PUBLIC_URL: ${service.kong.public_url}
+            REQUEST_ALLOW_X_FORWARDED_PATH: 'true'
+            FILE_SIZE_LIMIT: '52428800'
+            STORAGE_BACKEND: file
+            GLOBAL_S3_BUCKET: stub
+            FILE_STORAGE_BACKEND_PATH: /var/lib/storage
+            TENANT_ID: stub
+            REGION: stub
+            # Transformations need imgproxy reading this volume, and a volume belongs to one service.
+            ENABLE_IMAGE_TRANSFORMATION: 'false'
+            S3_PROTOCOL_ACCESS_KEY_ID: ${generate:hex:16}
+            S3_PROTOCOL_ACCESS_KEY_SECRET: ${generate:hex:32}
+        volumes:
+            - files:/var/lib/storage
+        depends_on: [db, rest]
+        healthcheck:
+            test:
+                [
+                    'CMD',
+                    'wget',
+                    '--no-verbose',
+                    '--tries=1',
+                    '--spider',
+                    'http://localhost:5000/status',
+                ]
+        deploy:
+            resources:
+                limits: { cpus: '1', memory: 256m }
+        x-launchroom: { name: Storage, logo: storage }
+    meta:
+        image: docker.io/supabase/postgres-meta:v0.100.0@sha256:145325b7e39f8ef4931d6e8cfd3f6f4d655de09d72a2ccc96d9513542c2202bd
+        expose: ['8080']
+        environment:
+            PG_META_PORT: '8080'
+            PG_META_DB_HOST: ${service.db.host}
+            PG_META_DB_PORT: '5432'
+            PG_META_DB_NAME: postgres
+            PG_META_DB_USER: postgres
+            PG_META_DB_PASSWORD: ${service.db.env.POSTGRES_PASSWORD}
+            CRYPTO_KEY: ${generate:password:32}
+        depends_on: [db]
+        healthcheck:
+            test: ['CMD', 'wget', '-qO-', 'http://localhost:8080/health']
+        deploy:
+            resources:
+                limits: { cpus: '0.5', memory: 256m }
+        x-launchroom: { name: Postgres Meta, logo: api }
+    db:
+        # Supabase's own Postgres image (extensions, roles, init SQL): an
+        # image with volumes, backed up as volumes rather than a managed engine.
+        image: docker.io/supabase/postgres:17.6.1.136@sha256:f371b5f3f2ac0a05703f33d6e6134515fb2498cab708fb948a0aeb7481467c00
+        command:
+            [
+                'postgres',
+                '-c',
+                'config_file=/etc/postgresql/postgresql.conf',
+                '-c',
+                'log_min_messages=fatal',
+            ]
+        expose: ['5432']
+        environment:
+            POSTGRES_HOST: /var/run/postgresql
+            PGPORT: '5432'
+            POSTGRES_PORT: '5432'
+            POSTGRES_PASSWORD: ${generate:password:32}
+            PGPASSWORD: ${self.env.POSTGRES_PASSWORD}
+            PGDATABASE: postgres
+            POSTGRES_DB: postgres
+            JWT_EXP: '3600'
+        volumes:
+            - data:/var/lib/postgresql/data
+            - config:/etc/postgresql-custom
+        configs:
+            - source: webhooks
+              target: /docker-entrypoint-initdb.d/init-scripts/98-webhooks.sql
+            - source: roles
+              target: /docker-entrypoint-initdb.d/init-scripts/99-roles.sql
+            - source: jwt
+              target: /docker-entrypoint-initdb.d/init-scripts/99-jwt.sql
+            - source: realtime
+              target: /docker-entrypoint-initdb.d/migrations/99-realtime.sql
+        cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
+        healthcheck:
+            test: ['CMD', 'pg_isready', '-U', 'postgres', '-h', 'localhost']
+            start_period: 120s
+        deploy:
+            resources:
+                limits: { cpus: '1', memory: 1g }
+        x-launchroom:
+            name: Postgres
+            logo: postgres
+            # Its data files change in place: backups freeze it while reading the volume.
+            backup: pause
+configs:
+    # Init SQL from Supabase's docker/volumes/db at the pinned release
+    # (supabase/supabase@bc27d26, self-hosted 0.8.3), written read-only into
+    # the database container before it starts. Literal: $$ is a $ (Compose
+    # interpolation), and the SQL reads the password from the environment.
+    webhooks:
+        content: |
+            BEGIN;
+              -- Create pg_net extension
+              CREATE EXTENSION IF NOT EXISTS pg_net SCHEMA extensions;
+              -- Create supabase_functions schema
+              CREATE SCHEMA supabase_functions AUTHORIZATION supabase_admin;
+              GRANT USAGE ON SCHEMA supabase_functions TO postgres, anon, authenticated, service_role;
+              ALTER DEFAULT PRIVILEGES IN SCHEMA supabase_functions GRANT ALL ON TABLES TO postgres, anon, authenticated, service_role;
+              ALTER DEFAULT PRIVILEGES IN SCHEMA supabase_functions GRANT ALL ON FUNCTIONS TO postgres, anon, authenticated, service_role;
+              ALTER DEFAULT PRIVILEGES IN SCHEMA supabase_functions GRANT ALL ON SEQUENCES TO postgres, anon, authenticated, service_role;
+              -- supabase_functions.migrations definition
+              CREATE TABLE supabase_functions.migrations (
+                version text PRIMARY KEY,
+                inserted_at timestamptz NOT NULL DEFAULT NOW()
+              );
+              -- Initial supabase_functions migration
+              INSERT INTO supabase_functions.migrations (version) VALUES ('initial');
+              -- supabase_functions.hooks definition
+              CREATE TABLE supabase_functions.hooks (
+                id bigserial PRIMARY KEY,
+                hook_table_id integer NOT NULL,
+                hook_name text NOT NULL,
+                created_at timestamptz NOT NULL DEFAULT NOW(),
+                request_id bigint
+              );
+              CREATE INDEX supabase_functions_hooks_request_id_idx ON supabase_functions.hooks USING btree (request_id);
+              CREATE INDEX supabase_functions_hooks_h_table_id_h_name_idx ON supabase_functions.hooks USING btree (hook_table_id, hook_name);
+              COMMENT ON TABLE supabase_functions.hooks IS 'Supabase Functions Hooks: Audit trail for triggered hooks.';
+              CREATE FUNCTION supabase_functions.http_request()
+                RETURNS trigger
+                LANGUAGE plpgsql
+                AS $$function$$
+                DECLARE
+                  request_id bigint;
+                  payload jsonb;
+                  url text := TG_ARGV[0]::text;
+                  method text := TG_ARGV[1]::text;
+                  headers jsonb DEFAULT '{}'::jsonb;
+                  params jsonb DEFAULT '{}'::jsonb;
+                  timeout_ms integer DEFAULT 1000;
+                BEGIN
+                  IF url IS NULL OR url = 'null' THEN
+                    RAISE EXCEPTION 'url argument is missing';
+                  END IF;
+
+                  IF method IS NULL OR method = 'null' THEN
+                    RAISE EXCEPTION 'method argument is missing';
+                  END IF;
+
+                  IF TG_ARGV[2] IS NULL OR TG_ARGV[2] = 'null' THEN
+                    headers = '{"Content-Type": "application/json"}'::jsonb;
+                  ELSE
+                    headers = TG_ARGV[2]::jsonb;
+                  END IF;
+
+                  IF TG_ARGV[3] IS NULL OR TG_ARGV[3] = 'null' THEN
+                    params = '{}'::jsonb;
+                  ELSE
+                    params = TG_ARGV[3]::jsonb;
+                  END IF;
+
+                  IF TG_ARGV[4] IS NULL OR TG_ARGV[4] = 'null' THEN
+                    timeout_ms = 1000;
+                  ELSE
+                    timeout_ms = TG_ARGV[4]::integer;
+                  END IF;
+
+                  CASE
+                    WHEN method = 'GET' THEN
+                      SELECT http_get INTO request_id FROM net.http_get(
+                        url,
+                        params,
+                        headers,
+                        timeout_ms
+                      );
+                    WHEN method = 'POST' THEN
+                      payload = jsonb_build_object(
+                        'old_record', OLD,
+                        'record', NEW,
+                        'type', TG_OP,
+                        'table', TG_TABLE_NAME,
+                        'schema', TG_TABLE_SCHEMA
+                      );
+
+                      SELECT http_post INTO request_id FROM net.http_post(
+                        url,
+                        payload,
+                        params,
+                        headers,
+                        timeout_ms
+                      );
+                    ELSE
+                      RAISE EXCEPTION 'method argument % is invalid', method;
+                  END CASE;
+
+                  INSERT INTO supabase_functions.hooks
+                    (hook_table_id, hook_name, request_id)
+                  VALUES
+                    (TG_RELID, TG_NAME, request_id);
+
+                  RETURN NEW;
+                END
+              $$function$$;
+              -- Supabase super admin
+              DO
+              $$$$
+              BEGIN
+                IF NOT EXISTS (
+                  SELECT 1
+                  FROM pg_roles
+                  WHERE rolname = 'supabase_functions_admin'
+                )
+                THEN
+                  CREATE USER supabase_functions_admin NOINHERIT CREATEROLE LOGIN NOREPLICATION;
+                END IF;
+              END
+              $$$$;
+              GRANT ALL PRIVILEGES ON SCHEMA supabase_functions TO supabase_functions_admin;
+              GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA supabase_functions TO supabase_functions_admin;
+              GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA supabase_functions TO supabase_functions_admin;
+              ALTER USER supabase_functions_admin SET search_path = "supabase_functions";
+              ALTER table "supabase_functions".migrations OWNER TO supabase_functions_admin;
+              ALTER table "supabase_functions".hooks OWNER TO supabase_functions_admin;
+              ALTER function "supabase_functions".http_request() OWNER TO supabase_functions_admin;
+              GRANT supabase_functions_admin TO postgres;
+              -- http_request() is SECURITY DEFINER and runs as supabase_functions_admin. Serializing
+              -- NEW/OLD can touch objects in the extensions schema (PostGIS geometry reads
+              -- extensions.spatial_ref_sys), so the role needs USAGE on it.
+              GRANT USAGE ON SCHEMA extensions TO supabase_functions_admin;
+              -- Remove unused supabase_pg_net_admin role
+              DO
+              $$$$
+              BEGIN
+                IF EXISTS (
+                  SELECT 1
+                  FROM pg_roles
+                  WHERE rolname = 'supabase_pg_net_admin'
+                )
+                THEN
+                  REASSIGN OWNED BY supabase_pg_net_admin TO supabase_admin;
+                  DROP OWNED BY supabase_pg_net_admin;
+                  DROP ROLE supabase_pg_net_admin;
+                END IF;
+              END
+              $$$$;
+              -- pg_net grants when extension is already enabled
+              DO
+              $$$$
+              BEGIN
+                IF EXISTS (
+                  SELECT 1
+                  FROM pg_extension
+                  WHERE extname = 'pg_net'
+                )
+                THEN
+                  GRANT USAGE ON SCHEMA net TO supabase_functions_admin, postgres, anon, authenticated, service_role;
+                  ALTER function net.http_get(url text, params jsonb, headers jsonb, timeout_milliseconds integer) SECURITY DEFINER;
+                  ALTER function net.http_post(url text, body jsonb, params jsonb, headers jsonb, timeout_milliseconds integer) SECURITY DEFINER;
+                  ALTER function net.http_get(url text, params jsonb, headers jsonb, timeout_milliseconds integer) SET search_path = net;
+                  ALTER function net.http_post(url text, body jsonb, params jsonb, headers jsonb, timeout_milliseconds integer) SET search_path = net;
+                  REVOKE ALL ON FUNCTION net.http_get(url text, params jsonb, headers jsonb, timeout_milliseconds integer) FROM PUBLIC;
+                  REVOKE ALL ON FUNCTION net.http_post(url text, body jsonb, params jsonb, headers jsonb, timeout_milliseconds integer) FROM PUBLIC;
+                  GRANT EXECUTE ON FUNCTION net.http_get(url text, params jsonb, headers jsonb, timeout_milliseconds integer) TO supabase_functions_admin, postgres, anon, authenticated, service_role;
+                  GRANT EXECUTE ON FUNCTION net.http_post(url text, body jsonb, params jsonb, headers jsonb, timeout_milliseconds integer) TO supabase_functions_admin, postgres, anon, authenticated, service_role;
+                END IF;
+              END
+              $$$$;
+              -- Event trigger for pg_net
+              CREATE OR REPLACE FUNCTION extensions.grant_pg_net_access()
+              RETURNS event_trigger
+              LANGUAGE plpgsql
+              AS $$$$
+              BEGIN
+                IF EXISTS (
+                  SELECT 1
+                  FROM pg_event_trigger_ddl_commands() AS ev
+                  JOIN pg_extension AS ext
+                  ON ev.objid = ext.oid
+                  WHERE ext.extname = 'pg_net'
+                )
+                THEN
+                  GRANT USAGE ON SCHEMA net TO supabase_functions_admin, postgres, anon, authenticated, service_role;
+                  ALTER function net.http_get(url text, params jsonb, headers jsonb, timeout_milliseconds integer) SECURITY DEFINER;
+                  ALTER function net.http_post(url text, body jsonb, params jsonb, headers jsonb, timeout_milliseconds integer) SECURITY DEFINER;
+                  ALTER function net.http_get(url text, params jsonb, headers jsonb, timeout_milliseconds integer) SET search_path = net;
+                  ALTER function net.http_post(url text, body jsonb, params jsonb, headers jsonb, timeout_milliseconds integer) SET search_path = net;
+                  REVOKE ALL ON FUNCTION net.http_get(url text, params jsonb, headers jsonb, timeout_milliseconds integer) FROM PUBLIC;
+                  REVOKE ALL ON FUNCTION net.http_post(url text, body jsonb, params jsonb, headers jsonb, timeout_milliseconds integer) FROM PUBLIC;
+                  GRANT EXECUTE ON FUNCTION net.http_get(url text, params jsonb, headers jsonb, timeout_milliseconds integer) TO supabase_functions_admin, postgres, anon, authenticated, service_role;
+                  GRANT EXECUTE ON FUNCTION net.http_post(url text, body jsonb, params jsonb, headers jsonb, timeout_milliseconds integer) TO supabase_functions_admin, postgres, anon, authenticated, service_role;
+                END IF;
+              END;
+              $$$$;
+              COMMENT ON FUNCTION extensions.grant_pg_net_access IS 'Grants access to pg_net';
+              DO
+              $$$$
+              BEGIN
+                IF NOT EXISTS (
+                  SELECT 1
+                  FROM pg_event_trigger
+                  WHERE evtname = 'issue_pg_net_access'
+                ) THEN
+                  CREATE EVENT TRIGGER issue_pg_net_access ON ddl_command_end WHEN TAG IN ('CREATE EXTENSION')
+                  EXECUTE PROCEDURE extensions.grant_pg_net_access();
+                END IF;
+              END
+              $$$$;
+              INSERT INTO supabase_functions.migrations (version) VALUES ('20210809183423_update_grants');
+              ALTER function supabase_functions.http_request() SECURITY DEFINER;
+              ALTER function supabase_functions.http_request() SET search_path = supabase_functions;
+              REVOKE ALL ON FUNCTION supabase_functions.http_request() FROM PUBLIC;
+              GRANT EXECUTE ON FUNCTION supabase_functions.http_request() TO postgres, anon, authenticated, service_role;
+            COMMIT;
+    roles:
+        content: |
+            -- NOTE: change to your own passwords for production environments
+            \set pgpass `echo "$$POSTGRES_PASSWORD"`
+
+            ALTER USER authenticator WITH PASSWORD :'pgpass';
+            ALTER USER pgbouncer WITH PASSWORD :'pgpass';
+            ALTER USER supabase_auth_admin WITH PASSWORD :'pgpass';
+            ALTER USER supabase_functions_admin WITH PASSWORD :'pgpass';
+            ALTER USER supabase_storage_admin WITH PASSWORD :'pgpass';
+    jwt:
+        content: |
+            \set jwt_exp `echo "$$JWT_EXP"`
+
+            ALTER DATABASE postgres SET "app.settings.jwt_exp" TO :'jwt_exp';
+    realtime:
+        content: |
+            \set pguser `echo "$$POSTGRES_USER"`
+
+            create schema if not exists _realtime;
+            alter schema _realtime owner to :pguser;

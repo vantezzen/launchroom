@@ -458,6 +458,31 @@ final class NodeStateValidator
             }
         }
 
+        // Web firewall (docs/03 §13.3): exclusions only for detection rules, unique; never with client certificates.
+        $waf = $route['waf'] ?? null;
+
+        if (is_array($waf)) {
+            $exclusions = [];
+
+            foreach ($this->list($waf['exclusions'] ?? []) as $j => $exclusion) {
+                $rule = $exclusion['rule'] ?? null;
+
+                if (! is_int($rule) || $rule < 911000 || $rule > 944999) {
+                    $this->add("{$p}.waf.exclusions[{$j}].rule", 'only detection rules 911000–944999 can be excluded');
+                }
+
+                $this->unique("{$p}.waf.exclusions", $j, $this->str($rule).'|'.$this->str($exclusion['path'] ?? null).'|'.$this->str($exclusion['target'] ?? null), $exclusions);
+            }
+
+            if (array_key_exists('inspectBodyKiB', $waf) && ! in_array($waf['inspectBodyKiB'], [32, 128, 1024], true)) {
+                $this->add("{$p}.waf.inspectBodyKiB", 'must be 32, 128 or 1024');
+            }
+
+            if (isset($route['clientAuth'])) {
+                $this->add("{$p}.waf", 'is never sent with clientAuth');
+            }
+        }
+
         // Client certificates (mTLS, docs/03 §4.3): every trusted certificate must be a CA.
         $clientAuth = $route['clientAuth'] ?? null;
 

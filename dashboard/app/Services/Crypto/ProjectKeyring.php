@@ -173,6 +173,21 @@ final class ProjectKeyring
     }
 
     /**
+     * An investigation's container inspections (docs/22 §8, AD
+     * `investigation|<team>|<project>|<ivg_ id>`): process commands may
+     * carry secrets the masking missed.
+     */
+    public function encryptInspections(Project $project, string $investigationPublicId, #[SensitiveParameter] string $json): string
+    {
+        return $this->encrypt($project, $json, "investigation|{$project->team_id}|{$project->id}|{$investigationPublicId}");
+    }
+
+    public function decryptInspections(Project $project, string $investigationPublicId, string $ciphertext): string
+    {
+        return $this->decrypt($project, $ciphertext, "investigation|{$project->team_id}|{$project->id}|{$investigationPublicId}");
+    }
+
+    /**
      * A keyed MAC under the current project DEK, for hashing secret material
      * into stored fingerprints (build keys) without making them guessable.
      * Rotating the DEK changes them (one rebuild).

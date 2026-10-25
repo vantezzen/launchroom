@@ -45,7 +45,7 @@ export function MoveProgress({
                     />
                     <span className="type-small text-muted-foreground tabular-nums">
                         {move.done} of {total} moved
-                        {move.failed > 0 && ` · ${move.failed} need attention`}
+                        {move.failed > 0 && `, ${move.failed} need attention`}
                     </span>
                 </div>
             )}

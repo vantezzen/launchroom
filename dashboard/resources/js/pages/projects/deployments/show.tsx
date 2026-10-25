@@ -3,6 +3,7 @@ import { ScrollText } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
 import { CommitAvatar } from '@/components/commit-avatar';
 import { Logo } from '@/components/logo';
+import { MetaLine } from '@/components/patterns/meta-line';
 import { Page, PageHeader } from '@/components/patterns/page';
 import { Section } from '@/components/patterns/section';
 import { Button } from '@/components/ui/button';
@@ -36,7 +37,6 @@ import { useDeploymentLogs } from '@/features/logs/use-deployment-logs';
 import type { ProjectShellProps } from '@/features/projects/types';
 import { logs as projectLogs } from '@/routes/projects';
 import { TimeAgo } from '@/components/time-ago';
-import { useNow } from '@/hooks/use-now';
 
 type Props = ProjectShellProps & {
     detail: App.Data.Deployments.DeploymentDetailData;
@@ -70,7 +70,6 @@ function DeploymentPage({
     const inProgress =
         isInProgress(deployment.status) && deployment.status !== 'ready';
     const live = inProgress || deployment.status === 'active';
-    const now = useNow(inProgress);
     const stream = useDeploymentLogs(
         {
             project: project.id,
@@ -81,13 +80,17 @@ function DeploymentPage({
     );
     const timeline = useMemo(
         (): TimelineStep[] =>
-            stepRows(detail, now).map((row) => ({
+            // Running steps tick in their own header (Elapsed): the page
+            // itself doesn't re-render every second.
+            stepRows(detail).map((row) => ({
                 section: row.section,
                 status: row.status,
                 duration: formatDuration(row.seconds),
+                startedAt: row.startedAt,
+                finishedAt: row.finishedAt,
                 message: row.message,
             })),
-        [detail, now],
+        [detail],
     );
     // The failure card's "Jump to line N": the first error of the failed step.
     const errorLine = useMemo(() => {
@@ -124,7 +127,7 @@ function DeploymentPage({
     return (
         <>
             <Head
-                title={`${deployment.serviceName} · ${shortSha(deployment.commitSha) ?? deployment.id}`}
+                title={`Deployment ${shortSha(deployment.commitSha) ?? deployment.id} - ${deployment.serviceName}`}
             />
 
             {live && (
@@ -158,10 +161,9 @@ function DeploymentPage({
                     }
                     title={deploymentTitle(deployment)}
                     description={
-                        <span className="inline-flex flex-wrap items-center gap-x-1.5">
-                            <span>
-                                {deployment.serviceName} · {environmentName} ·
-                            </span>
+                        <MetaLine>
+                            {deployment.serviceName}
+                            {environmentName}
                             <span className="inline-flex items-center gap-1.5">
                                 <CommitAvatar
                                     name={
@@ -174,7 +176,7 @@ function DeploymentPage({
                                 {startedBy(deployment)}
                             </span>
                             <TimeAgo value={deployment.queuedAt} />
-                        </span>
+                        </MetaLine>
                     }
                     actions={
                         <>
@@ -247,7 +249,6 @@ function DeploymentPage({
                     <OverviewCard
                         detail={detail}
                         environmentName={environmentName}
-                        now={now}
                     />
                     {detail.configErrors ? (
                         <ConfigFailureCard detail={detail} />

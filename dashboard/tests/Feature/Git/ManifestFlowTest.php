@@ -31,7 +31,7 @@ beforeEach(function (): void {
  */
 function ghStartManifest(object $test, array $input = []): array
 {
-    $test->actingAs($test->admin)->withSession(passwordConfirmed())
+    $test->actingAs($test->admin)
         ->post(route('git.github.manifest.store'), $input)
         ->assertRedirect(route('git.edit'));
 
@@ -90,15 +90,15 @@ test('GitHub Enterprise URLs are validated before anything is sent there', funct
     [, , $action] = ghStartManifest($this, ['githubUrl' => 'https://ghe.example.com']);
     expect($action)->toStartWith('https://ghe.example.com/settings/apps/new');
 
-    $this->actingAs($this->admin)->withSession(passwordConfirmed())
+    $this->actingAs($this->admin)
         ->post(route('git.github.manifest.store'), ['githubUrl' => 'https://ghe.internal.example.com'])
         ->assertSessionHasErrors('githubUrl');
 
-    $this->actingAs($this->admin)->withSession(passwordConfirmed())
+    $this->actingAs($this->admin)
         ->post(route('git.github.manifest.store'), ['githubUrl' => 'http://ghe.example.com'])
         ->assertSessionHasErrors('githubUrl');
 
-    $this->actingAs($this->admin)->withSession(passwordConfirmed())
+    $this->actingAs($this->admin)
         ->post(route('git.github.manifest.store'), ['organization' => 'bad org;id'])
         ->assertSessionHasErrors('organization');
 });
@@ -108,7 +108,7 @@ test('starting the flow needs the servers permission', function (): void {
         ->assertRedirect()->assertSessionHasNoErrors();
 
     foreach ([TeamRole::Developer, TeamRole::Viewer] as $role) {
-        $this->actingAs(memberOf($this->team, $role))->withSession(passwordConfirmed())
+        $this->actingAs(memberOf($this->team, $role))
             ->post(route('git.github.manifest.store'))
             ->assertForbidden();
     }

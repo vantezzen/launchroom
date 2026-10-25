@@ -56,7 +56,7 @@ final readonly class RaiseServerOfflineAlerts
                 rule: AlertRule::ServerOffline,
                 subject: $subject,
                 title: "{$server->name} is offline",
-                summary: 'It has not been in touch for 5 minutes. Apps with replicas on other servers keep serving; the server page lists what to check.',
+                summary: 'It has not been in touch for 5 minutes. Apps with replicas on other servers keep serving. The server page lists what to check.',
                 href: "/servers/{$server->public_id}",
                 server: $server,
                 facts: array_filter(['Last seen' => $server->last_seen_at?->toDayDateTimeString()], static fn (?string $v): bool => $v !== null),

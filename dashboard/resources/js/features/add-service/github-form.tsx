@@ -362,7 +362,7 @@ export function GitHubForm({
                     {preview.status === 'failed' && (
                         <p className="max-w-[65ch] type-body text-status-error">
                             {preview.message ??
-                                'Detection failed. You can still add the service; the first build detects again.'}
+                                'Detection failed. You can still add the service, and the first build will try again.'}
                         </p>
                     )}
                     <DetectedPlan
@@ -370,7 +370,7 @@ export function GitHubForm({
                         showPlanJson={false}
                         emptyMessage={
                             preview.status === 'failed'
-                                ? 'You can still add the service: the first build detects again, and Settings → Build shows what it found.'
+                                ? 'You can still add the service. The first build tries again, and Settings → Build shows the result.'
                                 : (preview.message ?? undefined)
                         }
                     />

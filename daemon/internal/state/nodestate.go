@@ -197,6 +197,12 @@ type WorkloadSpec struct {
 	// expression in the time zone, unless the previous run still runs.
 	// Requires restart "no" and no port, health or mesh publication.
 	Schedule *ScheduleSpec `json:"schedule,omitzero" jsonschema:"nullable"`
+	// Files are literal text files launchroomd writes into the container
+	// after creating it and before starting it (daemon feature
+	// "configFiles"): regular files, mode 0444, owner 0:0, never inside a
+	// mount target. They are config, not secrets: programs read secrets
+	// from the environment.
+	Files []ConfigFile `json:"files,omitzero" jsonschema:"nullable,maxItems=32"`
 }
 
 // CronExpr is a 5-field cron expression (package cronexpr's grammar).
@@ -332,6 +338,9 @@ type RouteSpec struct {
 	// §4.3; daemon feature clientCertificates). Only the dashboard's system
 	// routes on the control-plane server carry it.
 	ClientAuth *RouteClientAuth `json:"clientAuth,omitzero" jsonschema:"nullable"`
+	// Waf turns on the web firewall for the route (docs/22 §6, docs/03
+	// §13.3; daemon feature waf). Omitted: off.
+	Waf *RouteWaf `json:"waf,omitzero" jsonschema:"nullable"`
 }
 
 // RouteProtection guards a route.
@@ -669,6 +678,7 @@ func (w *WorkloadSpec) validate(e *errs, p string, nets map[NetworkID]bool, vols
 	if w.Stop != nil {
 		w.Stop.validate(e, p+".stop")
 	}
+	checkConfigFiles(e, p+".files", w.Files, w.Mounts)
 	if w.Schedule != nil {
 		w.Schedule.validate(e, p+".schedule")
 		switch {
@@ -763,5 +773,8 @@ func (r RouteSpec) validate(e *errs, p string, workloads map[WorkloadID]bool) {
 	}
 	if r.LoadBalancing != "" {
 		e.check(p+".loadBalancing", r.LoadBalancing)
+	}
+	if r.Waf != nil {
+		r.Waf.validate(e, p+".waf")
 	}
 }

@@ -15,6 +15,7 @@ import {
     Meter,
     MiniBars,
     Sparkline,
+    StackedBars,
     StatTile,
     TimeRangeSelect,
     TimeSeriesChart,
@@ -25,6 +26,7 @@ import { DEVICE_LABEL, DeviceImage } from '@/components/devices';
 import type { DeviceKind, DeviceStatus } from '@/components/devices';
 import { ServerMap } from '@/components/map';
 import type { MapLink, MapLocation } from '@/components/map';
+import { MetaLine } from '@/components/patterns/meta-line';
 import { Status } from '@/components/status';
 import {
     ActivityGroup,
@@ -218,7 +220,7 @@ function DevicesSection() {
                     >
                         <DeviceImage device={kind} size={300} status={status} />
                         <span className="type-small text-muted-foreground">
-                            {DEVICE_LABEL[kind]} · {status}
+                            {DEVICE_LABEL[kind]}, {status}
                         </span>
                     </div>
                 ))}
@@ -329,7 +331,7 @@ function MetricsSection() {
             </div>
             <div className="grid gap-4 md:grid-cols-3">
                 <Panel>
-                    <Label>Sparkline · inline, 24 px</Label>
+                    <Label>Sparkline: inline, 24 px</Label>
                     <div className="flex items-center gap-3">
                         <span className="w-14 type-small text-muted-foreground">
                             Network
@@ -358,17 +360,17 @@ function MetricsSection() {
                     </div>
                 </Panel>
                 <Panel>
-                    <Label>MiniBars · 14 days of deploys</Label>
+                    <Label>MiniBars: 14 days of deploys</Label>
                     <MiniBars bars={bars} label="Deploys, last 14 days" />
                     <Label>
                         <span className="mt-4 block">
-                            RunStrip · 30 days of backups
+                            RunStrip: 30 days of backups
                         </span>
                     </Label>
                     <RunStrip runs={runs} label="Backups, last 30 days" />
                 </Panel>
                 <Panel className="flex flex-col gap-4">
-                    <Label>Meter · single value</Label>
+                    <Label>Meter: single value</Label>
                     <div className="flex flex-col gap-1.5">
                         <div className="flex justify-between type-small">
                             <span className="text-muted-foreground">Disk</span>
@@ -419,7 +421,7 @@ function BreakdownSection() {
         >
             <div className="grid gap-4 md:grid-cols-3">
                 <Panel className="md:col-span-2">
-                    <Label>UsageMeter · memory by project (8 GB)</Label>
+                    <Label>UsageMeter: memory by project (8 GB)</Label>
                     <UsageMeter
                         items={projects}
                         total={8e9}
@@ -427,7 +429,7 @@ function BreakdownSection() {
                         format={formatBytes}
                     />
                     <div className="mt-6">
-                        <Label>UsageMeter · one item (signal)</Label>
+                        <Label>UsageMeter: one item (signal)</Label>
                         <UsageMeter
                             items={[
                                 { key: 'used', label: 'Used', value: 3.4e9 },
@@ -439,7 +441,7 @@ function BreakdownSection() {
                 </Panel>
                 <Panel className="flex flex-col gap-6">
                     <div>
-                        <Label>Donut · backups by kind</Label>
+                        <Label>Donut: backups by kind</Label>
                         <Donut
                             items={[
                                 {
@@ -469,7 +471,7 @@ function BreakdownSection() {
                         />
                     </div>
                     <div>
-                        <Label>Donut · single value</Label>
+                        <Label>Donut: single value</Label>
                         <Donut
                             items={[{ key: 'used', label: 'Used', value: 41 }]}
                             total={100}
@@ -521,7 +523,7 @@ function ChartsSection() {
         >
             <div className="grid gap-4 lg:grid-cols-2">
                 <Panel>
-                    <Label>CPU · single series with deploy markers</Label>
+                    <Label>CPU: single series with deploy markers</Label>
                     <TimeSeriesChart
                         series={single}
                         title="CPU over the last hour"
@@ -538,7 +540,7 @@ function ChartsSection() {
                     />
                 </Panel>
                 <Panel>
-                    <Label>Memory per replica · 6 series → 4 + other</Label>
+                    <Label>Memory per replica: 6 series → 4 + other</Label>
                     <TimeSeriesChart
                         series={replicas}
                         title="Memory per replica"
@@ -546,6 +548,52 @@ function ChartsSection() {
                     />
                 </Panel>
             </div>
+            <Panel>
+                <Label>Requests per hour by status: stacked bars</Label>
+                <StackedBars
+                    title="Requests per hour, last 24 hours"
+                    times={Array.from(
+                        { length: 24 },
+                        (_, i) => NOW - (23 - i) * 3_600_000,
+                    )}
+                    bucketMs={3_600_000}
+                    series={[
+                        {
+                            key: '2xx',
+                            label: 'Success (2xx)',
+                            color: 'var(--signal)',
+                            values: Array.from(
+                                { length: 24 },
+                                (_, i) =>
+                                    400 + Math.round(300 * Math.sin(i / 3.5)),
+                            ),
+                        },
+                        {
+                            key: '3xx',
+                            label: 'Redirects (3xx)',
+                            color: 'var(--chart-other)',
+                            values: Array.from({ length: 24 }, () => 40),
+                        },
+                        {
+                            key: '4xx',
+                            label: 'Client errors (4xx)',
+                            color: 'var(--status-progress)',
+                            values: Array.from({ length: 24 }, (_, i) =>
+                                i % 5 === 0 ? 60 : 12,
+                            ),
+                        },
+                        {
+                            key: '5xx',
+                            label: 'Server errors (5xx)',
+                            color: 'var(--status-error)',
+                            hatched: true,
+                            values: Array.from({ length: 24 }, (_, i) =>
+                                i === 17 ? 90 : 0,
+                            ),
+                        },
+                    ]}
+                />
+            </Panel>
             <Panel>
                 <Label>
                     Empty series → the caller&apos;s empty state, no frame
@@ -584,7 +632,7 @@ function StepsSection() {
             id: 'plan',
             name: 'Plan',
             status: 'succeeded',
-            summary: 'Next.js 16.1 · pnpm 9.12 · Node 22',
+            summary: 'Next.js 16.1, pnpm 9.12, Node 22',
             duration: '3s',
         },
         {
@@ -615,7 +663,7 @@ function StepsSection() {
             duration: '2s',
             content: (
                 <p className="p-4 type-small text-muted-foreground">
-                    Detected Laravel 13 · PHP 8.4
+                    Detected Laravel 13 with PHP 8.4
                 </p>
             ),
         },
@@ -655,15 +703,18 @@ function StepsSection() {
                         status={
                             <Status
                                 state="progress"
-                                label="Deploying · Health check"
+                                label="Deploying"
+                                detail="Health check"
                             />
                         }
                         title="fix: order totals with discounts"
                         meta={
-                            <>
-                                <span className="font-mono">3b7d5e1</span> ·
-                                main · bennett · 2m ago
-                            </>
+                            <MetaLine>
+                                <span className="font-mono">3b7d5e1</span>
+                                {'main'}
+                                {'bennett'}
+                                {'2m ago'}
+                            </MetaLine>
                         }
                         steps={running.map(({ id, name, status }) => ({
                             id,
@@ -954,7 +1005,7 @@ function CardsSection() {
                     device="cloud"
                     deviceStatus="online"
                     status={<Status state="active" label="Online" />}
-                    place="Hetzner · Frankfurt"
+                    place="Hetzner, Frankfurt"
                     lastSeen="12s ago"
                     note="Runs this dashboard"
                     roles={['Edge', 'Runtime']}
@@ -985,7 +1036,7 @@ function CardsSection() {
                             { key: 'crm', label: 'crm', value: 0.3e9, slot: 4 },
                         ],
                     }}
-                    specs="4 cores · 8 GB · 160 GB"
+                    specs="4 cores, 8 GB, 160 GB"
                     disk="Disk 41%"
                 />
                 <ServerCard
@@ -994,7 +1045,7 @@ function CardsSection() {
                     device="dedicated"
                     deviceStatus="unreachable"
                     status={<Status state="failed" label="Unreachable" />}
-                    place="DigitalOcean · New York"
+                    place="DigitalOcean, New York"
                     lastSeen={
                         <span className="text-status-error">8 min ago</span>
                     }
@@ -1007,7 +1058,7 @@ function CardsSection() {
                             Its 2 replicas moved to fra-1; nothing is down.
                         </p>
                     }
-                    specs="2 cores · 4 GB · 80 GB"
+                    specs="2 cores, 4 GB, 80 GB"
                     disk="Last report 08:41"
                 />
                 <ServerCard
@@ -1016,10 +1067,10 @@ function CardsSection() {
                     device="sbc"
                     deviceStatus="online"
                     status={<Status state="active" label="Online" />}
-                    place="At home · Berlin"
+                    place="At home, Berlin"
                     lastSeen="3s ago"
                     roles={['Runtime']}
-                    specs="4 cores · 8 GB · 128 GB · arm64"
+                    specs="4 cores, 8 GB, 128 GB, arm64"
                     disk="Disk 22%"
                 />
                 <ProjectCard

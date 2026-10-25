@@ -287,7 +287,8 @@ export function DestinationForm({
                                     Allow a private network or plain http
                                 </Label>
                                 <p className="type-small text-muted-foreground">
-                                    Instance owners only, audited. Plain http
+                                    Only instance owners can turn this on, and
+                                    it is recorded in the audit log. Plain http
                                     also needs the host in
                                     LR_BACKUP_INSECURE_HOSTS on the servers.
                                 </p>

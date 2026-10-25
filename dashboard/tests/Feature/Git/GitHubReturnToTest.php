@@ -40,7 +40,7 @@ function returnToConversion(): array
 test('connecting GitHub from onboarding comes back to onboarding', function (): void {
     Http::fake(['https://api.github.com/app-manifests/abc123/conversions' => Http::response(returnToConversion(), 201)]);
 
-    $this->actingAs($this->owner)->withSession(passwordConfirmed())
+    $this->actingAs($this->owner)
         ->post(route('git.github.manifest.store'), ['returnTo' => 'onboarding'])
         ->assertRedirect(route('onboarding.show'));
 
@@ -63,13 +63,13 @@ test('connecting GitHub from onboarding comes back to onboarding', function (): 
 });
 
 test('unknown or external return targets fall back to Settings → Git', function (string $returnTo): void {
-    $this->actingAs($this->owner)->withSession(passwordConfirmed())
+    $this->actingAs($this->owner)
         ->post(route('git.github.manifest.store'), ['returnTo' => $returnTo])
         ->assertRedirect(route('git.edit'));
 })->with(['https://evil.example/', '//evil.example', '/onboarding', 'projects', '']);
 
 test('only instance owners return to onboarding', function (): void {
-    $this->actingAs($this->admin)->withSession(passwordConfirmed())
+    $this->actingAs($this->admin)
         ->post(route('git.github.manifest.store'), ['returnTo' => 'onboarding'])
         ->assertRedirect(route('git.edit'));
 
@@ -79,7 +79,7 @@ test('only instance owners return to onboarding', function (): void {
 });
 
 test('a failed callback still returns to where the flow started', function (): void {
-    $this->actingAs($this->owner)->withSession(passwordConfirmed())
+    $this->actingAs($this->owner)
         ->post(route('git.github.manifest.store'), ['returnTo' => 'onboarding']);
 
     $this->get(route('git.github.manifest.callback', ['code' => 'abc123', 'state' => 'lr_ghm_forged']))

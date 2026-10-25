@@ -127,6 +127,24 @@ test('unauthenticated visitors are sent to the dashboard to sign in; other metho
     ppCheck(host: 'web-production.shop.localhost')->assertOk();
 });
 
+test('denials are a small HTML page for browsers and a plain line for other clients', function (): void {
+    $plain = ppCheck(host: 'nope.shop.localhost', headers: ['Accept' => '*/*']);
+    $plain->assertStatus(403)->assertHeader('Content-Type', 'text/plain; charset=utf-8');
+    expect($plain->getContent())->toBe("launchroom: this preview no longer exists.\n");
+
+    $html = ppCheck(host: 'nope.shop.localhost', headers: ['Accept' => 'text/html,application/xhtml+xml']);
+    $html->assertStatus(403)->assertHeader('Content-Type', 'text/html; charset=utf-8')->assertHeader('Cache-Control', 'no-store, private');
+    $body = (string) $html->getContent();
+    expect($body)->toContain('This preview doesn’t exist')
+        ->not->toContain('<script')
+        ->not->toContain('http://')
+        ->not->toContain('https://')
+        ->toContain('nope.shop.localhost')
+        ->and(strlen($body))->toBeLessThan(4096);
+
+    ppCheck(headers: ['Accept' => 'text/html'], method: 'POST')->assertStatus(401)->assertSee('Sign in to view this preview');
+});
+
 test('members exchange a single-use token for a cookie on the preview host', function (): void {
     $member = memberOf($this->team, TeamRole::Viewer);
 
@@ -250,7 +268,7 @@ test('viewers can’t create share links', function (): void {
 
 test('the CI bypass header passes with the project’s secret only', function (): void {
     $owner = memberOf($this->team, TeamRole::Owner);
-    $response = $this->actingAs($owner)->withSession(passwordConfirmed())->post(route('projects.previews.bypass', $this->project));
+    $response = $this->actingAs($owner)->post(route('projects.previews.bypass', $this->project));
     $response->assertRedirect();
     $settings = PreviewSettings::forProject($this->project);
     $secret = (string) resolve(PreviewAccess::class)->bypassSecret($this->project, $settings);

@@ -5,6 +5,7 @@ import type { FormEvent } from 'react';
 import InputError from '@/components/input-error';
 import { ChoiceTiles } from '@/components/patterns/choice-tiles';
 import { EmptyState } from '@/components/patterns/empty-state';
+import { MetaLine } from '@/components/patterns/meta-line';
 import { SidePanel, SheetSection } from '@/components/patterns/sheet';
 import { TimeAgo } from '@/components/time-ago';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -31,6 +32,7 @@ import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { SettingsCard, SettingsRow } from '@/features/settings/settings-card';
 import { useInitials } from '@/hooks/use-initials';
+import { index as settingsHome } from '@/routes/settings';
 import { consoleRecording as consoleRecordingRoute, edit } from '@/routes/team';
 import {
     destroy as destroyInvitation,
@@ -95,10 +97,10 @@ const roleLabel = (role: App.Enums.TeamRole): string =>
 
 /** What each role can do, in one line (docs/09 §2 permissions). */
 const roleSummary: Record<App.Enums.TeamRole, string> = {
-    owner: 'Everything, including the team',
-    admin: 'Servers, members, backups, projects',
+    owner: 'Full access, including team settings',
+    admin: 'Manages servers, members, backups and projects',
     developer: 'Deploys and edits projects',
-    viewer: 'Sees everything, changes nothing',
+    viewer: 'Can view everything but not change it',
 };
 
 function RoleChip({ role }: { role: App.Enums.TeamRole }) {
@@ -394,11 +396,13 @@ function InvitationRow({
                 invitation.expired ? (
                     'Expired'
                 ) : (
-                    <>
-                        Expires <TimeAgo value={invitation.expiresAt} />
+                    <MetaLine>
+                        <span>
+                            Expires <TimeAgo value={invitation.expiresAt} />
+                        </span>
                         {invitation.invitedBy !== null &&
-                            ` · invited by ${invitation.invitedBy}`}
-                    </>
+                            `Invited by ${invitation.invitedBy}`}
+                    </MetaLine>
                 )
             }
         >
@@ -488,10 +492,7 @@ export default function TeamSettings({
 
             {canManageMembers &&
                 (invitations.length > 0 ? (
-                    <SettingsCard
-                        title="Invited"
-                        description="Waiting for them to accept"
-                    >
+                    <SettingsCard title="Invited">
                         {invitations.map((invitation) => (
                             <InvitationRow
                                 key={invitation.id}
@@ -521,8 +522,9 @@ export default function TeamSettings({
                 (consoleRecording.canChange || consoleRecording.enabled) && (
                     <SettingsCard
                         title="Console recording"
-                        description="Keep a transcript of what console sessions showed."
-                        footer="Output only, never keystrokes. Secret values are masked; reading a recording requires Console access and is audited."
+                        setting="console-recording"
+                        description="Saves a transcript of what each console session showed."
+                        footer="Recordings contain output but no keystrokes, with secret values masked. Reading one requires Console access and is recorded in the audit log."
                     >
                         <SettingsRow
                             label="Record console sessions"
@@ -559,7 +561,7 @@ export default function TeamSettings({
 
 TeamSettings.layout = {
     breadcrumbs: [
-        { title: 'Settings', href: edit() },
+        { title: 'Settings', href: settingsHome() },
         {
             title: 'Members',
             href: edit(),

@@ -14,6 +14,7 @@ use App\Data\Sessions\SessionReplicaData;
 use App\Enums\DaemonFeature;
 use App\Enums\Permission;
 use App\Enums\Sessions\InteractiveSessionKind;
+use App\Enums\Sessions\SessionEndReason;
 use App\Models\Placement;
 use App\Models\ServiceInstance;
 use App\Models\Sessions\DatabaseQuery;
@@ -21,6 +22,7 @@ use App\Models\Sessions\InteractiveSession;
 use App\Models\User;
 use App\Services\Backups\DatabaseWorkloads;
 use App\Services\Crypto\ProjectKeyring;
+use App\Services\Sessions\SessionFailures;
 use App\Services\Sessions\SessionRelay;
 use App\Services\Sessions\SessionTargets;
 use Illuminate\Support\Facades\Gate;
@@ -68,7 +70,7 @@ final readonly class SessionTabs
         $running = $placement instanceof Placement && $this->targets->replica($instance, $placement->workload_id, InteractiveSessionKind::Data) instanceof Placement;
         $feature = $source->engine->daemonFeature();
         $outdated = $running && $feature instanceof DaemonFeature && ! $placement->server->supportsDaemonFeature($feature)
-            ? "Update launchroomd on {$placement->server->name} to browse {$source->engine->label()}."
+            ? "Update {$placement->server->name} in Settings → Updates to browse {$source->engine->label()}."
             : null;
 
         return new DataTabData(
@@ -95,7 +97,7 @@ final readonly class SessionTabs
             ->where('service_instance_id', $instance->id)
             ->where('kind', $kind->value)
             ->unless($everyone, static fn ($query) => $query->where('user_id', $user->id))
-            ->with(['user:id,name', 'server:id,name'])
+            ->with(['user:id,name', 'server:id,name', 'daemonTask:id,error'])
             ->latest('id')
             ->limit(self::RECENT)
             ->get()
@@ -123,6 +125,9 @@ final readonly class SessionTabs
             exitCode: $session->exit_code,
             canEnd: $session->status->isLive() && Gate::forUser($user)->allows('end', $session),
             hasRecording: ! $session->status->isLive() && $session->record && Gate::forUser($user)->allows('viewRecording', $session),
+            failure: in_array($session->end_reason, [SessionEndReason::Error, SessionEndReason::Refused, SessionEndReason::Exited], true)
+                ? SessionFailures::sentence($session->daemonTask?->error)
+                : null,
         );
     }
 

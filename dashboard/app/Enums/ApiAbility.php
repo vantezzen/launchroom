@@ -69,7 +69,7 @@ enum ApiAbility: string
         return match ($this) {
             self::Read => 'See projects, services, deployments, logs and servers.',
             self::Deploy => 'Deploy, redeploy, roll back and cancel deployments.',
-            self::EnvRead => 'See variable names and config values, pull them without secrets.',
+            self::EnvRead => 'See variable names and config values, and pull them without secrets.',
             self::EnvWrite => 'Add, change and remove variables (staged until you deploy).',
             self::SecretsRead => 'Read secret values, for env pull and run. Every read is audited.',
             self::DomainsWrite => 'Add and remove custom domains.',

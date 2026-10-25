@@ -1,0 +1,17 @@
+services:
+  web:
+    image: ghcr.io/umami-software/umami:3.4.0
+    ports: ["3000:3000"]
+    environment:
+      DATABASE_URL: postgres://umami:${DB_PASSWORD}@db:5432/umami
+    depends_on: [db]
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: umami
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: umami
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+volumes:
+  pgdata:

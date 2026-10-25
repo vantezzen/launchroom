@@ -49,14 +49,14 @@ test('servers of other teams are not found', function (): void {
     $foreign = Server::factory()->online()->create();
 
     $this->actingAs($this->admin)->get(route('servers.show', $foreign->public_id))->assertNotFound();
-    $this->actingAs($this->admin)->withSession(passwordConfirmed())->post(route('servers.revoke', $foreign->public_id))->assertNotFound();
+    $this->actingAs($this->admin)->post(route('servers.revoke', $foreign->public_id))->assertNotFound();
     $this->actingAs($this->admin)->get('/servers/srv_not-a-valid-id')->assertNotFound();
 });
 
 test('adding a server issues a join token shown once, with the install command inputs', function (): void {
     $this->actingAs($this->admin)->get(route('servers.create'))->assertOk();
 
-    $response = $this->actingAs($this->admin)->withSession(passwordConfirmed())
+    $response = $this->actingAs($this->admin)
         ->post(route('servers.enrollments.store'), ['roles' => ['runtime', 'build'], 'name' => 'Home box']);
 
     $enrollment = ServerEnrollment::query()->sole();
@@ -80,7 +80,7 @@ test('adding a server preserves build-only roles and hostname without password c
     $this->actingAs($this->admin)->post(route('servers.enrollments.store'), ['roles' => ['build'], 'name' => 'builder'])
         ->assertRedirect()->assertSessionHasNoErrors();
 
-    $this->actingAs($this->viewer)->withSession(passwordConfirmed())
+    $this->actingAs($this->viewer)
         ->post(route('servers.enrollments.store'), ['roles' => ['runtime']])->assertForbidden();
     $this->actingAs($this->viewer)->get(route('servers.create'))->assertForbidden();
 
@@ -91,9 +91,9 @@ test('adding a server preserves build-only roles and hostname without password c
 });
 
 test('roles are validated', function (): void {
-    $this->actingAs($this->admin)->withSession(passwordConfirmed())
+    $this->actingAs($this->admin)
         ->post(route('servers.enrollments.store'), ['roles' => ['root']])->assertSessionHasErrors('roles.0');
-    $this->actingAs($this->admin)->withSession(passwordConfirmed())
+    $this->actingAs($this->admin)
         ->post(route('servers.enrollments.store'), ['roles' => []])->assertSessionHasErrors('roles');
 });
 
@@ -107,21 +107,21 @@ test('enrollments of other teams are not found', function (): void {
 test('admins approve pending servers, which renders their first desired state', function (): void {
     $server = Server::factory()->create(['team_id' => $this->team->id]);
 
-    $this->actingAs($this->admin)->withSession(passwordConfirmed())->post(route('servers.approve', $server->public_id))->assertRedirect();
+    $this->actingAs($this->admin)->post(route('servers.approve', $server->public_id))->assertRedirect();
 
     expect($server->refresh()->status)->toBe(ServerStatus::Online)
         ->and($server->approved_by)->toBe($this->admin->id)
         ->and(NodeStateVersion::query()->where('server_id', $server->id)->count())->toBe(1);
 
     // Approving twice is not allowed (policy: only pending servers).
-    $this->actingAs($this->admin)->withSession(passwordConfirmed())->post(route('servers.approve', $server->public_id))->assertForbidden();
+    $this->actingAs($this->admin)->post(route('servers.approve', $server->public_id))->assertForbidden();
 });
 
 test('admins revoke servers; viewers cannot', function (): void {
     $server = Server::factory()->online()->create(['team_id' => $this->team->id]);
 
-    $this->actingAs($this->viewer)->withSession(passwordConfirmed())->post(route('servers.revoke', $server->public_id))->assertForbidden();
-    $this->actingAs($this->admin)->withSession(passwordConfirmed())->post(route('servers.revoke', $server->public_id))->assertRedirect();
+    $this->actingAs($this->viewer)->post(route('servers.revoke', $server->public_id))->assertForbidden();
+    $this->actingAs($this->admin)->post(route('servers.revoke', $server->public_id))->assertRedirect();
 
     expect($server->refresh()->status)->toBe(ServerStatus::Revoked)
         ->and($server->revoked_at)->not->toBeNull()
@@ -168,11 +168,11 @@ test('the add-server wizard carries the machine kind to the waiting step', funct
     $this->actingAs($this->admin)->get(route('servers.create'))
         ->assertInertia(fn ($page) => $page->component('servers/create')->where('serverCount', 0));
 
-    $this->actingAs($this->admin)->withSession(passwordConfirmed())
+    $this->actingAs($this->admin)
         ->post(route('servers.enrollments.store'), ['roles' => ['build'], 'machine' => 'home'])
         ->assertRedirect(route('servers.enrollments.show', ['enrollment' => ServerEnrollment::query()->sole()->public_id, 'machine' => 'home']));
 
-    $this->actingAs($this->admin)->withSession(passwordConfirmed())
+    $this->actingAs($this->admin)
         ->post(route('servers.enrollments.store'), ['roles' => ['build'], 'machine' => 'toaster'])
         ->assertSessionHasErrors('machine');
 

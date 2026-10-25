@@ -41,6 +41,9 @@ const (
 	SystemCaddy     = "caddy"
 	SystemBuildkit  = "buildkit"
 	SystemTailscale = "tailscale"
+	// SystemFiles is the SFTP helper of volume access (D67): busybox's file
+	// tools in a container that mounts one volume, no network, no shell exec.
+	SystemFiles = "files"
 )
 
 // DefaultSystemImageDigests pins the image digests the daemon accepts for its
@@ -59,6 +62,7 @@ const (
 //	          = v2.11.7 (StockCaddyImageDigest), what the dev stack and tests run.
 //	buildkit: docker.io/moby/buildkit:v0.34.0-rootless (multi-arch index digest)
 //	tailscale: docker.io/tailscale/tailscale:v1.104.1 (multi-arch index digest)
+//	files:    docker.io/library/busybox:1.37.0-glibc (multi-arch index digest)
 var DefaultSystemImageDigests = systemImageDigests(launchroomCaddyDigest)
 
 // launchroomCaddyDigest is the index digest of this release's launchroom-caddy
@@ -96,6 +100,8 @@ func systemImageDigests(caddyDigest string) map[string][]string {
 		SystemBuildkit: {BuildkitImageDigest},
 		// The mesh client runs with the host network, NET_ADMIN and /dev/net/tun.
 		SystemTailscale: {TailscaleImageDigest},
+		// The volume SFTP helper: no network, no capabilities, read-only root.
+		SystemFiles: {FilesImageDigest},
 	}
 }
 
@@ -115,6 +121,9 @@ func isDigest(s string) bool {
 
 // TailscaleImageDigest pins tailscale/tailscale:v1.104.1 (docs/05 §2).
 const TailscaleImageDigest = "sha256:87c55d6be56ad85b3d8bceca5f87f73de288c609131460dd1be1874c250cc41d"
+
+// FilesImageDigest pins busybox:1.37.0-glibc, the volume SFTP helper (D67).
+const FilesImageDigest = "sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e"
 
 // BuildkitImageDigest pins moby/buildkit:v0.34.0-rootless.
 const BuildkitImageDigest = "sha256:65eca3c01cd1180c8f64565c4e3c5983af5145818b0e6fa863385d099eb73855"
@@ -341,6 +350,9 @@ func Check(spec state.WorkloadSpec, cfg Config) error {
 		if err := m.Target.Validate(); err != nil {
 			add(violation("mounts", "%v", err))
 		}
+	}
+	if err := state.CheckConfigFiles(spec.Files, spec.Mounts); err != nil {
+		add(violation("files", "%v", err))
 	}
 	if st := spec.Stop; st != nil {
 		if err := st.Signal.Validate(); err != nil {

@@ -1,0 +1,111 @@
+{
+  "apiVersion": "launchroom.vantezzen.io/v1",
+  "kind": "TaskCompletion",
+  "attempt": 1,
+  "outcome": "succeeded",
+  "inventory": {
+    "image": "127.0.0.1:5000/apps/svc_01j9z8x7w6v5t4s3r2q1p0n9n2@sha256:4b5e57f6eb2f42b9039b3d1e13929295f231749c510cbe341cd68036d9af97e2",
+    "platform": "linux/amd64",
+    "generator": "docker.io/docker/buildkit-syft-scanner@sha256:ae4f3b554449e7e25548e7d8ccc029d17357348e30c6e3df01b92bc93654d6a9",
+    "distro": {
+      "id": "debian",
+      "versionId": "12"
+    },
+    "sourceAnalyzed": true,
+    "lockfiles": [
+      {
+        "path": "pnpm-lock.yaml",
+        "kind": "pnpm",
+        "packages": 812
+      },
+      {
+        "path": "apps/web/package.json",
+        "kind": "npm",
+        "packages": 34
+      }
+    ],
+    "components": [
+      {
+        "ecosystem": "binary",
+        "name": "node",
+        "version": "22.11.0",
+        "purl": "pkg:generic/node@22.11.0",
+        "kind": "runtime",
+        "scope": "runtime",
+        "presence": "installed"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "next",
+        "version": "16.4.2",
+        "purl": "pkg:npm/next@16.4.2",
+        "kind": "library",
+        "scope": "runtime",
+        "presence": "installed",
+        "direct": true
+      },
+      {
+        "ecosystem": "npm",
+        "name": "lodash",
+        "version": "4.17.20",
+        "purl": "pkg:npm/lodash@4.17.20",
+        "kind": "library",
+        "scope": "runtime",
+        "presence": "bundled",
+        "direct": true
+      },
+      {
+        "ecosystem": "npm",
+        "name": "@radix-ui/react-dialog",
+        "version": "1.1.4",
+        "purl": "pkg:npm/%40radix-ui/react-dialog@1.1.4",
+        "kind": "library",
+        "scope": "client",
+        "presence": "bundled",
+        "direct": true
+      },
+      {
+        "ecosystem": "npm",
+        "name": "zod",
+        "version": "3.23.8",
+        "purl": "pkg:npm/zod@3.23.8",
+        "kind": "library",
+        "scope": "unknown",
+        "presence": "bundled"
+      },
+      {
+        "ecosystem": "npm",
+        "name": "vitest",
+        "version": "2.1.8",
+        "purl": "pkg:npm/vitest@2.1.8",
+        "kind": "library",
+        "scope": "dev",
+        "presence": "bundled",
+        "direct": true
+      },
+      {
+        "ecosystem": "deb",
+        "name": "libssl3",
+        "version": "3.0.15-1~deb12u1",
+        "purl": "pkg:deb/debian/libssl3@3.0.15-1~deb12u1?arch=amd64&distro=debian-12&upstream=openssl",
+        "kind": "os",
+        "scope": "runtime",
+        "presence": "installed"
+      },
+      {
+        "ecosystem": "deb",
+        "name": "libc6",
+        "version": "2.36-9+deb12u9",
+        "purl": "pkg:deb/debian/libc6@2.36-9%2Bdeb12u9?arch=amd64&distro=debian-12&upstream=glibc",
+        "kind": "os",
+        "scope": "runtime",
+        "presence": "installed"
+      }
+    ],
+    "dropped": 1,
+    "notes": [
+      "1 component had a name or version launchroom couldn't read."
+    ],
+    "durationMs": 18230
+  }
+}

@@ -21,13 +21,13 @@ Route::middleware(['web', 'auth', 'verified'])->group(function (): void {
     Route::get('settings/backups', [BackupSettingsController::class, 'edit'])->name('backups.settings');
 
     Route::post('settings/backups/destinations', [BackupDestinationController::class, 'store'])
-
+        ->middleware('throttle:20,1')
         ->name('backups.destinations.store');
     Route::put('settings/backups/destinations/{backupDestination}', [BackupDestinationController::class, 'update'])
-
+        ->middleware('throttle:20,1')
         ->name('backups.destinations.update');
     Route::delete('settings/backups/destinations/{backupDestination}', [BackupDestinationController::class, 'destroy'])
-
+        ->middleware('throttle:20,1')
         ->name('backups.destinations.destroy');
     Route::post('settings/backups/destinations/{backupDestination}/test', [BackupDestinationController::class, 'test'])
         ->middleware('throttle:10,1')

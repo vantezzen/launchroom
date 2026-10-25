@@ -22,7 +22,7 @@ final class DeliveryFailed extends RuntimeException
         return new self(match (true) {
             $status === 404 || $status === 410 => "The address answered {$status}: the webhook was probably deleted.",
             $status === 401 || $status === 403 => "The address answered {$status}: it no longer accepts messages from here.",
-            $status === 429 => 'The service is rate limiting messages (429). We will try again.',
+            $status === 429 => 'The service is rate limiting messages (429). launchroom will try again.',
             default => "The service answered {$status}.",
         });
     }

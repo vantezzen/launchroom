@@ -25,7 +25,7 @@ export type ServerCardProps = {
     deviceStatus: DeviceStatus;
     /** StatusPill/Status (word + cue). */
     status: ReactNode;
-    /** "Hetzner · Frankfurt", "At home · Berlin". */
+    /** "Hetzner, Frankfurt", "At home, Berlin". */
     place?: string | null;
     /** "12s ago" (TimeAgo). */
     lastSeen?: ReactNode;
@@ -36,7 +36,7 @@ export type ServerCardProps = {
     memory?: ServerCardMetric;
     /** Memory by project; top 3 coloured by their slot, rest grey. */
     usedBy?: { items: Breakdown[]; total: number; caption: string };
-    /** "4 cores · 8 GB · 160 GB". */
+    /** "4 cores, 8 GB, 160 GB". */
     specs?: string;
     /** "Disk 41%". */
     disk?: string;

@@ -20,6 +20,9 @@ export type StepRow = {
     section: LogSection;
     status: StepStatus;
     seconds: number | null;
+    /** Set for recorded steps: a running step ticks from `startedAt`. */
+    startedAt: string | null;
+    finishedAt: string | null;
     message: string | null;
 };
 
@@ -40,6 +43,8 @@ export function stepRows(detail: Detail, now = Date.now()): StepRow[] {
                 step.startedAt === null
                     ? null
                     : elapsedSeconds(step.startedAt, step.finishedAt, now),
+            startedAt: step.startedAt,
+            finishedAt: step.finishedAt,
             message: step.message,
         }));
     const last = Math.max(
@@ -69,6 +74,8 @@ export function stepRows(detail: Detail, now = Date.now()): StepRow[] {
         section,
         status: rest,
         seconds: null,
+        startedAt: null,
+        finishedAt: null,
         message: null,
     }));
 

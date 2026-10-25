@@ -105,7 +105,7 @@ final class EnvFileParser
             }
 
             if (isset($entries[$key])) {
-                $warnings[] = ['line' => $lineNumber, 'message' => "{$key} is defined more than once; the last value wins."];
+                $warnings[] = ['line' => $lineNumber, 'message' => "{$key} is defined more than once. The last value is used."];
                 unset($entries[$key]);
             }
 

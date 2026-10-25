@@ -32,9 +32,9 @@ Open the database's **Backups** tab and choose **Import data…**. The dialog wa
 <Step>
 ### Target
 
-launchroom checks the database first: "postgres is empty", or "postgres has 14 tables (48 MB)". An empty database imports right away. A database with tables needs **Replace everything**: launchroom takes a safety snapshot, then drops and recreates the database before importing. Templates often create their tables on the first start, so replacing is the normal case when you move an app.
+launchroom checks the database first: "postgres is empty", or "postgres has 14 tables (48 MB)". An empty database imports right away. A database with tables needs **Replace everything**: launchroom takes a safety snapshot, then drops and recreates the database before importing. Templates often create their tables on the first start, so replacing is the normal case when you move an app that already ran. To avoid it, [import before the first deploy](#import-before-the-first-deploy).
 
-The apps connected to the database are listed. **Stop them while importing** is on by default, so they don't write half-imported data; they start again when the import ends, whether it worked or not.
+The apps connected to the database are listed, together with their workers and crons. **Stop them while importing** is on by default, so they don't write half-imported data; they start again when the import ends, whether it worked or not.
 </Step>
 <Step>
 ### Review
@@ -43,7 +43,7 @@ The apps connected to the database are listed. **Stop them while importing** is 
 </Step>
 </Steps>
 
-The run shows its steps live (uploaded, safety snapshot, stopping apps, fetching on the server, importing) and ends with what the database holds now, for example "Imported 14 tables · 48 MB · in 1m 13s". If launchroom had to adjust something in the dump, it says so under the result. Without a backup destination there is no safety snapshot, and the confirmation says so.
+The run shows its steps live (uploaded, safety snapshot, stopping apps, fetching on the server, importing) and ends with what the database holds now, for example "Imported 14 tables · 48 MB · in 1m 13s". While the apps stop, it shows which ones it still waits for. An app that never started, such as one whose deploy failed, has nothing to stop. If an app hasn't stopped after 5 minutes, for example because its server is offline, the import fails without changing anything and the apps start again. Until the import itself begins you can **Cancel import**. If launchroom had to adjust something in the dump, it says so under the result. Without a backup destination there is no safety snapshot, and the confirmation says so.
 
 ### Versions
 
@@ -66,6 +66,19 @@ Dumps from another server carry details that only made sense there. launchroom l
 The restore runs in a throwaway container made from the database's own image, so the client tools match the server. It sits on the database's environment network with the same firewall as your apps: it can reach the internet and its own environment, never your private network, the mesh or other environments. Credentials go to the tools through environment variables, never on a command line, and the container is removed afterwards.
 
 A connection URL is sealed for the one server and the one import that uses it. launchroom doesn't store it in a readable form and keeps it out of logs and errors. The run shows only the host, port and database.
+
+## Import before the first deploy
+
+When you move an app, import its data before the app runs for the first time. Then the app starts with your data instead of creating empty tables you would have to replace.
+
+1. Create the project **without deploying**: in the template sheet, choose **Create without deploying**.
+2. Open the database and its **Backups** tab. **Move data** shows **Import data before the first deploy**. Choose **Import data…**.
+3. launchroom starts the database on its own ("Starting postgres on its own on fra-1"). Your apps stay off. The database runs on the server and volume it keeps later, with the same generated user and password your apps will get.
+4. Upload the dump or paste a connection URL and import as usual. The database is empty, so nothing needs replacing.
+5. When the import ends, launchroom stops the database again. Its data stays on the volume.
+6. Deploy. The database starts on the same volume and your apps find the imported data.
+
+If you close the import sheet without importing, the database stops again. Deploying while it runs for an import stops it first, then deploys.
 
 ## Import files into a volume
 

@@ -16,7 +16,7 @@ Every variable has a type:
 
 - **Config**: readable by everyone who can see the service. Use it for settings like `LOG_LEVEL` or `APP_URL`.
 - **Secret**: write-only after saving and masked in logs. You can replace it but not read it back. If your role may
-  reveal secrets, **Reveal** asks for your password and records the reveal in the audit log.
+  reveal secrets, **Reveal** shows the value and records the reveal in the audit log.
 
 When you import variables, keys that usually hold secrets (`*_KEY`, `*_SECRET`, `*_TOKEN`, `*PASSWORD*`, `*_DSN`) and
 values that look like private keys, live API keys or URLs with passwords are suggested as secrets.

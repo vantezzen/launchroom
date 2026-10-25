@@ -42,13 +42,11 @@ export function frameworkLogo(
     return (runtime && runtimes[runtime.toLowerCase()]) || 'app';
 }
 
-/** "Next.js 16.1 · pnpm · Node 22" from a detected plan. */
-export function planLine(plan: App.Data.Canvas.DetectedPlanData): string {
+/** ["Next.js 16.1", "pnpm", "Node 22"] from a detected plan, for a `MetaLine`. */
+export function planParts(plan: App.Data.Canvas.DetectedPlanData): string[] {
     return [
         [plan.framework, plan.frameworkVersion].filter(Boolean).join(' '),
         plan.packageManager,
         plan.runtime,
-    ]
-        .filter((part): part is string => Boolean(part))
-        .join(' · ');
+    ].filter((part): part is string => Boolean(part));
 }

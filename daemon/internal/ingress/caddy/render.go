@@ -20,13 +20,9 @@ import (
 
 // Defaults of the rendered config.
 const (
-	DefaultAdminListen    = "127.0.0.1:2019"
-	serverHTTPS           = "lr-https"
-	serverHTTP            = "lr-http"
-	notFoundBody          = "launchroom: there is no app at this address.\n"
-	unavailableBody       = "launchroom: this app has no healthy instance right now. Try again in a moment.\n"
-	refusedAuthBody       = "launchroom: this preview's protection is misconfigured, so it is not served.\n"
-	refusedClientAuthBody = "launchroom: this route's client certificate check is refused by the server's local policy, so it is not served.\n"
+	DefaultAdminListen = "127.0.0.1:2019"
+	serverHTTPS        = "lr-https"
+	serverHTTP         = "lr-http"
 )
 
 // Options are server-local render settings (never from the dashboard).
@@ -64,17 +60,45 @@ type Options struct {
 	// route) is proxied there, so the dashboard can confirm a domain reaches
 	// this server even behind a proxy (docs/05 §5). Empty = no such route.
 	ReachabilityDial string
+	// Waf turns the web firewall on for routes with RouteSpec.waf (docs/22
+	// §6.3); nil when the running Caddy has no firewall module, or for the
+	// fallback load without it (docs/22 §6.6).
+	Waf *WafOptions
 }
 
 // AccessLogger is the name of the access logger of the HTTPS server.
 const AccessLogger = "lr-access"
 
 // accessLogDeleted are the access log fields removed inside Caddy before a
-// line leaves it: launchroomd needs only host, status, duration and sizes,
-// never client addresses, paths, headers or credentials (docs/15 §1.1).
+// line leaves it: launchroomd needs only host, path, status, duration and
+// sizes, never client addresses, headers or credentials (docs/15 §1.1).
 var accessLogDeleted = []string{
 	"request>headers", "request>remote_ip", "request>remote_port", "request>client_ip",
-	"request>uri", "request>tls", "resp_headers", "user_id",
+	"request>tls", "resp_headers", "user_id",
+}
+
+// Access log fields reduced inside Caddy (docs/15 §5.1): the URI loses its
+// query string, the referrer (added by accessLogAppend) keeps only its host
+// and the user agent only a bot keyword or "Mozilla" (anything else becomes
+// empty). Go's leftmost-first alternation picks a bot keyword before
+// "Mozilla", so crawlers that claim to be Mozilla count as bots.
+const (
+	AccessFieldReferer = "lr_referer"
+	AccessFieldAgent   = "lr_agent"
+	accessURIQuery     = `(?s)[?#].*$`
+	accessRefererHost  = `(?s)^(?:[A-Za-z][A-Za-z0-9+.-]*://)?(?:[^/?#@]*@)?([^/?#:]*).*$`
+	accessAgentClass   = `(?is)^(?:.*?(bot|crawl|spider|slurp|archiver|externalhit|headless|lighthouse|monitor|preview|curl|wget|python|httpclient|http-client|okhttp|java/|libwww|scrapy|go-http)|(mozilla)|).*$`
+)
+
+// accessLogAppend is the first route of the HTTPS server: it adds the
+// referrer and user agent to the access line, where the filters above
+// reduce them before the line leaves Caddy. It matches every request and
+// never terminates.
+func accessLogAppend() obj {
+	return obj{"handle": []any{
+		obj{"handler": "log_append", "key": AccessFieldReferer, "value": "{http.request.header.Referer}"},
+		obj{"handler": "log_append", "key": AccessFieldAgent, "value": "{http.request.header.User-Agent}"},
+	}}
 }
 
 // logging is Caddy's logging config with the access log going to
@@ -83,24 +107,41 @@ var accessLogDeleted = []string{
 // so they never land in the container's log file.
 func (o Options) logging() obj {
 	accessName := "http.log.access." + AccessLogger
+	def := obj{
+		"writer":  obj{"output": "stderr"},
+		"encoder": obj{"format": "json"},
+	}
+	var exclude []string
+	if o.AccessLogAddress != "" {
+		exclude = append(exclude, accessName)
+	}
+	if o.Waf != nil {
+		// The firewall module logs every match with the client address,
+		// the URI and the matched data: never into Caddy's log.
+		exclude = append(exclude, wafLogger)
+	}
+	if exclude != nil {
+		def["exclude"] = exclude
+	}
+	logs := obj{"default": def}
+	if o.AccessLogAddress == "" {
+		return obj{"logs": logs}
+	}
 	fields := obj{}
 	for _, f := range accessLogDeleted {
 		fields[f] = obj{"filter": "delete"}
 	}
-	return obj{"logs": obj{
-		"default": obj{
-			"writer":  obj{"output": "stderr"},
-			"encoder": obj{"format": "json"},
-			"exclude": []string{accessName},
-		},
-		AccessLogger: obj{
-			// soft_start: Caddy starts and serves while launchroomd is
-			// down; lines are dropped until it listens again.
-			"writer":  obj{"output": "net", "address": "tcp/" + o.AccessLogAddress, "dial_timeout": "1s", "soft_start": true},
-			"encoder": obj{"format": "filter", "wrap": obj{"format": "json"}, "fields": fields},
-			"include": []string{accessName},
-		},
-	}}
+	fields["request>uri"] = obj{"filter": "regexp", "regexp": accessURIQuery, "value": ""}
+	fields[AccessFieldReferer] = obj{"filter": "regexp", "regexp": accessRefererHost, "value": "${1}"}
+	fields[AccessFieldAgent] = obj{"filter": "regexp", "regexp": accessAgentClass, "value": "${1}${2}"}
+	logs[AccessLogger] = obj{
+		// soft_start: Caddy starts and serves while launchroomd is
+		// down; lines are dropped until it listens again.
+		"writer":  obj{"output": "net", "address": "tcp/" + o.AccessLogAddress, "dial_timeout": "1s", "soft_start": true},
+		"encoder": obj{"format": "filter", "wrap": obj{"format": "json"}, "fields": fields},
+		"include": []string{accessName},
+	}
+	return obj{"logs": logs}
 }
 
 // Paths inside the Caddy container (its data volume) for files launchroomd
@@ -184,7 +225,14 @@ const clientAuthVar = "lr_client_cert"
 // its edge secret is open and every upstream is a local upstream of
 // LR_ALLOWED_LOCAL_UPSTREAMS (the dashboard's loopback port).
 func (o Options) clientAuthAllowed(r Route) bool {
-	if r.Spec.ClientAuth == nil || r.EdgeSecretFile == "" || len(r.Spec.Upstreams) == 0 {
+	return r.Spec.ClientAuth != nil && r.EdgeSecretFile != "" && o.localOnly(r)
+}
+
+// localOnly reports whether every upstream of a route is a local upstream
+// of LR_ALLOWED_LOCAL_UPSTREAMS: the dashboard's system route (app routes
+// never reach them, docs/03 §8).
+func (o Options) localOnly(r Route) bool {
+	if len(r.Spec.Upstreams) == 0 {
 		return false
 	}
 	for _, u := range r.Spec.Upstreams {
@@ -228,8 +276,7 @@ func clientAuthRoutes(a *state.RouteClientAuth) []any {
 				"vars": obj{clientAuthVar: []string{""}},
 				"not":  []any{obj{"path": []string{state.EnrollPath, state.ClientCertificatePath}}},
 			}},
-			"handle": []any{obj{"handler": "static_response", "status_code": 401, "body": state.ClientCertRequiredBody,
-				"headers": obj{"Content-Type": []string{"application/json"}}}},
+			"handle":   []any{pageClientCertRequired.handler(401)},
 			"terminal": true,
 		})
 	}
@@ -318,11 +365,6 @@ func ResolveRoutes(routes []state.RouteSpec, resolve Resolver) []Route {
 
 type obj = map[string]any
 
-func staticResponse(status int, body string) obj {
-	return obj{"handler": "static_response", "status_code": status, "body": body,
-		"headers": obj{"Content-Type": []string{"text/plain; charset=utf-8"}}}
-}
-
 func redirect(location string) obj {
 	return obj{"handler": "static_response", "status_code": 308, "headers": obj{"Location": []string{location}}}
 }
@@ -377,6 +419,9 @@ func RenderTLS(routes []Route, t TLS, o Options) ([]byte, error) {
 
 	httpsRoutes := []any{}
 	httpRoutes := []any{}
+	if o.AccessLogAddress != "" {
+		httpsRoutes = append(httpsRoutes, accessLogAppend())
+	}
 	if o.ReachabilityDial != "" {
 		if ap, err := netip.ParseAddrPort(o.ReachabilityDial); err != nil || !ap.Addr().IsLoopback() || ap.Port() == 0 {
 			return nil, errors.New("caddy: the reachability dial must be a loopback ip:port")
@@ -388,6 +433,13 @@ func RenderTLS(routes []Route, t TLS, o Options) ([]byte, error) {
 		}
 		httpsRoutes = append(httpsRoutes, check)
 		httpRoutes = append(httpRoutes, check)
+	}
+	var wafDirs string
+	if o.Waf != nil {
+		var err error
+		if wafDirs, err = wafDirectives(WafRoutes(routes, o), o.Waf.LogAddress); err != nil {
+			return nil, err
+		}
 	}
 	var acmeHosts, internalHosts, onDemandHosts []string
 	wildcards := map[string]bool{}
@@ -433,7 +485,8 @@ func RenderTLS(routes []Route, t TLS, o Options) ([]byte, error) {
 			}
 		}
 
-		// HTTPS: www ↔ apex redirect, forward auth, headers, compression, proxy.
+		// HTTPS: www ↔ apex redirect, web firewall, forward auth, headers,
+		// compression, proxy.
 		sub := []any{}
 		if len(others) > 0 {
 			sub = append(sub, obj{
@@ -444,14 +497,17 @@ func RenderTLS(routes []Route, t TLS, o Options) ([]byte, error) {
 		}
 		if r.Spec.Protection != nil && !o.forwardAuthAllowed(r.Spec.Protection) {
 			// Fail closed: a protected route is never served without its check.
-			sub = append(sub, obj{"handle": []any{staticResponse(403, refusedAuthBody)}})
+			sub = append(sub, obj{"handle": []any{pageRefusedAuth.handler(403)}})
 		} else if r.Spec.ClientAuth != nil && !o.clientAuthAllowed(r) {
 			// Fail closed: client certificates are only checked for the
 			// dashboard's loopback upstream, never another route.
-			sub = append(sub, obj{"handle": []any{staticResponse(403, refusedClientAuthBody)}})
+			sub = append(sub, obj{"handle": []any{pageRefusedClientAuth.handler(403)}})
 		} else {
 			if r.Spec.ClientAuth != nil {
 				sub = append(sub, clientAuthRoutes(r.Spec.ClientAuth)...)
+			}
+			if o.wafOn(r) {
+				sub = append(sub, wafHandlers(r.Spec.ID, wafDirs)...)
 			}
 			sub = append(sub, appRoutes(r)...)
 		}
@@ -473,7 +529,7 @@ func RenderTLS(routes []Route, t TLS, o Options) ([]byte, error) {
 			"terminal": true,
 		})
 	}
-	notFound := obj{"handle": []any{staticResponse(404, notFoundBody)}, "terminal": true}
+	notFound := obj{"handle": []any{pageNotFound.handler(404)}, "terminal": true}
 	httpsRoutes = append(httpsRoutes, notFound)
 	httpRoutes = append(httpRoutes, notFound)
 
@@ -534,6 +590,7 @@ func RenderTLS(routes []Route, t TLS, o Options) ([]byte, error) {
 	https := obj{
 		"listen":          []string{":" + strconv.Itoa(o.HTTPSPort)},
 		"routes":          httpsRoutes,
+		"errors":          obj{"routes": o.errorRoutes(routes)},
 		"automatic_https": obj{"disable_redirects": true},
 	}
 	if pol := clientAuthPolicies(routes, o); pol != nil {
@@ -561,6 +618,8 @@ func RenderTLS(routes []Route, t TLS, o Options) ([]byte, error) {
 	}
 	if o.AccessLogAddress != "" {
 		https["logs"] = obj{"default_logger_name": AccessLogger}
+	}
+	if o.AccessLogAddress != "" || o.Waf != nil {
 		cfg["logging"] = o.logging()
 	}
 	data, err := json.MarshalIndent(cfg, "", "  ")
@@ -581,7 +640,7 @@ func appRoutes(r Route) []any {
 		sub = append(sub, obj{"handle": []any{hdr}})
 	}
 	if len(r.Dial) == 0 {
-		return append(sub, obj{"handle": []any{staticResponse(503, unavailableBody)}})
+		return append(sub, obj{"handle": []any{pageUnavailable.handler(503)}})
 	}
 	ups := make([]any, 0, len(r.Dial))
 	for _, d := range r.Dial {

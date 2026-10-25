@@ -70,7 +70,7 @@ final readonly class StartVerification
             }
 
             if (! $server->supportsDaemonFeature(DaemonFeature::VerifyRestore)) {
-                throw DomainRuleViolation::on('daemon', "Update launchroomd on {$server->name} to verify backups.");
+                throw DomainRuleViolation::on('daemon', "Update {$server->name} in Settings → Updates to verify backups.");
             }
 
             $source = DatabaseWorkloads::source($instance);

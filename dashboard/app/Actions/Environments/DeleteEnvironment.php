@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Environments;
 
+use App\Actions\Alerts\DetachAlerts;
 use App\Actions\Audit\RecordAuditEvent;
 use App\Data\Audit\AuditActor;
 use App\Data\Audit\AuditEntryData;
@@ -59,6 +60,7 @@ final readonly class DeleteEnvironment
         private ProjectBackupFootprint $backups,
         private VolumeRetirements $retirements,
         private FinalBackups $finalBackups,
+        private DetachAlerts $alerts,
     ) {}
 
     /**
@@ -67,7 +69,7 @@ final readonly class DeleteEnvironment
     public function handle(Environment $environment, ?DeleteEnvironmentData $data, AuditActor $actor): DeletionOutcome
     {
         if ($environment->kind === EnvironmentKind::Production) {
-            throw DomainRuleViolation::on('environment', 'Production can’t be deleted; delete the project instead.');
+            throw DomainRuleViolation::on('environment', 'Production can’t be deleted. Delete the project instead.');
         }
 
         if ($data instanceof DeleteEnvironmentData && trim($data->confirmName) !== $environment->name) {
@@ -140,6 +142,8 @@ final readonly class DeleteEnvironment
 
             Variable::query()->whereKey($onlyHere)->delete();
             Environment::query()->where('base_environment_id', $environment->id)->update(['base_environment_id' => null]);
+            // Alerts let go first: the cascade would trip over them (DetachAlerts).
+            $this->alerts->handle('The environment was deleted.', null, [$environment->id], $instances->modelKeys());
             $environment->delete();
 
             // Services that only existed here (added in this environment).

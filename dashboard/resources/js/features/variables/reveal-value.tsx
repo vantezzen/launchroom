@@ -8,8 +8,8 @@ export const MASK = '••••••••';
 
 /**
  * A secret's value: masked, with Reveal for members allowed to see secrets
- * (docs/06 §3.1). Revealing is audited server-side. The value lives only in this
- * component's state and is dropped on Hide.
+ * (docs/06 §3.1). Revealing is throttled and audited server-side. The
+ * value lives only in this component's state and is dropped on Hide.
  */
 export function RevealValue({
     project,

@@ -18,17 +18,17 @@ export function StagedConfigNote({ config }: { config: Staged | null }) {
 
     if (config.status === 'invalid') {
         lines.push(
-            `The latest ${config.path}${sha ? ` (${sha})` : ''} has problems, so nothing from it is here. Settings → General shows where.`,
+            `The latest ${config.path}${sha ? ` (${sha})` : ''} has problems, so none of its changes are included. Settings → Config file shows the details.`,
         );
     } else if (config.waiting) {
         lines.push(
-            `${config.path} changes from ${sha ?? 'the last push'} are part of these: another change was already staged, so the push didn’t deploy them. Deploy applies them together.`,
+            `These include ${config.path} changes from ${sha ?? 'the last push'}. The push didn’t deploy them because another change was already staged. Deploying applies both.`,
         );
     }
 
     if (config.managedPaths.length > 0 && !config.waiting) {
         lines.push(
-            `Items marked ${config.path} are set by the file: it sets them again on the next push. Change them in the file to keep them.`,
+            `Items marked ${config.path} come from the file and are reset on the next push. Change them in the file to keep your edits.`,
         );
     }
 

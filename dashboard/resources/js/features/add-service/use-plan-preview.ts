@@ -13,7 +13,7 @@ export const PLAN_POLL_MS = 2000;
 export const PLAN_TIMEOUT_MS = 180_000;
 
 export const PLAN_TIMEOUT_MESSAGE =
-    'Detection is taking longer than expected. Retry, or continue: the first build detects again.';
+    'Detection is taking longer than expected. Retry, or continue and let the first build detect it.';
 
 export type PlanPreviewUpdate =
     | { preview: Preview | null; error: null }

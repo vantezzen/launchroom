@@ -1,6 +1,7 @@
 import { router } from '@inertiajs/react';
 import { MoreHorizontal } from 'lucide-react';
 import { useState } from 'react';
+import { MetaLine } from '@/components/patterns/meta-line';
 import { Status } from '@/components/status';
 import { TimeAgo } from '@/components/time-ago';
 import { Button } from '@/components/ui/button';
@@ -123,15 +124,11 @@ export function AuditSinkRow({ sink }: { sink: Sink }) {
             media={kind?.media}
             description={
                 <span className="flex flex-col gap-1">
-                    <span className="truncate type-mono-small">
-                        {[
-                            sink.target,
-                            lock,
-                            sink.privateNetwork ? 'own network' : null,
-                        ]
-                            .filter(Boolean)
-                            .join(' · ')}
-                    </span>
+                    <MetaLine className="type-mono-small">
+                        <span className="truncate">{sink.target}</span>
+                        {lock}
+                        {sink.privateNetwork && 'own network'}
+                    </MetaLine>
                     <Delivery sink={sink} />
                 </span>
             }

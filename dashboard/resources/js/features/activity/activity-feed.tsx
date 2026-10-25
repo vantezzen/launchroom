@@ -264,7 +264,7 @@ export function ActivityFeed({
             {days.length === 0 ? (
                 <EmptyState icon={History}>
                     {filters.kind || filters.project
-                        ? 'Nothing like this happened recently.'
+                        ? 'No matching activity yet.'
                         : 'Deploys, promotions and changes will show up here.'}
                 </EmptyState>
             ) : (

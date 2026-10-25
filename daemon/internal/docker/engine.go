@@ -181,13 +181,17 @@ func (e *Engine) InspectContainer(ctx context.Context, id string) (Container, er
 }
 
 func fromInspect(r container.InspectResponse) Container {
-	c := Container{ID: r.ID, Name: strings.TrimPrefix(r.Name, "/"), RestartCount: r.RestartCount, Networks: map[string]netip.Addr{}, Created: parseDockerTime(r.Created)}
+	c := Container{ID: r.ID, Name: strings.TrimPrefix(r.Name, "/"), RestartCount: r.RestartCount, Networks: map[string]netip.Addr{}, Created: parseDockerTime(r.Created), ImageID: r.Image}
 	if r.Config != nil {
 		c.Image = r.Config.Image
+		c.User, c.WorkingDir = r.Config.User, r.Config.WorkingDir
 		c.Labels = maps.Clone(r.Config.Labels)
 		if r.Config.StopTimeout != nil {
 			c.StopTimeout = time.Duration(max(0, *r.Config.StopTimeout)) * time.Second
 		}
+	}
+	if r.HostConfig != nil && r.HostConfig.Init != nil {
+		c.Init = *r.HostConfig.Init
 	}
 	if s := r.State; s != nil {
 		c.State = string(s.Status)
@@ -260,13 +264,22 @@ func (e *Engine) CreateContainer(ctx context.Context, cc *ContainerCreate) (stri
 	if !strings.HasPrefix(cc.Name, "lr-") {
 		return "", fmt.Errorf("docker: container name %q must be generated (lr-…)", cc.Name)
 	}
-	ctx, cancel := e.call(ctx)
+	cctx, cancel := e.call(ctx)
 	defer cancel()
-	res, err := e.api.ContainerCreate(ctx, client.ContainerCreateOptions{
+	res, err := e.api.ContainerCreate(cctx, client.ContainerCreateOptions{
 		Name: cc.Name, Config: cc.Config, HostConfig: cc.HostConfig, NetworkingConfig: cc.Networking,
 	})
 	if err != nil {
 		return "", wrap("create container "+cc.Name, err)
+	}
+	if len(cc.Files) > 0 {
+		if err := e.writeConfigFiles(ctx, res.ID, cc); err != nil {
+			// A container without its files must never start: remove it.
+			rctx, rcancel := e.call(context.WithoutCancel(ctx))
+			defer rcancel()
+			_, _ = e.api.ContainerRemove(rctx, res.ID, client.ContainerRemoveOptions{Force: true})
+			return "", err
+		}
 	}
 	return res.ID, nil
 }

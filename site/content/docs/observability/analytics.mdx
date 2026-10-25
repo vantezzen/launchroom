@@ -1,0 +1,89 @@
+---
+title: Analytics
+description: How many requests each service serves and of what kind, measured at the edge without storing who visited.
+---
+
+Analytics gives an overview of the traffic your services serve: requests per hour, how many failed, which paths are requested most, which sites link to you and how much of it comes from bots. It needs no setup and no script in your app. It doesn't track visitors or sessions.
+
+## Where to find it
+
+Select **Analytics** in the sidebar. The overview shows every project of your team, all environments together:
+
+- total requests, the change against the period before, and the share of server errors (5xx) and client errors (4xx)
+- requests per hour (per day for a month), stacked by project. The four busiest projects have their own colour and the rest is summed as "Other". The legend, the readout when you hover a bar and the table view name every project.
+- one row per project with its requests, the change, the error rate and a small chart
+- the most requested paths across all projects, and which servers answered when more than one serves your domains
+
+Select a project to open its analytics. The project page shows one environment at a time. Pick a service in the service menu, or in the Services list, to narrow the page to that service. The address bar keeps the service (`?service=…`), so you can share the link. The breadcrumbs at the top lead back to the project and to all projects. The project's **Analytics** tab opens the same page.
+
+Choose **Day**, **Week** or **Month** at the top right of either page.
+
+Each project card on the projects page also shows production's requests of the last 24 hours as a small chart.
+
+## What the page shows
+
+| Section | What it shows |
+|---|---|
+| Requests | All requests in the range and the change against the period before |
+| Server errors | Responses with a 5xx status, as a share of all requests |
+| Client errors | Responses with a 4xx status (not found, unauthorised, bad requests) |
+| Requests per hour | One bar per hour (per day for a month), split into success, redirects, client errors and server errors. Server errors are striped. Hover a bar or use the arrow keys to read it, or switch to the table |
+| Top paths | The most requested paths with their share and their 4xx and 5xx rates |
+| Referrers | Other sites that linked to yours, by host |
+| Clients | Browsers, bots and crawlers, other clients |
+| Servers | Which servers answered, when more than one serves your domains |
+| Services | Requests per service when you look at all services. Select one to see its paths |
+
+Requests appear about a minute after they reach your domain. Paths, referrers and clients follow within 10 minutes.
+
+## How paths are grouped
+
+launchroom counts paths, not URLs. Before a path is counted:
+
+- the query string is removed (`/search?q=shoes` counts as `/search`)
+- numbers, UUIDs, hashes and random-looking tokens become `:id` (`/orders/1042` and `/orders/1043` both count as `/orders/:id`)
+- long paths are cut to 128 characters
+
+Each server keeps at most 1,000 distinct paths per service and 10 minutes, and reports the top 50. Everything else is shown as "Other paths".
+
+<Callout type="warn" title="Keep secrets out of paths">
+Query strings never leave the server, but path segments do. A token in a path segment that doesn't look like an id (for example a readable word) can show up in the top paths. Put secrets in headers or the request body.
+</Callout>
+
+## Privacy
+
+Caddy, the web server on your edge servers, reduces every request before launchroom sees it:
+
+- the client's IP address, cookies, headers and TLS details are removed
+- the query string is removed
+- the referrer is reduced to its host (`news.ycombinator.com`, never the full link)
+- the user agent is reduced to one word: a bot keyword, "Mozilla" or nothing
+
+launchroomd adds these up per service and 10 minutes and sends only the totals. No IP address, full URL, query string or user agent is stored, and no outside service is called. There are no countries, because that would need a location database for IP addresses.
+
+## How long analytics are kept
+
+| Data | Kept for |
+|---|---|
+| Request counts | as long as [request metrics](/docs/observability/metrics#how-long-metrics-are-kept): 30 days per 10 minutes, 1 year per day |
+| Paths, referrers, clients per 10 minutes | 48 hours |
+| Paths, referrers, clients per hour | 7 days |
+| Paths, referrers, clients per day | 90 days |
+
+Set `LAUNCHROOM_ANALYTICS_HOURLY_RETENTION_DAYS` and `LAUNCHROOM_ANALYTICS_DAILY_RETENTION_DAYS` on the control plane to keep them longer or shorter.
+
+## API
+
+With a token that has the `read` ability:
+
+```bash
+curl -H "Authorization: Bearer $LAUNCHROOM_TOKEN" \
+  "https://launchroom.example.com/api/v1/analytics?range=7d"
+```
+
+`/api/v1/analytics` returns the overview of every project of the token's team. `/api/v1/environments/{environment}/analytics` returns one environment, and `/api/v1/environments/{environment}/services/{service}/analytics` one service. `range` is `24h`, `7d` (default) or `30d`. See the [API reference](/docs/reference/api).
+
+<Cards>
+  <Card title="Metrics" href="/docs/observability/metrics" description="Requests per second, latency and bandwidth, CPU and memory." />
+  <Card title="Alerts" href="/docs/observability/alerts" description="Get told when the error rate climbs." />
+</Cards>

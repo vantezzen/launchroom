@@ -13,6 +13,7 @@ final class ProjectSummaryData extends Data
      * @param  list<EnvironmentSummaryData>  $environments
      * @param  list<string>  $logos  glyph keys of the first services
      * @param  list<DeployDayData>  $deploys  the last 14 days (UTC), oldest first, always 14 entries
+     * @param  list<int>|null  $requests  production requests per hour of the last 24 hours, oldest first; null without traffic
      */
     public function __construct(
         public string $id,
@@ -31,5 +32,6 @@ final class ProjectSummaryData extends Data
         public ?CanvasThumbnailData $canvas = null,
         /** The project icon (docs/08 §13); null → the card shows no icon. */
         public ?string $iconUrl = null,
+        public ?array $requests = null,
     ) {}
 }

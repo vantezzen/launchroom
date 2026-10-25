@@ -11,7 +11,7 @@ import type { Props as ManagePasskeysProps } from '@/components/manage-passkeys'
 import ManagePasskeys from '@/components/manage-passkeys';
 import type { Props as ManageTwoFactorProps } from '@/components/manage-two-factor';
 import ManageTwoFactor from '@/components/manage-two-factor';
-import { edit as teamSettings } from '@/routes/team';
+import { index as settingsHome } from '@/routes/settings';
 
 // oxfmt-ignore
 type Props = {
@@ -29,7 +29,8 @@ export default function Security(props: Props) {
 
             <SettingsCard
                 title="Password"
-                description="Long and random, ideally from a password manager."
+                setting="password"
+                description="Use a long, random password, ideally from a password manager."
             >
                 <SettingsBody className="sm:max-w-md">
                     <Form
@@ -139,7 +140,7 @@ export default function Security(props: Props) {
 
 Security.layout = {
     breadcrumbs: [
-        { title: 'Settings', href: teamSettings() },
+        { title: 'Settings', href: settingsHome() },
         {
             title: 'Security',
             href: edit(),

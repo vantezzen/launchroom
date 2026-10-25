@@ -4,7 +4,7 @@ import type { Appearance as Mode } from '@/hooks/use-appearance';
 import { useAppearance } from '@/hooks/use-appearance';
 import { cn } from '@/lib/utils';
 import { edit as editAppearance } from '@/routes/appearance';
-import { edit as teamSettings } from '@/routes/team';
+import { index as settingsHome } from '@/routes/settings';
 
 const themes: { value: Mode; label: string; description: string }[] = [
     { value: 'light', label: 'Light', description: 'Always light' },
@@ -165,7 +165,7 @@ export default function Appearance() {
 
 Appearance.layout = {
     breadcrumbs: [
-        { title: 'Settings', href: teamSettings() },
+        { title: 'Settings', href: settingsHome() },
         {
             title: 'Appearance',
             href: editAppearance(),

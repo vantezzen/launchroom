@@ -54,7 +54,7 @@ final readonly class ApprovePreview
             ));
 
             if ($preview->environment_id !== null) {
-                $preview->transitionTo(PreviewStatus::Preparing, 'Approved; deploying the new commits.');
+                $preview->transitionTo(PreviewStatus::Preparing, 'Approved. Deploying the new commits.');
 
                 return true;
             }

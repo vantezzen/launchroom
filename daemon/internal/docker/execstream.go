@@ -29,6 +29,9 @@ type ExecOptions struct {
 	// User runs the process as this user of the image ("postgres"); empty:
 	// the container's user.
 	User string
+	// Stderr, if set, also receives the process' stderr as it arrives (the
+	// tail is kept for ExecResult either way).
+	Stderr io.Writer
 }
 
 // ExecResult is the outcome of a finished exec.
@@ -88,7 +91,11 @@ func (e *Engine) ExecStream(ctx context.Context, id string, o ExecOptions) (Exec
 		out = io.Discard
 	}
 	tail := &tailBuffer{max: MaxExecStderr}
-	_, copyErr := stdcopy.StdCopy(out, tail, hr.Reader)
+	var errOut io.Writer = tail
+	if o.Stderr != nil {
+		errOut = io.MultiWriter(tail, o.Stderr)
+	}
+	_, copyErr := stdcopy.StdCopy(out, errOut, hr.Reader)
 	closeConn()
 	if err := ctx.Err(); err != nil {
 		return ExecResult{Stderr: tail.String()}, err

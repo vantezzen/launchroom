@@ -123,8 +123,8 @@ export function ClientCertificatesSection({
                 <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
                     <h2 className="type-heading">Server certificates</h2>
                     <p className="type-body text-muted-foreground">
-                        Servers also prove who they are with a certificate, on
-                        top of their signed requests.
+                        Servers can prove who they are with a certificate in
+                        addition to their signed requests.
                     </p>
                 </div>
                 <OptionCards
@@ -183,7 +183,8 @@ export function ClientCertificatesSection({
                 footer={
                     overview.caFingerprint ? (
                         <span>
-                            Issued by this launchroom’s own authority ·{' '}
+                            Issued by this launchroom’s own certificate
+                            authority, fingerprint{' '}
                             <span className="font-mono">
                                 {overview.caFingerprint.slice(0, 16)}
                             </span>
@@ -252,8 +253,8 @@ export function ClientCertificatesSection({
                                 Stop requiring certificates?
                             </DialogTitle>
                             <DialogDescription>
-                                Signed requests alone are enough again. You can
-                                require certificates again at any time.
+                                Servers can connect with signed requests alone.
+                                You can require certificates again at any time.
                             </DialogDescription>
                         </>
                     )}
@@ -315,8 +316,7 @@ function ServerRow({
                             </time>
                             {server.lastPresentedAt && (
                                 <>
-                                    {' '}
-                                    · last presented{' '}
+                                    , last presented{' '}
                                     <TimeAgo value={server.lastPresentedAt} />
                                 </>
                             )}

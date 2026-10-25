@@ -1,6 +1,7 @@
 import { router } from '@inertiajs/react';
-import { ArrowUpRight, KeyRound } from 'lucide-react';
+import { ArrowUpRight, DatabaseZap, Info, KeyRound } from 'lucide-react';
 import { useState } from 'react';
+import { MetaLine } from '@/components/patterns/meta-line';
 import { SheetSection } from '@/components/patterns/sheet';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -53,8 +54,12 @@ export function TemplateSetup({
     const [processing, setProcessing] = useState(false);
     const generated = template.preview.services.flatMap((service) =>
         service.variables
-            .filter((variable) => variable.generated)
+            .filter((variable) => variable.generated && variable.secret)
             .map((variable) => variable.key),
+    );
+    // Moving from another server: its data goes in before the first deploy (docs/14 §12.9).
+    const database = template.preview.services.find(
+        (service) => service.kind === 'database',
     );
     const fields = template.inputs.filter(
         (input) => input.type !== 'repository',
@@ -108,6 +113,25 @@ export function TemplateSetup({
                 )}
             </SheetSection>
 
+            {template.notes.length > 0 && (
+                <SheetSection title="Good to know">
+                    <ul className="flex flex-col gap-2">
+                        {template.notes.map((note) => (
+                            <li
+                                key={note}
+                                className="flex items-start gap-2 type-small text-muted-foreground"
+                            >
+                                <Info
+                                    aria-hidden="true"
+                                    className="mt-0.5 size-3.5 shrink-0"
+                                />
+                                <span>{note}</span>
+                            </li>
+                        ))}
+                    </ul>
+                </SheetSection>
+            )}
+
             <SheetSection title="Resources">
                 <dl className="grid grid-cols-3 overflow-hidden rounded-xl border bg-recessed">
                     {[
@@ -132,7 +156,7 @@ export function TemplateSetup({
                     ))}
                 </dl>
                 <p className="type-small text-muted-foreground">
-                    Limits per service; you can change them after it deploys.
+                    Limits per service. You can change them after it deploys.
                 </p>
             </SheetSection>
 
@@ -174,7 +198,7 @@ export function TemplateSetup({
                                 {input.optional && (
                                     <span className="font-normal text-muted-foreground">
                                         {' '}
-                                        · optional
+                                        (optional)
                                     </span>
                                 )}
                             </Label>
@@ -212,10 +236,33 @@ export function TemplateSetup({
                 </div>
             </SheetSection>
 
+            {askName && database && (
+                <SheetSection>
+                    <p className="flex items-start gap-2 type-small text-muted-foreground">
+                        <DatabaseZap
+                            aria-hidden="true"
+                            className="mt-0.5 size-3.5 shrink-0"
+                        />
+                        <span>
+                            Moving existing data? Choose{' '}
+                            <span className="text-foreground">
+                                Create without deploying
+                            </span>
+                            , open {database.name} and choose{' '}
+                            <span className="text-foreground">
+                                Import data before the first deploy
+                            </span>{' '}
+                            on its Backups tab. The first deploy then starts
+                            with your data.
+                        </span>
+                    </p>
+                </SheetSection>
+            )}
+
             <SheetSection>
                 <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
-                    <p className="type-small text-muted-foreground">
-                        {template.license && <>{template.license} · </>}
+                    <MetaLine className="type-small text-muted-foreground">
+                        {template.license}
                         {template.website ? (
                             <a
                                 href={template.website}
@@ -232,8 +279,8 @@ export function TemplateSetup({
                         ) : (
                             'Built from your code'
                         )}
-                    </p>
-                    <div className="flex flex-wrap justify-end gap-2">
+                    </MetaLine>
+                    <div className="flex shrink-0 flex-wrap gap-2 sm:justify-end">
                         {askName && (
                             <Button
                                 variant="outline"

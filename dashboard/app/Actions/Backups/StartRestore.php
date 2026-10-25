@@ -145,7 +145,7 @@ final readonly class StartRestore
             });
         } else {
             [$run, $deployEnvironment] = $this->asNewService($source, (string) $base->snapshot_id, $destination, $user, null);
-            $volume = Volume::query()->where('service_instance_id', $run->target_service_instance_id)->orderBy('id')->first();
+            $volume = Volume::query()->where('service_instance_id', $run->target_service_instance_id)->whereNull('removed_at')->orderBy('id')->first();
             $run->forceFill(['subject' => BackupSubject::BaseBackup, 'volume_id' => $volume?->id, 'point_in_time' => $at])->save();
         }
 
@@ -349,10 +349,10 @@ final readonly class StartRestore
                 $this->copyVariables($source, $service, $environment, $user);
 
                 foreach ($source->volumes as $sourceVolume) {
-                    $this->copier->addVolume($target, $sourceVolume->mount_path);
+                    $this->copier->addVolume($target, $sourceVolume->mount_path, $sourceVolume->backup_consistency);
                 }
 
-                $targetVolume = Volume::query()->where('service_instance_id', $target->id)->where('mount_path', $volume->mount_path)->firstOrFail();
+                $targetVolume = Volume::query()->where('service_instance_id', $target->id)->where('mount_path', $volume->mount_path)->whereNull('removed_at')->firstOrFail();
             } else {
                 $target = $this->provisioner->provision($service, $environment, actor: $user);
             }

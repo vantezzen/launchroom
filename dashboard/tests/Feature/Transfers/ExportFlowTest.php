@@ -109,7 +109,7 @@ test('chunks that don’t match what launchroomd reported fail the export and ar
     [$team, $server, , $postgres] = Backups::runningPostgres();
     exportable($server);
     $owner = memberOf($team, TeamRole::Owner);
-    $this->actingAs($owner)->withSession(['auth.password_confirmed_at' => time()])->postJson(route('transfers.services.exports.store', $postgres))->assertSuccessful();
+    $this->actingAs($owner)->postJson(route('transfers.services.exports.store', $postgres))->assertSuccessful();
     $run = DataExportRun::query()->sole();
     $transfer = DataTransfer::query()->whereKey($run->transfer_id)->sole();
     $daemon = Transfers::daemon($server);
@@ -136,7 +136,7 @@ test('a backup snapshot is exported with its destination sealed to the task', fu
     resolve(StartDatabaseBackup::class)->handle($postgres, BackupReason::Manual, $owner, AuditActor::user($owner));
     VolumeServices::backedUp($server, $snapshot = str_repeat('cd', 32));
 
-    $this->actingAs($owner)->withSession(['auth.password_confirmed_at' => time()])
+    $this->actingAs($owner)
         ->postJson(route('transfers.services.exports.store', $postgres), ['snapshot' => substr($snapshot, 0, 8)])
         ->assertSuccessful()
         ->assertJsonPath('exports.0.source', 'snapshot')
@@ -161,7 +161,7 @@ test('developers can’t download; the API needs the data:transfer ability', fun
     $developer = memberOf($team, TeamRole::Developer);
     $owner = memberOf($team, TeamRole::Owner);
 
-    $this->actingAs($developer)->withSession(['auth.password_confirmed_at' => time()])->postJson(route('transfers.services.exports.store', $postgres))->assertForbidden();
+    $this->actingAs($developer)->postJson(route('transfers.services.exports.store', $postgres))->assertForbidden();
 
     $path = "environments/{$postgres->environment->public_id}/services/{$postgres->service->public_id}/exports";
     Api::call('POST', $path, Api::token($owner, $team, [ApiAbility::Read]), [])->assertForbidden()->assertJsonPath('error.code', 'missing_ability');

@@ -44,11 +44,17 @@ type Result struct {
 	SelfUpdate *state.SelfUpdateResult
 	// Session is reported for finished session tasks, also when they failed.
 	Session *state.SessionResult
+	// Access is reported for finished access tasks, also when they failed.
+	Access *state.AccessResult
 	// Inspection is reported for plan tasks with inspect, also when they failed (docs/20).
 	Inspection *state.RepoInspection
 	// DataImport and DataExport are the results of import and export tasks (D55).
 	DataImport *state.DataImportResult
 	DataExport *state.DataExportResult
+	// Inventory and ContainerInspection are the results of the security
+	// center's tasks (docs/03 §13).
+	Inventory           *state.InventoryResult
+	ContainerInspection *state.ContainerInspectionResult
 }
 
 // Handler runs one task. ctx is cancelled when the deadline passes, the
@@ -76,8 +82,37 @@ func LeaseLost(ctx context.Context) bool {
 
 // progress holds a task's latest progress line (sent with heartbeats).
 type progress struct {
-	mu   sync.Mutex
-	line string
+	mu     sync.Mutex
+	line   string
+	access AccessReporter
+	now    chan struct{}
+}
+
+// AccessReporter supplies the access status of an access task's heartbeat
+// (docs/03 §12). done is called with whether the dashboard accepted it, so
+// events are only dropped once delivered.
+type AccessReporter interface {
+	HeartbeatStatus() (status *state.AccessStatus, done func(delivered bool))
+}
+
+// ReportAccess makes the task's heartbeats carry r's status. It is a no-op
+// outside a runner.
+func ReportAccess(ctx context.Context, r AccessReporter) {
+	if p, ok := ctx.Value(progressKey{}).(*progress); ok {
+		p.mu.Lock()
+		p.access = r
+		p.mu.Unlock()
+	}
+}
+
+// HeartbeatNow asks the runner to send the task's next heartbeat at once.
+func HeartbeatNow(ctx context.Context) {
+	if p, ok := ctx.Value(progressKey{}).(*progress); ok && p.now != nil {
+		select {
+		case p.now <- struct{}{}:
+		default:
+		}
+	}
 }
 
 // SetProgress sets the short status line sent with the task's next
@@ -97,6 +132,12 @@ func (p *progress) get() string {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.line
+}
+
+func (p *progress) reporter() AccessReporter {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.access
 }
 
 // Options configures a Runner.
@@ -234,7 +275,7 @@ func (r *Runner) run(parent context.Context, t state.Task) {
 
 	// The task does not stop the moment the daemon starts shutting down: it
 	// gets ShutdownGrace to finish (stopAfterGrace), then it is released.
-	prog := &progress{}
+	prog := &progress{now: make(chan struct{}, 1)}
 	lost := &atomic.Bool{}
 	base := context.WithValue(context.WithValue(context.WithoutCancel(parent), progressKey{}, prog), lostKey{}, lost)
 	ctx, cancel := context.WithDeadline(base, t.Deadline)
@@ -256,8 +297,17 @@ func (r *Runner) run(parent context.Context, t state.Task) {
 			case <-ctx.Done():
 				return
 			case <-tick.C:
+			case <-prog.now:
 			}
-			res, err := r.o.Client.Heartbeat(ctx, t.ID, &state.TaskHeartbeat{TypeMeta: state.NewTypeMeta(state.KindHeartbeat), Attempt: t.Attempt, Progress: prog.get()})
+			hb := &state.TaskHeartbeat{TypeMeta: state.NewTypeMeta(state.KindHeartbeat), Attempt: t.Attempt, Progress: prog.get()}
+			var delivered func(bool)
+			if rep := prog.reporter(); rep != nil {
+				hb.Access, delivered = rep.HeartbeatStatus()
+			}
+			res, err := r.o.Client.Heartbeat(ctx, t.ID, hb)
+			if delivered != nil {
+				delivered(err == nil)
+			}
 			var api *controlplane.APIError
 			switch {
 			case err == nil && res.Cancel:
@@ -306,6 +356,7 @@ func (r *Runner) run(parent context.Context, t state.Task) {
 		done.Backup, done.Restore, done.Snapshots, done.Maintenance = res.Backup, res.Restore, res.Snapshots, res.Maintenance
 		done.Verify = res.Verify
 		done.DataImport, done.DataExport = res.DataImport, res.DataExport
+		done.Inventory, done.ContainerInspection = res.Inventory, res.ContainerInspection
 	case cancelledByCP:
 		done.Outcome, done.Error = state.OutcomeCancelled, clip(err.Error())
 	case parent.Err() != nil:
@@ -322,6 +373,9 @@ func (r *Runner) run(parent context.Context, t state.Task) {
 	}
 	if res.Session != nil {
 		done.Session = res.Session
+	}
+	if res.Access != nil {
+		done.Access = res.Access
 	}
 	if res.Inspection != nil && done.Outcome != state.OutcomeReleased {
 		done.Inspection = res.Inspection
@@ -414,3 +468,19 @@ type LineShipper interface {
 func NewTaskLogShipper(ctx context.Context, c Client, id state.TaskID, attempt int) LineShipper {
 	return newStepShipper(ctx, c, state.LogSource{Kind: state.LogSourceTask, ID: string(id)}, attempt)
 }
+
+// HandlerProbe exposes what a handler registered on a context from
+// HandlerContext (tests of handlers outside a runner).
+type HandlerProbe struct{ p *progress }
+
+// HandlerContext returns ctx as a runner hands it to a handler.
+func HandlerContext(ctx context.Context) (context.Context, *HandlerProbe) {
+	p := &progress{now: make(chan struct{}, 1)}
+	return context.WithValue(ctx, progressKey{}, p), &HandlerProbe{p: p}
+}
+
+// Reporter is the AccessReporter the handler registered (nil: none yet).
+func (h *HandlerProbe) Reporter() AccessReporter { return h.p.reporter() }
+
+// Heartbeats receives when the handler asked for a heartbeat now.
+func (h *HandlerProbe) Heartbeats() <-chan struct{} { return h.p.now }

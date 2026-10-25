@@ -1,4 +1,5 @@
 import type { StatusState } from '@/components/status';
+import { elapsedSeconds } from '@/lib/duration';
 
 type DeploymentStatus = App.Enums.DeploymentStatus;
 type DeploymentTrigger = App.Enums.DeploymentTrigger;
@@ -46,36 +47,7 @@ export function triggerLabel(trigger: DeploymentTrigger): string {
     return triggerLabels[trigger];
 }
 
-/**
- * Compact durations (design-system §8): "42s", "1m 42s", "1h 3m".
- */
-export function formatDuration(seconds: number | null): string | null {
-    if (seconds === null) {
-        return null;
-    }
-
-    if (seconds < 60) {
-        return `${seconds}s`;
-    }
-
-    const minutes = Math.floor(seconds / 60);
-
-    if (minutes < 60) {
-        return `${minutes}m ${seconds % 60}s`;
-    }
-
-    return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
-}
-
-export function elapsedSeconds(
-    from: string,
-    to: string | null,
-    now = Date.now(),
-): number {
-    const end = to === null ? now : new Date(to).getTime();
-
-    return Math.max(0, Math.round((end - new Date(from).getTime()) / 1000));
-}
+export { elapsedSeconds, formatDuration } from '@/lib/duration';
 
 export function shortSha(sha: string | null): string | null {
     return sha === null ? null : sha.slice(0, 7);

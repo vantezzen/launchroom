@@ -123,7 +123,7 @@ test('removing a domain removes its www redirect too', function (): void {
     expect(Domain::query()->where('kind', DomainKind::Custom)->exists())->toBeFalse();
 });
 
-test('subdomains may CNAME to the generated hostname under the platform domain', function (): void {
+test('custom domains may point at the generated hostname under the platform domain', function (): void {
     InstanceSettings::current()->forceFill(['apps_domain' => 'apps.example.org'])->save();
     $api = Projects::image($this->project, 'api');
     $instance = $api->instances()->sole();
@@ -138,9 +138,11 @@ test('subdomains may CNAME to the generated hostname under the platform domain',
         ->assertInertia(fn ($page) => $page
             ->where('panel.settings.domains.0.hostname', 'api.example.com')
             ->where('panel.settings.domains.0.cnameTarget', $generated)
-            // No CNAME at a zone apex.
+            ->where('panel.settings.domains.0.apex', false)
+            // A zone apex gets the same target for ALIAS/ANAME/flattening; the UI keeps A records first.
             ->where('panel.settings.domains.1.hostname', 'example.net')
-            ->where('panel.settings.domains.1.cnameTarget', null));
+            ->where('panel.settings.domains.1.cnameTarget', $generated)
+            ->where('panel.settings.domains.1.apex', true));
 });
 
 test('the periodic check queues domains that are due', function (): void {

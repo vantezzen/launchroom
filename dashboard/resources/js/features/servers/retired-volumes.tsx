@@ -2,6 +2,7 @@ import { router } from '@inertiajs/react';
 import { Archive } from 'lucide-react';
 import { useState } from 'react';
 import { ConfirmPopover } from '@/components/patterns/confirm-popover';
+import { MetaLine } from '@/components/patterns/meta-line';
 import { SidePanel } from '@/components/patterns/sheet';
 import { Status } from '@/components/status';
 import type { StatusState } from '@/components/status';
@@ -15,6 +16,7 @@ const reasons: Record<string, string> = {
     environment_deleted: 'Environment deleted',
     project_deleted: 'Project deleted',
     preview_destroyed: 'Preview closed',
+    volume_removed: 'Removed from its service',
 };
 
 function state(volume: RetiredVolume): { state: StatusState; label: string } {
@@ -35,14 +37,17 @@ function state(volume: RetiredVolume): { state: StatusState; label: string } {
     return { state: 'idle', label: 'Kept' };
 }
 
-function until(iso: string): string {
+/** "in 3 days", or null when it's due. */
+function inDays(iso: string): string | null {
     const days = Math.ceil((new Date(iso).getTime() - Date.now()) / 86_400_000);
 
-    if (days <= 0) {
-        return 'deleted soon';
-    }
+    return days <= 0 ? null : `in ${days} ${days === 1 ? 'day' : 'days'}`;
+}
 
-    return `deleted in ${days} ${days === 1 ? 'day' : 'days'}`;
+function until(iso: string): string {
+    const days = inDays(iso);
+
+    return days === null ? 'Deleted soon' : `Deleted ${days}`;
 }
 
 /**
@@ -90,13 +95,12 @@ export function RetiredVolumes({
                         {volumes.length} retired{' '}
                         {volumes.length === 1 ? 'volume' : 'volumes'}
                     </span>
-                    <span className="type-small text-muted-foreground">
+                    <MetaLine className="type-small text-muted-foreground">
                         Data of deleted environments and previews
-                        {next ? ` · next ${until(next)}` : ''}
-                        {waiting > 0
-                            ? ` · ${waiting} ${waiting === 1 ? 'needs' : 'need'} your OK`
-                            : ''}
-                    </span>
+                        {next && `Next deletion ${inDays(next) ?? 'soon'}`}
+                        {waiting > 0 &&
+                            `${waiting} ${waiting === 1 ? 'needs' : 'need'} your OK`}
+                    </MetaLine>
                 </span>
                 <span className="type-small text-signal">Review</span>
             </button>
@@ -126,9 +130,10 @@ export function RetiredVolumes({
                                         <span className="type-body font-medium">
                                             {volume.label}
                                         </span>
-                                        <span className="truncate type-mono-small text-muted-foreground">
-                                            {volume.name} · {volume.mountPath}
-                                        </span>
+                                        <MetaLine className="type-mono-small text-muted-foreground">
+                                            {volume.name}
+                                            {volume.mountPath}
+                                        </MetaLine>
                                     </div>
                                     <Status
                                         state={tone}
@@ -137,18 +142,17 @@ export function RetiredVolumes({
                                     />
                                 </div>
                                 <div className="flex flex-wrap items-center justify-between gap-2 type-small text-muted-foreground">
-                                    <span>
+                                    <MetaLine>
                                         {reasons[volume.reason] ??
                                             volume.reason}
-                                        {' · '}
                                         {volume.status === 'deleted'
-                                            ? `deleted ${shortAge(volume.deletedAt) ?? ''}`
+                                            ? `Deleted ${shortAge(volume.deletedAt) ?? ''}`
                                             : until(volume.retainUntil)}
-                                    </span>
+                                    </MetaLine>
                                     {confirmable && (
                                         <ConfirmPopover
                                             title="Allow deleting this volume?"
-                                            consequence="Its database had backups; those stay in the destination. The volume is deleted once its retention ends."
+                                            consequence="The database backups stay in their destination. The volume is deleted when its retention ends."
                                             confirmLabel="Allow deletion"
                                             tone="destructive"
                                             onConfirm={() =>

@@ -19,6 +19,7 @@ use App\Support\Compose\TranslationOptions;
 use App\Support\Compose\YamlLineIndex;
 use App\Support\Hostname;
 use App\Support\Slug;
+use App\Support\Variables\GeneratedValues;
 
 /**
  * Templates (`launchroom.template/v1`, docs/17 §3): parses a template file,
@@ -27,11 +28,15 @@ use App\Support\Slug;
  * only when every line of it is something launchroom runs.
  *
  * Expressions: `${generate:password:32}` (also hex, base64, base64url with
- * a byte count, and `${generate:uuid}`) become launchroom generator
- * expressions, evaluated per environment when the variable is created and
- * always secret; `${service.<key>.url|public_url|host|port|user|password|
- * database|env.VAR}` and `${self.public_url|domain|port|host}` become
- * references; `${input.<id>}` is the guided input's value.
+ * a byte count, `${generate:uuid}` and `${generate:jwt:<role>:<KEY>}`, a
+ * JWT signed with the variable KEY of the same service) become launchroom
+ * generator expressions, evaluated per environment when the variable is
+ * created and secret (except an anon JWT, public by design);
+ * `${service.<key>.url|public_url|host|port|user|password|database|env.VAR}`
+ * and `${self.public_url|domain|port|host|env.VAR}` become references;
+ * `${input.<id>}` is the guided input's value. Top-level `configs` with
+ * inline content become config files (literal: no expressions); `notes`
+ * are shown on the detail sheet.
  */
 final class TemplateCompiler
 {
@@ -51,7 +56,10 @@ final class TemplateCompiler
 
     public const array INPUT_TYPES = ['text', 'email', 'domain', 'repository'];
 
-    private const array TOP_LEVEL = ['schema', 'id', 'name', 'tagline', 'description', 'category', 'logo', 'website', 'license', 'inputs', 'services'];
+    private const array TOP_LEVEL = ['schema', 'id', 'name', 'tagline', 'description', 'category', 'logo', 'website', 'license', 'notes', 'inputs', 'services', 'configs'];
+
+    /** Short notes on the detail sheet: requirements and limits (D65). */
+    public const int MAX_NOTES = 6;
 
     private const string EXPRESSION = '/\$\{(generate|service|self|input)([:.])([^}]*)\}/';
 
@@ -148,6 +156,29 @@ final class TemplateCompiler
             );
         }
 
+        $notes = [];
+
+        foreach (is_array($data['notes'] ?? null) ? $data['notes'] : [] as $index => $note) {
+            if (! is_string($note) || trim($note) === '' || mb_strlen($note) > 240) {
+                $problems[] = "notes.{$index} must be text of 1 to 240 characters.";
+
+                continue;
+            }
+
+            $notes[] = trim((string) preg_replace('/\s+/', ' ', $note));
+        }
+
+        if (count($notes) > self::MAX_NOTES) {
+            $problems[] = 'A template has at most '.self::MAX_NOTES.' notes.';
+        }
+
+        $configs = $data['configs'] ?? [];
+
+        if (! is_array($configs) || ($configs !== [] && array_is_list($configs))) {
+            $problems[] = 'configs must be a mapping of Compose configs.';
+            $configs = [];
+        }
+
         if (count($inputs) > 6) {
             $problems[] = 'A template asks for at most 6 inputs.';
         }
@@ -163,7 +194,7 @@ final class TemplateCompiler
             throw new TemplateInvalid($problems === [] ? ['The template is incomplete.'] : $problems);
         }
 
-        return new TemplateDefinition($id, $name, $tagline, $description, $category, $logo, $website, $license, $inputs, $services, YamlLineIndex::of($yaml));
+        return new TemplateDefinition($id, $name, $tagline, $description, $category, $logo, $website, $license, $inputs, $services, YamlLineIndex::of($yaml), $notes, $configs);
     }
 
     /**
@@ -186,7 +217,7 @@ final class TemplateCompiler
         }
 
         try {
-            $translation = ComposeTranslator::translateData(['services' => $services], $template->lines, new TranslationOptions(
+            $translation = ComposeTranslator::translateData(['services' => $services, ...($template->configs === [] ? [] : ['configs' => $template->configs])], $template->lines, new TranslationOptions(
                 repository: $repository,
                 template: true,
                 engines: $engines,
@@ -201,6 +232,10 @@ final class TemplateCompiler
         $services = array_map(static function (BlueprintService $service) use ($placeholders, &$problems): BlueprintService {
             $copy = clone $service;
             $copy->variables = self::restore($service->variables, $placeholders);
+            $copy->provides = array_map(
+                static fn (BlueprintVariable $variable): BlueprintVariable => new BlueprintVariable($variable->key, (string) preg_replace_callback(self::SENTINEL, static fn (array $m): string => $placeholders[(int) $m[1]] ?? '', $variable->value)),
+                $service->provides,
+            );
             $rest = json_encode([$service->entrypoint, $service->startCommand, $service->domain, $service->image, $service->volumes, $service->healthcheck?->path]);
 
             if (is_string($rest) && preg_match('/\\\\ue000/', $rest) === 1) {
@@ -222,7 +257,10 @@ final class TemplateCompiler
     }
 
     /**
-     * Sentinels back to launchroom expressions; generated values are secrets.
+     * Sentinels back to launchroom expressions; generated values are secrets,
+     * except a JWT for the `anon` role: it is public by design (Supabase's
+     * anon key ships in browser bundles; row level security protects the
+     * data), and as config it can feed `NEXT_PUBLIC_*` variables.
      *
      * @param  list<BlueprintVariable>  $variables
      * @param  list<string>  $placeholders
@@ -234,7 +272,8 @@ final class TemplateCompiler
 
         foreach ($variables as $variable) {
             $value = (string) preg_replace_callback(self::SENTINEL, static fn (array $m): string => $placeholders[(int) $m[1]] ?? '', $variable->value);
-            $restored[] = new BlueprintVariable($variable->key, $value, $variable->secret || str_contains($value, '${{ secret(') || str_contains($value, '${{ uuid() }}'));
+            $publicJwt = GeneratedValues::jwtRole(GeneratedValues::sole($value)) === 'anon';
+            $restored[] = new BlueprintVariable($variable->key, $value, ! $publicJwt && ($variable->secret || str_contains($value, '${{ secret(') || str_contains($value, '${{ uuid() }}') || str_contains($value, '${{ jwt(')));
         }
 
         return $restored;
@@ -414,6 +453,11 @@ final class TemplateCompiler
                 return '${{ uuid() }}';
             }
 
+            // `${generate:jwt:anon:JWT_SECRET}`: signed with that variable of the same service.
+            if (preg_match('/^jwt:([a-z_][a-z0-9_]{0,62}):([A-Za-z_][A-Za-z0-9_]{0,255})$/D', $rest, $m) === 1) {
+                return "\${{ jwt(\"{$m[1]}\", {$m[2]}) }}";
+            }
+
             if (preg_match('/^(password|hex|base64|base64url):(\d{1,4})$/D', $rest, $m) !== 1 || (int) $m[2] < 8 || (int) $m[2] > 1024) {
                 return null;
             }
@@ -426,6 +470,10 @@ final class TemplateCompiler
         }
 
         if ($kind === 'self') {
+            if (preg_match('/^env\.([A-Za-z_][A-Za-z0-9_]{0,255})$/D', $rest, $m) === 1) {
+                return '${{'.$m[1].'}}';
+            }
+
             return match ($rest) {
                 'public_url' => '${{PUBLIC_URL}}',
                 'domain' => '${{DOMAIN}}',

@@ -234,8 +234,8 @@ export function DatabaseForm({
                 <fieldset className="grid gap-2">
                     <legend className="mb-1 type-label">Connect it to…</legend>
                     <p className="-mt-1 mb-1 type-small text-muted-foreground">
-                        Picked services get its connection variables with the
-                        next deploy.
+                        The services you pick get its connection variables with
+                        the next deploy.
                     </p>
                     <div className="flex flex-wrap gap-2">
                         {consumers.map((consumer) => {
@@ -397,7 +397,7 @@ export function ProcessForm({
                 helper={
                     kind === 'worker'
                         ? 'Runs without a shell, e.g. php artisan queue:work --tries=3.'
-                        : 'Runs without a shell, e.g. php artisan schedule:run. Set when it runs under Settings → Schedule; without a schedule the command runs continuously.'
+                        : 'Runs without a shell, e.g. php artisan schedule:run. Set when it runs under Settings → Schedule. Without a schedule, the command runs continuously.'
                 }
                 error={commandError ?? errors.startCommand}
             >

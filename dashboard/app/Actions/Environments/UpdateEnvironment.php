@@ -52,7 +52,7 @@ final readonly class UpdateEnvironment
 
             if (! $data->triggers instanceof Optional) {
                 if ($environment->kind === EnvironmentKind::Preview) {
-                    throw DomainRuleViolation::on('triggers', 'Previews follow their pull request; they have no triggers of their own.');
+                    throw DomainRuleViolation::on('triggers', 'Previews deploy from their pull request and have no triggers of their own.');
                 }
 
                 $triggers = $data->triggers;

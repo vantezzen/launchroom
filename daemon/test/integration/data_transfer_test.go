@@ -15,6 +15,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/moby/moby/api/types/mount"
+
 	"github.com/vantezzen/launchroom/daemon/internal/backup"
 	"github.com/vantezzen/launchroom/daemon/internal/docker"
 	"github.com/vantezzen/launchroom/daemon/internal/policy"
@@ -299,6 +301,56 @@ func TestDataTransferPostgres(t *testing.T) {
 	}
 	if te.psql(ctx, t, fresh, "fresh-pw-11111", "SELECT count(*) FROM notes") != "4" {
 		t.Fatal("the refused import changed the database")
+	}
+	assertNoImportLeftovers(ctx, t, te)
+}
+
+// TestDataImportBeforeFirstDeploy: the dashboard prepares a database that
+// was never deployed (docs/14 §12.9): its workload runs alone on its volume
+// for the import and is removed again; the first deploy's workload (a new
+// id, the same volume and credentials) finds the imported data.
+func TestDataImportBeforeFirstDeploy(t *testing.T) {
+	te := setupTransfers(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+	defer cancel()
+
+	_, src := te.db(ctx, t, postgres17Image, pgEnv("src-pw-123456"))
+	te.waitPG(ctx, t, src, "src-pw-123456")
+	te.psql(ctx, t, src, "src-pw-123456", "CREATE TABLE website (id serial PRIMARY KEY, name text); INSERT INTO website (name) VALUES ('blog'), ('shop')")
+	dump := te.output(ctx, t, src, []string{"pg_dump", "-Fc", "--host=127.0.0.1", "--username=app", "--dbname=app"}, "PGPASSWORD=src-pw-123456")
+
+	_, volume := te.serviceVolume(ctx, t)
+	mounts := []mount.Mount{{Type: mount.TypeVolume, Source: volume, Target: "/var/lib/postgresql/data"}}
+	env := pgEnv("db-pw-777777")
+
+	// The preparation: the database alone, on its volume, empty.
+	prepared := state.WorkloadID(randomID("wl"))
+	id := te.runMounted(ctx, t, prepared, postgres17Image, env, nil, mounts)
+	te.images[prepared] = postgres17Image
+	te.waitPG(ctx, t, id, "db-pw-777777")
+	in, err := te.importDB(ctx, taskID(), &state.DbImportSpec{Mode: state.ImportInspect, Engine: state.EnginePostgres, Workload: prepared}, "")
+	if err != nil || !in.Empty {
+		t.Fatalf("prepared database: %+v %v", in, err)
+	}
+	if _, err := te.importDB(ctx, taskID(), &state.DbImportSpec{Mode: state.ImportRun, Engine: state.EnginePostgres, Workload: prepared,
+		Source: &state.DbImportSource{Kind: state.SourceFile, File: ptrRef(te.fake.upload(dump))}}, ""); err != nil {
+		t.Fatal(err)
+	}
+
+	// Stopped and removed again; the volume stays.
+	if err := te.engine.StopContainer(ctx, id, time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	if err := te.engine.RemoveContainer(ctx, id); err != nil {
+		t.Fatal(err)
+	}
+
+	// The first deploy: a new workload on the same volume with the same credentials.
+	first := state.WorkloadID(randomID("wl"))
+	id = te.runMounted(ctx, t, first, postgres17Image, env, nil, mounts)
+	te.waitPG(ctx, t, id, "db-pw-777777")
+	if got := te.psql(ctx, t, id, "db-pw-777777", "SELECT string_agg(name, ',' ORDER BY id) FROM website"); got != "blog,shop" {
+		t.Fatalf("the first deploy sees %q", got)
 	}
 	assertNoImportLeftovers(ctx, t, te)
 }

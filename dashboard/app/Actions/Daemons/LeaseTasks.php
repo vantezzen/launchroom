@@ -64,11 +64,20 @@ final readonly class LeaseTasks
                                 $role->whereNull('required_role')->orWhereIn('required_role', $roles);
                             }));
                 })
-                // Builds and plans only go to servers that build the target platform.
-                ->when($platform !== null, static fn (Builder $query) => $query->where(static function (\Illuminate\Contracts\Database\Query\Builder $arch) use ($platforms): void {
-                    $arch->whereNotIn('type', [DaemonTaskType::Build->value, DaemonTaskType::Plan->value])
-                        ->orWhereRaw("spec->>'platform' IN (".implode(', ', array_fill(0, count($platforms), '?')).')', $platforms);
+                // Builds and plans only go to servers that build the target
+                // platform; inventories to servers of the image's platform.
+                ->when($platform !== null, static fn (Builder $query) => $query->where(static function (\Illuminate\Contracts\Database\Query\Builder $arch) use ($platforms, $platform): void {
+                    $arch->whereNotIn('type', [DaemonTaskType::Build->value, DaemonTaskType::Plan->value, DaemonTaskType::Inventory->value])
+                        ->orWhere(static fn (\Illuminate\Contracts\Database\Query\Builder $build) => $build
+                            ->whereIn('type', [DaemonTaskType::Build->value, DaemonTaskType::Plan->value])
+                            ->whereRaw("spec->>'platform' IN (".implode(', ', array_fill(0, count($platforms), '?')).')', $platforms))
+                        ->orWhere(static fn (\Illuminate\Contracts\Database\Query\Builder $inventory) => $inventory
+                            ->where('type', DaemonTaskType::Inventory->value)
+                            ->whereRaw("spec->>'platform' = ?", [$platform]));
                 }))
+                // Security center tasks only for servers that announce them (docs/22 §3.2, §7.2).
+                ->when(! $server->supportsDaemonFeature(DaemonFeature::Inventory), static fn (Builder $query) => $query->where('type', '!=', DaemonTaskType::Inventory->value))
+                ->when(! $server->supportsDaemonFeature(DaemonFeature::ContainerInspection), static fn (Builder $query) => $query->where('type', '!=', DaemonTaskType::InspectContainer->value))
                 // Builds from GitLab/Gitea, over SSH or with a fallback ref need
                 // a launchroomd that understands those fields (docs/19 §6).
                 ->when(! $server->supportsDaemonFeature(DaemonFeature::GitProviders), static fn (Builder $query) => $query->where(static function (\Illuminate\Contracts\Database\Query\Builder $git): void {

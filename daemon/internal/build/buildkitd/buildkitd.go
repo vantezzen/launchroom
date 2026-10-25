@@ -145,6 +145,9 @@ type Manager struct {
 	// failed because the host has not loaded it (zero = not known missing).
 	profile        string
 	profileMissing time.Time
+	// noIOWeight is set once the engine refused the I/O weight (no io
+	// cgroup controller, as in nested Docker): builds go without it.
+	noIOWeight bool
 
 	// connect dials buildkitd in container id (tests replace it).
 	connect func(ctx context.Context, id string) (*bkclient.Client, error)
@@ -197,9 +200,18 @@ func (m *Manager) planResources(ctx context.Context) {
 	if m.o.Measure == nil {
 		return
 	}
-	next := PlanResources(m.o.Measure(ctx), m.o.Overrides)
+	h := m.o.Measure(ctx)
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	// A failed reading (Docker's info timed out) would drop the limits and
+	// recreate buildkitd twice; keep the last plan until the host reads again.
+	if (h.MemoryMB <= 0 || h.CPUs <= 0) && m.res.CPUShares != 0 {
+		return
+	}
+	next := PlanResources(h, m.o.Overrides)
+	if m.noIOWeight {
+		next.BlkioWeight = 0
+	}
 	settled := Settle(m.res, next)
 	changes := !sameContainer(settled, m.res)
 	if changes && m.res.CPUShares != 0 && m.o.Busy != nil && m.o.Busy() {
@@ -595,4 +607,32 @@ func (m *Manager) dial(ctx context.Context, id string) (*bkclient.Client, error)
 		case <-time.After(500 * time.Millisecond):
 		}
 	}
+}
+
+// ensureWeighted converges the container, dropping the I/O weight when the
+// engine can't apply it: a host without the io cgroup controller (nested
+// Docker, some VPS kernels) refuses to start a container that sets one, and
+// a lower build priority is not worth having no builds.
+func (m *Manager) ensureWeighted(ctx context.Context, image state.ImageRef, profile string) (string, error) {
+	id, err := m.ensureContainer(ctx, image, profile)
+	if err == nil || !ioWeightRefused(err) {
+		return id, err
+	}
+	m.mu.Lock()
+	retry := m.res.BlkioWeight != 0
+	m.noIOWeight, m.res.BlkioWeight = true, 0
+	m.mu.Unlock()
+	if !retry {
+		return id, err
+	}
+	m.o.Log.Warn("this host can't weight block I/O; builds run without the low I/O priority", "err", err)
+	return m.ensureContainer(ctx, image, profile)
+}
+
+// ioWeightRefused: runc could not write the weight file ("openat2
+// /sys/fs/cgroup/…/io.weight: no such file or directory", blkio.weight on
+// cgroup v1).
+func ioWeightRefused(err error) bool {
+	msg := err.Error()
+	return strings.Contains(msg, "io.weight") || strings.Contains(msg, "bfq.weight")
 }

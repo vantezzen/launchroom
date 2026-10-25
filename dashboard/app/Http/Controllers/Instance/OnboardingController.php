@@ -116,7 +116,7 @@ final class OnboardingController extends Controller
 
         Inertia::flash('toast', $result->status === 'ok'
             ? ['type' => 'success', 'message' => 'DNS verified. Your apps get addresses under this domain.']
-            : ['type' => 'success', 'message' => 'Saved. Apps are reachable once DNS reaches your server.']);
+            : ['type' => 'success', 'message' => 'Saved. Apps become reachable once the DNS record points at your server.']);
 
         return back();
     }

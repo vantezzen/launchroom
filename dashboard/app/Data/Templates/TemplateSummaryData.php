@@ -15,6 +15,7 @@ final class TemplateSummaryData extends Data
 {
     /**
      * @param  list<TemplateInputData>  $inputs
+     * @param  list<string>  $notes  requirements and limits (D65)
      */
     public function __construct(
         public string $id,
@@ -29,5 +30,6 @@ final class TemplateSummaryData extends Data
         public BlueprintPreviewData $preview,
         /** Built from the user's repository (stacks). */
         public bool $needsRepository,
+        public array $notes = [],
     ) {}
 }

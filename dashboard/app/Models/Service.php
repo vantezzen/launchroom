@@ -28,6 +28,7 @@ use Illuminate\Support\Carbon;
  * @property int|null $parent_service_id
  * @property ServiceSource $source
  * @property string|null $icon
+ * @property list<array{key: string, value: string}>|null $connection_variables what a connection to it injects (D65), null: the default naming
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property-read Project $project
@@ -91,6 +92,7 @@ final class Service extends Model
         return [
             'kind' => ServiceKind::class,
             'source' => ServiceSourceCast::class,
+            'connection_variables' => 'array',
         ];
     }
 }

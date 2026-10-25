@@ -16,6 +16,15 @@ test('profile page is displayed', function (): void {
     $this->actingAs($user)->get(route('profile.edit'))->assertOk();
 });
 
+test('the settings list URL shows the profile page', function (): void {
+    $user = User::factory()->create();
+
+    $this->actingAs($user)->get(route('settings.index'))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page->component('settings/profile'));
+    $this->get('/settings')->assertOk();
+});
+
 test('profile information can be updated', function (): void {
     $user = User::factory()->create();
 

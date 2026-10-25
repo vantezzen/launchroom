@@ -1,7 +1,8 @@
 import { Link } from '@inertiajs/react';
-import { ArrowUpRight, Maximize2, Minimize2, X } from 'lucide-react';
+import { ArrowUpRight, CircleX, Maximize2, Minimize2, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { StatusPill } from '@/components/status';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { BackupsTab } from '@/features/backups/backups-tab';
 import { compactAge } from '@/features/canvas/format';
@@ -18,6 +19,8 @@ import { VariablesTab } from '@/features/variables/variables-tab';
 import { prefersReducedMotion, sharedElement } from '@/lib/motion';
 import { cn } from '@/lib/utils';
 import services from '@/routes/projects/services';
+import { index as securityRoute } from '@/routes/security';
+import { show as findingRoute } from '@/routes/security/findings';
 
 const EXPANDED_KEY = 'launchroom.panel.expanded';
 
@@ -144,6 +147,9 @@ export function ServicePanel({
                                 }
                             />
                             {node.staged && <StagedChip effect={node.staged} />}
+                            {panel.actionNeeded > 0 && (
+                                <ActionNeededChip panel={panel} />
+                            )}
                         </div>
                         <p className="flex min-w-0 flex-wrap items-center gap-x-2 type-small text-muted-foreground">
                             {meta.map((part) => (
@@ -267,6 +273,7 @@ export function ServicePanel({
                                 project={project}
                                 environment={environment}
                                 service={node.id}
+                                database={node.kind === 'database'}
                             />
                         )}
                         {panel.tab === 'variables' && (
@@ -289,6 +296,7 @@ export function ServicePanel({
                                 project={project}
                                 environment={environment}
                                 service={node.id}
+                                dataHint={panel.canData}
                             />
                         )}
                         {panel.tab === 'data' && panel.canData && (
@@ -348,4 +356,30 @@ export function panelVisitOptions() {
         preserveScroll: true,
         viewTransition: !prefersReducedMotion(),
     };
+}
+
+/**
+ * "Action needed" in the header (docs/22 §9.1): opens the finding, or the
+ * Security page for this service when there are several.
+ */
+function ActionNeededChip({
+    panel,
+}: {
+    panel: App.Data.Canvas.ServicePanelData;
+}) {
+    const href = panel.actionNeededFinding
+        ? findingRoute(panel.actionNeededFinding).url
+        : securityRoute({ query: { service: panel.serviceId } }).url;
+
+    return (
+        <Badge variant="destructive" className="gap-1" asChild>
+            <Link href={href}>
+                <CircleX aria-hidden="true" className="size-3" />
+                Action needed
+                {panel.actionNeeded > 1 && (
+                    <span className="tabular-nums">{panel.actionNeeded}</span>
+                )}
+            </Link>
+        </Badge>
+    );
 }

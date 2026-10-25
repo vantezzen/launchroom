@@ -42,6 +42,7 @@ use Illuminate\Support\Carbon;
  * @property array<string, mixed>|null $plan
  * @property array{path: string, commitSha: string|null, repository: string|null, errors: list<array<string, mixed>>}|null $config_errors the launchroom.json problems a push failed on (docs/18 §6)
  * @property int|null $build_server_id
+ * @property int|null $inventory_id the image's inventory in this team (docs/22 §3.1)
  * @property string|null $env_snapshot
  * @property Carbon $queued_at
  * @property Carbon|null $started_at

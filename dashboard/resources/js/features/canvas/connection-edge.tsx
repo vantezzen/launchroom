@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils';
 import type { ConnectionFlowEdge } from './types';
 
 /**
- * "DATABASE_URL", or "DB_* · 6" when a connection injects a family of
+ * "DATABASE_URL", or "DB_* (6)" when a connection injects a family of
  * variables.
  */
 export function edgeLabel(variables: string[]): string {
@@ -21,7 +21,7 @@ export function edgeLabel(variables: string[]): string {
     const shared = prefixes.every((prefix) => prefix === prefixes[0]);
 
     return shared
-        ? `${prefixes[0]}_* · ${variables.length}`
+        ? `${prefixes[0]}_* (${variables.length})`
         : `${variables[0]} +${variables.length - 1}`;
 }
 

@@ -65,7 +65,7 @@ function HealthTimeline({ form }: { form: DeployForm }) {
                     className="absolute inset-y-0.5 left-0 flex items-center overflow-hidden rounded-md bg-hover px-2 type-small whitespace-nowrap text-muted-foreground"
                     style={{ width: `${grace}%` }}
                 >
-                    {grace > 18 && `Starting · ${form.startPeriod}s`}
+                    {grace > 18 && `Starting (${form.startPeriod}s)`}
                 </div>
                 <div
                     className="absolute inset-x-0 top-1/2 h-px bg-border"
@@ -96,7 +96,7 @@ function HealthTimeline({ form }: { form: DeployForm }) {
                     every {form.interval}s
                 </span>
                 <span className="text-status-progress">
-                    {form.failures} misses in a row: unhealthy
+                    Unhealthy after {form.failures} misses in a row
                 </span>
             </div>
         </div>
@@ -169,12 +169,12 @@ export function DeploySection({ context }: { context: SettingsContext }) {
             ? `Ready when GET ${data.healthPath || '/'} answers ${data.expectStatus || '2xx'} within ${data.timeout}s.`
             : data.healthType === 'tcp'
               ? `Ready when the port accepts a connection within ${data.timeout}s.`
-              : 'Running counts as ready. Traffic switches as soon as it starts.';
+              : 'Traffic switches to a new replica as soon as it is running.';
 
     return (
         <SettingsPage
             title="Deploy"
-            description="How launchroom starts your service and knows it is ready. Changes restart it without a rebuild."
+            description="How launchroom starts your service and checks that it is ready. Changes restart the service without a rebuild."
         >
             <form onSubmit={submit} className="flex flex-col gap-8">
                 <SettingsCard title="Start">

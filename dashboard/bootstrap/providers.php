@@ -13,6 +13,8 @@ use App\Providers\GitServiceProvider;
 use App\Providers\HorizonServiceProvider;
 use App\Providers\InteractiveSessionsServiceProvider;
 use App\Providers\PreviewsServiceProvider;
+use App\Providers\RemoteAccessServiceProvider;
+use App\Providers\SecurityServiceProvider;
 use App\Providers\TransfersServiceProvider;
 use App\Providers\TypeScriptTransformerServiceProvider;
 
@@ -28,6 +30,8 @@ return [
     HorizonServiceProvider::class,
     InteractiveSessionsServiceProvider::class,
     PreviewsServiceProvider::class,
+    RemoteAccessServiceProvider::class,
+    SecurityServiceProvider::class,
     TransfersServiceProvider::class,
     TypeScriptTransformerServiceProvider::class,
 ];

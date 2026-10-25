@@ -247,13 +247,12 @@ export function Histogram({
                     }}
                 >
                     <span className="text-muted-foreground">
-                        {formatTooltipTime(current.start, span)}
+                        {formatTooltipTime(current.start, span)}:
                     </span>{' '}
-                    · {formatCompact(current.total)} {unit}
+                    {formatCompact(current.total)} {unit}
                     {current.errors ? (
                         <span className="text-status-error">
-                            {' '}
-                            · {current.errors} errors
+                            , {current.errors} errors
                         </span>
                     ) : null}
                 </div>

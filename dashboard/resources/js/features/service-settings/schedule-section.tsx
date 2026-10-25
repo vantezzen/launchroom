@@ -3,6 +3,7 @@ import { CalendarClock, Infinity as Continuous } from 'lucide-react';
 import { useMemo } from 'react';
 import type { FormEvent } from 'react';
 import InputError from '@/components/input-error';
+import { MetaLine } from '@/components/patterns/meta-line';
 import { TimeRangeSelect } from '@/components/charts/time-range-select';
 import { relativeTime } from '@/components/time-ago';
 import { Input } from '@/components/ui/input';
@@ -202,11 +203,25 @@ export function ScheduleSection({ context }: { context: SettingsContext }) {
                                             {sentence ?? 'Not a valid schedule'}
                                         </p>
                                         <p className="type-small text-muted-foreground">
-                                            {sentence
-                                                ? runs.length > 0
-                                                    ? `${zoneLabel(data.timeZone)} · next run ${relativeTime(runs[0].toISOString())}`
-                                                    : `${zoneLabel(data.timeZone)} · this never matches a date`
-                                                : 'Fix the expression below.'}
+                                            {sentence ? (
+                                                runs.length > 0 ? (
+                                                    <MetaLine>
+                                                        {zoneLabel(
+                                                            data.timeZone,
+                                                        )}
+                                                        {`Next run ${relativeTime(runs[0].toISOString())}`}
+                                                    </MetaLine>
+                                                ) : (
+                                                    <MetaLine>
+                                                        {zoneLabel(
+                                                            data.timeZone,
+                                                        )}
+                                                        Never matches a date
+                                                    </MetaLine>
+                                                )
+                                            ) : (
+                                                'Fix the expression below.'
+                                            )}
                                         </p>
                                     </div>
                                 </div>

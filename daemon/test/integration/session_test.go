@@ -319,6 +319,12 @@ type sessionEnv struct {
 
 func (s *sessionEnv) start(ctx context.Context, t *testing.T, image string, env []string, cmd []string) state.WorkloadID {
 	t.Helper()
+	return s.startAs(ctx, t, image, env, cmd, "")
+}
+
+// startAs starts a workload container running as user (empty: the image's).
+func (s *sessionEnv) startAs(ctx context.Context, t *testing.T, image string, env []string, cmd []string, user string) state.WorkloadID {
+	t.Helper()
 	if err := s.engine.PullImage(ctx, image); err != nil {
 		t.Fatalf("pull %s: %v", image, err)
 	}
@@ -327,7 +333,7 @@ func (s *sessionEnv) start(ctx context.Context, t *testing.T, image string, env 
 	labels[docker.LabelWorkload] = string(wl)
 	id, err := fixtureEngine(t, s.serverID).CreateContainer(ctx, &docker.ContainerCreate{
 		Name:       docker.ContainerName(wl),
-		Config:     &container.Config{Image: image, Env: env, Labels: labels, Cmd: cmd},
+		Config:     &container.Config{Image: image, Env: env, Labels: labels, Cmd: cmd, User: user},
 		HostConfig: &container.HostConfig{},
 	})
 	if err != nil {
@@ -446,6 +452,39 @@ func TestInteractiveSessions(t *testing.T) {
 		}
 		if res.Session == nil || res.Session.EndReason != state.EndExited || res.Session.ExitCode == nil || *res.Session.ExitCode != 3 || res.Session.BytesIn == 0 || res.Session.BytesOut == 0 {
 			t.Fatalf("result %+v", res.Session)
+		}
+	})
+
+	// An image without bash, running as a non-root user (Umami: node:alpine
+	// as "nextjs"): Automatic falls back to ash/sh, as that user.
+	t.Run("console without bash as a non-root user", func(t *testing.T) {
+		wl := s.startAs(ctx, t, busyboxImage, nil, []string{"sleep", "3600"}, "65534:65534")
+		sid := state.SessionID(randomID("ses"))
+		spec := &state.SessionSpec{Session: sid, Kind: state.SessionConsole, Workload: wl, Cols: 80, Rows: 24}
+		key, done, errc := s.runSession(ctx, t, spec, nil, nil)
+		b := dialBrowser(ctx, t, s.relay, key, sid)
+		b.await(session.TReady, nil)
+		b.send(ctx, session.Payload{T: session.THello, Cols: 80, Rows: 24})
+		started := b.await(session.TStarted, nil)
+		if started.Shell != "/bin/ash" && started.Shell != "/bin/sh" {
+			t.Fatalf("shell %q", started.Shell)
+		}
+		var out strings.Builder
+		collect := func(p session.Payload) {
+			if p.T == session.TOut {
+				d, _ := session.DecodeData(p.D)
+				out.Write(d)
+			}
+		}
+		b.send(ctx, session.Payload{T: session.TIn, D: session.EncodeData([]byte("echo uid-$(id -u); exit 0\n"))})
+		b.await(session.TExit, collect)
+		if !strings.Contains(out.String(), "uid-65534") {
+			t.Fatalf("not the container's user: %q", out.String())
+		}
+		b.await(session.TEnd, nil)
+		<-done
+		if err := <-errc; err != nil {
+			t.Fatal(err)
 		}
 	})
 

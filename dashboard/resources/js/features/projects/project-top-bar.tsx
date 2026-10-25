@@ -29,6 +29,7 @@ import { StagedChangesPill } from '@/features/staged-changes/staged-changes-pill
 import { project as projectDeployments } from '@/routes/deployments';
 import {
     activity,
+    analyticsPage as projectAnalytics,
     canvas,
     index,
     logs as projectLogs,
@@ -210,7 +211,7 @@ function ProjectTabs({
 /**
  * Project top bar (design-system §4.1, direction §3.2): one 52 px row with
  * `project ▾ / environment ▾`, the project tabs inline (Canvas ·
- * Deployments · Logs · Metrics · Previews · Settings) and the staged-changes button
+ * Deployments · Logs · Metrics · Analytics · Previews · Settings) and the staged-changes button
  * right. Project activity lives in the project menu (the team Activity page
  * in the sidebar is the main feed).
  */
@@ -255,6 +256,11 @@ export function ProjectTopBar() {
                       label: 'Metrics',
                       href: projectMetrics([project.id, environmentId]).url,
                       active: page.component === 'projects/metrics',
+                  },
+                  {
+                      label: 'Analytics',
+                      href: projectAnalytics([project.id, environmentId]).url,
+                      active: page.component === 'projects/analytics',
                   },
               ]
             : []),

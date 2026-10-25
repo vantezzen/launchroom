@@ -11,12 +11,17 @@ use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 
 #[Signature('launchroom:volumes:retire')]
-#[Description('Request deletion of retired volumes whose retention passed (docs/05 §1.1)')]
+#[Description('Retire volumes removed from services and request deletion of retired volumes whose retention passed (docs/05 §1.1)')]
 final class RetireVolumesCommand extends Command
 {
     public function handle(VolumeRetirements $retirements): int
     {
+        $removed = $retirements->retireRemoved();
         $servers = $retirements->requestDue();
+
+        if ($removed > 0) {
+            $this->info("Retired {$removed} removed volume(s).");
+        }
 
         if ($servers !== []) {
             event(new NodeStateInvalidated($servers));

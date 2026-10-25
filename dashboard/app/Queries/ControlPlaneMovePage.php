@@ -87,13 +87,13 @@ final readonly class ControlPlaneMovePage
             ! $source instanceof Server => 'blocker',
             $source->status !== ServerStatus::Online => 'blocker',
             default => 'ok',
-        }, $source instanceof Server ? ($source->status === ServerStatus::Online ? "{$source->name} runs the dashboard and is online." : "{$source->name} is {$source->status->value}. It must be online to move; if it is gone, restore from a backup instead.") : 'No server runs the dashboard.');
+        }, $source instanceof Server ? ($source->status === ServerStatus::Online ? "{$source->name} runs the dashboard and is online." : "{$source->name} is {$source->status->value}. It must be online to move. If it is gone, restore from a backup instead.") : 'No server runs the dashboard.');
 
         $checks[] = new MovePreflightCheckData('address', 'Dashboard address', $ipBound ? ($others > 0 ? 'warning' : 'info') : 'ok', match (true) {
             $ipBound && $others > 0 => "{$host} is tied to this server’s IP address. The new dashboard gets the new server’s address, and your other {$others} ".($others === 1 ? 'server needs' : 'servers need').' one command each to follow. A domain of your own avoids that.',
             $ipBound => "{$host} is tied to this server’s IP address, so the dashboard gets the new server’s address after the move.",
             Hostname::isLocal($host) => "{$host} only works on this machine.",
-            default => "{$host} stays the address. You point it at the new server during the move; servers follow by themselves.",
+            default => "{$host} stays the address. During the move you point its DNS at the new server, and your servers switch over automatically.",
         });
 
         $checks[] = new MovePreflightCheckData('backups', 'Backups', 'ok', BackupDestination::query()->exists()
@@ -111,8 +111,8 @@ final readonly class ControlPlaneMovePage
 
         $mesh = $settings->mesh_enabled_at !== null || config()->boolean('launchroom.mesh.auto_enable');
         $checks[] = new MovePreflightCheckData('mesh', 'Private network', $mesh ? 'ok' : 'blocker', $mesh
-            ? 'The servers talk over the private network while apps move; it turns on by itself when the new server joins.'
-            : 'The private network is off and doesn’t turn on by itself. Turn it on in Servers → Private network first.');
+            ? 'Servers use the private network while apps move. It turns on automatically when the new server joins.'
+            : 'The private network is off and doesn’t turn on automatically. Turn it on in Servers → Private network first.');
 
         $checks[] = new MovePreflightCheckData('dns', 'DNS', 'info', 'Lower the TTL of your DNS records (to 60–300 seconds) a day ahead, so the switch to the new server’s address is quick.');
 

@@ -58,6 +58,9 @@ type ContainerCreate struct {
 	Config     *container.Config
 	HostConfig *container.HostConfig
 	Networking *network.NetworkingConfig
+	// Files are written into the container after it is created and before
+	// it starts (WorkloadSpec.files, see ConfigFilesTar).
+	Files []state.ConfigFile
 }
 
 // ContainerName is the generated host-side container name for a workload.
@@ -180,7 +183,7 @@ func BuildContainer(in WorkloadInput, pc policy.Config) (*ContainerCreate, error
 	if err := policy.CheckContainer(cfg, hc, pc); err != nil {
 		return nil, fmt.Errorf("docker: generated config violates the policy floor (bug): %w", err)
 	}
-	return &ContainerCreate{Name: ContainerName(spec.ID), Config: cfg, HostConfig: hc, Networking: nc}, nil
+	return &ContainerCreate{Name: ContainerName(spec.ID), Config: cfg, HostConfig: hc, Networking: nc, Files: slices.Clone(spec.Files)}, nil
 }
 
 // buildEnv renders KEY=value pairs sorted by key, rejecting keys that are not

@@ -3,7 +3,7 @@ import { cn } from '@/lib/utils';
 export type Run = {
     key: string;
     status: 'ok' | 'failed' | 'none';
-    /** Tooltip text, e.g. "Oct 12 · succeeded · 4.1 GB". */
+    /** Tooltip text, e.g. "Oct 12: succeeded, 4.1 GB". */
     label: string;
 };
 

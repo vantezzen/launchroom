@@ -73,7 +73,7 @@ export function MovePlanView({ plan }: { plan: App.Data.Moves.MovePlanData }) {
                             {target} runs {plan.platformTo}. Apps built from
                             source are built again for {plan.platformTo} before
                             they switch over. Databases and registry images are
-                            pulled for {plan.platformTo}; an image that only
+                            pulled for {plan.platformTo}, so an image that only
                             exists for {plan.platformFrom} can’t move.
                         </Note>
                     )}
@@ -109,7 +109,7 @@ export function MovePlanView({ plan }: { plan: App.Data.Moves.MovePlanData }) {
 
             <Section
                 title="Moves without downtime"
-                description="Starts on the new server, then the old copy stops."
+                description="Each one starts on the new server before the old copy stops."
             >
                 {stateless.length === 0 ? (
                     <p className="type-body text-muted-foreground">
@@ -136,7 +136,7 @@ export function MovePlanView({ plan }: { plan: App.Data.Moves.MovePlanData }) {
 
             <Section
                 title="Stops briefly"
-                description="One at a time: its apps stop, the data is copied over, then everything starts on the new server."
+                description="One at a time, the apps stop while their data is copied, then start again on the new server."
             >
                 {stateful.length === 0 ? (
                     <p className="type-body text-muted-foreground">

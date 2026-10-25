@@ -82,7 +82,7 @@ final readonly class CreateService
 
             if ($parent instanceof Service && $environment instanceof Environment
                 && ! ServiceInstance::query()->current()->where('service_id', $parent->id)->where('environment_id', $environment->id)->exists()) {
-                throw DomainRuleViolation::on('parentServiceId', "{$parent->name} isn't in {$environment->name}; add or promote it there first.");
+                throw DomainRuleViolation::on('parentServiceId', "{$parent->name} isn't in {$environment->name}. Add or promote it there first.");
             }
 
             foreach ($environments as $environment) {

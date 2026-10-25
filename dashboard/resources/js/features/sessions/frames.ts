@@ -39,6 +39,8 @@ export type IncomingPayload = {
     part?: number;
     parts?: number;
     reason?: string;
+    /** Why a session couldn't start (end frames). */
+    message?: string;
 };
 
 export function base64UrlEncode(bytes: Uint8Array): string {

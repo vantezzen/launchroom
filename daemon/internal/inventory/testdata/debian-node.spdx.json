@@ -1,0 +1,1700 @@
+{
+ "_type": "https://in-toto.io/Statement/v0.1",
+ "predicate": {
+  "creationInfo": {
+   "created": "2026-10-25T12:54:49Z",
+   "creators": [
+    "Organization: Anchore, Inc",
+    "Tool: syft-v1.51.0"
+   ],
+   "licenseListVersion": "3.28"
+  },
+  "packages": [
+   {
+    "SPDXID": "SPDXRef-Package-npm--isaacs-cliui-1936461de3690fe2",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@isaacs\\/cliui:\\@isaacs\\/cliui:8.0.2:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:npm/%40isaacs/cliui@8.0.2",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "@isaacs/cliui",
+    "versionInfo": "8.0.2"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-npm--isaacs-fs-minipass-efd9fbfd741a0d06",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@isaacs\\/fs-minipass:\\@isaacs\\/fs-minipass:4.0.1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@isaacs\\/fs-minipass:\\@isaacs\\/fs_minipass:4.0.1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@isaacs\\/fs_minipass:\\@isaacs\\/fs-minipass:4.0.1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@isaacs\\/fs_minipass:\\@isaacs\\/fs_minipass:4.0.1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@isaacs\\/fs:\\@isaacs\\/fs-minipass:4.0.1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@isaacs\\/fs:\\@isaacs\\/fs_minipass:4.0.1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:npm:\\@isaacs\\/fs-minipass:4.0.1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:npm:\\@isaacs\\/fs_minipass:4.0.1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:npm/%40isaacs/fs-minipass@4.0.1",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "@isaacs/fs-minipass",
+    "versionInfo": "4.0.1"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-npm--isaacs-string-locale-compare-30abee79696da6db",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@isaacs\\/string-locale-compare:\\@isaacs\\/string-locale-compare:1.1.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@isaacs\\/string-locale-compare:\\@isaacs\\/string_locale_compare:1.1.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@isaacs\\/string_locale_compare:\\@isaacs\\/string-locale-compare:1.1.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@isaacs\\/string_locale_compare:\\@isaacs\\/string_locale_compare:1.1.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@isaacs\\/string-locale:\\@isaacs\\/string-locale-compare:1.1.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@isaacs\\/string-locale:\\@isaacs\\/string_locale_compare:1.1.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@isaacs\\/string_locale:\\@isaacs\\/string-locale-compare:1.1.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@isaacs\\/string_locale:\\@isaacs\\/string_locale_compare:1.1.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@isaacs\\/string:\\@isaacs\\/string-locale-compare:1.1.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@isaacs\\/string:\\@isaacs\\/string_locale_compare:1.1.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:npm/%40isaacs/string-locale-compare@1.1.0",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "@isaacs/string-locale-compare",
+    "versionInfo": "1.1.0"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-npm--npmcli-agent-c69d5404e1f68402",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@npmcli\\/agent:\\@npmcli\\/agent:3.0.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:npm:\\@npmcli\\/agent:3.0.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:npm/%40npmcli/agent@3.0.0",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "@npmcli/agent",
+    "versionInfo": "3.0.0"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-npm--npmcli-arborist-d537751a8c288bd9",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:npmjs:arborist:8.0.5:*:*:*:*:node.js:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:npm/%40npmcli/arborist@8.0.5",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "@npmcli/arborist",
+    "versionInfo": "8.0.5"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-npm--npmcli-config-9d340bdce9a8f8e7",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@npmcli\\/config:\\@npmcli\\/config:9.0.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:npm/%40npmcli/config@9.0.0",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "@npmcli/config",
+    "versionInfo": "9.0.0"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-npm--npmcli-fs-a4110c0e3a1a344a",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@npmcli\\/fs:\\@npmcli\\/fs:4.0.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:npm/%40npmcli/fs@4.0.0",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "@npmcli/fs",
+    "versionInfo": "4.0.0"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-npm--npmcli-git-d7e0e98196d3330a",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@npmcli\\/git:\\@npmcli\\/git:6.0.3:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:npm/%40npmcli/git@6.0.3",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "@npmcli/git",
+    "versionInfo": "6.0.3"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-npm--npmcli-installed-package-contents-9fe7b950d182edfe",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@npmcli\\/installed-package-contents:\\@npmcli\\/installed-package-contents:3.0.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@npmcli\\/installed-package-contents:\\@npmcli\\/installed_package_contents:3.0.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@npmcli\\/installed_package_contents:\\@npmcli\\/installed-package-contents:3.0.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@npmcli\\/installed_package_contents:\\@npmcli\\/installed_package_contents:3.0.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@npmcli\\/installed-package:\\@npmcli\\/installed-package-contents:3.0.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@npmcli\\/installed-package:\\@npmcli\\/installed_package_contents:3.0.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@npmcli\\/installed_package:\\@npmcli\\/installed-package-contents:3.0.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@npmcli\\/installed_package:\\@npmcli\\/installed_package_contents:3.0.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@npmcli\\/installed:\\@npmcli\\/installed-package-contents:3.0.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@npmcli\\/installed:\\@npmcli\\/installed_package_contents:3.0.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:npm/%40npmcli/installed-package-contents@3.0.0",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "@npmcli/installed-package-contents",
+    "versionInfo": "3.0.0"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-npm--npmcli-map-workspaces-db2ecd4b44f35632",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@npmcli\\/map-workspaces:\\@npmcli\\/map-workspaces:4.0.2:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@npmcli\\/map-workspaces:\\@npmcli\\/map_workspaces:4.0.2:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@npmcli\\/map_workspaces:\\@npmcli\\/map-workspaces:4.0.2:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@npmcli\\/map_workspaces:\\@npmcli\\/map_workspaces:4.0.2:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@npmcli\\/map:\\@npmcli\\/map-workspaces:4.0.2:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@npmcli\\/map:\\@npmcli\\/map_workspaces:4.0.2:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:npm/%40npmcli/map-workspaces@4.0.2",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "@npmcli/map-workspaces",
+    "versionInfo": "4.0.2"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-npm--npmcli-metavuln-calculator-b9f3436864830da8",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@npmcli\\/metavuln-calculator:\\@npmcli\\/metavuln-calculator:8.0.1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@npmcli\\/metavuln-calculator:\\@npmcli\\/metavuln_calculator:8.0.1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@npmcli\\/metavuln_calculator:\\@npmcli\\/metavuln-calculator:8.0.1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@npmcli\\/metavuln_calculator:\\@npmcli\\/metavuln_calculator:8.0.1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@npmcli\\/metavuln:\\@npmcli\\/metavuln-calculator:8.0.1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@npmcli\\/metavuln:\\@npmcli\\/metavuln_calculator:8.0.1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:npm/%40npmcli/metavuln-calculator@8.0.1",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "@npmcli/metavuln-calculator",
+    "versionInfo": "8.0.1"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-npm--npmcli-name-from-folder-25d9243de39286ae",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@npmcli\\/name-from-folder:\\@npmcli\\/name-from-folder:3.0.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@npmcli\\/name-from-folder:\\@npmcli\\/name_from_folder:3.0.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@npmcli\\/name_from_folder:\\@npmcli\\/name-from-folder:3.0.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@npmcli\\/name_from_folder:\\@npmcli\\/name_from_folder:3.0.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@npmcli\\/name-from:\\@npmcli\\/name-from-folder:3.0.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@npmcli\\/name-from:\\@npmcli\\/name_from_folder:3.0.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@npmcli\\/name_from:\\@npmcli\\/name-from-folder:3.0.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@npmcli\\/name_from:\\@npmcli\\/name_from_folder:3.0.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@npmcli\\/name:\\@npmcli\\/name-from-folder:3.0.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@npmcli\\/name:\\@npmcli\\/name_from_folder:3.0.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:npm/%40npmcli/name-from-folder@3.0.0",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "@npmcli/name-from-folder",
+    "versionInfo": "3.0.0"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-npm--npmcli-node-gyp-d51a4894781da38c",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@npmcli\\/node-gyp:\\@npmcli\\/node-gyp:4.0.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@npmcli\\/node-gyp:\\@npmcli\\/node_gyp:4.0.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@npmcli\\/node_gyp:\\@npmcli\\/node-gyp:4.0.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@npmcli\\/node_gyp:\\@npmcli\\/node_gyp:4.0.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@npmcli\\/node:\\@npmcli\\/node-gyp:4.0.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@npmcli\\/node:\\@npmcli\\/node_gyp:4.0.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:npm/%40npmcli/node-gyp@4.0.0",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "@npmcli/node-gyp",
+    "versionInfo": "4.0.0"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-npm--npmcli-package-json-8fae53782a8836e6",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@npmcli\\/package-json:\\@npmcli\\/package-json:6.2.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@npmcli\\/package-json:\\@npmcli\\/package_json:6.2.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@npmcli\\/package_json:\\@npmcli\\/package-json:6.2.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@npmcli\\/package_json:\\@npmcli\\/package_json:6.2.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@npmcli\\/package:\\@npmcli\\/package-json:6.2.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@npmcli\\/package:\\@npmcli\\/package_json:6.2.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:npm/%40npmcli/package-json@6.2.0",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "@npmcli/package-json",
+    "versionInfo": "6.2.0"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-npm--npmcli-promise-spawn-0c77ebf065edb9b3",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@npmcli\\/promise-spawn:\\@npmcli\\/promise-spawn:8.0.3:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@npmcli\\/promise-spawn:\\@npmcli\\/promise_spawn:8.0.3:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@npmcli\\/promise_spawn:\\@npmcli\\/promise-spawn:8.0.3:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@npmcli\\/promise_spawn:\\@npmcli\\/promise_spawn:8.0.3:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@npmcli\\/promise:\\@npmcli\\/promise-spawn:8.0.3:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@npmcli\\/promise:\\@npmcli\\/promise_spawn:8.0.3:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:npm/%40npmcli/promise-spawn@8.0.3",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "@npmcli/promise-spawn",
+    "versionInfo": "8.0.3"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-npm--npmcli-query-50a60416c654c86c",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@npmcli\\/query:\\@npmcli\\/query:4.0.1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:npm/%40npmcli/query@4.0.1",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "@npmcli/query",
+    "versionInfo": "4.0.1"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-npm--npmcli-redact-74fcc06ac0503ac8",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@npmcli\\/redact:\\@npmcli\\/redact:3.2.2:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:npm/%40npmcli/redact@3.2.2",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "@npmcli/redact",
+    "versionInfo": "3.2.2"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-npm--npmcli-run-script-99d3d70249037de7",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@npmcli\\/run-script:\\@npmcli\\/run-script:9.1.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@npmcli\\/run-script:\\@npmcli\\/run_script:9.1.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@npmcli\\/run_script:\\@npmcli\\/run-script:9.1.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@npmcli\\/run_script:\\@npmcli\\/run_script:9.1.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@npmcli\\/run:\\@npmcli\\/run-script:9.1.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@npmcli\\/run:\\@npmcli\\/run_script:9.1.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:npm/%40npmcli/run-script@9.1.0",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "@npmcli/run-script",
+    "versionInfo": "9.1.0"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-npm--pkgjs-parseargs-67ae0752dd304442",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@pkgjs\\/parseargs:\\@pkgjs\\/parseargs:0.11.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:pkgjs:\\@pkgjs\\/parseargs:0.11.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:npm/%40pkgjs/parseargs@0.11.0",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "@pkgjs/parseargs",
+    "versionInfo": "0.11.0"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-npm--sigstore-bundle-ee39cd615934648a",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@sigstore\\/bundle:\\@sigstore\\/bundle:3.1.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:sigstore:\\@sigstore\\/bundle:3.1.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:npm/%40sigstore/bundle@3.1.0",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "@sigstore/bundle",
+    "versionInfo": "3.1.0"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-npm--sigstore-core-4e4feb653524f67f",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@sigstore\\/core:\\@sigstore\\/core:2.0.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:sigstore:\\@sigstore\\/core:2.0.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:npm/%40sigstore/core@2.0.0",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "@sigstore/core",
+    "versionInfo": "2.0.0"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-npm--sigstore-protobuf-specs-2b6be1ea8929deb7",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@sigstore\\/protobuf-specs:\\@sigstore\\/protobuf-specs:0.4.3:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@sigstore\\/protobuf-specs:\\@sigstore\\/protobuf_specs:0.4.3:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@sigstore\\/protobuf_specs:\\@sigstore\\/protobuf-specs:0.4.3:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@sigstore\\/protobuf_specs:\\@sigstore\\/protobuf_specs:0.4.3:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@sigstore\\/protobuf:\\@sigstore\\/protobuf-specs:0.4.3:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@sigstore\\/protobuf:\\@sigstore\\/protobuf_specs:0.4.3:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:sigstore:\\@sigstore\\/protobuf-specs:0.4.3:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:sigstore:\\@sigstore\\/protobuf_specs:0.4.3:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:npm/%40sigstore/protobuf-specs@0.4.3",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "@sigstore/protobuf-specs",
+    "versionInfo": "0.4.3"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-npm--sigstore-sign-d30ebb3213b23e2b",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@sigstore\\/sign:\\@sigstore\\/sign:3.1.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:sigstore:\\@sigstore\\/sign:3.1.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:npm/%40sigstore/sign@3.1.0",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "@sigstore/sign",
+    "versionInfo": "3.1.0"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-npm--sigstore-tuf-0b471d684aca5b69",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@sigstore\\/tuf:\\@sigstore\\/tuf:3.1.1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:sigstore:\\@sigstore\\/tuf:3.1.1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:npm/%40sigstore/tuf@3.1.1",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "@sigstore/tuf",
+    "versionInfo": "3.1.1"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-npm--sigstore-verify-e4abe2e4d21089c9",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@sigstore\\/verify:\\@sigstore\\/verify:2.1.1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:sigstore:\\@sigstore\\/verify:2.1.1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:npm/%40sigstore/verify@2.1.1",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "@sigstore/verify",
+    "versionInfo": "2.1.1"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-npm--tufjs-canonical-json-f5dcd8b05632e7ac",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@tufjs\\/canonical-json:\\@tufjs\\/canonical-json:2.0.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@tufjs\\/canonical-json:\\@tufjs\\/canonical_json:2.0.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@tufjs\\/canonical_json:\\@tufjs\\/canonical-json:2.0.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@tufjs\\/canonical_json:\\@tufjs\\/canonical_json:2.0.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:theupdateframework:\\@tufjs\\/canonical-json:2.0.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:theupdateframework:\\@tufjs\\/canonical_json:2.0.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@tufjs\\/canonical:\\@tufjs\\/canonical-json:2.0.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@tufjs\\/canonical:\\@tufjs\\/canonical_json:2.0.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:npm/%40tufjs/canonical-json@2.0.0",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "@tufjs/canonical-json",
+    "versionInfo": "2.0.0"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-npm--tufjs-models-ab130efc7c56544a",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:theupdateframework:\\@tufjs\\/models:3.0.1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:\\@tufjs\\/models:\\@tufjs\\/models:3.0.1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:npm/%40tufjs/models@3.0.1",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "@tufjs/models",
+    "versionInfo": "3.0.1"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-npm-abbrev-568625abbee3f469",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:abbrev:abbrev:3.0.1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:npm/abbrev@3.0.1",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "abbrev",
+    "versionInfo": "3.0.1"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-npm-agent-base-637aea6a833324da",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:TooTallNate:agent-base:7.1.4:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:TooTallNate:agent_base:7.1.4:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:agent-base:agent-base:7.1.4:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:agent-base:agent_base:7.1.4:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:agent_base:agent-base:7.1.4:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:agent_base:agent_base:7.1.4:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:agent:agent-base:7.1.4:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:agent:agent_base:7.1.4:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:npm/agent-base@7.1.4",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "agent-base",
+    "versionInfo": "7.1.4"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-npm-ansi-regex-ab37a3f69986d353",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:ansi-regex_project:ansi-regex:5.0.1:*:*:*:*:node.js:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:npm/ansi-regex@5.0.1",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "ansi-regex",
+    "versionInfo": "5.0.1"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-deb-apt-facf68475984aa8d",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:apt:apt:3.0.3:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:deb/debian/apt@3.0.3?arch=arm64&distro=debian-13.7",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "apt",
+    "versionInfo": "3.0.3"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-deb-base-files-db097f36d226da8a",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:base-files:base-files:13.8\\+deb13u7:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:base-files:base_files:13.8\\+deb13u7:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:base_files:base-files:13.8\\+deb13u7:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:base_files:base_files:13.8\\+deb13u7:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:base:base-files:13.8\\+deb13u7:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:base:base_files:13.8\\+deb13u7:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:deb/debian/base-files@13.8%2Bdeb13u7?arch=arm64&distro=debian-13.7",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "base-files",
+    "versionInfo": "13.8+deb13u7"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-deb-base-passwd-a59a5bdd15bd91fe",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:base-passwd:base-passwd:3.6.7:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:base-passwd:base_passwd:3.6.7:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:base_passwd:base-passwd:3.6.7:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:base_passwd:base_passwd:3.6.7:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:base:base-passwd:3.6.7:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:base:base_passwd:3.6.7:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:deb/debian/base-passwd@3.6.7?arch=arm64&distro=debian-13.7",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "base-passwd",
+    "versionInfo": "3.6.7"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-deb-bash-3f7399722228e855",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:bash:bash:5.2.37-2\\+b10:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:deb/debian/bash@5.2.37-2%2Bb10?arch=arm64&distro=debian-13.7&upstream=bash%405.2.37-2",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "bash",
+    "versionInfo": "5.2.37-2+b10"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-deb-bsdutils-f499f08d29476b59",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:bsdutils:bsdutils:1\\:2.41.5-0\\+deb13u1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:deb/debian/bsdutils@1%3A2.41.5-0%2Bdeb13u1?arch=arm64&distro=debian-13.7&upstream=util-linux%402.41.5-0%2Bdeb13u1",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "bsdutils",
+    "versionInfo": "1:2.41.5-0+deb13u1"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-deb-ca-certificates-f80dc4f1a1be6794",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:ca-certificates:ca-certificates:20250419:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:ca-certificates:ca_certificates:20250419:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:ca_certificates:ca-certificates:20250419:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:ca_certificates:ca_certificates:20250419:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:ca:ca-certificates:20250419:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:ca:ca_certificates:20250419:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:deb/debian/ca-certificates@20250419?arch=all&distro=debian-13.7",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "ca-certificates",
+    "versionInfo": "20250419"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-deb-coreutils-2993da8365e6c3ce",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:coreutils:coreutils:9.7-3:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:deb/debian/coreutils@9.7-3?arch=arm64&distro=debian-13.7",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "coreutils",
+    "versionInfo": "9.7-3"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-deb-dash-3a9ba4eb8f43adf8",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:dash:dash:0.5.12-12:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:deb/debian/dash@0.5.12-12?arch=arm64&distro=debian-13.7",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "dash",
+    "versionInfo": "0.5.12-12"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-deb-debconf-0f203ecbcf805e2b",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:debconf:debconf:1.5.91:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:deb/debian/debconf@1.5.91?arch=all&distro=debian-13.7",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "debconf",
+    "versionInfo": "1.5.91"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-deb-debian-archive-keyring-7991e18ee6aee390",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:debian-archive-keyring:debian-archive-keyring:2025.1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:debian-archive-keyring:debian_archive_keyring:2025.1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:debian_archive_keyring:debian-archive-keyring:2025.1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:debian_archive_keyring:debian_archive_keyring:2025.1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:debian-archive:debian-archive-keyring:2025.1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:debian-archive:debian_archive_keyring:2025.1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:debian_archive:debian-archive-keyring:2025.1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:debian_archive:debian_archive_keyring:2025.1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:debian:debian-archive-keyring:2025.1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:debian:debian_archive_keyring:2025.1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:deb/debian/debian-archive-keyring@2025.1?arch=all&distro=debian-13.7",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "debian-archive-keyring",
+    "versionInfo": "2025.1"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-deb-debianutils-8c9a85b8e82cb7a1",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:debianutils:debianutils:5.23.2:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:deb/debian/debianutils@5.23.2?arch=arm64&distro=debian-13.7",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "debianutils",
+    "versionInfo": "5.23.2"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-deb-diffutils-892fd31e224198f0",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:diffutils:diffutils:1\\:3.10-4:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:deb/debian/diffutils@1%3A3.10-4?arch=arm64&distro=debian-13.7",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "diffutils",
+    "versionInfo": "1:3.10-4"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-deb-dpkg-bb8d7eb6f6171757",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:dpkg:dpkg:1.22.22:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:deb/debian/dpkg@1.22.22?arch=arm64&distro=debian-13.7",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "dpkg",
+    "versionInfo": "1.22.22"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-deb-findutils-9cb0aaef64c6ed98",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:findutils:findutils:4.10.0-3:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:deb/debian/findutils@4.10.0-3?arch=arm64&distro=debian-13.7",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "findutils",
+    "versionInfo": "4.10.0-3"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-deb-gcc-14-base-968cab04caa47ab3",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:gcc-14-base:gcc-14-base:14.2.0-19:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:gcc-14-base:gcc_14_base:14.2.0-19:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:gcc_14_base:gcc-14-base:14.2.0-19:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:gcc_14_base:gcc_14_base:14.2.0-19:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:gcc-14:gcc-14-base:14.2.0-19:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:gcc-14:gcc_14_base:14.2.0-19:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:gcc_14:gcc-14-base:14.2.0-19:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:gcc_14:gcc_14_base:14.2.0-19:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:gcc:gcc-14-base:14.2.0-19:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:gcc:gcc_14_base:14.2.0-19:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:deb/debian/gcc-14-base@14.2.0-19?arch=arm64&distro=debian-13.7&upstream=gcc-14",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "gcc-14-base",
+    "versionInfo": "14.2.0-19"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-deb-grep-384f93b0ebb15bb2",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:grep:grep:3.11-4\\+b1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:deb/debian/grep@3.11-4%2Bb1?arch=arm64&distro=debian-13.7&upstream=grep%403.11-4",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "grep",
+    "versionInfo": "3.11-4+b1"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-deb-gzip-ae7e7783e0460a97",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:gzip:gzip:1.13-1\\+deb13u1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:deb/debian/gzip@1.13-1%2Bdeb13u1?arch=arm64&distro=debian-13.7",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "gzip",
+    "versionInfo": "1.13-1+deb13u1"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-deb-hostname-89de19025a56ea8e",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:hostname:hostname:3.25:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:deb/debian/hostname@3.25?arch=arm64&distro=debian-13.7",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "hostname",
+    "versionInfo": "3.25"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-deb-init-system-helpers-40e23b20a464282c",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:init-system-helpers:init-system-helpers:1.69\\~deb13u1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:init-system-helpers:init_system_helpers:1.69\\~deb13u1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:init_system_helpers:init-system-helpers:1.69\\~deb13u1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:init_system_helpers:init_system_helpers:1.69\\~deb13u1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:init-system:init-system-helpers:1.69\\~deb13u1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:init-system:init_system_helpers:1.69\\~deb13u1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:init_system:init-system-helpers:1.69\\~deb13u1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:init_system:init_system_helpers:1.69\\~deb13u1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:init:init-system-helpers:1.69\\~deb13u1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:init:init_system_helpers:1.69\\~deb13u1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:deb/debian/init-system-helpers@1.69~deb13u1?arch=all&distro=debian-13.7",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "init-system-helpers",
+    "versionInfo": "1.69~deb13u1"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-deb-libacl1-0c75a10f5c7b3ed8",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:libacl1:libacl1:2.3.2-2\\+b1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:deb/debian/libacl1@2.3.2-2%2Bb1?arch=arm64&distro=debian-13.7&upstream=acl%402.3.2-2",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "libacl1",
+    "versionInfo": "2.3.2-2+b1"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-deb-libapt-pkg7.0-592151e20d065588",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:libapt-pkg7.0:libapt-pkg7.0:3.0.3:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:libapt-pkg7.0:libapt_pkg7.0:3.0.3:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:libapt_pkg7.0:libapt-pkg7.0:3.0.3:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:libapt_pkg7.0:libapt_pkg7.0:3.0.3:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:libapt:libapt-pkg7.0:3.0.3:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:libapt:libapt_pkg7.0:3.0.3:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:deb/debian/libapt-pkg7.0@3.0.3?arch=arm64&distro=debian-13.7&upstream=apt",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "libapt-pkg7.0",
+    "versionInfo": "3.0.3"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-deb-libatomic1-64d344f35c5fd422",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:libatomic1:libatomic1:14.2.0-19:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:deb/debian/libatomic1@14.2.0-19?arch=arm64&distro=debian-13.7&upstream=gcc-14",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "libatomic1",
+    "versionInfo": "14.2.0-19"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-deb-libattr1-2b954dd82088269d",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:libattr1:libattr1:1\\:2.5.2-3:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:deb/debian/libattr1@1%3A2.5.2-3?arch=arm64&distro=debian-13.7&upstream=attr",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "libattr1",
+    "versionInfo": "1:2.5.2-3"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-deb-libaudit-common-aa068f3c5068edb0",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:libaudit-common:libaudit-common:1\\:4.0.2-2\\+deb13u1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:libaudit-common:libaudit_common:1\\:4.0.2-2\\+deb13u1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:libaudit_common:libaudit-common:1\\:4.0.2-2\\+deb13u1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:libaudit_common:libaudit_common:1\\:4.0.2-2\\+deb13u1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:libaudit:libaudit-common:1\\:4.0.2-2\\+deb13u1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:libaudit:libaudit_common:1\\:4.0.2-2\\+deb13u1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:deb/debian/libaudit-common@1%3A4.0.2-2%2Bdeb13u1?arch=all&distro=debian-13.7&upstream=audit",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "libaudit-common",
+    "versionInfo": "1:4.0.2-2+deb13u1"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-deb-libaudit1-c5dd13e269e27736",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:libaudit1:libaudit1:1\\:4.0.2-2\\+deb13u1:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:deb/debian/libaudit1@1%3A4.0.2-2%2Bdeb13u1?arch=arm64&distro=debian-13.7&upstream=audit",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "libaudit1",
+    "versionInfo": "1:4.0.2-2+deb13u1"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-binary-node-68e92be10d0f69b8",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:nodejs:node.js:22.23.3:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:generic/node@22.23.3",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "node",
+    "versionInfo": "22.23.3"
+   },
+   {
+    "SPDXID": "SPDXRef-DocumentRoot-Directory-sbom",
+    "externalRefs": null,
+    "name": "sbom",
+    "versionInfo": null
+   }
+  ],
+  "spdxVersion": "SPDX-2.3"
+ },
+ "predicateType": "https://spdx.dev/Document"
+}

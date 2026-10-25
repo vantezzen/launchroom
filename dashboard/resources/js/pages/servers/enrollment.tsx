@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { ConfirmAction } from '@/components/confirm-action';
 import { DeviceImage, DEVICE_LABEL } from '@/components/devices/device-image';
 import { LiveWait } from '@/components/patterns/live-wait';
+import { MetaLine } from '@/components/patterns/meta-line';
 import { Page, PageHeader } from '@/components/patterns/page';
 import { Wizard } from '@/components/patterns/wizard';
 import { StatusPill, serverStatus } from '@/components/status';
@@ -42,7 +43,7 @@ function Connected({
         server.device?.model && server.device.model !== 'Container'
             ? server.device.model
             : DEVICE_LABEL[kind];
-    const facts = [looksLike, ...specParts(server.specs)].join(' · ');
+    const facts = [looksLike, ...specParts(server.specs)];
     const waiting = server.status === 'pending_approval';
 
     return (
@@ -61,13 +62,15 @@ function Connected({
                     <span className="type-heading">{server.name}</span>
                     <StatusPill state={state} label={label} />
                 </div>
-                <p className="type-small text-muted-foreground">{facts}</p>
+                <MetaLine className="justify-center type-small text-muted-foreground">
+                    {facts}
+                </MetaLine>
             </div>
             {waiting ? (
                 canApprove ? (
                     <div className="flex flex-col items-center gap-2">
                         <p className="max-w-[48ch] type-small text-muted-foreground">
-                            It connected and waits for your approval.{' '}
+                            It connected and is waiting for your approval.{' '}
                             <Link
                                 href={show(server.id)}
                                 className="text-signal underline-offset-4 hover:underline"
@@ -217,7 +220,7 @@ export default function Enrollment({
                                     />
                                 }
                                 status="Waiting for your server…"
-                                hint="This updates by itself, usually 20 to 40 seconds after you run the command."
+                                hint="This page updates automatically, usually 20 to 40 seconds after you run the command."
                                 fallback={
                                     <span>
                                         Not connecting? The server needs to
@@ -240,7 +243,8 @@ export default function Enrollment({
                                 Changed your mind?
                             </p>
                             <p className="type-small text-muted-foreground">
-                                Remove this server; the command stops working.
+                                Remove this server and the command stops
+                                working.
                             </p>
                         </div>
                         <RemovePendingButton

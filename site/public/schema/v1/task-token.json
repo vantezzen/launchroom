@@ -15,7 +15,8 @@
       "enum": [
         "clone",
         "ssh_key",
-        "session"
+        "session",
+        "access"
       ]
     },
     "token": {

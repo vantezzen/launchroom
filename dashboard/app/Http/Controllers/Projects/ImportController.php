@@ -134,17 +134,15 @@ final class ImportController extends Controller
         $project = $import->handle($team, $data, $user, $actor);
         $production = $project->production()->sole();
 
-        if ($data->deploy && Gate::allows('deploy', $production)) {
+        if (! $data->deploy) {
+            Inertia::flash('toast', ['type' => 'success', 'message' => "{$project->name} is ready. Set its variables, then deploy."]);
+        } elseif (Gate::allows('deploy', $production)) {
             try {
                 $deploy->handle($production, $user, $actor, 'Imported from '.$this->repositoryName($data->repository, $team), DeploymentTrigger::Config);
-                Inertia::flash('toast', ['type' => 'success', 'message' => "{$project->name} is deploying. Watch it go live here."]);
+                Inertia::flash('toast', ['type' => 'success', 'message' => "{$project->name} is deploying."]);
             } catch (DomainRuleViolation|UnresolvedReferences $e) {
                 Inertia::flash('toast', ['type' => 'warning', 'message' => "{$project->name} is ready but didn’t deploy: {$e->getMessage()}"]);
             }
-        }
-
-        if (! $data->deploy) {
-            Inertia::flash('toast', ['type' => 'success', 'message' => "{$project->name} is ready. Set your variables, then deploy when you’re ready."]);
         }
 
         return to_route('projects.canvas', [$project, $production]);

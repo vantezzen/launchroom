@@ -3,9 +3,12 @@ import { Link, router } from '@inertiajs/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { MoreHorizontal, Rocket } from 'lucide-react';
 import { useState } from 'react';
+import type { ReactNode } from 'react';
 import { DeploymentCard } from '@/components/cards/deployment-card';
+import { Elapsed } from '@/components/elapsed';
 import { ConfirmPopover } from '@/components/patterns/confirm-popover';
 import { EmptyState } from '@/components/patterns/empty-state';
+import { MetaLine } from '@/components/patterns/meta-line';
 import { StatusIcon, StatusPill } from '@/components/status';
 import type { StepStatus } from '@/components/steps/step-icon';
 import { Button } from '@/components/ui/button';
@@ -19,6 +22,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { compactAge } from '@/features/canvas/format';
 import { requestJson } from '@/features/projects/http';
 import { rollback } from '@/routes/deployments';
+import services from '@/routes/projects/services';
 import { show as stagedChanges } from '@/routes/staged-changes';
 import type { PendingAction } from './deployment-actions';
 import {
@@ -30,7 +34,6 @@ import {
 import {
     deploymentState,
     deploymentTitle,
-    elapsedSeconds,
     formatDuration,
     isInProgress,
     shortSha,
@@ -42,6 +45,8 @@ export type DeploymentsTabProps = {
     project: string;
     environment: string;
     service: string;
+    /** A database: offers importing data before the first deploy (docs/14 §12.9). */
+    database?: boolean;
 };
 
 type Summary = App.Data.Deployments.DeploymentSummaryData;
@@ -93,15 +98,16 @@ function CardAvatar({ deployment }: { deployment: Summary }) {
     );
 }
 
-function metaLine(deployment: Summary): string {
-    return [
-        shortSha(deployment.commitSha),
-        deployment.gitRef?.replace(/^refs\/(heads|tags)\//, ''),
-        deployment.commitAuthor ?? deployment.actorName,
-        compactAge(deployment.queuedAt),
-    ]
-        .filter(Boolean)
-        .join(' · ');
+function metaLine(deployment: Summary, extra?: string | null): ReactNode {
+    return (
+        <MetaLine>
+            {shortSha(deployment.commitSha)}
+            {deployment.gitRef?.replace(/^refs\/(heads|tags)\//, '')}
+            {deployment.commitAuthor ?? deployment.actorName}
+            {compactAge(deployment.queuedAt)}
+            {extra}
+        </MetaLine>
+    );
 }
 
 /**
@@ -114,6 +120,7 @@ export function DeploymentsTab({
     project,
     environment,
     service,
+    database = false,
 }: DeploymentsTabProps) {
     const queryClient = useQueryClient();
     const key = serviceDeploymentsKey(environment, service);
@@ -171,13 +178,14 @@ export function DeploymentsTab({
                                     <StatusPill
                                         state="progress"
                                         label={running.statusLabel}
-                                        detail={formatDuration(
-                                            elapsedSeconds(
-                                                running.startedAt ??
-                                                    running.queuedAt,
-                                                null,
-                                            ),
-                                        )}
+                                        detail={
+                                            <Elapsed
+                                                since={
+                                                    running.startedAt ??
+                                                    running.queuedAt
+                                                }
+                                            />
+                                        }
                                     />
                                 }
                                 title={deploymentTitle(running)}
@@ -231,13 +239,12 @@ export function DeploymentsTab({
                                 }
                                 title={deploymentTitle(data.active)}
                                 avatar={<CardAvatar deployment={data.active} />}
-                                meta={
-                                    <>
-                                        {metaLine(data.active)}
-                                        {data.active.durationSeconds !== null &&
-                                            ` · took ${formatDuration(data.active.durationSeconds)}`}
-                                    </>
-                                }
+                                meta={metaLine(
+                                    data.active,
+                                    data.active.durationSeconds !== null
+                                        ? `took ${formatDuration(data.active.durationSeconds)}`
+                                        : null,
+                                )}
                                 className={
                                     running ? 'bg-transparent shadow-none' : ''
                                 }
@@ -284,18 +291,37 @@ export function DeploymentsTab({
                                 <EmptyState
                                     icon={Rocket}
                                     action={
-                                        <Button variant="outline" asChild>
-                                            <Link
-                                                href={
-                                                    stagedChanges({
-                                                        project,
-                                                        environment,
-                                                    }).url
-                                                }
-                                            >
-                                                Review staged changes
-                                            </Link>
-                                        </Button>
+                                        <div className="flex flex-wrap justify-center gap-2">
+                                            <Button variant="outline" asChild>
+                                                <Link
+                                                    href={
+                                                        stagedChanges({
+                                                            project,
+                                                            environment,
+                                                        }).url
+                                                    }
+                                                >
+                                                    Review staged changes
+                                                </Link>
+                                            </Button>
+                                            {database && (
+                                                <Button variant="ghost" asChild>
+                                                    <Link
+                                                        href={services.show({
+                                                            project,
+                                                            environment,
+                                                            service,
+                                                            tab: 'backups',
+                                                        })}
+                                                        only={['panel']}
+                                                        preserveState
+                                                        preserveScroll
+                                                    >
+                                                        Import data first
+                                                    </Link>
+                                                </Button>
+                                            )}
+                                        </div>
                                     }
                                 >
                                     Not running here yet. Deploy the staged
@@ -312,7 +338,7 @@ export function DeploymentsTab({
                                     Earlier
                                 </h3>
                                 <p className="type-small text-muted-foreground">
-                                    Rolls back in seconds, no rebuild
+                                    Roll back in seconds, without a rebuild
                                 </p>
                             </div>
                             <ul className="flex flex-col">
@@ -374,19 +400,15 @@ function HistoryRow({
                         avatarUrl={deployment.commitAuthorAvatarUrl}
                         size={16}
                     />
-                    <span className="truncate">
-                        {[
-                            sha,
-                            deployment.commitAuthor ?? deployment.actorName,
-                            compactAge(deployment.queuedAt),
-                            duration,
-                            deployment.status === 'failed'
-                                ? null
-                                : deployment.statusLabel,
-                        ]
-                            .filter(Boolean)
-                            .join(' · ')}
-                    </span>
+                    <MetaLine className="truncate">
+                        {sha}
+                        {deployment.commitAuthor ?? deployment.actorName}
+                        {compactAge(deployment.queuedAt)}
+                        {duration}
+                        {deployment.status === 'failed'
+                            ? null
+                            : deployment.statusLabel}
+                    </MetaLine>
                 </p>
                 {deployment.status === 'failed' &&
                     deployment.failureSummary && (
@@ -400,7 +422,7 @@ function HistoryRow({
                     {deployment.canRollback && (
                         <ConfirmPopover
                             title={`Roll back to ${sha ?? 'this deployment'}?`}
-                            consequence="Traffic switches in seconds. New pushes to production wait until you resume auto-deploy; migrations are not reverted."
+                            consequence="Traffic switches back within seconds. Database migrations are not reverted, and new pushes to production wait until you resume auto-deploy."
                             confirmLabel="Roll back"
                             onConfirm={() =>
                                 new Promise<void>((resolve) =>

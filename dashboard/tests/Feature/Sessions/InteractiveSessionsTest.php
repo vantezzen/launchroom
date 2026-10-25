@@ -17,6 +17,7 @@ use App\Models\Team;
 use App\Services\Crypto\ResponseSignature;
 use App\Services\Crypto\Signer;
 use Illuminate\Support\Facades\Broadcast;
+use Illuminate\Support\Facades\Log;
 use Tests\Support\FakeDaemon;
 use Tests\Support\Sessions;
 
@@ -43,9 +44,9 @@ function sessionComplete($test, array $task, array $session, string $outcome = '
 test('the permission matrix: owners and admins open sessions, developers only when granted, viewers never', function (string $role, bool $console, bool $data): void {
     $user = memberOf($this->team, TeamRole::from($role));
 
-    $this->actingAs($user)->withSession(passwordConfirmed())->postJson(Sessions::url($this->instance, 'console'))
+    $this->actingAs($user)->postJson(Sessions::url($this->instance, 'console'))
         ->assertStatus($console ? 201 : 403);
-    $this->actingAs($user)->withSession(passwordConfirmed())->postJson(Sessions::url($this->instance, 'data'))
+    $this->actingAs($user)->postJson(Sessions::url($this->instance, 'data'))
         ->assertStatus($data ? 201 : 403);
     $this->actingAs($user)->getJson(Sessions::url($this->instance, 'console'))->assertStatus($console ? 200 : 403);
 })->with([
@@ -68,7 +69,7 @@ test('roles map to the new permissions and only developers accept grants', funct
 test('other teams’ services and sessions are not found', function (): void {
     $outsider = memberOf(Team::factory()->create(), TeamRole::Owner);
 
-    $this->actingAs($outsider)->withSession(passwordConfirmed())->postJson(Sessions::url($this->instance, 'console'))->assertNotFound();
+    $this->actingAs($outsider)->postJson(Sessions::url($this->instance, 'console'))->assertNotFound();
 
     $owner = memberOf($this->team, TeamRole::Owner);
     $opened = Sessions::open($this, $owner, $this->instance);
@@ -107,14 +108,6 @@ test('opening an authorized session creates a ticket and pinned task without an 
     expect($audit->meta)->toMatchArray(['session' => $session->public_id, 'replica' => 1, 'shell' => '/bin/sh'])
         ->and(json_encode($audit->meta))->not->toContain((string) $response->json('key'))
         ->and(json_encode($audit->meta))->not->toContain((string) $response->json('ticket'));
-});
-
-test('an old password confirmation does not interrupt an authorized session', function (): void {
-    $owner = memberOf($this->team, TeamRole::Owner);
-
-    $this->actingAs($owner)->withSession(['auth.password_confirmed_at' => time() - 3600])
-        ->postJson(Sessions::url($this->instance, 'console'))
-        ->assertCreated();
 });
 
 test('the lease seals the key to the server and task, opens the session and wipes the stored key', function (): void {
@@ -305,21 +298,85 @@ test('ending: the opener and owners/admins can, other developers can’t', funct
     expect($row->status)->toBe(InteractiveSessionStatus::Ended)->and($row->end_reason?->value)->toBe('closed');
 });
 
-test('at most three open sessions per user', function (): void {
+test('at most three open sessions per user; a reconnect replaces instead of counting', function (): void {
+    config()->set('launchroom.sessions.max_open_per_user', 1);
     $owner = memberOf($this->team, TeamRole::Owner);
 
-    foreach (range(1, 3) as $ignored) {
-        Sessions::open($this, $owner, $this->instance);
-    }
+    Sessions::open($this, $owner, $this->instance);
+    $this->actingAs($owner)->postJson(Sessions::url($this->instance, 'data'))->assertStatus(409);
 
-    $this->actingAs($owner)->withSession(passwordConfirmed())->postJson(Sessions::url($this->instance, 'console'))->assertStatus(409);
+    // The same tab again replaces the open session.
+    Sessions::open($this, $owner, $this->instance);
+    expect(InteractiveSession::query()->whereIn('status', ['pending', 'open'])->count())->toBe(1);
+});
+
+test('disconnect then immediate reconnect: the new session is leased at once and the old one ends', function (): void {
+    $owner = memberOf($this->team, TeamRole::Owner);
+    $first = Sessions::open($this, $owner, $this->instance, 'data');
+    $firstTask = Sessions::lease($this, $this->daemon);
+
+    // The tab ends the session and opens a new one right away, before
+    // launchroomd reported the first one finished.
+    $this->actingAs($owner)->postJson('/sessions/'.$first['id'].'/end')->assertNoContent();
+    $second = Sessions::open($this, $owner, $this->instance, 'data');
+    $secondTask = Sessions::lease($this, $this->daemon);
+
+    expect($secondTask['spec']['session'] ?? null)->toBe($second['id'])
+        ->and(InteractiveSession::query()->where('public_id', $second['id'])->sole()->status)->toBe(InteractiveSessionStatus::Open);
+
+    sessionComplete($this, $firstTask, ['endReason' => 'closed', 'bytesIn' => 0, 'bytesOut' => 0]);
+
+    expect(InteractiveSession::query()->where('public_id', $first['id'])->sole()->status)->toBe(InteractiveSessionStatus::Ended)
+        ->and(InteractiveSession::query()->where('public_id', $second['id'])->sole()->status)->toBe(InteractiveSessionStatus::Open);
+});
+
+test('reconnecting without ending first replaces the old session of the same kind only', function (): void {
+    $owner = memberOf($this->team, TeamRole::Owner);
+    $admin = memberOf($this->team, TeamRole::Admin);
+    $console = Sessions::open($this, $owner, $this->instance);
+    $consoleTask = Sessions::lease($this, $this->daemon);
+    $data = Sessions::open($this, $owner, $this->instance, 'data');
+    $theirs = Sessions::open($this, $admin, $this->instance);
+
+    $this->spy->sent = [];
+    $again = Sessions::open($this, $owner, $this->instance);
+
+    $old = InteractiveSession::query()->where('public_id', $console['id'])->sole();
+    expect($old->ended_by_id)->toBe($owner->id)
+        ->and(DaemonTask::query()->where('public_id', $consoleTask['id'])->sole()->cancel_requested_at)->not->toBeNull()
+        ->and(collect($this->spy->sent)->pluck('event')->all())->toContain('session.end')
+        ->and(InteractiveSession::query()->where('public_id', $data['id'])->sole()->ended_by_id)->toBeNull()
+        ->and(InteractiveSession::query()->where('public_id', $theirs['id'])->sole()->ended_by_id)->toBeNull()
+        ->and(InteractiveSession::query()->where('public_id', $again['id'])->sole()->status)->toBe(InteractiveSessionStatus::Pending);
+});
+
+test('a session the server couldn’t start says why in the tab and in the log', function (): void {
+    Log::spy();
+    $owner = memberOf($this->team, TeamRole::Owner);
+    $opened = Sessions::open($this, $owner, $this->instance);
+    $task = Sessions::lease($this, $this->daemon);
+
+    $this->daemon->send($this, 'POST', '/daemon/v1/tasks/'.$task['id'].'/complete', [
+        'apiVersion' => 'launchroom.vantezzen.io/v1', 'kind' => 'TaskCompletion', 'attempt' => $task['attempt'], 'outcome' => 'failed',
+        'error' => 'this image has no shell (looked for /bin/bash, /bin/ash and /bin/sh)',
+        'session' => ['endReason' => 'error', 'bytesIn' => 0, 'bytesOut' => 0],
+    ], ['Idempotency-Key' => $task['id'].':'.$task['attempt']])->assertSuccessful();
+
+    $this->actingAs($owner)->getJson('/sessions/'.$opened['id'])
+        ->assertOk()
+        ->assertJsonPath('status', 'ended')
+        ->assertJsonPath('failure', 'This image has no shell (looked for bash, ash and sh), so there is no console for it.');
+
+    Log::shouldHaveReceived('warning')->withArgs(static fn (string $message, array $context): bool => str_contains($message, 'before it was used')
+        && $context['session'] === $opened['id']
+        && str_contains((string) $context['error'], 'no shell'));
 });
 
 test('the instance kill switch refuses new sessions', function (): void {
     config(['launchroom.sessions.enabled' => false]);
     $owner = memberOf($this->team, TeamRole::Owner);
 
-    $this->actingAs($owner)->withSession(passwordConfirmed())->postJson(Sessions::url($this->instance, 'console'))->assertStatus(409);
+    $this->actingAs($owner)->postJson(Sessions::url($this->instance, 'console'))->assertStatus(409);
     expect($this->actingAs($owner)->getJson(Sessions::url($this->instance, 'console'))->json('available'))->toBeFalse();
 });
 
@@ -330,13 +387,13 @@ test('granting a developer Console access lets them open one; revoking ends thei
     $membership = Membership::query()->where('team_id', $this->team->id)->where('user_id', $developer->id)->sole();
     $viewerMembership = Membership::query()->where('team_id', $this->team->id)->where('user_id', $viewer->id)->sole();
 
-    $this->actingAs($admin)->withSession(passwordConfirmed())
+    $this->actingAs($admin)
         ->put('/settings/team/members/'.$membership->public_id.'/permissions', ['permissions' => ['containers.exec']])
         ->assertRedirect();
-    $this->actingAs($admin)->withSession(passwordConfirmed())
+    $this->actingAs($admin)
         ->put('/settings/team/members/'.$viewerMembership->public_id.'/permissions', ['permissions' => ['containers.exec']])
         ->assertForbidden();
-    $this->actingAs($admin)->withSession(passwordConfirmed())
+    $this->actingAs($admin)
         ->put('/settings/team/members/'.$membership->public_id.'/permissions', ['permissions' => ['deployments.create']])
         ->assertSessionHasErrors('permissions.0');
 
@@ -345,9 +402,9 @@ test('granting a developer Console access lets them open one; revoking ends thei
 
     $developer->forgetTeamRoles();
     $opened = Sessions::open($this, $developer, $this->instance);
-    $this->actingAs($developer)->withSession(passwordConfirmed())->postJson(Sessions::url($this->instance, 'data'))->assertForbidden();
+    $this->actingAs($developer)->postJson(Sessions::url($this->instance, 'data'))->assertForbidden();
 
-    $this->actingAs($admin)->withSession(passwordConfirmed())
+    $this->actingAs($admin)
         ->put('/settings/team/members/'.$membership->public_id.'/permissions', ['permissions' => []])
         ->assertRedirect()->assertSessionHasNoErrors();
 
@@ -387,8 +444,8 @@ test('console recording is an owner switch and is carried into new sessions', fu
     $owner = memberOf($this->team, TeamRole::Owner);
     $admin = memberOf($this->team, TeamRole::Admin);
 
-    $this->actingAs($admin)->withSession(passwordConfirmed())->put('/settings/team/console-recording', ['enabled' => true])->assertForbidden();
-    $this->actingAs($owner)->withSession(passwordConfirmed())->put('/settings/team/console-recording', ['enabled' => true])->assertRedirect();
+    $this->actingAs($admin)->put('/settings/team/console-recording', ['enabled' => true])->assertForbidden();
+    $this->actingAs($owner)->put('/settings/team/console-recording', ['enabled' => true])->assertRedirect();
 
     $opened = Sessions::open($this, $owner, $this->instance);
     $task = DaemonTask::query()->findOrFail(InteractiveSession::query()->where('public_id', $opened['id'])->sole()->daemon_task_id);
@@ -422,6 +479,6 @@ test('servers whose local policy doesn’t allow a kind are not offered', functi
     $this->server->forceFill(['daemon_features' => ['dataSessions']])->save();
 
     expect($this->actingAs($owner)->getJson(Sessions::url($this->instance, 'console'))->json('available'))->toBeFalse();
-    $this->actingAs($owner)->withSession(passwordConfirmed())->postJson(Sessions::url($this->instance, 'console'))->assertUnprocessable();
-    $this->actingAs($owner)->withSession(passwordConfirmed())->postJson(Sessions::url($this->instance, 'data'))->assertCreated();
+    $this->actingAs($owner)->postJson(Sessions::url($this->instance, 'console'))->assertUnprocessable();
+    $this->actingAs($owner)->postJson(Sessions::url($this->instance, 'data'))->assertCreated();
 });

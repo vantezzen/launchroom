@@ -94,7 +94,7 @@ export function ServerHealth({ health }: { health: Health }) {
                         {health.collectedAt
                             ? `Checked ${shortAge(health.collectedAt)}`
                             : 'Waiting for the first report'}
-                        {health.stale && ' · out of date'}
+                        {health.stale && ' (out of date)'}
                     </span>
                     {health.checks.length > 0 && (
                         <Button

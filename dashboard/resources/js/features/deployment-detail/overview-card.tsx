@@ -9,6 +9,8 @@ import {
 } from 'lucide-react';
 import { Link } from '@inertiajs/react';
 import { DeviceImage } from '@/components/devices';
+import { Duration, Elapsed } from '@/components/elapsed';
+import { MetaLine } from '@/components/patterns/meta-line';
 import { show as serverPage } from '@/routes/servers';
 import type { ReactNode } from 'react';
 import { useState } from 'react';
@@ -18,10 +20,8 @@ import { Status } from '@/components/status';
 import { TimeAgo } from '@/components/time-ago';
 import {
     branchName,
-    deploymentSeconds,
     deploymentState,
     deploymentWord,
-    formatDuration,
     shortSha,
     firstLine,
     triggerLabel,
@@ -95,7 +95,7 @@ function Stage({ detail }: { detail: Detail }) {
         return (
             <Link
                 href={serverPage(server.id)}
-                className="flex flex-col items-center justify-center gap-2 rounded-[10px] border bg-(--recessed) p-4 hover:bg-hover"
+                className="flex h-44 flex-col items-center justify-center gap-2 rounded-[10px] border bg-(--recessed) p-4 transition-colors duration-fast hover:border-border-strong focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-signal lg:h-full lg:min-h-48"
             >
                 <DeviceImage
                     device={server.device.kind}
@@ -136,14 +136,11 @@ function Stage({ detail }: { detail: Detail }) {
 export function OverviewCard({
     detail,
     environmentName,
-    now,
 }: {
     detail: Detail;
     environmentName: string;
-    now: number;
 }) {
     const deployment = detail.deployment;
-    const seconds = deploymentSeconds(deployment, now);
     const branch = branchName(deployment.gitRef);
     const message = firstLine(deployment.commitMessage);
 
@@ -168,13 +165,19 @@ export function OverviewCard({
                         </span>
                     </Fact>
                     <Fact label="Duration">
-                        <span className="tabular-nums">
-                            {formatDuration(seconds) ?? (
-                                <span className="text-muted-foreground">
-                                    Not started
-                                </span>
-                            )}
-                        </span>
+                        {deployment.durationSeconds !== null ? (
+                            <Duration seconds={deployment.durationSeconds} />
+                        ) : (
+                            <Elapsed
+                                since={deployment.startedAt}
+                                until={deployment.finishedAt}
+                                fallback={
+                                    <span className="text-muted-foreground">
+                                        Not started
+                                    </span>
+                                }
+                            />
+                        )}
                     </Fact>
                     <Fact label="Environment">{environmentName}</Fact>
                     <Fact label="Built on">
@@ -217,11 +220,11 @@ export function OverviewCard({
                                 </span>
                             </span>
                         ) : (
-                            <span className="text-muted-foreground">
+                            <MetaLine className="text-muted-foreground">
                                 {triggerLabel(deployment.trigger)}
                                 {detail.revision !== null &&
-                                    ` · revision ${detail.revision}`}
-                            </span>
+                                    `revision ${detail.revision}`}
+                            </MetaLine>
                         )}
                     </Fact>
                     <Fact

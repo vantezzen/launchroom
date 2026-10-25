@@ -206,7 +206,8 @@ final readonly class PromoteChanges
 
     /**
      * New services first (their variables depend on them), then shared
-     * variables (usages depend on them), removals of services last.
+     * variables (usages depend on them), values signed with another
+     * variable after it, removals of services last.
      *
      * @param  array<string, PromotionItem>  $selected
      * @return list<PromotionItem>
@@ -216,7 +217,9 @@ final readonly class PromoteChanges
         $rank = static fn (PromotionItem $item): int => match (true) {
             $item->type === PromotionEntryType::Service && $item->kind !== ChangeKind::Removed => 0,
             $item->type === PromotionEntryType::SharedVariable => 1,
-            $item->type === PromotionEntryType::Service => 3,
+            $item->type === PromotionEntryType::Service => 4,
+            // Values signed with another variable (jwt()) come after it.
+            array_any($item->dependsOn, static fn (string $path): bool => str_contains($path, '.variables.')) => 3,
             default => 2,
         };
 

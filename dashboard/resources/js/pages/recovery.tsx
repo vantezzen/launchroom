@@ -238,7 +238,7 @@ export default function Recovery({
                     >
                         <p className="max-w-[65ch] type-body text-muted-foreground">
                             {expectedAddresses.length > 0
-                                ? `Point ${dashboardHost ?? 'the dashboard'} and your apps domain at ${expectedAddresses.join(', ')}. With a stable hostname nothing else changes: servers reconnect by themselves.`
+                                ? `Point ${dashboardHost ?? 'the dashboard'} and your apps domain at ${expectedAddresses.join(', ')}. If the hostname stays the same, your servers reconnect automatically.`
                                 : 'No edge server has a public address yet.'}
                         </p>
                         {dns.length === 0 ? (
@@ -393,9 +393,8 @@ export default function Recovery({
                                         />
                                         <span className="type-small text-muted-foreground">
                                             {server.reconnected
-                                                ? 'Reconnected'
-                                                : 'Not seen since the restore. If the dashboard URL changed, set LR_CONTROL_PLANE_URL in launchroomd/.env on that server and restart launchroomd.'}{' '}
-                                            · last seen{' '}
+                                                ? 'Reconnected, last seen'
+                                                : 'Not seen since the restore. If the dashboard URL changed, set LR_CONTROL_PLANE_URL in launchroomd/.env on that server and restart launchroomd. Last seen'}{' '}
                                             <TimeAgo
                                                 value={server.lastSeenAt}
                                             />
@@ -428,7 +427,7 @@ export default function Recovery({
                                 </Button>
                                 {open.length > 0 && (
                                     <span className="type-small text-muted-foreground">
-                                        Some steps are still open; finishing
+                                        Some steps are still open. Finishing now
                                         records that in the audit log.
                                     </span>
                                 )}

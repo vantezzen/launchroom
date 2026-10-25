@@ -7,7 +7,7 @@ import { Status } from '@/components/status';
 import { Input } from '@/components/ui/input';
 import { SettingsCard, SettingsRow } from '@/features/settings/settings-card';
 import { edit } from '@/routes/profile';
-import { edit as teamSettings } from '@/routes/team';
+import { index as settingsHome } from '@/routes/settings';
 import { send } from '@/routes/verification';
 import type { Auth } from '@/types';
 
@@ -60,6 +60,7 @@ export default function Profile({
             >
                 <SettingsCard title="Account">
                     <SettingsRow
+                        setting="name"
                         label="Name"
                         description="Shown on deploys and in activity."
                         htmlFor="name"
@@ -78,6 +79,7 @@ export default function Profile({
                         </div>
                     </SettingsRow>
                     <SettingsRow
+                        setting="email"
                         label="Email"
                         description={
                             mustVerifyEmail &&
@@ -161,7 +163,7 @@ export default function Profile({
 
 Profile.layout = {
     breadcrumbs: [
-        { title: 'Settings', href: teamSettings() },
+        { title: 'Settings', href: settingsHome() },
         {
             title: 'Profile',
             href: edit(),

@@ -183,6 +183,7 @@ type fakeDocker struct {
 	docker.Client
 	containers []docker.Container
 	paths      map[string]bool
+	statErr    map[string]error
 }
 
 func (f *fakeDocker) ListContainers(_ context.Context, labels map[string]string) ([]docker.Container, error) {
@@ -195,7 +196,12 @@ func (f *fakeDocker) ListContainers(_ context.Context, labels map[string]string)
 	return out, nil
 }
 
-func (f *fakeDocker) PathExists(_ context.Context, _, p string) (bool, error) { return f.paths[p], nil }
+func (f *fakeDocker) PathExists(_ context.Context, _, p string) (bool, error) {
+	if err := f.statErr[p]; err != nil {
+		return false, err
+	}
+	return f.paths[p], nil
+}
 func (f *fakeDocker) ExecTTY(context.Context, string, docker.TTYOptions) (*docker.TTYExec, error) {
 	return nil, errors.New("not in tests")
 }
@@ -225,6 +231,11 @@ func TestTargetPolicy(t *testing.T) {
 		"task container":       {&fakeDocker{containers: []docker.Container{managed(map[string]string{docker.LabelTask: "tsk_x"})}}, in, true},
 		"no container":         {&fakeDocker{}, in, true},
 		"workload container":   {&fakeDocker{containers: []docker.Container{managed(nil)}}, in, false},
+		"stopped duplicate first": {&fakeDocker{containers: func() []docker.Container {
+			old := managed(nil)
+			old.ID, old.Running = "c0", false
+			return []docker.Container{old, managed(nil)}
+		}()}, in, false},
 	}
 	for name, c := range cases {
 		r := &run{o: Options{Docker: c.fd, InDesiredState: c.inState}, spec: spec}
@@ -253,6 +264,28 @@ func TestShellPolicy(t *testing.T) {
 	r.o.Docker = &fakeDocker{paths: map[string]bool{}}
 	if _, err := r.pickShell(context.Background()); err == nil || !strings.Contains(err.Error(), "no shell") {
 		t.Fatalf("distroless: %v", err)
+	}
+	// A failed stat of bash doesn't hide sh (Umami: node:alpine, no bash).
+	r.o.Docker = &fakeDocker{paths: map[string]bool{"/bin/sh": true}, statErr: map[string]error{"/bin/bash": errors.New("docker: stat: boom")}}
+	if sh, err := r.pickShell(context.Background()); err != nil || sh != "/bin/sh" {
+		t.Fatalf("stat error on bash: %q %v", sh, err)
+	}
+	// Only errors: the error says so (not "no shell").
+	r.o.Docker = &fakeDocker{statErr: map[string]error{"/bin/bash": errors.New("boom"), "/bin/ash": errors.New("boom"), "/bin/sh": errors.New("boom")}}
+	if _, err := r.pickShell(context.Background()); err == nil || !strings.Contains(err.Error(), "checking for a shell") {
+		t.Fatalf("all stats failed: %v", err)
+	}
+}
+
+func TestShellFailedToStart(t *testing.T) {
+	for _, c := range []struct {
+		code  int
+		after time.Duration
+		want  bool
+	}{{127, time.Second, true}, {126, 0, true}, {127, 10 * time.Second, false}, {0, 0, false}, {1, 0, false}} {
+		if got := shellFailedToStart(c.code, c.after); got != c.want {
+			t.Errorf("%d after %s: %v", c.code, c.after, got)
+		}
 	}
 }
 

@@ -37,7 +37,7 @@ final class AuditSinkController extends Controller
             Inertia::flash('auditSigningSecret', ['sink' => $created->sink->public_id, 'secret' => $created->signingSecret]);
         }
 
-        Inertia::flash('toast', ['type' => 'success', 'message' => "Added {$created->sink->name}. It starts with the first entry and catches up."]);
+        Inertia::flash('toast', ['type' => 'success', 'message' => "Added {$created->sink->name}. It receives every entry, starting with the first one."]);
 
         return back();
     }
@@ -55,7 +55,7 @@ final class AuditSinkController extends Controller
         Inertia::flash('toast', ['type' => 'success', 'message' => match (true) {
             $input->enabled === false => "{$auditSink->name} is paused. Entries wait here until you resume it.",
             $input->enabled === true => "{$auditSink->name} is catching up.",
-            $secret !== null => 'New signing secret ready. Update your receiver, the old one no longer works.',
+            $secret !== null => 'New signing secret created. Update your receiver, because the old secret no longer works.',
             default => 'Saved.',
         }]);
 
@@ -68,7 +68,7 @@ final class AuditSinkController extends Controller
 
         $delete->handle($auditSink, $this->auditActor($request, $user));
 
-        Inertia::flash('toast', ['type' => 'success', 'message' => "Removed {$auditSink->name}. What it received stays there."]);
+        Inertia::flash('toast', ['type' => 'success', 'message' => "Removed {$auditSink->name}. Entries it already received stay there."]);
 
         return back();
     }

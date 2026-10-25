@@ -41,7 +41,7 @@ test('connecting GitHub reaches github.com with the manifest after a real sessio
     URL::forceScheme('https');
     config(['app.url' => 'https://launchroom.example.com']);
 
-    $this->actingAs($this->admin)->withSession(passwordConfirmed())
+    $this->actingAs($this->admin)
         ->post(route('git.github.manifest.store'))
         ->assertRedirect(route('git.edit'))
         ->assertSessionHasNoErrors();
@@ -74,7 +74,7 @@ test('the callback and the setup URL complete the connection', function (): void
     URL::forceRootUrl('https://launchroom.example.com');
     URL::forceScheme('https');
 
-    $this->actingAs($this->admin)->withSession(passwordConfirmed())
+    $this->actingAs($this->admin)
         ->post(route('git.github.manifest.store'));
     ghJsonRoundTripSession();
     parse_str((string) parse_url(session(GitSettingsController::MANIFEST_FLASH_KEY)['action'], PHP_URL_QUERY), $query);
@@ -122,7 +122,7 @@ test('a dashboard GitHub cannot reach gets an app without webhooks and a clear n
     $this->actingAs($this->admin)->get(route('git.edit'))
         ->assertInertia(fn ($page) => $page->where('webhookReachable', false)->where('webhookUrl', 'http://localhost:8000/webhooks/github'));
 
-    $this->withSession(passwordConfirmed())->post(route('git.github.manifest.store'))
+    $this->post(route('git.github.manifest.store'))
         ->assertSessionHasNoErrors();
     ghJsonRoundTripSession();
 
@@ -141,7 +141,7 @@ test('a dashboard GitHub cannot reach gets an app without webhooks and a clear n
 test('GitHub Enterprise Server keeps the webhook on a private address', function (): void {
     URL::forceRootUrl('http://launchroom.lan');
 
-    $this->actingAs($this->admin)->withSession(passwordConfirmed())
+    $this->actingAs($this->admin)
         ->post(route('git.github.manifest.store'), ['githubUrl' => 'https://ghe.example.com']);
 
     $manifest = json_decode(session(GitSettingsController::MANIFEST_FLASH_KEY)['manifest'], true);
@@ -154,7 +154,7 @@ test('onboarding shows the same note and posts the manifest after a session roun
     $owner = memberOf($this->team, TeamRole::Owner);
     $owner->forceFill(['is_instance_owner' => true, 'current_team_id' => $this->team->id])->save();
 
-    $this->actingAs($owner)->withSession(passwordConfirmed())
+    $this->actingAs($owner)
         ->post(route('git.github.manifest.store'), ['returnTo' => 'onboarding'])
         ->assertRedirect(route('onboarding.show'));
     ghJsonRoundTripSession();

@@ -42,11 +42,10 @@ export function SmallServerHint({
                     {hint.serverName} is small ({size(hint)})
                 </h2>
                 <p className="max-w-[65ch] type-small text-muted-foreground">
-                    A heavy build next to your running apps can slow them down
-                    or briefly make them unavailable while the build takes the
-                    CPU and memory. Add a separate build server, even your home
-                    server, a Raspberry Pi or your laptop, to keep your apps at
-                    full speed.
+                    Builds share CPU and memory with your apps, so a heavy build
+                    can slow them down or make them briefly unavailable. A
+                    separate build server avoids this, and a home machine or
+                    laptop works fine for it.
                 </p>
                 <div className="flex flex-wrap gap-x-4 gap-y-1 pt-1">
                     <LearnMore

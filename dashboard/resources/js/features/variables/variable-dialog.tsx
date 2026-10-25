@@ -34,6 +34,12 @@ type Target = {
     branchPattern: string | null;
 };
 
+const exposureWords: Record<App.Enums.VariableExposure, string> = {
+    runtime: 'runtime only',
+    build: 'build only',
+    both: 'build and runtime',
+};
+
 /**
  * Add or edit a variable (docs/06 §3.1, §3.4). Every edit is staged. Secret
  * values are write-only: editing a secret replaces its value only when a new
@@ -333,7 +339,7 @@ export function VariableDialog({
                                     <span className="flex flex-col">
                                         <span>{here} only</span>
                                         <span className="type-small text-muted-foreground">
-                                            {here} gets its own row; the other
+                                            {here} gets its own row. The other
                                             environments keep this one.
                                         </span>
                                     </span>
@@ -437,8 +443,8 @@ export function VariableDialog({
                             <SelectContent>
                                 <SelectItem value="auto">
                                     {variable && !variable.exposureOverridden
-                                        ? `Automatic: ${variable.exposure === 'runtime' ? 'runtime only' : variable.exposure === 'build' ? 'build only' : 'build and runtime'}`
-                                        : 'Automatic (runtime only unless recognized)'}
+                                        ? `Automatic: ${exposureWords[variable.exposure]}`
+                                        : 'Automatic: runtime, unless the key is a known build variable'}
                                 </SelectItem>
                                 <SelectItem value="runtime">
                                     Runtime only
@@ -452,10 +458,8 @@ export function VariableDialog({
                             </SelectContent>
                         </Select>
                         <p className="type-small text-muted-foreground">
-                            If your app reads this variable while building,
-                            choose Build and runtime. Build-time values reach
-                            builds as secrets; changing them rebuilds the
-                            service.
+                            Choose Build and runtime if the build reads it.
+                            Changing a build-time value rebuilds the service.
                         </p>
                     </div>
 

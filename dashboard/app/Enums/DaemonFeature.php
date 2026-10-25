@@ -47,4 +47,20 @@ enum DaemonFeature: string
     case DataTransfer = 'dataTransfer';
     /** NodeState volumes no workload mounts are created too (owner-less), so a moving service's volumes exist before it runs (docs/14 §13.2, D56). */
     case PreparedVolumes = 'preparedVolumes';
+    /** `Report.metrics.analytics`: top paths, referrer hosts and client classes per route and 10 minutes (docs/15 §5). */
+    case RequestAnalytics = 'requestAnalytics';
+    /** `access` tasks of kind ssh and `TaskHeartbeat.access` (D61, docs/03 §12). */
+    case RemoteAccessSsh = 'remoteAccessSsh';
+    /** `access` tasks of kind database (D61, docs/03 §12). */
+    case RemoteAccessDatabase = 'remoteAccessDatabase';
+    /** `access` tasks of kind volume: SFTP into one volume through a helper container (D67, docs/03 §12.4). */
+    case RemoteAccessVolume = 'remoteAccessVolume';
+    /** The `inventory` task (docs/22 §3.2, docs/03 §13.1). */
+    case Inventory = 'inventory';
+    /** The `inspect_container` task (docs/22 §7.2, docs/03 §13.2). */
+    case ContainerInspection = 'containerInspection';
+    /** `RouteSpec.waf`, `Report.ingress.waf` and `Report.metrics.waf`: the web firewall (docs/22 §6, docs/03 §13.3–13.4). */
+    case Waf = 'waf';
+    /** `WorkloadSpec.files`: config files written into the container before it starts (D65, docs/03 §6). */
+    case ConfigFiles = 'configFiles';
 }

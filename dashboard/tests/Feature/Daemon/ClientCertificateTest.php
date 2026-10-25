@@ -272,7 +272,7 @@ test('while required, a server that had a certificate gets a new one only by pre
         ->assertJson(['error' => 'client certificate required']);
 
     $owner = User::factory()->instanceOwner()->create();
-    $this->actingAs($owner)->withSession(passwordConfirmed())
+    $this->actingAs($owner)
         ->post(route('client-certificates.reissue', $server->public_id))
         ->assertRedirect();
     expect($server->refresh()->client_certificate_reissue_until?->isFuture())->toBeTrue();
@@ -337,20 +337,20 @@ test('instance owners move through Off, Check and Require; Require waits for rea
     $seed = random_bytes(32);
     certServer($seed, ['name' => 'fra-1']);
 
-    $this->actingAs($owner)->withSession(passwordConfirmed())
+    $this->actingAs($owner)
         ->put(route('client-certificates.update'), ['mode' => 'require'])
         ->assertSessionHasErrors('mode');
 
-    $this->actingAs($owner)->withSession(passwordConfirmed())
+    $this->actingAs($owner)
         ->put(route('client-certificates.update'), ['mode' => 'verify'])
         ->assertSessionHasNoErrors();
     expect(InstanceSettings::current()->daemon_client_certificates)->toBe(ClientCertificateMode::Verify);
 
-    $this->actingAs($owner)->withSession(passwordConfirmed())
+    $this->actingAs($owner)
         ->put(route('client-certificates.update'), ['mode' => 'require'])
         ->assertSessionHasErrors(['mode' => 'Not every server is ready: fra-1.']);
 
-    $this->actingAs($owner)->withSession(passwordConfirmed())
+    $this->actingAs($owner)
         ->put(route('client-certificates.update'), ['mode' => 'require', 'force' => true])
         ->assertSessionHasNoErrors();
 
@@ -395,9 +395,9 @@ test('only instance owners see or change server certificates', function (TeamRol
     $member = memberOf($team, $role);
     $server = certServer(random_bytes(32), ['team_id' => $team->id]);
 
-    $this->actingAs($member)->withSession(passwordConfirmed())->get(route('instance-security.edit'))->assertForbidden();
-    $this->actingAs($member)->withSession(passwordConfirmed())->put(route('client-certificates.update'), ['mode' => 'verify'])->assertForbidden();
-    $this->actingAs($member)->withSession(passwordConfirmed())->post(route('client-certificates.reissue', $server->public_id))->assertForbidden();
+    $this->actingAs($member)->get(route('instance-security.edit'))->assertForbidden();
+    $this->actingAs($member)->put(route('client-certificates.update'), ['mode' => 'verify'])->assertForbidden();
+    $this->actingAs($member)->post(route('client-certificates.reissue', $server->public_id))->assertForbidden();
 
     expect(InstanceSettings::current()->daemon_client_certificates)->toBeNull();
 })->with(['team owner' => [TeamRole::Owner], 'admin' => [TeamRole::Admin], 'developer' => [TeamRole::Developer]]);

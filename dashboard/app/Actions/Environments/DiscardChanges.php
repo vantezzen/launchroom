@@ -76,7 +76,7 @@ final class DiscardChanges
             $base = $revision instanceof EnvironmentRevision ? $revision->spec : $environment->lastAppliedRevision?->spec;
 
             if ($base === null) {
-                throw DomainRuleViolation::on('environment', 'This environment has never been deployed; there is nothing to go back to.');
+                throw DomainRuleViolation::on('environment', 'This environment has never been deployed, so there is nothing to go back to.');
             }
 
             $this->asNewVersions = $revision instanceof EnvironmentRevision;
@@ -289,7 +289,7 @@ final class DiscardChanges
                 $here = ServiceInstance::query()->whereKey($elsewhere->service_instance_id)->where('environment_id', $environment->id)->exists();
 
                 if (! $here) {
-                    throw DomainRuleViolation::conflict("{$hostname} is now used by another service; it can't be restored.");
+                    throw DomainRuleViolation::conflict("{$hostname} is now used by another service, so it can't be restored.");
                 }
 
                 $elsewhere->forceFill(['service_instance_id' => $instance->id, 'kind' => $recorded->kind, 'redirect_to' => $recorded->redirectTo])->save();
@@ -341,7 +341,8 @@ final class DiscardChanges
             $volume->forceFill(['public_id' => $recorded->id, 'team_id' => $instance->team_id, 'service_instance_id' => $instance->id]);
         }
 
-        $volume->forceFill(['mount_path' => $recorded->mountPath])->save();
+        // A staged removal (docs/14 §9.12) comes back with its files.
+        $volume->forceFill(['mount_path' => $recorded->mountPath, 'removed_at' => null])->save();
     }
 
     private function discardConnection(Environment $environment, EnvironmentSpec $base, string $connectionId, ChangeKind $kind): void

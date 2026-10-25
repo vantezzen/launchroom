@@ -39,7 +39,7 @@ final class AlertEmailNotification extends Notification
         }
 
         if ($this->message->context !== []) {
-            $mail->line(implode(' · ', $this->message->context));
+            $mail->line(implode(' / ', $this->message->context));
         }
 
         $mail->action($this->message->event === AlertDeliveryEvent::Test ? 'Open notification settings' : 'Open in launchroom', $this->message->url);

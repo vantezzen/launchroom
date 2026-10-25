@@ -15,6 +15,7 @@ use App\Enums\Transfers\TransferDirection;
 use App\Enums\Transfers\TransferPurpose;
 use App\Enums\VariableType;
 use App\Http\Middleware\RequireTokenAbility;
+use App\Models\Security\SecurityFinding;
 use App\Models\ServiceInstance;
 use App\Models\Team;
 use App\Models\Transfers\DataExportRun;
@@ -134,6 +135,13 @@ test('a token without the route\'s ability gets 403 missing_ability; with it, ne
         ...transferIds($world->team, $instance),
         'index' => '0',
         'token' => 'lr_dl_'.str_repeat('A', 43),
+        // Security center (docs/22 §11).
+        'finding' => SecurityFinding::query()->forceCreate([
+            'team_id' => $world->team->id, 'project_id' => $world->project->id, 'environment_id' => $world->production->id,
+            'service_instance_id' => $instance->id, 'group_key' => 'GHSA-0000-0000-0000', 'ecosystem' => 'npm', 'name' => 'lodash',
+            'version' => '4.17.20', 'kind' => 'library', 'scope' => 'runtime', 'presence' => 'installed', 'level' => 'worth_knowing',
+            'first_seen_at' => now(), 'last_seen_at' => now(),
+        ])->public_id,
     ];
 
     $checked = 0;

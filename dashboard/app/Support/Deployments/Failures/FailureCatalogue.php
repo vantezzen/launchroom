@@ -123,7 +123,7 @@ final class FailureCatalogue
                     key: 'buildkit_unavailable',
                     title: 'BuildKit did not start on the build server',
                     cause: 'BuildKit, which builds your image on the server, kept restarting or did not answer in time. launchroom waited and retried once.',
-                    fix: 'Redeploy to try again. If it keeps failing, BuildKit’s last log lines in the build log say why; low free memory or disk on the server is the usual cause.',
+                    fix: 'Redeploy to try again. If it keeps failing, check BuildKit’s last lines in the build log. Low memory or disk space on the server is the usual cause.',
                 ),
             ],
             [

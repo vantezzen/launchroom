@@ -14,7 +14,8 @@ use Spatie\LaravelData\Data;
  * `clientAuth` (the dashboard's system routes only, daemons with the
  * `clientCertificates` feature): client certificates for /daemon/v1 (mTLS,
  * docs/03 §4.3); the edge secret is sealed, so renders compare its
- * fingerprint.
+ * fingerprint. `waf` (edges with the `waf` feature, docs/03 §13.3): the
+ * web firewall's typed settings; omitted means off.
  */
 final class RouteSpec extends Data
 {
@@ -24,6 +25,7 @@ final class RouteSpec extends Data
      * @param  array<string, string>|null  $headers  values must not contain { or }
      * @param  array{forwardAuth: array{url: string, stripHeaders?: list<string>}}|null  $protection  preview protection (forward auth to the dashboard, docs/06 §5)
      * @param  array{mode: string, caCertificates: list<string>, edgeSecret: array{sealed: string, fingerprint: string}}|null  $clientAuth
+     * @param  array{mode: string, paranoia?: int, inspectBodyKiB?: int, exclusions?: list<array{rule: int, path?: string, target?: string}>}|null  $waf
      */
     public function __construct(
         public string $id,
@@ -36,6 +38,7 @@ final class RouteSpec extends Data
         /** `round_robin` (default when null) or `prefer_local` (docs/05 §4). */
         public ?string $loadBalancing = null,
         public ?array $clientAuth = null,
+        public ?array $waf = null,
     ) {}
 
     public static function fromProtocol(object $wire): self
@@ -65,6 +68,25 @@ final class RouteSpec extends Data
             ];
         }
 
+        $waf = null;
+        $wafWire = Wire::object($wire, 'waf');
+
+        if ($wafWire !== null) {
+            $exclusions = array_map(static fn (object $x): array => array_filter([
+                'rule' => Wire::int($x, 'rule'),
+                'path' => Wire::nullableString($x, 'path'),
+                'target' => Wire::nullableString($x, 'target'),
+            ], static fn (mixed $value): bool => $value !== null), Wire::objects($wafWire, 'exclusions'));
+            $paranoia = Wire::nullableInt($wafWire, 'paranoia');
+            $body = Wire::nullableInt($wafWire, 'inspectBodyKiB');
+            $waf = [
+                'mode' => Wire::string($wafWire, 'mode'),
+                ...($paranoia === null ? [] : ['paranoia' => $paranoia]),
+                ...($body === null ? [] : ['inspectBodyKiB' => $body]),
+                ...($exclusions === [] ? [] : ['exclusions' => $exclusions]),
+            ];
+        }
+
         return new self(
             Wire::string($wire, 'id'),
             Wire::strings($wire, 'hosts') ?? [],
@@ -75,6 +97,7 @@ final class RouteSpec extends Data
             $protection,
             Wire::nullableString($wire, 'loadBalancing'),
             $clientAuth,
+            $waf,
         );
     }
 
@@ -129,6 +152,10 @@ final class RouteSpec extends Data
                 'caCertificates' => $this->clientAuth['caCertificates'],
                 'edgeSecret' => $fingerprint ? ['fingerprint' => $secret['fingerprint']] : ['sealed' => $secret['sealed']],
             ];
+        }
+
+        if ($this->waf !== null) {
+            $wire['waf'] = $this->waf;
         }
 
         return $wire;

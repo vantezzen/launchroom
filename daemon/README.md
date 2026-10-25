@@ -65,6 +65,7 @@ launchroomd dials out to the dashboard, verifies and persists the signed NodeSta
 | `DOCKER_HOST` | | Docker client default | Engine endpoint; installs set dockerd-guard's socket `unix:///run/launchroom/docker.sock` |
 | `LR_INGRESS_ASK_ADDR` | `--ingress-ask-addr` | `127.0.0.1:2021` | loopback address of the on-demand TLS ask endpoint |
 | `LR_INGRESS_ACCESS_LOG_ADDR` | | `127.0.0.1:2022` | loopback listener for the edge Caddy's access log (request metrics) |
+| `LR_INGRESS_WAF_LOG_ADDR` | | `127.0.0.1:2023` | loopback listener for the web firewall's audit records (firewall events, docs/22 §6.5) |
 | `LR_INGRESS_HTTPS_PORT` | `--ingress-https-port` | `443` | public HTTPS port used in HTTP→HTTPS redirects (dev: `8443`) |
 | `LR_ALLOWED_LOCAL_UPSTREAMS` | | | `ip:port` route upstreams allowed besides the mesh range, e.g. the dashboard's `127.0.0.1:8000` on the control-plane host |
 | `LR_CERT_STORAGE_ALLOW` | | | `ip:port` shared certificate storage allowed besides the mesh range |

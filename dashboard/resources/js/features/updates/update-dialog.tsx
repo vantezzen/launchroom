@@ -48,10 +48,10 @@ export function UpdateDialog({
                 <DialogTitle>Update launchroom to {version}?</DialogTitle>
                 <DialogDescription>
                     {hasBackupDestination
-                        ? `launchroom is backed up${backupDestinationName ? ` to ${backupDestinationName}` : ''} first; if that fails, nothing changes.`
+                        ? `launchroom is backed up${backupDestinationName ? ` to ${backupDestinationName}` : ''} first. If the backup fails, nothing changes.`
                         : 'There is no backup destination, so only a local snapshot is kept for the rollback.'}{' '}
-                    The dashboard is away for a few minutes while it restarts.
-                    Your apps keep running.
+                    The dashboard is unavailable for a few minutes while it
+                    restarts, but your apps keep running.
                 </DialogDescription>
                 <Form
                     {...controlPlane.form()}

@@ -13,9 +13,10 @@ use Illuminate\Validation\ValidationException;
 use SensitiveParameter;
 
 /**
- * The legacy confirm-password endpoint limits failed attempts per user and
- * client IP (review L4), so a hijacked session can't use it as a password oracle. Lockouts are
- * logged (no password, no value).
+ * Fortify always registers `/user/confirm-password`, although launchroom no
+ * longer asks for a password confirmation (D60). Failed attempts there are
+ * limited per user and client IP (review L4), so a hijacked session can't
+ * use it as a password oracle. Lockouts are logged (no password, no value).
  */
 final class PasswordConfirmationThrottle
 {

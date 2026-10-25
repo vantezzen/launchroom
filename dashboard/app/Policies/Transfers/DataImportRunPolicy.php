@@ -25,4 +25,10 @@ final class DataImportRunPolicy
     {
         return $user->hasTeamPermission($instance->team_id, Permission::ManageBackups);
     }
+
+    /** Whoever may start an import may call one off before it runs. */
+    public function cancel(User $user, DataImportRun $run): bool
+    {
+        return $user->hasTeamPermission($run->team_id, Permission::ManageBackups);
+    }
 }

@@ -64,7 +64,7 @@ export function StatTile({
 
     const readout =
         active !== null && activeValue !== null && activeValue !== undefined
-            ? `${times?.[active] ? formatTooltipTime(times[active], span) + ' · ' : ''}${
+            ? `${times?.[active] ? formatTooltipTime(times[active], span) + ': ' : ''}${
                   series?.format ? series.format(activeValue) : activeValue
               }`
             : null;

@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Transfers;
 
+use App\Actions\Transfers\CancelImport;
 use App\Actions\Transfers\CreateDownloadLink;
 use App\Actions\Transfers\CreateUpload;
+use App\Actions\Transfers\EndDatabasePreparation;
 use App\Actions\Transfers\InspectImportTarget;
+use App\Actions\Transfers\PrepareDatabaseForImport;
 use App\Actions\Transfers\StartExport;
 use App\Actions\Transfers\StartImport;
 use App\Data\Transfers\DownloadLinkData;
@@ -71,6 +74,41 @@ final class ServiceTransfersController extends Controller
         Gate::authorize('create', [DataImportRun::class, $serviceInstance]);
 
         $start->handle($serviceInstance, $input, $user, $this->auditActor($request, $user));
+
+        return $view->for($serviceInstance, $user);
+    }
+
+    public function cancelImport(Request $request, ServiceInstance $serviceInstance, DataImportRun $import, #[CurrentUser] User $user, CancelImport $cancel, ServiceTransfersView $view): ServiceTransfersData
+    {
+        abort_unless($import->service_instance_id === $serviceInstance->id, 404);
+        Gate::authorize('cancel', $import);
+
+        $cancel->handle($import, $this->auditActor($request, $user));
+
+        return $view->for($serviceInstance, $user);
+    }
+
+    /**
+     * Starts a database that was never deployed alone for an import, or
+     * keeps it waiting while the import sheet is open (docs/14 §12.9).
+     */
+    public function prepare(Request $request, ServiceInstance $serviceInstance, #[CurrentUser] User $user, PrepareDatabaseForImport $prepare, ServiceTransfersView $view): ServiceTransfersData
+    {
+        Gate::authorize('create', [DataImportRun::class, $serviceInstance]);
+
+        $prepare->handle($serviceInstance, $user, $this->auditActor($request, $user));
+
+        return $view->for($serviceInstance, $user);
+    }
+
+    /**
+     * Stops it again when the sheet closes without an import.
+     */
+    public function unprepare(ServiceInstance $serviceInstance, #[CurrentUser] User $user, EndDatabasePreparation $end, ServiceTransfersView $view): ServiceTransfersData
+    {
+        Gate::authorize('create', [DataImportRun::class, $serviceInstance]);
+
+        $end->handle($serviceInstance);
 
         return $view->for($serviceInstance, $user);
     }

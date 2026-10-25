@@ -57,7 +57,8 @@ export function AuditLogSection({
         <>
             <SettingsCard
                 title="Audit log"
-                description="Every change is chained to the one before it and signed every 10 minutes, so edits and deletions show."
+                setting="audit-log"
+                description="Each entry is chained to the one before it and signed every 10 minutes, so edits and deletions can be detected."
                 actions={
                     v === null ? (
                         <StatusPill state="idle" label="Not checked yet" />
@@ -114,7 +115,8 @@ export function AuditLogSection({
                     description={
                         <span className="flex flex-col gap-0.5">
                             <span>
-                                Checks forwarded copies outside launchroom.
+                                Verifies copies of the log stored outside
+                                launchroom.
                                 {overview.lastCheckpointAt && (
                                     <>
                                         {' '}
@@ -166,7 +168,7 @@ export function AuditLogSection({
 
             <SettingsCard
                 title="Copies outside launchroom"
-                description="Each entry is sent as it happens. A copy someone can't edit from here is what makes the log trustworthy."
+                description="Each entry is sent as it happens. Keep a copy where nobody can edit it from this dashboard."
                 actions={
                     overview.sinks.length > 0 &&
                     overview.canAdd && (

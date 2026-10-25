@@ -19,12 +19,13 @@ use Illuminate\Support\Facades\DB;
  * `launchroom:transfers:sweep` (every 5 minutes, docs/14 §12.1): expired
  * uploads (unless an import still reads them) and exports are marked and
  * their chunks deleted; chunk directories of ended or deleted transfers go
- * too.
+ * too. Imports stuck before their task fail ({@see FailStuckImports}).
  */
 final readonly class SweepTransfers
 {
     public function __construct(
         private TransferStore $store,
+        private FailStuckImports $stuckImports,
     ) {}
 
     /**
@@ -77,6 +78,9 @@ final readonly class SweepTransfers
             ->where('created_at', '<', now()->subDay())
             ->get()
             ->each(static fn (DataImportRun $run) => $run->transitionTo(ImportRunStatus::Cancelled, 'The safety snapshot never finished.'));
+
+        // Imports that couldn't start fail here too, should the tick be stuck.
+        $this->stuckImports->handle();
 
         return ['expired' => $expired, 'removed' => $removed];
     }

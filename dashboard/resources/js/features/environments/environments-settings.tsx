@@ -2,6 +2,7 @@ import { Form, Link, router } from '@inertiajs/react';
 import { MoreHorizontal, Pause, Plus } from 'lucide-react';
 import { useState } from 'react';
 import InputError from '@/components/input-error';
+import { MetaLine } from '@/components/patterns/meta-line';
 import { Section } from '@/components/patterns/section';
 import { Badge } from '@/components/ui/badge';
 import { TimeAgo } from '@/components/time-ago';
@@ -233,7 +234,7 @@ function DeleteEnvironmentDialog({
                 >
                     <p className="type-small text-muted-foreground">
                         {backedUp > 0
-                            ? `${backedUp} ${backedUp === 1 ? 'service has' : 'services have'} backups: a final backup of their data is taken first, and ${environment.name} is deleted once it succeeded. Snapshots stay in your backup destination; data volumes are deleted after the retention period.`
+                            ? `${backedUp} ${backedUp === 1 ? 'service has' : 'services have'} backups. A final backup of their data is taken first, and ${environment.name} is deleted once it succeeds. Snapshots stay in your backup destination. Data volumes are deleted after the retention period.`
                             : 'Data volumes stay on their servers for the retention period, then are deleted.'}
                     </p>
                     {backedUp > 0 && environment.canSkipFinalBackup && (
@@ -441,10 +442,10 @@ function EnvironmentRow({
                     {environment.revision === null ? (
                         'Never deployed'
                     ) : (
-                        <>
-                            Revision {environment.revision} ·{' '}
+                        <MetaLine>
+                            {`Revision ${environment.revision}`}
                             <TimeAgo value={environment.lastDeployedAt} />
-                        </>
+                        </MetaLine>
                     )}
                 </span>
                 <span className="tabular-nums">
@@ -513,8 +514,8 @@ export function EnvironmentsSettings({
                     <DialogContent>
                         <DialogTitle>New environment</DialogTitle>
                         <DialogDescription>
-                            Services, settings and variables are copied;
-                            databases start empty with new credentials.
+                            Services, settings and variables are copied.
+                            Databases start empty with new credentials.
                         </DialogDescription>
                         <Form
                             {...environmentRoutes.store.form(project.id)}

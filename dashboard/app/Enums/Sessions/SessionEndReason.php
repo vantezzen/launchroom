@@ -31,7 +31,7 @@ enum SessionEndReason: string
             self::Ended => 'Ended from the dashboard',
             self::NeverConnected => 'The browser never connected',
             self::Refused => 'The server doesn’t allow this',
-            self::Error => 'Something went wrong',
+            self::Error => 'Ended with an error',
         };
     }
 }

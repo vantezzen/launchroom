@@ -31,6 +31,17 @@ Route::middleware(['web', 'auth', 'verified'])->group(function (): void {
     Route::post('transfers/services/{serviceInstance}/imports', [ServiceTransfersController::class, 'storeImport'])
         ->middleware('throttle:10,1')
         ->name('transfers.services.imports.store');
+    // Before its task starts an import can be called off (docs/14 §12.5).
+    Route::post('transfers/services/{serviceInstance}/imports/{import}/cancel', [ServiceTransfersController::class, 'cancelImport'])
+        ->middleware('throttle:30,1')
+        ->name('transfers.services.imports.cancel');
+    // A database never deployed runs alone for an import (docs/14 §12.9).
+    Route::post('transfers/services/{serviceInstance}/prepare', [ServiceTransfersController::class, 'prepare'])
+        ->middleware('throttle:30,1')
+        ->name('transfers.services.prepare');
+    Route::delete('transfers/services/{serviceInstance}/prepare', [ServiceTransfersController::class, 'unprepare'])
+        ->middleware('throttle:30,1')
+        ->name('transfers.services.unprepare');
     Route::post('transfers/services/{serviceInstance}/exports', [ServiceTransfersController::class, 'storeExport'])
         ->middleware('throttle:10,1')
         ->name('transfers.services.exports.store');

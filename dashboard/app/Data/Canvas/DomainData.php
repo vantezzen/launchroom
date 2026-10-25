@@ -29,8 +29,15 @@ final class DomainData extends Data
         public ?DnsCheckData $verification = null,
         /** Custom domains: `www.<hostname>` redirects here. */
         public bool $wwwRedirect = false,
-        /** Custom subdomains may CNAME to this generated hostname instead of A/AAAA records. */
+        /**
+         * Custom domains may point here (the service's generated hostname
+         * under the platform domain) instead of at the edges' addresses:
+         * a CNAME for subdomains, ALIAS/ANAME/CNAME flattening at an apex.
+         * Null without a platform domain.
+         */
         public ?string $cnameTarget = null,
+        /** A zone apex (`example.com`): most DNS hosts allow no CNAME there. */
+        public bool $apex = false,
         /** The www redirect toggle applies (custom, not www., not itself a redirect). */
         public bool $canRedirectWww = false,
         /** Custom domains: Strict-Transport-Security once the certificate is issued. */

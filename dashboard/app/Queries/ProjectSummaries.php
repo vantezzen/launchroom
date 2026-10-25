@@ -36,8 +36,10 @@ use Illuminate\Support\Facades\DB;
  * domain, last deployment, 14-day deploy bars and a mini canvas of
  * production. A fixed number of queries regardless of the project count.
  */
-final class ProjectSummaries
+final readonly class ProjectSummaries
 {
+    public function __construct(private RequestAnalytics $analytics = new RequestAnalytics) {}
+
     public const int DEPLOY_DAYS = 14;
 
     public const int THUMBNAIL_NODES = 24;
@@ -92,8 +94,9 @@ final class ProjectSummaries
         $lastDeployments = $this->lastDeployments($projectIds);
         $deploys = $this->deployDays($projectIds);
         $thumbnails = $this->thumbnails($production, $grouped);
+        $requests = $this->requests($production, $grouped);
 
-        return array_values($projects->map(static function (Project $project) use ($byEnvironment, $latest, $placements, $domains, $lastDeployments, $deploys, $thumbnails): ProjectSummaryData {
+        return array_values($projects->map(static function (Project $project) use ($byEnvironment, $latest, $placements, $domains, $lastDeployments, $deploys, $thumbnails, $requests): ProjectSummaryData {
             $logos = [];
             $updated = $project->updated_at;
 
@@ -133,8 +136,48 @@ final class ProjectSummaries
                 deploys: $deploys[$project->id] ?? self::emptyDays(),
                 canvas: $thumbnails[$project->id] ?? null,
                 iconUrl: $project->iconUrl(),
+                requests: $requests[$project->id] ?? null,
             );
         })->all());
+    }
+
+    /**
+     * Production requests per hour of the last 24 hours (docs/15 §5.4),
+     * only for projects that had traffic.
+     *
+     * @param  array<int, Environment>  $production
+     * @param  array<int, list<ServiceInstance>>  $byEnvironment
+     * @return array<int, list<int>> project id => 24 counts
+     */
+    private function requests(array $production, array $byEnvironment): array
+    {
+        $projectOf = [];
+
+        foreach ($production as $projectId => $environment) {
+            foreach ($byEnvironment[$environment->id] ?? [] as $instance) {
+                $projectOf[$instance->id] = $projectId;
+            }
+        }
+
+        $out = [];
+
+        foreach ($this->analytics->lastDay(array_keys($projectOf)) as $instanceId => $hours) {
+            $projectId = $projectOf[$instanceId] ?? null;
+
+            if ($projectId === null) {
+                continue;
+            }
+
+            $sum = $out[$projectId] ?? array_fill(0, 24, 0);
+
+            foreach ($hours as $i => $count) {
+                $sum[$i] = ($sum[$i] ?? 0) + $count;
+            }
+
+            $out[$projectId] = $sum;
+        }
+
+        return array_map(array_values(...), array_filter($out, static fn (array $hours): bool => array_sum($hours) > 0));
     }
 
     /**

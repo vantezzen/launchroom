@@ -9,6 +9,7 @@ use App\Http\Controllers\Projects\DomainController;
 use App\Http\Controllers\Projects\ImportController;
 use App\Http\Controllers\Projects\LogRetentionController;
 use App\Http\Controllers\Projects\PlanPreviewController;
+use App\Http\Controllers\Projects\ProjectAnalyticsController;
 use App\Http\Controllers\Projects\ProjectController;
 use App\Http\Controllers\Projects\ProjectIconController;
 use App\Http\Controllers\Projects\ProjectLogsController;
@@ -52,13 +53,17 @@ Route::middleware(['web', 'auth', 'verified'])
         Route::get('p/{project}', [ProjectController::class, 'show'])->name('projects.show');
         // Per-service usage metrics JSON (canvas nodes, service panel Metrics tab).
         Route::get('p/{project}/-/metrics', ProjectMetricsController::class)->name('projects.metrics');
+        // Request analytics JSON (docs/15 §5.4).
+        Route::get('p/{project}/-/analytics', [ProjectAnalyticsController::class, 'data'])
+            ->middleware('throttle:120,1')
+            ->name('projects.analytics');
 
         Route::get('p/{project}/settings/{section?}', [ProjectSettingsController::class, 'show'])
             ->whereIn('section', ProjectSettingsController::SECTIONS)
             ->name('projects.settings');
         Route::patch('p/{project}/settings', [ProjectSettingsController::class, 'update'])->name('projects.settings.update');
         Route::delete('p/{project}', [ProjectSettingsController::class, 'destroy'])
-
+            ->middleware('throttle:20,1')
             ->name('projects.destroy');
         Route::post('p/{project}/environments', [ProjectSettingsController::class, 'storeEnvironment'])->name('projects.environments.store');
 
@@ -94,6 +99,8 @@ Route::middleware(['web', 'auth', 'verified'])
         Route::get('p/{project}/{environment}/logs', [ProjectLogsController::class, 'show'])->name('projects.logs');
         // The project Metrics tab (docs/15 §2.3); numbers come from projects.metrics.
         Route::get('p/{project}/{environment}/metrics', [ProjectMetricsPageController::class, 'show'])->name('projects.metrics-page');
+        // The project Analytics tab (docs/15 §5.4); numbers come from projects.analytics.
+        Route::get('p/{project}/{environment}/analytics', [ProjectAnalyticsController::class, 'show'])->name('projects.analytics-page');
         // The log explorer's lines and live runtime tails (JSON).
         Route::get('p/{project}/{environment}/-/logs', [ProjectLogsController::class, 'entries'])
             ->middleware('throttle:120,1')
@@ -124,6 +131,13 @@ Route::middleware(['web', 'auth', 'verified'])
             ->name('projects.services.scaling-preview');
         Route::patch('p/{project}/{environment}/s/{service}/name', [ServiceSettingsController::class, 'rename'])->name('projects.services.rename');
         Route::post('p/{project}/{environment}/s/{service}/volumes', [ServiceSettingsController::class, 'addVolume'])->name('projects.services.volumes.store');
+        Route::patch('p/{project}/{environment}/s/{service}/volumes/{volume}', [ServiceSettingsController::class, 'updateVolume'])
+            ->where('volume', 'vol_[0-9A-HJKMNP-TV-Z]{26}')
+            ->name('projects.services.volumes.update');
+        Route::delete('p/{project}/{environment}/s/{service}/volumes/{volume}', [ServiceSettingsController::class, 'removeVolume'])
+            ->where('volume', 'vol_[0-9A-HJKMNP-TV-Z]{26}')
+            ->name('projects.services.volumes.destroy');
+        Route::patch('p/{project}/{environment}/s/{service}/image', [ServiceSettingsController::class, 'changeImage'])->name('projects.services.image');
         Route::post('p/{project}/{environment}/s/{service}/plan', [ServiceSettingsController::class, 'replan'])
             ->middleware('throttle:10,1')
             ->name('projects.services.replan');

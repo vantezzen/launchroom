@@ -57,7 +57,7 @@ final class AlertChannelController extends Controller
         Inertia::flash('toast', ['type' => 'success', 'message' => match (true) {
             $input->enabled === false => "{$alertChannel->name} is paused.",
             $input->enabled === true => "{$alertChannel->name} gets alerts again.",
-            $secret !== null => 'New signing secret ready. Update your receiver, the old one no longer works.',
+            $secret !== null => 'New signing secret created. Update your receiver, because the old secret no longer works.',
             default => 'Saved.',
         }]);
 

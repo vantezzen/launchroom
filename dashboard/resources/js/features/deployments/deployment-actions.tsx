@@ -108,7 +108,7 @@ function describe(action: PendingAction): {
             return {
                 title: `Promote ${action.deployment.serviceName}?`,
                 description:
-                    'Traffic switches to the staged version, which is already running and healthy. The current version drains. No rebuild, no restart.',
+                    'Traffic switches to the staged version, which is already running and healthy. Nothing is rebuilt or restarted, and the current version drains.',
                 confirm: 'Promote',
             };
     }

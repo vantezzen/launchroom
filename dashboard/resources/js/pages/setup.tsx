@@ -3,6 +3,7 @@ import { Check } from 'lucide-react';
 import AppLogoIcon from '@/components/app-logo-icon';
 import InputError from '@/components/input-error';
 import PasswordInput from '@/components/password-input';
+import { MetaLine } from '@/components/patterns/meta-line';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -39,7 +40,7 @@ export default function Setup({
             <Head title="Set up launchroom" />
 
             <section className="flex flex-col justify-between gap-10 border-b bg-recessed px-6 py-8 sm:px-10 lg:border-r lg:border-b-0 lg:px-14 lg:py-12">
-                <AppLogoIcon className="size-8 text-foreground" />
+                <AppLogoIcon className="size-10 text-foreground" />
 
                 <div className="flex flex-col items-center gap-8 text-center lg:items-start lg:text-left">
                     <ServerDevice
@@ -52,14 +53,12 @@ export default function Setup({
                             Your launchroom is installed.
                         </h1>
                         {server ? (
-                            <p className="type-body text-muted-foreground">
+                            <MetaLine className="type-body text-muted-foreground">
                                 <span className="font-medium text-foreground">
                                     {server.name}
                                 </span>
-                                {facts.map((fact) => (
-                                    <span key={fact}> · {fact}</span>
-                                ))}
-                            </p>
+                                {facts}
+                            </MetaLine>
                         ) : (
                             <p className="type-body text-muted-foreground">
                                 Create your account to start deploying.
@@ -87,8 +86,8 @@ export default function Setup({
                     <div className="flex flex-col gap-2">
                         <h2 className="type-title">Create the owner account</h2>
                         <p className="type-body text-muted-foreground">
-                            This account runs the instance. Get started guides
-                            you next.
+                            This account owns the instance. Next, Get started
+                            walks you through the rest of the setup.
                         </p>
                     </div>
 

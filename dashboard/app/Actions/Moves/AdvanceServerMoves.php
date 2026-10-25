@@ -278,7 +278,7 @@ final readonly class AdvanceServerMoves
             }
 
             $item->deployment_id = $deployment->id;
-            $item->transitionTo(MoveItemStatus::Starting, "Starting on {$move->target->name}; the copy on {$move->source->name} serves until then.");
+            $item->transitionTo(MoveItemStatus::Starting, "Starting on {$move->target->name}. The copy on {$move->source->name} keeps serving until then.");
 
             return true;
         }
@@ -713,7 +713,7 @@ final readonly class AdvanceServerMoves
             $item->save();
         } catch (DomainRuleViolation $e) {
             $held = MoveHolds::heldBy($item);
-            $item->transitionTo(MoveItemStatus::Failed, ($failure ?? 'Cancelled.')." It couldn’t be started on {$move->source->name} again ({$e->getMessage()}); deploy it from its page.");
+            $item->transitionTo(MoveItemStatus::Failed, ($failure ?? 'Cancelled.')." It couldn’t be started on {$move->source->name} again ({$e->getMessage()}). Deploy it from its page.");
             $this->release($held, []);
         }
 

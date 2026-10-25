@@ -19,12 +19,10 @@ const widths: Record<Exclude<PageSize, 'full'>, string> = {
 type PageProps = Omit<ComponentProps<'div'>, 'children'> & {
     /**
      * `wide` lists, overviews and detail pages; `narrow` guided flows;
-     * `settings` the shared settings layout (pass `nav`); `full` only the
-     * canvas and the logs explorer.
+     * `settings` around a `SettingsShell` (components/settings); `full`
+     * only the canvas and the logs explorer.
      */
     size?: PageSize;
-    /** Left column of the `settings` size (200 px, sticky on desktop). */
-    nav?: ReactNode;
     children?: ReactNode;
 };
 
@@ -38,7 +36,6 @@ type PageProps = Omit<ComponentProps<'div'>, 'children'> & {
  */
 export function Page({
     size = 'wide',
-    nav,
     className,
     children,
     ...props
@@ -60,6 +57,7 @@ export function Page({
     }
 
     if (size === 'settings') {
+        // The shell lays out its own sidebar and page column.
         return (
             <div
                 data-slot="page"
@@ -72,23 +70,12 @@ export function Page({
             >
                 <div
                     className={cn(
-                        'mx-auto grid w-full min-w-0 gap-6 md:grid-cols-[200px_minmax(0,1fr)] md:gap-10',
+                        'mx-auto w-full min-w-0',
                         widths.settings,
+                        className,
                     )}
                 >
-                    {nav && (
-                        <div className="min-w-0 md:sticky md:top-8 md:self-start">
-                            {nav}
-                        </div>
-                    )}
-                    <div
-                        className={cn(
-                            'flex w-full max-w-[800px] min-w-0 flex-col gap-10',
-                            className,
-                        )}
-                    >
-                        {children}
-                    </div>
+                    {children}
                 </div>
             </div>
         );

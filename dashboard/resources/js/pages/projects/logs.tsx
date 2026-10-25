@@ -27,7 +27,7 @@ export default function ProjectLogs({ project, environment, services }: Props) {
 
     return (
         <>
-            <Head title={`Logs · ${project.name}`} />
+            <Head title={`Logs - ${project.name}`} />
             <Page size="full">
                 {environment && (
                     <LogExplorer

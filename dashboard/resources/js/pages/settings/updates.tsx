@@ -1,5 +1,6 @@
-import { Head, usePoll } from '@inertiajs/react';
+import { Head, router } from '@inertiajs/react';
 import { useEffect } from 'react';
+import { useConnection } from '@/components/reconnect-banner';
 import { Status } from '@/components/status';
 import type { StatusState } from '@/components/status';
 import { TimeAgo } from '@/components/time-ago';
@@ -8,7 +9,8 @@ import { ServerVersions } from '@/features/updates/server-versions';
 import { UpdatePreferences } from '@/features/updates/update-preferences';
 import { UpdateAttention, UpdateHero } from '@/features/updates/update-status';
 import type { UpdatesPageProps } from '@/features/updates/update-status';
-import { edit as teamSettings } from '@/routes/team';
+import { checkConnection, connectionState } from '@/lib/connection';
+import { index as settingsHome } from '@/routes/settings';
 import { edit } from '@/routes/updates';
 
 const outcome: Record<App.Enums.Updates.ControlPlaneUpdateStatus, StatusState> =
@@ -44,7 +46,7 @@ function History({
                     description={
                         <>
                             <TimeAgo value={update.finishedAt} />
-                            {update.automatic ? ' · automatic' : ''}
+                            {update.automatic ? ', automatically' : ''}
                         </>
                     }
                 >
@@ -65,17 +67,34 @@ function History({
  * automatic updates.
  */
 export default function UpdateSettings(props: UpdatesPageProps) {
-    // Live status while an update runs (the dashboard itself restarts during
-    // a control-plane update; polling resumes when it is back).
-    const { start, stop } = usePoll(3000, {}, { autoStart: false });
+    // Live status while an update runs. The dashboard itself restarts
+    // during a control-plane update: each tick asks the tiny /up/version
+    // first, so while it is away nothing piles up, and once the new build
+    // answers the page reloads fully (lib/connection.ts).
+    const connection = useConnection();
 
     useEffect(() => {
-        if (props.running) {
-            start();
-        } else {
-            stop();
+        if (!props.running) {
+            return;
         }
-    }, [props.running, start, stop]);
+
+        const timer = window.setInterval(() => {
+            if (document.visibilityState !== 'visible') {
+                return;
+            }
+
+            const wasOnline = connectionState() === 'online';
+
+            void checkConnection().then((reachable) => {
+                // Coming back online refreshes the page by itself.
+                if (reachable && wasOnline) {
+                    router.reload();
+                }
+            });
+        }, 3000);
+
+        return () => window.clearInterval(timer);
+    }, [props.running]);
 
     const update = props.controlPlaneUpdate;
     const attention =
@@ -109,7 +128,10 @@ export default function UpdateSettings(props: UpdatesPageProps) {
                 />
             )}
 
-            <UpdateHero {...props} />
+            <UpdateHero
+                {...props}
+                restarting={props.running && connection === 'reconnecting'}
+            />
 
             <ServerVersions {...props} />
 
@@ -126,7 +148,7 @@ export default function UpdateSettings(props: UpdatesPageProps) {
 
 UpdateSettings.layout = {
     breadcrumbs: [
-        { title: 'Settings', href: teamSettings() },
+        { title: 'Settings', href: settingsHome() },
         {
             title: 'Updates',
             href: edit(),

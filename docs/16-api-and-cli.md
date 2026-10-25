@@ -59,6 +59,8 @@ Secrets are never part of a list response. `GET …/variables` returns secret ro
 
 The endpoint reference is the [API reference](https://launchroom.vantezzen.io/docs/reference/api) on the site and the generated OpenAPI document `dashboard/resources/api/openapi.json` (§2.4).
 
+Security center (D63): read-only endpoints under `/api/v1/security/…` and `…/services/{service}/inventory` (ability `read`) and the CLI commands `launchroom security` and `launchroom security inventory`, listed in [22](22-security-center.md) §11.
+
 ### 2.3 Server-sent events
 
 `GET …/logs/stream` answers `text/event-stream` (`Cache-Control: no-store`, `X-Accel-Buffering: no`). Events:

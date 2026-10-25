@@ -1,5 +1,6 @@
 import { Plus, TriangleAlert, X } from 'lucide-react';
 import { useState } from 'react';
+import { MetaLine } from '@/components/patterns/meta-line';
 import { Button } from '@/components/ui/button';
 import {
     Dialog,
@@ -20,7 +21,7 @@ const builderLabels: Record<string, string> = {
 };
 
 /**
- * "Next.js · pnpm 9.12 · Node 22.11 (from .nvmrc) · port 3000".
+ * "Next.js", "pnpm 9.12", "Node 22.11 (from .nvmrc)", "port 3000".
  */
 export function planHeadline(plan: Plan): string[] {
     return [
@@ -34,7 +35,7 @@ export function planHeadline(plan: Plan): string[] {
 }
 
 /**
- * "Next.js 16.4 · standalone · ISR routes: 2 · middleware" from the
+ * "Next.js 16.4", "standalone", "ISR routes: 2", "middleware" from the
  * launchroom Next.js adapter's build report.
  */
 export function nextHeadline(
@@ -69,12 +70,14 @@ function NextDetails({ next }: { next: App.Data.Protocol.V1.NextBuildInfo }) {
             <span className="type-label text-muted-foreground">
                 Next.js build
             </span>
-            <p className="type-body">{nextHeadline(next).join(' · ')}</p>
+            <p className="type-body">
+                <MetaLine>{nextHeadline(next)}</MetaLine>
+            </p>
             {routes.length > 0 && (
                 <p className="type-small text-muted-foreground">
-                    {routes
-                        .map(([label, count]) => `${label}: ${count}`)
-                        .join(' · ')}
+                    <MetaLine>
+                        {routes.map(([label, count]) => `${label}: ${count}`)}
+                    </MetaLine>
                 </p>
             )}
             {next.isrRoutes && next.isrRoutes.length > 0 && (
@@ -88,13 +91,16 @@ function NextDetails({ next }: { next: App.Data.Protocol.V1.NextBuildInfo }) {
                 </p>
             )}
             <p className="type-small text-muted-foreground">
-                Image optimization{' '}
-                {next.imageOptimization
-                    ? next.sharp
-                        ? 'on (sharp)'
-                        : 'on (without sharp)'
-                    : 'off'}{' '}
-                · launchroom adapter {next.adapterVersion}
+                <MetaLine>
+                    {`Image optimization ${
+                        next.imageOptimization
+                            ? next.sharp
+                                ? 'on (sharp)'
+                                : 'on (without sharp)'
+                            : 'off'
+                    }`}
+                    {`launchroom adapter ${next.adapterVersion}`}
+                </MetaLine>
             </p>
         </div>
     );
@@ -120,8 +126,8 @@ export function PlanJsonDialog({
             <DialogContent className="sm:max-w-3xl">
                 <DialogTitle>Build plan</DialogTitle>
                 <DialogDescription>
-                    The plan Railpack generated for this commit, after presets
-                    and overrides. Read-only.
+                    The plan Railpack generated for this commit, with presets
+                    and overrides applied.
                 </DialogDescription>
                 <pre className="max-h-[60vh] overflow-auto rounded-md border bg-muted p-3 type-mono-small">
                     {json}
@@ -237,7 +243,7 @@ export function DetectedPlan({
                     <span className="text-muted-foreground">We detected </span>
                     <span className="font-medium">
                         {headline.length > 0
-                            ? headline.join(' · ')
+                            ? headline.join(', ')
                             : 'a buildable app'}
                     </span>
                 </p>
@@ -250,7 +256,7 @@ export function DetectedPlan({
                               'with Railpack')}
                         {plan.railpackVersion &&
                             plan.builder === 'railpack' &&
-                            ` · Railpack ${plan.railpackVersion}`}
+                            ` (Railpack ${plan.railpackVersion})`}
                     </p>
                 )}
             </div>
@@ -300,8 +306,9 @@ export function DetectedPlan({
                     </ul>
                     {onToggleDecision && (
                         <p className="type-small text-muted-foreground">
-                            Remove a decision to build without it. Saved with
-                            the build settings; applies to the next build.
+                            Remove a decision to build without it. The change is
+                            saved with the build settings and applies to the
+                            next build.
                         </p>
                     )}
                 </div>

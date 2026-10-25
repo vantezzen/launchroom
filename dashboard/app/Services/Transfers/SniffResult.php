@@ -51,7 +51,7 @@ final readonly class SniffResult
     }
 
     /**
-     * One line for the UI: "PostgreSQL custom dump · from PostgreSQL 15.8".
+     * One line for the UI: "PostgreSQL custom dump from PostgreSQL 15.8".
      */
     public function detail(): ?string
     {
@@ -70,12 +70,12 @@ final readonly class SniffResult
         }
 
         if ($this->compressed && $this->format !== 'tar') {
-            $kind .= ', gzipped';
+            $kind = 'Gzipped '.$kind;
         }
 
         $from = $this->sourceVersionLabel();
 
-        return $from === null ? $kind : "{$kind} · from {$from}";
+        return $from === null ? $kind : "{$kind} from {$from}";
     }
 
     /**

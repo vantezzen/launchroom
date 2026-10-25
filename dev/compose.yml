@@ -75,6 +75,9 @@ x-dashboard-env: &dashboard-env
   LAUNCHROOM_GIT_WEBHOOK_URL: http://dashboard:8000
   # Apps are served on the host-mapped HTTPS port (LR_INGRESS_HTTPS_PORT).
   LAUNCHROOM_PREVIEW_HTTPS_PORT: "${LR_DEV_HTTPS_PORT:-8443}"
+  # The edge Caddy: stock caddy:2.11.7 unless `make caddy-image-pin` pinned
+  # the local launchroom-caddy build (modules, web firewall; docs/11 §6).
+  LAUNCHROOM_CADDY_IMAGE: ${LR_DEV_CADDY_IMAGE:-docker.io/library/caddy@sha256:685ae3d7c34d9b5f8caeddc5d14051db7bbd88ff1f5a2fa0c16bd8ca328fb7af}
   # Generate a Dockerfile (docs/20 §8): no real API key in dev, a stub model
   # answers from a fixture. Set LR_DOCKERFILE_MODEL=anthropic in dev/.env and
   # add a key in Settings → Dockerfile generation to try the real one.
@@ -356,6 +359,9 @@ services:
     restart: unless-stopped
     environment:
       LR_DEV_SERVER_NAME: server-1
+      # Extra system image pins (host config): `make caddy-image-pin` adds the
+      # local launchroom-caddy build here.
+      LR_SYSTEM_IMAGE_DIGESTS: ${LR_DEV_SYSTEM_IMAGE_DIGESTS:-}
       # Pretend host time zone (suggests a location for the server map).
       LR_HOST_TIMEZONE: Europe/Berlin
       # Dev never asks IP echo services (fake servers have no public address).

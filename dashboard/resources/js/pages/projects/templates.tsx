@@ -35,7 +35,7 @@ export default function Templates({
             <Page size="wide">
                 <PageHeader
                     title="Start from a template"
-                    description="Apps and stacks that are ready to run. Secrets are generated, the first deploy starts right away."
+                    description="Apps and stacks that are ready to run. launchroom generates the secrets and starts the first deploy."
                 />
                 <NewProjectTabs current="template" />
                 <TemplateGallery
@@ -70,7 +70,7 @@ export default function Templates({
                         template={shown}
                         url={store(shown.id).url}
                         askName
-                        submitLabel="Deploy"
+                        submitLabel="Create and deploy"
                     />
                 )}
             </SidePanel>

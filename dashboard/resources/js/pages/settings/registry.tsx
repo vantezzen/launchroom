@@ -28,7 +28,7 @@ import {
     useDocsUrl,
 } from '@/features/settings/settings-card';
 import { destroy, edit, update } from '@/routes/registry-settings';
-import { edit as teamSettings } from '@/routes/team';
+import { index as settingsHome } from '@/routes/settings';
 
 type Props = {
     settings: App.Data.Registry.RegistrySettingsData;
@@ -101,7 +101,7 @@ export default function RegistrySettings({ settings }: Props) {
                             value: 'disk',
                             title: 'This server',
                             description:
-                                'Fast and free. Lost with the server, then rebuilt from git.',
+                                'Fast and free. If the server is lost, images are rebuilt from git.',
                             media: (
                                 <HardDrive
                                     aria-hidden="true"
@@ -113,7 +113,7 @@ export default function RegistrySettings({ settings }: Props) {
                             value: 's3',
                             title: 'Your S3 bucket',
                             description:
-                                'Survives the server. Slower pulls and more storage used.',
+                                'Kept if the server is lost, but pulls are slower and the bucket uses more storage.',
                             media: (
                                 <Cloud
                                     aria-hidden="true"
@@ -156,8 +156,8 @@ export default function RegistrySettings({ settings }: Props) {
                     }
                     footer={
                         <>
-                            Images already stored aren’t copied over; each
-                            service rebuilds on its next deploy.{' '}
+                            Images already stored aren’t copied. Each service
+                            rebuilds on its next deploy.{' '}
                             <LearnMore
                                 href={docsUrl('builds/how-builds-work')}
                             />
@@ -354,7 +354,7 @@ function StorageForm({
                                     Path-style requests
                                 </Label>
                                 <p className="type-small text-muted-foreground">
-                                    Most S3-compatible providers need it; some
+                                    Most S3-compatible providers need this. Some
                                     AWS buckets don’t.
                                 </p>
                             </div>
@@ -373,8 +373,8 @@ function StorageForm({
                                     Allow a private network or plain http
                                 </Label>
                                 <p className="type-small text-muted-foreground">
-                                    For storage on your LAN. Recorded in the
-                                    audit log.
+                                    For storage on your local network. Turning
+                                    this on is recorded in the audit log.
                                 </p>
                                 <InputError
                                     message={errors.allowPrivateNetwork}
@@ -399,7 +399,7 @@ function StorageForm({
 
 RegistrySettings.layout = {
     breadcrumbs: [
-        { title: 'Settings', href: teamSettings() },
+        { title: 'Settings', href: settingsHome() },
         {
             title: 'Registry',
             href: edit(),

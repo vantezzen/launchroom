@@ -2,6 +2,7 @@ import { usePage } from '@inertiajs/react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { endOnUnload, openSession, sendCommand } from './api';
 import type { ServiceRef } from './api';
+import { watchConnect } from './connect-watch';
 import { endSentence } from './format';
 import type { DataResult } from './result-types';
 import { SessionClient } from './session-client';
@@ -32,6 +33,9 @@ export function useDataSession(ref: ServiceRef, onEnded: () => void) {
     const sessionId = useRef<string | null>(null);
     const waiters = useRef(new Map<string, Waiter>());
     const early = useRef(new Map<string, DataResult>());
+    const unwatch = useRef<(() => void) | null>(null);
+    // Each open() bumps it: late events of an earlier attempt are ignored.
+    const attempt = useRef(0);
 
     const settle = useCallback((op: string, result: DataResult) => {
         const waiter = waiters.current.get(op);
@@ -57,6 +61,8 @@ export function useDataSession(ref: ServiceRef, onEnded: () => void) {
     const stop = useCallback(() => {
         const current = client.current;
         client.current = null;
+        unwatch.current?.();
+        unwatch.current = null;
 
         if (current && sessionId.current) {
             endOnUnload(sessionId.current);
@@ -69,11 +75,18 @@ export function useDataSession(ref: ServiceRef, onEnded: () => void) {
 
         return () => {
             window.removeEventListener('pagehide', stop);
+            // A session still being opened ends as soon as it arrives.
+            attempt.current++;
             stop();
         };
     }, [stop]);
 
     const open = useCallback(async (): Promise<void> => {
+        // A reconnect replaces the previous session (the server ends it too).
+        stop();
+        failAll('The session ended.');
+        const mine = ++attempt.current;
+        const current = () => attempt.current === mine;
         setPhase({ kind: 'connecting' });
 
         try {
@@ -81,20 +94,39 @@ export function useDataSession(ref: ServiceRef, onEnded: () => void) {
                 cols: 80,
                 rows: 24,
             });
+
+            if (!current()) {
+                endOnUnload(session.id);
+
+                return;
+            }
+
             sessionId.current = session.id;
             const live = new SessionClient(
                 session,
                 {
                     onReady: () => {
-                        setPhase({ kind: 'live' });
+                        unwatch.current?.();
+                        unwatch.current = null;
+
+                        if (current()) {
+                            setPhase({ kind: 'live' });
+                        }
                     },
                     onResult: (op, result) => settle(op, result as DataResult),
-                    onEnd: (reason) => {
+                    onEnd: (reason, message) => {
+                        unwatch.current?.();
+                        unwatch.current = null;
+
+                        if (!current()) {
+                            return;
+                        }
+
                         client.current = null;
                         failAll('The session ended.');
                         setPhase({
                             kind: 'ended',
-                            reason: endSentence(reason),
+                            reason: message ?? endSentence(reason),
                         });
                         onEnded();
                     },
@@ -102,8 +134,26 @@ export function useDataSession(ref: ServiceRef, onEnded: () => void) {
                 () => ({ t: 'hello' }),
             );
             client.current = live;
+            unwatch.current = watchConnect(
+                session.id,
+                session.replica.serverName,
+                (message) => {
+                    if (!current()) {
+                        return;
+                    }
+
+                    client.current = null;
+                    live.close();
+                    setPhase({ kind: 'idle', error: message });
+                    onEnded();
+                },
+            );
             await live.connect(realtime);
         } catch (failure) {
+            if (!current()) {
+                return;
+            }
+
             const message =
                 failure instanceof Error
                     ? failure.message
@@ -111,7 +161,7 @@ export function useDataSession(ref: ServiceRef, onEnded: () => void) {
 
             setPhase({ kind: 'idle', error: message });
         }
-    }, [ref, realtime, settle, failAll, onEnded]);
+    }, [ref, realtime, settle, failAll, onEnded, stop]);
 
     const run = useCallback(
         async (command: Record<string, unknown>): Promise<DataResult> => {

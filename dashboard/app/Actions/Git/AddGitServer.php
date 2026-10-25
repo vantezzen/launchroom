@@ -104,7 +104,7 @@ final readonly class AddGitServer
         }
 
         if ($refs === []) {
-            throw DomainRuleViolation::on('url', 'That repository has no branches launchroom can see. Plain HTTPS works for public repositories; use SSH with a deploy key for private ones.');
+            throw DomainRuleViolation::on('url', 'That repository has no branches launchroom can see. HTTPS works for public repositories. For private ones, use SSH with a deploy key.');
         }
 
         return $this->store($connection, $this->httpsName($https), GitServerBranches::defaultBranch($refs), $actor, active: true);

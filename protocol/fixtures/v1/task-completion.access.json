@@ -1,0 +1,14 @@
+{
+  "apiVersion": "launchroom.vantezzen.io/v1",
+  "kind": "TaskCompletion",
+  "attempt": 1,
+  "outcome": "succeeded",
+  "access": {
+    "endReason": "idle",
+    "startedAt": "2026-10-17T12:04:00Z",
+    "connections": 3,
+    "authFailures": 2,
+    "bytesIn": 4096,
+    "bytesOut": 81920
+  }
+}

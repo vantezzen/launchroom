@@ -18,6 +18,9 @@ func FuzzParseRequest(f *testing.F) {
 		"GET /v1.52/containers/json?all=1", "POST /v1.52/containers/create?name=lr-x", "GET /images/a/b@sha256:x/json",
 		"DELETE /v1.52/images/127.0.0.1:5000/x", "POST /exec/" + strings.Repeat("a", 64) + "/start", "GET /v1.52/../info",
 		"PUT /containers/x/archive?path=/data", "GET /containers/x/logs?tail=all&tail=1", "POST /v1.99/build",
+		"GET /v1.52/containers/" + strings.Repeat("a", 64) + "/changes", "GET /v1.52/containers/" + strings.Repeat("a", 64) + "/top",
+		"GET /v1.52/containers/" + strings.Repeat("a", 64) + "/top?ps_args=aux", "GET /containers/x/top?ps_args=-ef&ps_args=",
+		"GET /v1.52/containers/" + strings.Repeat("a", 64) + "/changes?kind=1",
 	} {
 		f.Add(s)
 	}
@@ -31,6 +34,9 @@ func FuzzParseRequest(f *testing.F) {
 		q, err := parseRequest(r)
 		if err != nil {
 			return
+		}
+		if (q.op == opContainerChanges || q.op == opContainerTop) && len(q.query) != 0 {
+			t.Fatalf("accepted a query for an inspection route: %q", u.RawQuery)
 		}
 		p := u.EscapedPath()
 		if strings.Contains(p, "..") && q.op != opImageInspect && q.op != opImageRemove {

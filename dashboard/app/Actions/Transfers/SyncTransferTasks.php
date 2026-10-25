@@ -16,6 +16,7 @@ use App\Enums\Transfers\ImportRunStatus;
 use App\Enums\Transfers\TransferStatus;
 use App\Events\NodeStateInvalidated;
 use App\Models\DaemonTask;
+use App\Models\ServiceInstance;
 use App\Models\Transfers\DataExportRun;
 use App\Models\Transfers\DataImportRun;
 use App\Models\Transfers\DataTransfer;
@@ -23,6 +24,7 @@ use App\Services\Backups\RestoreHolds;
 use App\Services\Transfers\ImportHolds;
 use App\Services\Transfers\TransferStore;
 use Illuminate\Support\Facades\DB;
+use Throwable;
 
 /**
  * Mirrors data import and export task outcomes onto their runs (docs/14
@@ -38,6 +40,7 @@ final readonly class SyncTransferTasks
     public function __construct(
         private TransferStore $store,
         private RecordAuditEvent $audit,
+        private EndDatabasePreparation $endPreparation,
     ) {}
 
     public function handle(?DaemonTask $task = null): void
@@ -54,7 +57,13 @@ final readonly class SyncTransferTasks
         ];
 
         foreach (DaemonTask::query()->whereIn('id', $ids)->get() as $daemonTask) {
-            $this->sync($daemonTask);
+            // One task that can't be mirrored must not stop the others, nor
+            // the rest of the transfers tick (imports waiting to start).
+            try {
+                $this->sync($daemonTask);
+            } catch (Throwable $e) {
+                report($e);
+            }
         }
     }
 
@@ -69,11 +78,11 @@ final readonly class SyncTransferTasks
 
     private function import(DaemonTask $task): void
     {
-        DB::transaction(function () use ($task): void {
+        $finished = DB::transaction(function () use ($task): ?ServiceInstance {
             $run = DataImportRun::query()->where('daemon_task_id', $task->id)->with(['serviceInstance.service', 'volume'])->lockForUpdate()->first();
 
             if (! $run instanceof DataImportRun || $run->status !== ImportRunStatus::Importing) {
-                return;
+                return null;
             }
 
             $held = ImportHolds::heldBy($run);
@@ -86,7 +95,7 @@ final readonly class SyncTransferTasks
             } elseif ($task->status === DaemonTaskStatus::Failed || $task->status === DaemonTaskStatus::Cancelled) {
                 $run->transitionTo(ImportRunStatus::Failed, $task->error ?? 'The import task '.$task->status->value.'.');
             } else {
-                return;
+                return null;
             }
 
             // The file stays for a retry until it expires.
@@ -122,7 +131,14 @@ final readonly class SyncTransferTasks
             if ($servers !== []) {
                 event(new NodeStateInvalidated(array_values(array_unique($servers))));
             }
+
+            return $run->subject === DataSubject::Database ? $run->serviceInstance : null;
         });
+
+        // A database started alone for this import stops again (docs/14 §12.9).
+        if ($finished instanceof ServiceInstance) {
+            $this->endPreparation->handle($finished);
+        }
     }
 
     private function export(DaemonTask $task): void

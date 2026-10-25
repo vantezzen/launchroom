@@ -4,18 +4,21 @@ import {
     Container,
     Database,
     GitBranch,
-    Globe,
     HardDrive,
-    Hammer,
     Layers,
     Link2,
     Network,
     Rocket,
+    ShieldCheck,
     SlidersHorizontal,
     TriangleAlert,
     Wrench,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import type {
+    SettingsNavGroup,
+    SettingsNavPage,
+} from '@/components/settings/types';
 import type { SettingsContext } from './settings-context';
 
 export type SectionId =
@@ -26,28 +29,19 @@ export type SectionId =
     | 'schedule'
     | 'domains'
     | 'networking'
+    | 'firewall'
     | 'scaling'
     | 'volumes'
     | 'advanced'
     | 'danger';
 
-export type SectionPage = {
-    id: SectionId;
-    label: string;
-    icon: LucideIcon;
-};
+export type SectionPage = SettingsNavPage<SectionId>;
 
 /**
- * A sidebar entry: one page, or an area with several pages that opens a
- * sub-menu (back arrow + area title). An area left with a
- * single page for this kind of service renders as that page.
+ * A group of pages in the sidebar (`SettingsShell`): General at the top and
+ * Advanced and Danger zone at the bottom need no title.
  */
-export type SettingsArea = {
-    id: string;
-    label: string;
-    icon: LucideIcon;
-    pages: SectionPage[];
-};
+export type SettingsArea = SettingsNavGroup<SectionId>;
 
 /**
  * The Settings tab's structure for one service (docs/08 §16): which pages
@@ -64,132 +58,67 @@ export function settingsAreas(context: SettingsContext): SettingsArea[] {
             : settings.source.type === 'image'
               ? Container
               : GitBranch;
+    const page = (
+        id: SectionId,
+        label: string,
+        icon: LucideIcon,
+        when = true,
+    ): SectionPage[] => (when ? [{ id, label, icon }] : []);
 
     const areas: SettingsArea[] = [
         {
             id: 'general',
-            label: 'General',
-            icon: SlidersHorizontal,
-            pages: [
-                { id: 'general', label: 'General', icon: SlidersHorizontal },
-            ],
+            label: null,
+            pages: page('general', 'General', SlidersHorizontal),
         },
         {
             id: 'build',
             label: 'Build & deploy',
-            icon: Hammer,
             pages: [
-                { id: 'source', label: 'Source', icon: sourceIcon },
-                ...(kind === 'app'
-                    ? [{ id: 'build' as const, label: 'Build', icon: Boxes }]
-                    : []),
-                ...(kind !== 'database'
-                    ? [{ id: 'deploy' as const, label: 'Deploy', icon: Rocket }]
-                    : []),
-                ...(kind === 'cron'
-                    ? [
-                          {
-                              id: 'schedule' as const,
-                              label: 'Schedule',
-                              icon: CalendarClock,
-                          },
-                      ]
-                    : []),
+                ...page('source', 'Source', sourceIcon),
+                ...page('build', 'Build', Boxes, kind === 'app'),
+                ...page('deploy', 'Deploy', Rocket, kind !== 'database'),
+                ...page('schedule', 'Schedule', CalendarClock, kind === 'cron'),
             ],
         },
         {
             id: 'network',
             label: 'Network',
-            icon: Globe,
             pages: [
-                ...(web
-                    ? [
-                          {
-                              id: 'domains' as const,
-                              label: 'Domains',
-                              icon: Link2,
-                          },
-                      ]
-                    : []),
-                ...(listens
-                    ? [
-                          {
-                              id: 'networking' as const,
-                              label: 'Private network',
-                              icon: Network,
-                          },
-                      ]
-                    : []),
+                ...page('domains', 'Domains', Link2, web),
+                ...page('networking', 'Private network', Network, listens),
+                ...page('firewall', 'Web firewall', ShieldCheck, web),
             ],
         },
         {
-            id: 'scaling',
-            label: 'Scaling',
-            icon: Layers,
-            pages: [{ id: 'scaling', label: 'Scaling', icon: Layers }],
+            id: 'resources',
+            label: 'Resources',
+            pages: [
+                ...page('scaling', 'Scaling', Layers),
+                ...page(
+                    'volumes',
+                    'Volumes',
+                    HardDrive,
+                    settings.volumes.length > 0 || (canUpdate && web),
+                ),
+            ],
         },
-        ...(settings.volumes.length > 0 || (canUpdate && web)
-            ? [
-                  {
-                      id: 'volumes',
-                      label: 'Volumes',
-                      icon: HardDrive,
-                      pages: [
-                          {
-                              id: 'volumes' as const,
-                              label: 'Volumes',
-                              icon: HardDrive,
-                          },
-                      ],
-                  },
-              ]
-            : []),
         {
-            id: 'advanced',
-            label: 'Advanced',
-            icon: Wrench,
-            pages: [{ id: 'advanced', label: 'Advanced', icon: Wrench }],
+            id: 'more',
+            label: null,
+            pages: [
+                ...page('advanced', 'Advanced', Wrench),
+                ...page(
+                    'danger',
+                    'Danger zone',
+                    TriangleAlert,
+                    canUpdate || canDelete,
+                ),
+            ],
         },
-        ...(canUpdate || canDelete
-            ? [
-                  {
-                      id: 'danger',
-                      label: 'Danger zone',
-                      icon: TriangleAlert,
-                      pages: [
-                          {
-                              id: 'danger' as const,
-                              label: 'Danger zone',
-                              icon: TriangleAlert,
-                          },
-                      ],
-                  },
-              ]
-            : []),
     ];
 
-    return areas
-        .filter((area) => area.pages.length > 0)
-        .map((area) =>
-            area.pages.length === 1
-                ? {
-                      ...area,
-                      label: area.pages[0].label,
-                      icon: area.pages[0].icon,
-                  }
-                : area,
-        );
-}
-
-export function allPages(areas: SettingsArea[]): SectionPage[] {
-    return areas.flatMap((area) => area.pages);
-}
-
-export function areaOf(
-    areas: SettingsArea[],
-    section: string | null,
-): SettingsArea | undefined {
-    return areas.find((area) => area.pages.some((page) => page.id === section));
+    return areas.filter((area) => area.pages.length > 0);
 }
 
 /** The page shown for `/settings` without a section (wide layout). */

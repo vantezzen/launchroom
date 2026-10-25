@@ -24,7 +24,7 @@ export const pathLabels: Record<App.Enums.Mesh.MeshPath, string> = {
 export const pathDescriptions: Record<App.Enums.Mesh.MeshPath, string> = {
     direct: 'Traffic flows directly between the servers.',
     relay: 'Traffic is relayed through the dashboard’s server (works behind any NAT, slower).',
-    idle: 'No traffic recently; the path is chosen on first use.',
+    idle: 'No recent traffic. The path is chosen on first use.',
 };
 
 /**
@@ -40,12 +40,18 @@ export function MeshStatus({
         return <Status state="idle" label="Not connected" />;
     }
 
-    const label =
+    const path =
         mesh.state === 'connected' && mesh.pathToControlPlane !== null
-            ? `${labels.connected} · ${pathLabels[mesh.pathToControlPlane].toLowerCase()}`
-            : labels[mesh.state];
+            ? pathLabels[mesh.pathToControlPlane]
+            : undefined;
 
-    return <Status state={states[mesh.state]} label={label} />;
+    return (
+        <Status
+            state={states[mesh.state]}
+            label={labels[mesh.state]}
+            detail={path}
+        />
+    );
 }
 
 export const meshModeLabels: Record<App.Enums.Mesh.MeshMode, string> = {

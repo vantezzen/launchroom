@@ -32,7 +32,9 @@ export const GroupFrame = memo(function GroupFrame({
             <span className="flex items-center gap-1.5 px-4 pt-3 type-small text-muted-foreground">
                 <group.icon aria-hidden="true" className="size-3.5" />
                 {group.label}
-                <span className="tabular-nums">· {data.count}</span>
+                <span className="rounded-full bg-(--hover) px-1.5 tabular-nums">
+                    {data.count}
+                </span>
             </span>
         </div>
     );

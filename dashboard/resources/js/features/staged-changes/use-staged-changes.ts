@@ -55,7 +55,7 @@ export function effectLabel(effect: App.Enums.ChangeEffect): string {
 }
 
 /**
- * "web: rebuild · api: restart" (docs/04 §7).
+ * "web: rebuild, api: restart" (docs/04 §7).
  */
 export function effectSummary(changes: StagedChanges): string {
     return changes.groups
@@ -64,5 +64,5 @@ export function effectSummary(changes: StagedChanges): string {
             (group) =>
                 `${group.slug ?? group.name}: ${effectLabel(group.effect)}`,
         )
-        .join(' · ');
+        .join(', ');
 }

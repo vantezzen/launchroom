@@ -51,7 +51,7 @@ test('admins add a Slack channel; the URL is encrypted and never rendered, only 
 
     expect($channel->kind)->toBe(AlertChannelKind::Slack)
         ->and($channel->name)->toBe('Slack')
-        ->and($channel->target_hint)->toBe('hooks.slack.com · …uvwx')
+        ->and($channel->target_hint)->toBe('hooks.slack.com/…uvwx')
         ->and($channel->secret)->toStartWith('lr1:')
         ->and(json_encode($channel->toArray(), JSON_THROW_ON_ERROR))->not->toContain('lr1:')->not->toContain('abcdefghijklmnop')
         ->and(resolve(AlertChannelSecrets::class)->reveal($channel)->url)->toBe(Alerts::SLACK)
@@ -60,7 +60,7 @@ test('admins add a Slack channel; the URL is encrypted and never rendered, only 
     $page = $this->actingAs($this->admin)->get(route('notifications.edit'))->assertOk();
     expect($page->getContent())->not->toContain('abcdefghijklmnopqrstuvwx');
     $page->assertInertia(fn (AssertableInertia $p): AssertableInertia => $p->component('settings/notifications')
-        ->where('channels.0.hint', 'hooks.slack.com · …uvwx')
+        ->where('channels.0.hint', 'hooks.slack.com/…uvwx')
         ->where('canManage', true)
         ->has('rules', count(AlertRule::cases())));
 

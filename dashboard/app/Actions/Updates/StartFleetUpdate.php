@@ -44,7 +44,7 @@ final readonly class StartFleetUpdate
         $version = Semver::parse($target);
 
         if (! $version instanceof Semver || str_ends_with($target, '-dev')) {
-            throw DomainRuleViolation::on('fleet', "This dashboard ({$target}) is not a release, so there is no launchroomd version to roll out.");
+            throw DomainRuleViolation::on('fleet', "This dashboard ({$target}) is not a release, so there is no server version to roll out.");
         }
 
         if (! is_string($image) || ! ImageReference::isDigestPinned($image)) {

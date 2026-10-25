@@ -5,10 +5,10 @@ description: Move apps one at a time from your old platform to launchroom withou
 
 You move one app at a time. Your old platform keeps serving each app until you switch its DNS, so the app stays online the whole time. For every app:
 
-1. Deploy it on launchroom.
+1. Create it on launchroom without deploying.
 2. Copy its variables.
-3. Import its database and files.
-4. Check it on its generated address.
+3. Import its database.
+4. Deploy it, import its files and check it on its generated address.
 5. Switch DNS.
 6. Remove it from your old platform.
 
@@ -22,17 +22,17 @@ The examples move **Umami** (website analytics on PostgreSQL). The same steps wo
 
 <Steps>
 <Step>
-### Deploy the app
+### Create the app
 
 How depends on how it runs on your old platform:
 
-- **A common app** such as Umami: open **New project**, choose **Template** and pick it. The Umami template adds Umami and a managed PostgreSQL 17 database, connects them, generates `APP_SECRET` and deploys.
-- **A `docker-compose.yml`**: [import the Compose file](/docs/projects/templates-and-compose#import-a-compose-file). Well-known database images become managed databases, so you can import their data in the next steps.
+- **A common app** such as Umami: open **New project**, choose **Template**, pick it and choose **Create without deploying**. The Umami template adds Umami and a managed PostgreSQL 17 database, connects them and generates `APP_SECRET`.
+- **A `docker-compose.yml`**: [import the Compose file](/docs/projects/templates-and-compose#import-a-compose-file) without deploying. Well-known database images become managed databases, so you can import their data in the next steps.
 - **Your own code**: [import the repository](/docs/getting-started/first-deploy). launchroom detects how to build it.
 
 Pick the same database engine and the same or a newer major version as on your old platform: a dump only imports into the same or a newer version.
 
-On its first start, Umami creates its tables. That's expected: the import replaces them.
+Nothing runs yet. The database gets your data before Umami starts for the first time, so Umami never creates empty tables of its own.
 </Step>
 <Step>
 ### Copy the variables
@@ -45,7 +45,7 @@ docker exec umami env > umami.env
 
 Remove what launchroom sets itself: `PATH`, `HOSTNAME`, `HOME`, the database's address and credentials (`DATABASE_URL`, `DB_HOST` and similar come from the connection), and anything the image sets itself (`NODE_VERSION` and similar).
 
-Open the service's **Variables** tab and paste the file or choose **Import .env**. launchroom shows a preview with conflicts and suggests which values to keep as secrets. Deploy to apply them. From a terminal, `launchroom env set KEY=VALUE…` adds variables (staged) and `launchroom deploy --staged` applies them.
+Open the service's **Variables** tab and paste the file or choose **Import .env**. launchroom shows a preview with conflicts and suggests which values to keep as secrets. They apply with the first deploy. From a terminal, `launchroom env set KEY=VALUE…` adds variables (staged) and `launchroom deploy --staged` applies them.
 
 #### Umami's secrets
 
@@ -86,11 +86,11 @@ docker exec chat-db mongodump --archive --gzip --db chat -u app -p '<password>' 
 
 To dump inside the container instead, write to `/tmp` and copy it out: `docker exec umami-db pg_dump -Fc -U umami -f /tmp/umami.dump umami`, then `docker cp umami-db:/tmp/umami.dump .`. Copy the dump to the machine you upload from, for example with `scp`.
 
-On launchroom, open the database on the canvas and go to **Backups → Move data → Import data…**. Drop the dump in. The upload resumes if your connection drops. launchroom shows what it found ("PostgreSQL custom dump · from PostgreSQL 15.8") and what the database holds now.
+On launchroom, open the database on the canvas and go to its **Backups** tab. **Move data** shows **Import data before the first deploy**. Choose **Import data…**: launchroom starts the database on its own, with the user and password Umami will get. Umami stays off.
 
-Umami already created its tables, so choose **Replace everything**. launchroom takes a safety snapshot, stops Umami, drops and recreates the database, imports the dump and starts Umami again. Type the database's name to confirm.
+Drop the dump in. The upload resumes if your connection drops. launchroom shows what it found ("PostgreSQL custom dump · from PostgreSQL 15.8") and that the database is empty, so nothing needs replacing. Choose **Import**. When the import ends, launchroom stops the database again; the data stays on its volume.
 
-From a terminal, with a token that has the `data:transfer` ability:
+If the app already ran on launchroom (you deployed first), its tables exist: choose **Replace everything** instead. launchroom takes a safety snapshot, stops the app, drops and recreates the database, imports the dump and starts the app again. From a terminal, with a token that has the `data:transfer` ability, a running database imports with:
 
 ```sh
 launchroom db import postgres umami.dump --replace
@@ -99,7 +99,9 @@ launchroom db import postgres umami.dump --replace
 When the old database is reachable from the internet, **From a connection URL** copies it directly without a dump file. See [Import and export](/docs/databases/import-and-export) for formats, version rules and what launchroom adjusts in a dump.
 </Step>
 <Step>
-### Import files
+### Deploy and import files
+
+Deploy the project. The database starts on the volume with your data, and Umami connects to it with the same credentials.
 
 If the app keeps uploads or other files on disk, add a volume at the same path on the service (**Settings → Volumes**) and deploy. Then pack the folder on your old server:
 

@@ -21,6 +21,10 @@ declare module '@inertiajs/core' {
             realtime: App.Data.Instance.RealtimeConfigData | null;
             onboardingProgress: App.Data.Instance.OnboardingProgressData | null;
             updateAvailable: boolean;
+            /** Open "Action needed" findings of the current team (docs/22 §9.1). */
+            securityActionNeeded: number;
+            /** The control-plane server is under heavy load (docs/08 §4); managers only. */
+            controlPlaneLoad: App.Data.Servers.ControlPlaneLoadData | null;
             version: string | null;
             [key: string]: unknown;
         };

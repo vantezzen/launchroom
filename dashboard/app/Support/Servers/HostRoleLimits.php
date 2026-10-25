@@ -91,13 +91,13 @@ final class HostRoleLimits
         $mac = self::isMacHost($runtime, $facts);
 
         if ($role === ServerRole::Edge && ($mac || $engine === DockerEngine::DockerDesktop)) {
-            return ($mac ? 'A Mac' : 'This machine').' can’t serve traffic: its Docker runs in a Linux VM whose ports 80 and 443 aren’t on your network. Let a public server serve traffic; it reaches apps here over the private network.';
+            return ($mac ? 'A Mac' : 'This machine').' can’t serve traffic: its Docker runs in a Linux VM whose ports 80 and 443 aren’t on your network. Use a public server to serve traffic. It reaches apps here over the private network.';
         }
 
         $workloads = $runtime?->capability(RuntimeCapability::Workloads);
 
         if ($role === ServerRole::Runtime && ($workloads === CapabilityState::Unavailable || (! $workloads instanceof CapabilityState && $engine === DockerEngine::DockerDesktop))) {
-            return 'Docker Desktop can’t make apps on this machine reachable from your other servers. It builds; to run apps on a Mac, switch it to OrbStack or Colima and run the install command again.';
+            return 'Docker Desktop can’t make apps on this machine reachable from your other servers. It can still build. To run apps on a Mac, switch to OrbStack or Colima and run the install command again.';
         }
 
         return null;

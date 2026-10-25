@@ -21,7 +21,7 @@ export type ChartMarker = {
     /** Short label at the top of the marker, e.g. the short SHA. */
     label: string;
     tone?: 'signal' | 'error';
-    /** Hover text, e.g. "web · 3b7d5e1 · failed". */
+    /** Hover text, e.g. "web 3b7d5e1: failed". */
     detail?: string;
 };
 

@@ -2,6 +2,7 @@ import { AppWindow, Globe, Hammer, Package } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { Status, serverStatus } from '@/components/status';
 import { shortDuration } from '@/features/servers/format';
+import { useNow } from '@/hooks/use-now';
 
 export function ServerStatus({
     status,
@@ -14,10 +15,9 @@ export function ServerStatus({
     className?: string;
 }) {
     const { state, label } = serverStatus[status];
-    const since =
-        status === 'unreachable' || status === 'offline'
-            ? shortDuration(lastSeenAt)
-            : null;
+    const down = status === 'unreachable' || status === 'offline';
+    const now = useNow(down && lastSeenAt !== null, 10_000);
+    const since = down ? shortDuration(lastSeenAt, now) : null;
 
     return (
         <Status
@@ -56,7 +56,7 @@ export const roleIcons: Record<App.Enums.ServerRole, LucideIcon> = {
 export const roleDescriptions: Record<App.Enums.ServerRole, string> = {
     edge: 'Receives public traffic and serves HTTPS for every app.',
     runtime: 'Runs your apps, workers and databases.',
-    build: 'Turns pushes into images. Best on a fast machine.',
+    build: 'Builds images from your pushes, best on a fast machine.',
     registry: 'Stores built images.',
 };
 

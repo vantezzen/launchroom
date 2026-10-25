@@ -2,6 +2,109 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://launchroom.vantezzen.io/schema/v1/task-completion.json",
   "$defs": {
+    "AccessEvent": {
+      "properties": {
+        "at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "connected",
+            "auth_failed",
+            "locked"
+          ]
+        },
+        "remote": {
+          "type": "string",
+          "pattern": "^(?:[0-9]{1,3}(?:\\.[0-9]{1,3}){3}|[0-9a-f:.]{2,45})$"
+        },
+        "method": {
+          "type": "string",
+          "enum": [
+            "password",
+            "publickey"
+          ]
+        },
+        "channel": {
+          "type": "string",
+          "enum": [
+            "shell",
+            "exec",
+            "sftp",
+            "database"
+          ],
+          "description": "Channel is set for connected events once the client opened one (ssh) or\nauthenticated (database)."
+        },
+        "count": {
+          "type": "integer",
+          "maximum": 1000000,
+          "minimum": 0,
+          "description": "Count aggregates auth_failed events of one address."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "at",
+        "type"
+      ],
+      "description": "AccessEvent is reported for the audit log (never credentials or contents)."
+    },
+    "AccessResult": {
+      "properties": {
+        "endReason": {
+          "type": "string",
+          "enum": [
+            "ended",
+            "idle",
+            "deadline",
+            "locked",
+            "refused",
+            "error"
+          ]
+        },
+        "startedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "connections": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "authFailures": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "bytesIn": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "bytesOut": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "events": {
+          "items": {
+            "$ref": "#/$defs/AccessEvent"
+          },
+          "type": "array",
+          "maxItems": 50,
+          "description": "Events are those after the last heartbeat."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "endReason",
+        "connections",
+        "authFailures",
+        "bytesIn",
+        "bytesOut"
+      ],
+      "description": "AccessResult is reported when an access task finishes."
+    },
     "AppliedPreset": {
       "properties": {
         "name": {
@@ -376,6 +479,294 @@
       ],
       "description": "BuildWarning is a non-fatal finding shown with the plan."
     },
+    "CollapsedChanges": {
+      "properties": {
+        "prefix": {
+          "type": "string",
+          "maxLength": 1024,
+          "pattern": "^/[^\\x00-\\x1f\\x7f]*$"
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "prefix",
+        "count"
+      ],
+      "description": "CollapsedChanges counts the changes under one cache location."
+    },
+    "ContainerChange": {
+      "properties": {
+        "path": {
+          "type": "string",
+          "maxLength": 1024,
+          "pattern": "^/[^\\x00-\\x1f\\x7f]*$"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "added",
+            "modified",
+            "deleted"
+          ]
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "file",
+            "dir",
+            "symlink",
+            "other"
+          ],
+          "description": "Type, Size, Executable and ModifiedAt come from a stat of the path\n(archive HEAD), done for at most 256 added or modified paths; omitted\notherwise and for deleted paths."
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "executable": {
+          "type": "boolean"
+        },
+        "modifiedAt": {
+          "oneOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "flags": {
+          "oneOf": [
+            {
+              "items": {
+                "type": "string",
+                "enum": [
+                  "executable",
+                  "system_path",
+                  "sensitive_file",
+                  "app_code",
+                  "temp_dir",
+                  "hidden"
+                ]
+              },
+              "type": "array",
+              "maxItems": 8,
+              "description": "Flags are launchroomd's fixed classification rules (docs/03 §13.2)."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "path",
+        "kind"
+      ],
+      "description": "ContainerChange is one changed path."
+    },
+    "ContainerChanges": {
+      "properties": {
+        "total": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total is the number of changes Docker reported."
+        },
+        "entries": {
+          "items": {
+            "$ref": "#/$defs/ContainerChange"
+          },
+          "type": "array",
+          "maxItems": 2000,
+          "description": "Entries are changes outside collapsed locations, most interesting\nfirst (flagged, then the working dir, then the rest), ≤ 2000."
+        },
+        "collapsed": {
+          "oneOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/CollapsedChanges"
+              },
+              "type": "array",
+              "maxItems": 64,
+              "description": "Collapsed counts changes under known cache locations (package manager\ncaches, .next/cache, __pycache__, /var/cache, /var/log, …)."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "truncated": {
+          "type": "boolean",
+          "description": "Truncated is true when changes were left out because of the entry limit."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "total",
+        "entries"
+      ],
+      "description": "ContainerChanges are the writable layer's changes since the container was created (Docker's container changes)."
+    },
+    "ContainerInspectionResult": {
+      "properties": {
+        "workload": {
+          "type": "string",
+          "pattern": "^wl_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "containerId": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "imageId": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$",
+          "description": "ImageID is the image the container runs (\"sha256:\u003c64 hex\u003e\")."
+        },
+        "imageMatches": {
+          "type": "boolean",
+          "description": "ImageMatches is true when that image is the one of the workload's\nimage reference in the verified NodeState."
+        },
+        "startedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "restartCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "user": {
+          "type": "string",
+          "maxLength": 32,
+          "pattern": "^[A-Za-z0-9._+-]{1,32}$",
+          "description": "User is the container's configured user (omitted: the image default, root)."
+        },
+        "workingDir": {
+          "type": "string",
+          "maxLength": 1024,
+          "pattern": "^/[^\\x00-\\x1f\\x7f]*$",
+          "description": "WorkingDir is the container's working directory (the app's files)."
+        },
+        "changes": {
+          "$ref": "#/$defs/ContainerChanges"
+        },
+        "processes": {
+          "$ref": "#/$defs/ContainerProcesses"
+        },
+        "inspectedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "InspectedAt is when launchroomd read the container."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "workload",
+        "containerId",
+        "imageId",
+        "imageMatches",
+        "startedAt",
+        "restartCount",
+        "changes",
+        "processes",
+        "inspectedAt"
+      ],
+      "description": "ContainerInspectionResult is TaskCompletion.containerInspection of a succeeded inspect_container task."
+    },
+    "ContainerProcess": {
+      "properties": {
+        "pid": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "ppid": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "user": {
+          "type": "string",
+          "maxLength": 32,
+          "pattern": "^[A-Za-z0-9._+-]{1,32}$"
+        },
+        "command": {
+          "type": "string",
+          "maxLength": 512,
+          "description": "Command is the command line, masked against the spec's maskEnv\nvalues, control characters escaped, cut to 512 bytes."
+        },
+        "flags": {
+          "oneOf": [
+            {
+              "items": {
+                "type": "string",
+                "enum": [
+                  "entry",
+                  "shell",
+                  "network_tool",
+                  "miner",
+                  "temp_executable",
+                  "inline_code",
+                  "added_binary"
+                ]
+              },
+              "type": "array",
+              "maxItems": 8
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "pid",
+        "ppid",
+        "user",
+        "command"
+      ],
+      "description": "ContainerProcess is one process (host PIDs, as Docker reports them)."
+    },
+    "ContainerProcesses": {
+      "properties": {
+        "total": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "entries": {
+          "items": {
+            "$ref": "#/$defs/ContainerProcess"
+          },
+          "type": "array",
+          "maxItems": 256,
+          "description": "Entries in PID order, ≤ 256."
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "parentsUnknown": {
+          "type": "boolean",
+          "description": "ParentsUnknown is true when the host's ps printed no parent PIDs\n(busybox): every ppid is 0, only the first process (the lowest PID)\nis flagged entry, and no other process can be judged by its parent."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "total",
+        "entries"
+      ],
+      "description": "ContainerProcesses is the container's process list (Docker's top with its default ps arguments)."
+    },
     "DataExportResult": {
       "properties": {
         "format": {
@@ -563,6 +954,28 @@
       ],
       "description": "FileOwner is a numeric owner for imported files."
     },
+    "ImageDistro": {
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 32,
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,31}$",
+          "description": "ID is os-release ID (\"debian\", \"alpine\", \"ubuntu\")."
+        },
+        "versionId": {
+          "type": "string",
+          "maxLength": 32,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$",
+          "description": "VersionID is os-release VERSION_ID (\"12\", \"3.20.3\"); omitted when absent."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "id"
+      ],
+      "description": "ImageDistro is an image's distribution from /etc/os-release."
+    },
     "InspectedFile": {
       "properties": {
         "path": {
@@ -586,6 +999,225 @@
         "truncated"
       ],
       "description": "InspectedFile is one file of a RepoInspection (UTF-8 text, cut at its limit)."
+    },
+    "InventoryComponent": {
+      "properties": {
+        "ecosystem": {
+          "type": "string",
+          "enum": [
+            "npm",
+            "pypi",
+            "go",
+            "maven",
+            "nuget",
+            "cargo",
+            "rubygems",
+            "packagist",
+            "hex",
+            "pub",
+            "deb",
+            "apk",
+            "rpm",
+            "binary"
+          ]
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 256,
+          "pattern": "^[A-Za-z0-9@_][A-Za-z0-9@._/:+~-]{0,255}$",
+          "description": "Name as the ecosystem writes it (npm \"@scope/name\", Maven\n\"group:artifact\", Go module path or \"stdlib\", Debian binary package)."
+        },
+        "version": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._+~:^-]{0,127}$"
+        },
+        "purl": {
+          "type": "string",
+          "maxLength": 1024,
+          "pattern": "^pkg:[a-z][a-z0-9.+-]{0,31}/[!-~]{1,1000}$",
+          "description": "PURL is the scanner's package URL with its qualifiers (distro,\nupstream source package, arch); omitted when the scanner had none."
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "os",
+            "library",
+            "runtime"
+          ]
+        },
+        "scope": {
+          "type": "string",
+          "enum": [
+            "runtime",
+            "dev",
+            "client",
+            "unknown"
+          ]
+        },
+        "presence": {
+          "type": "string",
+          "enum": [
+            "installed",
+            "bundled"
+          ]
+        },
+        "direct": {
+          "type": "boolean",
+          "description": "Direct: named in the app's own manifest."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "ecosystem",
+        "name",
+        "version",
+        "kind",
+        "scope",
+        "presence"
+      ],
+      "description": "InventoryComponent is one package, library or runtime of an image."
+    },
+    "InventoryLockfile": {
+      "properties": {
+        "path": {
+          "type": "string",
+          "maxLength": 1024,
+          "pattern": "^[A-Za-z0-9._@+=,-]+(?:/[A-Za-z0-9._@+=,-]+)*$"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "npm",
+            "pnpm",
+            "yarn",
+            "bun",
+            "composer",
+            "poetry",
+            "uv",
+            "pipfile",
+            "requirements",
+            "pyproject",
+            "gemfile",
+            "gomod"
+          ]
+        },
+        "packages": {
+          "type": "integer",
+          "maximum": 100000,
+          "minimum": 0,
+          "description": "Packages is the number of packages it lists."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "path",
+        "kind",
+        "packages"
+      ],
+      "description": "InventoryLockfile is one manifest or lockfile read from the source."
+    },
+    "InventoryResult": {
+      "properties": {
+        "image": {
+          "type": "string",
+          "maxLength": 512,
+          "pattern": "^(?:localhost|[a-z0-9-]+(?:\\.[a-z0-9-]+)+|[a-z0-9-]+(?:\\.[a-z0-9-]+)*:[0-9]{1,5})(?:/[a-z0-9]+(?:(?:\\.|_|__|-+)[a-z0-9]+)*)+@sha256:[a-f0-9]{64}$",
+          "description": "Image and Platform repeat the spec's."
+        },
+        "platform": {
+          "type": "string",
+          "enum": [
+            "linux/amd64",
+            "linux/arm64"
+          ]
+        },
+        "generator": {
+          "type": "string",
+          "maxLength": 512,
+          "pattern": "^(?:localhost|[a-z0-9-]+(?:\\.[a-z0-9-]+)+|[a-z0-9-]+(?:\\.[a-z0-9-]+)*:[0-9]{1,5})(?:/[a-z0-9]+(?:(?:\\.|_|__|-+)[a-z0-9]+)*)+@sha256:[a-f0-9]{64}$",
+          "description": "Generator is the SBOM scanner image that read the image."
+        },
+        "distro": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ImageDistro",
+              "description": "Distro is the image's /etc/os-release (omitted without one, e.g. distroless or scratch)."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sourceAnalyzed": {
+          "type": "boolean",
+          "description": "SourceAnalyzed is true when the spec's source was cloned and its\nmanifests and lockfiles were read."
+        },
+        "lockfiles": {
+          "oneOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/InventoryLockfile"
+              },
+              "type": "array",
+              "maxItems": 32,
+              "description": "Lockfiles are the manifests and lockfiles that set scopes."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "components": {
+          "items": {
+            "$ref": "#/$defs/InventoryComponent"
+          },
+          "type": "array",
+          "maxItems": 20000,
+          "description": "Components are the normalised components in display order (docs/22\n§3.4): runtimes, direct libraries, other runtime libraries, unknown,\nclient, dev, OS packages. Unique by (ecosystem, name, version)."
+        },
+        "dropped": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Dropped counts components whose name, version or purl failed the grammar."
+        },
+        "truncated": {
+          "type": "boolean",
+          "description": "Truncated is true when there were more than 20,000 components."
+        },
+        "notes": {
+          "oneOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array",
+              "maxItems": 16,
+              "description": "Notes are short, secret-free remarks for the UI (\"No lockfile found, …\")."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "durationMs": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "image",
+        "platform",
+        "generator",
+        "sourceAnalyzed",
+        "components",
+        "durationMs"
+      ],
+      "description": "InventoryResult is TaskCompletion.inventory of a succeeded inventory task."
     },
     "MaintenanceResult": {
       "properties": {
@@ -1468,6 +2100,39 @@
         {
           "$ref": "#/$defs/DataExportResult",
           "description": "DataExport is set for db_export and volume_export tasks that succeeded (D55)."
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "access": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/AccessResult",
+          "description": "Access is set for finished access tasks, also when they failed (docs/03 §12)."
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "inventory": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/InventoryResult",
+          "description": "Inventory is set for succeeded inventory tasks (docs/03 §13.1)."
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "containerInspection": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/ContainerInspectionResult",
+          "description": "ContainerInspection is set for succeeded inspect_container tasks (docs/03 §13.2)."
         },
         {
           "type": "null"

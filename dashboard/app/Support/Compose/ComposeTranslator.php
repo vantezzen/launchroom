@@ -13,7 +13,9 @@ use App\Data\Blueprints\ComposeInputData;
 use App\Data\Blueprints\ProjectBlueprint;
 use App\Data\Blueprints\ServiceChoiceData;
 use App\Data\Blueprints\SkippedServiceData;
+use App\Data\Services\ConfigFile;
 use App\Data\Services\HealthcheckSettings;
+use App\Enums\Backups\VolumeConsistency;
 use App\Enums\BlueprintNoteKind as Note;
 use App\Enums\ConnectionStyle;
 use App\Enums\DatabaseEngine;
@@ -23,7 +25,9 @@ use App\Enums\VariableExposure;
 use App\Enums\VariableType;
 use App\Support\Blueprints\BlueprintValidator;
 use App\Support\Canvas\ServiceGlyph;
+use App\Support\Connections\ProvidedVariables;
 use App\Support\Images\ImageReference;
+use App\Support\Services\ConfigFileRules;
 use App\Support\Slug;
 use App\Support\Variables\EnvFileParser;
 use InvalidArgumentException;
@@ -70,7 +74,6 @@ final class ComposeTranslator
         'mac_address' => 'mac_address is refused.',
         'oom_kill_disable' => 'oom_kill_disable is refused: memory limits always apply.',
         'secrets' => 'secrets is refused: use a secret variable instead.',
-        'configs' => 'configs is refused: build the file into the image or use a variable.',
         'extends' => 'extends is refused: write the service out in this file.',
         'post_start' => 'post_start is refused: lifecycle hooks aren’t run.',
         'pre_stop' => 'pre_stop is refused: lifecycle hooks aren’t run.',
@@ -117,8 +120,8 @@ final class ComposeTranslator
         'develop' => 'develop is ignored.',
         'annotations' => 'annotations is ignored.',
         'attach' => 'attach is ignored.',
-        'container_name' => 'launchroom names containers; other services reach it by its service name.',
-        'hostname' => 'launchroom names containers; other services reach it by its service name.',
+        'container_name' => 'Ignored. Other services reach it by its service name.',
+        'hostname' => 'Ignored. Other services reach it by its service name.',
         'networks' => 'Every service of an environment shares one private network.',
         'links' => 'Services reach each other by name without links.',
         'cap_drop' => 'launchroom already drops every capability.',
@@ -195,6 +198,9 @@ final class ComposeTranslator
 
     /** @var list<SkippedServiceData> */
     private array $skipped = [];
+
+    /** @var array<string, array{content: string|null, problem: string|null}> top-level `configs` by name (D65) */
+    private array $configs = [];
 
     private readonly ComposeInterpolation $interpolation;
 
@@ -310,11 +316,55 @@ final class ComposeTranslator
                 $key === 'version' => $this->projectNote(Note::Ignored, '“version” is obsolete in Compose and not needed.', $key, $line),
                 $key === 'networks' => $this->projectNote(Note::Ignored, 'Networks are ignored: every service of an environment shares one private network and reaches the others by name.', $key, $line),
                 $key === 'volumes' => $this->topLevelVolumes($value),
-                in_array($key, ['secrets', 'configs'], true) => $this->projectNote(Note::Refused, "Top-level {$key} are refused: use secret variables instead of files.", $key, $line),
+                $key === 'secrets' => $this->projectNote(Note::Refused, 'Top-level secrets are refused: use secret variables instead of files.', $key, $line),
+                $key === 'configs' => $this->topLevelConfigs($value),
                 $key === 'include' => $this->projectNote(Note::Refused, 'include is refused: only this file is imported.', $key, $line),
                 default => $this->projectNote(Note::Ignored, "launchroom doesn’t use “{$key}”.", $key, $line),
             };
         }
+    }
+
+    /**
+     * Top-level `configs` (D65): inline `content` becomes a config file of
+     * the services that use it (interpolated like Compose does); configs
+     * read from a file, the environment or outside the project are refused.
+     */
+    private function topLevelConfigs(mixed $configs): null
+    {
+        if (! is_array($configs)) {
+            return $this->projectNote(Note::Refused, 'configs can’t be read.', 'configs', $this->lines->line('configs'));
+        }
+
+        foreach ($configs as $name => $definition) {
+            $name = (string) $name;
+            $path = "configs.{$name}";
+            $content = null;
+            $problem = null;
+
+            if (is_array($definition) && is_string($definition['content'] ?? null)) {
+                try {
+                    $content = $this->interpolation->substitute($definition['content']);
+                } catch (InterpolationFailed $e) {
+                    $problem = "Config {$name}: ".$e->getMessage();
+                }
+            } else {
+                $problem = match (true) {
+                    ! is_array($definition) => "Config {$name} can’t be read.",
+                    array_key_exists('file', $definition) => "Config {$name} is read from a file: write its content into this file instead (content: |).",
+                    array_key_exists('environment', $definition) => "Config {$name} comes from an environment variable: use a variable of the service instead.",
+                    array_key_exists('external', $definition) => "Config {$name} is external: write its content into this file instead (content: |).",
+                    default => "Config {$name} has no content.",
+                };
+            }
+
+            if ($problem !== null) {
+                $this->projectNote(Note::Refused, $problem, $path, $this->lines->line($path));
+            }
+
+            $this->configs[$name] = ['content' => $content, 'problem' => $problem];
+        }
+
+        return null;
     }
 
     private function topLevelVolumes(mixed $volumes): null
@@ -751,6 +801,7 @@ final class ComposeTranslator
 
             switch ($field) {
                 case 'image': case 'build': case 'ports': case 'environment': case 'env_file': case 'healthcheck':
+                case 'configs':
                     break;
                 case 'x-launchroom':
                     if (! $this->options->template) {
@@ -800,8 +851,70 @@ final class ComposeTranslator
             $draft->public = false;
         }
 
+        $this->configFiles($draft);
         $this->healthcheck($draft);
         $this->templateExtension($draft);
+    }
+
+    /**
+     * A service's `configs` (D65): each one with inline content becomes a
+     * config file at its target (default `/<name>`), written read-only before
+     * the service starts. Only files that pass launchroomd's rules are kept.
+     */
+    private function configFiles(ServiceDraft $draft): void
+    {
+        $base = "services.{$draft->composeName}.configs";
+        $entries = $draft->definition['configs'] ?? null;
+
+        if ($entries === null) {
+            return;
+        }
+
+        if (! is_array($entries) || ! array_is_list($entries)) {
+            $draft->note(Note::Refused, 'configs can’t be read.', $base, $this->lines->line($base));
+
+            return;
+        }
+
+        foreach ($entries as $index => $entry) {
+            $path = "{$base}.{$index}";
+            $line = $this->lines->line($path);
+            $name = is_string($entry) ? $entry : (is_array($entry) && is_string($entry['source'] ?? null) ? $entry['source'] : null);
+
+            if ($name === null) {
+                $draft->note(Note::Refused, 'The config has no source.', $path, $line);
+
+                continue;
+            }
+
+            $config = $this->configs[$name] ?? null;
+
+            if ($config === null || $config['content'] === null) {
+                $draft->note(Note::Refused, $config === null ? "Config {$name} isn’t defined in this file." : "Config {$name} isn’t imported (see the note at the top).", $path, $line);
+
+                continue;
+            }
+
+            $target = is_array($entry) && is_string($entry['target'] ?? null) && $entry['target'] !== '' ? $entry['target'] : '/'.$name;
+
+            foreach (['uid', 'gid', 'mode'] as $option) {
+                if (is_array($entry) && array_key_exists($option, $entry)) {
+                    $draft->note(Note::Ignored, "{$option} is ignored: config files are read-only for every user of the container.", "{$path}.{$option}", $this->lines->line("{$path}.{$option}"));
+                }
+            }
+
+            $file = new ConfigFile($target, $config['content']);
+            $problems = ConfigFileRules::errors([...$draft->files, $file], $draft->volumes);
+
+            if ($problems !== []) {
+                $draft->note(Note::Refused, $problems[0], $path, $line);
+
+                continue;
+            }
+
+            $draft->files[] = $file;
+            $draft->note(Note::Translated, "Config {$name} becomes a read-only file at {$target}, written before the service starts.", $path, $line);
+        }
     }
 
     private function managedFields(ServiceDraft $draft): void
@@ -834,7 +947,7 @@ final class ComposeTranslator
         }
 
         if ($draft->rawEnv !== []) {
-            $draft->note(Note::Translated, 'Its credentials are generated per environment; services that used them get references instead.', "{$base}.environment", $this->lines->line("{$base}.environment") ?? $this->lines->line("{$base}.env_file"));
+            $draft->note(Note::Translated, 'Its credentials are generated per environment, and services that used them get references instead.', "{$base}.environment", $this->lines->line("{$base}.environment") ?? $this->lines->line("{$base}.env_file"));
         }
 
         $draft->env = [];
@@ -913,6 +1026,27 @@ final class ComposeTranslator
 
         if (is_string($extension['domain'] ?? null) && trim($extension['domain']) !== '') {
             $draft->domain = strtolower(trim($extension['domain']));
+        }
+
+        if (is_string($extension['backup'] ?? null)) {
+            $draft->backupConsistency = VolumeConsistency::tryFrom($extension['backup']);
+        }
+
+        if (is_array($extension['provides'] ?? null)) {
+            $base = "services.{$draft->composeName}.x-launchroom.provides";
+
+            foreach ($extension['provides'] as $key => $value) {
+                $value = is_scalar($value) ? (string) $value : null;
+                $problems = $value === null ? ['It must be text.'] : ProvidedVariables::errors([(string) $key => $value]);
+
+                if ($problems !== [] || ! in_array($draft->kind, [ServiceKind::App, ServiceKind::Image], true) || count($draft->provides) >= ProvidedVariables::MAX) {
+                    $draft->note(Note::Refused, "provides {$key}: ".($problems[0] ?? 'only app and image services provide variables, at most '.ProvidedVariables::MAX.'.'), "{$base}.{$key}", $this->lines->line("{$base}.{$key}"));
+
+                    continue;
+                }
+
+                $draft->provides[(string) $key] = (string) $value;
+            }
         }
 
         if (is_array($extension['connect'] ?? null)) {
@@ -995,7 +1129,7 @@ final class ComposeTranslator
 
                 [$container, $host, $loopback] = $parsed;
 
-                if (isset(self::NON_HTTP[$container])) {
+                if (isset(self::NON_HTTP[$container]) && $public) {
                     $draft->note(Note::Refused, 'Port '.$container.' ('.self::NON_HTTP[$container].') isn’t routed: launchroom serves HTTP on domains. Other services still reach it as '.$draft->key.':'.$container.'.', $path, $line);
                     $private[] = ['port' => $container, 'path' => $path, 'line' => $line, 'routable' => false];
 
@@ -1096,7 +1230,7 @@ final class ComposeTranslator
 
         if (! in_array($draft->kind, [ServiceKind::App, ServiceKind::Image], true)) {
             if ($value !== null) {
-                $draft->note(Note::Ignored, 'Workers have no port to check; launchroom watches the process.', $base, $this->lines->line($base));
+                $draft->note(Note::Ignored, 'Workers have no port to check, so launchroom watches the process.', $base, $this->lines->line($base));
             }
 
             return;
@@ -1180,7 +1314,7 @@ final class ComposeTranslator
         }
 
         $draft->healthcheck = HealthcheckSettings::none();
-        $draft->note(Note::Ignored, 'The health check runs a command, which launchroom doesn’t do; without a port nothing is checked.', "{$base}.test", $line);
+        $draft->note(Note::Ignored, 'The health check runs a command, which launchroom doesn’t support. Without a port, nothing is checked.', "{$base}.test", $line);
     }
 
     /**
@@ -1309,7 +1443,7 @@ final class ComposeTranslator
                 $value = $this->interpolation->value($key);
 
                 if ($value === null) {
-                    $draft->note(Note::Warning, "{$key} takes its value from your shell in Compose; it isn’t set here.", $entry['path'], $line);
+                    $draft->note(Note::Warning, "{$key} takes its value from your shell in Compose, so it isn’t set here.", $entry['path'], $line);
 
                     continue;
                 }
@@ -1725,7 +1859,7 @@ final class ComposeTranslator
             }
 
             if ($draft->kind === ServiceKind::Worker) {
-                $draft->note(Note::Refused, "Workers have no volumes; {$target} isn’t mounted.", $path, $line);
+                $draft->note(Note::Refused, "Workers have no volumes, so {$target} isn’t mounted.", $path, $line);
 
                 continue;
             }

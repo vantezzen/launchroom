@@ -6,6 +6,7 @@ import type { ChartMarker } from '@/components/charts/time-series-chart';
 import { TimeRangeSelect } from '@/components/charts/time-range-select';
 import type { TimeRangeOption } from '@/components/charts/time-range-select';
 import { EmptyState } from '@/components/patterns/empty-state';
+import { MetaLine } from '@/components/patterns/meta-line';
 import { SidePanel } from '@/components/patterns/sheet';
 import { Button } from '@/components/ui/button';
 import {
@@ -625,18 +626,20 @@ export function LogExplorer({
                         className="type-small text-muted-foreground"
                         aria-live="polite"
                     >
-                        {live || !page
-                            ? `${visible.length.toLocaleString('en')} of ${rows.length.toLocaleString('en')} lines`
-                            : `${page.matches.toLocaleString('en')} ${searched !== '' ? (page.matches === 1 ? 'matching line' : 'matching lines') : page.matches === 1 ? 'line' : 'lines'}`}
-                        {!live && page?.truncated && ' · newest 5,000 shown'}
-                        {scope === 'project' && ' · all environments'}
-                        {scope === 'team' && ' · all projects'}
-                        {live &&
-                            (following === null
-                                ? ' · starting live logs…'
-                                : following === 0
-                                  ? ' · no running service to follow'
-                                  : ` · following ${following} ${following === 1 ? 'replica' : 'replicas'}`)}
+                        <MetaLine>
+                            {live || !page
+                                ? `${visible.length.toLocaleString('en')} of ${rows.length.toLocaleString('en')} lines`
+                                : `${page.matches.toLocaleString('en')} ${searched !== '' ? (page.matches === 1 ? 'matching line' : 'matching lines') : page.matches === 1 ? 'line' : 'lines'}`}
+                            {!live && page?.truncated && 'newest 5,000 shown'}
+                            {scope === 'project' && 'all environments'}
+                            {scope === 'team' && 'all projects'}
+                            {live &&
+                                (following === null
+                                    ? 'starting live logs…'
+                                    : following === 0
+                                      ? 'no running service to follow'
+                                      : `following ${following} ${following === 1 ? 'replica' : 'replicas'}`)}
+                        </MetaLine>
                     </p>
                 </div>
             </div>

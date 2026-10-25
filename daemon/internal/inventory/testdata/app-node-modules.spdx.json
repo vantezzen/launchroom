@@ -1,0 +1,141 @@
+{
+ "_type": "https://in-toto.io/Statement/v0.1",
+ "predicate": {
+  "creationInfo": {
+   "created": "2026-10-25T12:52:34Z",
+   "creators": [
+    "Organization: Anchore, Inc",
+    "Tool: syft-v1.51.0"
+   ],
+   "licenseListVersion": "3.28"
+  },
+  "packages": [
+   {
+    "SPDXID": "SPDXRef-Package-binary-busybox-e3afadc545b2ba55",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:busybox:busybox:1.37.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:generic/busybox@1.37.0",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "busybox",
+    "versionInfo": "1.37.0"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-npm-inventory-node-2a202635818b1252",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:inventory-node:inventory-node:1.0.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:inventory-node:inventory_node:1.0.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:inventory_node:inventory-node:1.0.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:inventory_node:inventory_node:1.0.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:inventory:inventory-node:1.0.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:inventory:inventory_node:1.0.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:npm/inventory-node@1.0.0",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "inventory-node",
+    "versionInfo": "1.0.0"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-npm-is-number-7b3ddd18c9aa579d",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:is-number:is-number:7.0.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:is-number:is_number:7.0.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:is_number:is-number:7.0.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:is_number:is_number:7.0.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:is:is-number:7.0.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:is:is_number:7.0.0:*:*:*:*:*:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:npm/is-number@7.0.0",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "is-number",
+    "versionInfo": "7.0.0"
+   },
+   {
+    "SPDXID": "SPDXRef-Package-npm-ms-fba87f498f26c430",
+    "externalRefs": [
+     {
+      "referenceCategory": "SECURITY",
+      "referenceLocator": "cpe:2.3:a:vercel:ms:2.1.3:*:*:*:*:node.js:*:*",
+      "referenceType": "cpe23Type"
+     },
+     {
+      "referenceCategory": "PACKAGE-MANAGER",
+      "referenceLocator": "pkg:npm/ms@2.1.3",
+      "referenceType": "purl"
+     }
+    ],
+    "name": "ms",
+    "versionInfo": "2.1.3"
+   },
+   {
+    "SPDXID": "SPDXRef-DocumentRoot-Directory-sbom",
+    "externalRefs": null,
+    "name": "sbom",
+    "versionInfo": null
+   }
+  ],
+  "spdxVersion": "SPDX-2.3"
+ },
+ "predicateType": "https://spdx.dev/Document"
+}

@@ -252,3 +252,51 @@ type ConfigCheck struct {
 	Ignored  []ConfigProblem `json:"ignored"`
 	Changes  []ChangeItem    `json:"changes"`
 }
+
+// SecurityServiceRef is where a finding or package runs (docs/22 §11).
+type SecurityServiceRef struct {
+	ID              string `json:"id"`
+	Name            string `json:"name"`
+	ProjectName     string `json:"projectName"`
+	EnvironmentName string `json:"environmentName"`
+	Href            string `json:"href"`
+}
+
+// SecurityFinding is one item of GET /security/findings.
+type SecurityFinding struct {
+	ID             string             `json:"id"`
+	Href           string             `json:"href"`
+	Advisory       string             `json:"advisory"`
+	Title          *string            `json:"title"`
+	Severity       string             `json:"severity"`
+	KnownExploited bool               `json:"knownExploited"`
+	Package        string             `json:"package"`
+	Version        string             `json:"version"`
+	FixedVersion   *string            `json:"fixedVersion"`
+	Level          string             `json:"level"`
+	Reasons        []string           `json:"reasons"`
+	Status         string             `json:"status"`
+	Service        SecurityServiceRef `json:"service"`
+}
+
+// InventoryUse is one version of a package and where it runs.
+type InventoryUse struct {
+	Version  string               `json:"version"`
+	Scope    string               `json:"scope"`
+	Services []SecurityServiceRef `json:"services"`
+	Findings []SecurityFinding    `json:"findings"`
+}
+
+// InventoryPackage groups versions of a package.
+type InventoryPackage struct {
+	Name      string         `json:"name"`
+	Ecosystem string         `json:"ecosystem"`
+	Versions  []InventoryUse `json:"versions"`
+}
+
+// InventorySearch is GET /security/inventory?q=.
+type InventorySearch struct {
+	Query     string             `json:"query"`
+	Packages  []InventoryPackage `json:"packages"`
+	Truncated bool               `json:"truncated"`
+}

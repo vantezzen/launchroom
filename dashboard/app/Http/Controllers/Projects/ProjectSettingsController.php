@@ -35,19 +35,25 @@ use Inertia\Inertia;
 use Inertia\Response;
 
 /**
- * Project settings (`/p/{project}/settings/{section}`, docs/08 §2).
+ * Project settings (`/p/{project}/settings/{section}`, docs/08 §2). Without
+ * a section it is General beside the sidebar on wide screens and the list of
+ * pages on phones (`index`).
  */
 final class ProjectSettingsController extends Controller
 {
-    public const array SECTIONS = ['general', 'environments', 'previews', 'logs', 'danger'];
+    public const array SECTIONS = ['general', 'environments', 'previews', 'config-file', 'logs', 'danger'];
 
-    public function show(Project $project, ProjectBackupFootprint $backups, #[CurrentUser] User $user, string $section = 'general'): Response
+    public function show(Project $project, ProjectBackupFootprint $backups, #[CurrentUser] User $user, ?string $section = null): Response
     {
         Gate::authorize('view', $project);
+
+        $index = $section === null;
+        $section ??= 'general';
 
         return Inertia::render('projects/settings', [
             ...ProjectScope::shellProps($project, null),
             'section' => $section,
+            'index' => $index,
             'icon' => ProjectIconData::fromProject($project),
             'allEnvironments' => $project->environments()
                 ->orderByRaw("case kind when 'production' then 0 when 'persistent' then 1 else 2 end")
@@ -59,8 +65,8 @@ final class ProjectSettingsController extends Controller
             // Settings → Logs: runtime log retention per environment (docs/08 §12).
             'logRetention' => $section === 'logs' ? resolve(ProjectLogRetention::class)->for($project) : [],
             'logRetentionOptions' => ['days' => RuntimeLogRetentionData::dayOptions(), 'maxMb' => RuntimeLogRetentionData::sizeOptions()],
-            // Settings → General → Config file (docs/18 §3.1).
-            'configFile' => $section === 'general' ? resolve(ConfigFilePage::class)->for($project) : null,
+            // Settings → Config file (docs/18 §3.1).
+            'configFile' => $section === 'config-file' ? resolve(ConfigFilePage::class)->for($project) : null,
             'secretsPolicy' => [
                 'project' => $project->settings->productionSecretsMustDiffer,
                 'team' => $project->team->settings->productionSecretsMustDiffer,
@@ -136,7 +142,7 @@ final class ProjectSettingsController extends Controller
         if ($outcome !== DeletionOutcome::Deleted) {
             Inertia::flash('toast', $outcome === DeletionOutcome::Blocked
                 ? ['type' => 'error', 'message' => "{$name} was not deleted: its final backup failed. See the Danger zone."]
-                : ['type' => 'info', 'message' => "Taking a final backup of {$name}'s data first. The project is deleted as soon as it succeeded."]);
+                : ['type' => 'info', 'message' => "Taking a final backup of {$name}'s data first. The project is deleted once the backup succeeds."]);
 
             return back();
         }

@@ -31,6 +31,7 @@ const (
 	classBuildkit
 	classAmbassador
 	classVolumeHelper
+	classAccessHelper
 	classUpdater
 )
 
@@ -51,6 +52,8 @@ const (
 	ambassadorVolume     = "lr-system-ambassador-config"
 	volumeHelperImage    = "launchroom-local/volume-helper:1"
 	volumeHelperMount    = "/data"
+	accessHelperMount    = "/data"
+	accessHelperMaxSleep = 5 * 60 * 60
 	systemAmbassador     = "ambassador"
 	roleUpdater          = "updater"
 	supervisorBinary     = "/usr/local/bin/launchroomd"
@@ -63,6 +66,10 @@ const (
 var (
 	reContainerName = regexp.MustCompile(`^lr-[a-z0-9][a-z0-9_.-]{0,120}$`)
 	reHelperName    = regexp.MustCompile(`^lr-vol-[a-f0-9]{12}$`)
+	reAccessHelper  = regexp.MustCompile(`^lr-acc-[a-f0-9]{12}$`)
+	reAccessID      = regexp.MustCompile(`^acc_[0-9A-HJKMNP-TV-Z]{26}$`)
+	reNumericUser   = regexp.MustCompile(`^[0-9]{1,10}:[0-9]{1,10}$`)
+	reSleepSeconds  = regexp.MustCompile(`^[1-9][0-9]{0,4}$`)
 	reUpdaterName   = regexp.MustCompile(`^lr-system-update-[a-z0-9]{26}$`)
 	reLocalImage    = regexp.MustCompile(`^lr-[a-z0-9][a-z0-9-]{0,62}:[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$`)
 	reImageID       = regexp.MustCompile(`^sha256:[a-f0-9]{64}$`)
@@ -82,6 +89,8 @@ func classify(name string, labels map[string]string) class {
 		return classUpdater
 	case labels[labelHelper] == "volume":
 		return classVolumeHelper
+	case labels[labelHelper] == "access":
+		return classAccessHelper
 	}
 	switch name {
 	case caddyName:
@@ -198,6 +207,8 @@ func (s *Server) checkCreate(ctx context.Context, name string, req *container.Cr
 	case classUpdater:
 		cfgAllowed = append(cfgAllowed, "WorkingDir", "Tty")
 		hostAllowed = append(hostAllowed, "GroupAdd")
+	case classAccessHelper:
+		hostAllowed = append(hostAllowed, "ReadonlyRootfs")
 	default:
 		if sh, ok := shapes[cls]; ok {
 			hostAllowed = append(hostAllowed, sh.extraHost...)
@@ -236,6 +247,8 @@ func (s *Server) checkCreate(ctx context.Context, name string, req *container.Cr
 		return s.checkUpdater(ctx, name, cfg, hc, endpoints)
 	case classVolumeHelper:
 		return s.checkVolumeHelper(ctx, name, cfg, hc, endpoints)
+	case classAccessHelper:
+		return s.checkAccessHelper(ctx, name, cfg, hc, endpoints, pol)
 	case classWorkload:
 		if strings.HasPrefix(name, policy.SystemPrefix) {
 			return deny("%s… names are reserved for launchroom's system containers", policy.SystemPrefix)
@@ -315,6 +328,10 @@ func (s *Server) checkSystem(ctx context.Context, cls class, name string, cfg *c
 		if hc.CPUShares < 0 || hc.CPUShares > 1024 || hc.BlkioWeight != 0 && (hc.BlkioWeight < 10 || hc.BlkioWeight > 1000) {
 			return deny("container %s: builds may only get a default or lower CPU weight and a valid I/O weight", name)
 		}
+		// Swap is bounded like memory: never unlimited (-1) on top of a limit.
+		if hc.Memory > 0 && hc.MemorySwap != 0 && hc.MemorySwap < hc.Memory {
+			return deny("container %s: builds may only get bounded swap", name)
+		}
 		for _, h := range hc.ExtraHosts {
 			if !reExtraHost.MatchString(h) {
 				return deny("container %s: extra host %q is not allowed", name, truncate(h, 64))
@@ -350,6 +367,58 @@ func (s *Server) checkVolumeHelper(ctx context.Context, name string, cfg *contai
 	}
 	return s.checkMounts(ctx, hc.Mounts, nil)
 }
+
+// checkAccessHelper: the SFTP helper of a volume access (D67, docs/09
+// R39): the pinned busybox of the "files" component running `sleep <s>` as
+// a numeric user, no network, cap-drop ALL, no-new-privileges, read-only
+// root, an init and limits, exactly one workload volume at /data. Execs
+// into it run only the SFTP file tools (checkExec).
+func (s *Server) checkAccessHelper(ctx context.Context, name string, cfg *container.Config, hc *container.HostConfig, endpoints map[string]bool, pol policy.Config) error {
+	sleep := len(cfg.Cmd) == 1 && reSleepSeconds.MatchString(cfg.Cmd[0])
+	if sleep {
+		n := 0
+		for _, c := range cfg.Cmd[0] {
+			n = n*10 + int(c-'0')
+		}
+		sleep = n <= accessHelperMaxSleep
+	}
+	switch {
+	case !reAccessHelper.MatchString(name):
+		return deny("access helper name %q is not generated", truncate(name, 64))
+	case !reAccessID.MatchString(cfg.Labels["launchroom.access"]):
+		return deny("access helpers carry their access id")
+	case policy.CheckSystemImage(policy.SystemFiles, state.ImageRef(cfg.Image), pol) != nil:
+		return deny("access helpers run the pinned files image only")
+	case !slices.Equal(cfg.Entrypoint, []string{"sleep"}) || !sleep:
+		return deny("access helpers run sleep for at most %d seconds", accessHelperMaxSleep)
+	case !reNumericUser.MatchString(cfg.User):
+		return deny("access helpers run as a numeric uid:gid")
+	case string(hc.NetworkMode) != "none" || !cfg.NetworkDisabled || len(endpoints) > 0:
+		return deny("access helpers have no network")
+	case !slices.Equal(upper(hc.CapDrop), []string{"ALL"}) || len(hc.CapAdd) > 0:
+		return deny("access helpers drop every capability")
+	case !sameSet(hc.SecurityOpt, []string{policy.NoNewPrivileges}):
+		return deny("access helpers run with no-new-privileges only")
+	case !hc.ReadonlyRootfs || hc.Init == nil || !*hc.Init:
+		return deny("access helpers need a read-only root and an init")
+	case hc.Memory <= 0 || hc.PidsLimit == nil || *hc.PidsLimit <= 0 || hc.NanoCPUs <= 0:
+		return deny("access helpers need memory, pids and CPU limits")
+	case hc.RestartPolicy.Name != "" && hc.RestartPolicy.Name != container.RestartPolicyDisabled:
+		return deny("access helpers are never restarted")
+	case len(hc.Mounts) != 1 || hc.Mounts[0].Target != accessHelperMount:
+		return deny("access helpers mount exactly one volume at %s", accessHelperMount)
+	case len(hc.PortBindings) > 0 || len(cfg.ExposedPorts) > 0 || len(cfg.Env) > 0:
+		return deny("access helpers have no ports or environment")
+	}
+	if err := checkLogConfig(hc.LogConfig); err != nil {
+		return deny("container %s: %v", name, err)
+	}
+	return s.checkMounts(ctx, hc.Mounts, nil)
+}
+
+// accessHelperTools are the only programs an exec into an access helper may
+// run: the SFTP backend's file tools (internal/access/sftpfs.go).
+var accessHelperTools = []string{"ls", "stat", "cat", "tail", "dd", "tee", "mkdir", "rmdir", "rm", "mv", "ln", "readlink", "chmod", "truncate"}
 
 // checkUpdater: the self-update supervisor (internal/update). It is the
 // only container with host access: the Docker socket and the install

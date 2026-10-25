@@ -24,6 +24,8 @@ template with its service count and the resources it needs.
 | Django + Postgres + Celery | Web, Celery worker, PostgreSQL and a Redis broker |
 | Rails + Postgres + Sidekiq | Web, Sidekiq, PostgreSQL and Redis |
 
+**Backends**: [Supabase](/docs/projects/supabase) (Postgres with auth, a REST API, realtime, storage and Studio).
+
 **Apps** run a prebuilt image: Plausible (with managed ClickHouse and PostgreSQL), Umami, Uptime Kuma, n8n, Ghost (with
 MySQL), Gitea, versitygw (S3-compatible storage), Meilisearch, PocketBase and Metabase.
 
@@ -93,7 +95,8 @@ need and refuses anything that would give a container access to the server. It n
 | `build` | An app built from the repository, with the context as root directory and its Dockerfile |
 | Same `build` with another `command` | A worker of that app (one build feeds both) |
 | `ports` | The service's port, public with a generated domain. Host ports are never published: traffic enters through your edge servers |
-| `expose` | The service's port, private |
+| `expose` | The service's port, private. Other ports than HTTP, like `5432`, too: they get a TCP health check |
+| `configs` with inline `content` | Config files, written read-only into the container before it starts (up to 32 files, 64 KB each). Keep secrets in variables |
 | `environment`, `env_file` | Variables. Secret-looking keys and values become secrets, and other services' host names are rewritten to their slugs |
 | `depends_on` | Connections on the canvas (databases deploy first) |
 | Named or anonymous volumes | Volumes of that service |
@@ -126,7 +129,7 @@ imported without them:
   volume afterwards or build the file into the image.
 - the Docker socket, always
 - capabilities outside the list above, UDP ports and port ranges
-- `secrets`, `configs`, `include` and `extends`
+- `secrets`, configs read from a file or the environment, `include` and `extends`
 
 Settings launchroom handles itself (`restart`, `logging`, `container_name`, `networks`, `user`, `working_dir` and
 others) are ignored with a note. Reverse proxies in the file (Traefik, Caddy, nginx-proxy, HAProxy) get a note that

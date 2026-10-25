@@ -160,7 +160,7 @@ export function ChangeRow({
                     {label}
                     {managedBy && (
                         <span
-                            title={`Set by ${managedBy}: the next push sets it again.`}
+                            title={`Set by ${managedBy}. The next push overwrites it.`}
                             className="rounded-md bg-hover px-1.5 py-px type-mono-small text-muted-foreground"
                         >
                             {managedBy}

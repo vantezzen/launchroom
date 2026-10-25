@@ -2,6 +2,7 @@ import { LoaderCircle, TriangleAlert } from 'lucide-react';
 import { createContext, useContext, useState } from 'react';
 import type { ComponentProps, ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import { MetaDivider } from '@/components/patterns/meta-line';
 import { cn } from '@/lib/utils';
 
 type Slot = {
@@ -212,8 +213,9 @@ export function StagedBar({
                     {count === 1 ? '1 change' : `${count} changes`}
                 </span>
                 {summary && (
-                    <span className="hidden truncate type-body text-background/70 sm:inline">
-                        · {summary}
+                    <span className="hidden min-w-0 items-center gap-2 type-body text-background/70 sm:inline-flex">
+                        <MetaDivider className="bg-background/30" />
+                        <span className="truncate">{summary}</span>
                     </span>
                 )}
             </span>

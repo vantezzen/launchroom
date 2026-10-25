@@ -156,8 +156,8 @@ test('only instance owners see and use Settings → Updates', function (): void 
 
     $this->actingAs($admin)->get(route('updates.edit'))->assertForbidden();
     $this->actingAs($admin)->post(route('updates.check'))->assertForbidden();
-    $this->actingAs($admin)->withSession(passwordConfirmed())->post(route('updates.control-plane'), ['version' => '0.2.0', 'skipBackup' => true])->assertForbidden();
-    $this->actingAs($admin)->withSession(passwordConfirmed())->post(route('updates.servers'))->assertForbidden();
+    $this->actingAs($admin)->post(route('updates.control-plane'), ['version' => '0.2.0', 'skipBackup' => true])->assertForbidden();
+    $this->actingAs($admin)->post(route('updates.servers'))->assertForbidden();
 
     $this->actingAs($this->owner)->get(route('updates.edit'))
         ->assertOk()
@@ -300,7 +300,7 @@ test('a release the dashboard cannot install says why and shows the installer co
             ->where('check.available.cannotInstallReason', $reason)
             ->where('check.available.installerCommand', 'curl -fsSL https://launchroom.vantezzen.io/install | sh -s -- --version 0.1.0-rc.4'));
 
-    $this->actingAs($this->owner)->withSession(passwordConfirmed())
+    $this->actingAs($this->owner)
         ->post(route('updates.control-plane'), ['version' => '0.1.0-rc.4', 'skipBackup' => true])
         ->assertSessionHasErrors(['version' => "{$reason} Install it with the installer instead: curl -fsSL https://launchroom.vantezzen.io/install | sh -s -- --version 0.1.0-rc.4"]);
     expect(ControlPlaneUpdate::query()->count())->toBe(0);
@@ -341,12 +341,12 @@ test('assets that redirect anywhere but GitHub storage are ignored', function ()
 test('without a backup destination the update needs the acknowledgement, then queues a schema-valid control-plane task', function (): void {
     fakeGitHub([release('v0.2.0')]);
 
-    $this->actingAs($this->owner)->withSession(passwordConfirmed())
+    $this->actingAs($this->owner)
         ->post(route('updates.control-plane'), ['version' => '0.2.0'])
         ->assertSessionHasErrors('skipBackup');
     expect(ControlPlaneUpdate::query()->count())->toBe(0);
 
-    $this->actingAs($this->owner)->withSession(passwordConfirmed())
+    $this->actingAs($this->owner)
         ->post(route('updates.control-plane'), ['version' => '0.2.0', 'skipBackup' => true])
         ->assertSessionHasNoErrors();
 
@@ -364,7 +364,7 @@ test('without a backup destination the update needs the acknowledgement, then qu
         ->and(AuditEvent::query()->where('action', AuditAction::ControlPlaneUpdateStarted->value)->exists())->toBeTrue();
 
     // A second update while one runs is refused.
-    $this->actingAs($this->owner)->withSession(passwordConfirmed())
+    $this->actingAs($this->owner)
         ->post(route('updates.control-plane'), ['version' => '0.2.0', 'skipBackup' => true]);
     expect(ControlPlaneUpdate::query()->count())->toBe(1);
 
@@ -378,7 +378,7 @@ test('versions that are not newer or not released are refused', function (): voi
     fakeGitHub([release('v0.2.0')]);
 
     foreach (['0.1.0', '0.0.9', '0.5.0'] as $version) {
-        $this->actingAs($this->owner)->withSession(passwordConfirmed())
+        $this->actingAs($this->owner)
             ->post(route('updates.control-plane'), ['version' => $version, 'skipBackup' => true])
             ->assertSessionHasErrors('version');
     }
@@ -392,7 +392,7 @@ test('a failing pre-upgrade backup stops the update before any task exists', fun
     Backups::destination(null, $this->owner, 'Control plane');
     InstanceSettings::current()->forceFill(['recovery_public_key' => 'x25519:'.base64_encode(random_bytes(32)), 'recovery_kdf' => ['salt' => 'x']])->save();
 
-    $this->actingAs($this->owner)->withSession(passwordConfirmed())
+    $this->actingAs($this->owner)
         ->post(route('updates.control-plane'), ['version' => '0.2.0'])
         ->assertSessionHasNoErrors();
 
@@ -407,7 +407,7 @@ test('a failing pre-upgrade backup stops the update before any task exists', fun
 
 test('the control-plane task outcome decides the update status', function (string $outcome, array $extra, ControlPlaneUpdateStatus $expected): void {
     fakeGitHub([release('v0.2.0')]);
-    $this->actingAs($this->owner)->withSession(passwordConfirmed())
+    $this->actingAs($this->owner)
         ->post(route('updates.control-plane'), ['version' => '0.2.0', 'skipBackup' => true]);
 
     $task = finishSelfUpdate($this, $this->cpDaemon, $outcome, $extra);
@@ -429,7 +429,7 @@ test('the control-plane task outcome decides the update status', function (strin
 
 test('the scheduler records an outcome whose event was lost', function (): void {
     fakeGitHub([release('v0.2.0')]);
-    $this->actingAs($this->owner)->withSession(passwordConfirmed())
+    $this->actingAs($this->owner)
         ->post(route('updates.control-plane'), ['version' => '0.2.0', 'skipBackup' => true]);
 
     $task = DaemonTask::query()->find(ControlPlaneUpdate::query()->sole()->daemon_task_id);
@@ -456,7 +456,7 @@ test('servers are updated one at a time, edges last, without the control plane, 
     // Another team's server is part of the instance's fleet too.
     $other = Server::factory()->online()->create(['name' => 'build-1', 'roles' => [ServerRole::Build], 'daemon_version' => '0.1.5']);
 
-    $this->actingAs($this->owner)->withSession(passwordConfirmed())->post(route('updates.servers'))->assertSessionHasNoErrors();
+    $this->actingAs($this->owner)->post(route('updates.servers'))->assertSessionHasNoErrors();
 
     $fleet = FleetUpdate::query()->sole();
     $steps = $fleet->steps()->get();
@@ -471,7 +471,7 @@ test('servers are updated one at a time, edges last, without the control plane, 
         ->and($first?->timeout_seconds)->toBe(1200);
 
     // Only one rollout at a time; the control plane can't update meanwhile.
-    $this->actingAs($this->owner)->withSession(passwordConfirmed())->post(route('updates.servers'))->assertSessionHasErrors();
+    $this->actingAs($this->owner)->post(route('updates.servers'))->assertSessionHasErrors();
     expect(FleetUpdate::query()->count())->toBe(1);
 
     finishSelfUpdate($this, new FakeDaemon($seeds['runtime-1'])->as($runtime->public_id), 'succeeded');
@@ -498,7 +498,7 @@ test('a rollout finishes when every server succeeded', function (): void {
     $seed = random_bytes(32);
     $server = Server::factory()->withSigningSeed($seed)->online()->create(['team_id' => $this->team->id, 'daemon_version' => '0.1.0']);
 
-    $this->actingAs($this->owner)->withSession(passwordConfirmed())->post(route('updates.servers'));
+    $this->actingAs($this->owner)->post(route('updates.servers'));
     finishSelfUpdate($this, new FakeDaemon($seed)->as($server->public_id), 'succeeded');
 
     expect(FleetUpdate::query()->sole()->status)->toBe(FleetUpdateStatus::Succeeded);
@@ -507,13 +507,13 @@ test('a rollout finishes when every server succeeded', function (): void {
 test('no rollout without a released, digest-pinned target or anything to update', function (): void {
     config(['launchroom.version' => '0.2.0-dev']);
     Server::factory()->online()->create(['daemon_version' => '0.1.0']);
-    $this->actingAs($this->owner)->withSession(passwordConfirmed())->post(route('updates.servers'))->assertSessionHasErrors('fleet');
+    $this->actingAs($this->owner)->post(route('updates.servers'))->assertSessionHasErrors('fleet');
 
     config(['launchroom.version' => '0.2.0', 'launchroom.daemon.image' => 'ghcr.io/vantezzen/launchroomd:0.2.0']);
-    $this->actingAs($this->owner)->withSession(passwordConfirmed())->post(route('updates.servers'))->assertSessionHasErrors('fleet');
+    $this->actingAs($this->owner)->post(route('updates.servers'))->assertSessionHasErrors('fleet');
 
     config(['launchroom.version' => '0.1.0', 'launchroom.daemon.image' => daemonImage()]);
-    $this->actingAs($this->owner)->withSession(passwordConfirmed())->post(route('updates.servers'))->assertSessionHasErrors('fleet');
+    $this->actingAs($this->owner)->post(route('updates.servers'))->assertSessionHasErrors('fleet');
 
     expect(FleetUpdate::query()->count())->toBe(0);
 });
@@ -538,30 +538,30 @@ test('the channel and automatic updates are owner settings, audited, and automat
     fakeGitHub([release('v0.3.0-beta.1', ['prerelease' => true]), release('v0.2.0')]);
     $admin = memberOf($this->team, TeamRole::Admin);
 
-    $this->actingAs($admin)->withSession(passwordConfirmed())->put(route('updates.preferences'), ['channel' => 'beta', 'autoUpdate' => false])->assertForbidden();
+    $this->actingAs($admin)->put(route('updates.preferences'), ['channel' => 'beta', 'autoUpdate' => false])->assertForbidden();
     $this->flushSession();
     $this->actingAs($this->owner)->put(route('updates.preferences'), ['channel' => 'stable', 'autoUpdate' => false])->assertRedirect()->assertSessionHasNoErrors();
 
     // Without a control-plane destination, automatic updates stay off.
-    $this->actingAs($this->owner)->withSession(passwordConfirmed())
+    $this->actingAs($this->owner)
         ->put(route('updates.preferences'), ['channel' => 'stable', 'autoUpdate' => true])
         ->assertSessionHasErrors('autoUpdate');
     expect(InstanceSettings::current()->auto_update)->toBeFalse();
 
-    $this->actingAs($this->owner)->withSession(passwordConfirmed())
+    $this->actingAs($this->owner)
         ->put(route('updates.preferences'), ['channel' => 'nightly', 'autoUpdate' => false])
         ->assertSessionHasErrors('channel');
 
     // The beta channel offers prereleases; the cached check is per channel.
     $this->actingAs($this->owner)->post(route('updates.check'))->assertSessionHas('success', 'launchroom 0.2.0 is available.');
-    $this->actingAs($this->owner)->withSession(passwordConfirmed())
+    $this->actingAs($this->owner)
         ->put(route('updates.preferences'), ['channel' => 'beta', 'autoUpdate' => false])
         ->assertSessionHasNoErrors();
     expect(InstanceSettings::current()->update_channel)->toBe('beta');
     $this->actingAs($this->owner)->post(route('updates.check'))->assertSessionHas('success', 'launchroom 0.3.0-beta.1 is available.');
 
     Backups::destination(null, $this->owner, 'Control plane');
-    $this->actingAs($this->owner)->withSession(passwordConfirmed())
+    $this->actingAs($this->owner)
         ->put(route('updates.preferences'), ['channel' => 'beta', 'autoUpdate' => true])
         ->assertSessionHasNoErrors();
 
@@ -589,7 +589,7 @@ test('"and my servers": the new dashboard rolls every server to its version once
     $this->actingAs($this->owner)->get(route('updates.edit'))
         ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page->where('serversBehindRelease', 1));
 
-    $this->actingAs($this->owner)->withSession(passwordConfirmed())
+    $this->actingAs($this->owner)
         ->post(route('updates.control-plane'), ['version' => '0.2.0', 'skipBackup' => true, 'updateServers' => true])
         ->assertSessionHasNoErrors();
     expect(ControlPlaneUpdate::query()->sole()->update_servers)->toBeTrue();
@@ -621,7 +621,7 @@ test('"and my servers": the new dashboard rolls every server to its version once
 
 test('"and my servers" with nothing to update is dropped instead of retried', function (): void {
     fakeGitHub([release('v0.2.0')]);
-    $this->actingAs($this->owner)->withSession(passwordConfirmed())
+    $this->actingAs($this->owner)
         ->post(route('updates.control-plane'), ['version' => '0.2.0', 'skipBackup' => true, 'updateServers' => true]);
     finishSelfUpdate($this, $this->cpDaemon, 'succeeded');
 

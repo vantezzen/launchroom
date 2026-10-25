@@ -27,7 +27,7 @@ use Illuminate\Support\Carbon;
  * @property string $service_public_id
  * @property string $environment_public_id
  * @property string $label display only: "<service> in <project> / <environment>"
- * @property string $reason environment_deleted | project_deleted | preview_destroyed
+ * @property string $reason environment_deleted | project_deleted | preview_destroyed | volume_removed
  * @property string $mount_path
  * @property Carbon $retain_until
  * @property bool $backups_configured

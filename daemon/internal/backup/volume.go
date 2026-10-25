@@ -65,7 +65,9 @@ func (e *Engine) findVolume(ctx context.Context, id state.VolumeID) (docker.Volu
 	return found[0], nil
 }
 
-// users returns the non-helper containers that mount the volume.
+// users returns the containers that mount the volume, except volume
+// helpers. A volume access' SFTP helper counts (D67): a restore or import
+// waits until it is gone (the access ends once the service is held).
 func (e *Engine) users(ctx context.Context, name string) ([]docker.Container, error) {
 	cs, err := e.o.Volumes.ListContainers(ctx, nil)
 	if err != nil {
@@ -73,7 +75,7 @@ func (e *Engine) users(ctx context.Context, name string) ([]docker.Container, er
 	}
 	var out []docker.Container
 	for _, c := range cs {
-		if c.Labels[docker.LabelHelper] == "" && slices.Contains(c.Volumes, name) {
+		if c.Labels[docker.LabelHelper] != "volume" && slices.Contains(c.Volumes, name) {
 			out = append(out, c)
 		}
 	}

@@ -33,7 +33,10 @@
           "db_import",
           "volume_import",
           "db_export",
-          "volume_export"
+          "volume_export",
+          "access",
+          "inventory",
+          "inspect_container"
         ]
       },
       "type": "array",

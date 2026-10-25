@@ -64,7 +64,7 @@ final readonly class DiscordSender implements AlertSender
         }
 
         if ($message->context !== []) {
-            $embed['footer'] = ['text' => implode(' · ', $message->context)];
+            $embed['footer'] = ['text' => implode(' / ', $message->context)];
         }
 
         return ['username' => 'launchroom', 'embeds' => [$embed], 'allowed_mentions' => ['parse' => []]];

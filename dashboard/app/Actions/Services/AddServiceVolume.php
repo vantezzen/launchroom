@@ -13,6 +13,8 @@ use App\Enums\ServiceKind;
 use App\Exceptions\DomainRuleViolation;
 use App\Models\ServiceInstance;
 use App\Models\Volume;
+use App\Services\Volumes\StagedVolumes;
+use App\Support\Services\VolumeMountRules;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -25,9 +27,6 @@ use Illuminate\Support\Facades\DB;
  */
 final readonly class AddServiceVolume
 {
-    /** Paths that may never be mount targets (launchroomd refuses them too, docs/09 R4). */
-    private const array FORBIDDEN = ['/proc', '/sys', '/dev', '/var/run/docker.sock', '/run/docker.sock'];
-
     public function __construct(
         private RecordAuditEvent $audit,
     ) {}
@@ -35,21 +34,29 @@ final readonly class AddServiceVolume
     public function handle(ServiceInstance $instance, AddVolumeData $data, AuditActor $actor): Volume
     {
         $path = $data->mountPath;
+        $problem = VolumeMountRules::problem($path, []);
 
-        if (array_any(explode('/', $path), static fn (string $segment): bool => $segment === '.' || $segment === '..')
-            || array_any(self::FORBIDDEN, static fn (string $forbidden): bool => $path === $forbidden || str_starts_with($path, $forbidden.'/'))) {
-            throw DomainRuleViolation::on('mountPath', 'Pick another path: it must be clean and outside /proc, /sys and /dev.');
+        if ($problem !== null) {
+            throw DomainRuleViolation::on('mountPath', $problem);
         }
 
         return DB::transaction(function () use ($instance, $path, $actor): Volume {
-            $instance = ServiceInstance::query()->whereKey($instance->id)->with(['service', 'volumes'])->lockForUpdate()->firstOrFail();
+            $instance = ServiceInstance::query()->whereKey($instance->id)->with(['service', 'volumes', 'environment.lastAppliedRevision'])->lockForUpdate()->firstOrFail();
 
             if (! in_array($instance->service->kind, [ServiceKind::App, ServiceKind::Image], true)) {
                 throw DomainRuleViolation::on('mountPath', 'Volumes can be added to app and image services. Databases already have theirs.');
             }
 
-            if ($instance->volumes->contains(static fn (Volume $volume): bool => $volume->mount_path === $path || str_starts_with($path, rtrim($volume->mount_path, '/').'/') || str_starts_with($volume->mount_path, rtrim($path, '/').'/'))) {
-                throw DomainRuleViolation::on('mountPath', 'This path is already (inside) a volume of this service.');
+            $problem = VolumeMountRules::problem($path, $instance->volumes->map(static fn (Volume $volume): string => $volume->mount_path)->all());
+
+            if ($problem !== null) {
+                throw DomainRuleViolation::on('mountPath', $problem);
+            }
+
+            // A volume at this path whose removal isn't deployed yet still
+            // holds the files: keeping it is one discard away.
+            if (StagedVolumes::pendingRemovals($instance)->contains('mount_path', $path)) {
+                throw DomainRuleViolation::on('mountPath', "The volume at {$path} is removed with the next deploy. To keep it and its files, discard that change instead.");
             }
 
             $volume = Volume::query()->create([

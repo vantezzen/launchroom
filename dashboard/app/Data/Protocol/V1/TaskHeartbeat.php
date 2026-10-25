@@ -24,5 +24,7 @@ final class TaskHeartbeat extends Data
         public int $attempt,
         #[Max(256)]
         public string|Optional $progress = new Optional,
+        /** Running access tasks (docs/03 §12.1). */
+        public AccessStatus|null|Optional $access = new Optional,
     ) {}
 }

@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils';
 
 /**
  * Active deployment (direction §5.2): status pill, commit
- * message as the title, a meta line (sha · branch · author · age), the step
+ * message as the title, a meta line (sha, branch, author, age), the step
  * pills strip and actions. Not a link card: its actions are the point.
  */
 export function DeploymentCard({
@@ -21,7 +21,7 @@ export function DeploymentCard({
     title: string;
     /** Commit author avatar before the title (CommitAvatar). */
     avatar?: ReactNode;
-    /** "3b7d5e1 · main · jonas · 2m ago". */
+    /** "3b7d5e1 | main | jonas | 2m ago" in a MetaLine. */
     meta: ReactNode;
     steps?: { id: string; name: string; status: StepStatus }[];
     actions?: ReactNode;

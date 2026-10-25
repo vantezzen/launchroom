@@ -187,6 +187,13 @@ func (s *Server) checkExec(c *ctr, req *container.ExecCreateRequest) error {
 		return deny("exec user %q is not allowed", truncate(req.User, 32))
 	}
 	cls := c.class()
+	if cls == classAccessHelper {
+		// SFTP only: the file tools, without TTY, user override or environment.
+		if req.Tty || req.User != "" || len(req.Env) > 0 || !slices.Contains(accessHelperTools, req.Cmd[0]) {
+			return deny("access helpers run only the SFTP file tools")
+		}
+		return nil
+	}
 	if cls != classWorkload {
 		sh, ok := shapes[cls]
 		if !ok || sh.exec == nil {

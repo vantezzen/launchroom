@@ -30,7 +30,7 @@ export function NetworkingSection({
     return (
         <SettingsPage
             title="Private network"
-            description="Other services in this environment reach it here. It never leaves your servers."
+            description="The address other services in this environment use to reach it."
         >
             <div
                 data-setting="private-address"
@@ -58,8 +58,7 @@ export function NetworkingSection({
                 </div>
                 <div className="flex items-center gap-2 border-t px-5 py-3 type-small text-muted-foreground">
                     <Lock aria-hidden="true" className="size-3.5" />
-                    Stays on your servers’ private network. The internet can’t
-                    reach it.
+                    Reachable only on your servers’ private network.
                 </div>
             </div>
 

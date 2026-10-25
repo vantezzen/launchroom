@@ -61,7 +61,7 @@ final class ServerEnrollmentController extends Controller
 
         // A Mac never serves traffic (D53); enrollment drops the role anyway, this says so up front.
         if ($machine === 'mac' && in_array(ServerRole::Edge, $data->serverRoles(), true)) {
-            throw ValidationException::withMessages(['roles' => __('A Mac can’t serve traffic: its Docker runs in a Linux VM. Let a public server serve traffic.')]);
+            throw ValidationException::withMessages(['roles' => __('A Mac can’t serve traffic because Docker runs in a Linux VM there. Use a public server to serve traffic.')]);
         }
 
         $issued = $createEnrollment->handle($team, $data, $user, $this->auditActor($request, $user));

@@ -15,6 +15,7 @@ use App\Models\Variable;
 use App\Services\Environments\EnvironmentIntentCopier;
 use App\Services\Promotions\PromotionRecorder;
 use App\Services\Variables\ProductionSecretPolicy;
+use App\Support\Variables\GeneratedValues;
 use Illuminate\Contracts\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
 
@@ -94,7 +95,9 @@ final readonly class CopyEnvironmentIntent
                     ->whereHas('targets', static fn (Builder $query) => $query->where('environment_id', $from->id))
                     ->with(['service', 'usedBy:services.id'])
                     ->orderBy('id')
-                    ->get();
+                    ->get()
+                    // Values signed with another variable (jwt()) are generated after it.
+                    ->sortBy(static fn (Variable $row): int => GeneratedValues::signingKey($row->generator) === null ? 0 : 1, SORT_NUMERIC, false);
 
                 foreach ($rows as $row) {
                     if (($row->service_id !== null && ! isset($present[$row->service_id]))
@@ -104,7 +107,9 @@ final readonly class CopyEnvironmentIntent
                         continue;
                     }
 
-                    $copy = $this->copier->copyVariable($project, $row, $to, actor: $user);
+                    // Without secrets, a value signed with one is withheld too: it stays empty.
+                    $withheld = $noSecrets && GeneratedValues::signingKey($row->generator) !== null;
+                    $copy = $this->copier->copyVariable($project, $row, $to, $withheld ? '' : null, $user);
 
                     if ($row->service_id === null && $row->usedBy->isNotEmpty()) {
                         $copy->usedBy()->syncWithoutDetaching($row->usedBy->modelKeys());

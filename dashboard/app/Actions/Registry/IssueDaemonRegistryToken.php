@@ -27,7 +27,9 @@ use Spatie\LaravelData\Optional;
  * - pull and push on `apps/<service>` and `cache/<service>` only with `task`
  *   naming a build task currently leased by this server for that service;
  * - pull on `apps/<service>` with `task` naming a run_once task (release or
- *   seed command) currently leased by this server for that service.
+ *   seed command) currently leased by this server for that service;
+ * - pull on `apps/<service>` with `task` naming an inventory task currently
+ *   leased by this server for that service (docs/03 §13.1).
  */
 final readonly class IssueDaemonRegistryToken
 {
@@ -38,7 +40,8 @@ final readonly class IssueDaemonRegistryToken
     public function handle(Server $server, RegistryTokenRequest $request): RegistryToken
     {
         $buildService = $request->task instanceof Optional ? null : $this->leasedTaskService($server, $request->task, DaemonTaskType::Build);
-        $runOnceService = $request->task instanceof Optional ? null : $this->leasedTaskService($server, $request->task, DaemonTaskType::RunOnce);
+        $runOnceService = $request->task instanceof Optional ? null : $this->leasedTaskService($server, $request->task, DaemonTaskType::RunOnce)
+            ?? $this->leasedTaskService($server, $request->task, DaemonTaskType::Inventory);
         $nodeRepositories = null;
         $scopes = [];
 

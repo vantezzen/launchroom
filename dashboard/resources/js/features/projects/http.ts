@@ -30,7 +30,7 @@ function messageFrom(body: string, status: number): string {
 }
 
 export async function requestJson<T>(
-    method: 'get' | 'put' | 'post',
+    method: 'get' | 'put' | 'post' | 'patch' | 'delete',
     url: string,
     data?: unknown,
     signal?: AbortSignal,

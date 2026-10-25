@@ -52,6 +52,7 @@ export default function ManageTwoFactor(props: Props) {
     return (
         <SettingsCard
             title="Two-factor authentication"
+            setting="two-factor"
             actions={
                 twoFactorEnabled ? (
                     <StatusPill state="active" label="On" />

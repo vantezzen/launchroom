@@ -143,8 +143,8 @@ export function BlueprintCanvas({
                                 className="size-3.5"
                             />
                             {group.label}
-                            <span className="tabular-nums">
-                                · {group.services.length}
+                            <span className="rounded-full bg-(--hover) px-1.5 tabular-nums">
+                                {group.services.length}
                             </span>
                         </span>
                         {group.services.map((service) => (
@@ -222,7 +222,7 @@ function ServiceTile({
     );
 }
 
-/** "2 CPUs · 1.5 GB · 2 volumes" for a blueprint. */
+/** "2 CPUs, 1.5 GB, 2 volumes" for a blueprint. */
 export function resourcesLine(preview: Preview): string {
     const memory =
         preview.memoryMb >= 1024
@@ -234,5 +234,5 @@ export function resourcesLine(preview: Preview): string {
             ? null
             : `${preview.volumes} ${preview.volumes === 1 ? 'volume' : 'volumes'}`;
 
-    return [cpus, memory, volumes].filter(Boolean).join(' · ');
+    return [cpus, memory, volumes].filter(Boolean).join(', ');
 }

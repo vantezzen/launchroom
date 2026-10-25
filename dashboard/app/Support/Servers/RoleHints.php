@@ -89,7 +89,7 @@ final class RoleHints
             'small-builder',
             RoleHintTone::Warning,
             'Small for builds next to apps',
-            'Builds use a lot of CPU and memory; with '.self::size($c).' they can slow down or drop requests. A separate build server keeps your apps responsive.',
+            'Builds use a lot of CPU and memory. With '.self::size($c).', they can slow down or drop requests. Add a separate build server to keep your apps responsive.',
             'servers/roles-and-placement',
         );
     }
@@ -121,7 +121,7 @@ final class RoleHints
             'sleeps',
             RoleHintTone::Info,
             'Apps here stop when it sleeps',
-            'A laptop that sleeps or runs out of battery takes its apps offline. It makes a great build server; keep apps and traffic on a machine that stays on.',
+            'A laptop that sleeps or runs out of battery takes its apps offline. It works well as a build server. Run apps and serve traffic on a machine that stays on.',
         );
     }
 
@@ -166,7 +166,7 @@ final class RoleHints
             'shared-builder',
             RoleHintTone::Info,
             'Builds share this machine with your apps',
-            "Make sure it’s powerful enough to build images while {$while}; large builds can slow down requests. A separate build server keeps them apart.",
+            "Make sure it’s powerful enough to build images while {$while}. Large builds can slow down requests. Add a separate build server to keep them apart.",
             'servers/roles-and-placement',
         );
     }

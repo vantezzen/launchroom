@@ -184,7 +184,7 @@ export function ServerCharts({
             now:
                 rx === null && tx === null
                     ? null
-                    : `↓ ${formatBandwidth(rx ?? 0)} · ↑ ${formatBandwidth(tx ?? 0)}`,
+                    : `↓ ${formatBandwidth(rx ?? 0)}  ↑ ${formatBandwidth(tx ?? 0)}`,
             node: (
                 <TimeSeriesChart
                     title="Network traffic"

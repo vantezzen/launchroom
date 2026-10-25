@@ -66,9 +66,10 @@ function ConfirmServers({
                     Update {servers} to {version}?
                 </DialogTitle>
                 <DialogDescription>
-                    One server at a time, edge servers last. Each one goes back
-                    by itself if the new version doesn’t start, and running apps
-                    aren’t restarted. The rollout stops at the first problem.
+                    Servers update one at a time, with edge servers last.
+                    Running apps aren’t restarted. If the new version doesn’t
+                    start on a server, it goes back to its old version and the
+                    rollout stops.
                 </DialogDescription>
                 <Form
                     {...updateServers.form()}
@@ -128,7 +129,6 @@ export function ServerVersions({
     return (
         <Section
             title="Servers"
-            description="Updated one at a time, edge servers last."
             actions={
                 fleetUpdatable &&
                 serversToUpdate > 0 &&
@@ -192,7 +192,7 @@ export function ServerVersions({
                         />
                         <p className="pl-5 type-body text-muted-foreground">
                             {failedStep !== null
-                                ? `${failedStep.serverName} ${failedStep.status === 'rolled_back' ? `went back to ${failedStep.fromVersion ?? 'its version'} by itself` : 'didn’t take the update'}; the servers after it weren’t touched. Apps on every server kept running.`
+                                ? `${failedStep.serverName} ${failedStep.status === 'rolled_back' ? `rolled back to ${failedStep.fromVersion ?? 'its previous version'}` : 'didn’t take the update'}. The servers after it weren’t updated, and apps on every server kept running.`
                                 : (fleetUpdate.error ??
                                   'A server didn’t take the update.')}
                         </p>

@@ -1,0 +1,30 @@
+---
+title: Firewall exceptions
+description: Allow legitimate requests the web firewall blocks by mistake.
+---
+
+The firewall sometimes blocks a legitimate request, for example a search for a word that looks like SQL. An exception skips one rule for one service, optionally only for one path and one part of the request.
+
+## From a blocked request
+
+1. Open **Security** and find the request under **Recent blocks**. The reference on the blocked page helps you find it.
+2. Select it. The sheet shows the rules that matched and the part of the request they matched.
+3. Select **Add exception**, or **Edit first** to change it in the service settings.
+
+The exception is filled in from the request: the rule, the path cut to its fixed part (`/api/products` for `/api/products/:id`) and the part of the request, such as `ARGS:q`.
+
+## By hand
+
+Open the service, then **Settings → Web firewall → Exceptions → Add exception**:
+
+| Field | Example | Effect |
+|---|---|---|
+| Rule | `942100` | The rule that should not run. Detection rules 911000 to 944999 only |
+| Path | `/api/search` | Only for paths that start with it |
+| Part of the request | `ARGS:q`, `REQUEST_COOKIES:session`, `REQUEST_HEADERS:User-Agent`, `REQUEST_BODY` | Only that part is skipped for the rule |
+
+A service can have 50 exceptions. Keep them narrow: an exception without a path or part turns the rule off for the whole service.
+
+## Removing an exception
+
+Select the trash icon next to it and confirm. Adding and removing exceptions needs the Developer role or higher and is recorded in the audit log.

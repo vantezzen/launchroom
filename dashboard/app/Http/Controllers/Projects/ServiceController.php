@@ -52,7 +52,7 @@ final class ServiceController extends Controller
         $removeService->handle($instance, $this->auditActor($request, $user));
 
         broadcast(new CanvasChanged($environment->public_id, $service->public_id))->toOthers();
-        Inertia::flash('toast', ['type' => 'success', 'message' => "Removal of {$service->name} staged. Deploy to apply it; volumes are kept."]);
+        Inertia::flash('toast', ['type' => 'success', 'message' => "Removal of {$service->name} staged. Deploy to apply it. Its volumes are kept."]);
 
         return to_route('projects.canvas', [$project, $environment]);
     }

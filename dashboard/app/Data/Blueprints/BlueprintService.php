@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Data\Blueprints;
 
+use App\Data\Services\ConfigFile;
 use App\Data\Services\HealthcheckSettings;
+use App\Enums\Backups\VolumeConsistency;
 use App\Enums\ServiceKind;
 use Spatie\LaravelData\Data;
 
@@ -23,6 +25,9 @@ final class BlueprintService extends Data
      * @param  list<BlueprintVariable>  $variables
      * @param  list<BlueprintConnection>  $connections
      * @param  list<BlueprintNote>  $notes
+     * @param  list<ConfigFile>  $files  config files written into the container (D65)
+     * @param  list<BlueprintVariable>  $provides  what a connection to it injects, referencing its own variables (D65)
+     * @param  VolumeConsistency|null  $backupConsistency  how backups read its volumes (null: the default, live)
      */
     public function __construct(
         public string $key,
@@ -45,5 +50,8 @@ final class BlueprintService extends Data
         public array $variables = [],
         public array $connections = [],
         public array $notes = [],
+        public array $files = [],
+        public array $provides = [],
+        public ?VolumeConsistency $backupConsistency = null,
     ) {}
 }

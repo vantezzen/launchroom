@@ -53,7 +53,7 @@ export function AuthFrame({
                                 href={home()}
                                 className="rounded-[10px] outline-none focus-visible:ring-2 focus-visible:ring-signal focus-visible:ring-offset-2"
                             >
-                                <AppLogoIcon className="size-10 text-foreground" />
+                                <AppLogoIcon className="size-12 text-foreground" />
                                 <span className="sr-only">launchroom</span>
                             </Link>
                         )}
