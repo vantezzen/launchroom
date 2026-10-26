@@ -495,7 +495,10 @@ func RenderTLS(routes []Route, t TLS, o Options) ([]byte, error) {
 				"terminal": true,
 			})
 		}
-		if r.Spec.Protection != nil && !o.forwardAuthAllowed(r.Spec.Protection) {
+		if r.Spec.Stopped {
+			// The service was stopped in launchroom (D68): nothing to proxy.
+			sub = append(sub, obj{"handle": []any{pageStopped.handler(503)}})
+		} else if r.Spec.Protection != nil && !o.forwardAuthAllowed(r.Spec.Protection) {
 			// Fail closed: a protected route is never served without its check.
 			sub = append(sub, obj{"handle": []any{pageRefusedAuth.handler(403)}})
 		} else if r.Spec.ClientAuth != nil && !o.clientAuthAllowed(r) {

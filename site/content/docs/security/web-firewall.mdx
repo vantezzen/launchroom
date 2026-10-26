@@ -19,7 +19,7 @@ Each service has its own setting in **Settings → Web firewall**, per environme
 
 Changes apply within seconds, without a deploy. Preview environments copy the setting of their base environment. Services without a domain keep the setting, but it has no effect.
 
-**Defaults:** services created since the firewall was added start in Block. Services that existed before start in Log only, so you can see what would have been blocked first. The Security page lists them under **Watching, not blocking yet** with **Turn on blocking**.
+**Default:** every service starts in Block, including services that existed before the firewall was added. To see what would be blocked before refusing anything, switch a service to Log only. The Security page lists Log only services under **Watching, not blocking yet** with **Turn on blocking**.
 
 ## Advanced settings
 
@@ -54,4 +54,4 @@ Most requests take a few milliseconds longer. Requests with large or many-field 
 
 ## When the firewall can't run
 
-If an edge server can't load the firewall, it keeps serving requests without it and the Security page says so. A [notification](/docs/observability/alerts) follows after 5 minutes. Servers that run an older launchroom version don't have the firewall yet: update them in **Settings → Updates**.
+If an edge server can't load the firewall, it keeps serving requests without it and the Security page says so. This is separate from the mode: a service set to Block is still unprotected on that server until it runs the firewall. A [notification](/docs/observability/alerts) follows after 5 minutes. Servers that run an older launchroom version don't have the firewall yet: update them in **Settings → Updates**.

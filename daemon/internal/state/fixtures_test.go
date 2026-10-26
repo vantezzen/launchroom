@@ -168,14 +168,15 @@ func TestSchemaRejectsWhatGoRejects(t *testing.T) {
 		"privileged smuggled":     func(d map[string]any) { web(d)["privileged"] = true },
 		"health command smuggled": func(d map[string]any) { web(d)["health"].(map[string]any)["command"] = "curl x" },
 		"version zero":            func(d map[string]any) { d["version"] = 0 },
-		"route without upstreams": func(d map[string]any) { d["routes"].([]any)[0].(map[string]any)["upstreams"] = []any{} },
-		"compound duration":       func(d map[string]any) { web(d)["health"].(map[string]any)["startPeriod"] = "1m30s" },
-		"capability with prefix":  func(d map[string]any) { pg(d)["capabilities"] = []any{"CAP_CHOWN"} },
-		"no networks":             func(d map[string]any) { web(d)["networks"] = []any{} },
-		"bad network name":        func(d map[string]any) { d["networks"].([]any)[0].(map[string]any)["name"] = "my-net" },
-		"uppercase hostname":      func(d map[string]any) { d["routes"].([]any)[0].(map[string]any)["hosts"] = []any{"Shop.example.com"} },
-		"missing env":             func(d map[string]any) { delete(web(d), "env") },
-		"upstream as string":      func(d map[string]any) { route(d)["upstreams"] = []any{"10.231.4.5:3000"} },
+		// "route without upstreams" is not here: a stopped route (D68) has
+		// none, and only Go checks that upstreams and stopped go together.
+		"compound duration":      func(d map[string]any) { web(d)["health"].(map[string]any)["startPeriod"] = "1m30s" },
+		"capability with prefix": func(d map[string]any) { pg(d)["capabilities"] = []any{"CAP_CHOWN"} },
+		"no networks":            func(d map[string]any) { web(d)["networks"] = []any{} },
+		"bad network name":       func(d map[string]any) { d["networks"].([]any)[0].(map[string]any)["name"] = "my-net" },
+		"uppercase hostname":     func(d map[string]any) { d["routes"].([]any)[0].(map[string]any)["hosts"] = []any{"Shop.example.com"} },
+		"missing env":            func(d map[string]any) { delete(web(d), "env") },
+		"upstream as string":     func(d map[string]any) { route(d)["upstreams"] = []any{"10.231.4.5:3000"} },
 		"upstream both forms": func(d map[string]any) {
 			route(d)["upstreams"] = []any{map[string]any{"workload": "wl_01J9Z8X7W6V5T4S3R2Q1P0N9N7", "port": 3000, "address": "10.0.0.1:80"}}
 		},

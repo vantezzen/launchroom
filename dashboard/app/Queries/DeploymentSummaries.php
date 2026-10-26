@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Queries;
 
 use App\Data\Deployments\DeploymentSummaryData;
+use App\Data\Deployments\ServiceStoppedData;
 use App\Enums\DeploymentStatus;
 use App\Models\Deployment;
 use App\Models\Domain;
@@ -31,7 +32,7 @@ final class DeploymentSummaries
     public static function withRelations(Builder $query): Builder
     {
         return $query->with([
-            'serviceInstance:id,public_id,service_id,environment_id,active_deployment_id',
+            'serviceInstance:id,public_id,service_id,environment_id,active_deployment_id,stopped_at,stopped_by_id',
             'serviceInstance.service:id,public_id,name,slug,project_id',
             'serviceInstance.service.project:id,public_id',
             'environment:id,public_id,name,slug,project_id',
@@ -49,9 +50,13 @@ final class DeploymentSummaries
             return [];
         }
 
+        $stoppers = $deployments
+            ->map(static fn (Deployment $deployment): ?int => $deployment->serviceInstance->stopped_by_id)
+            ->filter();
+
         /** @var array<int, string> $actors */
         $actors = User::query()
-            ->whereIn('id', $deployments->pluck('actor_id')->filter()->unique()->values()->all())
+            ->whereIn('id', $deployments->pluck('actor_id')->merge($stoppers)->filter()->unique()->values()->all())
             ->pluck('name', 'id')
             ->all();
 
@@ -70,6 +75,7 @@ final class DeploymentSummaries
             $deployment,
             $deployment->actor_id === null ? null : ($actors[$deployment->actor_id] ?? null),
             $domains[$deployment->service_instance_id] ?? [],
+            $actors,
         ))->all());
     }
 
@@ -121,10 +127,15 @@ final class DeploymentSummaries
 
     /**
      * @param  list<string>  $urls
+     * @param  array<int, string>  $names  member names by id
      */
-    private function row(Deployment $deployment, ?string $actorName, array $urls): DeploymentSummaryData
+    private function row(Deployment $deployment, ?string $actorName, array $urls, array $names): DeploymentSummaryData
     {
         $instance = $deployment->serviceInstance;
+        $active = $instance->active_deployment_id === $deployment->id;
+        $stopped = $active && $instance->stopped_at !== null
+            ? new ServiceStoppedData($instance->stopped_at, $instance->stopped_by_id === null ? null : ($names[$instance->stopped_by_id] ?? null))
+            : null;
         $service = $instance->service;
         $started = $deployment->started_at ?? $deployment->queued_at;
         $duration = $deployment->finished_at === null ? null : (int) max(0, $started->diffInSeconds($deployment->finished_at));
@@ -147,15 +158,16 @@ final class DeploymentSummaries
             actorName: $actorName,
             failureClass: $deployment->failure_class,
             failureSummary: $this->firstLine($deployment->failure_message),
-            isActive: $instance->active_deployment_id === $deployment->id,
+            isActive: $active,
             urls: $urls,
             queuedAt: $deployment->queued_at,
             startedAt: $deployment->started_at,
             finishedAt: $deployment->finished_at,
             durationSeconds: $duration,
             rollbackOfId: $deployment->rollbackOf?->public_id,
-            canRollback: Gate::allows('rollback', $deployment),
+            canRollback: $instance->stopped_at === null && Gate::allows('rollback', $deployment),
             commitAuthorAvatarUrl: GitHubAvatar::fromAvatarUrl($deployment->commit_author_avatar_url),
+            stopped: $stopped,
         );
     }
 

@@ -14,6 +14,8 @@ type Status struct {
 	ConsecutiveFailures int
 	LastCheckedAt       time.Time
 	LastError           string
+	// Attempts counts the checks since the container started (start period included).
+	Attempts int
 	// everPassed ends the start period early (as in Docker).
 	everPassed bool
 }
@@ -23,6 +25,7 @@ type Status struct {
 // failures make the probe failing, and one success makes it passing again.
 func Next(st Status, probeErr error, now, startedAt time.Time, spec state.HealthSpec) Status {
 	st.LastCheckedAt = now
+	st.Attempts++
 	if st.State == "" {
 		st.State = state.ProbeStarting
 	}
@@ -51,6 +54,7 @@ type Monitor struct {
 	cancel   context.CancelFunc
 	probe    ProbeFunc
 	onChange func()
+	onProbe  func()
 	now      func() time.Time
 
 	mu      sync.Mutex
@@ -71,6 +75,10 @@ type MonitorOptions struct {
 	// OnChange is called (from a probe goroutine) whenever a workload's probe
 	// state changes. It must not block.
 	OnChange func()
+	// OnProbe is called (from a probe goroutine) after every check of a
+	// target that hasn't passed yet, so its attempts and last error reach the
+	// dashboard while it starts (D68). It must not block.
+	OnProbe func()
 	// Now is the clock (default time.Now).
 	Now func() time.Time
 }
@@ -79,7 +87,7 @@ type MonitorOptions struct {
 func NewMonitor(ctx context.Context, opts MonitorOptions) *Monitor {
 	ctx, cancel := context.WithCancel(ctx)
 	m := &Monitor{
-		ctx: ctx, cancel: cancel, probe: opts.Probe, onChange: opts.OnChange, now: opts.Now,
+		ctx: ctx, cancel: cancel, probe: opts.Probe, onChange: opts.OnChange, onProbe: opts.OnProbe, now: opts.Now,
 		running: map[state.WorkloadID]*runner{}, status: map[state.WorkloadID]Status{},
 	}
 	if m.probe == nil {
@@ -90,6 +98,9 @@ func NewMonitor(ctx context.Context, opts MonitorOptions) *Monitor {
 	}
 	if m.onChange == nil {
 		m.onChange = func() {}
+	}
+	if m.onProbe == nil {
+		m.onProbe = func() {}
 	}
 	return m
 }
@@ -153,6 +164,9 @@ func (m *Monitor) loop(ctx context.Context, t Target) {
 		m.mu.Unlock()
 		if next.State != prev.State {
 			m.onChange()
+		}
+		if !next.everPassed {
+			m.onProbe()
 		}
 		timer.Reset(interval)
 	}

@@ -1,4 +1,5 @@
 import type { StatusState } from '@/components/status';
+import { relativeTime } from '@/components/time-ago';
 import { elapsedSeconds } from '@/lib/duration';
 
 type DeploymentStatus = App.Enums.DeploymentStatus;
@@ -41,6 +42,8 @@ const triggerLabels: Record<DeploymentTrigger, string> = {
     promote: 'Promote',
     config: 'Config change',
     api: 'API',
+    restart: 'Restart',
+    start: 'Start',
 };
 
 export function triggerLabel(trigger: DeploymentTrigger): string {
@@ -77,7 +80,11 @@ export function deploymentTitle(
               ? 'Rollback'
               : deployment.trigger === 'manual'
                 ? 'Redeploy'
-                : triggerLabel(deployment.trigger))
+                : deployment.trigger === 'restart'
+                  ? 'Restart'
+                  : deployment.trigger === 'start'
+                    ? 'Start'
+                    : triggerLabel(deployment.trigger))
     );
 }
 
@@ -100,6 +107,8 @@ export function startedBy(
         promote: 'promoted',
         config: 'deployed',
         api: 'deployed',
+        restart: 'restarted',
+        start: 'started',
     };
 
     return who
@@ -123,10 +132,46 @@ export function deploymentSeconds(
         : null;
 }
 
-/** The status word of a deployment (design-system §3.3): "Live" for the serving one. */
+/** The live deployment of a running service: its containers serve (a stopped service's don't, D68). */
+export function isServing(
+    deployment: App.Data.Deployments.DeploymentSummaryData,
+): boolean {
+    return deployment.isActive && deployment.stopped === null;
+}
+
+/** The Status component's state for a row: idle for a stopped service's version, active for the serving one. */
+export function deploymentStatusState(
+    deployment: App.Data.Deployments.DeploymentSummaryData,
+): StatusState {
+    if (deployment.stopped !== null) {
+        return 'idle';
+    }
+
+    return deployment.isActive ? 'active' : deploymentState(deployment.status);
+}
+
+/** "Stopped by Ada 5 minutes ago" (D68). */
+export function stoppedLine(
+    stopped: App.Data.Deployments.ServiceStoppedData,
+    now: number = Date.now(),
+): string {
+    // Under a minute (or a clock slightly ahead of this one): no seconds count.
+    const when =
+        now - Date.parse(stopped.at) < 60_000
+            ? 'a moment ago'
+            : relativeTime(stopped.at, now);
+
+    return stopped.by ? `Stopped by ${stopped.by} ${when}` : `Stopped ${when}`;
+}
+
+/** The status word of a deployment (design-system §3.3): "Live" for the serving one, "Stopped" when its service is stopped. */
 export function deploymentWord(
     deployment: App.Data.Deployments.DeploymentSummaryData,
 ): string {
+    if (deployment.stopped !== null) {
+        return 'Stopped';
+    }
+
     if (deployment.isActive) {
         return 'Live';
     }

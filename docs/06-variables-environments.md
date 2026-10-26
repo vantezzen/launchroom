@@ -21,7 +21,7 @@ Per environment:
 | Tag push | `v*` → production | Teams who release by tag: production ignores branch pushes |
 | Pull request | open/sync → preview; close/merge → destroy | Target-branch filter, label filter (`preview`), or opt-out in the PR title (`[skip preview]`); max concurrent previews (default 3) with queueing; expiry after N days without new commits (default 7). See §5 |
 | Manual | "Deploy" button / API / CLI | Any commit or branch |
-| Polling fallback | Every 60 s via the GitHub API for tracked refs | When webhooks can't reach the dashboard (e.g. dashboard behind NAT) or webhook delivery is unhealthy |
+| Polling fallback | Every 60 s via the GitHub API for tracked refs; a safety poll every 5 min while webhooks are healthy | When webhooks can't reach the dashboard (e.g. dashboard behind NAT) or missed a push |
 
 ### 2.1 Environment triggers
 
@@ -37,7 +37,8 @@ Per environment:
 - Both record the ref's head in `github_ref_heads` first, so a push seen by both channels is emitted once. Deleted refs and skip-marked commits are recorded but not emitted.
 - Skip markers in the head commit message, case-insensitive: `[skip ci]`, `[skip deploy]`, `[ci skip]`, `[no ci]`, `[deploy skip]`.
 - `pull_request` webhooks emit `PullRequestEventReceived` (fork = head repository id ≠ base repository id; the author's permission is looked up for fork PRs). `App\Listeners\Previews\SyncPreviewsOnPullRequest` syncs every project with a service of that installation + repository (§5).
-- **Polling** runs every minute for the refs returned by the `App\Contracts\Git\TrackedRefs` contract, but only for apps without a verified webhook in the last 15 minutes. It uses `GET /repos/{repo}/commits/{ref}` with `If-None-Match` (a 304 costs no rate limit). The first observation of a ref only records a baseline; it doesn't deploy.
+- **Polling** runs every minute for the refs returned by the `App\Contracts\Git\TrackedRefs` contract when the app (or git connection) has unhealthy webhooks, and every `launchroom.github.safety_poll_seconds` (5 minutes) per ref while they are healthy. It uses `GET /repos/{repo}/commits/{ref}` with `If-None-Match` (a 304 costs no rate limit). The first observation of a ref only records a baseline; it doesn't deploy.
+- **Webhook health** is judged on missed pushes, not on silence: a developer can go hours without pushing. When polling records a new head that no webhook delivered, the ref head gets `awaiting_webhook_since`; any webhook for that ref clears it (for plain git connections, the "poll now" webhook counts). Still set after `launchroom.github.webhook_grace_seconds` (2 minutes), the poll job records `webhook_missed_at` on the GitHub app or git connection. Webhooks are **healthy** when a verified delivery arrived and none was missed since (`webhook_last_received_at > webhook_missed_at`), **stale** after a miss until the next verified delivery, **never** before the first delivery. Stale and never poll every minute. Settings → Git says "Pushes arrive right away", "A push didn't arrive by webhook: checking every minute" (with when) or "Pushes are checked every minute until GitHub reaches this dashboard", plus the last delivery. launchroom doesn't read GitHub's delivery log (`/app/hook/deliveries`), so a miss shows up only for tracked refs.
 - `TrackedRefs` (`App\Services\Git\ServiceTrackedRefs`): `refs/heads/<branch>` per (installation, repository, branch) of live GitHub-sourced instances in non-preview environments. Glob branches are left to webhooks.
 
 ### 2.3 Push deploys

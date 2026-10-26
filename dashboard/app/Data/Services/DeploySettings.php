@@ -53,7 +53,37 @@ final class DeploySettings extends Data
         public ?ScheduleSettings $schedule = null,
         #[ChangeAffects(ChangeEffect::Restart), Promotion(PromotionClass::Structural), DataCollectionOf(ConfigFile::class)]
         public array $files = [],
+        /** How long the Roll out step may take (D68); null: ROLLOUT_TIMEOUT_DEFAULT. Pulls that make progress extend it. */
+        #[ChangeAffects(ChangeEffect::None), Promotion(PromotionClass::Structural), Min(60), Max(3600)]
+        public ?int $rolloutTimeoutSeconds = null,
+        /** How long a new container may take to become healthy (D68); null: derived from the health check. */
+        #[ChangeAffects(ChangeEffect::None), Promotion(PromotionClass::Structural), Min(30), Max(3600)]
+        public ?int $healthTimeoutSeconds = null,
     ) {}
+
+    /** Default of the Roll out step's timeout. */
+    public const int ROLLOUT_TIMEOUT_DEFAULT = 600;
+
+    public function rolloutTimeout(): int
+    {
+        return $this->rolloutTimeoutSeconds ?? self::ROLLOUT_TIMEOUT_DEFAULT;
+    }
+
+    /**
+     * How long a new container may take to become healthy: the explicit
+     * setting, else the health check's own bound (start period plus the
+     * failures it allows, plus a minute), at least 90 seconds.
+     */
+    public function healthTimeout(): int
+    {
+        if ($this->healthTimeoutSeconds !== null) {
+            return $this->healthTimeoutSeconds;
+        }
+
+        $health = $this->healthcheck;
+
+        return max(90, $health->startPeriodSeconds + ($health->intervalSeconds + $health->timeoutSeconds) * $health->failureThreshold + 60);
+    }
 
     /**
      * @return array<string, list<string>>

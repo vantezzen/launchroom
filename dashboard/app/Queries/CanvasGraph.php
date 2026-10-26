@@ -21,6 +21,7 @@ use App\Models\Environment;
 use App\Models\Placement;
 use App\Models\ServiceInstance;
 use App\Services\Backups\BackupStatuses;
+use App\Services\Backups\DataHolds;
 use App\Support\Canvas\NodeStatus;
 use App\Support\Canvas\ServiceGlyph;
 use App\Support\Changes\SpecDiff;
@@ -59,6 +60,7 @@ final readonly class CanvasGraph
 
         $nodes = [];
         $present = [];
+        $holds = DataHolds::reasons();
 
         foreach ($instances as $instance) {
             $service = $instance->service;
@@ -79,7 +81,7 @@ final readonly class CanvasGraph
                 kind: $service->kind,
                 logo: ServiceGlyph::logo($service, $framework),
                 subtitle: ServiceGlyph::subtitle($service, $framework),
-                status: NodeStatus::for($instance, $deployment, $workloads),
+                status: NodeStatus::for($instance, $deployment, $workloads, $holds[$instance->id] ?? null),
                 domain: self::primaryDomain($instance),
                 privateAddress: $instance->deploy->port === null ? null : ($service->kind->isWeb() ? 'http://' : '').$service->slug.':'.$instance->deploy->port,
                 replicas: $instance->scaling->replicas,

@@ -42,7 +42,10 @@ import {
     logs as projectLogs,
     index as projectsIndex,
 } from '@/routes/projects';
-import { show as servicePanel } from '@/routes/projects/services';
+import {
+    section as serviceSection,
+    show as servicePanel,
+} from '@/routes/projects/services';
 import { index as serversIndex, show as serverShow } from '@/routes/servers';
 import { edit as teamSettings } from '@/routes/team';
 import { addRecent, readRecent } from './recent';
@@ -194,11 +197,11 @@ export function CommandPalette() {
 
                 if (match?.[1] && match[2] && match[3]) {
                     router.visit(
-                        servicePanel({
+                        serviceSection({
                             project: match[1],
                             environment: match[2],
                             service: match[3],
-                            tab: 'variables',
+                            section: 'variables',
                         }).url,
                     );
                 } else {
@@ -498,7 +501,7 @@ export function CommandPalette() {
                                             value={`add variable ${item.label} variables env`}
                                             onSelect={() =>
                                                 go(
-                                                    `${servicePanel({ project, environment, service: item.id, tab: 'variables' }).url}?add=variable`,
+                                                    `${serviceSection({ project, environment, service: item.id, section: 'variables' }).url}?add=variable`,
                                                 )
                                             }
                                         >

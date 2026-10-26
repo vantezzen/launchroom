@@ -889,6 +889,17 @@
               "type": "null"
             }
           ]
+        },
+        "registry": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/RegistryReach",
+              "description": "Registry is whether this server reaches the launchroom registry it\npulls images from (D68): checked every few minutes, so a server that\ncan't download images shows before a deploy hangs on it."
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "additionalProperties": false,
@@ -1093,6 +1104,38 @@
         "load15"
       ],
       "description": "LoadAverage is /proc/loadavg."
+    },
+    "LogLine": {
+      "properties": {
+        "time": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "stream": {
+          "type": "string",
+          "enum": [
+            "stdout",
+            "stderr",
+            "system"
+          ]
+        },
+        "text": {
+          "type": "string"
+        },
+        "step": {
+          "type": "string",
+          "maxLength": 128,
+          "description": "Step groups build log lines into collapsible steps (\"clone\", \"plan\",\n\"install\", \"build\", \"push\", …). Omitted for runtime logs."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "time",
+        "stream",
+        "text"
+      ],
+      "description": "LogLine is one line."
     },
     "MemoryUsage": {
       "properties": {
@@ -1310,6 +1353,11 @@
           "type": "string",
           "maxLength": 1024,
           "description": "LastError is the last probe failure (e.g. \"connection refused\", \"HTTP 500\")."
+        },
+        "attempts": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Attempts counts the checks since the container started, including\nthose in the start period (D68: \"attempt 3\" on the Health step)."
         }
       },
       "additionalProperties": false,
@@ -1359,6 +1407,18 @@
         "totalBytes": {
           "type": "integer",
           "minimum": 0
+        },
+        "updatedAt": {
+          "oneOf": [
+            {
+              "type": "string",
+              "format": "date-time",
+              "description": "UpdatedAt is when the pull last moved (a new stage or more bytes;\nD68): a pull that is still \"pulling\" but hasn't moved for minutes is\nstuck, whatever the report's time says."
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "additionalProperties": false,
@@ -1389,6 +1449,34 @@
         "requests"
       ],
       "description": "ReferrerCount is one referrer host's requests in a window."
+    },
+    "RegistryReach": {
+      "properties": {
+        "reachable": {
+          "type": "boolean"
+        },
+        "checkedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "latencyMs": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "LatencyMs is the time to the first answer (reachable only)."
+        },
+        "error": {
+          "type": "string",
+          "maxLength": 512,
+          "description": "Error is why it isn't reachable (secret-free)."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "reachable",
+        "checkedAt"
+      ],
+      "description": "RegistryReach is the latest check of the image registry from this server (GET /v2/ through its local registry address; any HTTP answer counts)."
     },
     "Rejection": {
       "properties": {
@@ -2028,6 +2116,176 @@
       ],
       "description": "WalArchiveStatus is the WAL shipping state of one workload (Report.walArchives)."
     },
+    "WorkloadEvent": {
+      "properties": {
+        "seq": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "workload": {
+          "type": "string",
+          "pattern": "^wl_[0-9A-HJKMNP-TV-Z]{26}$"
+        },
+        "deployment": {
+          "type": "string",
+          "pattern": "^dpl_[0-9A-HJKMNP-TV-Z]{26}$",
+          "description": "Deployment is the workload's deployment from the NodeState (omitted\nwhen launchroomd no longer knows it, e.g. a leftover container)."
+        },
+        "at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "created",
+            "create_failed",
+            "started",
+            "exited",
+            "restarted",
+            "health_passing",
+            "health_failing",
+            "stopped",
+            "removed"
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "enum": [
+            "drained",
+            "not_desired",
+            "spec_changed",
+            "duplicate",
+            "port_not_bound"
+          ],
+          "description": "Reason is set on stopped and removed events."
+        },
+        "exitCode": {
+          "oneOf": [
+            {
+              "type": "integer",
+              "description": "ExitCode and OOMKilled describe an exit (exited, restarted)."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "oomKilled": {
+          "type": "boolean"
+        },
+        "restarts": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Restarts is Docker's restart count of the container (restarted)."
+        },
+        "failures": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Failures is the number of consecutive failed health checks (health_failing)."
+        },
+        "message": {
+          "type": "string",
+          "maxLength": 1024,
+          "description": "Message is a short, secret-free detail: the probe error, the create error."
+        },
+        "output": {
+          "oneOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/LogLine"
+              },
+              "type": "array",
+              "maxItems": 30,
+              "description": "Output is the container's last lines before an exit (at most 30;\nthe dashboard masks them like any other deployment log line)."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "seq",
+        "workload",
+        "at",
+        "kind"
+      ],
+      "description": "WorkloadEvent is one container lifecycle event."
+    },
+    "WorkloadIssue": {
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "crash_loop",
+            "loopback_only",
+            "wrong_port"
+          ]
+        },
+        "since": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "port": {
+          "oneOf": [
+            {
+              "type": "integer",
+              "maximum": 65535,
+              "minimum": 1,
+              "description": "Port is the port launchroom expects (port issues)."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "listening": {
+          "oneOf": [
+            {
+              "items": {
+                "type": "integer",
+                "maximum": 65535,
+                "minimum": 1
+              },
+              "type": "array",
+              "maxItems": 32,
+              "description": "Listening are the TCP ports the app listens on (port issues; loopback\nones included)."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "exitCode": {
+          "oneOf": [
+            {
+              "type": "integer",
+              "description": "ExitCode, OOMKilled and Restarts describe the last exit (crash loop)."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "oomKilled": {
+          "type": "boolean"
+        },
+        "restarts": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "kind",
+        "since"
+      ],
+      "description": "WorkloadIssue is reported on a workload whose container is clearly misconfigured."
+    },
     "WorkloadMetricSample": {
       "properties": {
         "workload": {
@@ -2170,6 +2428,17 @@
               "type": "null"
             }
           ]
+        },
+        "issue": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/WorkloadIssue",
+              "description": "Issue is set while the container is clearly misconfigured (crash loop,\nport mismatch; D68): the dashboard fails a rollout on it right away."
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "additionalProperties": false,
@@ -2286,6 +2555,21 @@
           "type": "array",
           "maxItems": 256,
           "description": "WalArchives is the WAL shipping state of every workload with a\nwalArchive (point-in-time recovery); omitted when there is none."
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "events": {
+      "oneOf": [
+        {
+          "items": {
+            "$ref": "#/$defs/WorkloadEvent"
+          },
+          "type": "array",
+          "maxItems": 256,
+          "description": "Events are container lifecycle events not delivered yet (D68), oldest\nfirst; omitted when there are none."
         },
         {
           "type": "null"

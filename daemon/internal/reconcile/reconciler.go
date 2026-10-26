@@ -53,6 +53,13 @@ type Options struct {
 	StopGrace time.Duration
 	// OnProgress is called (non-blocking) when statuses change mid-pass, e.g. before a long pull.
 	OnProgress func()
+	// PullWait is how long a pass waits for an image pull it started
+	// before it goes on without the workloads that need it (default
+	// DefaultPullWait); the pull goes on in the background.
+	PullWait time.Duration
+	// OnPullDone is called (non-blocking) when a background pull ends: the
+	// workloads waiting for it can be created now. nil = none.
+	OnPullDone func()
 	// Isolate makes sure the network isolation covers every network
 	// (firewall.Manager.Sync). It runs once per pass, after new networks are
 	// created and before any container is created or started; while it fails,
@@ -84,6 +91,16 @@ type Reconciler struct {
 	refused []state.AddrPort
 	// deletions are the outcomes of NodeState.deleteVolumes, by volume id.
 	deletions map[state.VolumeID]state.VolumeDeletionResult
+	// marks and events: container lifecycle (lifecycle.go, D68).
+	marks  map[state.WorkloadID]mark
+	events eventLog
+	// boot is when this reconciler started: containers that started or
+	// exited before it are not reported as new events.
+	boot time.Time
+	// pulls are the image pulls in flight, by image (pulls.go): a pull runs
+	// in the background, so one stuck download never holds back the rest
+	// of the desired state (D68); AbandonPulls cancels the unneeded ones.
+	pulls map[state.ImageRef]*bgPull
 }
 
 type observed struct {
@@ -91,6 +108,8 @@ type observed struct {
 	ip       netip.Addr // primary network IP
 	ports    []health.Listener
 	portsErr bool
+	// issue is set while the container is clearly misconfigured (D68).
+	issue *state.WorkloadIssue
 }
 
 // note is the daemon's own knowledge about a workload that Docker can't tell:
@@ -119,7 +138,16 @@ func New(o Options) *Reconciler {
 	if o.OnProgress == nil {
 		o.OnProgress = func() {}
 	}
-	return &Reconciler{o: o, observed: map[state.WorkloadID]observed{}, book: map[state.WorkloadID]note{}, deletions: map[state.VolumeID]state.VolumeDeletionResult{}}
+	if o.OnPullDone == nil {
+		o.OnPullDone = func() {}
+	}
+	if o.PullWait <= 0 {
+		o.PullWait = DefaultPullWait
+	}
+	return &Reconciler{
+		o: o, observed: map[state.WorkloadID]observed{}, book: map[state.WorkloadID]note{}, deletions: map[state.VolumeID]state.VolumeDeletionResult{},
+		marks: map[state.WorkloadID]mark{}, boot: o.Now(), pulls: map[state.ImageRef]*bgPull{},
+	}
 }
 
 func (r *Reconciler) setNote(id state.WorkloadID, phase state.WorkloadPhase, msg string) {
@@ -129,6 +157,14 @@ func (r *Reconciler) setNote(id state.WorkloadID, phase state.WorkloadPhase, msg
 		msg = msg[:maxMessage]
 	}
 	r.book[id] = note{phase: phase, message: msg, at: r.o.Now()}
+}
+
+// observedContainer reports whether the workload has a container (last observation).
+func (r *Reconciler) observedContainer(id state.WorkloadID) (docker.Container, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	o, ok := r.observed[id]
+	return o.c, ok
 }
 
 // clearFailure drops a failure note (the workload is waiting, not failing).
@@ -250,6 +286,10 @@ func (r *Reconciler) desired(ns *state.NodeState) (Desired, map[state.WorkloadID
 			// soon as the mesh address is known (docs/05 §3).
 			d.Skipped[spec.ID] = "waiting for this server's mesh address"
 			r.clearFailure(spec.ID)
+			// Reported, so the rollout says what it waits for (D68).
+			if _, running := r.observedContainer(spec.ID); !running {
+				r.setNote(spec.ID, state.PhasePending, "waiting for this server's private network address")
+			}
 			continue
 		}
 		cc, err := r.build(ns.ServerID, &spec, nets, vols, meshIP)
@@ -359,12 +399,20 @@ func (r *Reconciler) observe(ctx context.Context, d Desired) (Actual, error) {
 func (r *Reconciler) apply(ctx context.Context, ns *state.NodeState, p Plan, creates map[state.WorkloadID]*docker.ContainerCreate) error {
 	var errs []error
 	failedPull := map[state.ImageRef]error{}
+	pending := map[state.ImageRef]bool{}
 	// A volume that could not be created (e.g. an unmanaged volume of that
 	// name exists) must not be mounted: Docker would mount whatever has the name.
 	failedVolume := map[string]error{}
 	fail := func(a Action, err error) {
 		errs = append(errs, fmt.Errorf("%s: %w", a, err))
 		r.o.Log.Warn("reconcile action failed", "action", a.String(), "err", err)
+	}
+	deployments := make(map[state.WorkloadID]state.DeploymentID, len(ns.Workloads))
+	for i := range ns.Workloads {
+		deployments[ns.Workloads[i].ID] = ns.Workloads[i].Deployment
+	}
+	event := func(a Action, kind state.WorkloadEventKind, msg string) {
+		r.emit(state.WorkloadEvent{Workload: a.Workload, Deployment: deployments[a.Workload], Kind: kind, Reason: a.Why, Message: msg})
 	}
 	isolated := false
 	var isoErr error
@@ -412,8 +460,10 @@ func (r *Reconciler) apply(ctx context.Context, ns *state.NodeState, p Plan, cre
 			}
 		case PullImage:
 			r.markPulling(p, a.Image)
-			pctx := docker.WithPullProgress(ctx, func(pp docker.PullProgress) { r.pullProgress(p, a.Image, pp) })
-			if err := r.o.Docker.PullImage(pctx, string(a.Image)); err != nil {
+			switch done, err := r.pull(ctx, a.Image); {
+			case !done:
+				pending[a.Image] = true
+			case err != nil:
 				failedPull[a.Image] = err
 				fail(a, err)
 			}
@@ -422,10 +472,16 @@ func (r *Reconciler) apply(ctx context.Context, ns *state.NodeState, p Plan, cre
 				fail(a, err)
 				continue
 			}
+			if a.Workload != "" {
+				event(a, state.EventRemoved, "")
+			}
 			if a.Undesired {
 				r.setNote(a.Workload, state.PhaseRemoved, "")
 			}
 		case CreateWorkload:
+			if pending[a.Image] {
+				continue // still pulling in the background; reported as pulling
+			}
 			if err, ok := failedPull[a.Image]; ok {
 				r.setNote(a.Workload, state.PhaseFailed, "pull failed: "+err.Error())
 				continue
@@ -436,13 +492,16 @@ func (r *Reconciler) apply(ctx context.Context, ns *state.NodeState, p Plan, cre
 			}
 			if err := r.createAndStart(ctx, ns, creates[a.Workload], !a.CreateOnly); err != nil {
 				r.setNote(a.Workload, state.PhaseFailed, err.Error())
+				event(a, state.EventCreateFailed, err.Error())
 				fail(a, err)
 				continue
 			}
+			event(a, state.EventCreated, "")
 			r.clearNote(a.Workload)
 		case StartContainer:
 			if err := r.o.Docker.StartContainer(ctx, a.ContainerID); err != nil {
 				r.setNote(a.Workload, state.PhaseFailed, "start: "+err.Error())
+				event(a, state.EventCreateFailed, "start: "+err.Error())
 				fail(a, err)
 				continue
 			}
@@ -450,7 +509,9 @@ func (r *Reconciler) apply(ctx context.Context, ns *state.NodeState, p Plan, cre
 		case StopContainer:
 			if err := r.o.Docker.StopContainer(ctx, a.ContainerID, a.Grace); err != nil {
 				fail(a, err)
+				continue
 			}
+			event(a, state.EventStopped, "")
 		case RemoveNetwork:
 			removed, err := r.o.Holds.RemoveUnlessHeld(a.NetworkName, func() error {
 				if r.o.BeforeNetworkRemove != nil {
@@ -486,6 +547,12 @@ func mountsFailedVolume(cc *docker.ContainerCreate, failed map[string]error) err
 func (r *Reconciler) markPulling(p Plan, image state.ImageRef) {
 	for _, a := range p.Actions {
 		if a.Kind == CreateWorkload && a.Image == image {
+			r.mu.Lock()
+			n, ok := r.book[a.Workload]
+			r.mu.Unlock()
+			if ok && n.phase == state.PhasePulling {
+				continue // a background pull from an earlier pass: keep its progress
+			}
 			r.setNote(a.Workload, state.PhasePulling, "pulling "+string(image))
 		}
 	}
@@ -494,7 +561,7 @@ func (r *Reconciler) markPulling(p Plan, image state.ImageRef) {
 
 // pullProgress records an in-flight pull's progress on the workloads waiting
 // for the image and reports it (docs/04 §11 "Pulls").
-func (r *Reconciler) pullProgress(p Plan, image state.ImageRef, pp docker.PullProgress) {
+func (r *Reconciler) pullProgress(image state.ImageRef, pp docker.PullProgress) {
 	prog := &state.PullProgress{
 		Stage: state.PullStage(pp.Stage), DownloadedBytes: max(pp.Downloaded, 0), TotalBytes: max(pp.Total, 0),
 	}
@@ -502,12 +569,17 @@ func (r *Reconciler) pullProgress(p Plan, image state.ImageRef, pp docker.PullPr
 		return
 	}
 	r.mu.Lock()
-	for _, a := range p.Actions {
-		if a.Kind == CreateWorkload && a.Image == image {
-			if n, ok := r.book[a.Workload]; ok && n.phase == state.PhasePulling {
-				n.pull = prog
-				r.book[a.Workload] = n
+	for _, id := range r.waitingFor(image) {
+		if n, ok := r.book[id]; ok && n.phase == state.PhasePulling {
+			// UpdatedAt moves only with the pull (D68): a stuck pull keeps its time.
+			at := r.o.Now().UTC()
+			if prev := n.pull; prev != nil && prev.UpdatedAt != nil && prev.Stage == prog.Stage && prev.DownloadedBytes == prog.DownloadedBytes && prev.TotalBytes == prog.TotalBytes {
+				at = *prev.UpdatedAt
 			}
+			p := *prog
+			p.UpdatedAt = &at
+			n.pull = &p
+			r.book[id] = n
 		}
 	}
 	r.mu.Unlock()
@@ -641,8 +713,31 @@ func (r *Reconciler) refresh(ctx context.Context, ns *state.NodeState) error {
 	}
 	now := r.o.Now()
 	r.mu.Lock()
-	defer r.mu.Unlock()
+	var exits []exitTail
+	for id, o := range obs {
+		spec := specs[id]
+		var dep state.DeploymentID
+		if spec != nil {
+			dep = spec.Deployment
+		}
+		exits = append(exits, r.trackLocked(id, dep, o.c)...)
+		if spec != nil {
+			probe := r.probeLocked(spec)
+			r.probeEventsLocked(spec, probe, o.c.Running)
+			o.issue = r.issueLocked(spec, o, probe)
+			obs[id] = o
+		}
+	}
+	for id := range r.marks {
+		if _, seen := obs[id]; !seen && specs[id] == nil {
+			delete(r.marks, id) // the container is gone and the workload left
+		}
+	}
 	r.observed = obs
+	r.mu.Unlock()
+	r.finishExits(ctx, exits)
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	for id, n := range r.book {
 		if _, desired := specs[id]; !desired && n.phase != state.PhaseRemoved {
 			delete(r.book, id)
@@ -762,7 +857,7 @@ func (r *Reconciler) Snapshot() (version int64, workloads []state.WorkloadStatus
 func statusOf(s *state.WorkloadSpec, o *observed, n *note, probe *health.Status, now time.Time) state.WorkloadStatus {
 	ws := state.WorkloadStatus{ID: s.ID, ObservedAt: now}
 	if probe != nil {
-		ps := &state.ProbeStatus{State: probe.State, ConsecutiveFailures: probe.ConsecutiveFailures, LastError: clip(probe.LastError, 1024)}
+		ps := &state.ProbeStatus{State: probe.State, ConsecutiveFailures: probe.ConsecutiveFailures, LastError: clip(probe.LastError, 1024), Attempts: probe.Attempts}
 		if !probe.LastCheckedAt.IsZero() {
 			t := probe.LastCheckedAt.UTC()
 			ps.LastCheckedAt = &t
@@ -787,6 +882,10 @@ func statusOf(s *state.WorkloadSpec, o *observed, n *note, probe *health.Status,
 	c := o.c
 	if len(c.ID) == 64 {
 		ws.ContainerID = c.ID
+	}
+	if o.issue != nil {
+		is := *o.issue
+		ws.Issue = &is
 	}
 	ws.RestartCount = max(c.RestartCount, 0)
 	if !c.StartedAt.IsZero() {

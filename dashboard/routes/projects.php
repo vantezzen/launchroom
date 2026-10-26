@@ -119,6 +119,9 @@ Route::middleware(['web', 'auth', 'verified'])
             ->name('projects.layout');
 
         Route::post('p/{project}/{environment}/services', [ServiceController::class, 'store'])->name('projects.services.store');
+        Route::get('p/{project}/{environment}/s/{service}/{tab}', [CanvasController::class, 'movedTab'])
+            ->whereIn('tab', CanvasController::MOVED_TABS)
+            ->name('projects.services.moved');
         Route::get('p/{project}/{environment}/s/{service}/{tab?}', [CanvasController::class, 'service'])
             ->whereIn('tab', CanvasController::TABS)
             ->name('projects.services.show');

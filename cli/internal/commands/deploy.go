@@ -81,48 +81,7 @@ func (a *App) deployCmd() *cobra.Command {
 					p.Info(p.Dim(d.DashboardURL))
 				}
 			}
-			if detach || len(deployments) == 0 {
-				return p.Result(deployments, func(w io.Writer) {
-					for _, d := range deployments {
-						_, _ = fmt.Fprintf(w, "%s %s %s\n", d.ID, p.Status(d.Status), d.ServiceName)
-					}
-				})
-			}
-			var final []api.Deployment
-			if len(deployments) == 1 {
-				d, err := a.followDeployment(ctx, s, deployments[0])
-				if err != nil {
-					return err
-				}
-				final = []api.Deployment{d}
-			} else {
-				if final, err = a.waitAll(ctx, s, deployments); err != nil {
-					return err
-				}
-			}
-			var failed []string
-			for _, d := range final {
-				if d.Failed() {
-					msg := d.ServiceName + " " + d.Status
-					if d.Failure != nil && d.Failure.Message != "" {
-						msg += ": " + d.Failure.Message
-					}
-					failed = append(failed, msg)
-				}
-			}
-			if err := p.Result(final, func(w io.Writer) {
-				for _, d := range final {
-					if !d.Failed() {
-						_, _ = fmt.Fprintf(w, "%s %s is %s\n", p.Good("✓"), d.ServiceName, statusWord(d.Status))
-					}
-				}
-			}); err != nil {
-				return err
-			}
-			if failed != nil {
-				return exitcode.New(exitcode.DeploymentFailed, errors.New(strings.Join(failed, "\n")))
-			}
-			return nil
+			return a.finishDeployments(ctx, s, deployments, detach)
 		},
 	}
 	f := cmd.Flags()
@@ -133,6 +92,55 @@ func (a *App) deployCmd() *cobra.Command {
 	f.StringVar(&message, "message", "", "revision message (with --staged)")
 	f.BoolVar(&detach, "detach", false, "don't wait for the deployment to finish")
 	return cmd
+}
+
+// finishDeployments prints the started deployments (--detach) or follows
+// them until they are live or failed; a failed one exits with code 10.
+func (a *App) finishDeployments(ctx context.Context, s *session, deployments []api.Deployment, detach bool) error {
+	p := a.Printer
+	if detach || len(deployments) == 0 {
+		return p.Result(deployments, func(w io.Writer) {
+			for _, d := range deployments {
+				_, _ = fmt.Fprintf(w, "%s %s %s\n", d.ID, p.Status(d.Status), d.ServiceName)
+			}
+		})
+	}
+	var final []api.Deployment
+	var err error
+	if len(deployments) == 1 {
+		d, err := a.followDeployment(ctx, s, deployments[0])
+		if err != nil {
+			return err
+		}
+		final = []api.Deployment{d}
+	} else {
+		if final, err = a.waitAll(ctx, s, deployments); err != nil {
+			return err
+		}
+	}
+	var failed []string
+	for _, d := range final {
+		if d.Failed() {
+			msg := d.ServiceName + " " + d.Status
+			if d.Failure != nil && d.Failure.Message != "" {
+				msg += ": " + d.Failure.Message
+			}
+			failed = append(failed, msg)
+		}
+	}
+	if err := p.Result(final, func(w io.Writer) {
+		for _, d := range final {
+			if !d.Failed() {
+				_, _ = fmt.Fprintf(w, "%s %s is %s\n", p.Good("✓"), d.ServiceName, statusWord(d.Status))
+			}
+		}
+	}); err != nil {
+		return err
+	}
+	if failed != nil {
+		return exitcode.New(exitcode.DeploymentFailed, errors.New(strings.Join(failed, "\n")))
+	}
+	return nil
 }
 
 func plural(n int, one, many string) string {

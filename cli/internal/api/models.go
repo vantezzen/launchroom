@@ -112,6 +112,15 @@ type Service struct {
 	DashboardURL     string      `json:"dashboardUrl"`
 	// Volumes are the service's volumes, when the dashboard lists them.
 	Volumes []VolumeRef `json:"volumes,omitempty"`
+	// StoppedAt is when the service was stopped (nil: it isn't).
+	StoppedAt *string `json:"stoppedAt,omitempty"`
+}
+
+// ServiceActionResult is POST …/services/{svc}/stop|start|restart: the
+// service afterwards and the deployments the action started.
+type ServiceActionResult struct {
+	Service     Service      `json:"service"`
+	Deployments []Deployment `json:"deployments"`
 }
 
 // DeployResult is POST /environments/{env}/deploy.

@@ -33,7 +33,7 @@ export type SettingDraft<Target extends string = string> = Omit<
 /**
  * Turns drafts into the search index of one settings surface. A draft
  * whose target is neither a page in `groups` nor named in `extra` (a
- * target outside the settings, such as the Variables tab) is left out, so
+ * target outside the settings) is left out, so
  * the index follows the same visibility rules as the sidebar.
  * `pages: true` adds one entry per page first (its label, its summary as
  * the hint), for surfaces whose pages hold few rows.

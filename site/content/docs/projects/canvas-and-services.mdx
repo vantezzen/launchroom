@@ -90,13 +90,13 @@ first so they are ready for the apps connected to them.
 
 Click a service to open its panel next to the canvas. The tabs are:
 
-- **Deployments**: the live deployment and the one in progress as cards, with **View logs**, **Redeploy** and
-  **Cancel**, then earlier deployments you can roll back to.
-- **Variables**: the service's variables, references and shared variables. See [Variables](/docs/projects/variables).
+- **Deployments**: every deployment of the service, newest first. The current one (in progress, else live) is the
+  first row and shows its steps with **View logs**, **Redeploy** and **Cancel**. Earlier deployments can be rolled
+  back to.
 - **Metrics** and **Logs**: this service only. See [Logs](/docs/observability/logs) and
   [Metrics](/docs/observability/metrics).
-- **Settings**: everything else.
-- **Console**, and for databases **Data** and **Backups**, for members with the permission. See
+- **Settings**: everything else, including **Variables** and **Backups**.
+- **Console**, and for databases **Data**, for members with the permission. See
   [Console and data](/docs/observability/console-and-data).
 
 <Screenshot id="service-panel" />
@@ -110,11 +110,14 @@ The Settings tab expands the panel to full width and shows a sidebar of pages:
 
 - **General**: the service at a glance (domains, build, replicas and where they run, private address), its name and
   slug. The slug is the service's name on the private network and in references; it never changes.
-- **Build & deploy**: Source (repository and branch, image or database engine), Build (apps), Deploy (start, release and
-  seed commands, health check, drain time) and, for cron jobs, Schedule.
+- **Build & deploy**: Source (repository and branch, image or database engine), Variables (see
+  [Variables](/docs/projects/variables)), Build (apps), Deploy (start, release and seed commands, health check, drain
+  time) and, for cron jobs, Schedule.
 - **Network**: Domains and Private network (the port and the address other services use).
 - **Scaling**: replicas, size per replica and where it may run. See [Scaling](/docs/projects/scaling).
 - **Volumes**: persistent storage (below).
+- **Backups** (databases and services with volumes): snapshots, restores and imports. See
+  [Backups](/docs/databases/backups).
 - **Advanced**: the entrypoint, Linux capabilities from a short allow-list, and read-only ids and containers for
   debugging.
 - **Danger zone**: remove the service.

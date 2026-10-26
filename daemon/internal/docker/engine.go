@@ -42,6 +42,9 @@ type EngineOptions struct {
 	PullIdleTimeout time.Duration
 	// Warm prepares the launchroom registry's mirror before a pull (nil: none).
 	Warm MirrorWarm
+	// BuiltWarmTimeout bounds the warm-up of images launchroom built
+	// (default BuiltWarmTimeout).
+	BuiltWarmTimeout time.Duration
 	// Auth supplies registry credentials per pull (default: anonymous).
 	Auth RegistryAuth
 	// UserAgent identifies the daemon to the daemon.
@@ -55,6 +58,7 @@ type Engine struct {
 	callTimeout time.Duration
 	pullTimeout time.Duration
 	pullIdle    time.Duration
+	builtWarm   time.Duration
 	warm        MirrorWarm
 	auth        RegistryAuth
 }
@@ -80,6 +84,7 @@ func NewEngine(opts EngineOptions) (*Engine, error) {
 	e := &Engine{
 		api: api, serverID: opts.ServerID, auth: opts.Auth,
 		callTimeout: opts.CallTimeout, pullTimeout: opts.PullTimeout, pullIdle: opts.PullIdleTimeout, warm: opts.Warm,
+		builtWarm: opts.BuiltWarmTimeout,
 	}
 	if e.callTimeout <= 0 {
 		e.callTimeout = 30 * time.Second
@@ -89,6 +94,9 @@ func NewEngine(opts EngineOptions) (*Engine, error) {
 	}
 	if e.pullIdle <= 0 {
 		e.pullIdle = DefaultPullIdleTimeout
+	}
+	if e.builtWarm <= 0 {
+		e.builtWarm = BuiltWarmTimeout
 	}
 	if e.auth == nil {
 		e.auth = func(context.Context, string) (string, error) { return "", nil }

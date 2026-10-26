@@ -222,10 +222,10 @@ test('database volumes are never file-copied; services without data have nothing
         ->toThrow(DomainRuleViolation::class, 'This service has no data to back up');
 
     $this->actingAs($this->owner)
-        ->get(route('projects.services.show', [$project, $project->production()->sole(), Service::query()->where('project_id', $project->id)->sole(), 'backups']))
+        ->get(route('projects.services.section', [$project, $project->production()->sole(), Service::query()->where('project_id', $project->id)->sole(), 'backups']))
         ->assertNotFound();
     $this->actingAs($this->owner)
-        ->get(route('projects.services.show', [$this->svc->environment->project, $this->svc->environment, $this->svc->service, 'backups']))
+        ->get(route('projects.services.section', [$this->svc->environment->project, $this->svc->environment, $this->svc->service, 'backups']))
         ->assertOk();
 });
 

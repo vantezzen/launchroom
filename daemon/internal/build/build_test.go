@@ -140,6 +140,24 @@ func TestReadDockerfile(t *testing.T) {
 	if f.Expose != 3000 || !f.Args["NPM_TOKEN"] || !f.Args["GREETING"] || f.DevOnly != "" || !strings.Contains(f.Cmd, "server.js") {
 		t.Fatalf("facts %+v", f)
 	}
+	// Exec form prints as a shell would read it back (never the JSON array),
+	// and the port comes from the command when there is no EXPOSE.
+	uvi, _ := readDockerfile(write("Dockerfile", "FROM python:3.12-slim\nCMD [\"uvicorn\", \"app.main:app\", \"--host\", \"0.0.0.0\", \"--port\", \"8000\"]\n"))
+	if uvi.Cmd != "uvicorn app.main:app --host 0.0.0.0 --port 8000" || uvi.CmdPort != 8000 || uvi.Expose != 0 {
+		t.Errorf("uvicorn %+v", uvi)
+	}
+	quoted, _ := readDockerfile(write("Dockerfile", "FROM python:3.12\nENTRYPOINT [\"gunicorn\"]\nCMD [\"-b\", \"0.0.0.0:9000\", \"--log-level\", \"info warn\", \"it's\"]\n"))
+	if quoted.Cmd != `gunicorn -b 0.0.0.0:9000 --log-level 'info warn' 'it'"'"'s'` || quoted.CmdPort != 9000 {
+		t.Errorf("quoted %+v", quoted)
+	}
+	shell, _ := readDockerfile(write("Dockerfile", "FROM node:22\nCMD node server.js --port=$PORT\n"))
+	if shell.Cmd != "node server.js --port=$PORT" || shell.CmdPort != 0 {
+		t.Errorf("shell form %+v", shell)
+	}
+	flask, _ := readDockerfile(write("Dockerfile", "FROM python:3.12\nCMD flask run --host 0.0.0.0 -p 5000\n"))
+	if flask.CmdPort != 5000 {
+		t.Errorf("flask %+v", flask)
+	}
 	dev, _ := readDockerfile(write("Dockerfile.dev", "FROM node:22\nCMD npm run dev\n"))
 	if dev.DevOnly == "" {
 		t.Fatal("dev Dockerfile not flagged")

@@ -22,9 +22,10 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property string|null $etag
  * @property CarbonImmutable|null $last_polled_at
  * @property CarbonImmutable|null $last_changed_at
+ * @property CarbonImmutable|null $awaiting_webhook_since polling saw a new head that no webhook delivered yet
  * @property-read GitHubInstallation $installation
  */
-#[Fillable(['github_installation_id', 'github_repo_id', 'ref', 'head_sha', 'etag', 'last_polled_at', 'last_changed_at'])]
+#[Fillable(['github_installation_id', 'github_repo_id', 'ref', 'head_sha', 'etag', 'last_polled_at', 'last_changed_at', 'awaiting_webhook_since'])]
 #[Table(name: 'github_ref_heads')]
 final class GitHubRefHead extends Model
 {
@@ -45,6 +46,7 @@ final class GitHubRefHead extends Model
             'github_repo_id' => 'integer',
             'last_polled_at' => 'datetime',
             'last_changed_at' => 'datetime',
+            'awaiting_webhook_since' => 'datetime',
         ];
     }
 }

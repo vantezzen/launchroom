@@ -3,7 +3,7 @@ title: Import and export
 description: Import a dump or a live database into a managed database, import files into a volume, and download a backup or the current data in its own format.
 ---
 
-Data moves in and out of launchroom in the formats its engines already use. Import a `pg_dump` from your old server, copy a database straight from a connection URL, unpack a `.tar.gz` of uploads into a volume, or download a decrypted backup to keep somewhere else. Everything lives in the **Backups** tab of a database or a service with volumes, under **Move data**.
+Data moves in and out of launchroom in the formats its engines already use. Import a `pg_dump` from your old server, copy a database straight from a connection URL, unpack a `.tar.gz` of uploads into a volume, or download a decrypted backup to keep somewhere else. Everything lives in **Settings → Backups** of a database or a service with volumes, under **Move data**.
 
 Importing and exporting need the **Owner** or **Admin** role: an import writes a whole database, and an export takes decrypted data off your servers.
 
@@ -20,7 +20,7 @@ Importing and exporting need the **Owner** or **Admin** role: an import writes a
 
 ## Import into a database
 
-Open the database's **Backups** tab and choose **Import data…**. The dialog walks through three steps.
+Open the database's **Settings → Backups** and choose **Import data…**. The dialog walks through three steps.
 
 <Steps>
 <Step>
@@ -72,7 +72,7 @@ A connection URL is sealed for the one server and the one import that uses it. l
 When you move an app, import its data before the app runs for the first time. Then the app starts with your data instead of creating empty tables you would have to replace.
 
 1. Create the project **without deploying**: in the template sheet, choose **Create without deploying**.
-2. Open the database and its **Backups** tab. **Move data** shows **Import data before the first deploy**. Choose **Import data…**.
+2. Open the database and its **Settings → Backups**. **Move data** shows **Import data before the first deploy**. Choose **Import data…**.
 3. launchroom starts the database on its own ("Starting postgres on its own on fra-1"). Your apps stay off. The database runs on the server and volume it keeps later, with the same generated user and password your apps will get.
 4. Upload the dump or paste a connection URL and import as usual. The database is empty, so nothing needs replacing.
 5. When the import ends, launchroom stops the database again. Its data stays on the volume.

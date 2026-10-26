@@ -7,8 +7,8 @@ type SectionProps = Omit<ComponentProps<'section'>, 'title'> & {
     description?: ReactNode;
     /** Right-aligned section actions (ghost/outline buttons, a select). */
     actions?: ReactNode;
-    /** Heading level; sections directly under the page header are h2. */
-    level?: 2 | 3;
+    /** Heading level; sections directly under the page header are h2 (h4 under a settings page in the service panel). */
+    level?: 2 | 3 | 4;
     children?: ReactNode;
 };
 
@@ -25,7 +25,7 @@ export function Section({
     children,
     ...props
 }: SectionProps) {
-    const Heading = level === 2 ? 'h2' : 'h3';
+    const Heading = `h${level}` as const;
 
     return (
         <section

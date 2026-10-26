@@ -21,7 +21,7 @@ The API is a second entry point to the same use cases: every endpoint calls the 
 | Ability | Grants (∩ the role) | Typical use |
 |---|---|---|
 | `read` | `resources.view`: projects, environments, services, deployments, logs, servers, domains | Status checks, dashboards |
-| `deploy` | `deployments.create`: deploy a ref, apply staged changes, redeploy, roll back, cancel | CI deploys |
+| `deploy` | `deployments.create`: deploy a ref, apply staged changes, redeploy, roll back, cancel; deploy, restart, stop and start a service (D68) | CI deploys |
 | `env:read` | Variable **names and config values**, `env pull` without secrets | Local development |
 | `env:write` | `variables.write`: create, update and delete variables (staged until deploy) | `env set` |
 | `secrets:read` | `secrets.reveal`: secret values (one variable, or `env pull`/`run` with secrets), each read audited | `env pull`, `run` |
@@ -52,12 +52,14 @@ Secrets are never part of a list response. `GET …/variables` returns secret ro
 - **Responses**: one object `{"data": {...}}`; lists `{"data": [...], "meta": {"nextCursor": "…"|null}}` (opaque cursor, `?cursor=`, `?limit=` ≤ 100). Times are ISO 8601 UTC.
 - **Errors** (every 4xx/5xx under `/api/v1`): `{"error": {"code": "…", "message": "…", "fields"?: {"key": ["…"]}, "ability"?: "deploy"}}`. Codes: `unauthenticated` 401, `forbidden` 403, `missing_ability` 403, `not_found` 404, `method_not_allowed` 405, `conflict` 409, `idempotency_key_in_progress` 409, `idempotency_key_reused` 422, `validation_failed` 422, `rule_violation` (a `DomainRuleViolation`, its own status), `rate_limited` 429 (with `Retry-After`), `server_error` 500 (never internals). `App\Http\Api\ApiExceptionRenderer` owns the mapping.
 - **Rate limits** per token: 300 requests/min (`api`), mutations additionally 60/min (`api-write`); the CLI login endpoints per IP (`api-cli-start` 10/min, `api-cli-poll` 60/min). `X-RateLimit-*` headers.
-- **Idempotency**: `POST` creates (deployments, deploy, variables, domains, rollback, redeploy) accept `Idempotency-Key` (1–255 of `[A-Za-z0-9_.:-]`). The first request stores (token, key, SHA-256 of method + path + body) and, when it finishes, the status and body (24 h, `api_idempotency_keys`). A replay returns the stored response with `Idempotent-Replayed: true`; the same key with a different request is `422 idempotency_key_reused`; a replay while the first is still running is `409 idempotency_key_in_progress`. 5xx responses are not stored (retry is safe). Bodies of create responses never contain secrets.
+- **Idempotency**: `POST` creates (deployments, deploy, variables, domains, rollback, redeploy, a service's deploy/restart/stop/start) accept `Idempotency-Key` (1–255 of `[A-Za-z0-9_.:-]`). The first request stores (token, key, SHA-256 of method + path + body) and, when it finishes, the status and body (24 h, `api_idempotency_keys`). A replay returns the stored response with `Idempotent-Replayed: true`; the same key with a different request is `422 idempotency_key_reused`; a replay while the first is still running is `409 idempotency_key_in_progress`. 5xx responses are not stored (retry is safe). Bodies of create responses never contain secrets.
 - **Versioning**: additive changes stay in v1 (new fields, endpoints); a breaking change is `/api/v2`.
 
 ### 2.2 Endpoints
 
 The endpoint reference is the [API reference](https://launchroom.vantezzen.io/docs/reference/api) on the site and the generated OpenAPI document `dashboard/resources/api/openapi.json` (§2.4).
+
+Service lifecycle (D68): `POST /environments/{environment}/services/{service}/deploy|restart|stop|start` (`Api\V1\ServiceActionController`, ability `deploy`, `api-write`, idempotent) call the service panel header's Actions (`DeployLatest`, `RestartService`, `StopService`, `StartService`) after `Gate::authorize('deploy', $environment)`, audited like the buttons with `via_token`. Restart, stop and start take `{processes?: bool}` (default true: an app's workers and crons follow) and answer `ServiceActionResultData {service, deployments}` (`202`; Stop `200` with no deployments); deploy answers the `DeploymentResource` (`202`) like `createDeployment`. Domain refusals (stopped, staged changes, a deployment in progress) are `rule_violation`. `ServiceResource.status` is `stopped` while the service is stopped, with `stoppedAt`.
 
 Security center (D63): read-only endpoints under `/api/v1/security/…` and `…/services/{service}/inventory` (ability `read`) and the CLI commands `launchroom security` and `launchroom security inventory`, listed in [22](22-security-center.md) §11.
 
@@ -92,7 +94,7 @@ A separate Go module **`cli/`** (`github.com/vantezzen/launchroom/cli`, binary `
 
 ### 3.2 Commands
 
-The command reference (flags, output, exit codes, CI variables) is the [CLI reference](https://launchroom.vantezzen.io/docs/reference/cli) on the site. `db import`, `db export` and `volume export` (exit code 11 when the import or export fails) are specified in [14](14-backup-and-restore.md) §12.7.
+The command reference (flags, output, exit codes, CI variables) is the [CLI reference](https://launchroom.vantezzen.io/docs/reference/cli) on the site. `launchroom service deploy|restart|stop|start [SERVICE]` (D68) acts on one service: the argument (id, slug or name), else `--service`, else the link. Deploy, restart and start follow the rollout like `deploy` (exit 10 on failure, `--detach`); `stop` asks on a terminal and needs `--yes` without one (exit 2); `--without-processes` leaves an app's workers and crons alone. `db import`, `db export` and `volume export` (exit code 11 when the import or export fails) are specified in [14](14-backup-and-restore.md) §12.7.
 
 ### 3.3 Decisions
 

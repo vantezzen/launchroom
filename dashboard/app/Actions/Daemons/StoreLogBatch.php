@@ -17,6 +17,8 @@ use App\Models\LogChunk;
 use App\Models\Placement;
 use App\Models\Server;
 use App\Services\Deployments\DeploymentLogMasker;
+use App\Support\Deployments\LogSections;
+use App\Support\Deployments\RetiredWorkloads;
 use App\Support\Logs\LogLevel;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -42,6 +44,9 @@ use Illuminate\Support\Facades\Log;
  */
 final readonly class StoreLogBatch
 {
+    /** launchroomd's step of a starting container's first output (logship.StartupStep, D68). */
+    private const string STARTUP_STEP = 'startup';
+
     public function __construct(
         private DeploymentLogMasker $masker,
     ) {}
@@ -66,11 +71,22 @@ final readonly class StoreLogBatch
                 continue;
             }
 
-            $lines = array_map(function (LogLine $line) use ($deploymentId): array {
+            // A starting container's first output (D68, step `startup`) is
+            // part of its deployment's log: it goes to the step the
+            // deployment is in and is kept like build output (not runtime).
+            $startup = $chunk->source->kind === LogSourceKind::Workload && $deploymentId !== null
+                && array_all($chunk->lines, static fn (LogLine $line): bool => $line->step === self::STARTUP_STEP);
+            $section = $startup ? $this->section($deploymentId) : null;
+
+            $lines = array_map(function (LogLine $line) use ($deploymentId, $section): array {
                 $data = $line->toArray();
                 $text = $deploymentId !== null ? $this->masker->mask($deploymentId, $line->text) : $line->text;
                 $data['text'] = $text;
                 $data['level'] = LogLevel::guess($text);
+
+                if ($section !== null) {
+                    $data['step'] = $section;
+                }
 
                 return $data;
             }, $chunk->lines);
@@ -90,7 +106,7 @@ final readonly class StoreLogBatch
                 'project_id' => $scope['project_id'] ?? null,
                 'environment_id' => $scope['environment_id'] ?? null,
                 'service_id' => $scope['service_id'] ?? null,
-                'runtime' => $tail || $chunk->source->kind === LogSourceKind::Workload,
+                'runtime' => $tail || ($chunk->source->kind === LogSourceKind::Workload && $section === null),
                 'line_count' => count($lines),
                 'error_count' => count(array_filter($lines, static fn (array $line): bool => $line['level'] === 'error')),
                 'bytes' => strlen($json),
@@ -192,6 +208,18 @@ final readonly class StoreLogBatch
             ->where('workload_id', $workloadId)
             ->value('deployment_id');
 
-        return is_int($deploymentId) ? $deploymentId : null;
+        // A failed rollout's container prints its last lines after its
+        // placement was removed (D68).
+        return is_int($deploymentId) ? $deploymentId : RetiredWorkloads::deploymentOf($server->id, $workloadId);
+    }
+
+    /**
+     * The deployment step startup output belongs to (LogSections).
+     */
+    private function section(int $deploymentId): string
+    {
+        $deployment = Deployment::query()->whereKey($deploymentId)->first();
+
+        return $deployment instanceof Deployment ? LogSections::current($deployment) : 'runtime';
     }
 }

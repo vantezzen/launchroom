@@ -190,7 +190,9 @@ test('role matrix: what each role\'s full token may do', function (TeamRole $rol
     expect(Api::call('POST', "deployments/{$world->latest($world->web)->public_id}/redeploy", $plain)->status() === 202)->toBe($deploy)
         ->and(Api::call('POST', "environments/{$env}/services/{$world->web->public_id}/variables", $plain, ['key' => 'NEW_ONE', 'value' => '1'])->status() === 201)->toBe($writeVariables)
         ->and(Api::get("environments/{$env}/variables/{$secret->public_id}/value", $plain)->status() === 200)->toBe($revealSecrets)
-        ->and(Api::call('POST', "environments/{$env}/services/{$world->web->public_id}/domains", $plain, ['hostname' => strtolower($role->value).'.example.com'])->status() === 201)->toBe($domains);
+        ->and(Api::call('POST', "environments/{$env}/services/{$world->web->public_id}/domains", $plain, ['hostname' => strtolower($role->value).'.example.com'])->status() === 201)->toBe($domains)
+        // Service lifecycle (D68): the deploy permission, like redeploy.
+        ->and(Api::call('POST', "environments/{$env}/services/{$world->web->public_id}/stop", $plain)->status() === 200)->toBe($deploy);
 })->with([
     'owner' => [TeamRole::Owner, true, true, true, true],
     'admin' => [TeamRole::Admin, true, true, true, true],

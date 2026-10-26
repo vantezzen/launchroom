@@ -47,12 +47,20 @@ export default function ProjectCanvas({
     const openService = useCallback(
         (serviceId: string, tab: string = 'deployments') =>
             router.visit(
-                services.show({
-                    project: project.id,
-                    environment: environment.id,
-                    service: serviceId,
-                    tab,
-                }),
+                // Variables is a settings page (docs/08 §16).
+                tab === 'variables'
+                    ? services.section({
+                          project: project.id,
+                          environment: environment.id,
+                          service: serviceId,
+                          section: 'variables',
+                      })
+                    : services.show({
+                          project: project.id,
+                          environment: environment.id,
+                          service: serviceId,
+                          tab,
+                      }),
                 panelVisitOptions(),
             ),
         [project.id, environment.id],
@@ -102,11 +110,11 @@ export default function ProjectCanvas({
                     <DegradedServicesBanner
                         nodes={nodes}
                         backupsHref={(serviceId) =>
-                            services.show({
+                            services.section({
                                 project: project.id,
                                 environment: environment.id,
                                 service: serviceId,
-                                tab: 'backups',
+                                section: 'backups',
                             }).url
                         }
                     />

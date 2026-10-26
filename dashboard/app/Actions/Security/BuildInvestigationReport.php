@@ -200,7 +200,7 @@ final readonly class BuildInvestigationReport
         $connections = [];
         $hrefs = [
             'deployments' => "{$base}/deployments",
-            'variables' => "{$base}/variables",
+            'variables' => "{$base}/settings/variables",
             'source' => "{$base}/settings/source",
             'docs:responding' => DocsUrl::to('security/responding-to-a-vulnerability'),
         ];
@@ -217,7 +217,7 @@ final readonly class BuildInvestigationReport
                 $connections[] = ['name' => $target->name, 'database' => $database, 'engine' => $database ? (is_string($target->source['engine'] ?? null) ? $target->source['engine'] : null) : null];
 
                 if ($database) {
-                    $hrefs['backups:'.$target->name] = "/p/{$investigation->project->public_id}/{$environment->public_id}/s/{$target->id}/backups?before=".rawurlencode($now->toIso8601ZuluString());
+                    $hrefs['backups:'.$target->name] = "/p/{$investigation->project->public_id}/{$environment->public_id}/s/{$target->id}/settings/backups?before=".rawurlencode($now->toIso8601ZuluString());
                 }
             }
         }

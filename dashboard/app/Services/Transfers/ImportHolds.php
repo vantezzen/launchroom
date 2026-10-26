@@ -9,6 +9,8 @@ use App\Enums\Transfers\ImportRunStatus;
 use App\Events\NodeStateInvalidated;
 use App\Models\ServiceInstance;
 use App\Models\Transfers\DataImportRun;
+use App\Services\Backups\DataHolds;
+use App\Services\Backups\HoldBlocker;
 use App\Services\Backups\RestoreHolds;
 
 /**
@@ -58,12 +60,16 @@ final class ImportHolds
 
     /**
      * Re-renders the servers of the held services (and of an imported
-     * volume) once a run no longer holds them: they start again.
+     * volume) when a run starts or stops holding them: they stop, or start
+     * again. Their deployments move on right away: a started one is
+     * cancelled, a queued one starts once nothing holds them
+     * ({@see DataHolds}).
      *
      * @param  list<int>  $held
      */
     public static function release(DataImportRun $run, array $held): void
     {
+        DataHolds::advanceDeployments($held);
         $servers = RestoreHolds::serverIds($held);
 
         if ($run->subject === DataSubject::Volume && $run->volume?->server_id !== null) {
@@ -87,7 +93,8 @@ final class ImportHolds
     }
 
     /**
-     * Why an overdue run failed, naming the held services that still run.
+     * Why an overdue run failed, naming the held services that still run
+     * and, when it's their server, what holds them up ({@see HoldBlocker}).
      *
      * @param  list<int>  $running  held instances that still have a workload up
      */
@@ -109,7 +116,14 @@ final class ImportHolds
         $last = array_pop($names);
         $list = $names === [] ? $last : implode(', ', $names).' and '.$last;
         [$it, $its] = $names === [] ? ['it', 'its server is'] : ['them', 'their servers are'];
+        $head = "{$list} didn’t stop {$within}, so nothing was imported and {$target} is unchanged.";
+        // Usually the server is the blocker (offline, or still busy with an earlier change).
+        $blocker = HoldBlocker::describe($running);
 
-        return "{$list} didn’t stop {$within}, so nothing was imported and {$target} is unchanged. Check that {$its} online and try again, or import without stopping {$it}.";
+        if ($blocker !== null) {
+            return "{$head} {$blocker} Try again once that’s resolved, or import without stopping {$it}.";
+        }
+
+        return "{$head} Check that {$its} online and try again, or import without stopping {$it}.";
     }
 }

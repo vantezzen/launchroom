@@ -25,7 +25,7 @@ Values are stored as written, without trimming or `$VAR` expansion. Multiline va
 
 ## Add and import
 
-Open a service's **Variables** tab and choose **Add variable**, or:
+Open a service's **Settings → Variables** and choose **Add variable**, or:
 
 - **Paste a `.env` file** anywhere on the tab, or use **Import .env**. launchroom shows a preview with conflicts and
   suggested secrets before saving.
@@ -52,7 +52,7 @@ masked.
 References resolve per environment. `${{postgres.DATABASE_URL}}` in a preview resolves to the preview's own
 database, so previews and new environments work without editing any variable.
 
-A reference to a service or variable that doesn't exist in this environment is broken. The Variables tab flags it in
+A reference to a service or variable that doesn't exist in this environment is broken. The Variables page flags it in
 red, and the deploy is refused with the name of every broken reference. launchroom never deploys the literal `${{…}}`
 text.
 
@@ -99,7 +99,7 @@ The final environment of a service is built in this order. Later layers win.
 
 Shared variables belong to the project instead of one service, with the same targeting. They are not added to every
 service automatically. A service either references one as `${{shared.KEY}}` or switches it on in the **Shared
-variables** section of its Variables tab, which adds it under its own key. A Compose import creates shared variables for
+variables** section on its Variables page, which adds it under its own key. A Compose import creates shared variables for
 values several services use.
 
 ## Build or runtime
@@ -121,7 +121,7 @@ Build values reach the build as BuildKit secrets, never as image layers. See
 
 ## Variables launchroom sets
 
-The Variables tab lists the system variables, read-only:
+The Variables page lists the system variables, read-only:
 
 | Variable | Value |
 |---|---|

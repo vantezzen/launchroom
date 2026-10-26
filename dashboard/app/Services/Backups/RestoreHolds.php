@@ -15,7 +15,9 @@ use App\Models\Service;
 use App\Models\ServiceInstance;
 use App\Services\Moves\MoveHolds;
 use App\Services\Transfers\ImportHolds;
+use Carbon\CarbonInterface;
 use Illuminate\Contracts\Database\Query\Builder;
+use Illuminate\Database\Eloquent\Collection;
 
 /**
  * Services held for a restore (docs/14 §5.1, §9.12): while a restore is
@@ -36,6 +38,9 @@ use Illuminate\Contracts\Database\Query\Builder;
  */
 final class RestoreHolds
 {
+    /** A workload its server's reports leave out for this long doesn't run there. */
+    public const int SILENT_SECONDS = 120;
+
     /**
      * @return array<int, true> held service instance ids
      */
@@ -160,29 +165,69 @@ final class RestoreHolds
     }
 
     /**
-     * The given instances that still have a workload up on some server.
+     * The given instances that still have a workload up on some server
+     * ({@see runningPlacements}).
      *
      * @param  list<int>  $instanceIds
      * @return list<int>
      */
     public static function running(array $instanceIds): array
     {
-        if ($instanceIds === []) {
-            return [];
-        }
-
-        $up = [WorkloadPhase::Starting->value, WorkloadPhase::Running->value, WorkloadPhase::Healthy->value, WorkloadPhase::Unhealthy->value, WorkloadPhase::Draining->value];
-
         /** @var list<int> $ids */
-        $ids = Placement::query()
-            ->whereIn('service_instance_id', $instanceIds)
-            ->whereIn('phase', $up)
-            ->distinct()
-            ->orderBy('service_instance_id')
+        $ids = self::runningPlacements($instanceIds)
             ->pluck('service_instance_id')
+            ->unique()
+            ->sort()
+            ->values()
             ->map(static fn (mixed $id): int => is_numeric($id) ? (int) $id : 0)
             ->all();
 
         return $ids;
+    }
+
+    /**
+     * The workloads of the given instances that launchroomd still reports
+     * up. Judged on what it reports, not on a stale status: launchroomd
+     * reports every workload it runs (and removed ones for a while) in every
+     * report, so a workload its server keeps reporting without it for
+     * `SILENT_SECONDS` runs no container there, whatever it was last seen as
+     * (a container removed without a report, a worker never recreated). A
+     * workload that never got a container (pulling, pending, failed) isn't
+     * up either.
+     *
+     * @param  list<int>  $instanceIds
+     * @return Collection<int, Placement>
+     */
+    public static function runningPlacements(array $instanceIds): Collection
+    {
+        if ($instanceIds === []) {
+            return new Collection;
+        }
+
+        $up = [WorkloadPhase::Starting->value, WorkloadPhase::Running->value, WorkloadPhase::Healthy->value, WorkloadPhase::Unhealthy->value, WorkloadPhase::Draining->value];
+
+        return Placement::query()
+            ->whereIn('service_instance_id', $instanceIds)
+            ->whereIn('phase', $up)
+            ->with('server')
+            ->orderBy('server_id')
+            ->orderBy('id')
+            ->get()
+            ->filter(static fn (Placement $placement): bool => self::stillReported($placement))
+            ->values();
+    }
+
+    /**
+     * Whether the latest reports of its server still mention $placement
+     * (each report that does updates it). A server that stopped reporting
+     * altogether can't tell: its workloads count as up.
+     */
+    private static function stillReported(Placement $placement): bool
+    {
+        $reportedAt = $placement->server->last_report_at;
+
+        return ! $reportedAt instanceof CarbonInterface
+            || ! $placement->updated_at instanceof CarbonInterface
+            || $placement->updated_at->gte($reportedAt->copy()->subSeconds(self::SILENT_SECONDS));
     }
 }

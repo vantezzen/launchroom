@@ -16,6 +16,7 @@ Each one must honour `$PORT` and answer quickly on a health path.
 | `next-standalone` | Next.js with `output: 'standalone'`: the nextjs preset copies static assets and starts `node .next/standalone/server.js` |
 | `next-adapter` | Next.js 16.4 (≥ 16.2) without `output` in next.config: the nextjs preset injects `@vantezzen/launchroom-next-adapter` (standalone, `deploymentId`, static assets, manifest). App Router, ISR page `/isr` (60 s), `proxy.js` (adds `x-launchroom-proxy: 1`), `public/launchroom.txt`, health `/api/health`. Integration copy: `daemon/test/integration/testdata/build/next-adapter` |
 | `dockerfile-hello` | Repository Dockerfile wins over Railpack; declared `ARG` as build arg, `BUILD_SECRET` as a BuildKit secret, `EXPOSE` as port |
+| `uvicorn-dockerfile` | FastAPI behind its own Dockerfile: exec-form `CMD` uvicorn on `0.0.0.0:8000`, no `EXPOSE` (the port comes from `--port`). `FIXTURE_MODE=crash` raises while importing, `slow` waits 90 s before it listens; a start command with `--host 127.0.0.1` binds loopback only. The rollout failure cases of D68 (docs/04 §8.1) |
 | `unplannable-site` | A static page in `www/` with no manifest: Railpack can't plan it (`plan_error`), the "Generate a Dockerfile" end to end (docs/20 §8) with the stub answer `dashboard/tests/Fixtures/Dockerfiles/unplannable-site.json` (busybox httpd on 8080) |
 
 The `git-fixtures` service of the dev stack publishes every directory here as a

@@ -35,7 +35,6 @@ type Page = App.Data.Logs.LogExplorerPageData;
 type Entry = App.Data.Logs.LogEntryData;
 type Range = '15m' | '1h' | '24h' | '7d' | '30d';
 type Scope = 'environment' | 'project' | 'team';
-type Source = 'all' | 'runtime' | 'build';
 
 const RANGES: TimeRangeOption<Range>[] = [
     { value: '15m', label: '15m' },
@@ -44,11 +43,12 @@ const RANGES: TimeRangeOption<Range>[] = [
     { value: '7d', label: '7d' },
     { value: '30d', label: '30d' },
 ];
-const SOURCES: TimeRangeOption<Source>[] = [
-    { value: 'all', label: 'All' },
-    { value: 'runtime', label: 'Runtime' },
-    { value: 'build', label: 'Build' },
-];
+/**
+ * Build output (plan, build, release) belongs to its deployment's Steps,
+ * not here (docs/08 §12): the explorer asks for everything else, which is
+ * what services print plus rollout, health and lifecycle events.
+ */
+const SOURCE = 'runtime';
 const WIDER: Record<Range, Range | null> = {
     '15m': '1h',
     '1h': '24h',
@@ -101,8 +101,7 @@ function updateUrl(params: Record<string, string | null>) {
 }
 
 /**
- * The log explorer (direction §9.8): query bar, range and
- * source, Live; the histogram with deploy markers and errors stacked in
+ * The log explorer (direction §9.8): query bar, range, Live; the histogram with deploy markers and errors stacked in
  * red; the filter rail with counts; the virtualised table (newest first);
  * the detail drawer (right column on wide screens, a sheet on phones).
  *
@@ -137,7 +136,7 @@ export function LogExplorer({
     /** Service public id: scope everything to it. */
     service?: string | null;
     initialQuery?: string;
-    /** Keep `?q=`, `?range=`, `?source=`, `?scope=` in the address bar. */
+    /** Keep `?q=`, `?range=`, `?scope=` in the address bar. */
     syncUrl?: boolean;
     className?: string;
 }) {
@@ -163,13 +162,6 @@ export function LogExplorer({
             : null;
 
         return value && value in WIDER ? (value as Range) : '1h';
-    });
-    const [source, setSource] = useState<Source>(() => {
-        const value = syncUrl
-            ? new URLSearchParams(window.location.search).get('source')
-            : null;
-
-        return value === 'runtime' || value === 'build' ? value : 'all';
     });
     const [query, setQuery] = useState(initialQuery);
     const [searched, setSearched] = useState(initialQuery);
@@ -199,7 +191,7 @@ export function LogExplorer({
             const options = {
                 query: {
                     range,
-                    source,
+                    source: SOURCE,
                     ...(searched !== '' ? { q: searched } : {}),
                     ...(service ? { service } : {}),
                     ...(after > 0 ? { after } : {}),
@@ -217,7 +209,7 @@ export function LogExplorer({
             return entriesRoute(args, options).url;
         },
         // eslint-disable-next-line react-hooks/exhaustive-deps
-        [project, environment, scope, range, source, service, searched],
+        [project, environment, scope, range, service, searched],
     );
 
     // Live polling reads the latest search without restarting the tails.
@@ -405,13 +397,6 @@ export function LogExplorer({
             updateUrl({ scope: next === 'project' ? 'project' : null });
         }
     };
-    const changeSource = (next: Source) => {
-        setSource(next);
-
-        if (syncUrl) {
-            updateUrl({ source: next === 'all' ? null : next });
-        }
-    };
 
     const facts = (row: Row) => [
         {
@@ -425,10 +410,6 @@ export function LogExplorer({
         ...(row.environment
             ? [{ label: 'Environment', value: row.environment }]
             : []),
-        {
-            label: 'Source',
-            value: row.source === 'runtime' ? 'Runtime' : 'Build and release',
-        },
         ...(row.deployment
             ? [{ label: 'Deployment', value: row.deployment, mono: true }]
             : []),
@@ -588,13 +569,6 @@ export function LogExplorer({
                             className="max-sm:order-3"
                         />
                     )}
-                    <TimeRangeSelect<Source>
-                        value={source}
-                        onChange={changeSource}
-                        options={SOURCES}
-                        label="Source"
-                        className="max-sm:order-3"
-                    />
                     <TimeRangeSelect<Range>
                         value={range}
                         onChange={changeRange}

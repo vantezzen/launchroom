@@ -87,6 +87,7 @@ final class ApiResources
         $active?->setRelation('serviceInstance', $instance)->setRelation('environment', $instance->environment);
 
         $status = match (true) {
+            $instance->stopped_at !== null => 'stopped',
             $latest !== null && ! $this->finished($latest->status) => $latest->status->value,
             $active !== null => 'live',
             $latest !== null => $latest->status->value,
@@ -113,6 +114,7 @@ final class ApiResources
             urls: $urls,
             dashboardUrl: route('projects.services.show', [$environment->project->public_id, $environment->public_id, $instance->service->public_id]),
             volumes: array_values($instance->volumes->sortBy('mount_path')->map(static fn (Volume $volume): TransferVolumeData => new TransferVolumeData($volume->public_id, $volume->mount_path))->all()),
+            stoppedAt: $instance->stopped_at?->toIso8601String(),
         );
     }
 

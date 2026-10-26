@@ -36,6 +36,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property string|null $webhook_secret
  * @property string $private_key
  * @property CarbonImmutable|null $webhook_last_received_at
+ * @property CarbonImmutable|null $webhook_missed_at polling found a push no webhook delivered (docs/06 §2.2)
  * @property int|null $created_by
  * @property CarbonImmutable|null $created_at
  * @property CarbonImmutable|null $updated_at
@@ -117,13 +118,15 @@ final class GitHubApp extends Model
     }
 
     /**
-     * Whether a verified webhook arrived recently enough that polling isn't
-     * needed (docs/06 §2 polling fallback).
+     * Whether webhooks deliver pushes (docs/06 §2.2): a verified delivery
+     * arrived, and none was missed since. A quiet repository stays healthy;
+     * only a push that polling found and no webhook delivered within the
+     * grace period counts against it, until the next delivery.
      */
     public function hasHealthyWebhooks(): bool
     {
         return $this->webhook_last_received_at !== null
-            && $this->webhook_last_received_at->greaterThan(now()->subSeconds(config()->integer('launchroom.github.webhook_stale_after_seconds')));
+            && ($this->webhook_missed_at === null || $this->webhook_last_received_at->greaterThan($this->webhook_missed_at));
     }
 
     /**
@@ -134,6 +137,7 @@ final class GitHubApp extends Model
         return [
             'app_id' => 'integer',
             'webhook_last_received_at' => 'datetime',
+            'webhook_missed_at' => 'datetime',
         ];
     }
 }

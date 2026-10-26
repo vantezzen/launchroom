@@ -7,6 +7,7 @@ use App\Http\Controllers\Deployments\DeploymentController;
 use App\Http\Controllers\Deployments\DeploymentLogsController;
 use App\Http\Controllers\Deployments\ProjectDeploymentsController;
 use App\Http\Controllers\Deployments\ServiceDeploymentsController;
+use App\Http\Controllers\Deployments\ServiceLifecycleController;
 use App\Http\Controllers\StagedChanges\StagedChangesController;
 use App\Http\Controllers\Variables\RawVariablesController;
 use App\Http\Controllers\Variables\RevealVariableController;
@@ -55,6 +56,11 @@ Route::middleware(['web', 'auth', 'verified'])
 
         Route::get('p/{project}/{environment}/-/services/{service}/deployments', [ServiceDeploymentsController::class, 'index'])->name('deployments.service');
         Route::post('p/{project}/{environment}/-/services/{service}/redeploy', [ServiceDeploymentsController::class, 'redeploy'])->name('deployments.service.redeploy');
+        // Service lifecycle (D68): deploy the latest version, restart, stop, start.
+        Route::post('p/{project}/{environment}/-/services/{service}/deploy', [ServiceLifecycleController::class, 'deploy'])->name('services.lifecycle.deploy');
+        Route::post('p/{project}/{environment}/-/services/{service}/restart', [ServiceLifecycleController::class, 'restart'])->name('services.lifecycle.restart');
+        Route::post('p/{project}/{environment}/-/services/{service}/stop', [ServiceLifecycleController::class, 'stop'])->name('services.lifecycle.stop');
+        Route::post('p/{project}/{environment}/-/services/{service}/start', [ServiceLifecycleController::class, 'start'])->name('services.lifecycle.start');
 
         Route::get('p/{project}/{environment}/-/services/{service}/variables', [ServiceVariablesController::class, 'index'])->name('variables.index');
         Route::post('p/{project}/{environment}/-/services/{service}/variables', [ServiceVariablesController::class, 'store'])->name('variables.store');

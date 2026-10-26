@@ -428,6 +428,12 @@ final class NodeStateValidator
         }
 
         $upstreams = [];
+        $count = count($this->list($route['upstreams'] ?? []));
+
+        // A stopped route (D68) answers with the edge's page and has no upstreams.
+        if (($route['stopped'] ?? false) === true ? $count !== 0 : $count === 0) {
+            $this->add("{$p}.upstreams", ($route['stopped'] ?? false) === true ? 'a stopped route has no upstreams' : 'must have at least 1 item');
+        }
 
         foreach ($this->list($route['upstreams'] ?? []) as $j => $upstream) {
             $workload = $upstream['workload'] ?? null;

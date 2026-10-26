@@ -35,6 +35,13 @@ final class Wire
         return is_int($value) ? $value : null;
     }
 
+    public static function nullableBool(object $wire, string $field): ?bool
+    {
+        $value = $wire->{$field} ?? null;
+
+        return is_bool($value) ? $value : null;
+    }
+
     public static function float(object $wire, string $field): float
     {
         $value = $wire->{$field} ?? null;

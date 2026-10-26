@@ -358,9 +358,15 @@ return [
         // Warn when GitHub's Date header and our clock differ by more than this.
         'max_clock_skew_seconds' => 30,
 
-        // Polling fallback (docs/06 §2): apps without a verified webhook
-        // delivery in this window get their tracked refs polled every minute.
-        'webhook_stale_after_seconds' => 900,
+        // Webhook health (docs/06 §2.2): a new head that polling finds and no
+        // webhook delivers within this grace period is a missed push; the app
+        // (or git connection) is then polled every minute until the next
+        // verified delivery. A quiet repository is not a missed push.
+        'webhook_grace_seconds' => 120,
+
+        // Safety poll of tracked refs while webhooks are healthy: catches a
+        // missed push within this interval plus the grace period.
+        'safety_poll_seconds' => 300,
 
         // GitHub caps webhook payloads at 25 MB.
         'max_webhook_bytes' => 25 * 1024 * 1024,

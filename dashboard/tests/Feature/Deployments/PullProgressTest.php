@@ -97,14 +97,14 @@ test('progress alone nudges open pages without advancing the deployment', functi
         && $job->event->status === $deployment->status->value);
 });
 
-test('the health deadline waits while the image is still pulling', function (): void {
+test('the health deadline counts from the end of the pull', function (): void {
     [$server, $web, $placement] = pullingDeployment();
     $w = $placement->workload_id;
 
-    // An hour of pulling with progress: still rolling out.
-    for ($minutes = 0; $minutes < 60; $minutes += 2) {
+    // Eight minutes of pulling with progress, within the Roll out timeout (D68).
+    for ($minutes = 0; $minutes < 8; $minutes += 2) {
         Date::setTestNow(now()->addMinutes(2));
-        Projects::report($server, 'pulling', pulls: [$w => ['stage' => 'downloading', 'downloadedBytes' => $minutes * 10_000_000, 'totalBytes' => 690_000_000]]);
+        Projects::report($server, 'pulling', pulls: [$w => ['stage' => 'downloading', 'downloadedBytes' => ($minutes + 1) * 10_000_000, 'totalBytes' => 690_000_000, 'updatedAt' => now()->utc()->format('Y-m-d\\TH:i:s\\Z')]]);
         resolve(SweepDeployments::class)->handle();
     }
     expect(pullDeploymentOf($web)->status)->toBe(DeploymentStatus::RollingOut);

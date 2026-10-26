@@ -27,6 +27,13 @@ final class HostStatusFacts
             'dockerVersion' => $host->dockerVersion instanceof Optional ? null : $host->dockerVersion,
             'daemonVersion' => $host->daemonVersion,
             'health' => is_array($host->health) ? self::health($host->health) : null,
+            // Whether the server reaches the image registry (D68).
+            'registry' => is_array($host->registry) ? [
+                'reachable' => ($host->registry['reachable'] ?? false) === true,
+                'checkedAt' => is_string($host->registry['checkedAt'] ?? null) ? $host->registry['checkedAt'] : null,
+                'latencyMs' => is_int($host->registry['latencyMs'] ?? null) ? $host->registry['latencyMs'] : null,
+                'error' => is_string($host->registry['error'] ?? null) ? mb_substr($host->registry['error'], 0, 512) : null,
+            ] : null,
         ];
     }
 

@@ -1,9 +1,9 @@
 ---
 title: Logs
-description: Build and runtime logs in one explorer. Search across services, environments or the whole team, follow lines live and keep runtime logs if you want them.
+description: Runtime logs in one explorer, build logs on each deployment. Search across services, environments or the whole team, follow lines live and keep runtime logs if you want them.
 ---
 
-Every line a build, a deploy or a running service writes is collected in the **Logs** tab of a project. You can search it like a document, filter it by service, level or server, and follow new lines live.
+Every line a running service writes, plus its rollout and health checks, is collected in the **Logs** tab of a project. You can search it like a document, filter it by service, level or server, and follow new lines live.
 
 <Screenshot id="logs" />
 
@@ -11,7 +11,7 @@ Every line a build, a deploy or a running service writes is collected in the **L
 
 launchroom collects two kinds of lines:
 
-- **Build and deploy logs**: everything a deployment prints, including the build, release commands, the rollout and health checks. They are stored with the deployment and kept as long as the deployment exists. Open a deployment to read its log step by step, or find the same lines in the explorer.
+- **Build and deploy logs**: everything a deployment prints, including the build, release commands, the rollout and health checks. They are stored with the deployment and kept as long as the deployment exists. Open a deployment to read its log step by step. Build output stays there; the rollout and health check lines also show in the explorer.
 - **Runtime logs**: what your services write to stdout and stderr while they run. By default they are shown live and kept for a day. Turn on [retention](#keep-runtime-logs) for an environment to store every line for longer.
 
 Secret values are masked before lines are stored. If a variable marked secret shows up in a build or deploy log, you see a placeholder instead of the value. Logs are always shown as text, never rendered as HTML.
@@ -20,13 +20,14 @@ Secret values are masked before lines are stored. If a variable marked secret sh
 
 Open a project and choose **Logs**. The explorer has one toolbar, a histogram, a filter rail and the lines themselves.
 
-- **Source**: All, Runtime or Build.
 - **Range**: 15m, 1h, 24h, 7d or 30d. When nothing matches, the empty state has options to widen the range or follow live.
 - **Histogram**: lines over time, with errors stacked in red and a marker for every deploy (failed deploys in red). Hover a marker to see its service and commit.
 - **Filter rail**: counts per level, environment, service, deployment and server. Click a value to filter by it.
 - **Detail drawer**: click a line to see its facts (service, replica, server, commit), similar lines and a shortcut to show only that service.
 
 Each service also has a **Logs** tab in its panel with the same explorer, scoped to that service.
+
+Build output (planning, building and the release command) isn't in the explorer. It belongs to its deployment: open the deployment to read it step by step. Rollout and health check lines stay in the explorer next to what your services print.
 
 ### Search syntax
 

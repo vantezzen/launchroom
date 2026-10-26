@@ -252,8 +252,8 @@ export function TemplateSetup({
                             <span className="text-foreground">
                                 Import data before the first deploy
                             </span>{' '}
-                            on its Backups tab. The first deploy then starts
-                            with your data.
+                            in its Backups settings. The first deploy then
+                            starts with your data.
                         </span>
                     </p>
                 </SheetSection>

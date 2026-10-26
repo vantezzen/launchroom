@@ -5,28 +5,23 @@ import {
     GitBranch,
     GitCommitHorizontal,
     Globe,
-    Hammer,
 } from 'lucide-react';
-import { Link } from '@inertiajs/react';
-import { DeviceImage } from '@/components/devices';
 import { Duration, Elapsed } from '@/components/elapsed';
 import { MetaLine } from '@/components/patterns/meta-line';
-import { show as serverPage } from '@/routes/servers';
 import type { ReactNode } from 'react';
 import { useState } from 'react';
-import { UrlCard } from '@/components/cards/preview-card';
-import { Logo } from '@/components/logo';
 import { Status } from '@/components/status';
 import { TimeAgo } from '@/components/time-ago';
 import {
     branchName,
-    deploymentState,
+    deploymentStatusState,
     deploymentWord,
     shortSha,
     firstLine,
     triggerLabel,
 } from '@/features/deployments/format';
 import { cn } from '@/lib/utils';
+import { DeploymentStage } from './deployment-stage';
 
 type Detail = App.Data.Deployments.DeploymentDetailData;
 
@@ -84,52 +79,7 @@ export function CopyButton({
 }
 
 /**
- * The stage on the left of the overview card: the site as a URL card for
- * services with a domain, the service's logo otherwise.
- */
-function Stage({ detail }: { detail: Detail }) {
-    const deployment = detail.deployment;
-    const url = deployment.urls[0]?.replace(/^https:\/\//, '') ?? null;
-    if (detail.buildServer && deployment.status === 'building') {
-        const server = detail.buildServer;
-        return (
-            <Link
-                href={serverPage(server.id)}
-                className="flex h-44 flex-col items-center justify-center gap-2 rounded-[10px] border bg-(--recessed) p-4 transition-colors duration-fast hover:border-border-strong focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-signal lg:h-full lg:min-h-48"
-            >
-                <DeviceImage
-                    device={server.device.kind}
-                    status="busy"
-                    size={120}
-                />
-                <span className="inline-flex items-center gap-2 type-small text-muted-foreground">
-                    <Hammer className="size-3.5" aria-hidden="true" />
-                    Building on{' '}
-                    <span className="font-medium text-foreground">
-                        {server.name}
-                    </span>
-                </span>
-            </Link>
-        );
-    }
-    return (
-        <div className="relative flex h-44 items-center justify-center overflow-hidden rounded-[10px] border bg-(--recessed) max-sm:hidden lg:h-full lg:min-h-48">
-            {url ? (
-                <UrlCard url={url} />
-            ) : (
-                <Logo
-                    kind={detail.logo}
-                    name={deployment.serviceName}
-                    size={44}
-                    decorative
-                />
-            )}
-        </div>
-    );
-}
-
-/**
- * Overview card (direction §9.7): stage left,
+ * Overview card (direction §9.7): the stage left (`DeploymentStage`),
  * facts right (status, duration, environment, built on; source; domains),
  * and a quiet footer with when, revision and the raw deployment id.
  */
@@ -150,16 +100,12 @@ export function OverviewCard({
             className="overflow-hidden rounded-[14px] border bg-card shadow-card"
         >
             <div className="grid gap-6 p-5 lg:grid-cols-[minmax(0,340px)_minmax(0,1fr)] lg:gap-8">
-                <Stage detail={detail} />
+                <DeploymentStage detail={detail} />
                 <dl className="grid min-w-0 grid-cols-2 content-start gap-x-6 gap-y-6 sm:grid-cols-4">
                     <Fact label="Status">
                         <span aria-live="polite">
                             <Status
-                                state={
-                                    deployment.isActive
-                                        ? 'active'
-                                        : deploymentState(deployment.status)
-                                }
+                                state={deploymentStatusState(deployment)}
                                 label={deploymentWord(deployment)}
                             />
                         </span>

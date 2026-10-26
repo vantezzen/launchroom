@@ -124,7 +124,7 @@ function protection(backup: App.Data.Backups.ServiceBackupStatusData | null): {
 /**
  * A volume as an object: where it is mounted, the server that holds it
  * (device with its LED), how big it is, and whether backups protect it,
- * with the way into the Backups tab.
+ * with the way into its Backups settings.
  */
 function VolumeCard({
     volume,
@@ -141,11 +141,11 @@ function VolumeCard({
 }) {
     const placed = volume.server !== null;
     const guard = protection(context.node.backup);
-    const backupsHref = services.show({
+    const backupsHref = services.section({
         project: context.route[0],
         environment: context.route[1],
         service: context.route[2],
-        tab: 'backups',
+        section: 'backups',
     }).url;
 
     return (

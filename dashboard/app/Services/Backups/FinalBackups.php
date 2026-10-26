@@ -209,7 +209,7 @@ final readonly class FinalBackups
 
         return match ($request->status) {
             DeletionRequestStatus::BackingUp => throw DomainRuleViolation::on('environment', "The final backup of {$request->subject_name} is still running. Deploy again once it finished."),
-            DeletionRequestStatus::Blocked => throw DomainRuleViolation::on('environment', "{$request->subject_name} can’t be removed yet: {$request->error} Retry the final backup or remove it without one (its Backups tab), or discard the removal."),
+            DeletionRequestStatus::Blocked => throw DomainRuleViolation::on('environment', "{$request->subject_name} can’t be removed yet: {$request->error} Retry the final backup or remove it without one (its Backups settings), or discard the removal."),
             default => $request,
         };
     }

@@ -275,17 +275,17 @@
     }
   },
   "database-backups": {
-    "alt": "Backups tab of orders-db: backed up 6 hours ago, daily schedule, retention 7 daily, 4 weekly, 3 monthly, last verified 6 days ago, point-in-time recovery on with a 7-day window, and a snapshot list.",
+    "alt": "Backups settings page of orders-db: backed up 6 hours ago, daily schedule, retention 7 daily, 4 weekly, 3 monthly, last verified 6 days ago, point-in-time recovery on with a 7-day window, and a snapshot list.",
     "caption": "Scheduled, verified backups with point-in-time recovery, right on the database.",
     "light": {
       "width": 2880,
       "height": 2000,
-      "blur": "data:image/webp;base64,UklGRioAAABXRUJQVlA4IB4AAABwAQCdASoQAAsAAsBMJaWR5AGIAAD+9tP5P/FGgAA="
+      "blur": "data:image/webp;base64,UklGRjAAAABXRUJQVlA4ICQAAABwAQCdASoQAAsAAsBMJaWDrAGIAAD+9tzeD5FvnpNVrdgAAAA="
     },
     "dark": {
       "width": 2880,
       "height": 2000,
-      "blur": "data:image/webp;base64,UklGRjIAAABXRUJQVlA4ICYAAACwAQCdASoQAAsAAsBMJaQAAujfV/qAAP768HmsK8TanqT11ZAAAA=="
+      "blur": "data:image/webp;base64,UklGRjAAAABXRUJQVlA4ICQAAAAwAQCdASoQAAsAAsBMJaQAA3AA/vZ3yc/IYsmNSyK5YFe7AAA="
     }
   },
   "database-browse": {
@@ -317,17 +317,17 @@
     }
   },
   "deployment": {
-    "alt": "Deployment 'fix: order totals with discounts' of the web service in production: Live, 1m 51s, built on control plane, with the steps Plan, Build, Roll out, Health check and Switch traffic all done.",
+    "alt": "Deployment 'fix: order totals with discounts' of the web service in production: Live, 1m 51s, built on control plane, with a timeline of the steps Plan, Build, Roll out, Health check and Switch traffic, where Build took 1m 28s.",
     "caption": "Every step of a deployment, with its duration and logs.",
     "light": {
       "width": 2880,
       "height": 1800,
-      "blur": "data:image/webp;base64,UklGRi4AAABXRUJQVlA4ICIAAABwAQCdASoQAAoAAsBMJaWR5AGIAAD+9t37MhR4R8nvoAAA"
+      "blur": "data:image/webp;base64,UklGRiwAAABXRUJQVlA4ICAAAAAwAQCdASoQAAoAAsBMJaQAA3AA/vcHMrCNyGBOy/SAAA=="
     },
     "dark": {
       "width": 2880,
       "height": 1800,
-      "blur": "data:image/webp;base64,UklGRjIAAABXRUJQVlA4ICYAAABwAQCdASoQAAoAAsBMJaVnyAGIAAD+9nj8Ehj83dCue97khwNoAA=="
+      "blur": "data:image/webp;base64,UklGRi4AAABXRUJQVlA4ICIAAAAwAQCdASoQAAoAAsBMJaQAA3AA/vahD1ZpyY44hVXkiQAA"
     }
   },
   "deployment-failed": {
@@ -335,13 +335,13 @@
     "caption": "When a build fails, you get the cause, the fix and the exact log line. Your site keeps serving the last good version.",
     "light": {
       "width": 1440,
-      "height": 1423,
-      "blur": "data:image/webp;base64,UklGRjAAAABXRUJQVlA4ICQAAAAwAQCdASoQABAAAsBMJaQAA3AA/vbc6ylbTmyywjm/PGcAAAA="
+      "height": 1556,
+      "blur": "data:image/webp;base64,UklGRj4AAABXRUJQVlA4IDIAAAAQAwCdASoQABEAPtFWo0uoJKMhsAgBABoJaWZAADdQzIgA/vHNV5MhCesYfrbN+gAAAA=="
     },
     "dark": {
       "width": 1440,
-      "height": 1423,
-      "blur": "data:image/webp;base64,UklGRjoAAABXRUJQVlA4IC4AAAAwAQCdASoQABAAAsBMJaQAA3AA/vZ3ydGS2kxxyU/1GI4Bx4usiA1r5RGEAAAA"
+      "height": 1556,
+      "blur": "data:image/webp;base64,UklGRkgAAABXRUJQVlA4IDwAAABQAwCdASoQABEAPtFWo0uoJKMhsAgBABoJaQAAXK+59GYhwAD+9pUEwmAva464IgFd+vHe6DQYFj5TIAA="
     }
   },
   "domains": {
@@ -420,12 +420,12 @@
     "light": {
       "width": 1440,
       "height": 1000,
-      "blur": "data:image/webp;base64,UklGRjAAAABXRUJQVlA4ICQAAABwAQCdASoQAAsAAsBMJaWR5AGIAAD+9t583DfEJKY7GwyYAAA="
+      "blur": "data:image/webp;base64,UklGRjAAAABXRUJQVlA4ICQAAABwAQCdASoQAAsAAsBMJaWM+AGIAAD+9t583DgHHESMN0x4AAA="
     },
     "dark": {
       "width": 1440,
       "height": 1000,
-      "blur": "data:image/webp;base64,UklGRjIAAABXRUJQVlA4ICYAAABwAQCdASoQAAsAAsBMJaWDrAGIAAD+9sptvMMJTtyBfs0nOcgAAA=="
+      "blur": "data:image/webp;base64,UklGRjQAAABXRUJQVlA4ICgAAABwAQCdASoQAAsAAsBMJaV2AAGIAAD+9sptvMa6eS46jgXCrFYtSAAA"
     }
   },
   "metrics": {
@@ -667,17 +667,17 @@
     }
   },
   "service-panel": {
-    "alt": "Service panel for api open beside the canvas, Deployments tab: the live deployment 'fix: order totals with discounts' with View logs and Redeploy, and four earlier deployments that can be rolled back.",
+    "alt": "Service panel for api open beside the canvas, Deployments tab: the live deployment 'fix: order totals with discounts' as the first row with its steps, View logs and Redeploy, and four earlier deployments that can be rolled back.",
     "caption": "Click a service to see what is live and roll back in seconds, without a rebuild.",
     "light": {
       "width": 1440,
       "height": 900,
-      "blur": "data:image/webp;base64,UklGRiwAAABXRUJQVlA4ICAAAABwAQCdASoQAAoAAsBMJaWM+AGIAAD+9wTXoHdo1XwAAA=="
+      "blur": "data:image/webp;base64,UklGRiwAAABXRUJQVlA4ICAAAABwAQCdASoQAAoAAsBMJaWM+AGIAAD+9wTXo/NzkHuAAA=="
     },
     "dark": {
       "width": 1440,
       "height": 900,
-      "blur": "data:image/webp;base64,UklGRiwAAABXRUJQVlA4ICAAAAAwAQCdASoQAAoAAsBMJaQAA3AA/vakjTPEIZSDTcNgAA=="
+      "blur": "data:image/webp;base64,UklGRjAAAABXRUJQVlA4ICQAAACwAQCdASoQAAoAAsBMJaQAAujfYmFAAP768HzY6CCM+3tIAAA="
     }
   },
   "service-settings": {
@@ -686,7 +686,7 @@
     "light": {
       "width": 1440,
       "height": 960,
-      "blur": "data:image/webp;base64,UklGRiwAAABXRUJQVlA4ICAAAAAwAQCdASoQAAsAAsBMJaQAA3AA/vcG/r4048QUPIQAAA=="
+      "blur": "data:image/webp;base64,UklGRjQAAABXRUJQVlA4ICgAAACwAQCdASoQAAsAAsBMJaQAAudFyYcAAP76Qk9ScmAEXg3phHVPwAAA"
     },
     "dark": {
       "width": 1440,
@@ -821,17 +821,17 @@
     }
   },
   "variables": {
-    "alt": "Variables tab of the web service: eight variables including references like ${{api.PRIVATE_URL}} resolved to their values, masked secrets with a lock icon, per-environment badges and a broken reference flagged in red.",
+    "alt": "Variables page in the settings of the web service: variables including references like ${{api.PRIVATE_URL}} resolved to their values, masked secrets with a lock icon, per-environment badges and a broken reference flagged in red.",
     "caption": "Reference other services instead of copying values. Secrets stay masked.",
     "light": {
       "width": 1440,
       "height": 900,
-      "blur": "data:image/webp;base64,UklGRkYAAABXRUJQVlA4IDoAAADQAQCdASoQAAoAAsBMJaQAAud7aYA8QAD++kGJBpa3SPpoLTeJyFanG0QoWJp0e7+sEnLc4qJLu0AA"
+      "blur": "data:image/webp;base64,UklGRkIAAABXRUJQVlA4IDYAAACwAQCdASoQAAoAAsBMJaQAAud7aLUgAP76Qk6htAtqLaAuCtpDbGQdqc7gvp3UU+a0+amoAAA="
     },
     "dark": {
       "width": 1440,
       "height": 900,
-      "blur": "data:image/webp;base64,UklGRkwAAABXRUJQVlA4IEAAAADQAQCdASoQAAoAAsBMJaQAAueHMh2ZAAD++vB+EzrnXtpMzryNCoqKe7beWJIa0TA0n72bTYl6DCDfLyVmAAAA"
+      "blur": "data:image/webp;base64,UklGRkYAAABXRUJQVlA4IDoAAACwAQCdASoQAAoAAsBMJaQAAudGLuwAAP76Zhcnh01tHuYPhvWA32tYC/BeE7lzwz3Ytu9uVlCDgAAA"
     }
   }
 }

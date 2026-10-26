@@ -4,9 +4,9 @@ import { useEffect, useRef, useState } from 'react';
 import { StatusPill } from '@/components/status';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { BackupsTab } from '@/features/backups/backups-tab';
 import { compactAge } from '@/features/canvas/format';
 import { ServiceGlyph } from '@/features/canvas/service-glyph';
+import { ServiceControls } from '@/features/service-panel/service-controls';
 import { ConsoleTab } from '@/features/sessions/console-tab';
 import { DataTab } from '@/features/sessions/data-tab';
 import { placementLine, StagedChip } from '@/features/canvas/service-node';
@@ -15,7 +15,6 @@ import { ServiceMetrics } from '@/features/metrics/service-metrics';
 import { ServiceLogs } from '@/features/project-logs/service-logs';
 import { SettingsTab } from '@/features/service-settings/settings-tab';
 import { ServiceStagedBar } from '@/features/staged-changes/service-staged-bar';
-import { VariablesTab } from '@/features/variables/variables-tab';
 import { prefersReducedMotion, sharedElement } from '@/lib/motion';
 import { cn } from '@/lib/utils';
 import services from '@/routes/projects/services';
@@ -36,8 +35,8 @@ type Tab = {
  * §9.5): a floating sheet 12 px in from the canvas edges so the
  * canvas visibly continues behind it. Header with the logo (it morphs from
  * the node, shared element `svc-<id>`), name, status and one meta line;
- * tabs Deployments · Variables · Metrics · Logs · Settings (+ Backups for
- * stateful services). Every tab has a URL
+ * tabs Deployments, Metrics, Logs and Settings (+ Console and Data with
+ * their permission; Variables and Backups are settings pages). Every tab has a URL
  * (`/p/{project}/{env}/s/{service}/{tab}`); expanded it covers the canvas.
  */
 export function ServicePanel({
@@ -71,17 +70,13 @@ export function ServicePanel({
             : setPinned((value) => !value);
     const ref = useRef<HTMLElement>(null);
     const route: [string, string, string] = [project, environment, node.id];
-    // Backups: databases and services with volumes (docs/08 §1, docs/14 §2).
-    const hasBackups = node.kind === 'database' || node.volume !== null;
     const tabs: Tab[] = [
         { id: 'deployments', label: 'Deployments' },
-        { id: 'variables', label: 'Variables' },
         { id: 'metrics', label: 'Metrics' },
         { id: 'logs', label: 'Logs' },
         ...(panel.canConsole ? [{ id: 'console', label: 'Console' }] : []),
         ...(panel.canData ? [{ id: 'data', label: 'Data' }] : []),
         { id: 'settings', label: 'Settings' },
-        ...(hasBackups ? [{ id: 'backups', label: 'Backups' }] : []),
     ];
     const placement = placementLine(node);
     const meta = [node.subtitle, placement].filter((part): part is string =>
@@ -197,6 +192,16 @@ export function ServicePanel({
                     </div>
                 </div>
 
+                {panel.controls && (
+                    <ServiceControls
+                        project={project}
+                        environment={environment}
+                        service={node.id}
+                        name={node.name}
+                        controls={panel.controls}
+                    />
+                )}
+
                 {node.removed && (
                     <p className="rounded-lg bg-signal-soft px-3 py-2 type-small text-signal">
                         Removal staged: {node.name} keeps running until the next
@@ -274,13 +279,7 @@ export function ServicePanel({
                                 environment={environment}
                                 service={node.id}
                                 database={node.kind === 'database'}
-                            />
-                        )}
-                        {panel.tab === 'variables' && (
-                            <VariablesTab
-                                project={project}
-                                environment={environment}
-                                service={node.id}
+                                controls={panel.controls}
                             />
                         )}
                         {panel.tab === 'metrics' && (
@@ -314,13 +313,6 @@ export function ServicePanel({
                                 service={node.id}
                             />
                         )}
-                        {panel.tab === 'backups' && hasBackups && (
-                            <BackupsTab
-                                project={project}
-                                environment={environment}
-                                service={node.id}
-                            />
-                        )}
                         {panel.tab === 'settings' && panel.settings && (
                             <SettingsTab
                                 key={`${node.id}-${environment}`}
@@ -336,7 +328,7 @@ export function ServicePanel({
                         )}
                     </div>
                 </div>
-                {(panel.tab === 'variables' || panel.tab === 'settings') && (
+                {panel.tab === 'settings' && (
                     <ServiceStagedBar
                         project={project}
                         environment={environment}

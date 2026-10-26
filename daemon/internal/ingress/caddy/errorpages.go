@@ -43,6 +43,14 @@ var (
 		plain: "launchroom: this app has no healthy instance right now. Try again in a moment.\n",
 		host:  true, refresh: true,
 	}
+	// A service stopped in launchroom (RouteSpec.stopped, D68). Not
+	// transient: it stays stopped until someone starts it again.
+	pageStopped = errorPage{
+		title: "This app is stopped",
+		text:  "Its owner stopped it in launchroom. It comes back when they start it again.",
+		plain: "launchroom: this app is stopped. It comes back when its owner starts it again.\n",
+		host:  true,
+	}
 	pageRefusedAuth = errorPage{
 		title: "This preview is not served",
 		text:  "The server won't serve it because its access protection is misconfigured.",

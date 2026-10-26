@@ -222,7 +222,7 @@ export function Blockers({ blockers }: { blockers: string[] }) {
                 ))}
             </ul>
             <p className="type-small text-muted-foreground">
-                Fix them in the service’s Variables tab, then deploy.
+                Fix them in the service’s settings under Variables, then deploy.
             </p>
         </div>
     );

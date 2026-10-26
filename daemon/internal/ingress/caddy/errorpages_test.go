@@ -14,6 +14,7 @@ var allPages = map[string]errorPage{
 	"not-found": pageNotFound, "unavailable": pageUnavailable, "refused-auth": pageRefusedAuth,
 	"refused-client-auth": pageRefusedClientAuth, "client-cert-required": pageClientCertRequired,
 	"app-error": pageAppError, "dashboard-error": pageDashboardError, "upstream-error": pageUpstreamError,
+	"stopped": pageStopped,
 }
 
 var rePlaceholder = regexp.MustCompile(`\{[a-z_]+\.[a-z_.]+\}`)

@@ -9,6 +9,7 @@ use App\Enums\Transfers\ImportRunStatus;
 use App\Enums\Transfers\ImportSourceKind;
 use App\Models\ServiceInstance;
 use App\Models\Transfers\DataImportRun;
+use App\Services\Backups\HoldBlocker;
 use App\Services\Backups\RestoreHolds;
 use App\Services\Transfers\ImportHolds;
 use Spatie\LaravelData\Data;
@@ -44,12 +45,15 @@ final class ImportRunData extends Data
         public ?string $transferId = null,
         /** While holding: the services it waits for, still running. */
         public array $waitingFor = [],
+        /** While holding: why they still run, when it's their server (offline, busy with an earlier change). */
+        public ?string $waitingOn = null,
     ) {}
 
     public static function fromRun(DataImportRun $run): self
     {
         $run->loadMissing(['volume', 'daemonTask', 'transfer']);
         $task = $run->daemonTask;
+        $running = $run->status === ImportRunStatus::Holding ? RestoreHolds::running(ImportHolds::heldBy($run)) : [];
 
         return new self(
             $run->public_id,
@@ -68,17 +72,17 @@ final class ImportRunData extends Data
             $run->finished_at?->toIso8601String(),
             $run->safety_backup_run_id !== null,
             $run->transfer?->public_id,
-            $run->status === ImportRunStatus::Holding ? self::waitingFor($run) : [],
+            self::names($running),
+            HoldBlocker::describe($running),
         );
     }
 
     /**
+     * @param  list<int>  $running
      * @return list<string>
      */
-    private static function waitingFor(DataImportRun $run): array
+    private static function names(array $running): array
     {
-        $running = RestoreHolds::running(ImportHolds::heldBy($run));
-
         /** @var list<string> $names */
         $names = $running === [] ? [] : ServiceInstance::query()->whereKey($running)->with('service')->get()
             ->map(static fn (ServiceInstance $instance): string => $instance->service->name)

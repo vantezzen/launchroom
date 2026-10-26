@@ -9,9 +9,10 @@ use App\Enums\ServiceKind;
 use Spatie\LaravelData\Data;
 
 /**
- * A service in one environment. `status`: the latest deployment's status
- * while it runs, else `live` when a deployment serves, else the latest
- * deployment's outcome, else `not_deployed`.
+ * A service in one environment. `status`: `stopped` while it is stopped
+ * (D68), else the latest deployment's status while it runs, else `live`
+ * when a deployment serves, else the latest deployment's outcome, else
+ * `not_deployed`.
  */
 final class ServiceResource extends Data
 {
@@ -32,5 +33,7 @@ final class ServiceResource extends Data
         public string $dashboardUrl,
         /** Volumes of this service (for `launchroom volume export`, docs/14 §12.7). */
         public array $volumes = [],
+        /** When it was stopped (null: not stopped). */
+        public ?string $stoppedAt = null,
     ) {}
 }

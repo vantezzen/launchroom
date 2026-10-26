@@ -290,7 +290,7 @@ SHOTS = {
     "console": (f"{P3}/s/{P3_NODE}/console", 1440, 1000, 1, False, a_console),
     "cron": (f"{JOBS}/s/{JOBS_CRON}/settings/schedule", 1440, 900, 1, False, None),
     "dashboard-domain": ("/settings/dashboard-domain", 1440, 900, 1, True, None),
-    "database-backups": (f"{PITR}/s/{PITR_DB}/backups", 1440, 1000, 2, False, None),
+    "database-backups": (f"{PITR}/s/{PITR_DB}/settings/backups", 1440, 1000, 2, False, None),
     "database-browse": (f"{CH}/s/{CH_SVC}/data", 1440, 1000, 1, False, a_data_browse),
     "database-data": (f"{CH}/s/{CH_SVC}/data", 1440, 1000, 1, False, a_data_query),
     "deployment": (f"{SHOP}/d/dpl_01M59SM3EQGV7HDQX9E43ZVRNB", 1440, 900, 2, False, None),
@@ -304,12 +304,12 @@ SHOTS = {
     "metrics": (f"{SHOP}/metrics", 1440, 900, 1, True, a_metrics),
     "mtls": ("/settings/instance-security", 1440, 900, 1, True, None),
     "onboarding": ("/onboarding", 1440, 900, 1, False, None),
-    "pitr": (f"{PITR}/s/{PITR_DB}/backups", 1440, 1000, 2, False, a_pitr),
+    "pitr": (f"{PITR}/s/{PITR_DB}/settings/backups", 1440, 1000, 2, False, a_pitr),
     "previews": ("/p/prj_01M5AVNP34QRTV484YQ4JK0MXC/previews", 1440, 900, 1, False, None),
     "private-network": ("/settings/network", 1440, 900, 1, True, None),
     "projects": ("/projects", 1440, 1211, 1, False, None),
     "promote": (f"/p/{SHOP_PRJ}/promote?from={SHOP_STG}&to={SHOP_PRD}", 1440, 900, 1, False, None),
-    "restore-dialog": (f"{PITR}/s/{PITR_DB}/backups", 1440, 1000, 2, False, a_restore_dialog),
+    "restore-dialog": (f"{PITR}/s/{PITR_DB}/settings/backups", 1440, 1000, 2, False, a_restore_dialog),
     "scaling": (f"{SHOP}/s/{SHOP_WEB}/settings/scaling", 1440, 960, 1, False, a_scaling),
     "server-detail": (f"/servers/{SRV_CP}", 1440, 900, 1, True, None),
     "server-network": (f"/servers/{SRV_CP}/network", 1440, 900, 1, True, None),
@@ -325,7 +325,7 @@ SHOTS = {
     "templates": ("/projects/new/templates", 1440, 960, 1, False, None),
     "two-factor": ("/settings/security", 1440, 900, 1, True, None),
     "updates": ("/settings/updates", 1440, 900, 1, True, None),
-    "variables": (f"{ACME}/s/{ACME_WEB}/variables", 1440, 900, 1, False, None),
+    "variables": (f"{ACME}/s/{ACME_WEB}/settings/variables", 1440, 900, 1, False, None),
 }
 
 

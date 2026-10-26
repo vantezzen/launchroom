@@ -21,6 +21,7 @@ use App\Models\ServiceInstance;
 use App\Models\Volume;
 use App\Services\Backups\BackupTasks;
 use App\Services\Backups\DatabaseWorkloads;
+use App\Services\Backups\DataHolds;
 use App\Services\Backups\PointInTimeRecovery;
 use App\Services\Backups\RestoreHolds;
 use Illuminate\Contracts\Database\Query\Builder;
@@ -192,6 +193,7 @@ final readonly class AdvanceRestores
      */
     private function rerender(array $instanceIds): void
     {
+        DataHolds::advanceDeployments($instanceIds);
         $servers = RestoreHolds::serverIds($instanceIds);
 
         if ($servers !== []) {
@@ -236,6 +238,7 @@ final readonly class AdvanceRestores
         $run->transitionTo(RestoreRunStatus::Restoring);
 
         // Holds the service: its workloads leave the server's NodeState.
+        DataHolds::advanceDeployments([$target->id]);
         event(new NodeStateInvalidated([$server->id]));
 
         return true;

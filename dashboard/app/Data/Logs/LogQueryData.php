@@ -12,7 +12,8 @@ use Spatie\LaravelData\Data;
 
 /**
  * Query of the log explorer endpoints: `range` (15m, 1h, 24h, 7d, 30d),
- * `source` (all, runtime, build), an optional `service`, the search `q`
+ * `source` (all; runtime: everything but build output; build: the plan,
+ * build and release output of deployments), an optional `service`, the search `q`
  * (App\Support\Logs\LogSearchQuery) and the live cursor `after` (the last
  * chunk id seen).
  */

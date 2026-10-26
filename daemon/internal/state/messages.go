@@ -498,6 +498,9 @@ type Report struct {
 	// WalArchives is the WAL shipping state of every workload with a
 	// walArchive (point-in-time recovery); omitted when there is none.
 	WalArchives []WalArchiveStatus `json:"walArchives,omitzero" jsonschema:"nullable,maxItems=256"`
+	// Events are container lifecycle events not delivered yet (D68), oldest
+	// first; omitted when there are none.
+	Events []WorkloadEvent `json:"events,omitzero" jsonschema:"nullable,maxItems=256"`
 }
 
 // Rejection describes a NodeState launchroomd refused (Report.stateRejected).
@@ -554,6 +557,21 @@ type HostStatus struct {
 	// PublicAddresses are where the internet reaches this server: what DNS
 	// records must point at (docs/05 §5). Omitted until known.
 	PublicAddresses *PublicAddresses `json:"publicAddresses,omitzero" jsonschema:"nullable"`
+	// Registry is whether this server reaches the launchroom registry it
+	// pulls images from (D68): checked every few minutes, so a server that
+	// can't download images shows before a deploy hangs on it.
+	Registry *RegistryReach `json:"registry,omitzero" jsonschema:"nullable"`
+}
+
+// RegistryReach is the latest check of the image registry from this server
+// (GET /v2/ through its local registry address; any HTTP answer counts).
+type RegistryReach struct {
+	Reachable bool      `json:"reachable"`
+	CheckedAt time.Time `json:"checkedAt"`
+	// LatencyMs is the time to the first answer (reachable only).
+	LatencyMs int `json:"latencyMs,omitzero" jsonschema:"minimum=0"`
+	// Error is why it isn't reachable (secret-free).
+	Error string `json:"error,omitzero" jsonschema:"maxLength=512"`
 }
 
 // PublicAddresses are the server's public addresses as IP echo services see
@@ -615,6 +633,9 @@ type ProbeStatus struct {
 	LastCheckedAt       *time.Time `json:"lastCheckedAt,omitzero" jsonschema:"nullable"`
 	// LastError is the last probe failure (e.g. "connection refused", "HTTP 500").
 	LastError string `json:"lastError,omitzero" jsonschema:"maxLength=1024"`
+	// Attempts counts the checks since the container started, including
+	// those in the start period (D68: "attempt 3" on the Health step).
+	Attempts int `json:"attempts,omitzero" jsonschema:"minimum=0"`
 }
 
 // WorkloadStatus is the observed state of one workload.
@@ -636,6 +657,9 @@ type WorkloadStatus struct {
 	Health *ProbeStatus `json:"health,omitzero" jsonschema:"nullable"`
 	// Pull is the progress of the image pull while the phase is pulling.
 	Pull *PullProgress `json:"pull,omitzero" jsonschema:"nullable"`
+	// Issue is set while the container is clearly misconfigured (crash loop,
+	// port mismatch; D68): the dashboard fails a rollout on it right away.
+	Issue *WorkloadIssue `json:"issue,omitzero" jsonschema:"nullable"`
 }
 
 // PullProgress is an in-flight image pull: compressed layer bytes downloaded
@@ -644,6 +668,10 @@ type PullProgress struct {
 	Stage           PullStage `json:"stage"`
 	DownloadedBytes int64     `json:"downloadedBytes" jsonschema:"minimum=0"`
 	TotalBytes      int64     `json:"totalBytes" jsonschema:"minimum=0"`
+	// UpdatedAt is when the pull last moved (a new stage or more bytes;
+	// D68): a pull that is still "pulling" but hasn't moved for minutes is
+	// stuck, whatever the report's time says.
+	UpdatedAt *time.Time `json:"updatedAt,omitzero" jsonschema:"nullable"`
 }
 
 // Validate checks the report.
@@ -686,6 +714,12 @@ func (r *Report) Validate() error {
 				e.addf(p+".health.consecutiveFailures", "must be >= 0")
 			}
 			checkText(&e, p+".health.lastError", h.LastError, maxProbeErrorLen)
+			if h.Attempts < 0 {
+				e.addf(p+".health.attempts", "must be >= 0")
+			}
+		}
+		if w.Issue != nil {
+			w.Issue.validate(&e, p+".issue")
 		}
 		if pp := w.Pull; pp != nil {
 			e.check(p+".pull.stage", pp.Stage)
@@ -723,6 +757,15 @@ func (r *Report) Validate() error {
 		}
 		if h.Runtime != nil {
 			h.Runtime.validate(&e, "host.runtime")
+		}
+		if r := h.Registry; r != nil {
+			if r.CheckedAt.IsZero() {
+				e.addf("host.registry.checkedAt", "is required")
+			}
+			if r.LatencyMs < 0 {
+				e.addf("host.registry.latencyMs", "must be >= 0")
+			}
+			checkText(&e, "host.registry.error", r.Error, 512)
 		}
 		if h.PublicAddresses != nil {
 			h.PublicAddresses.validate(&e, "host.publicAddresses")
@@ -772,6 +815,10 @@ func (r *Report) Validate() error {
 		walIDs = append(walIDs, r.WalArchives[i].Workload)
 	}
 	unique(&e, "walArchives.workload", walIDs)
+	checkCount(&e, "events", len(r.Events), 0, MaxReportEvents)
+	for i := range r.Events {
+		r.Events[i].validate(&e, idx("events", i))
+	}
 	return e.err()
 }
 

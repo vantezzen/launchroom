@@ -20,10 +20,12 @@ final class DeploymentRefData extends Data
         public ?string $commitMessage,
         public DeploymentStatus $status,
         public string $queuedAt,
+        /** When it finished (went live, failed or was cancelled). */
+        public ?string $finishedAt = null,
     ) {}
 
     public static function of(Deployment $deployment): self
     {
-        return new self($deployment->public_id, $deployment->commit_sha, $deployment->commit_message, $deployment->status, $deployment->queued_at->toIso8601String());
+        return new self($deployment->public_id, $deployment->commit_sha, $deployment->commit_message, $deployment->status, $deployment->queued_at->toIso8601String(), $deployment->finished_at?->toIso8601String());
     }
 }

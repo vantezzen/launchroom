@@ -17,7 +17,7 @@ Backups turn on as soon as you add a destination. Databases and volumes in produ
 | Volumes of app and image services | A snapshot of the volume's files | Daily | 7 daily, 4 weekly |
 | Previews | Not backed up | | |
 
-Schedules, retention and on/off are editable per service in its **Backups** tab, with an hourly option and custom cron expressions. Daily backups start at a staggered time between 01:00 and 07:00 UTC so they don't all run at once. Each server runs at most one heavy backup at a time, at lower CPU and IO priority than your apps.
+Schedules, retention and on/off are editable per service in its **Settings → Backups**, with an hourly option and custom cron expressions. Daily backups start at a staggered time between 01:00 and 07:00 UTC so they don't all run at once. Each server runs at most one heavy backup at a time, at lower CPU and IO priority than your apps.
 
 launchroom doesn't back up what it can recreate:
 
@@ -76,7 +76,7 @@ Keep the kit and the passphrase in different places. The kit opens the backups, 
 
 ## Volume backups
 
-App and image services with volumes (uploads, SQLite files, any other mounted data) are backed up as a snapshot of the volume's files. Each volume has a consistency setting in the Backups tab:
+App and image services with volumes (uploads, SQLite files, any other mounted data) are backed up as a snapshot of the volume's files. Each volume has a consistency setting on the Backups page:
 
 - **Live** (default): files are read while the service runs. Use it for uploads and other files that are written once.
 - **Pauses while reading**: the service's containers are frozen until the volume has been read, then resume. Use it for files written in place, like SQLite.
@@ -108,11 +108,11 @@ Every week launchroom restores the newest backup of each protected database and 
 | ClickHouse | Restore, table and row counts, `CHECK TABLE` |
 | Volumes | Every file read back and its integrity checked |
 
-The Backups tab shows "Last verified" with the result, and **Verify now** runs one immediately. Restores and verification run from the backup alone, so they also confirm that your destination still holds everything.
+The Backups page’shows "Last verified" with the result, and **Verify now** runs one immediately. Restores and verification run from the backup alone, so they also confirm that your destination still holds everything.
 
 ## Download a backup
 
-Select a snapshot in the **Backups** tab and choose **Download** for the decrypted backup in the engine's own format: a `pg_dump -Fc` file, gzipped SQL for MySQL, a `mongodump` archive, ClickHouse's backup zip, a Redis or Valkey RDB file, or a `.tar.gz` of a volume. **Download now** gives you the current data without making a backup first. Downloads need the Owner or Admin role, and each link works once. See [Import and export](/docs/databases/import-and-export#download).
+Select a snapshot in **Settings → Backups** and choose **Download** for the decrypted backup in the engine's own format: a `pg_dump -Fc` file, gzipped SQL for MySQL, a `mongodump` archive, ClickHouse's backup zip, a Redis or Valkey RDB file, or a `.tar.gz` of a volume. **Download now** gives you the current data without making a backup first. Downloads need the Owner or Admin role, and each link works once. See [Import and export](/docs/databases/import-and-export#download).
 
 ## Retention and maintenance
 
@@ -120,7 +120,7 @@ Each day launchroom forgets snapshots outside the retention policy and prunes th
 
 ## Status and alerts
 
-Every database node on the canvas shows when it was last backed up, with a warning when the backup is stale or failing. The Backups tab also shows a trend of recent runs (sizes, how many succeeded, the usual duration) and the snapshot list.
+Every database node on the canvas shows when it was last backed up, with a warning when the backup is stale or failing. The Backups page also shows a trend of recent runs (sizes, how many succeeded, the usual duration) and the snapshot list.
 
 The **A backup fails** [alert rule](/docs/observability/alerts) fires when:
 

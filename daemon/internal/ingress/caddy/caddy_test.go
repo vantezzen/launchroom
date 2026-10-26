@@ -196,6 +196,25 @@ func TestRenderProtected(t *testing.T) {
 	}
 }
 
+// A stopped service's route answers with the stopped page and proxies
+// nothing, also when it is protected (D68).
+func TestRenderStopped(t *testing.T) {
+	r := Route{Spec: state.RouteSpec{
+		ID: "rt_01J9Z8X7W6V5T4S3R2Q1P0N9NG", Hosts: []state.Hostname{"shop.example.com"}, TLS: state.TLSACME, Stopped: true,
+		Protection: &state.RouteProtection{ForwardAuth: state.ForwardAuth{URL: "http://dashboard:8000/auth/preview"}},
+	}}
+	cfg, err := Render([]Route{r}, renderOpts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(cfg, []byte("This app is stopped")) || !bytes.Contains(cfg, []byte(`"status_code": 503`)) {
+		t.Errorf("stopped page missing:\n%s", cfg)
+	}
+	if bytes.Contains(cfg, []byte("reverse_proxy")) || bytes.Contains(cfg, []byte("forward_auth")) {
+		t.Error("a stopped route must not proxy or ask the dashboard")
+	}
+}
+
 func TestRenderRejects(t *testing.T) {
 	if _, err := Render(nil, Options{AdminListen: "0.0.0.0:2019", AskURL: "x"}); err == nil {
 		t.Error("public admin accepted")

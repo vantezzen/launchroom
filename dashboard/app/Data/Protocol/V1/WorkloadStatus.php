@@ -35,6 +35,8 @@ final class WorkloadStatus extends Data
         public array|null|Optional $detectedPorts = new Optional,
         public ProbeStatus|null|Optional $health = new Optional,
         public PullProgress|null|Optional $pull = new Optional,
+        /** Clearly misconfigured (D68): fails an in-flight deployment right away. */
+        public WorkloadIssue|null|Optional $issue = new Optional,
     ) {}
 
     /**

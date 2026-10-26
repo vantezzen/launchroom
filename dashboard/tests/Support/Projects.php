@@ -107,9 +107,11 @@ final class Projects
      *
      * @param  array<string, string>  $phases  workload id => phase
      * @param  array<string, string>  $messages  workload id => message
-     * @param  array<string, array{stage: string, downloadedBytes: int, totalBytes: int}>  $pulls  workload id => pull progress
+     * @param  array<string, array{stage: string, downloadedBytes: int, totalBytes: int, updatedAt?: string}>  $pulls  workload id => pull progress
+     * @param  array<string, array<string, mixed>>  $fields  workload id => more status fields (issue, health, …)
+     * @param  list<array<string, mixed>>  $events  Report.events (D68)
      */
-    public static function report(Server $server, string $phase = 'healthy', array $phases = [], ?int $appliedVersion = null, array $messages = [], array $pulls = []): void
+    public static function report(Server $server, string $phase = 'healthy', array $phases = [], ?int $appliedVersion = null, array $messages = [], array $pulls = [], array $fields = [], array $events = []): void
     {
         $server->refresh();
         self::$seq++;
@@ -122,6 +124,7 @@ final class Projects
             'observedAt' => now()->addMilliseconds(self::$seq)->utc()->format('Y-m-d\TH:i:s.v\Z'),
             'restartCount' => 0,
             'containerId' => str_repeat('c', 64),
+            ...($fields[$placement->workload_id] ?? []),
         ])->values()->all();
 
         resolve(RecordReport::class)->handle($server, Report::validateAndCreate([
@@ -133,6 +136,7 @@ final class Projects
             'full' => true,
             'appliedVersion' => $appliedVersion ?? $server->desired_version,
             'workloads' => $workloads,
+            ...($events === [] ? [] : ['events' => $events]),
         ]));
     }
 

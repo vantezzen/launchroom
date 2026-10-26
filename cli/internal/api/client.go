@@ -343,6 +343,20 @@ func (c *Client) CreateDeployment(ctx context.Context, envID string, body Deploy
 	return d, c.do(ctx, request{method: http.MethodPost, path: "/environments/" + seg(envID) + "/deployments", body: body, idempotent: true}, &d, nil)
 }
 
+// DeployService deploys the latest version of a service: the head of the
+// branch it tracks, or its image tag resolved again (D68).
+func (c *Client) DeployService(ctx context.Context, envID, serviceID string) (Deployment, error) {
+	var d Deployment
+	return d, c.do(ctx, request{method: http.MethodPost, path: "/environments/" + seg(envID) + "/services/" + seg(serviceID) + "/deploy", idempotent: true}, &d, nil)
+}
+
+// ServiceAction is POST /environments/{env}/services/{svc}/{stop|start|restart}.
+// processes: the app's workers and crons follow it.
+func (c *Client) ServiceAction(ctx context.Context, envID, serviceID, action string, processes bool) (ServiceActionResult, error) {
+	var r ServiceActionResult
+	return r, c.do(ctx, request{method: http.MethodPost, path: "/environments/" + seg(envID) + "/services/" + seg(serviceID) + "/" + action, body: map[string]any{"processes": processes}, idempotent: true}, &r, nil)
+}
+
 // DeployStaged applies the environment's staged changes.
 func (c *Client) DeployStaged(ctx context.Context, envID, message string) (DeployResult, error) {
 	body := map[string]any{"stage": false}

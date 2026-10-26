@@ -11,7 +11,7 @@ launchroom deploys from GitHub, GitLab (gitlab.com and self-managed), Gitea and 
 
 <Screenshot id="git-providers" />
 
-Owners and admins connect providers. Everyone on the team sees the connections and their health: "Receiving webhooks", "Checking for pushes every minute" or "Needs you to sign in again".
+Owners and admins connect providers. Everyone on the team sees the connections and their health: "Pushes arrive right away", "A push didn't arrive by webhook: checking every minute", "Checking for pushes every minute" or "Needs you to sign in again".
 
 ## What each provider supports
 
@@ -24,6 +24,8 @@ Owners and admins connect providers. Everyone on the team sees the connections a
 | Previews | One PR comment with a table of services | One merge request note | One PR comment | Not available |
 
 When a webhook can't reach your dashboard, launchroom checks tracked branches for new commits every minute instead. Pushes still deploy, with a delay. Pull request previews need webhooks.
+
+While webhooks work, launchroom still checks tracked branches every 5 minutes. If it finds a commit that no webhook delivered within 2 minutes, the connection shows that a push didn't arrive and branches are checked every minute until the next webhook arrives. A repository without pushes for hours stays healthy.
 
 ## GitHub
 

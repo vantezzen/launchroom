@@ -104,7 +104,7 @@ export type SettingsShellProps<Id extends string> = {
     onNavigate?: (page: Id | null) => void;
     /** The search index (`buildSettingsIndex`). */
     index: SettingResult[];
-    /** A chosen result whose target isn't a page here (the Variables tab). */
+    /** A chosen result whose target isn't a page here. */
     onSelectOther?: (result: SettingResult) => void;
     /** What "No setting matches" suggests instead. */
     emptyHint?: string;

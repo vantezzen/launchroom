@@ -28,7 +28,21 @@ type DeployForm = {
     timeout: number;
     failures: number;
     drain: number;
+    rolloutTimeout: number;
+    /** null: derived from the health check (autoHealthTimeout). */
+    healthTimeout: number | null;
 };
+
+/** The Roll out step's default timeout (DeploySettings::ROLLOUT_TIMEOUT_DEFAULT). */
+const ROLLOUT_TIMEOUT_DEFAULT = 600;
+
+/** The health check's own bound (DeploySettings::healthTimeout()). */
+function autoHealthTimeout(form: DeployForm): number {
+    return Math.max(
+        90,
+        form.startPeriod + (form.interval + form.timeout) * form.failures + 60,
+    );
+}
 
 function fromSettings(deploy: App.Data.Services.DeploySettings): DeployForm {
     return {
@@ -46,6 +60,8 @@ function fromSettings(deploy: App.Data.Services.DeploySettings): DeployForm {
         timeout: deploy.healthcheck.timeoutSeconds,
         failures: deploy.healthcheck.failureThreshold,
         drain: deploy.drainSeconds,
+        rolloutTimeout: deploy.rolloutTimeoutSeconds ?? ROLLOUT_TIMEOUT_DEFAULT,
+        healthTimeout: deploy.healthTimeoutSeconds,
     };
 }
 
@@ -155,6 +171,11 @@ export function DeploySection({ context }: { context: SettingsContext }) {
                     failureThreshold: values.failures,
                 },
                 drainSeconds: values.drain,
+                rolloutTimeoutSeconds:
+                    values.rolloutTimeout === ROLLOUT_TIMEOUT_DEFAULT
+                        ? null
+                        : values.rolloutTimeout,
+                healthTimeoutSeconds: values.healthTimeout,
             },
         }));
         form.patch(services.settings(context.route).url, {
@@ -402,6 +423,52 @@ export function DeploySection({ context }: { context: SettingsContext }) {
                             disabled={!canUpdate}
                             onChange={(value) => form.setData('drain', value)}
                             helper={error('drainSeconds')}
+                        />
+                    </SettingsRow>
+                    <SettingsRow
+                        setting="rollout-timeout"
+                        label="Start timeout"
+                        description="How long the new version may take to download and start before the deploy fails."
+                    >
+                        <Stepper
+                            label="Start timeout"
+                            className="[&>label]:sr-only"
+                            unit="s"
+                            min={60}
+                            max={3600}
+                            step={60}
+                            value={data.rolloutTimeout}
+                            disabled={!canUpdate}
+                            onChange={(value) =>
+                                form.setData('rolloutTimeout', value)
+                            }
+                            helper={error('rolloutTimeoutSeconds')}
+                        />
+                    </SettingsRow>
+                    <SettingsRow
+                        setting="health-timeout"
+                        label="Health check timeout"
+                        description={
+                            data.healthTimeout === null
+                                ? 'How long a new container may take to become healthy. Follows the health check settings until you change it.'
+                                : 'How long a new container may take to become healthy before the deploy fails.'
+                        }
+                    >
+                        <Stepper
+                            label="Health check timeout"
+                            className="[&>label]:sr-only"
+                            unit="s"
+                            min={30}
+                            max={3600}
+                            step={30}
+                            value={
+                                data.healthTimeout ?? autoHealthTimeout(data)
+                            }
+                            disabled={!canUpdate}
+                            onChange={(value) =>
+                                form.setData('healthTimeout', value)
+                            }
+                            helper={error('healthTimeoutSeconds')}
                         />
                     </SettingsRow>
                 </SettingsCard>

@@ -9,7 +9,7 @@ Restoring a database takes a few clicks. By default the restore goes next to the
 
 ## Restore a database
 
-Open the database's **Backups** tab and pick a snapshot from the list. Each snapshot shows its time, size and the reason it was taken (scheduled, before a deploy, before a delete and so on). For PostgreSQL with [point-in-time recovery](/docs/databases/point-in-time-recovery), you can pick any second instead. Then choose how to restore.
+Open the database's **Settings → Backups** and pick a snapshot from the list. Each snapshot shows its time, size and the reason it was taken (scheduled, before a deploy, before a delete and so on). For PostgreSQL with [point-in-time recovery](/docs/databases/point-in-time-recovery), you can pick any second instead. Then choose how to restore.
 
 ### As a new service
 
@@ -19,7 +19,7 @@ The copy has its own generated credentials. Inspect it in the [Data tab](/docs/o
 
 ### Swap it in
 
-When the copy looks right, choose **Swap in…** next to the finished restore on the original's Backups tab and type the original's name. In that environment:
+When the copy looks right, choose **Swap in…** next to the finished restore on the original’s Backups page and type the original's name. In that environment:
 
 - every service connected to the original gets the same connection to the copy, so its `DATABASE_URL` and other injected variables now point at the copy
 - the original's own connections and its domains move to the copy
@@ -46,7 +46,7 @@ Redis and Valkey databases are backed up and verified, but restoring them from t
 
 ## Restore a volume
 
-App and image services with volumes have a Backups tab too. Their snapshots show the volume's mount path.
+App and image services with volumes have a Backups page in their settings too. Their snapshots show the volume's mount path.
 
 - **As a new service** adds a copy of the service (same source, settings, variables and volume paths) to the environment, deploys it, then replaces its empty volume with the snapshot.
 - **Into this service** takes a safety snapshot, stops the service while its volume is replaced and starts it again. Files that weren't in the snapshot are removed, and changed ones go back to their saved version.

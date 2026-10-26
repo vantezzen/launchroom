@@ -22,6 +22,7 @@ final class Report extends Data
      * @param  list<WorkloadStatus>  $workloads
      * @param  list<VolumeDeletionResult>|null|Optional  $volumeDeletions
      * @param  array<string, mixed>|null|Optional  $metrics
+     * @param  list<WorkloadEvent>|null|Optional  $events
      */
     public function __construct(
         #[In(['launchroom.vantezzen.io/v1'])]
@@ -50,6 +51,8 @@ final class Report extends Data
          * @var list<array<string, mixed>>|null|Optional
          */
         public array|null|Optional $walArchives = new Optional,
+        /** Container lifecycle events (D68), recorded by App\Actions\Servers\RecordWorkloadEvents. */
+        public array|null|Optional $events = new Optional,
     ) {}
 
     /**
@@ -71,6 +74,7 @@ final class Report extends Data
             // Web firewall samples of edges (docs/03 §13.4), checked by App\Support\Security\WafSamples.
             'metrics.waf' => ['sometimes', 'array', 'max:1024'],
             'walArchives' => ['sometimes', 'nullable', 'array', 'max:256'],
+            'events' => ['sometimes', 'nullable', 'array', 'max:256'],
             'walArchives.*.workload' => ['required', 'string', 'regex:/^wl_[0-9A-HJKMNP-TV-Z]{26}$/D'],
             'walArchives.*.state' => ['required', 'string', 'in:active,waiting,failing'],
             'walArchives.*.checkedAt' => ['required', 'string', 'regex:'.self::TIME_PATTERN],

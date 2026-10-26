@@ -116,6 +116,25 @@ test('the service panel is route-backed; Settings carries the settings data', fu
     $this->actingAs($this->viewer)->get(route('projects.services.show', [$this->project, $this->production, $foreign, 'settings']))->assertNotFound();
 });
 
+test('the former Variables tab redirects to its settings page, keeping the add link', function (): void {
+    $base = "/p/{$this->project->public_id}/{$this->production->public_id}/s/{$this->web->public_id}";
+    $page = route('projects.services.section', [$this->project, $this->production, $this->web, 'variables']);
+
+    $this->actingAs($this->viewer)->get("{$base}/variables?add=API_KEY&value=x")
+        ->assertStatus(301)
+        ->assertRedirect("{$page}?add=API_KEY&value=x");
+    $this->actingAs($this->viewer)->get("{$base}?tab=variables")->assertRedirect($page);
+    $this->actingAs($this->viewer)->get("{$base}/deployments?tab=variables&add=X")->assertRedirect("{$page}?add=X");
+
+    $this->actingAs($this->viewer)->get($page)
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page->where('panel.tab', 'settings')->where('panel.section', 'variables'));
+
+    // Not a team member: no redirect that would confirm the service exists.
+    $outsider = memberOf(Team::factory()->create(), TeamRole::Owner);
+    $this->actingAs($outsider)->get("{$base}/variables")->assertNotFound();
+});
+
 test('node positions are saved instantly by members who manage the project', function (): void {
     $url = route('projects.layout', [$this->project, $this->production]);
     $positions = ['positions' => [

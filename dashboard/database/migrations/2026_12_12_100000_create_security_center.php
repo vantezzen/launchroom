@@ -18,8 +18,8 @@ use Illuminate\Support\Facades\Schema;
  *   one row per source with its on/off switch);
  * - findings per service instance and advisory group, investigations with
  *   their encrypted container inspections;
- * - the web firewall: per-instance mode and paranoia (existing instances
- *   start in Log only, new ones in Block), exclusions, 10-minute and hourly
+ * - the web firewall: per-instance mode and paranoia (every instance
+ *   blocks by default, existing ones too), exclusions, 10-minute and hourly
  *   samples, event samples with the client's /24 or /48 network only, and
  *   each edge's reported firewall state.
  */
@@ -229,14 +229,12 @@ return new class extends Migration
         });
 
         Schema::table('service_instances', function (Blueprint $table): void {
-            // Existing instances start in Log only (docs/22 §6.2) ...
-            $table->string('waf_mode', 8)->default('log');
+            // Every instance blocks by default, existing ones included (docs/22 §6.2).
+            $table->string('waf_mode', 8)->default('block');
             $table->smallInteger('waf_paranoia')->default(1);
             $table->timestampTz('waf_mode_changed_at')->nullable();
         });
 
-        // ... and every instance created from now on in Block.
-        DB::statement("ALTER TABLE service_instances ALTER COLUMN waf_mode SET DEFAULT 'block'");
         DB::statement("ALTER TABLE service_instances ADD CONSTRAINT service_instances_waf_mode_check CHECK (waf_mode IN ('off', 'log', 'block'))");
         DB::statement('ALTER TABLE service_instances ADD CONSTRAINT service_instances_waf_paranoia_check CHECK (waf_paranoia IN (1, 2))');
 

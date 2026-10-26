@@ -35,17 +35,32 @@ test('database nodes carry their backup health; other nodes don’t', function (
             ->where('nodes.0.backup.nextRunAt', fn ($next): bool => is_string($next)));
 });
 
-test('the Backups panel tab exists for databases only', function (): void {
+test('the Backups settings page exists for databases only', function (): void {
     $service = $this->database->service;
+    $page = fn ($target): string => route('projects.services.section', [$this->project, $this->environment, $target, 'backups']);
 
-    $this->actingAs($this->viewer)->get(route('projects.services.show', [$this->project, $this->environment, $service, 'backups']))
+    $this->actingAs($this->viewer)->get($page($service))
         ->assertOk()
-        ->assertInertia(fn ($page) => $page->where('panel.tab', 'backups')->where('panel.settings', null));
+        ->assertInertia(fn ($page) => $page->where('panel.tab', 'settings')->where('panel.section', 'backups'));
 
-    $this->actingAs($this->viewer)->get(route('projects.services.show', [$this->project, $this->environment, $this->web, 'backups']))
+    $this->actingAs($this->viewer)->get($page($this->web))
         ->assertNotFound();
 
     $outsider = memberOf(Team::factory()->create(), TeamRole::Owner);
-    $this->actingAs($outsider)->get(route('projects.services.show', [$this->project, $this->environment, $service, 'backups']))
+    $this->actingAs($outsider)->get($page($service))
         ->assertNotFound();
+});
+
+test('links to the former Backups tab redirect to the settings page with their query', function (): void {
+    $service = $this->database->service;
+    $base = "/p/{$this->project->public_id}/{$this->environment->public_id}/s/{$service->public_id}";
+    $page = route('projects.services.section', [$this->project, $this->environment, $service, 'backups']);
+
+    $this->actingAs($this->viewer)->get("{$base}/backups?before=2026-10-20T10%3A00%3A00Z")
+        ->assertRedirect("{$page}?before=2026-10-20T10%3A00%3A00Z");
+    $this->actingAs($this->viewer)->get("{$base}?tab=backups")
+        ->assertRedirect($page);
+
+    $outsider = memberOf(Team::factory()->create(), TeamRole::Owner);
+    $this->actingAs($outsider)->get("{$base}/backups")->assertNotFound();
 });

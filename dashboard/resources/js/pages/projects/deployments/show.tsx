@@ -69,7 +69,10 @@ function DeploymentPage({
     const [action, setAction] = useState<PendingAction | null>(null);
     const inProgress =
         isInProgress(deployment.status) && deployment.status !== 'ready';
-    const live = inProgress || deployment.status === 'active';
+    // A stopped service's live deployment runs nothing (D68): no runtime lines to follow.
+    const live =
+        inProgress ||
+        (deployment.status === 'active' && deployment.stopped === null);
     const stream = useDeploymentLogs(
         {
             project: project.id,

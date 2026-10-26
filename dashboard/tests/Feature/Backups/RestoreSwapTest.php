@@ -7,6 +7,8 @@ use App\Actions\Backups\StartDatabaseBackup;
 use App\Actions\Backups\StartServiceBackup;
 use App\Actions\Connections\CreateConnection;
 use App\Actions\Deployments\DeployEnvironment;
+use App\Actions\Deployments\RedeployService;
+use App\Actions\Deployments\SweepDeployments;
 use App\Actions\Environments\CreateEnvironment;
 use App\Actions\Environments\DiscardChanges;
 use App\Actions\Servers\RenderNodeState;
@@ -19,6 +21,7 @@ use App\Enums\Backups\RestoreRunStatus;
 use App\Enums\ConnectionMode;
 use App\Enums\ConnectionStyle;
 use App\Enums\DaemonTaskType;
+use App\Enums\DeploymentStatus;
 use App\Enums\DomainKind;
 use App\Enums\TeamRole;
 use App\Models\AuditEvent;
@@ -293,4 +296,37 @@ test('a database without dependents is restored in place right after its safety 
 
     expect(RestoreRun::query()->sole()->daemon_task_id)->not->toBeNull()
         ->and(Service::query()->count())->toBe(1);
+});
+
+test('a restore in place wins over a rollout of a dependent, and a new deployment of it waits for the restore', function (): void {
+    [$team, $server, $postgres, $app, $snapshot] = swapFixture();
+    $owner = memberOf($team, TeamRole::Owner);
+
+    // The app rolls out a new version (its container starts) when the restore begins.
+    $rolling = resolve(RedeployService::class)->handle($app, null, null, AuditActor::system());
+    Projects::report($server, phases: Placement::query()->where('deployment_id', $rolling->id)->pluck('workload_id')->mapWithKeys(static fn (string $id): array => [$id => 'starting'])->all());
+    expect($rolling->refresh()->status)->toBe(DeploymentStatus::HealthChecking);
+
+    $this->actingAs($owner)->postJson(route('backups.services.restore', $postgres), ['snapshot' => $snapshot, 'mode' => 'in_place', 'confirmation' => 'postgres'])
+        ->assertSuccessful();
+    VolumeServices::backedUp($server, str_repeat('c8', 32));
+    resolve(RunBackupTick::class)->handle();
+
+    expect(RestoreRun::query()->sole()->status)->toBe(RestoreRunStatus::Restoring)
+        ->and($rolling->refresh()->status)->toBe(DeploymentStatus::Cancelled)
+        ->and($rolling->failure_message)->toBe('The deployment was cancelled because postgres is being restored. Deploy again once the restore has finished.')
+        ->and(Placement::query()->where('deployment_id', $rolling->id)->exists())->toBeFalse();
+
+    // Deployed while held: queued until the restore ended.
+    $waiting = resolve(RedeployService::class)->handle($app, null, null, AuditActor::system());
+    resolve(SweepDeployments::class)->handle();
+    expect($waiting->refresh()->status)->toBe(DeploymentStatus::Queued);
+
+    Projects::report($server, phases: Placement::query()->where('service_instance_id', $app->id)->pluck('workload_id')->mapWithKeys(static fn (string $id): array => [$id => 'removed'])->all());
+    resolve(RunBackupTick::class)->handle();
+    $task = VolumeServices::lease($server, DaemonTaskType::Restore);
+    VolumeServices::finish($server, $task, 'failed', ['error' => 'pg_restore exited 1']);
+
+    expect(RestoreRun::query()->sole()->status)->toBe(RestoreRunStatus::Failed)
+        ->and($waiting->refresh()->status)->not->toBe(DeploymentStatus::Queued);
 });

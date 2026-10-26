@@ -56,6 +56,9 @@ type Action struct {
 	// workloads; RunDue starts it when it is due).
 	CreateOnly bool
 	Reason     string
+	// Why is the typed reason of a stop or removal, reported as a lifecycle
+	// event (D68).
+	Why state.WorkloadEventReason
 }
 
 // String renders the action for logs.
@@ -222,10 +225,10 @@ func Diff(d Desired, a Actual, now time.Time, grace time.Duration) Plan {
 			}
 			keep := cs[0]
 			for _, extra := range cs[1:] {
-				workloadSteps = append(workloadSteps, removal(extra, s.ID, grace, "duplicate container"))
+				workloadSteps = append(workloadSteps, removal(extra, s.ID, grace, "duplicate container", state.ReasonDuplicate))
 			}
 			if keep.Running && s.DrainUntil != nil && !now.Before(*s.DrainUntil) {
-				drains = append(drains, Action{Kind: StopContainer, Workload: s.ID, ContainerID: keep.ID, Grace: stopGrace(keep, grace), Reason: "drain period over"})
+				drains = append(drains, Action{Kind: StopContainer, Workload: s.ID, ContainerID: keep.ID, Grace: stopGrace(keep, grace), Reason: "drain period over", Why: state.ReasonDrained})
 			}
 			continue
 		}
@@ -245,13 +248,13 @@ func Diff(d Desired, a Actual, now time.Time, grace time.Duration) Plan {
 				pulled[s.Image] = true
 			}
 			for _, c := range stale {
-				workloadSteps = append(workloadSteps, removal(c, s.ID, grace, "spec changed"))
+				workloadSteps = append(workloadSteps, removal(c, s.ID, grace, "spec changed", state.ReasonSpecChanged))
 			}
 			workloadSteps = append(workloadSteps, Action{Kind: CreateWorkload, Workload: s.ID, Image: s.Image, Reason: createReason(len(stale)), CreateOnly: s.Schedule != nil})
 			continue
 		}
 		for _, c := range stale {
-			workloadSteps = append(workloadSteps, removal(c, s.ID, grace, "duplicate container"))
+			workloadSteps = append(workloadSteps, removal(c, s.ID, grace, "duplicate container", state.ReasonDuplicate))
 		}
 		if s.Schedule == nil && needsStart(*keep, s.Restart) {
 			workloadSteps = append(workloadSteps, Action{Kind: StartContainer, Workload: s.ID, ContainerID: keep.ID, Reason: "not running (" + keep.State + ")"})
@@ -261,7 +264,7 @@ func Diff(d Desired, a Actual, now time.Time, grace time.Duration) Plan {
 			// restart policy at boot) and runs it without the published
 			// port; a restart does not bind it either (Docker 29), so the
 			// container is recreated.
-			workloadSteps = append(workloadSteps, removal(*keep, s.ID, grace, "published port "+w.MeshBinding.String()+" not bound"),
+			workloadSteps = append(workloadSteps, removal(*keep, s.ID, grace, "published port "+w.MeshBinding.String()+" not bound", state.ReasonPortNotBound),
 				Action{Kind: CreateWorkload, Workload: s.ID, Image: s.Image, Reason: "recreate: published port not bound"})
 		}
 	}
@@ -279,22 +282,26 @@ func Diff(d Desired, a Actual, now time.Time, grace time.Duration) Plan {
 			continue
 		}
 		for _, c := range byWorkload[id] {
-			rm := removal(c, id, grace, "no longer desired")
+			rm := removal(c, id, grace, "no longer desired", state.ReasonNotDesired)
 			rm.Undesired = true
 			removals = append(removals, rm)
 		}
 	}
 
-	p.Actions = slices.Concat(creates, pulls, workloadSteps, drains, removals, netRemovals)
+	// Containers no longer desired go right after networks and volumes are
+	// created, before pulls and creates: a service held for an import or a
+	// restore (docs/14 §12.5) stops as soon as this server applies the
+	// state, not after a slow pull for another workload.
+	p.Actions = slices.Concat(creates, removals, pulls, workloadSteps, drains, netRemovals)
 	return p
 }
 
-func removal(c docker.Container, id state.WorkloadID, grace time.Duration, reason string) Action {
+func removal(c docker.Container, id state.WorkloadID, grace time.Duration, reason string, why state.WorkloadEventReason) Action {
 	g := stopGrace(c, grace)
 	if !c.Running {
 		g = 0
 	}
-	return Action{Kind: RemoveContainer, Workload: id, ContainerID: c.ID, Grace: g, Reason: reason}
+	return Action{Kind: RemoveContainer, Workload: id, ContainerID: c.ID, Grace: g, Reason: reason, Why: why}
 }
 
 // stopGrace is how long a stop waits for the container: the reconciler's

@@ -502,10 +502,56 @@ func TestReconcileReportsPullProgress(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := state.PullProgress{Stage: state.PullDownloading, DownloadedBytes: 412_000_000, TotalBytes: 690_000_000}
-	if during.Phase != state.PhasePulling || during.Pull == nil || *during.Pull != want {
+	if during.Phase != state.PhasePulling || during.Pull == nil || during.Pull.UpdatedAt == nil || !during.Pull.UpdatedAt.Equal(t0) {
 		t.Fatalf("during the pull: %+v (pull %+v)", during, during.Pull)
+	}
+	if got := *during.Pull; got.Stage != want.Stage || got.DownloadedBytes != want.DownloadedBytes || got.TotalBytes != want.TotalBytes {
+		t.Fatalf("during the pull: %+v", got)
 	}
 	if st := phaseOf(h.r, wlA); st.Pull != nil {
 		t.Fatalf("after the pull: %+v", st.Pull)
+	}
+}
+
+// A pull the running pass waits for is abandoned once a newer desired state
+// no longer has a workload with its image (a deployment cancelled or a
+// service held for an import, docs/14 §12.5): the server applies the new
+// state instead of waiting for the pull to end. A pull the new state still
+// needs goes on.
+func TestAbandonPullsWhenNoDesiredWorkloadNeedsTheImage(t *testing.T) {
+	h := newHarness(t)
+	w := h.workload(t, wlA, nil)
+	first, still, without := h.nodeState(t, 1, w), h.nodeState(t, 2, w), h.nodeState(t, 3)
+	started := make(chan struct{})
+	var cause error
+	h.d.PullErr[string(imgA)] = context.Canceled
+	h.d.OnPull = func(ctx context.Context, _ string) {
+		close(started)
+		<-ctx.Done()
+		cause = context.Cause(ctx)
+	}
+	done := make(chan error, 1)
+	go func() { done <- h.r.Reconcile(t.Context(), first) }()
+	<-started
+
+	if h.r.AbandonPulls(still) {
+		t.Fatal("abandoned a pull the new state still needs")
+	}
+	if !h.r.AbandonPulls(without) {
+		t.Fatal("the pull was not abandoned")
+	}
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("the pass hid the abandoned pull")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the pass kept waiting for the pull")
+	}
+	if !errors.Is(cause, errPullAbandoned) {
+		t.Fatalf("cause %v", cause)
+	}
+	if h.r.AbandonPulls(without) {
+		t.Fatal("abandoned a pull after the pass ended")
 	}
 }

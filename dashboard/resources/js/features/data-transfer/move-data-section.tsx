@@ -88,7 +88,7 @@ function outcome(run: ImportRun): (string | null)[] {
 /**
  * Move data (docs/14 §12.6): import a dump, a connection URL or an archive,
  * and download the data as it is now or from a backup. Mounted by the
- * Backups tab; fetches its own data and polls while something runs.
+ * Backups settings page; fetches its own data and polls while something runs.
  */
 export function MoveDataSection({
     serviceInstanceId,
@@ -124,7 +124,7 @@ export function MoveDataSection({
             );
             setFailures(0);
         } catch {
-            // The Backups tab around it shows connection problems.
+            // The Backups page around it shows connection problems.
             if (!controller.signal.aborted) {
                 setFailures((count) => count + 1);
             }
@@ -262,7 +262,8 @@ export function MoveDataSection({
 
     return (
         <Section
-            level={3}
+            level={4}
+            data-setting="move-data"
             title="Move data"
             description={
                 volumes
@@ -517,6 +518,7 @@ function ImportRow({
                     aria-live="polite"
                 >
                     Waiting for {listNames(run.waitingFor)} to stop
+                    {run.waitingOn !== null && <>. {run.waitingOn}</>}
                 </p>
             )}
             {run.status === 'importing' && run.step !== null && (

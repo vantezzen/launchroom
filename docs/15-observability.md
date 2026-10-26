@@ -7,6 +7,7 @@ Builds on the usage metrics (per-minute host and workload samples, rollups 1/10/
 3. **Alerts and notifications**: built-in rules plus a few thresholds, email / Slack / Discord / signed webhooks, one `RaiseAlert` / `ResolveAlert` API other parts of launchroom call (§3).
 4. **Audit log forwarding** to webhooks, syslog and S3 (§4).
 5. **Request analytics**: requests per hour by status class, top paths, referrer hosts and client classes per service (§5).
+6. **Container lifecycle events**: what happened to each container, as management lines in the deployment log and the Logs tab (§6).
 
 Principles (design-system §1, §9): a chart appears only when it has data; one signal colour per small chart; deltas are coloured only when the direction has a clear meaning; alerts are few, specific and calm ("web failed to deploy. production still serves 3b7d5e1."), and every alert that opens also closes.
 
@@ -263,3 +264,24 @@ Validation on both sides: `RequestPath` is `/` plus printable ASCII without `?` 
 - **Project → Analytics** (`/p/{project}/{env}/analytics`, page `projects/analytics`, tab after Metrics; data from `GET /p/{project}/-/analytics?environment=&service=&range=`): header with a service select (all services or one; `?service=` preselects) and the range select; three stat tiles (requests with the change against the previous period, server errors as a 5xx share with a coloured delta, client errors as a 4xx share); **Requests per hour** (per day for a month) as `StackedBars` by status class: 2xx signal, 3xx grey, 4xx amber, 5xx red and hatched, legend with totals, readout per class and a table view; **Top paths** (path, requests and share as a bar behind the row, 4xx and 5xx share; "Other paths" last); **Referrers** and **Clients** with shares; **Servers** when more than one edge served traffic; **Services** when all services are shown and more than one had traffic (selecting one filters). Empty: "No requests in this range yet…"; paths not there yet: "…appear here within 10 minutes", or "Update <server> to see the most requested paths" for older edges.
 - **Projects list**: each project card shows production's requests per hour of the last 24 hours as a sparkline with the total ("1.2K req · 24h"), only when there was traffic.
 - **API** (ability `read`): `GET /api/v1/analytics?range=` returns the team overview (`TeamAnalyticsData`) of the token's team; `GET /api/v1/environments/{environment}/analytics?range=` and `GET /api/v1/environments/{environment}/services/{service}/analytics?range=` return `AnalyticsData` (tag "Analytics" in the OpenAPI document).
+
+## 6. Container lifecycle events (D68)
+
+What happens to a workload's container is reported by launchroomd as typed events and worded by the dashboard, so the deployment log and the Logs tab say when a container started, crashed, failed its health check or was stopped, and why ([04](04-build-and-deploy.md) §8.1).
+
+### 6.1 Collection
+
+- **Sources** (`internal/reconcile/lifecycle.go`): the reconciler's own actions (`created`, `create_failed`, `stopped` and `removed` with a typed reason: `drained`, `not_desired`, `spec_changed`, `duplicate`, `port_not_bound`) and the difference between two inspections of the same container, with Docker's own times (`started`, `exited`, `restarted` with Docker's restart count). Health check transitions (`health_passing`, `health_failing` with the error and the failures in a row) come from the probe monitor.
+- **Exits** carry the exit code (only while the container is down: Docker resets it when it restarts the container), whether it was killed for memory, and the last 30 output lines (2 KiB each).
+- **Timing**: every reconcile pass, plus a look every 2 s at starting workloads (not yet healthy for 30 s, at most 15 minutes after their start), so a crash at start is reported within seconds. Containers that started or exited before launchroomd started are not reported again.
+- **Delivery**: `Report.events` (≤ 256 per report, ≤ 1,024 buffered, oldest dropped), repeated until a report carrying them was accepted; `seq` is unique per launchroomd (Unix µs), so the dashboard stores each event once. No Docker event stream: dockerd-guard would need a streaming route filtered per event, and events lost while launchroomd restarts would have to be rebuilt from the state anyway.
+- **Issues** (`WorkloadStatus.issue`): `crash_loop`, `loopback_only`, `wrong_port`, used to fail rollouts at once.
+- **Startup output**: a starting workload's output is shipped from its first line (step `startup`, at most 1,000 lines, nothing persisted) also when the environment keeps no runtime logs.
+
+### 6.2 Storage and display
+
+- `RecordWorkloadEvents` stores each event as a log chunk of its deployment (`source_kind` deployment, `stream` system, a level per kind) in the step the deployment was in (`rollout`, `health`, `route`; `runtime` once it is live, then with the exit's last lines). Lines are masked like every deployment log line and kept with the deployment (not runtime retention). Startup output goes to the same step (`StoreLogBatch`).
+- Words (`LifecycleLines`): "Container created (replica 1, server-2)", "Container started (replica 1, server-2)", "Container exited with code 1 (replica 1, server-2)", "Out of memory: the container was killed (…). Raise its memory limit in Settings → Scaling.", "Container restarted (attempt 4, …)", "Health check failed: GET / on :8000 → connection refused (3/3, …)", "Health check passed: GET / on :8000 (…)", "Container stopped by launchroom (replaced by deployment dpl_…, …)", "Container removed by launchroom (the service was stopped, …)".
+- A server writes only about what it runs: the workload's placement on it, one just retired (`RetiredWorkloads`, 2 hours, so a failed rollout's last events still land) or the event's deployment with a task or placement there.
+- The Logs tab shows them with the runtime lines (they are not build output). The placement keeps the last exit (`placements.last_exit`) for failure messages, the health check's progress (`placements.probe`) for the Health step and the issue (`placements.issue`).
+- No alert fires for a stopped service (its unhealthy rule skips stopped instances).

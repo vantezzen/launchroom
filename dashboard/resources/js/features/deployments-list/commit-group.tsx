@@ -17,7 +17,7 @@ import type { PendingAction } from '@/features/deployments/deployment-actions';
 import { deploymentUrl } from '@/features/deployments/deployment-actions';
 import {
     deploymentSeconds,
-    deploymentState,
+    deploymentStatusState,
     deploymentTitle,
     deploymentWord,
     formatDuration,
@@ -267,11 +267,7 @@ export function CommitGroupCard({
                         >
                             <span className="w-28 shrink-0 max-sm:w-auto">
                                 <Status
-                                    state={
-                                        deployment.isActive
-                                            ? 'active'
-                                            : deploymentState(deployment.status)
-                                    }
+                                    state={deploymentStatusState(deployment)}
                                     label={deploymentWord(deployment)}
                                 />
                             </span>

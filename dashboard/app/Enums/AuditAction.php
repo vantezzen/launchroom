@@ -104,6 +104,9 @@ enum AuditAction: string
     case ServiceVolumeChanged = 'service.volume_changed';
     case ServiceVolumeRemoved = 'service.volume_removed';
     case ServiceImageChanged = 'service.image_changed';
+    case ServiceStopped = 'service.stopped';
+    case ServiceStarted = 'service.started';
+    case ServiceRestarted = 'service.restarted';
     case ServerReplaced = 'server.replaced';
     case RecoveryFinished = 'instance.recovery_finished';
     case RecoveryPassphraseSet = 'backup.recovery_passphrase_set';

@@ -72,8 +72,20 @@ type Manager struct {
 	opts Options
 	mu   sync.Mutex
 	run  map[state.WorkloadID]context.CancelFunc
-	wg   sync.WaitGroup
+	// startup are the startup followers (SyncStartup).
+	startup map[state.WorkloadID]context.CancelFunc
+	wg      sync.WaitGroup
 }
+
+// Startup output (D68): every starting workload's output is shipped from its
+// first line until it settled (health check passing for 30 s), also without
+// runtime log retention, so a rollout shows what the container prints and a
+// crash at start is never lost. Lines carry step StartupStep; at most
+// StartupLines per workload; nothing is persisted (no cursor file).
+const (
+	StartupStep  = "startup"
+	StartupLines = 1000
+)
 
 // New returns a manager; nothing runs until Sync.
 func New(o Options) *Manager {
@@ -92,7 +104,7 @@ func New(o Options) *Manager {
 	if o.Log == nil {
 		o.Log = slog.New(slog.DiscardHandler)
 	}
-	return &Manager{opts: o, run: map[state.WorkloadID]context.CancelFunc{}}
+	return &Manager{opts: o, run: map[state.WorkloadID]context.CancelFunc{}, startup: map[state.WorkloadID]context.CancelFunc{}}
 }
 
 // Sync starts followers for workloads with shipLogs and stops the others.
@@ -131,6 +143,41 @@ func (m *Manager) Sync(ctx context.Context, ns *state.NodeState) {
 	}
 }
 
+// SyncStartup ships the output of the given starting workloads (the
+// reconciler's Starting) and stops startup followers of the others. A
+// workload whose runtime logs are shipped anyway gets no startup follower.
+func (m *Manager) SyncStartup(ctx context.Context, starting []state.WorkloadID) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	want := map[state.WorkloadID]bool{}
+	for _, id := range starting {
+		if _, shipped := m.run[id]; !shipped {
+			want[id] = true
+		}
+	}
+	for id, stop := range m.startup {
+		if !want[id] {
+			stop()
+			delete(m.startup, id)
+		}
+	}
+	for id := range want {
+		if _, ok := m.startup[id]; ok {
+			continue
+		}
+		fctx, cancel := context.WithCancel(ctx)
+		m.startup[id] = cancel
+		m.wg.Add(1)
+		go func() {
+			defer m.wg.Done()
+			f := newFollower(m, id)
+			f.step, f.limit, f.memory = StartupStep, StartupLines, true
+			f.cur = cursor{}
+			f.loop(fctx)
+		}()
+	}
+}
+
 // Following lists the workloads being followed (tests, debugging).
 func (m *Manager) Following() []state.WorkloadID {
 	m.mu.Lock()
@@ -148,6 +195,10 @@ func (m *Manager) Stop() {
 	for id, stop := range m.run {
 		stop()
 		delete(m.run, id)
+	}
+	for id, stop := range m.startup {
+		stop()
+		delete(m.startup, id)
 	}
 	m.mu.Unlock()
 	m.wg.Wait()
@@ -174,6 +225,14 @@ type follower struct {
 	// token bucket
 	tokens float64
 	last   time.Time
+	// Startup followers: the step of every line, the line budget (0 = none),
+	// lines taken so far, whether the budget's end was announced, and no
+	// cursor file (memory).
+	step      string
+	limit     int
+	taken     int
+	announced bool
+	memory    bool
 }
 
 func newFollower(m *Manager, id state.WorkloadID) *follower {
@@ -251,6 +310,16 @@ func (f *follower) stream(ctx context.Context) error {
 			break
 		}
 	}
+	if target == nil && f.limit > 0 {
+		// Startup output: a container that crashed at start (or waits for
+		// Docker to restart it) still has the lines it printed.
+		for i := range cs {
+			if cs[i].Labels[docker.LabelSystem] == "" {
+				target = &cs[i]
+				break
+			}
+		}
+	}
 	if target == nil {
 		return errors.New("no running container")
 	}
@@ -274,11 +343,23 @@ func (f *follower) add(l docker.LogLine) {
 	if !f.cur.Time.IsZero() && !l.Time.After(f.cur.Time) {
 		return
 	}
+	if f.limit > 0 && f.taken >= f.limit {
+		if !f.announced {
+			f.announced = true
+			f.pending = append(f.pending, state.LogLine{
+				Time: l.Time.UTC(), Stream: state.StreamSystem, Step: f.step,
+				Text: fmt.Sprintf("launchroom: the deployment log keeps the first %d lines of the container's output", f.limit),
+			})
+		}
+		f.cur.Time = l.Time
+		return
+	}
 	if !f.take() {
 		f.dropped++
 		return
 	}
-	line := state.LogLine{Time: l.Time.UTC(), Stream: state.StreamStdout, Text: sanitize(l.Text)}
+	f.taken++
+	line := state.LogLine{Time: l.Time.UTC(), Stream: state.StreamStdout, Text: sanitize(l.Text), Step: f.step}
 	if l.Stream == "stderr" {
 		line.Stream = state.StreamStderr
 	}
@@ -310,7 +391,7 @@ func (f *follower) flush(ctx context.Context) error {
 		f.mu.Lock()
 		if f.dropped > 0 && len(f.pending) < maxBuffered {
 			f.pending = append(f.pending, state.LogLine{
-				Time: f.m.opts.Now().UTC(), Stream: state.StreamSystem,
+				Time: f.m.opts.Now().UTC(), Stream: state.StreamSystem, Step: f.step,
 				Text: fmt.Sprintf("launchroom: %d log lines were dropped (more than %d lines per second, or the dashboard was unreachable)", f.dropped, f.m.opts.Rate),
 			})
 			f.dropped = 0
@@ -345,6 +426,9 @@ func (f *follower) flush(ctx context.Context) error {
 }
 
 func (f *follower) save(c cursor) {
+	if f.memory {
+		return
+	}
 	data, err := json.Marshal(c)
 	if err != nil {
 		return

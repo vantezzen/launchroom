@@ -611,8 +611,12 @@
             "$ref": "#/$defs/RouteUpstream"
           },
           "type": "array",
-          "minItems": 1,
-          "description": "Upstreams reference workloads on this server ({\"workload\", \"port\"}; the\ndaemon resolves the container IP) or mesh-published replicas on other\nservers ({\"address\": \"100.64.0.9:31002\"}). The daemon only routes to\nserving workloads that are running and pass their health probe."
+          "maxItems": 64,
+          "description": "Upstreams reference workloads on this server ({\"workload\", \"port\"}; the\ndaemon resolves the container IP) or mesh-published replicas on other\nservers ({\"address\": \"100.64.0.9:31002\"}). The daemon only routes to\nserving workloads that are running and pass their health probe.\nEmpty only on a stopped route."
+        },
+        "stopped": {
+          "type": "boolean",
+          "description": "Stopped answers every request with the edge's \"stopped\" page (503)\ninstead of proxying: the service was stopped in launchroom (D68,\ndaemon feature serviceStop). A stopped route has no upstreams."
         },
         "headers": {
           "oneOf": [

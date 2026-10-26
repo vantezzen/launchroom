@@ -10,6 +10,7 @@ use App\Data\Logs\LogExplorerPageData;
 use App\Data\Logs\LogMarkerData;
 use App\Data\Logs\LogQueryData;
 use App\Enums\DeploymentStatus;
+use App\Enums\LogSourceKind;
 use App\Models\DaemonTask;
 use App\Models\Deployment;
 use App\Models\Environment;
@@ -141,8 +142,12 @@ final class LogSearch
                 $q->where('c.service_id', $service);
             }
 
+            // Build output (plan, build and release task lines) belongs to
+            // its deployment's Steps; `runtime` is everything else: container
+            // output, live tails and rollout, health and lifecycle events.
             if ($query->source !== 'all') {
-                $q->where('c.runtime', $query->source === 'runtime');
+                $build = static fn (Builder $w) => $w->where('c.runtime', false)->where('c.source_kind', LogSourceKind::Task->value);
+                $query->source === 'build' ? $q->where($build) : $q->whereNot($build);
             }
 
             if ($query->after > 0) {
@@ -334,7 +339,7 @@ final class LogSearch
                 id: $row['chunk_id'].'-'.($row['ord'] - 1),
                 time: is_string($line['time'] ?? null) ? $line['time'] : '',
                 level: LogLevel::of($line),
-                source: $row['runtime'] ? 'runtime' : 'build',
+                source: ! $row['runtime'] && $row['source_kind'] === LogSourceKind::Task->value ? 'build' : 'runtime',
                 service: $service instanceof Service ? $service->name : 'launchroom',
                 serviceId: $service instanceof Service ? $service->public_id : null,
                 replica: is_int($slot) ? (string) ($slot + 1) : null,

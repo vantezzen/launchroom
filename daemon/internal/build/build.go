@@ -379,10 +379,7 @@ func (b *Builder) resolve(dir, work string, job *Job, envNames []string, sink Lo
 		s.Builder = state.BuilderDockerfile
 		s.DockerfilePath = dfRel
 		s.StartCommand = clipText(df.Cmd, 4096)
-		if df.Expose > 0 {
-			p := state.Port(df.Expose)
-			s.Port = &p
-		}
+		s.Port = dockerfilePort(sink, df)
 		s.HealthPath = "/"
 		if df.DevOnly != "" {
 			s.Warnings = append(s.Warnings, state.BuildWarning{Code: "dockerfile-dev-only", Message: clipText("This Dockerfile looks like a development setup: "+df.DevOnly+". Switch to auto-build (Railpack) for a production image.", 1024)})
@@ -634,10 +631,7 @@ func (b *Builder) resolveInline(work, content string, r *resolved, sink LogSink)
 	s.Builder = state.BuilderDockerfile
 	s.BuilderReason = state.ReasonExplicit
 	s.StartCommand = clipText(df.Cmd, 4096)
-	if df.Expose > 0 {
-		p := state.Port(df.Expose)
-		s.Port = &p
-	}
+	s.Port = dockerfilePort(sink, df)
 	s.HealthPath = "/"
 	if df.DevOnly != "" {
 		s.Warnings = append(s.Warnings, state.BuildWarning{Code: "dockerfile-dev-only", Message: clipText("This Dockerfile looks like a development setup: "+df.DevOnly+".", 1024)})

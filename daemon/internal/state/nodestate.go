@@ -325,7 +325,12 @@ type RouteSpec struct {
 	// daemon resolves the container IP) or mesh-published replicas on other
 	// servers ({"address": "100.64.0.9:31002"}). The daemon only routes to
 	// serving workloads that are running and pass their health probe.
-	Upstreams []RouteUpstream `json:"upstreams" jsonschema:"minItems=1"`
+	// Empty only on a stopped route.
+	Upstreams []RouteUpstream `json:"upstreams" jsonschema:"maxItems=64"`
+	// Stopped answers every request with the edge's "stopped" page (503)
+	// instead of proxying: the service was stopped in launchroom (D68,
+	// daemon feature serviceStop). A stopped route has no upstreams.
+	Stopped bool `json:"stopped,omitzero"`
 	// Headers are response headers to set (e.g. X-Robots-Tag on non-production).
 	// An empty value removes the header. Values must not contain { or }.
 	Headers map[HeaderName]string `json:"headers,omitzero" jsonschema:"nullable"`
@@ -742,7 +747,11 @@ func (r RouteSpec) validate(e *errs, p string, workloads map[WorkloadID]bool) {
 			e.addf(p+".redirectWwwTo", "must be one of the route's hosts")
 		}
 	}
-	checkCount(e, p+".upstreams", len(r.Upstreams), 1, 64)
+	if r.Stopped {
+		checkCount(e, p+".upstreams", len(r.Upstreams), 0, 0)
+	} else {
+		checkCount(e, p+".upstreams", len(r.Upstreams), 1, 64)
+	}
 	for i, u := range r.Upstreams {
 		u.validate(e, idx(p+".upstreams", i), workloads)
 	}

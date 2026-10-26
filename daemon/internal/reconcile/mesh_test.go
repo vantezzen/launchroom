@@ -30,7 +30,8 @@ func TestPublishOnMeshWaitsForTheMeshAddress(t *testing.T) {
 	if _, ok := h.d.Create(name); ok {
 		t.Fatal("created before the mesh address was known")
 	}
-	if st := phaseOf(h.r, wlA); st.Phase != state.PhasePending || st.Message != "" {
+	// Pending, and saying why (D68: the rollout shows what it waits for).
+	if st := phaseOf(h.r, wlA); st.Phase != state.PhasePending || st.Message != "waiting for this server's private network address" {
 		t.Fatalf("status while waiting: %+v", st)
 	}
 

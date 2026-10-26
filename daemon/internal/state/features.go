@@ -100,8 +100,12 @@ const (
 	FeatureWaf DaemonFeature = "waf"
 )
 
+// FeatureServiceStop announces RouteSpec.stopped: the edge answers a stopped
+// service's domains with its "stopped" page (D68).
+const FeatureServiceStop DaemonFeature = "serviceStop"
+
 // SupportedFeatures is what this launchroomd announces in every report.
-var SupportedFeatures = []DaemonFeature{FeatureDNSProviders, FeatureLinkProbe, FeatureShipLogs, FeaturePointInTime, FeatureVerifyRestore, FeatureStopSpec, FeatureGitProviders, FeatureControlPlaneURL, FeatureCronSchedule, FeatureGeneratedDockerfile, FeatureClientCertificates, FeatureMongoClickHouse, FeaturePreparedVolumes, FeatureRequestAnalytics, FeatureContainerInspection, FeatureInventory, FeatureConfigFiles}
+var SupportedFeatures = []DaemonFeature{FeatureDNSProviders, FeatureLinkProbe, FeatureShipLogs, FeaturePointInTime, FeatureVerifyRestore, FeatureStopSpec, FeatureGitProviders, FeatureControlPlaneURL, FeatureCronSchedule, FeatureGeneratedDockerfile, FeatureClientCertificates, FeatureMongoClickHouse, FeaturePreparedVolumes, FeatureRequestAnalytics, FeatureContainerInspection, FeatureInventory, FeatureConfigFiles, FeatureServiceStop}
 
 // maxFeatures bounds Report.host.features.
 const maxFeatures = 64

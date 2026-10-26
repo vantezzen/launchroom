@@ -16,6 +16,7 @@ use App\Models\Backups\BackupRun;
 use App\Models\Backups\BackupVerification;
 use App\Models\Backups\RestoreRun;
 use App\Models\DaemonTask;
+use App\Services\Backups\DataHolds;
 use App\Services\Backups\RestoreHolds;
 use App\Services\Backups\SnapshotCache;
 use Carbon\CarbonImmutable;
@@ -133,7 +134,8 @@ final readonly class SyncBackupTasks
                 return;
             }
 
-            // A finished restore releases the held services.
+            // A finished restore releases the held services (and their queued deployments).
+            DataHolds::advanceDeployments($held);
             $servers = RestoreHolds::serverIds($held);
 
             if (($run->subject === BackupSubject::Volume || $run->subject === BackupSubject::BaseBackup) && $task->server_id !== null) {

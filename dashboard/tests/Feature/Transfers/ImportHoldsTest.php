@@ -4,10 +4,14 @@ declare(strict_types=1);
 
 use App\Actions\Connections\CreateConnection;
 use App\Actions\Deployments\DeployEnvironment;
+use App\Actions\Deployments\RedeployService;
+use App\Actions\Deployments\SweepDeployments;
+use App\Actions\Servers\RecordReport;
 use App\Actions\Services\CreateService;
 use App\Actions\Transfers\AdvanceImports;
 use App\Actions\Transfers\SweepTransfers;
 use App\Data\Audit\AuditActor;
+use App\Data\Protocol\V1\Report;
 use App\Data\Services\CreateServiceData;
 use App\Enums\ConnectionMode;
 use App\Enums\ConnectionStyle;
@@ -168,6 +172,7 @@ test('a service that doesn\'t stop ends the wait with an honest error, nothing i
     expect($run->refresh()->status)->toBe(ImportRunStatus::Holding);
 
     $this->travel(config()->integer('launchroom.transfers.hold_timeout_seconds'))->seconds();
+    Projects::report($server);
     resolve(AdvanceImports::class)->handle();
 
     expect($run->refresh()->status)->toBe(ImportRunStatus::Failed)
@@ -221,3 +226,181 @@ test('an import stuck holding (from an older release, or a tick that failed) is 
         ->and(DaemonTask::query()->where('type', DaemonTaskType::DbImport->value)->exists())->toBeFalse()
         ->and(ihWorkloads($server, $worker))->not->toBe([]);
 })->with(['by the transfers tick' => false, 'by the sweep' => true]);
+
+/*
+| A hold wins over a rollout (docs/14 §12.5, docs/04 §6): a deployment of a
+| held service that already started is cancelled with the reason, a new one
+| waits in the queue until the import ended, and the wait names the real
+| blocker when it is the server.
+*/
+
+/**
+ * Redeploys the app (its build reuses nothing in tests: lease and finish it)
+ * and reports its new container starting: the deployment health-checks.
+ */
+function ihRollingOutApp(Server $server, ServiceInstance $api): Deployment
+{
+    $deployment = resolve(RedeployService::class)->handle($api, null, null, AuditActor::system());
+
+    if ($deployment->refresh()->status === DeploymentStatus::Building) {
+        $build = VolumeServices::lease($server->refresh(), DaemonTaskType::Build);
+        VolumeServices::finish($server, $build, 'succeeded', ['build' => [
+            'image' => '127.0.0.1:5000/apps/'.strtolower($api->service->public_id).'@sha256:'.str_repeat('f', 64),
+            'durationMs' => 42000,
+            'summary' => ['builder' => 'railpack', 'builderReason' => 'preset', 'railpackVersion' => '0.42.0', 'provider' => 'node', 'port' => 3000],
+            'secretsHash' => str_repeat('e', 64),
+            'attestations' => ['sbom', 'provenance'],
+        ]]);
+    }
+
+    $starting = Placement::query()->where('deployment_id', $deployment->id)->pluck('workload_id')->mapWithKeys(static fn (string $id): array => [$id => 'starting'])->all();
+    Projects::report($server, 'healthy', $starting);
+
+    expect($deployment->refresh()->status)->toBe(DeploymentStatus::HealthChecking)
+        ->and(ihWorkloads($server->refresh(), $api))->not->toBe([]);
+
+    return $deployment;
+}
+
+test('an import wins over a rollout of a service it holds: the deployment is cancelled with the reason', function (): void {
+    [, $server, $owner, $api, $worker, $postgres] = ihFailedAppWithWorker();
+    $deployment = ihRollingOutApp($server, $api);
+
+    $run = ihImport($this, $owner, $postgres);
+
+    $message = 'The deployment was cancelled because postgres is being imported. Deploy again once the import has finished.';
+    expect($run->refresh()->status)->toBe(ImportRunStatus::Holding)
+        ->and($deployment->refresh()->status)->toBe(DeploymentStatus::Cancelled)
+        ->and($deployment->failure_message)->toBe($message)
+        ->and($deployment->failure_class)->toBeNull()
+        ->and(Placement::query()->where('deployment_id', $deployment->id)->exists())->toBeFalse()
+        ->and(ihWorkloads($server->refresh(), $api))->toBe([]);
+    $this->actingAs($owner)->getJson(route('transfers.services.show', $postgres))
+        ->assertJsonPath('imports.0.waitingFor', ['queue']);
+
+    // Its step says why, as skipped rather than failed.
+    $step = $deployment->steps()->where('name', 'health')->sole();
+    expect($step->status->value)->toBe('skipped')
+        ->and($step->meta['message'] ?? null)->toBe($message);
+
+    // Once the worker stopped, the import starts.
+    $workerWorkloads = Placement::query()->where('service_instance_id', $worker->id)->pluck('workload_id')->mapWithKeys(static fn (string $id): array => [$id => 'removed'])->all();
+    Projects::report($server, 'healthy', $workerWorkloads);
+    resolve(AdvanceImports::class)->handle();
+    expect($run->refresh()->status)->toBe(ImportRunStatus::Importing);
+});
+
+test('a deployment started while an import holds the service waits in the queue and starts once the import ended', function (): void {
+    [, $server, $owner, $api, $worker, $postgres] = ihFailedAppWithWorker();
+    $run = ihImport($this, $owner, $postgres);
+    $workerWorkloads = Placement::query()->where('service_instance_id', $worker->id)->pluck('workload_id')->mapWithKeys(static fn (string $id): array => [$id => 'removed'])->all();
+    Projects::report($server, 'healthy', $workerWorkloads);
+    resolve(AdvanceImports::class)->handle();
+    expect($run->refresh()->status)->toBe(ImportRunStatus::Importing);
+
+    $deployment = resolve(RedeployService::class)->handle($api, null, null, AuditActor::system());
+    resolve(SweepDeployments::class)->handle();
+
+    expect($deployment->refresh()->status)->toBe(DeploymentStatus::Queued)
+        ->and(DaemonTask::query()->where('type', DaemonTaskType::Build->value)->where('deployment_id', $deployment->id)->exists())->toBeFalse();
+
+    $task = VolumeServices::lease($server->refresh(), DaemonTaskType::DbImport);
+    VolumeServices::finish($server, $task, 'succeeded', ['dataImport' => ['mode' => 'import', 'empty' => false, 'tables' => 3, 'sizeBytes' => 4096, 'serverVersion' => '18.1', 'format' => 'postgres_custom', 'sourceVersion' => 'PostgreSQL 15.8', 'readBytes' => 4096, 'durationMs' => 900]]);
+
+    expect($run->refresh()->status)->toBe(ImportRunStatus::Succeeded)
+        ->and($deployment->refresh()->status)->not->toBe(DeploymentStatus::Queued);
+});
+
+test('the wait and the timeout name the server when it hasn\'t applied the change that stops the services', function (): void {
+    [, $server, $owner, $api, , $postgres] = ihFailedAppWithWorker();
+    $applied = $server->refresh()->desired_version;
+    $run = ihImport($this, $owner, $postgres);
+
+    // launchroomd is still busy with an earlier state: it downloads the app's image.
+    $pulling = Placement::query()->where('service_instance_id', $api->id)->pluck('workload_id')->mapWithKeys(static fn (string $id): array => [$id => 'pulling'])->all();
+    (new Placement)->forceFill([
+        'team_id' => $api->team_id, 'service_instance_id' => $api->id, 'deployment_id' => Deployment::query()->where('service_instance_id', $api->id)->latest('id')->value('id'),
+        'server_id' => $server->id, 'slot' => 0, 'workload_id' => 'wl_01M5TC07PBN68WC7RP7SQY9REY', 'memory_mb' => 256, 'cpus' => 1, 'phase' => 'pulling',
+    ])->save();
+    Projects::report($server, 'healthy', [...$pulling, 'wl_01M5TC07PBN68WC7RP7SQY9REY' => 'pulling'], appliedVersion: $applied);
+
+    $this->actingAs($owner)->getJson(route('transfers.services.show', $postgres))
+        ->assertJsonPath('imports.0.waitingFor', ['queue'])
+        ->assertJsonPath('imports.0.waitingOn', "{$server->name} is still downloading an image for api and hasn’t stopped it yet.");
+
+    $this->travel(config()->integer('launchroom.transfers.hold_timeout_seconds') + 1)->seconds();
+    Projects::report($server, 'healthy', ['wl_01M5TC07PBN68WC7RP7SQY9REY' => 'pulling'], appliedVersion: $applied);
+    resolve(AdvanceImports::class)->handle();
+
+    expect($run->refresh()->status)->toBe(ImportRunStatus::Failed)
+        ->and($run->error)->toBe("queue didn’t stop within 5 minutes, so nothing was imported and postgres is unchanged. {$server->name} is still downloading an image for api and hasn’t stopped it yet. Try again once that’s resolved, or import without stopping it.");
+});
+
+test('the wait names an offline server', function (): void {
+    [, $server, $owner, , , $postgres] = ihFailedAppWithWorker();
+    ihImport($this, $owner, $postgres);
+    $server->forceFill(['status' => 'offline'])->save();
+
+    $this->actingAs($owner)->getJson(route('transfers.services.show', $postgres))
+        ->assertJsonPath('imports.0.waitingOn', "{$server->name} is offline, so it can’t stop it.");
+});
+
+/**
+ * A full report of $server that leaves $without out (launchroomd no longer
+ * runs or knows them); everything else healthy.
+ *
+ * @param  list<string>  $without  workload ids
+ */
+function ihReportWithout(Server $server, array $without): void
+{
+    $server->refresh();
+    $workloads = Placement::query()->where('server_id', $server->id)->whereNotIn('workload_id', $without)->orderBy('id')->get()->map(static fn (Placement $placement): array => [
+        'id' => $placement->workload_id,
+        'phase' => 'healthy',
+        'observedAt' => now()->utc()->format('Y-m-d\TH:i:s.v\Z'),
+        'restartCount' => 0,
+        'containerId' => str_repeat('c', 64),
+    ])->values()->all();
+
+    resolve(RecordReport::class)->handle($server, Report::validateAndCreate([
+        'apiVersion' => 'launchroom.vantezzen.io/v1',
+        'kind' => 'Report',
+        'serverId' => $server->public_id,
+        'observedAt' => now()->utc()->format('Y-m-d\TH:i:s\Z'),
+        'seq' => (int) (microtime(true) * 1_000_000),
+        'full' => true,
+        'appliedVersion' => $server->desired_version,
+        'workloads' => $workloads,
+    ]));
+}
+
+test('a held worker its server no longer reports counts as stopped, whatever it was last seen as', function (): void {
+    [, $server, $owner, , $worker, $postgres] = ihFailedAppWithWorker();
+    $run = ihImport($this, $owner, $postgres);
+    $workerWorkloads = Placement::query()->where('service_instance_id', $worker->id)->pluck('workload_id')->all();
+
+    // launchroomd applied the hold but never says the worker was removed (it
+    // had no container): its last status stays "healthy".
+    ihReportWithout($server, $workerWorkloads);
+    resolve(AdvanceImports::class)->handle();
+    expect($run->refresh()->status)->toBe(ImportRunStatus::Holding)
+        ->and(RestoreHolds::running([$worker->id]))->toBe([$worker->id]);
+
+    // Reports keep leaving it out: it doesn't run there.
+    $this->travel(RestoreHolds::SILENT_SECONDS + 1)->seconds();
+    ihReportWithout($server, $workerWorkloads);
+    resolve(AdvanceImports::class)->handle();
+
+    expect(RestoreHolds::running([$worker->id]))->toBe([])
+        ->and($run->refresh()->status)->toBe(ImportRunStatus::Importing);
+});
+
+test('the wait names a server whose reports stopped arriving', function (): void {
+    [, $server, $owner, , , $postgres] = ihFailedAppWithWorker();
+    ihImport($this, $owner, $postgres);
+    $this->travel(13)->minutes();
+
+    $this->actingAs($owner)->getJson(route('transfers.services.show', $postgres))
+        ->assertJsonPath('imports.0.waitingFor', ['queue'])
+        ->assertJsonPath('imports.0.waitingOn', "{$server->name} hasn’t reported its status for 13 minutes, so launchroom can’t tell whether it stopped.");
+});

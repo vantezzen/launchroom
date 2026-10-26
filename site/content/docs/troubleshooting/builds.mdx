@@ -109,7 +109,7 @@ The card reads "The variable NEXT_PUBLIC_API_URL is missing" or the log shows `i
 
 **Cause.** The app reads the variable while it is built, but the build did not get it. Variables are runtime-only unless launchroom detects otherwise from the name (`NEXT_PUBLIC_*`, `VITE_*` and similar browser prefixes are build-time automatically) or you say so.
 
-**Fix.** Click **Add NAME** on the card, or open the variable in the service's **Variables** tab, then under **Advanced → Available at** choose **Build only** or **Build and runtime**. Build-time values reach the build as secrets, never as plain build arguments, and changing one rebuilds the service. See [Variables](/docs/projects/variables).
+**Fix.** Click **Add NAME** on the card, or open the variable in the service's **Settings → Variables**, then under **Advanced → Available at** choose **Build only** or **Build and runtime**. Build-time values reach the build as secrets, never as plain build arguments, and changing one rebuilds the service. See [Variables](/docs/projects/variables).
 
 ## Deploy is disabled because of a broken reference
 
@@ -119,7 +119,7 @@ The staged changes sheet says "Fix the broken references first" and lists entrie
 
 **Cause.** A variable references a service or variable that doesn't exist in this environment, often after renaming a service, removing one, or promoting from an environment that has a service this one lacks.
 
-**Fix.** Open the service's **Variables** tab, where broken references are flagged. Point the reference at an existing service slug or variable, or add the missing service, then deploy. See [Variables](/docs/projects/variables#references).
+**Fix.** Open the service's **Settings → Variables**, where broken references are flagged. Point the reference at an existing service slug or variable, or add the missing service, then deploy. See [Variables](/docs/projects/variables#references).
 
 ## No online build server can build for linux/arm64
 

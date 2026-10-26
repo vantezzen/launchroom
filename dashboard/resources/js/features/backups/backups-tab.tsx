@@ -126,17 +126,21 @@ function isBusy(data: Data): boolean {
 }
 
 /**
- * Service panel → Backups for databases and services with volumes (docs/08
- * §1, docs/14 §2, §5.1; design-system §13.9 "Backups tab"): a protection
+ * Service settings → Backups for databases and services with volumes
+ * (docs/08 §16, docs/14 §2, §5.1; design-system §13.9 "Backups"): a protection
  * card (health, schedule sentence, Back up now), the snapshot timeline
  * (pick one), restore as option cards ("As a new service" default, "Into
  * this service" with typed confirmation), and one history list of restores
  * and runs. A staged removal waiting for its final backup sits on top.
  *
- * Mounted by the canvas service panel. Fetches its own data (JSON,
+ * The body of the settings page (`BackupsSection`). Fetches its own data (JSON,
  * team-scoped on the server) and polls while something runs.
  */
-export function BackupsTab({ project, environment, service }: BackupsTabProps) {
+export function ServiceBackups({
+    project,
+    environment,
+    service,
+}: BackupsTabProps) {
     const [data, setData] = useState<Data | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [busyAction, setBusyAction] = useState<string | null>(null);
@@ -336,7 +340,7 @@ export function BackupsTab({ project, environment, service }: BackupsTabProps) {
 
             {volumes && data.volumes.length > 0 && (
                 <Section
-                    level={3}
+                    level={4}
                     title="Volumes"
                     description="Pause for files written in place, like SQLite."
                 >
@@ -415,7 +419,8 @@ export function BackupsTab({ project, environment, service }: BackupsTabProps) {
             )}
 
             <Section
-                level={3}
+                level={4}
+                data-setting="snapshots"
                 title="Snapshots"
                 description={
                     data.snapshots.length > 0
@@ -496,7 +501,8 @@ export function BackupsTab({ project, environment, service }: BackupsTabProps) {
 
             {canRestore && (selected !== null || pitrSelected) && (
                 <Section
-                    level={3}
+                    level={4}
+                    data-setting="restore"
                     title="Restore"
                     description={
                         pitrSelected
@@ -597,7 +603,7 @@ export function BackupsTab({ project, environment, service }: BackupsTabProps) {
 
             {data.trend.length >= 2 && (
                 <Section
-                    level={3}
+                    level={4}
                     title="Trend"
                     description={`Last ${data.trend.length} backups`}
                 >
@@ -608,7 +614,7 @@ export function BackupsTab({ project, environment, service }: BackupsTabProps) {
             {(data.restores.length > 0 ||
                 data.runs.length > 0 ||
                 data.verification !== null) && (
-                <Section level={3} title="History">
+                <Section level={4} title="History">
                     <ul className="flex flex-col divide-y overflow-hidden rounded-xl border bg-card shadow-card">
                         {data.verification !== null && (
                             <VerificationItem

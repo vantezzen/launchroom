@@ -10,6 +10,8 @@ use App\Data\Deployments\BuildServerData;
 use App\Data\Deployments\DeploymentDetailData;
 use App\Data\Deployments\DeploymentFailureData;
 use App\Data\Deployments\DeploymentRefData;
+use App\Data\Deployments\DeploymentReplicaData;
+use App\Data\Deployments\DeploymentServerData;
 use App\Data\Deployments\DeploymentStepData;
 use App\Data\Deployments\EnvSnapshotEntryData;
 use App\Data\Deployments\FailureExplanationData;
@@ -21,13 +23,13 @@ use App\Data\Specs\ServiceSpec;
 use App\Enums\DaemonTaskStatus;
 use App\Enums\DaemonTaskType;
 use App\Enums\DeploymentStatus;
-use App\Enums\DeploymentStepName;
 use App\Enums\DeploymentStepStatus;
 use App\Enums\WorkloadPhase;
 use App\Models\DaemonTask;
 use App\Models\Deployment;
 use App\Models\DeploymentStep;
 use App\Models\LogChunk;
+use App\Models\Placement;
 use App\Models\Server;
 use App\Models\Service;
 use App\Services\Crypto\ProjectKeyring;
@@ -35,7 +37,7 @@ use App\Services\Git\GitProviders;
 use App\Support\Canvas\ServiceGlyph;
 use App\Support\Deployments\Failures\FailureCatalogue;
 use App\Support\Deployments\Failures\FailureContext;
-use App\Support\Deployments\PullProgressMessage;
+use App\Support\Deployments\RolloutProgress;
 use Illuminate\Support\Facades\Gate;
 
 /**
@@ -60,18 +62,14 @@ final readonly class DeploymentDetailView
         $project = $deployment->environment->project;
 
         $stepRows = $deployment->steps()->orderBy('id')->get();
-        // Pulling and unpacking happen before the container's health check.
-        $pulling = $stepRows->contains(static fn (DeploymentStep $step): bool => $step->name === DeploymentStepName::Rollout && $step->status === DeploymentStepStatus::Running)
-            ? PullProgressMessage::for($deployment->placements()->where('phase', WorkloadPhase::Pulling->value)->get())
-            : null;
-        $steps = array_values($stepRows->map(static fn (DeploymentStep $step): DeploymentStepData => new DeploymentStepData(
-            name: $step->name,
-            status: $step->status,
-            startedAt: $step->started_at,
-            finishedAt: $step->finished_at,
-            message: isset($step->meta['message']) && is_string($step->meta['message'])
-                ? mb_substr($step->meta['message'], 0, 2000)
-                : ($step->name === DeploymentStepName::Rollout && $step->status === DeploymentStepStatus::Running ? $pulling : null),
+        // What the running Roll out or Health check step is doing right now
+        // ("Waiting for server-2 to pick up the change", "Downloading image
+        // (412 MB of 690 MB)", "Waiting for GET / on :8000 to answer
+        // (attempt 3: connection refused)"; D68).
+        $progress = RolloutProgress::for($deployment, $stepRows);
+        $steps = array_values($stepRows->map(static fn (DeploymentStep $step): DeploymentStepData => DeploymentStepData::fromStep(
+            $step,
+            $step->status === DeploymentStepStatus::Running ? ($progress[$step->name->value] ?? null) : null,
         ))->all());
 
         $service = $deployment->revision?->spec->service($deployment->serviceInstance->service->public_id);
@@ -89,7 +87,8 @@ final readonly class DeploymentDetailView
                 : null,
             config: $service instanceof ServiceSpec ? $this->config($service) : [],
             env: $this->env($deployment),
-            canRedeploy: Gate::allows('redeploy', $deployment),
+            // A stopped service starts from its panel (D68), not with Redeploy.
+            canRedeploy: $deployment->serviceInstance->stopped_at === null && Gate::allows('redeploy', $deployment),
             canCancel: Gate::allows('cancel', $deployment),
             canPromote: Gate::allows('promote', $deployment),
             failureExplanation: $failed ? $this->explain($deployment, array_values($stepRows->all()), $service instanceof ServiceSpec ? $service : null) : null,
@@ -101,7 +100,60 @@ final readonly class DeploymentDetailView
             compareUrl: $related['compareUrl'],
             configErrors: DeploymentConfigErrorsData::fromStored($deployment->config_errors),
             buildServer: $related['buildServer'],
+            servers: $this->servers($deployment),
+            supersededBy: $this->supersededBy($deployment),
         );
+    }
+
+    private function supersededBy(Deployment $deployment): ?DeploymentRefData
+    {
+        $next = $deployment->superseded_by_id === null ? null : Deployment::query()
+            ->where('team_id', $deployment->team_id)
+            ->whereKey($deployment->superseded_by_id)
+            ->first();
+
+        return $next instanceof Deployment ? DeploymentRefData::of($next) : null;
+    }
+
+    /**
+     * The servers that hold the deployment's replicas, each with its
+     * replicas in slot order (the stage of the overview card). Empty once
+     * they're gone: superseded, failed and cancelled deployments keep none.
+     *
+     * @return list<DeploymentServerData>
+     */
+    private function servers(Deployment $deployment): array
+    {
+        $placements = $deployment->placements()
+            ->where('team_id', $deployment->team_id)
+            ->where('phase', '!=', WorkloadPhase::Removed->value)
+            ->orderBy('slot')
+            ->get();
+
+        if ($placements->isEmpty()) {
+            return [];
+        }
+
+        $servers = Server::query()->where('team_id', $deployment->team_id)->whereIn('id', $placements->pluck('server_id')->unique()->all())->get()->keyBy('id');
+        $out = [];
+
+        foreach ($placements->groupBy('server_id') as $serverId => $group) {
+            $server = $servers->get($serverId);
+
+            if (! $server instanceof Server) {
+                continue;
+            }
+
+            $out[] = new DeploymentServerData(
+                id: $server->public_id,
+                name: $server->name,
+                device: DeviceData::fromServer($server),
+                status: $server->status,
+                replicas: array_values($group->map(static fn (Placement $placement): DeploymentReplicaData => DeploymentReplicaData::of($placement))->all()),
+            );
+        }
+
+        return $out;
     }
 
     /**

@@ -369,7 +369,7 @@ Hero (device 300 px on a recessed stage, name in `display`, status pill, one lin
 - **Phone**: the canvas becomes a list of group sections with node cards (tap opens the panel full screen).
 
 ### 9.5 Service panel tabs
-- **Deployments**: `DeploymentCard` for the active or in-progress deployment (status pill, message, meta, step pills, Open deployment / Cancel / View logs), then "Earlier" history rows (status dot, message, sha · age · duration, failure reason in red, Roll back on hover).
+- **Deployments**: one list in one card. The current deployment (in progress, else live) is its first row, expanded: the same avatar column, title and meta line as the rest, plus the steps with live status and times and Cancel / View logs / Redeploy. Then the history rows (status word, message, sha, age, duration, failure reason in red, Roll back on hover). See design-system.md §13.9 "Service panel Deployments".
 - **Variables**: table stays (it's a list of key/values) with calmer chips (icon-only lucide icons with tooltips: lock for secret, link for reference, hammer for build, plug for connection), changed rows marked staged, the `StagedBar` at the bottom, "Raw .env" and "Import" as secondary, paste-anywhere.
 - **Metrics**: requests, error rate and p95 when there is traffic, then CPU and memory, with charts and deploy markers.
 - **Logs**: the log explorer scoped to this service.

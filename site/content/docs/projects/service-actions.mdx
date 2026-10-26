@@ -1,0 +1,77 @@
+---
+title: Deploy, restart, stop and start
+description: Run a new version, restart a service, or stop it without removing it. The actions sit in the header of the service panel.
+---
+
+Open a service on the canvas. Its panel header has the actions for this service in the current environment. They need
+the Developer role or higher, and every use is in the audit log.
+
+| Action | What it does |
+|---|---|
+| **Deploy** | Builds and deploys the latest commit of the branch the service tracks. For an image service, launchroom looks up its tag again and runs what it points to now. |
+| **Deploy changes** | Shown instead of Deploy while the service has staged changes. It deploys the environment's staged changes, as **Review & deploy** does, so the new version goes out with them. |
+| **Restart** | Starts new containers of the running version and switches traffic to them. Nothing is built and the release command doesn't run again. |
+| **Stop** | Stops the service's containers. It keeps its settings, variables, domains, volumes and deployments. |
+| **Start** | Shown while the service is stopped. Runs the version that was live when it stopped. |
+
+Databases, workers and cron jobs have no version of their own, so they show Restart and Stop only.
+
+## Restart
+
+A restart is a deployment of its own, marked **Restart** in the deployments list. It runs like any other deploy:
+
+- With several replicas, launchroom replaces them one at a time and moves traffic only to replicas that pass the
+  health check.
+- A single replica starts next to the old one, and traffic moves once it is healthy.
+- A database stops, then starts again, because two copies can't share its data.
+
+If the new containers don't become healthy, the deployment fails and the old ones keep serving. Staged changes stay
+staged. Restart waits until a deployment of the service in progress has finished.
+
+## Stop and start
+
+Stopping a service:
+
+- stops and removes its containers on every server;
+- answers its domains with a page that says the app is stopped (HTTP 503);
+- cancels a deployment of it that hasn't finished;
+- pauses its scheduled backups and its "unhealthy" alerts.
+
+Services that use a stopped database lose the connection until it starts again. The stop dialog says how many there are.
+
+While it is stopped, the Deployments tab marks the version that was live as **Stopped**, with who stopped it and when,
+and offers **Start** in place of Redeploy. Its deployment page says the same.
+
+**Start** runs the version that was live before. If you deployed configuration changes for the service while it was
+stopped, Start deploys the last deployed configuration at the same commit instead. To run the latest commit, press
+**Deploy** after it started.
+
+## Workers and cron jobs
+
+An app's workers and cron jobs run its image. When you stop, start or restart the app, the dialog offers **Include its
+workers and crons**, checked by default. Uncheck it to leave them as they are.
+
+## Timeouts
+
+Two settings under **Settings → Deploy → Rollout** bound how long a deploy, restart or start may take:
+
+- **Start timeout** (default 10 minutes): how long the new version may take to download its image and start.
+- **Health check timeout**: how long a new container may take to become healthy. It follows the health check settings
+  until you change it.
+
+When one runs out, the deployment fails with the step it was in and what it was waiting for. See
+[Deploy problems](/docs/troubleshooting/health-checks).
+
+## From the API and the CLI
+
+Every action has a CLI command and an API endpoint. They need the token's `deploy` ability.
+
+```sh
+launchroom service restart web
+launchroom service stop web --yes
+launchroom service start web
+launchroom service deploy web
+```
+
+The API endpoints are `POST /api/v1/environments/{environment}/services/{service}/deploy`, `…/restart`, `…/stop` and
+`…/start`. See the [CLI](/docs/reference/cli) and [API](/docs/reference/api) references.

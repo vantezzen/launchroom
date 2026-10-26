@@ -5,7 +5,10 @@ import { SettingsShell } from '@/components/settings/settings-shell';
 import { allPages } from '@/components/settings/types';
 import { ManagedByFile } from '@/features/config-as-code/managed-by-file';
 import services from '@/routes/projects/services';
+import { backupHealthLabel } from '@/features/backups/backup-health';
+import { VariablesSection } from '@/features/variables/variables-section';
 import { AdvancedSection } from './advanced-section';
+import { BackupsSection } from './backups-section';
 import { BuildSection } from './build-section';
 import { describeCron, parseCron } from './cron';
 import { DangerZone } from './danger-zone';
@@ -37,6 +40,14 @@ function pageFor(
             return <GeneralSection context={context} navigate={navigate} />;
         case 'source':
             return <SourceSection context={context} />;
+        case 'variables':
+            return (
+                <VariablesSection
+                    project={context.route[0]}
+                    environment={context.route[1]}
+                    service={context.route[2]}
+                />
+            );
         case 'build':
             return <BuildSection context={context} />;
         case 'deploy':
@@ -53,6 +64,8 @@ function pageFor(
             return <ScalingSection context={context} />;
         case 'volumes':
             return <VolumesSection context={context} />;
+        case 'backups':
+            return <BackupsSection context={context} />;
         case 'advanced':
             return <AdvancedSection context={context} />;
         case 'danger':
@@ -106,6 +119,7 @@ function summaries(
             node.kind === 'database'
                 ? 'Ids, image and replicas for debugging'
                 : 'Entrypoint, capabilities and ids',
+        backups: node.backup ? backupHealthLabel(node.backup) : undefined,
         danger: settings.enabled ? 'Disable or remove' : 'Disabled',
     };
 }
@@ -202,23 +216,6 @@ export function SettingsTab({
                 hrefFor={hrefFor}
                 onNavigate={navigate}
                 index={settingsIndex(context, areas)}
-                onSelectOther={(result) => {
-                    if (result.target === 'variables') {
-                        router.visit(
-                            services.show({
-                                project,
-                                environment,
-                                service,
-                                tab: 'variables',
-                            }).url,
-                            {
-                                only: ['panel'],
-                                preserveState: true,
-                                preserveScroll: true,
-                            },
-                        );
-                    }
-                }}
                 emptyHint="Try “domain”, “port” or “health check”."
                 dirty={dirty}
                 notice={

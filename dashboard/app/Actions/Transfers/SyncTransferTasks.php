@@ -20,6 +20,7 @@ use App\Models\ServiceInstance;
 use App\Models\Transfers\DataExportRun;
 use App\Models\Transfers\DataImportRun;
 use App\Models\Transfers\DataTransfer;
+use App\Services\Backups\DataHolds;
 use App\Services\Backups\RestoreHolds;
 use App\Services\Transfers\ImportHolds;
 use App\Services\Transfers\TransferStore;
@@ -122,6 +123,7 @@ final readonly class SyncTransferTasks
                 ], static fn (mixed $value): bool => $value !== null),
             ));
 
+            DataHolds::advanceDeployments($held);
             $servers = RestoreHolds::serverIds($held);
 
             if ($run->subject === DataSubject::Volume && $task->server_id !== null) {

@@ -127,10 +127,13 @@ export function RelatedCards({ detail }: { detail: Detail }) {
                     {previous ? (
                         <>
                             Since{' '}
-                            <span className="type-mono-small">
-                                {shortSha(previous.commitSha) ??
-                                    'the previous version'}
-                            </span>
+                            {previous.commitSha ? (
+                                <span className="type-mono-small">
+                                    {shortSha(previous.commitSha)}
+                                </span>
+                            ) : (
+                                'the previous version'
+                            )}
                             , <TimeAgo value={previous.queuedAt} />
                         </>
                     ) : (

@@ -45,7 +45,7 @@ docker exec umami env > umami.env
 
 Remove what launchroom sets itself: `PATH`, `HOSTNAME`, `HOME`, the database's address and credentials (`DATABASE_URL`, `DB_HOST` and similar come from the connection), and anything the image sets itself (`NODE_VERSION` and similar).
 
-Open the service's **Variables** tab and paste the file or choose **Import .env**. launchroom shows a preview with conflicts and suggests which values to keep as secrets. They apply with the first deploy. From a terminal, `launchroom env set KEY=VALUE…` adds variables (staged) and `launchroom deploy --staged` applies them.
+Open the service's **Settings → Variables** and paste the file or choose **Import .env**. launchroom shows a preview with conflicts and suggests which values to keep as secrets. They apply with the first deploy. From a terminal, `launchroom env set KEY=VALUE…` adds variables (staged) and `launchroom deploy --staged` applies them.
 
 #### Umami's secrets
 
@@ -86,7 +86,7 @@ docker exec chat-db mongodump --archive --gzip --db chat -u app -p '<password>' 
 
 To dump inside the container instead, write to `/tmp` and copy it out: `docker exec umami-db pg_dump -Fc -U umami -f /tmp/umami.dump umami`, then `docker cp umami-db:/tmp/umami.dump .`. Copy the dump to the machine you upload from, for example with `scp`.
 
-On launchroom, open the database on the canvas and go to its **Backups** tab. **Move data** shows **Import data before the first deploy**. Choose **Import data…**: launchroom starts the database on its own, with the user and password Umami will get. Umami stays off.
+On launchroom, open the database on the canvas and go to its **Settings → Backups**. **Move data** shows **Import data before the first deploy**. Choose **Import data…**: launchroom starts the database on its own, with the user and password Umami will get. Umami stays off.
 
 Drop the dump in. The upload resumes if your connection drops. launchroom shows what it found ("PostgreSQL custom dump · from PostgreSQL 15.8") and that the database is empty, so nothing needs replacing. Choose **Import**. When the import ends, launchroom stops the database again; the data stays on its volume.
 
@@ -109,7 +109,7 @@ If the app keeps uploads or other files on disk, add a volume at the same path o
 docker exec app tar -czf - -C /app/uploads . > uploads.tar.gz
 ```
 
-In the service's **Backups** tab, choose **Import files…** next to the volume and upload `uploads.tar.gz`. Owners and modes from the archive are kept, or set one owner for all files if the image runs as a non-root user. See [Import files into a volume](/docs/databases/import-and-export#import-files-into-a-volume).
+In the service's **Settings → Backups**, choose **Import files…** next to the volume and upload `uploads.tar.gz`. Owners and modes from the archive are kept, or set one owner for all files if the image runs as a non-root user. See [Import files into a volume](/docs/databases/import-and-export#import-files-into-a-volume).
 </Step>
 <Step>
 ### Check the app

@@ -84,7 +84,7 @@ final readonly class EvaluateBackupAlerts
         return [
             BackupAlertKind::Failed->value => $latest?->status === BackupRunStatus::Failed ? [
                 'title' => ($latest->subject === BackupSubject::BaseBackup ? 'Base backup of ' : 'Backup of ').$name.' failed',
-                'summary' => 'The newest backup of '.$name.' did not finish. The error is on its Backups tab.',
+                'summary' => 'The newest backup of '.$name.' did not finish. The error is in its Settings, under Backups.',
                 'occurrence' => $latest->public_id,
             ] : null,
             BackupAlertKind::VerificationFailed->value => $verification?->status === VerificationStatus::Failed ? [
@@ -92,7 +92,8 @@ final readonly class EvaluateBackupAlerts
                 'summary' => 'A test restore of the newest backup of '.$name.' failed. Until one passes, it is not known to be restorable.',
                 'occurrence' => $verification->public_id,
             ] : null,
-            BackupAlertKind::Overdue->value => $schedule && $this->statuses->forInstance($instance)->status === BackupHealth::Stale ? [
+            // Paused while the service is stopped (D68): no new backups are due.
+            BackupAlertKind::Overdue->value => $schedule && $instance->stopped_at === null && $this->statuses->forInstance($instance)->status === BackupHealth::Stale ? [
                 'title' => 'Backups of '.$name.' are overdue',
                 'summary' => 'No backup of '.$name.' succeeded in the last '.config()->integer('launchroom.backups.stale_after_hours').' hours.',
                 'occurrence' => null,

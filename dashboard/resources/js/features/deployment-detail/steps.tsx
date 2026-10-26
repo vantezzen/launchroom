@@ -3,7 +3,11 @@ import { elapsedSeconds } from '@/features/deployments/format';
 import type { LogSection } from '@/features/logs/sections';
 import { isSection } from '@/features/logs/sections';
 
-type Detail = App.Data.Deployments.DeploymentDetailData;
+/** What the rows need: the status and the recorded steps (detail page, list). */
+type StepSource = {
+    deployment: { status: App.Enums.DeploymentStatus };
+    steps: App.Data.Deployments.DeploymentStepData[];
+};
 
 /** What a deployment of this kind still has to do while it runs. */
 const PIPELINE: LogSection[] = ['build', 'rollout', 'health', 'route'];
@@ -32,7 +36,7 @@ export type StepRow = {
  * skipped (failed or cancelled), so a failure reads "Build ✕ · Roll out
  * skipped · …" like the mockup.
  */
-export function stepRows(detail: Detail, now = Date.now()): StepRow[] {
+export function stepRows(detail: StepSource, now = Date.now()): StepRow[] {
     const status = detail.deployment.status;
     const recorded = detail.steps
         .filter((step) => isSection(step.name))

@@ -39,7 +39,7 @@ Conventions used below:
 
 - One "Connect GitHub" button wherever it's needed (onboarding, the import page's empty state, Settings → Git). Organisations and GitHub Enterprise Server sit under a disclosure.
 - After the app is created, launchroom forwards to the GitHub installation page; the return URL is the place you started.
-- Settings → Git shows one card per connection: app, owner, "12 repositories · Manage on GitHub ↗", and one health line ("Receiving webhooks" / "Checking for pushes every minute" when GitHub can't reach this dashboard). Other providers (GitLab, Gitea / Forgejo, any git server) follow the same pattern ([../19-git-providers.md](../19-git-providers.md) §4).
+- Settings → Git shows one card per connection: app, owner, "12 repositories · Manage on GitHub ↗", and one health line ("Pushes arrive right away" / "A push didn't arrive by webhook: checking every minute" after a missed push). Other providers (GitLab, Gitea / Forgejo, any git server) follow the same pattern ([../19-git-providers.md](../19-git-providers.md) §4).
 
 **Magic.** Returning from GitHub lands where you started, with the repo picker open.
 
@@ -80,7 +80,7 @@ Plan preview states, each designed: Inspecting (skeleton card with the repo name
 1. The node says "Last deploy failed · still serving 3b7d5e1" (reassurance first: nothing went down).
 2. Deployment page: the overview card, then the **explained failure card** (Laravel error page style): a human title ("Build failed: pnpm lockfile is out of date"), one or two sentences of cause and fix, actions ("Jump to line 7", "Copy command"), the failure class as a small chip.
 3. Steps list with the failed step open and scrolled to its first error, with error lines highlighted. The same toolbar searches every step, expands all steps, and copies or downloads the whole log.
-4. Known fixes are buttons: `port_mismatch` → "Use port 5173 and redeploy"; `health_timeout` → "Allow 60s to start and redeploy"; missing variable → "Add NEXT_PUBLIC_STRIPE_KEY" (opens the Variables tab prefilled). The fix stages the change and deploys it in the same click when it is the only staged change.
+4. Known fixes are buttons: `port_mismatch` → "Use port 5173 and redeploy"; `health_timeout` → "Allow 60s to start and redeploy"; missing variable → "Add NEXT_PUBLIC_STRIPE_KEY" (opens Settings → Variables prefilled). The fix stages the change and deploys it in the same click when it is the only staged change.
 
 **Magic.** The fix is one click for known errors.
 
@@ -94,7 +94,7 @@ Plan preview states, each designed: Inspecting (skeleton card with the repo name
 
 ## 8. Change env vars safely (staged changes)
 
-- Variables tab rows changed since the last deploy get the staged treatment (signal rule + "Changed" chip); new rows "New".
+- Variables page rows changed since the last deploy get the staged treatment (signal rule + "Changed" chip); new rows "New".
 - Paste anywhere: pasting a `.env` into the tab opens the import preview directly.
 - The staged bar floats at the bottom of the panel: "2 changes · api will restart · Discard · Deploy". Deploying from there is the same Deploy as everywhere.
 - Broken references are listed per row, and Deploy is disabled with the reason.

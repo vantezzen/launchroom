@@ -162,3 +162,40 @@ func TestRateLimitAndRetry(t *testing.T) {
 	}
 	m.Stop()
 }
+
+// Startup output (D68): a starting workload's output is shipped from the
+// first line with step "startup", also from a container that already
+// exited, up to the line budget; a workload that ships its runtime logs gets
+// no second follower; leaving the starting set stops the follower.
+func TestStartupOutput(t *testing.T) {
+	d := dockerfake.New(srvID)
+	id := running(t, d)
+	d.SetState(id, "exited", 1)
+	t0 := time.Now().Add(-time.Minute).UTC()
+	for i := range StartupLines + 5 {
+		d.Logs[id] = append(d.Logs[id], docker.LogLine{Stream: "stderr", Time: t0.Add(time.Duration(i) * time.Millisecond), Text: "Traceback"})
+	}
+	cp := &fakeCP{}
+	m := New(Options{Docker: d, Client: cp, Dir: t.TempDir(), FlushEvery: 10 * time.Millisecond, Rate: 100000, Burst: 100000})
+	m.SyncStartup(t.Context(), []state.WorkloadID{wl})
+	waitFor(t, "the startup lines and the notice", func() bool { return len(cp.lines()) == StartupLines+1 })
+	lines := cp.lines()
+	if lines[0].Step != StartupStep || lines[0].Stream != state.StreamStderr {
+		t.Fatalf("first line %+v", lines[0])
+	}
+	if last := lines[StartupLines]; last.Stream != state.StreamSystem || !strings.Contains(last.Text, "first 1000 lines") {
+		t.Fatalf("notice %+v", last)
+	}
+	m.SyncStartup(t.Context(), nil)
+	if len(m.startup) != 0 {
+		t.Fatal("startup follower still running")
+	}
+
+	// Shipping runtime logs: no startup follower.
+	m.Sync(t.Context(), nodeState(true))
+	m.SyncStartup(t.Context(), []state.WorkloadID{wl})
+	if len(m.startup) != 0 {
+		t.Fatal("startup follower next to the runtime follower")
+	}
+	m.Stop()
+}

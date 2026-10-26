@@ -61,6 +61,12 @@ func pullProgressFrom(ctx context.Context) func(PullProgress) {
 const (
 	DefaultPullTimeout     = 45 * time.Minute
 	DefaultPullIdleTimeout = 5 * time.Minute
+	// BuiltWarmTimeout bounds the warm-up of an image launchroom built
+	// (apps/…): the registry has it already and answers at once, so a
+	// warm-up that hangs means this server doesn't reach the registry (its
+	// mesh connection to the main server, D68). Mirrored images may take
+	// the whole pull timeout while the mirror syncs from upstream.
+	BuiltWarmTimeout = 2 * time.Minute
 	// pullReportEvery throttles progress callbacks while bytes move.
 	pullReportEvery = 2 * time.Second
 )
@@ -158,9 +164,19 @@ func (e *Engine) PullImage(ctx context.Context, ref string) error {
 	var sizes map[string]int64
 	if e.warm != nil {
 		report(PullProgress{Stage: PullMirroring})
-		s, err := e.warm(ctx, ref)
+		built := strings.Contains(ref, "/apps/")
+		wctx, wcancel := ctx, context.CancelFunc(func() {})
+		if built {
+			wctx, wcancel = context.WithTimeout(ctx, e.builtWarm)
+		}
+		s, err := e.warm(wctx, ref)
+		timedOut := wctx.Err() != nil
+		wcancel()
 		if ctx.Err() != nil {
 			return fmt.Errorf("docker: pull %s: the registry mirror did not finish fetching the image within %s", ref, e.pullTimeout)
+		}
+		if built && timedOut {
+			return fmt.Errorf("docker: pull %s: the launchroom registry didn't answer within %s; check that this server reaches the main server (its private network connection)", ref, e.builtWarm)
 		}
 		// Otherwise a failed warm-up changes nothing: Docker's pull reports
 		// the registry's actual answer.

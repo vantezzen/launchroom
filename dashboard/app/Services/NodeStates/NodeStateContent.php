@@ -19,6 +19,7 @@ use App\Data\Specs\ServiceSpec;
 use App\Drivers\DatabaseEngines\DatabaseEngines;
 use App\Enums\DaemonFeature;
 use App\Enums\DeploymentStatus;
+use App\Enums\DeploymentTrigger;
 use App\Enums\DomainKind;
 use App\Enums\EnvironmentKind;
 use App\Enums\ServerRole;
@@ -109,7 +110,8 @@ final readonly class NodeStateContent
         $held = RestoreHolds::instanceIds();
 
         foreach ($placements as $placement) {
-            if (isset($held[$placement->service_instance_id])) {
+            // A stopped service runs nothing (D68); held ones wait for a restore.
+            if (isset($held[$placement->service_instance_id]) || $placement->serviceInstance->stopped_at !== null) {
                 continue;
             }
 
@@ -420,6 +422,36 @@ final readonly class NodeStateContent
             }
         }
 
+        // Stopped services (D68): their domains answer with the edge's
+        // "stopped" page instead of "no app at this address", also while a
+        // Start brings them back (until the new version is routed).
+        if ($server->supportsDaemonFeature(DaemonFeature::ServiceStop)) {
+            foreach ($this->stoppedInstances($server, array_keys($byInstance)) as $instance) {
+                $spec = $instance->environment->lastAppliedRevision?->spec->service($instance->service->public_id);
+                $protection = $previews->protectionFor($instance->environment);
+
+                if ($spec === null || $protection === false) {
+                    continue;
+                }
+
+                foreach ($this->routeGroups($spec) as [$canonical, $hosts]) {
+                    $routes[$canonical->hostname] ??= new RouteSpec(
+                        id: Domain::routeIdFor($canonical->id),
+                        hosts: $hosts,
+                        tls: match (true) {
+                            Hostname::isLocal($canonical->hostname) => 'internal',
+                            $canonical->kind === DomainKind::Custom => 'on_demand',
+                            default => 'acme',
+                        },
+                        upstreams: [],
+                        redirectWwwTo: count($hosts) > 1 ? $canonical->hostname : null,
+                        headers: $instance->environment->kind === EnvironmentKind::Production ? null : ['X-Robots-Tag' => 'noindex'],
+                        stopped: true,
+                    );
+                }
+            }
+        }
+
         // Immutable per-deployment URLs (docs/05 §5); a domain wins a clash.
         $taken = [];
 
@@ -438,6 +470,30 @@ final readonly class NodeStateContent
         ksort($routes);
 
         return array_values($routes);
+    }
+
+    /**
+     * The team's stopped instances (D68), and the ones a Start is bringing
+     * back that have no routed replica yet ($routed: instances with one).
+     *
+     * @param  list<int>  $routed
+     * @return list<ServiceInstance>
+     */
+    private function stoppedInstances(Server $server, array $routed): array
+    {
+        return array_values(ServiceInstance::query()
+            ->current()
+            ->where('team_id', $server->team_id)
+            ->whereNotIn('id', $routed)
+            ->where(static fn (Builder $query) => $query
+                ->whereNotNull('stopped_at')
+                ->orWhereIn('id', Deployment::query()->select('service_instance_id')
+                    ->where('trigger', DeploymentTrigger::Start->value)
+                    ->whereIn('status', DeploymentStatus::values([DeploymentStatus::Queued, ...DeploymentStatus::inFlight()]))))
+            ->with(['service', 'environment.lastAppliedRevision'])
+            ->orderBy('id')
+            ->get()
+            ->all());
     }
 
     /**

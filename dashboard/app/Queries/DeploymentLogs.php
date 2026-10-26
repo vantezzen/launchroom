@@ -13,6 +13,7 @@ use App\Models\DaemonTask;
 use App\Models\Deployment;
 use App\Models\LogChunk;
 use App\Models\Placement;
+use App\Models\Server;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 
@@ -48,6 +49,17 @@ final class DeploymentLogs
         foreach (Placement::query()->where('team_id', $deployment->team_id)->where('deployment_id', $deployment->id)->get(['workload_id', 'server_id']) as $placement) {
             $workloads[] = [$placement->workload_id, $placement->server_id];
             $servers[] = $placement->server_id;
+        }
+
+        // Servers the rollout placed replicas on: a failed or cancelled
+        // rollout's placements are gone, its lifecycle lines and startup
+        // output stay (D68).
+        $placedOn = $deployment->steps()->where('name', DeploymentStepName::Rollout->value)->value('meta');
+        $placedOn = is_array($placedOn) ? $placedOn : (is_string($placedOn) ? json_decode($placedOn, true) : null);
+
+        if (is_array($placedOn) && is_array($placedOn['servers'] ?? null)) {
+            $ids = Server::query()->where('team_id', $deployment->team_id)->whereIn('public_id', array_values(array_filter($placedOn['servers'], is_string(...))))->pluck('id')->all();
+            $servers = [...$servers, ...array_values(array_filter($ids, is_int(...)))];
         }
 
         $servers = array_values(array_unique($servers));
@@ -129,7 +141,8 @@ final class DeploymentLogs
     private function section(LogSourceKind $source, ?DaemonTaskType $task, ?string $step): string
     {
         return match (true) {
-            $source === LogSourceKind::Workload => 'runtime',
+            // A starting container's output belongs to the step it ran in (D68).
+            $source === LogSourceKind::Workload => in_array($step, [DeploymentStepName::Rollout->value, DeploymentStepName::Health->value, DeploymentStepName::Route->value], true) ? (string) $step : 'runtime',
             $task === DaemonTaskType::Plan => DeploymentStepName::Plan->value,
             $task === DaemonTaskType::Build => DeploymentStepName::Build->value,
             $task === DaemonTaskType::RunOnce => DeploymentStepName::Release->value,

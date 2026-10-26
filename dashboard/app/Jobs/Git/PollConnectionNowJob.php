@@ -47,7 +47,7 @@ final class PollConnectionNowJob implements ShouldBeUnique, ShouldQueue
 
         foreach ($trackedRefs->all() as $ref) {
             if ($ref->provider === $connection->provider && $ref->installationId === $connection->id) {
-                $poll->handle($connection, $ref->repositoryId, $ref->ref);
+                $poll->handle($connection, $ref->repositoryId, $ref->ref, webhook: true);
             }
         }
     }

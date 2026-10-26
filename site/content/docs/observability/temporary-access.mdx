@@ -6,7 +6,7 @@ description: Connect your own SSH, SFTP or database client to one container or v
 Sometimes the browser isn't enough: you want to `scp` a file into a container, copy uploads out of a volume, run a migration from your laptop, or open a database in TablePlus or DBeaver. **Temporary access** opens a port on the server for you alone, for a limited time, with credentials made for this access.
 
 - **Connect via SSH** (Console tab): SSH and SFTP into one replica's container.
-- **Connect with SFTP** (a volume in **Settings → Volumes** or on the **Backups** tab): SFTP into one volume, nothing else.
+- **Connect with SFTP** (a volume in **Settings → Volumes** or in **Settings → Backups**): SFTP into one volume, nothing else.
 - **Temporary access** (Data tab): a temporary user on a PostgreSQL, Redis or Valkey database, for your own client.
 
 ## What it is
@@ -77,7 +77,7 @@ On first connect, your SSH client shows the server's **host key fingerprint**. C
 
 Your service keeps running while you're connected, and it can write to the same files at the same time. Changes you make are visible to it right away.
 
-- For larger changes, stop the service first, or take a backup on the **Backups** tab.
+- For larger changes, stop the service first, or take a backup in **Settings → Backups**.
 - A **database's volume** opens read-only only. The database changes its files while it runs, so writing to them corrupts it, and a copy taken this way may not restore. Use **Backups** for a copy and **Temporary access** or the Data tab for the data itself.
 
 ## How long it lasts

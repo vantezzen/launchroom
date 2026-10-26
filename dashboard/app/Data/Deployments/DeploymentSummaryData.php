@@ -47,5 +47,7 @@ final class DeploymentSummaryData extends Data
         public bool $canRollback,
         /** The commit author's avatar (GitHub's avatar host, a git connection's origin or Gravatar, docs/19 §7); null → initials. */
         public ?string $commitAuthorAvatarUrl = null,
+        /** The live deployment of a stopped service (D68): it runs nothing until Start. */
+        public ?ServiceStoppedData $stopped = null,
     ) {}
 }

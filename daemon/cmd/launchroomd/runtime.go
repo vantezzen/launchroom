@@ -152,6 +152,8 @@ type daemonRuntime struct {
 
 	// publicIP detects the server's public addresses (Report.host.publicAddresses).
 	publicIP *publicip.Detector
+	// registryCheck checks that this server reaches the image registry (Report.host.registry).
+	registryCheck *registryChecker
 
 	// rejected is the latest NodeState the daemon refused (Report.stateRejected).
 	rejected atomic.Pointer[state.Rejection]
@@ -230,6 +232,7 @@ func newRuntime(ctx context.Context, cfg config.Config, id *identity.Identity, s
 		Off: cfg.PublicIPDetectOff, Configured: cfg.PublicIPs, OnChange: rt.kickReport, Now: rt.now,
 		Log: log.With("component", "publicip"),
 	})
+	rt.registryCheck = newRegistryChecker(rt.now, rt.kickReport)
 	rt.traffic = traffic.New(traffic.Options{OnMinute: rt.kickReport, Now: rt.now, Log: log.With("component", "traffic")})
 	rt.waf = waf.New(waf.Options{OnWindow: rt.kickReport, Now: rt.now, Log: log.With("component", "waf")})
 	ingress := caddy.NewManager(caddy.ManagerOptions{
@@ -269,7 +272,7 @@ func newRuntime(ctx context.Context, cfg config.Config, id *identity.Identity, s
 		AmbassadorNetwork: ambassadord.NetworkName, Mesh: rt.meshRules, Access: rt.access.Rules,
 	})
 	rt.ingress = ingress
-	rt.monitor = health.NewMonitor(ctx, health.MonitorOptions{OnChange: rt.kickReconcile})
+	rt.monitor = health.NewMonitor(ctx, health.MonitorOptions{OnChange: rt.kickReconcile, OnProbe: rt.kickReport})
 	rt.sealingKey = priv
 	rt.rec = reconcile.New(reconcile.Options{
 		ServerID: serverID, Docker: dc, Policy: pol, Health: rt.monitor, Ports: d.ports, Ingress: ingress,
@@ -278,6 +281,7 @@ func newRuntime(ctx context.Context, cfg config.Config, id *identity.Identity, s
 			return sealed.OpenWorkloadEnv(s.Env, priv, serverID, s.ID)
 		},
 		OnProgress: rt.kickReport,
+		OnPullDone: rt.kickReconcile,
 		Isolate:    rt.firewall.Sync,
 		MeshIP:     rt.meshIP,
 		BeforeNetworkRemove: func(ctx context.Context, network string) error {
@@ -493,6 +497,17 @@ func (rt *daemonRuntime) serveForwarder(ctx context.Context, f *registry.Forward
 func (rt *daemonRuntime) kickReconcile() { notify(rt.reconcileKick) }
 func (rt *daemonRuntime) kickReport()    { notify(rt.reportKick) }
 
+// newState runs after a newer NodeState was accepted: a pull the running
+// pass waits for is abandoned when no workload of the new state needs its
+// image (a held or cancelled one, docs/14 §12.5), so the new state applies
+// now; then the reconciler runs.
+func (rt *daemonRuntime) newState() {
+	if cur := rt.store.Current(); cur != nil {
+		rt.rec.AbandonPulls(cur.State)
+	}
+	rt.kickReconcile()
+}
+
 func notify(ch chan struct{}) {
 	select {
 	case ch <- struct{}{}:
@@ -583,6 +598,8 @@ func (rt *daemonRuntime) run(ctx context.Context, syncState func(context.Context
 		start(func() { rt.clientCert.Run(ctx) })
 	}
 	start(func() { rt.runtimeLoop(ctx) })
+	start(func() { rt.watchLoop(ctx) })
+	start(func() { rt.registryCheck.run(ctx) })
 	rt.kickReconcile()
 
 	err := syncState(ctx)
@@ -662,6 +679,28 @@ func (rt *daemonRuntime) reconcileLoop(ctx context.Context) {
 	}
 }
 
+// watchLoop looks at starting workloads every couple of seconds (D68):
+// crashes, restarts and port issues reach the dashboard within seconds, and
+// their output is shipped from the first line (logship startup followers).
+func (rt *daemonRuntime) watchLoop(ctx context.Context) {
+	tick := time.NewTicker(watchInterval)
+	defer tick.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-tick.C:
+		}
+		if rt.rec.Watch(ctx) {
+			rt.kickReport()
+		}
+		rt.logship.SyncStartup(ctx, rt.rec.Starting())
+	}
+}
+
+// watchInterval is how often starting workloads are looked at.
+const watchInterval = 2 * time.Second
+
 // scheduleLoop starts scheduled workloads (cron services) at every due
 // minute, a second after the minute begins; works offline like the reconciler.
 func (rt *daemonRuntime) scheduleLoop(ctx context.Context) {
@@ -705,7 +744,8 @@ func (rt *daemonRuntime) reportLoop(ctx context.Context) {
 			}
 			continue
 		}
-		// Accepted: these minutes and facts are delivered.
+		// Accepted: these minutes, events and facts are delivered.
+		rt.rec.AckEvents(rep.Events)
 		rt.metrics.Ack(rep.Metrics)
 		if rep.Metrics != nil {
 			rt.traffic.Ack(rep.Metrics.Requests)
@@ -738,6 +778,7 @@ func (rt *daemonRuntime) buildReport(ctx context.Context) *state.Report {
 		VolumeDeletions: rt.rec.VolumeDeletions(),
 		Metrics:         rt.pendingMetrics(),
 		WalArchives:     rt.walArchiveStatus(),
+		Events:          rt.rec.PendingEvents(),
 	}
 }
 
@@ -794,6 +835,9 @@ func (rt *daemonRuntime) hostStatus(ctx context.Context) *state.HostStatus {
 	h.Runtime = rt.runtimeStatus(h)
 	if rt.publicIP != nil {
 		h.PublicAddresses = rt.publicIP.Snapshot()
+	}
+	if rt.registryCheck != nil {
+		h.Registry = rt.registryCheck.Snapshot()
 	}
 	return h
 }

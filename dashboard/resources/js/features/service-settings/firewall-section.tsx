@@ -1,14 +1,14 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Eye, Plus, ShieldCheck, ShieldOff, Trash2 } from 'lucide-react';
-import { useState } from 'react';
-import { toast } from 'sonner';
-import { formatCompact } from '@/components/charts/format';
-import { Sparkline } from '@/components/charts/sparkline';
-import { Callout } from '@/components/patterns/callout';
-import { ChoiceTiles } from '@/components/patterns/choice-tiles';
-import { ConfirmPopover } from '@/components/patterns/confirm-popover';
-import { TimeAgo } from '@/components/time-ago';
-import { Button } from '@/components/ui/button';
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Eye, Plus, ShieldCheck, ShieldOff, Trash2 } from "lucide-react";
+import { useState } from "react";
+import { toast } from "sonner";
+import { formatCompact } from "@/components/charts/format";
+import { Sparkline } from "@/components/charts/sparkline";
+import { Callout } from "@/components/patterns/callout";
+import { ChoiceTiles } from "@/components/patterns/choice-tiles";
+import { ConfirmPopover } from "@/components/patterns/confirm-popover";
+import { TimeAgo } from "@/components/time-ago";
+import { Button } from "@/components/ui/button";
 import {
     Dialog,
     DialogClose,
@@ -16,31 +16,31 @@ import {
     DialogDescription,
     DialogFooter,
     DialogTitle,
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import {
     Select,
     SelectContent,
     SelectItem,
     SelectTrigger,
     SelectValue,
-} from '@/components/ui/select';
-import { requestJson } from '@/features/projects/http';
-import { SettingsCard, SettingsRow } from '@/features/settings/settings-card';
-import { show as firewallRoute } from '@/routes/security/firewall';
-import { listNames } from '@/features/security/firewall-section';
-import { SettingsPage } from './section';
-import type { SettingsContext } from './settings-context';
+} from "@/components/ui/select";
+import { requestJson } from "@/features/projects/http";
+import { SettingsCard, SettingsRow } from "@/features/settings/settings-card";
+import { show as firewallRoute } from "@/routes/security/firewall";
+import { listNames } from "@/features/security/firewall-section";
+import { SettingsPage } from "./section";
+import type { SettingsContext } from "./settings-context";
 
 /** Request body inspection limits (docs/22 §6.7); 32 KiB is the default. */
 const BODY_LABEL: Record<string, string> = {
-    '32': '32 KiB',
-    '128': '128 KiB',
-    '1024': '1 MiB',
+    "32": "32 KiB",
+    "128": "128 KiB",
+    "1024": "1 MiB",
 };
 
 type Firewall = App.Data.Security.ServiceFirewallData;
-type Mode = 'off' | 'log' | 'block';
+type Mode = "off" | "log" | "block";
 
 /**
  * Settings → Web firewall (docs/22 §9.6): the mode as three tiles, the
@@ -50,12 +50,12 @@ type Mode = 'off' | 'log' | 'block';
 export function FirewallSection({ context }: { context: SettingsContext }) {
     const [project, environment, service] = context.route;
     const client = useQueryClient();
-    const key = ['service-firewall', project, environment, service];
+    const key = ["service-firewall", project, environment, service];
     const { data } = useQuery({
         queryKey: key,
         queryFn: ({ signal }) =>
             requestJson<Firewall>(
-                'get',
+                "get",
                 firewallRoute({ project, environment, service }).url,
                 undefined,
                 signal,
@@ -76,7 +76,7 @@ export function FirewallSection({ context }: { context: SettingsContext }) {
         setSaving(true);
 
         try {
-            await requestJson('patch', data.updateUrl, body);
+            await requestJson("patch", data.updateUrl, body);
             toast.success(message);
             refresh();
         } catch (error) {
@@ -87,7 +87,7 @@ export function FirewallSection({ context }: { context: SettingsContext }) {
     };
 
     const outdated = (data?.edges ?? []).filter(
-        (edge) => edge.state !== 'error',
+        (edge) => edge.state !== "error",
     );
 
     return (
@@ -108,15 +108,15 @@ export function FirewallSection({ context }: { context: SettingsContext }) {
                         </Callout>
                     )}
                     {data.edges
-                        .filter((edge) => edge.state === 'error')
+                        .filter((edge) => edge.state === "error")
                         .map((edge) => (
                             <Callout
                                 key={edge.serverId}
                                 tone="warning"
-                                title={`The firewall is off on ${edge.server}`}
+                                title={`The firewall isn’t running on ${edge.server}`}
                             >
                                 {edge.message ??
-                                    'The server refused the firewall settings.'}
+                                    "The server refused the firewall settings."}
                             </Callout>
                         ))}
                     {outdated.length > 0 && (
@@ -125,8 +125,8 @@ export function FirewallSection({ context }: { context: SettingsContext }) {
                             title={`Update ${listNames(outdated.map((edge) => edge.server))} to protect this service`}
                         >
                             {outdated.length === 1
-                                ? 'It serves this service’s requests without the firewall until then.'
-                                : 'They serve this service’s requests without the firewall until then.'}
+                                ? "Its edge doesn’t include the firewall yet, so it serves this service’s requests unchecked whatever the mode below says."
+                                : "Their edges don’t include the firewall yet, so they serve this service’s requests unchecked whatever the mode below says."}
                         </Callout>
                     )}
 
@@ -138,20 +138,20 @@ export function FirewallSection({ context }: { context: SettingsContext }) {
                             data.canManage && !saving && mode !== data.mode
                                 ? void update(
                                       { mode },
-                                      mode === 'block'
-                                          ? 'Attacks are blocked now'
-                                          : mode === 'log'
-                                            ? 'Attacks are logged now'
-                                            : 'The firewall is off',
+                                      mode === "block"
+                                          ? "Attacks are blocked now"
+                                          : mode === "log"
+                                            ? "Attacks are logged now"
+                                            : "The firewall is off",
                                   )
                                 : undefined
                         }
                         options={[
                             {
-                                value: 'off',
-                                label: 'Off',
+                                value: "off",
+                                label: "Off",
                                 description:
-                                    'Requests reach the service unchecked',
+                                    "Requests reach the service unchecked",
                                 media: (
                                     <ShieldOff
                                         aria-hidden="true"
@@ -161,9 +161,9 @@ export function FirewallSection({ context }: { context: SettingsContext }) {
                                 disabled: !data.canManage,
                             },
                             {
-                                value: 'log',
-                                label: 'Log only',
-                                description: 'Attacks are counted, not refused',
+                                value: "log",
+                                label: "Log only",
+                                description: "Attacks are counted, not refused",
                                 media: (
                                     <Eye
                                         aria-hidden="true"
@@ -173,10 +173,10 @@ export function FirewallSection({ context }: { context: SettingsContext }) {
                                 disabled: !data.canManage,
                             },
                             {
-                                value: 'block',
-                                label: 'Block',
+                                value: "block",
+                                label: "Block",
                                 description:
-                                    'Requests that match attack rules are refused',
+                                    "Requests that match attack rules are refused",
                                 media: (
                                     <ShieldCheck
                                         aria-hidden="true"
@@ -188,11 +188,11 @@ export function FirewallSection({ context }: { context: SettingsContext }) {
                         ]}
                     />
 
-                    {data.mode === 'log' &&
+                    {data.mode === "log" &&
                         data.watching &&
                         data.watching.detected > 0 && (
                             <Callout
-                                title={`Would have blocked ${data.watching.detected.toLocaleString('en')} ${data.watching.detected === 1 ? 'request' : 'requests'} in the last 7 days`}
+                                title={`Would have blocked ${data.watching.detected.toLocaleString("en")} ${data.watching.detected === 1 ? "request" : "requests"} in the last 7 days`}
                                 actions={
                                     data.canManage ? (
                                         <Button
@@ -201,8 +201,8 @@ export function FirewallSection({ context }: { context: SettingsContext }) {
                                             disabled={saving}
                                             onClick={() =>
                                                 void update(
-                                                    { mode: 'block' },
-                                                    'Attacks are blocked now',
+                                                    { mode: "block" },
+                                                    "Attacks are blocked now",
                                                 )
                                             }
                                         >
@@ -212,13 +212,13 @@ export function FirewallSection({ context }: { context: SettingsContext }) {
                                 }
                             >
                                 {[
-                                    data.watching.categories.join(', '),
+                                    data.watching.categories.join(", "),
                                     data.watching.topPath
                                         ? `most on ${data.watching.topPath}`
                                         : null,
                                 ]
                                     .filter(Boolean)
-                                    .join(', ')}
+                                    .join(", ")}
                             </Callout>
                         )}
 
@@ -233,7 +233,7 @@ export function FirewallSection({ context }: { context: SettingsContext }) {
                                         blocked
                                     </span>
                                 </div>
-                                {(data.detected > 0 || data.mode === 'log') && (
+                                {(data.detected > 0 || data.mode === "log") && (
                                     <div className="flex flex-col">
                                         <span className="type-stat tabular-nums">
                                             {formatCompact(data.detected)}
@@ -271,8 +271,8 @@ export function FirewallSection({ context }: { context: SettingsContext }) {
                                     void update(
                                         { paranoia: Number(value) },
                                         Number(value) === 2
-                                            ? 'Stricter rules are on'
-                                            : 'Default rules are on',
+                                            ? "Stricter rules are on"
+                                            : "Default rules are on",
                                     )
                                 }
                             >
@@ -343,8 +343,8 @@ function Exceptions({
     const [open, setOpen] = useState(false);
 
     const remove = async (id: string) => {
-        await requestJson('delete', `${data.exclusionsUrl}/${id}`);
-        toast.success('Exception removed');
+        await requestJson("delete", `${data.exclusionsUrl}/${id}`);
+        toast.success("Exception removed");
         onChanged();
     };
 
@@ -381,7 +381,7 @@ function Exceptions({
                                 <span className="type-body">
                                     <code className="font-mono text-muted-foreground">
                                         {x.rule}
-                                    </code>{' '}
+                                    </code>{" "}
                                     {x.message}
                                 </span>
                                 <span className="type-small [overflow-wrap:anywhere] text-muted-foreground">
@@ -390,21 +390,21 @@ function Exceptions({
                                             {x.target}
                                         </code>
                                     ) : (
-                                        'Whole request'
+                                        "Whole request"
                                     )}
                                     {x.path ? (
                                         <>
-                                            {' under '}
+                                            {" under "}
                                             <code className="font-mono">
                                                 {x.path}
                                             </code>
                                         </>
                                     ) : (
-                                        ' on every path'
+                                        " on every path"
                                     )}
                                     {x.addedBy
                                         ? `, added by ${x.addedBy} `
-                                        : ', added '}
+                                        : ", added "}
                                     <TimeAgo value={x.addedAt} />
                                 </span>
                                 {x.note && (
@@ -454,9 +454,9 @@ function AddException({
     url: string;
     onAdded: () => void;
 }) {
-    const [rule, setRule] = useState('');
-    const [path, setPath] = useState('');
-    const [target, setTarget] = useState('');
+    const [rule, setRule] = useState("");
+    const [path, setPath] = useState("");
+    const [target, setTarget] = useState("");
     const [error, setError] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
 
@@ -465,16 +465,16 @@ function AddException({
         setError(null);
 
         try {
-            await requestJson('post', url, {
+            await requestJson("post", url, {
                 rule: Number(rule),
                 path: path.trim() || null,
                 target: target.trim() || null,
             });
-            toast.success('Exception added');
+            toast.success("Exception added");
             onOpenChange(false);
-            setRule('');
-            setPath('');
-            setTarget('');
+            setRule("");
+            setPath("");
+            setTarget("");
             onAdded();
         } catch (failure) {
             setError((failure as Error).message);
@@ -534,7 +534,7 @@ function AddException({
                         <Button variant="ghost">Cancel</Button>
                     </DialogClose>
                     <Button
-                        disabled={busy || rule === ''}
+                        disabled={busy || rule === ""}
                         onClick={() => void submit()}
                     >
                         Add exception

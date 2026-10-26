@@ -44,7 +44,7 @@ final readonly class ForwardBackupAlerts
             title: $event->title,
             summary: $event->summary,
             severity: $event->kind->critical() ? AlertSeverity::Critical : AlertSeverity::Warning,
-            href: route('projects.services.show', ['project' => $instance->environment->project, 'environment' => $instance->environment, 'service' => $instance->service, 'tab' => 'backups']),
+            href: route('projects.services.section', ['project' => $instance->environment->project, 'environment' => $instance->environment, 'service' => $instance->service, 'section' => 'backups']),
             project: $instance->environment->project,
             environment: $instance->environment,
             serviceInstance: $instance,

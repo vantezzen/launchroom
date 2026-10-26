@@ -28,9 +28,10 @@ final readonly class PollConnectionRef
     ) {}
 
     /**
+     * @param  bool  $webhook  a webhook asked for this poll (docs/19 §4.2)
      * @return bool whether an event was emitted
      */
-    public function handle(GitConnection $connection, int $repositoryId, string $ref): bool
+    public function handle(GitConnection $connection, int $repositoryId, string $ref, bool $webhook = false): bool
     {
         if (! $connection->isActive() || ! GitRef::isValid($ref) || ! str_starts_with($ref, 'refs/heads/')) {
             return false;
@@ -51,7 +52,7 @@ final readonly class PollConnectionRef
             return false;
         }
 
-        $update = $this->recordRefHead->handle($connection, $repositoryId, $ref, $commit->sha, polled: true);
+        $update = $this->recordRefHead->handle($connection, $repositoryId, $ref, $commit->sha, polled: true, webhook: $webhook);
 
         if (! $update->changed || $update->previous === null || SkipMarkers::matches($commit->message)) {
             return false;

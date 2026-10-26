@@ -87,7 +87,7 @@ func parseProcNet(r io.Reader, found map[int]bool) error {
 			continue
 		}
 		addr, portHex, ok := strings.Cut(fields[1], ":")
-		if !ok {
+		if !ok || addr == dockerDNSHex {
 			continue
 		}
 		port, err := strconv.ParseUint(portHex, 16, 16)
@@ -103,6 +103,12 @@ func parseProcNet(r io.Reader, found map[int]bool) error {
 	}
 	return nil
 }
+
+// dockerDNSHex is 127.0.0.11 in /proc's notation: Docker's embedded DNS
+// server listens there (TCP, a random port) inside every container on a user
+// network. It is not the app's socket; counting it made a slow app look like
+// "the app listens on 42747, not 8000".
+const dockerDNSHex = "0B00007F"
 
 // isLoopbackHex recognises 127.x.x.x (little-endian hex "xx00007F" style:
 // last byte 7F) and ::1 / ::ffff:127.x in /proc's hex notation.

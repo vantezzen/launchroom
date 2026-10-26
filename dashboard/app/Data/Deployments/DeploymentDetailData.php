@@ -17,6 +17,7 @@ final class DeploymentDetailData extends Data
      * @param  list<ResolvedConfigEntryData>  $config
      * @param  list<EnvSnapshotEntryData>  $env
      * @param  list<BuildHistoryEntryData>  $buildHistory  the service instance's last 30 finished deployments, oldest first
+     * @param  list<DeploymentServerData>  $servers  where its replicas run (only while they exist: live, rolling out, ready)
      */
     public function __construct(
         public DeploymentSummaryData $deployment,
@@ -46,5 +47,8 @@ final class DeploymentDetailData extends Data
         /** The launchroom.json problems a push failed on (docs/18 §6). */
         public ?DeploymentConfigErrorsData $configErrors = null,
         public ?BuildServerData $buildServer = null,
+        public array $servers = [],
+        /** The deployment that replaced this one (superseded only). */
+        public ?DeploymentRefData $supersededBy = null,
     ) {}
 }

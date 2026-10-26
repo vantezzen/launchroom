@@ -63,4 +63,6 @@ enum DaemonFeature: string
     case Waf = 'waf';
     /** `WorkloadSpec.files`: config files written into the container before it starts (D65, docs/03 §6). */
     case ConfigFiles = 'configFiles';
+    /** `RouteSpec.stopped`: the edge answers a stopped service's domains with its "stopped" page (D68). */
+    case ServiceStop = 'serviceStop';
 }

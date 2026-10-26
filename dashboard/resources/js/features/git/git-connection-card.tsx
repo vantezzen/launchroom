@@ -1,47 +1,54 @@
-import { Link, router } from '@inertiajs/react';
-import { RefreshCw } from 'lucide-react';
-import { useState } from 'react';
-import { CopyValue } from '@/components/copy-value';
-import { MetaLine } from '@/components/patterns/meta-line';
-import { Logo } from '@/components/logo';
-import { Status } from '@/components/status';
-import type { StatusState } from '@/components/status';
-import { TimeAgo } from '@/components/time-ago';
-import { Button } from '@/components/ui/button';
-import { providerLogo } from '@/features/git/providers';
-import { edit } from '@/routes/git';
-import { requestJson, RequestFailed } from '@/features/projects/http';
-import { recheck, webhook } from '@/routes/git/servers';
+import { Link, router } from "@inertiajs/react";
+import { RefreshCw } from "lucide-react";
+import { useState } from "react";
+import { CopyValue } from "@/components/copy-value";
+import { MetaLine } from "@/components/patterns/meta-line";
+import { Logo } from "@/components/logo";
+import { Status } from "@/components/status";
+import type { StatusState } from "@/components/status";
+import { TimeAgo } from "@/components/time-ago";
+import { Button } from "@/components/ui/button";
+import { providerLogo } from "@/features/git/providers";
+import { edit } from "@/routes/git";
+import { requestJson, RequestFailed } from "@/features/projects/http";
+import { recheck, webhook } from "@/routes/git/servers";
 
 function health(connection: App.Data.Git.GitConnectionData): {
     state: StatusState;
     label: string;
 } {
     switch (connection.status) {
-        case 'needs_reauth':
-            return { state: 'warning', label: 'Needs you to sign in again' };
-        case 'pending':
+        case "needs_reauth":
+            return { state: "warning", label: "Needs you to sign in again" };
+        case "pending":
             return {
-                state: 'idle',
+                state: "idle",
                 label:
-                    connection.provider === 'git'
-                        ? 'Waiting for you to check the host key and add the deploy key'
-                        : 'Not finished: sign in to connect',
+                    connection.provider === "git"
+                        ? "Waiting for you to check the host key and add the deploy key"
+                        : "Not finished: sign in to connect",
             };
         default:
             if (
-                connection.provider === 'git' &&
+                connection.provider === "git" &&
                 !connection.hostKeysConfirmed
             ) {
                 return {
-                    state: 'warning',
-                    label: 'Host key changed: builds wait for you',
+                    state: "warning",
+                    label: "Host key changed: builds wait for you",
                 };
             }
 
-            return connection.webhooksHealthy
-                ? { state: 'active', label: 'Receiving webhooks' }
-                : { state: 'idle', label: 'Checking for pushes every minute' };
+            if (connection.webhooksHealthy) {
+                return { state: "active", label: "Pushes arrive right away" };
+            }
+
+            return connection.lastWebhookAt !== null
+                ? {
+                      state: "warning",
+                      label: "A push didn’t arrive by webhook: checking every minute",
+                  }
+                : { state: "idle", label: "Checking for pushes every minute" };
     }
 }
 
@@ -57,9 +64,9 @@ export function GitConnectionCard({
     onSignInAgain: (connection: App.Data.Git.GitConnectionData) => void;
 }) {
     const line = health(connection);
-    const plain = connection.provider === 'git';
-    const ssh = plain && connection.url.startsWith('ssh://');
-    const repos = `${connection.repositoriesCount} ${connection.repositoriesCount === 1 ? 'repository' : 'repositories'}`;
+    const plain = connection.provider === "git";
+    const ssh = plain && connection.url.startsWith("ssh://");
+    const repos = `${connection.repositoriesCount} ${connection.repositoriesCount === 1 ? "repository" : "repositories"}`;
 
     return (
         <section
@@ -90,7 +97,7 @@ export function GitConnectionCard({
                                     {connection.host}
                                     {connection.accountLogin !== null &&
                                         `Signed in as ${connection.accountLogin}`}
-                                    {connection.status === 'active' &&
+                                    {connection.status === "active" &&
                                         `${repos} seen`}
                                 </MetaLine>
                             )}
@@ -99,19 +106,19 @@ export function GitConnectionCard({
                 </div>
                 {connection.canManage && (
                     <div className="flex shrink-0 items-center gap-2">
-                        {(connection.status === 'needs_reauth' ||
-                            (connection.status === 'pending' && !plain)) && (
+                        {(connection.status === "needs_reauth" ||
+                            (connection.status === "pending" && !plain)) && (
                             <Button
                                 size="sm"
                                 onClick={() => onSignInAgain(connection)}
                             >
-                                {connection.status === 'pending'
-                                    ? 'Continue'
-                                    : 'Sign in again'}
+                                {connection.status === "pending"
+                                    ? "Continue"
+                                    : "Sign in again"}
                             </Button>
                         )}
                         {plain &&
-                            (connection.status === 'pending' ||
+                            (connection.status === "pending" ||
                                 !connection.hostKeysConfirmed) && (
                                 <Button size="sm" asChild>
                                     <Link
@@ -127,7 +134,7 @@ export function GitConnectionCard({
                                 </Button>
                             )}
                         {ssh &&
-                            connection.status === 'active' &&
+                            connection.status === "active" &&
                             connection.hostKeysConfirmed && (
                                 <Button
                                     variant="outline"
@@ -149,22 +156,22 @@ export function GitConnectionCard({
             </div>
             <div className="flex flex-col gap-0.5 border-t bg-recessed px-5 py-3">
                 <Status state={line.state} label={line.label} />
-                {connection.status === 'active' &&
+                {connection.status === "active" &&
                     connection.lastWebhookAt !== null && (
                         <p className="pl-5 type-small text-muted-foreground">
-                            Last delivery{' '}
+                            Last delivery{" "}
                             <TimeAgo value={connection.lastWebhookAt} />
                         </p>
                     )}
-                {connection.status !== 'active' &&
+                {connection.status !== "active" &&
                     connection.statusReason !== null && (
                         <p className="pl-5 type-small text-muted-foreground">
                             {connection.statusReason}
                         </p>
                     )}
             </div>
-            {connection.provider === 'git' &&
-                connection.status === 'active' &&
+            {connection.provider === "git" &&
+                connection.status === "active" &&
                 connection.canManage && <PollWebhook id={connection.id} />}
         </section>
     );
@@ -184,10 +191,10 @@ function PollWebhook({ id }: { id: string }) {
         try {
             setError(null);
             setDetails(
-                await requestJson<WebhookDetails>('post', webhook(id).url),
+                await requestJson<WebhookDetails>("post", webhook(id).url),
             );
         } catch (e) {
-            setError(e instanceof RequestFailed ? e.message : 'Try again.');
+            setError(e instanceof RequestFailed ? e.message : "Try again.");
         }
     }
 
@@ -211,10 +218,10 @@ function PollWebhook({ id }: { id: string }) {
     return (
         <div className="flex flex-col gap-2 border-t px-5 py-4">
             <p className="type-small text-muted-foreground">
-                POST anything to this URL with{' '}
+                POST anything to this URL with{" "}
                 <code className="font-mono">
                     {details.header}: sha256=&lt;HMAC-SHA256 of the body&gt;
-                </code>{' '}
+                </code>{" "}
                 (<code className="font-mono">X-Hub-Signature-256</code> works
                 too). launchroom then checks the branches right away.
             </p>

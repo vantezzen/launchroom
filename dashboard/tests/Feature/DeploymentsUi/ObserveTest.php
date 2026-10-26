@@ -56,6 +56,7 @@ test('the log explorer returns build and runtime lines of the environment with l
     $placement = Placement::query()->where('deployment_id', $web->id)->firstOrFail();
     obsTaskLogs($world, $web, DaemonTaskType::Build, ['$ pnpm build', 'ERR_PNPM_OUTDATED_LOCKFILE Cannot install']);
     obsTaskLogs($world, $web, DaemonTaskType::Logs, ['GET / 200', 'WARN slow query'], $placement->workload_id);
+    $world->logs($web, ['Health check passed on replica 1'], 9, 'health');
     $viewer = $world->member(TeamRole::Viewer);
     $url = route('projects.logs.entries', $world->envArgs());
 
@@ -69,8 +70,15 @@ test('the log explorer returns build and runtime lines of the environment with l
         ->and(collect($page['entries'])->firstWhere('message', 'WARN slow query')['level'])->toBe('warning')
         ->and($page['markers'])->not->toBeEmpty();
 
+    // The Logs tab asks for runtime: build output stays on its deployment,
+    // rollout and health events of the deployment stay in.
     $runtime = $this->actingAs($viewer)->getJson($url.'?source=runtime')->json('entries');
-    expect(collect($runtime)->pluck('source')->unique()->all())->toBe(['runtime']);
+    expect(collect($runtime)->pluck('source')->unique()->all())->toBe(['runtime'])
+        ->and(collect($runtime)->pluck('message'))->not->toContain('ERR_PNPM_OUTDATED_LOCKFILE Cannot install')
+        ->and(collect($runtime)->pluck('message'))->toContain('Health check passed on replica 1')
+        ->and(collect($runtime)->pluck('message'))->toContain('GET / 200');
+    $build = $this->actingAs($viewer)->getJson($url.'?source=build')->json('entries');
+    expect(collect($build)->pluck('message')->all())->toBe(['$ pnpm build', 'ERR_PNPM_OUTDATED_LOCKFILE Cannot install']);
 
     $postgres = $this->actingAs($viewer)->getJson($url.'?service='.$world->postgres->public_id)->json('entries');
     expect(collect($postgres)->pluck('service')->unique()->all())->not->toContain('web');

@@ -134,7 +134,7 @@ func run(ctx context.Context, cfg config.Config, log *slog.Logger, refresh <-cha
 	}
 	rt.nudgeFallback = rec.Nudge
 	rt.clientCert = certs
-	s := &syncer{client: client, store: store, serverID: rec.ServerID, log: log, onNewState: rt.kickReconcile, nudge: rt.stateKick,
+	s := &syncer{client: client, store: store, serverID: rec.ServerID, log: log, onNewState: rt.newState, nudge: rt.stateKick,
 		rejected: &rt.rejected, onRejected: rt.kickReport, now: rt.now, onContact: rt.controlPlaneContact}
 	return rt.run(ctx, func(ctx context.Context) error { return s.loop(ctx, interval, refresh) }, taskInterval)
 }

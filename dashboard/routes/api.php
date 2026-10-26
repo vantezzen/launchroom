@@ -18,6 +18,7 @@ use App\Http\Controllers\Api\V1\OpenApiController;
 use App\Http\Controllers\Api\V1\ProjectController;
 use App\Http\Controllers\Api\V1\SecurityController;
 use App\Http\Controllers\Api\V1\ServerController;
+use App\Http\Controllers\Api\V1\ServiceActionController;
 use App\Http\Controllers\Api\V1\TransferController;
 use App\Http\Controllers\Api\V1\VariableController;
 use App\Http\Middleware\IdempotentRequest;
@@ -104,6 +105,11 @@ Route::middleware(SubstituteBindings::class)->group(function () use ($ability): 
                 Route::post('deployments/{deployment}/redeploy', [DeploymentController::class, 'redeploy'])->name('deployments.redeploy');
                 Route::post('deployments/{deployment}/rollback', [DeploymentController::class, 'rollback'])->name('deployments.rollback');
                 Route::post('deployments/{deployment}/cancel', [DeploymentController::class, 'cancel'])->name('deployments.cancel');
+                // Service lifecycle (D68): the service panel header's actions.
+                Route::post('environments/{environment}/services/{service}/deploy', [ServiceActionController::class, 'deploy'])->name('services.deploy');
+                Route::post('environments/{environment}/services/{service}/restart', [ServiceActionController::class, 'restart'])->name('services.restart');
+                Route::post('environments/{environment}/services/{service}/stop', [ServiceActionController::class, 'stop'])->name('services.stop');
+                Route::post('environments/{environment}/services/{service}/start', [ServiceActionController::class, 'start'])->name('services.start');
             });
 
             Route::middleware($ability(ApiAbility::EnvRead))->group(function (): void {

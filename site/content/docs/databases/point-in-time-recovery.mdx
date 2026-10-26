@@ -23,7 +23,7 @@ Your daily dumps keep running alongside. They restore across PostgreSQL versions
 
 ## Turning it on
 
-Open the database's **Backups** tab and turn on **Point-in-time recovery**. Owners and admins can change it, and the change is audited.
+Open the database's **Settings → Backups** and turn on **Point-in-time recovery**. Owners and admins can change it, and the change is audited.
 
 - The database needs a backup destination (its schedule's, otherwise the team's default).
 - PostgreSQL **restarts once** to turn archiving on.
@@ -33,7 +33,7 @@ The tab shows "Taking the first base backup" until the window opens, then the wi
 
 ## Restoring to a point in time
 
-In the Backups tab's snapshot list, choose **Any point in time** (it shows the window, for example "From Oct 12, 03:00 to about a minute ago"). Pick a date and time down to the second, or **To the newest point**. Times outside the window are refused.
+In the Backups page’s snapshot list, choose **Any point in time** (it shows the window, for example "From Oct 12, 03:00 to about a minute ago"). Pick a date and time down to the second, or **To the newest point**. Times outside the window are refused.
 
 Then choose how to restore:
 

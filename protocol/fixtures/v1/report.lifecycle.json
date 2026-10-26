@@ -1,0 +1,141 @@
+{
+  "apiVersion": "launchroom.vantezzen.io/v1",
+  "kind": "Report",
+  "serverId": "srv_01J9Z8X7W6V5T4S3R2Q1P0N9MK",
+  "observedAt": "2026-10-25T12:00:30Z",
+  "seq": 42,
+  "full": true,
+  "appliedVersion": 1850,
+  "workloads": [
+    {
+      "id": "wl_01J9Z8X7W6V5T4S3R2Q1P0N9N7",
+      "phase": "unhealthy",
+      "observedAt": "2026-10-25T12:00:30Z",
+      "containerId": "d0f631ca1ddba8db3bcfcb9e057cdc98d0379f1bee00e75a545147a27dadd982",
+      "startedAt": "2026-10-25T12:00:28Z",
+      "exitCode": 1,
+      "restartCount": 3,
+      "message": "restarting after exit code 1",
+      "issue": {
+        "kind": "crash_loop",
+        "since": "2026-10-25T12:00:29Z",
+        "exitCode": 1,
+        "restarts": 3
+      }
+    },
+    {
+      "id": "wl_01J9Z8X7W6V5T4S3R2Q1P0N9N8",
+      "phase": "starting",
+      "observedAt": "2026-10-25T12:00:30Z",
+      "containerId": "a0f631ca1ddba8db3bcfcb9e057cdc98d0379f1bee00e75a545147a27dadd982",
+      "startedAt": "2026-10-25T12:00:01Z",
+      "restartCount": 0,
+      "message": "waiting for health check: connection refused; the app listens on 127.0.0.1:8000 only; bind to 0.0.0.0 so it is reachable",
+      "detectedPorts": [
+        8000
+      ],
+      "health": {
+        "state": "starting",
+        "consecutiveFailures": 0,
+        "lastCheckedAt": "2026-10-25T12:00:29Z",
+        "lastError": "connection refused",
+        "attempts": 6
+      },
+      "issue": {
+        "kind": "loopback_only",
+        "since": "2026-10-25T12:00:12Z",
+        "port": 8000,
+        "listening": [
+          8000
+        ]
+      }
+    },
+    {
+      "id": "wl_01J9Z8X7W6V5T4S3R2Q1P0N9NB",
+      "phase": "pulling",
+      "observedAt": "2026-10-25T12:00:30Z",
+      "restartCount": 0,
+      "message": "pulling 127.0.0.1:5000/apps/svc_01j9z8x7w6v5t4s3r2q1p0n9n2@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "pull": {
+        "stage": "downloading",
+        "downloadedBytes": 412000000,
+        "totalBytes": 690000000,
+        "updatedAt": "2026-10-25T11:58:10Z"
+      }
+    }
+  ],
+  "events": [
+    {
+      "seq": 1761393600000001,
+      "workload": "wl_01J9Z8X7W6V5T4S3R2Q1P0N9N7",
+      "deployment": "dpl_01J9Z8X7W6V5T4S3R2Q1P0N9N5",
+      "at": "2026-10-25T12:00:00Z",
+      "kind": "created"
+    },
+    {
+      "seq": 1761393600000002,
+      "workload": "wl_01J9Z8X7W6V5T4S3R2Q1P0N9N7",
+      "deployment": "dpl_01J9Z8X7W6V5T4S3R2Q1P0N9N5",
+      "at": "2026-10-25T12:00:00.4Z",
+      "kind": "started"
+    },
+    {
+      "seq": 1761393601000000,
+      "workload": "wl_01J9Z8X7W6V5T4S3R2Q1P0N9N7",
+      "deployment": "dpl_01J9Z8X7W6V5T4S3R2Q1P0N9N5",
+      "at": "2026-10-25T12:00:01Z",
+      "kind": "exited",
+      "exitCode": 1,
+      "output": [
+        {
+          "time": "2026-10-25T12:00:00.9Z",
+          "stream": "stderr",
+          "text": "ModuleNotFoundError: No module named 'app'"
+        }
+      ]
+    },
+    {
+      "seq": 1761393601500000,
+      "workload": "wl_01J9Z8X7W6V5T4S3R2Q1P0N9N7",
+      "deployment": "dpl_01J9Z8X7W6V5T4S3R2Q1P0N9N5",
+      "at": "2026-10-25T12:00:01.5Z",
+      "kind": "restarted",
+      "restarts": 1
+    },
+    {
+      "seq": 1761393640000000,
+      "workload": "wl_01J9Z8X7W6V5T4S3R2Q1P0N9N8",
+      "deployment": "dpl_01J9Z8X7W6V5T4S3R2Q1P0N9N6",
+      "at": "2026-10-25T12:00:40Z",
+      "kind": "health_failing",
+      "failures": 3,
+      "message": "connection refused"
+    },
+    {
+      "seq": 1761393650000000,
+      "workload": "wl_01J9Z8X7W6V5T4S3R2Q1P0N9N9",
+      "at": "2026-10-25T12:00:50Z",
+      "kind": "stopped",
+      "reason": "drained"
+    },
+    {
+      "seq": 1761393651000000,
+      "workload": "wl_01J9Z8X7W6V5T4S3R2Q1P0N9N9",
+      "at": "2026-10-25T12:00:51Z",
+      "kind": "removed",
+      "reason": "not_desired"
+    }
+  ],
+  "host": {
+    "cpus": 2,
+    "memoryMb": 4096,
+    "diskTotalMb": 80000,
+    "diskFreeMb": 51000,
+    "daemonVersion": "0.1.0",
+    "registry": {
+      "reachable": false,
+      "checkedAt": "2026-10-25T11:59:00Z",
+      "error": "no answer within 15 seconds"
+    }
+  }
+}

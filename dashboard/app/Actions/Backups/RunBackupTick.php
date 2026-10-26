@@ -74,6 +74,11 @@ final readonly class RunBackupTick
 
             $schedule->forceFill(['last_run_at' => $now])->save();
 
+            // A stopped service's backups pause (D68): nothing runs, nothing changes.
+            if ($schedule->serviceInstance?->stopped_at !== null) {
+                continue;
+            }
+
             try {
                 $this->start($schedule);
                 $started++;

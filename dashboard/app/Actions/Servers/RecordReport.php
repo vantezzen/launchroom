@@ -16,6 +16,7 @@ use App\Data\Protocol\V1\PullProgress;
 use App\Data\Protocol\V1\Report;
 use App\Data\Protocol\V1\StateRejection;
 use App\Data\Protocol\V1\VolumeDeletionResult;
+use App\Data\Protocol\V1\WorkloadIssue;
 use App\Data\Protocol\V1\WorkloadStatus;
 use App\Data\Servers\HostFactsData;
 use App\Data\Servers\ServerRuntimeData;
@@ -60,6 +61,7 @@ final readonly class RecordReport
         private RecordLinkQuality $links,
         private RecordWalArchives $walArchives,
         private RecordWafReport $waf,
+        private RecordWorkloadEvents $events,
     ) {}
 
     public function handle(Server $server, Report $report): bool
@@ -183,6 +185,12 @@ final readonly class RecordReport
         // WAL shipping of point-in-time recovery (docs/14 §10.2), forward-only per archive.
         if (is_array($report->walArchives)) {
             $this->walArchives->handle($server, array_values(array_filter($report->walArchives, is_array(...))));
+        }
+
+        // Container lifecycle events (D68): stored once per seq, so also from
+        // a report that was otherwise stale.
+        if (is_array($report->events)) {
+            $this->events->handle($server, $report->events);
         }
 
         if ($result === null) {
@@ -320,12 +328,21 @@ final readonly class RecordReport
                 'stage' => $status->pull->stage,
                 'downloaded' => $status->pull->downloadedBytes,
                 'total' => $status->pull->totalBytes,
+                ...(is_string($status->pull->updatedAt) ? ['updatedAt' => $status->pull->updatedAt] : []),
             ] : null;
 
-            if ($placement->phase !== $phase || $placement->health !== $health || $placement->message !== $message) {
+            $issue = $status->issue instanceof WorkloadIssue ? $status->issue->toStored() : null;
+            $probe = $status->health instanceof ProbeStatus ? array_filter([
+                'attempts' => is_int($status->health->attempts) ? $status->health->attempts : null,
+                'failures' => $status->health->consecutiveFailures,
+                'lastError' => is_string($status->health->lastError) ? mb_substr($status->health->lastError, 0, 1024) : null,
+                'checkedAt' => is_string($status->health->lastCheckedAt) ? $status->health->lastCheckedAt : null,
+            ], static fn (mixed $value): bool => $value !== null) : null;
+
+            if ($placement->phase !== $phase || $placement->health !== $health || $placement->message !== $message || ($placement->issue['kind'] ?? null) !== ($issue['kind'] ?? null)) {
                 $changed[] = $placement->deployment_id;
                 $instances[] = $placement->service_instance_id;
-            } elseif ($placement->pull != $pull) { // jsonb doesn't keep key order
+            } elseif ($placement->pull != $pull || $placement->probe != $probe) { // jsonb doesn't keep key order
                 // Only the pull moved: open deployment pages refetch, nothing to advance.
                 $progressed[] = $placement->deployment_id;
             }
@@ -336,6 +353,8 @@ final readonly class RecordReport
                 'container_id' => $status->containerId instanceof Optional ? $placement->container_id : $status->containerId,
                 'message' => $message,
                 'pull' => $pull,
+                'probe' => $probe,
+                'issue' => $issue,
                 'restart_count' => $status->restartCount,
                 'observed_at' => $observedAt,
             ])->save();

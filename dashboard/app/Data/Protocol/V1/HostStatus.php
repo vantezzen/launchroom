@@ -24,6 +24,7 @@ final class HostStatus extends Data
      * @param  list<string>|null|Optional  $features  optional protocol features the daemon understands (docs/03 §10)
      * @param  array<string, mixed>|null|Optional  $controlPlane  which dashboard URL launchroomd uses (docs/05 §4.1)
      * @param  array<string, mixed>|null|Optional  $runtime  how Docker runs and what launchroomd can do there (D49), normalized by App\Data\Servers\ServerRuntimeData
+     * @param  array<string, mixed>|null|Optional  $registry  whether the server reaches the image registry (D68)
      * @param  array<string, mixed>|null|Optional  $publicAddresses  the server's public IPv4/IPv6 as IP echo services see them (docs/05 §5), stored by RecordReport
      */
     public function __construct(
@@ -47,6 +48,8 @@ final class HostStatus extends Data
         public array|null|Optional $controlPlane = new Optional,
         public array|null|Optional $runtime = new Optional,
         public array|null|Optional $publicAddresses = new Optional,
+        /** Whether the server reaches the image registry it pulls from (D68), stored by RecordReport. */
+        public array|null|Optional $registry = new Optional,
     ) {}
 
     /** `ControlPlaneBaseURL` (protocol/schema/v1/report.json). */
@@ -145,6 +148,11 @@ final class HostStatus extends Data
             'runtime.capabilities.*.message' => ['sometimes', 'string', 'max:512'],
             // Public addresses (docs/05 §5), stored by RecordReport after ServerAddress.
             'publicAddresses' => ['sometimes', 'nullable', 'array'],
+            'registry' => ['sometimes', 'nullable', 'array'],
+            'registry.reachable' => ['required_with:registry', 'boolean'],
+            'registry.checkedAt' => ['required_with:registry', ...$time],
+            'registry.latencyMs' => ['sometimes', 'integer', 'min:0'],
+            'registry.error' => ['sometimes', 'string', 'max:512'],
             'publicAddresses.ipv4' => ['sometimes', 'string', 'ipv4'],
             'publicAddresses.ipv6' => ['sometimes', 'string', 'ipv6'],
             'publicAddresses.detectedAt' => ['required_with:publicAddresses', ...$time],

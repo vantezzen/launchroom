@@ -1888,6 +1888,87 @@
                 }
             }
         },
+        "/environments/{environment}/services/{service}/deploy": {
+            "post": {
+                "operationId": "deployService",
+                "summary": "Deploy the latest version of a service",
+                "description": "Builds and deploys the latest commit of the branch the service tracks, or resolves an image service's tag again. Refused while the service is stopped or has staged changes (deploy those with `POST /environments/{environment}/deploy`). Databases, workers and crons restart instead.\n\nRequires the `deploy` ability.",
+                "tags": [
+                    "Services"
+                ],
+                "x-launchroom-ability": "deploy",
+                "security": [
+                    {
+                        "token": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "environment",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^env_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+                        }
+                    },
+                    {
+                        "name": "service",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^svc_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+                        }
+                    },
+                    {
+                        "name": "Idempotency-Key",
+                        "in": "header",
+                        "required": false,
+                        "description": "Replays return the first response (24 h); the same key for another request is refused.",
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9_.:-]{1,255}$"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [
+                                        "data"
+                                    ],
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/DeploymentResource"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthenticated"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Invalid"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimited"
+                    }
+                }
+            }
+        },
         "/environments/{environment}/services/{service}/domains": {
             "get": {
                 "operationId": "listDomains",
@@ -2363,6 +2444,279 @@
                                     "properties": {
                                         "data": {
                                             "$ref": "#/components/schemas/ServiceInventoryResource"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthenticated"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Invalid"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimited"
+                    }
+                }
+            }
+        },
+        "/environments/{environment}/services/{service}/restart": {
+            "post": {
+                "operationId": "restartService",
+                "summary": "Restart a running service",
+                "description": "Starts new containers of the live version (same image, configuration and environment, no build) through the usual rollout, one replica at a time when there are several. Refused while a deployment of the service is in progress.\n\nRequires the `deploy` ability.",
+                "tags": [
+                    "Services"
+                ],
+                "x-launchroom-ability": "deploy",
+                "security": [
+                    {
+                        "token": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "environment",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^env_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+                        }
+                    },
+                    {
+                        "name": "service",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^svc_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+                        }
+                    },
+                    {
+                        "name": "Idempotency-Key",
+                        "in": "header",
+                        "required": false,
+                        "description": "Replays return the first response (24 h); the same key for another request is refused.",
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9_.:-]{1,255}$"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ServiceActionInput"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "202": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [
+                                        "data"
+                                    ],
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/ServiceActionResultData"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthenticated"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Invalid"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimited"
+                    }
+                }
+            }
+        },
+        "/environments/{environment}/services/{service}/start": {
+            "post": {
+                "operationId": "startService",
+                "summary": "Start a stopped service",
+                "description": "Runs the version that was live when it stopped, with the configuration deployed last, through the usual rollout.\n\nRequires the `deploy` ability.",
+                "tags": [
+                    "Services"
+                ],
+                "x-launchroom-ability": "deploy",
+                "security": [
+                    {
+                        "token": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "environment",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^env_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+                        }
+                    },
+                    {
+                        "name": "service",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^svc_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+                        }
+                    },
+                    {
+                        "name": "Idempotency-Key",
+                        "in": "header",
+                        "required": false,
+                        "description": "Replays return the first response (24 h); the same key for another request is refused.",
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9_.:-]{1,255}$"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ServiceActionInput"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "202": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [
+                                        "data"
+                                    ],
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/ServiceActionResultData"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthenticated"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/Invalid"
+                    },
+                    "429": {
+                        "$ref": "#/components/responses/RateLimited"
+                    }
+                }
+            }
+        },
+        "/environments/{environment}/services/{service}/stop": {
+            "post": {
+                "operationId": "stopService",
+                "summary": "Stop a service",
+                "description": "Its containers stop and its domains show a stopped page. Configuration, domains, volumes and deployments stay; unfinished deployments are cancelled. Applies at once, not as a staged change.\n\nRequires the `deploy` ability.",
+                "tags": [
+                    "Services"
+                ],
+                "x-launchroom-ability": "deploy",
+                "security": [
+                    {
+                        "token": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "environment",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^env_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+                        }
+                    },
+                    {
+                        "name": "service",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^svc_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+                        }
+                    },
+                    {
+                        "name": "Idempotency-Key",
+                        "in": "header",
+                        "required": false,
+                        "description": "Replays return the first response (24 h); the same key for another request is refused.",
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9_.:-]{1,255}$"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ServiceActionInput"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "required": [
+                                        "data"
+                                    ],
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/ServiceActionResultData"
                                         }
                                     }
                                 }
@@ -5375,7 +5729,9 @@
                     "rollback",
                     "promote",
                     "config",
-                    "api"
+                    "api",
+                    "restart",
+                    "start"
                 ]
             },
             "DomainKind": {
@@ -6080,6 +6436,13 @@
                         "items": {
                             "type": "string"
                         }
+                    },
+                    "waitingOn": {
+                        "description": "While holding: why they still run, when it's their server (offline, busy with an earlier change).",
+                        "type": [
+                            "string",
+                            "null"
+                        ]
                     }
                 },
                 "required": [
@@ -6865,6 +7228,37 @@
                 ],
                 "description": "Lifecycle of an enrolled server. pending_approval → online (approved) | revoked online ⇄ unreachable → offline → online revoked is terminal: the key is denied immediately."
             },
+            "ServiceActionInput": {
+                "type": "object",
+                "description": "Body of `POST …/services/{service}/stop|start|restart` (D68). `processes`: an app's workers and crons stop, start or restart with it.",
+                "properties": {
+                    "processes": {
+                        "type": "boolean",
+                        "default": true
+                    }
+                },
+                "additionalProperties": false
+            },
+            "ServiceActionResultData": {
+                "type": "object",
+                "description": "`POST …/services/{service}/stop|start|restart` (D68): the service after the action and the deployments it started (Start and Restart roll out a deployment per service; Stop starts none).",
+                "properties": {
+                    "service": {
+                        "$ref": "#/components/schemas/ServiceResource"
+                    },
+                    "deployments": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/DeploymentResource"
+                        }
+                    }
+                },
+                "required": [
+                    "service",
+                    "deployments"
+                ],
+                "additionalProperties": false
+            },
             "ServiceInventoryResource": {
                 "type": "object",
                 "description": "The inventory of a service's live image.",
@@ -6951,7 +7345,7 @@
             },
             "ServiceResource": {
                 "type": "object",
-                "description": "A service in one environment. `status`: the latest deployment's status while it runs, else `live` when a deployment serves, else the latest deployment's outcome, else `not_deployed`.",
+                "description": "A service in one environment. `status`: `stopped` while it is stopped (D68), else the latest deployment's status while it runs, else `live` when a deployment serves, else the latest deployment's outcome, else `not_deployed`.",
                 "properties": {
                     "id": {
                         "type": "string"
@@ -7006,6 +7400,13 @@
                         "items": {
                             "$ref": "#/components/schemas/TransferVolumeData"
                         }
+                    },
+                    "stoppedAt": {
+                        "description": "When it was stopped (null: not stopped).",
+                        "type": [
+                            "string",
+                            "null"
+                        ]
                     }
                 },
                 "required": [

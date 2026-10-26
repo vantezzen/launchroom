@@ -170,6 +170,7 @@ const procTCP = `  sl  local_address rem_address   st tx_queue rx_queue tr tm->w
    0: 00000000:1F90 00000000:0000 0A 00000000:00000000 00:00000000 00000000     0        0 1 1 0000000000000000 100 0 0 10 0
    1: 0100007F:1435 00000000:0000 0A 00000000:00000000 00:00000000 00000000     0        0 2 1 0000000000000000 100 0 0 10 0
    2: 0200000A:1F90 0300000A:C350 01 00000000:00000000 00:00000000 00000000     0        0 3 1 0000000000000000 100 0 0 10 0
+   3: 0B00007F:A6FB 00000000:0000 0A 00000000:00000000 00:00000000 00000000     0        0 6 1 0000000000000000 100 0 0 10 0
 `
 
 const procTCP6 = `  sl  local_address                         remote_address                        st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode
@@ -189,6 +190,7 @@ func TestProcScanner(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// 127.0.0.11:42747 is Docker's embedded DNS server, not the app.
 	want := []Listener{{Port: 3000}, {Port: 5173, LoopbackOnly: true}, {Port: 8080}}
 	if len(ls) != len(want) {
 		t.Fatalf("%+v", ls)

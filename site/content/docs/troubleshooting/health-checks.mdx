@@ -1,6 +1,6 @@
 ---
 title: Health check problems
-description: The build passed but the new version never went live. Fix wrong ports and hosts, slow starts, long first pulls, crash loops and failing release commands.
+description: The build passed but the new version never went live. Fix rollouts that wait, wrong ports and hosts, slow starts, crash loops and failing release commands.
 ---
 
 After a build, launchroom starts the new version next to the old one and switches traffic only once it answers its health check. If it never does, the deployment fails and the old version keeps serving. This page covers the reasons a new version doesn't become healthy and how to fix each.
@@ -13,9 +13,47 @@ launchroomd, the program launchroom runs on each server, checks every new replic
 - **TCP**: a connection to the port is enough. Databases and other non-HTTP services use this.
 - **None**: workers and cron jobs have no probe. A worker counts as healthy once it has run for a while without exiting.
 
-The settings live in the service's **Settings → Deploy → Health check**: Path, **Time to start** (default 30 seconds), **Check every** (5 seconds), **Answer within** (3 seconds) and **Unhealthy after** (3 failed checks). A deployment fails with `health_timeout` when the new replica isn't healthy by the deadline: the time to start, plus the checks, plus two minutes of slack. The deadline doesn't run out while the server is still downloading the image.
+The settings live in the service's **Settings → Deploy → Health check**: Path, **Time to start** (default 30 seconds), **Check every** (5 seconds), **Answer within** (3 seconds) and **Unhealthy after** (3 failed checks). A deployment fails with `health_timeout` when the new replica isn't healthy within the **Health check timeout** (Settings → Deploy → Rollout). By default that is the time to start, plus the checks, plus a minute, at least 90 seconds.
 
 A failed health check never touches the live version. If something goes wrong after the new version became healthy, launchroom keeps the new one rather than tearing down the only healthy copy.
+
+## What the deployment log shows
+
+The **Roll out** and **Health check** steps list what happens to each container, with the time:
+
+```
+Container created (replica 1, server-2)
+Container started (replica 1, server-2)
+INFO:     Uvicorn running on http://0.0.0.0:8000
+Health check passed: GET / on :8000 (replica 1, server-2)
+```
+
+The container's own output from its first line is in the same step, also when the environment keeps no runtime logs.
+Exits, restarts, failed health checks and containers launchroom stopped show up the same way, for example
+`Container exited with code 1 (replica 1, server-2)`, `Out of memory: the container was killed (…)`,
+`Container restarted (attempt 4, …)` or `Container stopped by launchroom (replaced by deployment dpl_…, …)`. The
+service's **Logs** tab shows these lines too.
+
+## Deploy stuck at Roll out
+
+The Roll out step creates the new containers. While it runs, it says what it waits for:
+
+- **"Waiting for server-2 to pick up the change"**: the server hasn't applied the new version yet. It does so within
+  seconds when it is online. If it doesn't, the server's page shows why under **Desired state**.
+- **"Fetching image into the local registry"**, **"Downloading image (412 MB of 690 MB)"**, **"Unpacking image"**: the
+  server downloads the image.
+- **"server-2: waiting for this server's private network address"**: the server's private network is still starting.
+
+The step fails instead of waiting forever:
+
+- **"server-2 couldn't download the image … no data for 2 minutes"**: the download stalled. Check the server's
+  **Image registry** health check and its private network connection on the server's page, then deploy again.
+- **"server-2 refused the new desired state"**: the server's launchroom version doesn't accept what the dashboard sent.
+  Update the server (Settings → Updates).
+- **"server-2 couldn't run the container: …"**: the server couldn't create or start it; the reason follows.
+- The **Start timeout** ran out (default 10 minutes, Settings → Deploy → Rollout): the message names the step it was in,
+  for example "server-2 was still downloading the image after 10 minutes (412 MB of 690 MB)". For a large image on a
+  slow connection, raise the timeout.
 
 ## Deploy stuck at Health check
 
@@ -24,7 +62,8 @@ Open the deployment. While the step runs, it says what it is waiting for:
 - **"Fetching image into the local registry (first deploy of this image)"**: launchroom's registry is copying a public image from its origin registry.
 - **"Downloading image (412 MB of 690 MB)"**: the server pulls the image. With several servers it shows the one furthest behind ("… on 2 servers").
 - **"Unpacking image"**: the download is done and Docker is extracting it.
-- No progress message: the container is running and launchroomd is probing it. Open **Runtime logs** from the deployment page to see what the app prints.
+- **"Waiting for GET / on :8000 to answer (attempt 3: connection refused)"**: the container runs and launchroomd checks it. The app's output is in the same step.
+- **"The container keeps restarting (4 so far)"**: the app exits right after it starts. See [Start failed](#start-failed-the-app-exited).
 
 Large images on a slow connection take longer the first time. Later deploys of the same service reuse unchanged layers, and servers keep the running image plus the previous two, so rollbacks need no download. A pull fails after 5 minutes without any progress or 45 minutes in total; the class is then `transient`. A redeploy usually succeeds, because launchroom's registry has copied the image by then.
 
@@ -34,6 +73,13 @@ Large images on a slow connection take longer the first time. Later deploys of t
 
 **Fix.** Click **Use port 5173 and redeploy** on the card, or start the app on the configured port. launchroom passes the configured port to the app in the `PORT` variable. Most frameworks read it. The best fix is to use `PORT` in your start command or code instead of a fixed number.
 
+## The container never became healthy: it listens on 127.0.0.1
+
+The deployment fails within about half a minute with: "it listens on 127.0.0.1:8000, so nothing outside the container
+reaches it. launchroom expects it on 0.0.0.0:8000 ($PORT)." Uvicorn and Flask bind to `127.0.0.1` unless told
+otherwise. Start them with `--host 0.0.0.0 --port $PORT`, for example
+`uvicorn app.main:app --host 0.0.0.0 --port $PORT`. The next section explains the variables launchroom sets.
+
 ## Health check failed: your app only accepts connections from itself
 
 The card says the app "listens on 127.0.0.1:3000, which nothing outside its container can reach."
@@ -42,7 +88,7 @@ The card says the app "listens on 127.0.0.1:3000, which nothing outside its cont
 
 launchroom already sets `HOST=0.0.0.0` and `HOSTNAME=0.0.0.0` for every service except databases (Next.js standalone servers read `HOSTNAME`, most other frameworks `HOST`). When an app still binds to `127.0.0.1`, something overrides that: a variable you set yourself, a hard-coded address in the code or config, or a start command with `--host 127.0.0.1` or `--host localhost`.
 
-**Fix.** Remove the override, or bind to `0.0.0.0` explicitly on the command line (`--host 0.0.0.0`, `--bind 0.0.0.0:$PORT` for gunicorn). If a variable of yours sets `HOST` or `HOSTNAME`, check its value in the service's **Variables** tab.
+**Fix.** Remove the override, or bind to `0.0.0.0` explicitly on the command line (`--host 0.0.0.0`, `--bind 0.0.0.0:$PORT` for gunicorn). If a variable of yours sets `HOST` or `HOSTNAME`, check its value in the service's **Settings → Variables**.
 
 ## Health check failed: nothing answered on port 3000
 
@@ -70,7 +116,10 @@ launchroom already sets `HOST=0.0.0.0` and `HOSTNAME=0.0.0.0` for every service 
 
 The class is `runtime_error`, and the canvas may show the service as **Crashed**.
 
-**Cause.** The container stopped while starting. The last runtime log lines usually say why: a missing variable, a database that isn't reachable, a syntax error, a missing file in the image. If the app exits with code 137, it ran out of memory instead (the card then says "Your app ran out of memory").
+When the container exits again after Docker restarted it three times, the deployment fails right away with "The
+container keeps crashing" and the last lines it printed, instead of waiting for the health check timeout.
+
+**Cause.** The container stopped while starting. The last lines it printed usually say why: a missing variable, a database that isn't reachable, a syntax error, a missing file in the image. If the app exits with code 137, it ran out of memory instead (the card then says "Your app ran out of memory").
 
 **Fix.** Open the deployment's **Runtime logs** and read the last lines before the exit. Typical fixes:
 

@@ -151,6 +151,8 @@ final readonly class EvaluateAlertConditions
             ->join('environments as e', 'e.id', '=', 'si.environment_id')
             ->join('servers as s', 's.id', '=', 'p.server_id')
             ->whereNull('si.removed_at')
+            // A stopped service is down on purpose (D68).
+            ->whereNull('si.stopped_at')
             ->where('e.kind', '!=', EnvironmentKind::Preview->value)
             ->where('s.status', ServerStatus::Online->value)
             ->get(['p.workload_id', 'p.service_instance_id', 'p.phase', 'p.restart_count', 'p.message', 'si.team_id']);

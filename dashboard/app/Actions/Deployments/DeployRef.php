@@ -34,7 +34,7 @@ final readonly class DeployRef
         private RecordAuditEvent $audit,
     ) {}
 
-    public function handle(ServiceInstance $instance, ?string $ref, ?string $sha, User $user, AuditActor $actor): Deployment
+    public function handle(ServiceInstance $instance, ?string $ref, ?string $sha, User $user, AuditActor $actor, DeploymentTrigger $trigger = DeploymentTrigger::Api): Deployment
     {
         $instance->loadMissing(['service', 'environment']);
         $source = $instance->service->source;
@@ -51,7 +51,7 @@ final readonly class DeployRef
 
         $sha ??= $this->heads->head($instance->team_id, $source, $branch);
 
-        $deployment = $this->deployCommit->handle($instance, new CommitData($sha, '', null, null, null), 'refs/heads/'.$branch, DeploymentTrigger::Api);
+        $deployment = $this->deployCommit->handle($instance, new CommitData($sha, '', null, null, null), 'refs/heads/'.$branch, $trigger);
 
         if (! $deployment instanceof Deployment) {
             throw DomainRuleViolation::conflict("Nothing was deployed: this commit is already deploying, the service isn't deployed in this environment yet (deploy its staged changes first), or a deploy rule refused it.");

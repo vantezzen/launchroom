@@ -36,13 +36,13 @@ final readonly class RedeployService
         private RecordAuditEvent $audit,
     ) {}
 
-    public function handle(ServiceInstance $instance, ?Deployment $from, ?User $user, AuditActor $actor): Deployment
+    public function handle(ServiceInstance $instance, ?Deployment $from, ?User $user, AuditActor $actor, DeploymentTrigger $trigger = DeploymentTrigger::Manual): Deployment
     {
         if ($from instanceof Deployment && $from->service_instance_id !== $instance->id) {
             throw DomainRuleViolation::forbidden('That deployment belongs to another service.');
         }
 
-        $deployment = DB::transaction(function () use ($instance, $from, $user, $actor): Deployment {
+        $deployment = DB::transaction(function () use ($instance, $from, $user, $actor, $trigger): Deployment {
             $instance = ServiceInstance::query()->whereKey($instance->id)->with(['service', 'activeDeployment'])->lockForUpdate()->firstOrFail();
             $environment = Environment::query()->whereKey($instance->environment_id)->with(['project', 'lastAppliedRevision'])->firstOrFail();
             $revision = $environment->lastAppliedRevision;
@@ -73,7 +73,7 @@ final readonly class RedeployService
                 $spec,
                 $service,
                 $env,
-                DeploymentTrigger::Manual,
+                $trigger,
                 $user,
                 $source?->commit_sha,
                 $source?->git_ref,

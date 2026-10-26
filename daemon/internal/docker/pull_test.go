@@ -154,6 +154,24 @@ func TestEnginePullFailsWithoutProgress(t *testing.T) {
 	}
 }
 
+// A warm-up of an image launchroom built that hangs means this server
+// doesn't reach the registry: the pull fails at the warm-up's bound with a
+// clear message instead of waiting for the overall pull timeout (D68).
+func TestEnginePullFailsWhenTheRegistryDoesNotAnswer(t *testing.T) {
+	e := pullEngine(t, &pullDaemon{}, EngineOptions{BuiltWarmTimeout: 100 * time.Millisecond, Warm: func(ctx context.Context, _ string) (map[string]int64, error) {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}})
+	start := time.Now()
+	err := e.PullImage(t.Context(), "127.0.0.1:5000/apps/svc_x@sha256:1111111111111111111111111111111111111111111111111111111111111111")
+	if err == nil || !strings.Contains(err.Error(), "the launchroom registry didn't answer within 100ms") {
+		t.Fatalf("err %v", err)
+	}
+	if time.Since(start) > 3*time.Second {
+		t.Fatalf("took %s", time.Since(start))
+	}
+}
+
 func TestEnginePullKeepsGoingWhileProgressing(t *testing.T) {
 	// Each message comes within the idle timeout; the whole pull takes longer.
 	msgs := make([]string, 0, 8)

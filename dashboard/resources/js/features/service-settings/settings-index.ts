@@ -3,8 +3,8 @@ import type { SettingDraft, SettingResult } from '@/components/settings/search';
 import type { SectionId, SettingsArea } from './sections';
 import type { SettingsContext } from './settings-context';
 
-/** Where a result leads: a settings page, or the panel's Variables tab. */
-export type SettingTarget = SectionId | 'variables';
+/** Where a result leads: a settings page. */
+export type SettingTarget = SectionId;
 
 /**
  * Every setting of the Settings tab for this service (docs/08 §16), in
@@ -101,6 +101,64 @@ export function settingsIndex(
             keywords: ['version', 'upgrade', 'postgres', 'mysql', 'redis'],
             anchor: 'versions',
             when: settings.source.type === 'database',
+        },
+
+        // Variables
+        {
+            target: 'variables',
+            label: 'Variables',
+            hint: 'Environment variables and secrets',
+            keywords: [
+                'variable',
+                'env',
+                'environment variables',
+                'secret',
+                '.env',
+                'config',
+                'keys',
+            ],
+            anchor: 'variables-list',
+        },
+        {
+            target: 'variables',
+            label: 'Add variable',
+            hint: 'A key and its value for this environment',
+            keywords: ['new', 'env', 'secret', 'create'],
+            anchor: 'add-variable',
+            fallback: 'variables-list',
+            when: canUpdate,
+        },
+        {
+            target: 'variables',
+            label: 'Import .env',
+            hint: 'Paste or upload a .env file',
+            keywords: ['dotenv', 'paste', 'upload', 'bulk', 'env file'],
+            anchor: 'import-env',
+            fallback: 'variables-list',
+            when: canUpdate,
+        },
+        {
+            target: 'variables',
+            label: 'Raw .env',
+            hint: 'Edit every variable as text',
+            keywords: ['text', 'editor', 'bulk', 'dotenv'],
+            anchor: 'raw-env',
+            fallback: 'variables-list',
+            when: canUpdate,
+        },
+        {
+            target: 'variables',
+            label: 'Shared variables',
+            hint: 'Project-wide values',
+            keywords: ['shared', 'project', 'global', 'env'],
+            anchor: 'shared-variables',
+        },
+        {
+            target: 'variables',
+            label: 'System variables',
+            hint: 'Set by launchroom on every deployment',
+            keywords: ['launchroom', 'builtin', 'port', 'hostname', 'env'],
+            anchor: 'system-variables',
         },
 
         // Build
@@ -257,6 +315,20 @@ export function settingsIndex(
                 'draining',
             ],
             anchor: 'drain',
+        },
+        {
+            target: 'deploy',
+            label: 'Start timeout',
+            hint: 'How long a new version may take to start',
+            keywords: ['timeout', 'rollout', 'pull', 'download', 'stuck'],
+            anchor: 'rollout-timeout',
+        },
+        {
+            target: 'deploy',
+            label: 'Health check timeout',
+            hint: 'How long a new container may take to become healthy',
+            keywords: ['timeout', 'health', 'ready', 'slow start'],
+            anchor: 'health-timeout',
         },
 
         // Schedule (cron services)
@@ -464,10 +536,52 @@ export function settingsIndex(
                 'mount',
                 'data',
                 'files',
-                'backup',
             ],
             anchor: canUpdate && web ? 'add-volume' : undefined,
             fallback: 'volumes-list',
+        },
+
+        // Backups (databases and services with volumes)
+        {
+            target: 'backups',
+            label: 'Backups',
+            hint: 'Snapshots and their schedule',
+            keywords: [
+                'backup',
+                'snapshot',
+                'schedule',
+                'back up now',
+                'protection',
+            ],
+        },
+        {
+            target: 'backups',
+            label: 'Restore',
+            hint: 'As a new service or in place',
+            keywords: ['restore', 'rollback', 'recover', 'snapshot'],
+            anchor: 'restore',
+            fallback: 'snapshots',
+        },
+        {
+            target: 'backups',
+            label: 'Point-in-time recovery',
+            hint: 'Restore to any second',
+            keywords: ['pitr', 'wal', 'point in time', 'recovery'],
+            when: kind === 'database',
+        },
+        {
+            target: 'backups',
+            label: kind === 'database' ? 'Import data' : 'Import files',
+            hint: 'From a dump, a connection or an archive',
+            keywords: ['import', 'migrate', 'dump', 'upload', 'restore'],
+            anchor: 'move-data',
+        },
+        {
+            target: 'backups',
+            label: 'Download',
+            hint: 'A copy of the data as a file',
+            keywords: ['download', 'export', 'dump', 'copy'],
+            anchor: 'move-data',
         },
 
         // Advanced
@@ -567,25 +681,7 @@ export function settingsIndex(
             anchor: 'remove',
             when: canDelete,
         },
-
-        // The Variables tab
-        {
-            target: 'variables',
-            label: 'Variables',
-            hint: 'Environment variables and secrets',
-            keywords: [
-                'variable',
-                'env',
-                'environment variables',
-                'secret',
-                '.env',
-                'config',
-                'keys',
-            ],
-        },
     ];
 
-    return buildSettingsIndex<SettingTarget>(drafts, areas, {
-        extra: { variables: 'Variables tab' },
-    });
+    return buildSettingsIndex<SettingTarget>(drafts, areas);
 }

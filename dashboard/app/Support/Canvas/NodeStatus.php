@@ -21,8 +21,9 @@ final class NodeStatus
 {
     /**
      * @param  iterable<Placement>  $placements  workloads of the active deployment
+     * @param  array{reason: string, ends: string}|null  $hold  an import or restore holds it (App\Services\Backups\DataHolds)
      */
-    public static function for(ServiceInstance $instance, ?Deployment $latest, iterable $placements = []): NodeStatusData
+    public static function for(ServiceInstance $instance, ?Deployment $latest, iterable $placements = [], ?array $hold = null): NodeStatusData
     {
         if ($instance->removed_at !== null) {
             return new NodeStatusData(CanvasNodeState::Idle, 'Removal staged', $instance->removed_at);
@@ -30,6 +31,16 @@ final class NodeStatus
 
         if (! $instance->enabled) {
             return new NodeStatusData(CanvasNodeState::Idle, 'Disabled');
+        }
+
+        // Stopped in launchroom (D68): keeps everything, runs nothing.
+        if ($instance->stopped_at !== null) {
+            return new NodeStatusData(CanvasNodeState::Idle, 'Stopped', $instance->stopped_at, $instance->activeDeployment?->public_id);
+        }
+
+        // Out of its servers' desired state until an import or restore ends.
+        if ($hold !== null) {
+            return new NodeStatusData(CanvasNodeState::Warning, 'Paused: '.$hold['reason'], null, $instance->activeDeployment?->public_id);
         }
 
         $active = $instance->activeDeployment;
@@ -67,14 +78,44 @@ final class NodeStatus
             return new NodeStatusData(CanvasNodeState::Warning, 'Degraded', null, $active->public_id);
         }
 
+        $serving = 0;
+        $starting = null;
+
         foreach ($placements as $placement) {
-            if (in_array($placement->phase, [WorkloadPhase::Failed, WorkloadPhase::Exited], true) && $placement->role->value === 'serving') {
+            if ($placement->role->value !== 'serving') {
+                continue;
+            }
+
+            $serving++;
+
+            if (in_array($placement->phase, [WorkloadPhase::Failed, WorkloadPhase::Exited], true)) {
                 return new NodeStatusData(CanvasNodeState::Failed, 'Crashed', $placement->observed_at, $active->public_id);
             }
 
             if ($placement->phase === WorkloadPhase::Unhealthy) {
                 return new NodeStatusData(CanvasNodeState::Warning, 'Unhealthy', $placement->observed_at, $active->public_id);
             }
+
+            // Only an observed container is running (D68): a workload its
+            // server hasn't created (or removed) is not.
+            if ($placement->phase === WorkloadPhase::Removed) {
+                return new NodeStatusData(CanvasNodeState::Warning, 'Not running', $placement->observed_at, $active->public_id);
+            }
+
+            if (in_array($placement->phase, [WorkloadPhase::Pending, WorkloadPhase::Pulling, WorkloadPhase::Starting], true)) {
+                $starting ??= $placement;
+            }
+        }
+
+        if ($serving === 0 && $instance->scaling->replicas > 0) {
+            return new NodeStatusData(CanvasNodeState::Warning, 'Not running', null, $active->public_id);
+        }
+
+        if ($starting instanceof Placement) {
+            // Waiting this long for its server is not "starting" anymore.
+            return $starting->created_at !== null && $starting->created_at->lt(now()->subMinutes(10))
+                ? new NodeStatusData(CanvasNodeState::Warning, 'Not running', $starting->observed_at, $active->public_id)
+                : new NodeStatusData(CanvasNodeState::Progress, 'Starting', $starting->created_at, $active->public_id);
         }
 
         // Unified status words (docs/design-system.md §3.3): "Live" serves

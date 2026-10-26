@@ -12,7 +12,9 @@ use Illuminate\Support\Facades\DB;
 /**
  * Records the head of a ref, under a row lock, and says whether it changed.
  * Webhooks and polling both go through here, so one push is emitted once no
- * matter which channel sees it first.
+ * matter which channel sees it first. A new head that polling sees first
+ * waits for its webhook (`awaiting_webhook_since`, docs/06 §2.2); any
+ * webhook for the ref ends the wait.
  */
 final class RecordRefHead
 {
@@ -43,6 +45,12 @@ final class RecordRefHead
 
             if ($changed) {
                 $head->last_changed_at = now();
+            }
+
+            if (! $polled) {
+                $head->awaiting_webhook_since = null;
+            } elseif ($changed && $previous !== null && $sha !== null) {
+                $head->awaiting_webhook_since ??= now()->toImmutable();
             }
 
             $head->save();

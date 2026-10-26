@@ -49,11 +49,16 @@ test('the Git page shows apps, installations and webhook health without secrets'
         ->not->toContain('PRIVATE KEY');
 });
 
-test('webhook health turns stale', function (): void {
+test('webhook health stays healthy when quiet and turns stale after a missed push', function (): void {
     $this->githubApp->forceFill(['webhook_last_received_at' => now()->subDay()])->save();
 
     $this->actingAs($this->admin)->get(route('git.edit'))
-        ->assertInertia(fn ($page) => $page->where('apps.0.webhook.health', 'stale')->where('canManage', true));
+        ->assertInertia(fn ($page) => $page->where('apps.0.webhook.health', 'healthy')->where('apps.0.webhook.missedAt', null));
+
+    $this->githubApp->forceFill(['webhook_missed_at' => now()->subMinute()])->save();
+
+    $this->actingAs($this->admin)->get(route('git.edit'))
+        ->assertInertia(fn ($page) => $page->where('apps.0.webhook.health', 'stale')->whereType('apps.0.webhook.missedAt', 'string')->where('canManage', true));
 });
 
 test('disconnecting needs the servers permission', function (): void {

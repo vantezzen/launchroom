@@ -416,11 +416,11 @@ export function ScalingSection({ context }: { context: SettingsContext }) {
                     issue={placement.issue}
                     serviceName={node.name}
                     backupsHref={
-                        services.show({
+                        services.section({
                             project: context.route[0],
                             environment: context.route[1],
                             service: context.route[2],
-                            tab: 'backups',
+                            section: 'backups',
                         }).url
                     }
                 />
@@ -538,11 +538,11 @@ export function ScalingSection({ context }: { context: SettingsContext }) {
                                 To move it, restore a backup on another server.{' '}
                                 <Link
                                     href={
-                                        services.show({
+                                        services.section({
                                             project: context.route[0],
                                             environment: context.route[1],
                                             service: context.route[2],
-                                            tab: 'backups',
+                                            section: 'backups',
                                         }).url
                                     }
                                     only={['panel']}

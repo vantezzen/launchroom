@@ -42,10 +42,12 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $updated_at
  * @property-read Environment $environment
  * @property-read Service $service
- * @property WafMode $waf_mode web firewall (docs/22 §6.2): new instances block, existing ones started in log only
+ * @property WafMode $waf_mode web firewall (docs/22 §6.2): blocks by default
  * @property int $waf_paranoia CRS paranoia level 1 or 2
  * @property int $waf_inspect_body_kib request body inspected by the firewall: 32, 128 or 1024 KiB
  * @property Carbon|null $waf_mode_changed_at
+ * @property Carbon|null $stopped_at stopped in launchroom (D68): keeps its config, domains, volumes and deployments, runs nothing
+ * @property int|null $stopped_by_id
  * @property-read Deployment|null $activeDeployment
  */
 #[Fillable(['team_id', 'environment_id', 'service_id', 'enabled', 'branch_override', 'build', 'deploy', 'scaling', 'preview_strategy', 'waf_mode', 'waf_paranoia', 'waf_inspect_body_kib'])]
@@ -176,6 +178,7 @@ final class ServiceInstance extends Model
             'waf_paranoia' => 'integer',
             'waf_inspect_body_kib' => 'integer',
             'waf_mode_changed_at' => 'datetime',
+            'stopped_at' => 'datetime',
         ];
     }
 }

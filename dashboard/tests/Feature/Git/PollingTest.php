@@ -2,9 +2,12 @@
 
 declare(strict_types=1);
 
+use App\Actions\Git\RecordRefHead;
 use App\Contracts\Git\TrackedRefs;
 use App\Data\Git\TrackedRef;
+use App\Data\Git\WebhookHealthData;
 use App\Enums\Git\GitEventSource;
+use App\Enums\Git\WebhookHealth;
 use App\Events\Git\GitPushReceived;
 use App\Jobs\Git\PollTrackedRefsJob;
 use App\Models\Git\GitHubRefHead;
@@ -120,25 +123,81 @@ test('skip markers apply to polled commits too', function (): void {
     Event::assertNotDispatched(GitPushReceived::class);
 });
 
-test('apps with healthy webhooks are not polled', function (): void {
-    Http::fake();
-    $this->githubApp->forceFill(['webhook_last_received_at' => now()->subMinute()])->save();
-
-    dispatch_sync(new PollTrackedRefsJob);
-
-    Http::assertNothingSent();
-});
-
-test('stale webhooks fall back to polling', function (): void {
+test('a quiet repository keeps healthy webhooks and gets a safety poll every 5 minutes', function (): void {
     Http::fake([
         'https://api.github.com/app/installations/100/access_tokens' => GitHubFake::tokenResponse(),
         'https://api.github.com/repos/octo-org/web/commits/main' => Http::response(status: 304),
     ]);
+    $this->githubApp->forceFill(['webhook_last_received_at' => now()->subHours(6)])->save();
+    $head = GitHubRefHead::query()->create(['github_installation_id' => $this->installation->id, 'github_repo_id' => 555, 'ref' => 'refs/heads/main', 'head_sha' => str_repeat('a', 40), 'etag' => '"e"', 'last_polled_at' => now()->subMinutes(2)]);
+
+    dispatch_sync(new PollTrackedRefsJob);
+    Http::assertNothingSent();
+
+    $head->forceFill(['last_polled_at' => now()->subMinutes(6)])->save();
+    dispatch_sync(new PollTrackedRefsJob);
+    Http::assertSent(fn (Request $request): bool => str_contains($request->url(), '/commits/main'));
+
+    $health = WebhookHealthData::fromApp($this->githubApp->refresh());
+    expect($health->health)->toBe(WebhookHealth::Healthy)
+        ->and($health->missedAt)->toBeNull();
+});
+
+test('a push polling finds and no webhook delivers within 2 minutes makes webhooks stale until the next delivery', function (): void {
+    Http::fake([
+        'https://api.github.com/app/installations/100/access_tokens' => GitHubFake::tokenResponse(),
+        'https://api.github.com/repos/octo-org/web/commits/main' => Http::sequence()
+            ->pushResponse(ghCommitResponse(str_repeat('b', 40), '"etag-2"'))
+            ->whenEmpty(Http::response(status: 304)),
+    ]);
     $this->githubApp->forceFill(['webhook_last_received_at' => now()->subHour()])->save();
+    GitHubRefHead::query()->create(['github_installation_id' => $this->installation->id, 'github_repo_id' => 555, 'ref' => 'refs/heads/main', 'head_sha' => str_repeat('a', 40)]);
+
+    dispatch_sync(new PollTrackedRefsJob);
+    Event::assertDispatchedTimes(GitPushReceived::class, 1);
+    expect(GitHubRefHead::query()->sole()->awaiting_webhook_since)->not->toBeNull()
+        ->and($this->githubApp->refresh()->hasHealthyWebhooks())->toBeTrue();
+
+    $this->travel(3)->minutes();
+    dispatch_sync(new PollTrackedRefsJob);
+
+    $health = WebhookHealthData::fromApp($this->githubApp->refresh());
+    expect($health->health)->toBe(WebhookHealth::Stale)
+        ->and($health->missedAt)->not->toBeNull()
+        ->and(GitHubRefHead::query()->sole()->awaiting_webhook_since)->toBeNull();
+
+    // Stale: polled every minute, though the ref was polled a minute ago.
+    $this->travel(1)->minutes();
+    $before = count(Http::recorded());
+    dispatch_sync(new PollTrackedRefsJob);
+    expect(count(Http::recorded()))->toBeGreaterThan($before);
+
+    // The next verified delivery makes them healthy again.
+    $this->githubApp->forceFill(['webhook_last_received_at' => now()])->save();
+    expect(WebhookHealthData::fromApp($this->githubApp->refresh())->health)->toBe(WebhookHealth::Healthy);
+});
+
+test('a webhook that arrives within the grace period is not a missed push', function (): void {
+    Http::fake([
+        'https://api.github.com/app/installations/100/access_tokens' => GitHubFake::tokenResponse(),
+        'https://api.github.com/repos/octo-org/web/commits/main' => Http::sequence()
+            ->pushResponse(ghCommitResponse(str_repeat('b', 40), '"etag-2"'))
+            ->whenEmpty(Http::response(status: 304)),
+    ]);
+    $this->githubApp->forceFill(['webhook_last_received_at' => now()->subHour()])->save();
+    GitHubRefHead::query()->create(['github_installation_id' => $this->installation->id, 'github_repo_id' => 555, 'ref' => 'refs/heads/main', 'head_sha' => str_repeat('a', 40)]);
 
     dispatch_sync(new PollTrackedRefsJob);
 
-    Http::assertSent(fn (Request $request): bool => str_contains($request->url(), '/commits/main'));
+    $this->travel(30)->seconds();
+    $this->githubApp->forceFill(['webhook_last_received_at' => now()])->save();
+    resolve(RecordRefHead::class)->handle($this->installation, 555, 'refs/heads/main', str_repeat('b', 40));
+
+    $this->travel(3)->minutes();
+    dispatch_sync(new PollTrackedRefsJob);
+
+    expect($this->githubApp->refresh()->webhook_missed_at)->toBeNull()
+        ->and($this->githubApp->hasHealthyWebhooks())->toBeTrue();
 });
 
 test('one failing ref does not stop polling', function (): void {

@@ -38,6 +38,11 @@ final readonly class InspectImportTarget
         $instance->loadMissing(['service', 'environment']);
         $target = ImportTarget::for($instance);
 
+        // A stopped service runs nothing to import into (D68).
+        if ($instance->stopped_at !== null) {
+            throw DomainRuleViolation::on('service', 'This service is stopped. Start it, then import.');
+        }
+
         if (! $target->importSupported()) {
             throw DomainRuleViolation::on('service', 'Importing into this service isn’t supported.');
         }

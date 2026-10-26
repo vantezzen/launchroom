@@ -5,7 +5,12 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Deployments;
 
 use App\Actions\Deployments\RedeployService;
+use App\Data\Deployments\DeploymentStepData;
+use App\Data\Deployments\DeploymentSummaryData;
+use App\Enums\DeploymentStatus;
 use App\Http\Controllers\Controller;
+use App\Models\Deployment;
+use App\Models\DeploymentStep;
 use App\Models\Environment;
 use App\Models\Project;
 use App\Models\Service;
@@ -19,7 +24,9 @@ use Illuminate\Support\Facades\Gate;
 
 /**
  * Service panel → Deployments (docs/08 §3.4): the active deployment and the
- * history of the service in one environment, plus "Redeploy".
+ * history of the service in one environment, plus "Redeploy". `current` is
+ * the list's expanded first row (the deployment in progress, else the live
+ * one) with its recorded steps.
  */
 final class ServiceDeploymentsController extends Controller
 {
@@ -33,11 +40,22 @@ final class ServiceDeploymentsController extends Controller
         Gate::authorize('view', $instance);
 
         ['active' => $active, 'rows' => $rows] = $summaries->forInstance($instance, self::HISTORY);
+        $running = [DeploymentStatus::Queued, ...DeploymentStatus::inFlight()];
+        $current = array_values(array_filter($rows, static fn (DeploymentSummaryData $row): bool => in_array($row->status, $running, true)))[0] ?? $active;
+        $steps = $current === null ? [] : array_values(Deployment::query()
+            ->where('service_instance_id', $instance->id)
+            ->where('public_id', $current->id)
+            ->first()
+            ?->steps()->orderBy('id')->get()
+            ->map(static fn (DeploymentStep $step): DeploymentStepData => DeploymentStepData::fromStep($step))
+            ->all() ?? []);
 
         return response()->json([
             'active' => $active,
             'deployments' => $rows,
-            'canDeploy' => Gate::allows('deploy', $environment),
+            'current' => $current === null ? null : ['id' => $current->id, 'steps' => $steps],
+            // A stopped service starts from its header (D68), not with Redeploy.
+            'canDeploy' => $instance->stopped_at === null && Gate::allows('deploy', $environment),
         ]);
     }
 

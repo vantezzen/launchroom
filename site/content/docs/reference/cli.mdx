@@ -67,6 +67,7 @@ Every command also accepts `--project`, `--environment` and `--service` to overr
 | `launchroom status` | Services of the linked environment with status, active deployment and URL |
 | `launchroom open` | Open the linked environment (or `--service`) in the dashboard |
 | `launchroom deploy` | Deploy and follow until live or failed |
+| `launchroom service deploy\|restart\|stop\|start [SERVICE]` | Deploy the latest version, restart, stop or start one service |
 | `launchroom logs` | Recent log lines, or follow them with `-f` |
 | `launchroom env ls` | List variables (secret values are never listed) |
 | `launchroom env set KEY=VALUE…` | Add or change variables (staged) |
@@ -101,6 +102,22 @@ launchroom deploy --staged --message "Raise memory"   # apply staged changes
 `deploy` follows the build until the deployment is live or failed and exits with code 10 if it failed. Add `--detach` to return at once. `--ref` and `--sha` can be combined. The other modes can't. `--message` only applies with `--staged`.
 
 `deploy` builds from your repository, not from local files. Push first, then deploy.
+
+## Stop, start and restart
+
+```sh
+launchroom service restart web                       # new containers of the running version
+launchroom service stop web --environment staging    # stop it; asks first on a terminal
+launchroom service start web                         # run the stopped version again
+launchroom service deploy web                        # the latest version, like the panel's Deploy
+```
+
+These are the actions of the service panel's header ([service actions](/docs/projects/service-actions)). The service is the argument (id, slug or name), else `--service`, else the linked one.
+
+- `restart`, `start` and `service deploy` follow the rollout like `deploy` and exit with code 10 if it failed. Add `--detach` to return at once.
+- `stop` asks before it stops anything. In scripts, pass `--yes`; without a terminal and without `--yes` it exits with code 2.
+- An app's workers and crons restart, stop and start with it. Pass `--without-processes` to leave them as they are.
+- With staged changes, `service deploy` is refused. Deploy them with `launchroom deploy --staged`.
 
 ## Logs
 
@@ -213,7 +230,7 @@ Without a terminal, prompts never appear. Anything ambiguous exits with code 2 i
 |---|---|
 | 0 | OK |
 | 1 | Unexpected error (network, server error) |
-| 2 | Usage: bad flags, not linked, or a prompt without a terminal |
+| 2 | Usage: bad flags, not linked, a prompt without a terminal, or a declined confirmation |
 | 3 | Not signed in, or the token expired |
 | 4 | Not allowed: your role or the token's abilities |
 | 5 | Not found |

@@ -15,7 +15,9 @@ use Spatie\LaravelData\Data;
  * `clientCertificates` feature): client certificates for /daemon/v1 (mTLS,
  * docs/03 §4.3); the edge secret is sealed, so renders compare its
  * fingerprint. `waf` (edges with the `waf` feature, docs/03 §13.3): the
- * web firewall's typed settings; omitted means off.
+ * web firewall's typed settings; omitted means off. `stopped` (edges with
+ * the `serviceStop` feature, D68): the service was stopped in launchroom;
+ * the edge answers with its "stopped" page and the route has no upstreams.
  */
 final class RouteSpec extends Data
 {
@@ -39,6 +41,7 @@ final class RouteSpec extends Data
         public ?string $loadBalancing = null,
         public ?array $clientAuth = null,
         public ?array $waf = null,
+        public bool $stopped = false,
     ) {}
 
     public static function fromProtocol(object $wire): self
@@ -98,6 +101,7 @@ final class RouteSpec extends Data
             Wire::nullableString($wire, 'loadBalancing'),
             $clientAuth,
             $waf,
+            Wire::nullableBool($wire, 'stopped') ?? false,
         );
     }
 
@@ -156,6 +160,10 @@ final class RouteSpec extends Data
 
         if ($this->waf !== null) {
             $wire['waf'] = $this->waf;
+        }
+
+        if ($this->stopped) {
+            $wire['stopped'] = true;
         }
 
         return $wire;

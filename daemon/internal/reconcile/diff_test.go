@@ -144,6 +144,13 @@ func TestDiff(t *testing.T) {
 			want: []string{"remove:" + string(wlGone), "remove-network:lr-e_a"},
 		},
 		{
+			name:    "undesired containers are removed before pulls and creates (a held service stops first)",
+			desired: Desired{Networks: []state.NetworkSpec{netSpec()}, Workloads: []DesiredWorkload{{Spec: wspec(wlA), Hash: "h1"}}},
+			actual: Actual{Networks: []docker.Network{managedNet("lr-e_a", "10.231.4.0/24")}, Images: map[state.ImageRef]bool{},
+				Containers: []docker.Container{ctr(wlGone, "h", "running")}},
+			want: []string{"remove:" + string(wlGone), "pull:" + string(wlA), "create:" + string(wlA)},
+		},
+		{
 			name:    "skipped workloads (env/policy failure) keep their container",
 			desired: Desired{Skipped: map[state.WorkloadID]string{wlA: "cannot open env"}},
 			actual:  Actual{Containers: []docker.Container{ctr(wlA, "h1", "running")}},

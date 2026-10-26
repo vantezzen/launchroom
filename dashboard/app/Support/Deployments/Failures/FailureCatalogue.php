@@ -163,7 +163,8 @@ final class FailureCatalogue
                 'key' => 'port_loopback',
                 'classes' => $running,
                 'hints' => [],
-                'patterns' => ['/listens on 127\.0\.0\.1:([0-9]+) only/'],
+                // launchroomd's hint, and the fail-fast issue's message (D68).
+                'patterns' => ['/listens on 127\.0\.0\.1:([0-9]+) only/', '/listens on 127\.0\.0\.1:([0-9]+), so nothing outside/'],
                 'explain' => static fn (FailureMatch $m): FailureExplanationData => new FailureExplanationData(
                     key: 'port_loopback',
                     title: 'Your app only accepts connections from itself',

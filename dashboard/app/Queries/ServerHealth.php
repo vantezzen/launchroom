@@ -38,6 +38,7 @@ final readonly class ServerHealth
             $this->clock($health),
             $this->buildCache($health),
             $this->cleanup($health),
+            $this->registry($host),
             $this->desiredState($server),
         ];
 
@@ -274,6 +275,31 @@ final readonly class ServerHealth
         }
 
         return new HealthCheckData('desired_state', 'Desired state', HealthCheckState::Ok, sprintf('v%d of v%d applied', $server->observed_version, $server->desired_version));
+    }
+
+    /**
+     * Whether the server reaches the image registry it pulls from (D68):
+     * a server that can't makes every rollout on it wait for its image.
+     *
+     * @param  array<array-key, mixed>  $host
+     */
+    private function registry(array $host): HealthCheckData
+    {
+        $registry = is_array($host['registry'] ?? null) ? $host['registry'] : null;
+
+        if ($registry === null) {
+            return new HealthCheckData('registry', 'Image registry', HealthCheckState::Unknown, 'Not checked yet');
+        }
+
+        if (($registry['reachable'] ?? false) !== true) {
+            return new HealthCheckData('registry', 'Image registry', HealthCheckState::Critical,
+                'Not reachable'.(is_string($registry['error'] ?? null) ? ': '.$registry['error'] : ''),
+                'This server downloads images from the registry on the main server over the private network. Deploys to it wait until it reaches the registry again. Check the private network connection on this page.');
+        }
+
+        $latency = is_int($registry['latencyMs'] ?? null) ? $registry['latencyMs'] : null;
+
+        return new HealthCheckData('registry', 'Image registry', HealthCheckState::Ok, $latency === null ? 'Reachable' : "Reachable ({$latency} ms)");
     }
 
     private function rangeUsedPercent(): float

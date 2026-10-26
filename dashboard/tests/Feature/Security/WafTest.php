@@ -129,15 +129,26 @@ test('edges without the waf feature get no firewall settings', function (): void
     expect(array_column(wafRoutes($this->server), 'waf'))->toBe([]);
 });
 
-test('the migration starts existing instances in Log only and new ones in Block', function (): void {
+test('the migration starts existing and new instances in Block', function (): void {
     $migration = require database_path('migrations/2026_12_12_100000_create_security_center.php');
     $migration->down();
     $migration->up();
 
-    expect(DB::table('service_instances')->where('id', $this->instance->id)->value('waf_mode'))->toBe('log');
+    expect(DB::table('service_instances')->where('id', $this->instance->id)->value('waf_mode'))->toBe('block');
 
     $newer = Projects::image($this->project, 'api');
     expect(ServiceInstance::query()->where('service_id', $newer->id)->sole()->refresh()->waf_mode)->toBe(WafMode::Block);
+});
+
+test('instances that started in Log only move to Block unless someone chose it', function (): void {
+    $chosen = ServiceInstance::query()->where('service_id', Projects::image($this->project, 'api')->id)->sole();
+    DB::table('service_instances')->where('id', $this->instance->id)->update(['waf_mode' => 'log', 'waf_mode_changed_at' => null]);
+    DB::table('service_instances')->where('id', $chosen->id)->update(['waf_mode' => 'log', 'waf_mode_changed_at' => now()]);
+
+    (require database_path('migrations/2026_12_19_110000_block_attacks_on_existing_instances.php'))->up();
+
+    expect($this->instance->refresh()->waf_mode)->toBe(WafMode::Block)
+        ->and($chosen->refresh()->waf_mode)->toBe(WafMode::Log);
 });
 
 /**

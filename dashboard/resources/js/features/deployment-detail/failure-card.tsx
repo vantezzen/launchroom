@@ -4,10 +4,7 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { shortSha } from '@/features/deployments/format';
 import { fix } from '@/routes/deployments';
-import {
-    section as serviceSection,
-    show as serviceTab,
-} from '@/routes/projects/services';
+import { section as serviceSection } from '@/routes/projects/services';
 import { CopyButton } from './overview-card';
 
 type Detail = App.Data.Deployments.DeploymentDetailData;
@@ -106,12 +103,12 @@ export function fixAction(detail: Detail, canFix: boolean): FixAction | null {
         }
         case 'add_variable': {
             const name = String(params.name ?? '');
-            const href = serviceTab(
+            const href = serviceSection(
                 {
                     project: deployment.projectId,
                     environment: deployment.environmentId,
                     service: deployment.serviceId,
-                    tab: 'variables',
+                    section: 'variables',
                 },
                 {
                     query: {

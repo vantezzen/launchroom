@@ -17,21 +17,25 @@ final class WebhookHealthData extends Data
         public ?CarbonInterface $lastReceivedAt,
         public ?string $lastEvent,
         public ?WebhookDeliveryStatus $lastStatus,
+        /** When a push that polling found went undelivered (only while stale). */
+        public ?CarbonInterface $missedAt,
     ) {}
 
     public static function fromApp(GitHubApp $app): self
     {
         $latest = $app->latestDelivery;
+        $health = match (true) {
+            $app->webhook_last_received_at === null => WebhookHealth::Never,
+            $app->hasHealthyWebhooks() => WebhookHealth::Healthy,
+            default => WebhookHealth::Stale,
+        };
 
         return new self(
-            match (true) {
-                $app->webhook_last_received_at === null => WebhookHealth::Never,
-                $app->hasHealthyWebhooks() => WebhookHealth::Healthy,
-                default => WebhookHealth::Stale,
-            },
+            $health,
             $app->webhook_last_received_at,
             $latest?->event,
             $latest?->status,
+            $health === WebhookHealth::Stale ? $app->webhook_missed_at : null,
         );
     }
 }

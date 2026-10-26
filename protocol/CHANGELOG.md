@@ -4,6 +4,18 @@ All changes to launchroomd ↔ dashboard contract. Format: one section per proto
 
 ## v1 (unreleased)
 
+### Service lifecycle and rollout diagnosis (2026-10-25, D68)
+
+Additive. One new daemon feature, `serviceStop`, for the one NodeState field; every report field is optional and needs none.
+
+- `RouteSpec.stopped?: bool` (feature `serviceStop`): the edge answers the route's hosts with its "This app is stopped" page (503) and proxies nothing. A stopped route has no upstreams; `upstreams` lost its schema `minItems` (Go still requires 1–64 on every other route, and the dashboard's validator checks the pairing). Fixture `node-state.stopped.json`.
+- `Report.events?: [WorkloadEvent]` (≤ 256): `{seq (≥ 1, unique per launchroomd), workload, deployment?, at, kind (created|create_failed|started|exited|restarted|health_passing|health_failing|stopped|removed), reason? (drained|not_desired|spec_changed|duplicate|port_not_bound), exitCode?, oomKilled?, restarts?, failures?, message? (≤ 1024), output? [LogLine] (≤ 30, text ≤ 2 KiB)}`. Repeated until a report carrying them was accepted.
+- `WorkloadStatus.issue?: WorkloadIssue {kind (crash_loop|loopback_only|wrong_port), since, port?, listening? [Port] (≤ 32), exitCode?, oomKilled?, restarts?}`.
+- `ProbeStatus.attempts?: int` (checks since the container started).
+- `PullProgress.updatedAt?: time` (when the pull last moved).
+- `HostStatus.registry?: RegistryReach {reachable, checkedAt, latencyMs?, error? (≤ 512)}`.
+- Fixture `report.lifecycle.json`. Design: docs/04 §8.1, docs/15 §6, docs/03 §5.2, §5.6, §9.
+
 ### SFTP into a volume (2026-10-25, D67)
 
 Additive. New daemon feature `remoteAccessVolume`, announced when the local policy allows the kind (`LR_REMOTE_ACCESS` now also takes a list such as `ssh,volume`).
