@@ -1,18 +1,23 @@
 package caddy
 
 import (
+	"archive/tar"
 	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net"
 	"net/netip"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -296,7 +301,7 @@ func (a *refusingAdmin) Load(ctx context.Context, cfg []byte) error {
 		a.mu.Lock()
 		a.loads = append(a.loads, nil) // count the attempt
 		a.mu.Unlock()
-		return errors.New("caddy admin: POST /load: HTTP 400: loading module 'waf':\nprovision http.handlers.waf: invalid directive")
+		return fmt.Errorf("load: %w", &AdminStatusError{Method: "POST", Path: "/load", Status: 400, Body: "loading module 'waf':\nprovision http.handlers.waf: invalid directive"})
 	}
 	return a.fakeAdmin.Load(ctx, cfg)
 }
@@ -371,5 +376,159 @@ func TestManagerWaf(t *testing.T) {
 	changed[1].Spec.Waf = &state.RouteWaf{Mode: state.WafModeBlock}
 	if st = m.Sync(ctx, sys, changed); st.Waf.State != state.WafStateOn || st.Waf.Routes != 2 || st.Waf.Message != "" {
 		t.Fatalf("after change: %+v", st.Waf)
+	}
+}
+
+// unreachableAdmin answers "connection refused" to the next `down` loads,
+// like a Caddy that is still starting after a reboot.
+type unreachableAdmin struct {
+	fakeAdmin
+	down     int
+	attempts int
+}
+
+func (a *unreachableAdmin) Load(ctx context.Context, cfg []byte) error {
+	a.mu.Lock()
+	a.attempts++
+	if a.down > 0 {
+		a.down--
+		a.mu.Unlock()
+		return fmt.Errorf("caddy admin: POST /load: %w", &net.OpError{Op: "dial", Net: "tcp", Err: errors.New("connect: connection refused")})
+	}
+	a.mu.Unlock()
+	return a.fakeAdmin.Load(ctx, cfg)
+}
+
+// archiveFake records the files copied into containers.
+type archiveFake struct {
+	*dockerfake.Fake
+	mu    sync.Mutex
+	files map[string][]byte
+}
+
+func (f *archiveFake) CopyToContainer(_ context.Context, _, dst string, r io.Reader) error {
+	tr := tar.NewReader(r)
+	for {
+		h, err := tr.Next()
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if h.Typeflag != tar.TypeReg {
+			continue
+		}
+		b, err := io.ReadAll(tr)
+		if err != nil {
+			return err
+		}
+		f.mu.Lock()
+		f.files[path.Join(dst, h.Name)] = b //nolint:gosec // test double: names only key a map
+		f.mu.Unlock()
+	}
+}
+
+func (f *archiveFake) DialExec(context.Context, string, []string) (net.Conn, error) {
+	return nil, errors.New("not supported")
+}
+
+// Caddy not reachable yet is no refusal: the same config, firewall
+// included, is loaded again, and the firewall ends up on (docs/22 §6.6).
+func TestManagerWafCaddyUnreachable(t *testing.T) {
+	ctx := t.Context()
+	image := state.ImageRef("docker.io/library/caddy@" + policy.DefaultSystemImageDigests[policy.SystemCaddy][0])
+	routes := wafFixtureRoutes(t)
+	labels := map[string]string{LabelWafEngine: "coraza 3.8.1", LabelWafRuleSet: "OWASP CRS 4.25.0"}
+	sys := state.SystemContainer{Enabled: true, Image: image}
+	now := time.Date(2026, 10, 28, 12, 0, 0, 0, time.UTC)
+	var d *archiveFake
+	newManager := func(down int) (*Manager, *unreachableAdmin) {
+		d = &archiveFake{Fake: dockerfake.New(srvID), files: map[string][]byte{}}
+		d.ImageLabels = map[string]map[string]string{string(image): labels}
+		admin := &unreachableAdmin{down: down}
+		return NewManager(ManagerOptions{
+			ServerID: srvID, Docker: d, Admin: admin, Policy: policy.DefaultConfig(), Render: renderOpts, CacheDir: t.TempDir(), Ask: &Ask{},
+			WafLogAddress: "127.0.0.1:2023", LoadRetry: time.Millisecond, Now: func() time.Time { return now },
+		}), admin
+	}
+	hasWaf := func(cfg []byte) bool { return bytes.Contains(cfg, []byte(`"handler": "waf"`)) }
+
+	// First load refused at the connection, the retry in the same pass succeeds.
+	m, admin := newManager(1)
+	st := m.Sync(ctx, sys, routes)
+	if st.State != state.IngressApplied || st.Waf == nil || st.Waf.State != state.WafStateOn || st.Waf.Routes != 2 || st.Waf.Message != "" {
+		t.Fatalf("after one refused connection: %+v / %+v", st, st.Waf)
+	}
+	if admin.attempts != 2 || len(admin.loads) != 1 || !hasWaf(admin.loads[0]) {
+		t.Fatalf("attempts %d, loads %d", admin.attempts, len(admin.loads))
+	}
+
+	// Caddy stays away for the whole pass: pending, no firewall error, no
+	// fallback without the firewall; the next pass loads it.
+	m, admin = newManager(loadAttempts)
+	st = m.Sync(ctx, sys, routes)
+	if st.State != state.IngressPending || !strings.Contains(st.Message, "Caddy wasn't reachable yet; retrying") || !strings.Contains(st.Message, "connection refused") {
+		t.Fatalf("unreachable: %+v", st)
+	}
+	if st.Waf == nil || st.Waf.State == state.WafStateError || st.Waf.Message != "Caddy wasn't reachable yet; retrying." {
+		t.Fatalf("unreachable firewall state: %+v", st.Waf)
+	}
+	if admin.attempts != loadAttempts || len(admin.loads) != 0 {
+		t.Fatalf("attempts %d, loads %d (no fallback config expected)", admin.attempts, len(admin.loads))
+	}
+	// The next Caddy start resumes the routes (without the firewall, which
+	// is loaded once Caddy answers), not whatever kept it from starting.
+	if seeded := d.files[AutosaveFile]; !bytes.Contains(seeded, []byte("lr-route-rt_01J9Z8X7W6V5T4S3R2Q1P0N9N9")) || hasWaf(seeded) || !json.Valid(seeded) {
+		t.Fatalf("resume config: %.200s", seeded)
+	}
+	rep := state.Report{TypeMeta: state.NewTypeMeta(state.KindReport), ServerID: srvID, ObservedAt: now, Seq: 1, Full: true, AppliedVersion: 1, Workloads: []state.WorkloadStatus{}, Ingress: st}
+	if err := rep.Validate(); err != nil {
+		t.Fatalf("report while unreachable: %v", err)
+	}
+	st = m.Sync(ctx, sys, routes)
+	if st.State != state.IngressApplied || st.Waf.State != state.WafStateOn || st.Waf.Routes != 2 || st.Waf.Message != "" {
+		t.Fatalf("next pass: %+v / %+v", st, st.Waf)
+	}
+	if len(admin.loads) != 1 || !hasWaf(admin.loads[0]) {
+		t.Fatalf("loads %d", len(admin.loads))
+	}
+
+	// Unreachable for longer than wafUnreachableAfter: the firewall reports
+	// error (the dashboard's callout), yet every pass keeps trying.
+	m, admin = newManager(2 * loadAttempts)
+	m.Sync(ctx, sys, routes)
+	now = now.Add(wafUnreachableAfter)
+	st = m.Sync(ctx, sys, routes)
+	if st.State != state.IngressPending || st.Waf.State != state.WafStateError || !strings.Contains(st.Waf.Message, "hasn't been reachable since 2026-10-28T12:00:00Z") {
+		t.Fatalf("persistently unreachable: %+v / %+v", st, st.Waf)
+	}
+	st = m.Sync(ctx, sys, routes)
+	if st.State != state.IngressApplied || st.Waf.State != state.WafStateOn || st.Waf.Message != "" || admin.attempts != 2*loadAttempts+1 {
+		t.Fatalf("recovered: %+v / %+v (%d attempts)", st, st.Waf, admin.attempts)
+	}
+}
+
+// A real refusal (4xx) falls back at once, without retries in the pass.
+func TestManagerWafRefusalNotRetried(t *testing.T) {
+	ctx := t.Context()
+	image := state.ImageRef("docker.io/library/caddy@" + policy.DefaultSystemImageDigests[policy.SystemCaddy][0])
+	d := dockerfake.New(srvID)
+	d.ImageLabels = map[string]map[string]string{string(image): {LabelWafEngine: "coraza 3.8.1", LabelWafRuleSet: "OWASP CRS 4.25.0"}}
+	admin := &refusingAdmin{refuse: true}
+	m := NewManager(ManagerOptions{
+		ServerID: srvID, Docker: d, Admin: admin, Policy: policy.DefaultConfig(), Render: renderOpts, CacheDir: t.TempDir(), Ask: &Ask{},
+		WafLogAddress: "127.0.0.1:2023", LoadRetry: time.Hour, // a retry would hang the test
+	})
+	sys := state.SystemContainer{Enabled: true, Image: image}
+	routes := wafFixtureRoutes(t)
+	for range 3 {
+		st := m.Sync(ctx, sys, routes)
+		if st.State != state.IngressApplied || st.Waf.State != state.WafStateError || !strings.Contains(st.Waf.Message, "Caddy refused the firewall config") {
+			t.Fatalf("%+v / %+v", st, st.Waf)
+		}
+	}
+	if len(admin.loads) != 2 || admin.loads[0] != nil {
+		t.Fatalf("loads %d: the refused config was tried again", len(admin.loads))
 	}
 }

@@ -2,118 +2,157 @@
   "activity": {
     "alt": "Activity page with filters for deploys, promotions, changes, team and alerts, an 'Audit log verified' badge, and entries such as vulnerability alerts, a deploy to production, a service added to a project and a resolved server-busy alert.",
     "caption": "Every deploy, change and alert in one verified timeline.",
+    "scale": 2,
     "light": {
-      "width": 1440,
-      "height": 900,
-      "blur": "data:image/webp;base64,UklGRi4AAABXRUJQVlA4ICIAAABwAQCdASoQAAoAAsBMJaWM+AGIAAD+9uCNo/hDzS4gKgAA"
+      "width": 2880,
+      "height": 1800,
+      "blur": "data:image/webp;base64,UklGRiwAAABXRUJQVlA4ICAAAAAwAQCdASoQAAoAAsBMJaQAA3AA/vbgewTip5sXGLNYAA=="
     },
     "dark": {
-      "width": 1440,
-      "height": 900,
-      "blur": "data:image/webp;base64,UklGRjAAAABXRUJQVlA4ICQAAAAwAQCdASoQAAoAAsBMJaQAA3AA/vYasEfnlSY98n9JDkKq4AA="
+      "width": 2880,
+      "height": 1800,
+      "blur": "data:image/webp;base64,UklGRjIAAABXRUJQVlA4ICYAAAAwAQCdASoQAAoAAsBMJaQAA3AA/vZG7eyIE+dpP6SHJBG9eEgAAA=="
     }
   },
   "add-database": {
     "alt": "Add database sheet with engine choices PostgreSQL, MySQL, Redis, Valkey, MongoDB and ClickHouse, a version picker and a service name.",
     "caption": "Six database engines, credentials generated per environment.",
+    "scale": 2,
     "light": {
-      "width": 1440,
-      "height": 1000,
-      "blur": "data:image/webp;base64,UklGRjYAAABXRUJQVlA4ICoAAADQAQCdASoQAAsAAsBMJaQAAud+VyJzAAD+7f2R84n2/0nwgSCgGNOjAAA="
+      "width": 2880,
+      "height": 2000,
+      "blur": "data:image/webp;base64,UklGRjgAAABXRUJQVlA4ICwAAACwAQCdASoQAAsAAsBMJaQAAu186xUgAP7tScSkI7n3cyS7VkwJ85IrOgAAAA=="
     },
     "dark": {
-      "width": 1440,
-      "height": 1000,
+      "width": 2880,
+      "height": 2000,
       "blur": "data:image/webp;base64,UklGRi4AAABXRUJQVlA4ICIAAAAwAQCdASoQAAsAAsBMJaQAA3AA/vcb6XKofboagRcJXQAA"
     }
   },
   "add-server": {
     "alt": "Add a server, step Connect: a one-line install command with OS tabs and a Copy button, and a mini PC illustration waiting for the server to connect.",
     "caption": "One command on any Linux machine. It connects out, so there is nothing to open.",
+    "scale": 2,
     "light": {
-      "width": 1440,
-      "height": 1081,
-      "blur": "data:image/webp;base64,UklGRkIAAABXRUJQVlA4IDYAAADQAQCdASoQAAwAAsBMJaQAAueAOSzQAAD++kJVqZtKvw//wM/vFd+//Kl2M3ZoM0DBnSNoAAA="
+      "width": 2880,
+      "height": 2162,
+      "blur": "data:image/webp;base64,UklGRkIAAABXRUJQVlA4IDYAAADQAQCdASoQAAwAAsBMJaQAAud+JyLrgAD++kJVqZtK0G8/0ZP/KkijxQf/9bLFnX/FK6NAAAA="
     },
     "dark": {
-      "width": 1440,
-      "height": 1081,
+      "width": 2880,
+      "height": 2162,
       "blur": "data:image/webp;base64,UklGRkAAAABXRUJQVlA4IDQAAADQAQCdASoQAAwAAsBMJaQAAueH8S6LQAD++vCIolyhanAQ/gX/72aDJ9PLOWuWW0jdAAAA"
     }
   },
   "add-server-roles": {
     "alt": "Add a server, step What it does: cards for Run apps, Serve traffic and Build, with Build selected for a machine at home, and an optional name.",
     "caption": "Tell launchroom what a server is for: running apps, serving traffic or building.",
+    "scale": 2,
     "light": {
-      "width": 1440,
-      "height": 900,
+      "width": 2880,
+      "height": 1800,
       "blur": "data:image/webp;base64,UklGRjQAAABXRUJQVlA4ICgAAABwAQCdASoQAAoAAsBMJaV2AAGIAAD+9wXb9U3R7YVb49GcX6ei04AA"
     },
     "dark": {
-      "width": 1440,
-      "height": 900,
-      "blur": "data:image/webp;base64,UklGRjQAAABXRUJQVlA4ICgAAAAwAQCdASoQAAoAAsBMJaQAA3AA/vbyczcTAoJJnwo8pi5FQ/FoSgAA"
+      "width": 2880,
+      "height": 1800,
+      "blur": "data:image/webp;base64,UklGRjQAAABXRUJQVlA4ICgAAAAwAQCdASoQAAoAAsBMJaQAA3AA/vbyczlR3ReSZ8KPKYuRUPxaEoAA"
     }
   },
   "ai-dockerfile": {
     "alt": "Sheet 'Your Dockerfile is ready': the app builds and starts on port 8080 in 3.8 seconds on the first try, an explanation of what it does, a five-line Dockerfile with a pinned base image, and what launchroom sent to the model.",
     "caption": "No Dockerfile? launchroom drafts one, builds it and checks your app answers before you use it.",
+    "scale": 2,
     "light": {
-      "width": 1440,
-      "height": 900,
-      "blur": "data:image/webp;base64,UklGRjAAAABXRUJQVlA4ICQAAAAwAQCdASoQAAoAAsBMJaQAA3AA/vJd//ovprwBqSYcFAEgAAA="
+      "width": 2880,
+      "height": 1800,
+      "blur": "data:image/webp;base64,UklGRjQAAABXRUJQVlA4ICgAAABwAQCdASoQAAoAAsBMJaVnyAGIAAD+8l3/+jC5qzDpvu5Fj0INAAAA"
     },
     "dark": {
-      "width": 1440,
-      "height": 900,
-      "blur": "data:image/webp;base64,UklGRioAAABXRUJQVlA4IB4AAAAwAQCdASoQAAoAAsBMJaQAA3AA/vak85MAsEaAAAA="
+      "width": 2880,
+      "height": 1800,
+      "blur": "data:image/webp;base64,UklGRigAAABXRUJQVlA4IBwAAAAwAQCdASoQAAoAAsBMJaQAA3AA/vak85MCAjAA"
     }
   },
   "alerts": {
     "alt": "Notifications settings: open problems such as vulnerable packages and failed deploys and backups, email and Slack destinations with Send test, and alert rules for failed deploys, crashing services, request errors, offline servers, high CPU and memory, full disks, expiring certificates, failed backups and security findings.",
     "caption": "Alerts arrive once, and again when resolved, wherever your team already looks.",
+    "scale": 2,
     "light": {
-      "width": 1440,
-      "height": 2657,
-      "blur": "data:image/webp;base64,UklGRkYAAABXRUJQVlA4IDoAAABwAwCdASoQAB4APtFWo0uoJKMhsAgBABoJaQAAetYne6yP4oAA/vG/SMTF4uS3hmzoTHSy8Qf0gwAA"
+      "width": 2880,
+      "height": 5314,
+      "blur": "data:image/webp;base64,UklGRkYAAABXRUJQVlA4IDoAAABwAwCdASoQAB4APtFWo0uoJKMhsAgBABoJaQAAetZSQ4jjwgAA/vIF7iex4uSQbyGEHLAjWt03L4AA"
     },
     "dark": {
-      "width": 1440,
-      "height": 2657,
-      "blur": "data:image/webp;base64,UklGRk4AAABXRUJQVlA4IEIAAABQAwCdASoQAB4APtFUo0uoJKMhsAgBABoJaQAAesnPiqgbAAD+8WaJ5ixInHYuw9YZBamemTsMrhyNjgM0r/gAAAA="
+      "width": 2880,
+      "height": 5314,
+      "blur": "data:image/webp;base64,UklGRk4AAABXRUJQVlA4IEIAAADQAwCdASoQAB4APtFUo0uoJKMhsAgBABoJaQAAW/E9/mxQN4KfMAAA/vaMZU6QM1Qqh77cjhqEj5Y0YFKnJ6YAAAA="
+    }
+  },
+  "analytics-overview": {
+    "alt": "Team analytics for the last 7 days: 1.7M requests across 6 projects, requests per hour stacked by project (shop, blog, acme-store, jobs and other), one row per project with its share, change and a sparkline, and the top paths across projects",
+    "caption": "Every project of a team in one view",
+    "scale": 2,
+    "light": {
+      "width": 2880,
+      "height": 3496,
+      "blur": "data:image/webp;base64,UklGRkYAAABXRUJQVlA4IDoAAADwAgCdASoQABMAPtFUo0uoJKMhsAgBABoJaQAAerHYAAD+8cSIUDEFcMMiq3fzbhGkIhVVf+fSlAAA"
+    },
+    "dark": {
+      "width": 2880,
+      "height": 3496,
+      "blur": "data:image/webp;base64,UklGRkwAAABXRUJQVlA4IEAAAACwAwCdASoQABMAPtFUo0uoJKMhsAgBABoJaQAAW+vmzlJ/qq38kAD+9X1PwFAnXc1gGjWeTocpBHsCMQnA8AAA"
+    }
+  },
+  "analytics-service": {
+    "alt": "Analytics of the web service in the shop project, last 7 days: 728K requests (up 5 %), 0.07 % server errors and 2.0 % client errors, requests per hour stacked by status with a daily rhythm, top paths such as /products/:id and /checkout with their 4xx and 5xx shares, referrers led by www.google.com and l.instagram.com, and clients split into browsers, bots and other clients",
+    "caption": "Request analytics of one service",
+    "scale": 2,
+    "light": {
+      "width": 2880,
+      "height": 2956,
+      "blur": "data:image/webp;base64,UklGRkoAAABXRUJQVlA4ID4AAAAwAgCdASoQABAAAsBMJYwCdH8AGBwVPcbDAAD++XYyqLHQ9/4sxiW+jbsyknM3vTEMepRZ21WaWoRNUKIAAA=="
+    },
+    "dark": {
+      "width": 2880,
+      "height": 2956,
+      "blur": "data:image/webp;base64,UklGRkYAAABXRUJQVlA4IDoAAAAwAgCdASoQABAAAsBMJZQCdH8AGBrhHXVCeAD++mYcsQWerehSaZQbdJ1/1ei6FRLKmRYmvcTCCfwA"
     }
   },
   "api-tokens": {
     "alt": "API tokens page: CLI install command and launchroom login, and a GitHub Actions token with read, deploy, env:read and env:write scopes and a Revoke button.",
     "caption": "Install the CLI, sign in without copying a token, and create scoped tokens for CI.",
+    "scale": 2,
     "light": {
-      "width": 1440,
-      "height": 1000,
-      "blur": "data:image/webp;base64,UklGRiwAAABXRUJQVlA4ICAAAABwAQCdASoQAAsAAsBMJaWR5AGIAAD+9yxTem2m8ApAAA=="
+      "width": 2880,
+      "height": 2000,
+      "blur": "data:image/webp;base64,UklGRioAAABXRUJQVlA4IB4AAACQAQCdASoQAAsAAsBMJaQAAud7WCAA/vpBCYUAAAA="
     },
     "dark": {
-      "width": 1440,
-      "height": 1000,
-      "blur": "data:image/webp;base64,UklGRi4AAABXRUJQVlA4ICIAAAAwAQCdASoQAAsAAsBMJaQAA3AA/vbybccOMoZUwZkYugAA"
+      "width": 2880,
+      "height": 2000,
+      "blur": "data:image/webp;base64,UklGRi4AAABXRUJQVlA4ICIAAAAwAQCdASoQAAsAAsBMJaQAA3AA/vbybdEVd2JMLBj0/CAA"
     }
   },
   "backup-settings": {
     "alt": "Backups settings: two S3 destinations with the size of their latest copy, a list of protected databases with schedules and retention, and a Recovery kit section with passphrase set, kit file downloaded and stored safely.",
     "caption": "One place for backup destinations, what they protect and the kit that brings it all back.",
+    "scale": 2,
     "light": {
-      "width": 1440,
-      "height": 2474,
-      "blur": "data:image/webp;base64,UklGRj4AAABXRUJQVlA4IDIAAABQAwCdASoQABsAPtFUpEuoJKOhsAgBABoJaWVuADc3ul/zgAD+8gUcGCr8CveMOgAAAA=="
+      "width": 2880,
+      "height": 5232,
+      "blur": "data:image/webp;base64,UklGRj4AAABXRUJQVlA4IDIAAABQAwCdASoQAB0APtFWo0uoJKMhsAgBABoJaWVuADcqHUJsCAD+8gUb+HNhuZEAnMvgAA=="
     },
     "dark": {
-      "width": 1440,
-      "height": 2616,
-      "blur": "data:image/webp;base64,UklGRkoAAABXRUJQVlA4ID4AAABQAwCdASoQAB0APtFUo0uoJKMhsAgBABoJaWM+ADcqMj5AAAD+8a13ns8ghwWEo1H+h0fTiT0c+OE1fwoAAA=="
+      "width": 2880,
+      "height": 5232,
+      "blur": "data:image/webp;base64,UklGRkoAAABXRUJQVlA4ID4AAACQAwCdASoQAB0APtFUo0uoJKMhsAgBABoJaQAAW/ChFYLC5jsgAP72jCakaahvDJpDY8wemhGi4vDUmAAAAA=="
     }
   },
   "canvas": {
     "alt": "Project canvas for the shop project in production: web and api in a Public group, a worker in an App group and a PostgreSQL 18 database in a Data group, connected by DATABASE_URL. Every service shows Live or Running.",
     "caption": "Every service in a project on one canvas, grouped by what it does and wired by the variables it shares.",
+    "scale": 2,
     "light": {
       "width": 2880,
       "height": 1800,
@@ -122,207 +161,222 @@
     "dark": {
       "width": 2880,
       "height": 1800,
-      "blur": "data:image/webp;base64,UklGRioAAABXRUJQVlA4IB4AAAAwAQCdASoQAAoAAsBMJaQAA3AA/vcYPgMKkrEhgAA="
+      "blur": "data:image/webp;base64,UklGRiwAAABXRUJQVlA4ICAAAAAwAQCdASoQAAoAAsBMJaQAA3AA/vbxJPqSkrHkT9AAAA=="
     }
   },
   "canvas-alt": {
     "alt": "Canvas for acme-store in production with api and web marked Changed, a new mailer service marked New, and PostgreSQL 18. The bottom toolbar shows 4 changes and a Review and deploy button.",
     "caption": "Edits stage on the canvas first. Nothing goes live until you review and deploy.",
+    "scale": 2,
     "light": {
-      "width": 1440,
-      "height": 900,
-      "blur": "data:image/webp;base64,UklGRjIAAABXRUJQVlA4ICYAAADQAQCdASoQAAoAAsBMJaQAAud7ZyEEAAD++kEJiU4Ax8DFRVAAAA=="
+      "width": 2880,
+      "height": 1800,
+      "blur": "data:image/webp;base64,UklGRjIAAABXRUJQVlA4ICYAAADQAQCdASoQAAoAAsBMJaQAAud7ZyEEAAD++kEJiVE+i8CBe+4AAA=="
     },
     "dark": {
-      "width": 1440,
-      "height": 900,
-      "blur": "data:image/webp;base64,UklGRjQAAABXRUJQVlA4ICgAAABwAQCdASoQAAoAAsBMJaWHgAGIAAD+9svvYJ45Wfu7Gv503a+NAAAA"
+      "width": 2880,
+      "height": 1800,
+      "blur": "data:image/webp;base64,UklGRjQAAABXRUJQVlA4ICgAAABwAQCdASoQAAoAAsBMJaWHgAGIAAD+9svvYJ45Wfu7Gv503JAMAAAA"
     }
   },
   "capabilities": {
     "alt": "Advanced settings for an nginx service: entrypoint arguments and a Capabilities list where Change file owners (CHOWN) and Listen on ports below 1024 (NET_BIND_SERVICE) are on and others are off.",
     "caption": "Containers start with no Linux capabilities. Grant only what an image needs.",
+    "scale": 2,
     "light": {
-      "width": 1440,
-      "height": 900,
-      "blur": "data:image/webp;base64,UklGRj4AAABXRUJQVlA4IDIAAACwAQCdASoQAAoAAsBMJaQAAudVUocQAP76Qk8GyH+udc1SdahUrYU3cTq60MsMVoAAAA=="
+      "width": 2880,
+      "height": 1800,
+      "blur": "data:image/webp;base64,UklGRjwAAABXRUJQVlA4IDAAAACwAQCdASoQAAoAAsBMJaQAAudVeEqAAP76Qk8GyH+udc1SekauDC4BOh7PwfxjAAA="
     },
     "dark": {
-      "width": 1440,
-      "height": 900,
-      "blur": "data:image/webp;base64,UklGRjoAAABXRUJQVlA4IC4AAADQAQCdASoQAAoAAsBMJaQAAudF9ez6gAD++mYCVrioeowYAyiJj+omsDFZ3TAA"
+      "width": 2880,
+      "height": 1800,
+      "blur": "data:image/webp;base64,UklGRjoAAABXRUJQVlA4IC4AAADQAQCdASoQAAoAAsBMJaQAAudGOBSQAAD++mYCVrioeowYAvuyEFaoEvngGrAA"
     }
   },
   "cli-sign-in": {
     "alt": "Sign in to the launchroom CLI: a device code from bennett-mbp, permission checkboxes for deploys, variables, secrets, domains and data, a session length and Deny and Approve buttons.",
     "caption": "Approve the CLI in your browser and choose exactly what it may do.",
+    "scale": 2,
     "light": {
-      "width": 1440,
-      "height": 1010,
-      "blur": "data:image/webp;base64,UklGRjAAAABXRUJQVlA4ICQAAAAwAQCdASoQAAsAAsBMJaQAA3AA/vdMUdo761gqzvgbZf7QAAA="
+      "width": 2880,
+      "height": 2168,
+      "blur": "data:image/webp;base64,UklGRi4AAABXRUJQVlA4ICIAAAAwAQCdASoQAAwAAsBMJaQAA3AA/vdJ/lziBD24CsemjMAA"
     },
     "dark": {
-      "width": 1440,
-      "height": 1010,
-      "blur": "data:image/webp;base64,UklGRjAAAABXRUJQVlA4ICQAAAAwAQCdASoQAAsAAsBMJaQAA3AA/vbC5uernrStQWFG7vPwAAA="
+      "width": 2880,
+      "height": 2168,
+      "blur": "data:image/webp;base64,UklGRjIAAABXRUJQVlA4ICYAAADQAQCdASoQAAwAAsBMJaQAAudQUROAAAD++mIvmAnLTCX3WAgAAA=="
     }
   },
   "command-palette": {
     "alt": "Command palette over the canvas with a search field, an action to switch to staging, navigation shortcuts like g p for Projects, and a list of projects.",
     "caption": "Press ⌘K to jump anywhere or run an action.",
+    "scale": 2,
     "light": {
-      "width": 1440,
-      "height": 900,
-      "blur": "data:image/webp;base64,UklGRkAAAABXRUJQVlA4IDQAAADwAQCdASoQAAoAAsBMJaQAAxPDRZw3dvgA/sP/Tgmx456YuZWWJNjGgyksmuO7kXS0AAAA"
+      "width": 2880,
+      "height": 1800,
+      "blur": "data:image/webp;base64,UklGRkIAAABXRUJQVlA4IDYAAADQAQCdASoQAAoAAsBMJaQAApL0u5X2AAD+w/99ZKXNQMT/lHwbe6otG3kDcJrj0+OopB8MAAA="
     },
     "dark": {
-      "width": 1440,
-      "height": 900,
+      "width": 2880,
+      "height": 1800,
       "blur": "data:image/webp;base64,UklGRi4AAABXRUJQVlA4ICIAAAAwAQCdASoQAAoAAsBMJaQAA3AA/veJGyNz9J09DxylAAAA"
     }
   },
   "compose-import": {
     "alt": "Import a Compose file: a pasted compose.yml for Umami and Postgres, a preview of the resulting project, and a line-by-line explanation of what launchroom does with each part, with Postgres turned into a managed database.",
     "caption": "Paste a Compose file and see what it becomes, line by line, before anything is created.",
+    "scale": 2,
     "light": {
-      "width": 1440,
-      "height": 2090,
-      "blur": "data:image/webp;base64,UklGRkoAAABXRUJQVlA4ID4AAABQAwCdASoQABcAPtFUo0uoJKMhsAgBABoJaQAAesIJS8yQAAD+8hKYeKQsynS+ZqYW3nXGdf3TEy0orwAAAA=="
+      "width": 2880,
+      "height": 4180,
+      "blur": "data:image/webp;base64,UklGRkoAAABXRUJQVlA4ID4AAABQAwCdASoQABcAPtFWo0uoJKMhsAgBABoJaQAAesIJS8yQAAD+8hKYeKQsynS+ZqYW3nXGdf3TEy0orwAAAA=="
     }
   },
   "config-managed": {
     "alt": "Deploy settings of web with a banner 'Managed by launchroom.json' listing the fields the file controls, an Edit in launchroom.json link, and start command, port and health check settings.",
     "caption": "Keep service settings in a launchroom.json next to your code. The dashboard shows what the file manages.",
+    "scale": 2,
     "light": {
-      "width": 1440,
-      "height": 900,
-      "blur": "data:image/webp;base64,UklGRjoAAABXRUJQVlA4IC4AAADQAQCdASoQAAoAAsBMJaQAAueBPR/LmAD++kJOvKg/Drn4Y85HO4nGBY4UUAAA"
+      "width": 2880,
+      "height": 1800,
+      "blur": "data:image/webp;base64,UklGRjwAAABXRUJQVlA4IDAAAACwAQCdASoQAAoAAsBMJaQAAud7aLUgAP76Qk7OWbl0LAyDjc+yvT6SR7SH4NtgAAA="
     },
     "dark": {
-      "width": 1440,
-      "height": 900,
-      "blur": "data:image/webp;base64,UklGRjgAAABXRUJQVlA4ICwAAACwAQCdASoQAAoAAsBMJaQAAudF8w8AAP76ZgJWoMwwWAvvkzkcVD7t5lKAAA=="
+      "width": 2880,
+      "height": 1800,
+      "blur": "data:image/webp;base64,UklGRjgAAABXRUJQVlA4ICwAAACwAQCdASoQAAoAAsBMJaQAAudF8w8AAP76ZgJWoMwwWAvwXhQHqZ14paAAAA=="
     }
   },
   "config-problems": {
     "alt": "Failed deployment 'Scale web and move the health check': launchroom.json has 3 problems, each with the file line highlighted, a caret at the error and a fix such as 'Remove the quotes: 3000' or 'Did you mean replicas?'.",
     "caption": "A broken launchroom.json never deploys. You get each problem with its line and the fix.",
+    "scale": 2,
     "light": {
-      "width": 1440,
-      "height": 1689,
-      "blur": "data:image/webp;base64,UklGRj4AAABXRUJQVlA4IDIAAADwAgCdASoQABMAPtFUo0uoJKMhsAgBABoJaQAAerHYAAD+8cMyO/gNloy3ASpnugAAAA=="
+      "width": 2880,
+      "height": 3474,
+      "blur": "data:image/webp;base64,UklGRj4AAABXRUJQVlA4IDIAAADwAgCdASoQABMAPtFWo0uoJKMhsAgBABoJaQAAerHYAAD+8c5+Bc8DZaMtwsBAxcAAAA=="
     },
     "dark": {
-      "width": 1440,
-      "height": 1689,
-      "blur": "data:image/webp;base64,UklGRkgAAABXRUJQVlA4IDwAAAAwAwCdASoQABMAPtFUo0uoJKMhsAgBABoJaQAAewUYRhwAAP7xYzg8T4kmOLvtHLHrw/2tKz3FyGAAAAA="
+      "width": 2880,
+      "height": 3474,
+      "blur": "data:image/webp;base64,UklGRkgAAABXRUJQVlA4IDwAAAAwAwCdASoQABMAPtFUo0uoJKMhsAgBABoJaQAAewUZYGQAAP7xYzg8T4kmOLvtHLOUKHIVjqwpOGnAAAA="
     }
   },
   "config-settings": {
     "alt": "Project settings, Config file page: Follow launchroom.json on, path launchroom.json, a schema line for editor autocompletion, and the last read in production showing changes staged.",
     "caption": "Turn on the config file per project and get autocompletion in your editor.",
+    "scale": 2,
     "light": {
-      "width": 1440,
-      "height": 900,
+      "width": 2880,
+      "height": 1800,
       "blur": "data:image/webp;base64,UklGRi4AAABXRUJQVlA4ICIAAACQAQCdASoQAAoAAsBMJaQAAuguSGAA/vpCT107j/UsAAAA"
     },
     "dark": {
-      "width": 1440,
-      "height": 900,
+      "width": 2880,
+      "height": 1800,
       "blur": "data:image/webp;base64,UklGRiwAAABXRUJQVlA4ICAAAAAwAQCdASoQAAoAAsBMJaQAA3AA/vbybccKwSXYVJIAAA=="
     }
   },
   "console": {
     "alt": "Console tab of node-hello: a live shell on replica 1 on control plane after running echo, id and ls, with session status and a list of recent sessions.",
     "caption": "Open a shell in any replica from the browser. Every session is recorded.",
+    "scale": 2,
     "light": {
-      "width": 1440,
-      "height": 1000,
-      "blur": "data:image/webp;base64,UklGRi4AAABXRUJQVlA4ICIAAABwAQCdASoQAAsAAsBMJaV9qAGIAAD+9tqZEF/bMUCWTUAA"
+      "width": 2880,
+      "height": 2000,
+      "blur": "data:image/webp;base64,UklGRjAAAABXRUJQVlA4ICQAAABwAQCdASoQAAsAAsBMJaVkgAGIAAD+9rKa0eeJFliqqNWEAAA="
     },
     "dark": {
-      "width": 1440,
-      "height": 1000,
-      "blur": "data:image/webp;base64,UklGRjAAAABXRUJQVlA4ICQAAAAwAQCdASoQAAsAAsBMJaQAA3AA/vakf6iMvLBJMLxlmSLUAAA="
+      "width": 2880,
+      "height": 2000,
+      "blur": "data:image/webp;base64,UklGRjYAAABXRUJQVlA4ICoAAABwAQCdASoQAAsAAsBMJaV2AAGIAAD+9nvR22VjU3YghOrpeUqNCg9AAAA="
     }
   },
   "cron": {
     "alt": "Schedule settings for a Nightly report job: runs on a schedule, every weekday at 03:30 America/New York, preset chips, the cron expression 30 3 * * 1-5 broken into fields, and a time zone picker.",
     "caption": "Schedules in plain words, with the cron expression and time zone beside them.",
+    "scale": 2,
     "light": {
-      "width": 1440,
-      "height": 900,
-      "blur": "data:image/webp;base64,UklGRjwAAABXRUJQVlA4IDAAAADQAQCdASoQAAoAAsBMJaQAAud7aWDNAAD++kJOzlmGn4fRi4J/LDPy6PBljt8gAAA="
+      "width": 2880,
+      "height": 1800,
+      "blur": "data:image/webp;base64,UklGRj4AAABXRUJQVlA4IDIAAADQAQCdASoQAAoAAsBMJaQAAu1+9BVZwAD++kJTBJdisuu53EQvZmNiyPBl5h8jEAAAAA=="
     },
     "dark": {
-      "width": 1440,
-      "height": 900,
-      "blur": "data:image/webp;base64,UklGRkAAAABXRUJQVlA4IDQAAADQAQCdASoQAAoAAsBMJaQAAt0Af6fC+AD++mYLbN4vSJlEYIzC7FWth5MYn6aKjYVvwwAA"
+      "width": 2880,
+      "height": 1800,
+      "blur": "data:image/webp;base64,UklGRj4AAABXRUJQVlA4IDIAAADQAQCdASoQAAoAAsBMJaQAAu19yWx88AD++vCVVzd0PZ8aqdfH5Gw8mMT9NFRsK3AAAA=="
     }
   },
   "dashboard-domain": {
     "alt": "Dashboard domain settings: the dashboard answers on localhost, a field to use your own domain with HTTPS from Let's Encrypt, and the reset command for when you're locked out.",
     "caption": "Move the dashboard to its own domain once DNS, certificate and HTTPS check out.",
+    "scale": 2,
     "light": {
-      "width": 1440,
-      "height": 900,
-      "blur": "data:image/webp;base64,UklGRjAAAABXRUJQVlA4ICQAAACwAQCdASoQAAoAAsBMJaQAAueBPMYAAP76QRj4DBrSnetAAAA="
+      "width": 2880,
+      "height": 1800,
+      "blur": "data:image/webp;base64,UklGRjIAAABXRUJQVlA4ICYAAABwAQCdASoQAAoAAsBMJaV/2AGIAAD+9wXUCsE6e1SE342I2KgAAA=="
     },
     "dark": {
-      "width": 1440,
-      "height": 900,
+      "width": 2880,
+      "height": 1800,
       "blur": "data:image/webp;base64,UklGRjAAAABXRUJQVlA4ICQAAAAwAQCdASoQAAoAAsBMJaQAA3AA/vbybccy2tOGeDzynWlwAAA="
     }
   },
   "database-backups": {
-    "alt": "Backups settings page of orders-db: backed up 6 hours ago, daily schedule, retention 7 daily, 4 weekly, 3 monthly, last verified 6 days ago, point-in-time recovery on with a 7-day window, and a snapshot list.",
+    "alt": "Backups tab of orders-db: backed up 6 hours ago, daily schedule, retention 7 daily, 4 weekly, 3 monthly, last verified 6 days ago, point-in-time recovery on with a 7-day window, and a snapshot list.",
     "caption": "Scheduled, verified backups with point-in-time recovery, right on the database.",
+    "scale": 2,
     "light": {
       "width": 2880,
       "height": 2000,
-      "blur": "data:image/webp;base64,UklGRjAAAABXRUJQVlA4ICQAAABwAQCdASoQAAsAAsBMJaWDrAGIAAD+9tzeD5FvnpNVrdgAAAA="
+      "blur": "data:image/webp;base64,UklGRi4AAABXRUJQVlA4ICIAAAAwAQCdASoQAAsAAsBMJaQAA3AA/vbfqiiQTe5SzMFY8AAA"
     },
     "dark": {
       "width": 2880,
       "height": 2000,
-      "blur": "data:image/webp;base64,UklGRjAAAABXRUJQVlA4ICQAAAAwAQCdASoQAAsAAsBMJaQAA3AA/vZ3yc/IYsmNSyK5YFe7AAA="
+      "blur": "data:image/webp;base64,UklGRi4AAABXRUJQVlA4ICIAAAAwAQCdASoQAAsAAsBMJaQAA3AA/vZug2nqpN3/eU9uvAAA"
     }
   },
   "database-browse": {
-    "alt": "Data tab of a ClickHouse database browsing the pageviews table: rows with timestamp, path, country and duration.",
+    "alt": "Data tab of a PostgreSQL database: the customers, orders and pageviews tables with their row counts, and the first rows of pageviews with id, timestamp, path, country and duration.",
     "caption": "Browse tables without installing a database client.",
+    "scale": 2,
     "light": {
-      "width": 1440,
-      "height": 1000,
-      "blur": "data:image/webp;base64,UklGRi4AAABXRUJQVlA4ICIAAABwAQCdASoQAAsAAsBMJaV2AAGIAAD+9traiBmJI8p5SAAA"
+      "width": 2880,
+      "height": 2000,
+      "blur": "data:image/webp;base64,UklGRjAAAABXRUJQVlA4ICQAAABwAQCdASoQAAsAAsBMJaVnyAGIAAD+9rL0tIfG7UT3zkIAAAA="
     },
     "dark": {
-      "width": 1440,
-      "height": 1000,
-      "blur": "data:image/webp;base64,UklGRjYAAABXRUJQVlA4ICoAAADQAQCdASoQAAsAAsBMJaQAAujfWKkIAAD++vB5rNBDTiG+JKFnUuAAAAA="
+      "width": 2880,
+      "height": 2000,
+      "blur": "data:image/webp;base64,UklGRjIAAABXRUJQVlA4ICYAAABwAQCdASoQAAsAAsBMJaV2AAGIAAD+9nvobd3bKky99uIb17UgAA=="
     }
   },
   "database-data": {
-    "alt": "Data tab of a ClickHouse database: a read-only query grouping pageviews by path, and a result table with four rows of paths, view counts and average milliseconds.",
+    "alt": "Data tab of a PostgreSQL database: a read-only query grouping pageviews by path, and a result table with seven paths, their view counts and average milliseconds.",
     "caption": "Query your database from the dashboard. Read-only unless you allow writes.",
+    "scale": 2,
     "light": {
-      "width": 1440,
-      "height": 1000,
-      "blur": "data:image/webp;base64,UklGRjAAAABXRUJQVlA4ICQAAABwAQCdASoQAAsAAsBMJaWHgAGIAAD+9v/OhcMsKy5ysOUiAAA="
+      "width": 2880,
+      "height": 2000,
+      "blur": "data:image/webp;base64,UklGRjAAAABXRUJQVlA4ICQAAABwAQCdASoQAAsAAsBMJaV9qAGIAAD+9vy+HXT3vq0c7IoAAAA="
     },
     "dark": {
-      "width": 1440,
-      "height": 1000,
-      "blur": "data:image/webp;base64,UklGRjQAAABXRUJQVlA4ICgAAABwAQCdASoQAAsAAsBMJaVsKAGIAAD+9qSNM5JFzx+5gaTbkpGwAAAA"
+      "width": 2880,
+      "height": 2000,
+      "blur": "data:image/webp;base64,UklGRjIAAABXRUJQVlA4ICYAAABwAQCdASoQAAsAAsBMJaWHgAGIAAD+9qSPVnZL+4uvtEoIywAAAA=="
     }
   },
   "deployment": {
-    "alt": "Deployment 'fix: order totals with discounts' of the web service in production: Live, 1m 51s, built on control plane, with a timeline of the steps Plan, Build, Roll out, Health check and Switch traffic, where Build took 1m 28s.",
+    "alt": "Deployment 'fix: order totals with discounts' of the web service in production: Live, 1m 51s, built on control plane, with the steps Plan, Build, Roll out, Health check and Switch traffic all done.",
     "caption": "Every step of a deployment, with its duration and logs.",
+    "scale": 2,
     "light": {
       "width": 2880,
       "height": 1800,
-      "blur": "data:image/webp;base64,UklGRiwAAABXRUJQVlA4ICAAAAAwAQCdASoQAAoAAsBMJaQAA3AA/vcHMrCNyGBOy/SAAA=="
+      "blur": "data:image/webp;base64,UklGRiwAAABXRUJQVlA4ICAAAAAwAQCdASoQAAoAAsBMJaQAA3AA/vcHMq89hAE7L9IAAA=="
     },
     "dark": {
       "width": 2880,
@@ -333,48 +387,52 @@
   "deployment-failed": {
     "alt": "Failed deployment 'chore: bump next to 16.1': a card explains the build failed because pnpm-lock.yaml is out of date, the site still serves the previous commit, and the build step shows the log excerpt with the ERR_PNPM_OUTDATED_LOCKFILE line highlighted.",
     "caption": "When a build fails, you get the cause, the fix and the exact log line. Your site keeps serving the last good version.",
+    "scale": 2,
     "light": {
-      "width": 1440,
-      "height": 1556,
-      "blur": "data:image/webp;base64,UklGRj4AAABXRUJQVlA4IDIAAAAQAwCdASoQABEAPtFWo0uoJKMhsAgBABoJaWZAADdQzIgA/vHNV5MhCesYfrbN+gAAAA=="
+      "width": 2880,
+      "height": 3112,
+      "blur": "data:image/webp;base64,UklGRj4AAABXRUJQVlA4IDIAAAAQAwCdASoQABEAPtFWo0uoJKMhsAgBABoJaWZAADcn5YAA/vHNV5MhCesYfqLecAAAAA=="
     },
     "dark": {
-      "width": 1440,
-      "height": 1556,
-      "blur": "data:image/webp;base64,UklGRkgAAABXRUJQVlA4IDwAAABQAwCdASoQABEAPtFWo0uoJKMhsAgBABoJaQAAXK+59GYhwAD+9pUEwmAva464IgFd+vHe6DQYFj5TIAA="
+      "width": 2880,
+      "height": 3112,
+      "blur": "data:image/webp;base64,UklGRkYAAABXRUJQVlA4IDoAAACQAwCdASoQABEAPtFUo0uoJKMhsAgBABoJaQAAXK+587Ir4l/gAP72lQTCYC9rjrgfGA19IlIAAAAA"
     }
   },
   "domains": {
     "alt": "Domains settings for web: blog.acme.test waiting for DNS with the A records to add and a Check now button, HTTPS issued on first visit, served by two servers, plus HSTS and redirect toggles.",
     "caption": "Add a domain, copy the records, and launchroom checks DNS and issues the certificate by itself.",
+    "scale": 2,
     "light": {
-      "width": 1440,
-      "height": 960,
-      "blur": "data:image/webp;base64,UklGRjIAAABXRUJQVlA4ICYAAABwAQCdASoQAAsAAsBMJaV/2AGIAAD+9q3dhl4Lg1AWKlKZgaAAAA=="
+      "width": 2880,
+      "height": 1920,
+      "blur": "data:image/webp;base64,UklGRjYAAABXRUJQVlA4ICoAAABwAQCdASoQAAsAAsBMJaVefAGIAAD+9rWOvBYw3tYmYfUXbjKHfbMprAA="
     },
     "dark": {
-      "width": 1440,
-      "height": 960,
-      "blur": "data:image/webp;base64,UklGRjQAAABXRUJQVlA4ICgAAAAwAQCdASoQAAsAAsBMJaQAA3AA/vZ6pc4sjBJvBo5zPQLbrAzOSAAA"
+      "width": 2880,
+      "height": 1920,
+      "blur": "data:image/webp;base64,UklGRjoAAABXRUJQVlA4IC4AAACQAQCdASoQAAsAAsBMJaQAAxf7+RAA/vqOyKRy9hd1dOfwlobOlrFvjYnwAAAA"
     }
   },
   "domains-edges": {
     "alt": "Domain settings scrolled to the generated domain, Live, with DNS managed, a local certificate and traffic served by 2 servers, and edge server cards for control plane and server-2.",
     "caption": "Every edge server answers for your domains, so traffic keeps flowing if one is down.",
+    "scale": 2,
     "light": {
-      "width": 1440,
-      "height": 960,
-      "blur": "data:image/webp;base64,UklGRiwAAABXRUJQVlA4ICAAAABwAQCdASoQAAsAAsBMJaWR5AGIAAD+9wSPD5eB37AAAA=="
+      "width": 2880,
+      "height": 1920,
+      "blur": "data:image/webp;base64,UklGRjYAAABXRUJQVlA4ICoAAABwAQCdASoQAAsAAsBMJaVefAGIAAD+9rWOvBYw3tYmYfUXbjKHfbMprAA="
     },
     "dark": {
-      "width": 1440,
-      "height": 960,
-      "blur": "data:image/webp;base64,UklGRjAAAABXRUJQVlA4ICQAAAAwAQCdASoQAAsAAsBMJaQAA3AA/vZ4r8bZhhhJYyoM/BbAAAA="
+      "width": 2880,
+      "height": 1920,
+      "blur": "data:image/webp;base64,UklGRjoAAABXRUJQVlA4IC4AAACQAQCdASoQAAsAAsBMJaQAAxf7+RAA/vqOyKRy9hd1dOfwlobOlrFvjYnwAAAA"
     }
   },
   "env-switcher": {
     "alt": "The environment menu open in the project top bar: production (branch main) selected, staging, Compare & promote and Manage environments.",
     "caption": "Switch environments from the top bar; the whole canvas follows.",
+    "scale": 2,
     "light": {
       "width": 2880,
       "height": 1800,
@@ -383,455 +441,517 @@
     "dark": {
       "width": 2880,
       "height": 1800,
-      "blur": "data:image/webp;base64,UklGRiwAAABXRUJQVlA4ICAAAAAwAQCdASoQAAoAAsBMJaQAA3AA/vbxJQ+z0GZN2oYAAA=="
+      "blur": "data:image/webp;base64,UklGRi4AAABXRUJQVlA4ICIAAAAwAQCdASoQAAoAAsBMJaQAA3AA/vbxJQ+z0GZN3ZE/QAAA"
     }
   },
   "git-providers": {
     "alt": "Git settings: connected Forgejo, GitLab and a second Forgejo, plus two plain git servers, and a Connect another place section for GitHub, GitLab, Gitea or Forgejo, and any git server.",
     "caption": "Connect GitHub, GitLab, Gitea, Forgejo or any git server.",
+    "scale": 2,
     "light": {
-      "width": 1440,
-      "height": 1855,
-      "blur": "data:image/webp;base64,UklGRkQAAABXRUJQVlA4IDgAAAAQAwCdASoQABUAPtFWo0uoJKMhsAgBABoJaQAAexat8AAA/vIGDKAnsUrLB6k2EJf69DjSMUAAAA=="
+      "width": 2880,
+      "height": 4256,
+      "blur": "data:image/webp;base64,UklGRlAAAABXRUJQVlA4IEQAAADwAgCdASoQABgAPtFUpEuoJKOhsAgBABoJaWZAADdYAAD+8b9qTfRnKt09lvhfqzXvXhRDpXrS3D84YjdN30Rz7DyAAA=="
     },
     "dark": {
-      "width": 1440,
-      "height": 1855,
-      "blur": "data:image/webp;base64,UklGRkwAAABXRUJQVlA4IEAAAABQAwCdASoQABUAPtFUo0uoJKMhsAgBABoJaWM+ADc2qjt4AAD+8a2hSX4Nkvlc9c1bmI8x+44akjK7UUcQOAAA"
+      "width": 2880,
+      "height": 4256,
+      "blur": "data:image/webp;base64,UklGRlQAAABXRUJQVlA4IEgAAACwAwCdASoQABgAPtFUpEuoJKOhsAgBABoJaQAAW/ChGi93/r8mAAD+9ov2ldAOs/n7f8/SnIS3wVleglV2KgTiYfW4AQlAAAA="
     }
   },
   "git-source": {
     "alt": "Source settings of a web service built from GitLab repository acme/platform/web on branch main with root directory apps/web.",
     "caption": "Each service builds from a repository, a branch and a folder.",
+    "scale": 2,
     "light": {
-      "width": 1440,
-      "height": 1000,
-      "blur": "data:image/webp;base64,UklGRjwAAABXRUJQVlA4IDAAAADQAQCdASoQAAsAAsBMJaQAAudleSv5AAD++hSr/JCUAZEhLcJfRK1yYs3srBieAAA="
+      "width": 2880,
+      "height": 2000,
+      "blur": "data:image/webp;base64,UklGRjwAAABXRUJQVlA4IDAAAACwAQCdASoQAAsAAsBMJaQAAudF8w8AAP76FK01iKM/1rafpbYkGGuPf0BAfsErgAA="
     },
     "dark": {
-      "width": 1440,
-      "height": 1000,
-      "blur": "data:image/webp;base64,UklGRj4AAABXRUJQVlA4IDIAAACQAQCdASoQAAsAAsBMJaQAAudVMbgA/vpmFZDrkNSBi8Ar7uj9iMrWOe1iolYGNAAAAA=="
+      "width": 2880,
+      "height": 2000,
+      "blur": "data:image/webp;base64,UklGRjwAAABXRUJQVlA4IDAAAACwAQCdASoQAAsAAsBMJaQAAudQJfkAAP76ZgJWoMo8IyvaHX/P/YK7t36wYy6MAAA="
     }
   },
   "logs": {
     "alt": "Logs for the shop project searching 'health' across all environments over 30 days: a histogram with deploy markers, facets for level, environment, service and deployment, and matching lines with the term highlighted, including a failed health check.",
     "caption": "Search logs across services and environments, with a histogram that shows when it started.",
+    "scale": 2,
     "light": {
-      "width": 1440,
-      "height": 1000,
-      "blur": "data:image/webp;base64,UklGRjAAAABXRUJQVlA4ICQAAABwAQCdASoQAAsAAsBMJaWM+AGIAAD+9t583DgHHESMN0x4AAA="
+      "width": 2880,
+      "height": 2000,
+      "blur": "data:image/webp;base64,UklGRjAAAABXRUJQVlA4ICQAAABwAQCdASoQAAsAAsBMJaWM+AGIAAD+9t58367qbTBL19gAAAA="
     },
     "dark": {
-      "width": 1440,
-      "height": 1000,
-      "blur": "data:image/webp;base64,UklGRjQAAABXRUJQVlA4ICgAAABwAQCdASoQAAsAAsBMJaV2AAGIAAD+9sptvMa6eS46jgXCrFYtSAAA"
+      "width": 2880,
+      "height": 2000,
+      "blur": "data:image/webp;base64,UklGRjQAAABXRUJQVlA4ICgAAACwAQCdASoQAAsAAsBMJaQAAujcA/QAAP768HmcT3vuQDDEIPCQAAAA"
     }
   },
   "metrics": {
     "alt": "Metrics for shop production over a week: requests, error rate, p95 latency and bandwidth tiles with per-service sparklines, CPU and memory by service, a requests chart with deploy markers, and a services list.",
     "caption": "Requests, errors, latency and resources for every service, with deploys marked on the chart.",
+    "scale": 2,
     "light": {
-      "width": 1440,
-      "height": 1430,
-      "blur": "data:image/webp;base64,UklGRioAAABXRUJQVlA4IB4AAAAwAQCdASoQABAAAsBMJaQAA3AA/vcsew7bIewAAAA="
+      "width": 2880,
+      "height": 2860,
+      "blur": "data:image/webp;base64,UklGRiwAAABXRUJQVlA4ICAAAABwAQCdASoQABAAAsBMJaWVuAGIAAD+9wXSXoHj80AAAA=="
     },
     "dark": {
-      "width": 1440,
-      "height": 1430,
-      "blur": "data:image/webp;base64,UklGRi4AAABXRUJQVlA4ICIAAACwAQCdASoQABAAAsBMJaQAAude1cCAAP76jToDTE4692AA"
+      "width": 2880,
+      "height": 2860,
+      "blur": "data:image/webp;base64,UklGRjAAAABXRUJQVlA4ICQAAACwAQCdASoQABAAAsBMJaQAAudfFWKAAP76jToDTGnrMhYAAAA="
     }
   },
   "mtls": {
     "alt": "Team security settings: server certificates Off, Check or Require, readiness for control plane, server-2 and server-3, an audit log verified with over a thousand chained entries and its signing key, destinations for copies outside launchroom, and vulnerability data sources.",
     "caption": "Servers prove who they are with certificates, and the audit log is chained and signed.",
+    "scale": 2,
     "light": {
-      "width": 1440,
-      "height": 1722,
-      "blur": "data:image/webp;base64,UklGRjwAAABXRUJQVlA4IDAAAAAwAwCdASoQABMAPtFUo0uoJKMhsAgBABoJaQAAetkuEoIAAP7yAfhXmevGKOYAAAA="
+      "width": 2880,
+      "height": 3444,
+      "blur": "data:image/webp;base64,UklGRjwAAABXRUJQVlA4IDAAAAAwAwCdASoQABMAPtFWo0uoJKMhsAgBABoJaQAAetkuEoIAAP7yAfhXmevGKOYAAAA="
     },
     "dark": {
-      "width": 1440,
-      "height": 1722,
-      "blur": "data:image/webp;base64,UklGRkoAAABXRUJQVlA4ID4AAADwAgCdASoQABMAPtFUo0uoJKMhsAgBABoJaWapADdYAAD+8a1l7jVUSxNGzdy8qojRQVIIVUrptbzJZzaAAA=="
+      "width": 2880,
+      "height": 3444,
+      "blur": "data:image/webp;base64,UklGRkIAAABXRUJQVlA4IDYAAAAQAwCdASoQABMAPtFUo0uoJKMhsAgBABoJaWZAADcn9wAA/vGtZe3UlD6sbJUBiV14GDggAAA="
     }
   },
   "onboarding": {
     "alt": "Get started page: 'You're all set', 5 of 5 with the server connected, GitHub skipped, a free address for apps, the first app set up and backups off the server.",
     "caption": "A short checklist from first server to first backup. Nothing here is urgent.",
+    "scale": 2,
     "light": {
-      "width": 1440,
-      "height": 900,
+      "width": 2880,
+      "height": 1800,
       "blur": "data:image/webp;base64,UklGRjIAAABXRUJQVlA4ICYAAABwAQCdASoQAAoAAsBMJaV/2AGIAAD+9y2XIt1r8MSDHcipxoAAAA=="
     },
     "dark": {
-      "width": 1440,
-      "height": 900,
+      "width": 2880,
+      "height": 1800,
       "blur": "data:image/webp;base64,UklGRjQAAABXRUJQVlA4ICgAAACwAQCdASoQAAoAAsBMJaQAAueJS9cgAP768IiiXKSeoBnHgXB8YAAA"
     }
   },
   "pitr": {
     "alt": "Snapshot list with 'Any point in time' selected and a date-time picker set to a second inside the recovery window, above the restore options.",
     "caption": "Restore to any second inside the retention window.",
+    "scale": 2,
     "light": {
       "width": 2880,
       "height": 2000,
-      "blur": "data:image/webp;base64,UklGRi4AAABXRUJQVlA4ICIAAACwAQCdASoQAAsAAsBMJaQAAud/CvqAAP76QXuf66vQAAAA"
+      "blur": "data:image/webp;base64,UklGRi4AAABXRUJQVlA4ICIAAAAwAQCdASoQAAsAAsBMJaQAA3AA/va1/CGpp1G8R1rMwIAA"
     },
     "dark": {
       "width": 2880,
       "height": 2000,
-      "blur": "data:image/webp;base64,UklGRjIAAABXRUJQVlA4ICYAAACwAQCdASoQAAsAAsBMJaQAAujfV/qAAP768HmsK8TanqT11ZAAAA=="
+      "blur": "data:image/webp;base64,UklGRjAAAABXRUJQVlA4ICQAAACQAQCdASoQAAsAAsBMJaQAAudFrAAA/vrwlVcIJTCd7vUOAAA="
     }
   },
   "previews": {
     "alt": "Previews page with a live preview for pull request #1, its preview URL, author, commit, branch and expiry.",
     "caption": "Every pull request gets its own environment. Fork previews wait for your approval.",
+    "scale": 2,
     "light": {
-      "width": 1440,
-      "height": 900,
+      "width": 2880,
+      "height": 1800,
       "blur": "data:image/webp;base64,UklGRioAAABXRUJQVlA4IB4AAAAwAQCdASoQAAoAAsBMJaQAA3AA/vctuMg5sWd4AAA="
     },
     "dark": {
-      "width": 1440,
-      "height": 900,
+      "width": 2880,
+      "height": 1800,
       "blur": "data:image/webp;base64,UklGRioAAABXRUJQVlA4IB4AAAAwAQCdASoQAAoAAsBMJaQAA3AA/vcSGKmFDHYwAAA="
     }
   },
   "private-network": {
     "alt": "Network settings: built-in private network selected over your own Tailscale, three connected servers with private addresses, edge servers receiving public traffic, and certificate options.",
     "caption": "A private network between your servers is built in, even behind NAT.",
+    "scale": 2,
     "light": {
-      "width": 1440,
-      "height": 1525,
-      "blur": "data:image/webp;base64,UklGRjgAAABXRUJQVlA4ICwAAADwAgCdASoQABEAPtFUo0uoJKMhsAgBABoJaQAAerHYAAD+8hSR10igyAAAAA=="
+      "width": 2880,
+      "height": 3242,
+      "blur": "data:image/webp;base64,UklGRjoAAABXRUJQVlA4IC4AAAAwAwCdASoQABIAPtFUo0uoJKMhsAgBABoJaQAAetksm6AAAP7yCYVu4V6DuAAA"
     },
     "dark": {
-      "width": 1440,
-      "height": 1525,
-      "blur": "data:image/webp;base64,UklGRj4AAABXRUJQVlA4IDIAAAAQAwCdASoQABEAPtFUo0uoJKMhsAgBABoJaWbvADdQzIgA/vGtZfivj499UdSqwwAAAA=="
+      "width": 2880,
+      "height": 3242,
+      "blur": "data:image/webp;base64,UklGRj4AAABXRUJQVlA4IDIAAAAwAwCdASoQABIAPtFWo0uoJKMhsAgBABoJaQAAetjqpj4AAP7xrWX4uhbQiaiojAAAAA=="
     }
   },
   "projects": {
     "alt": "Projects page with project cards, each with a small service diagram, its domain, latest commit and a deploy sparkline, plus a New project button.",
     "caption": "All your projects at a glance, with what changed last and what needs attention.",
+    "scale": 2,
     "light": {
-      "width": 1440,
-      "height": 1211,
+      "width": 2880,
+      "height": 2422,
       "blur": "data:image/webp;base64,UklGRi4AAABXRUJQVlA4ICIAAAAwAQCdASoQAA0AAsBMJaQAA3AA/vbX8pgizWyVOoJSgAAA"
     },
     "dark": {
-      "width": 1440,
-      "height": 1211,
-      "blur": "data:image/webp;base64,UklGRjYAAABXRUJQVlA4ICoAAACwAQCdASoQAA0AAsBMJaQAAudcGMfAAP76Zh1XQUw9tqU9Nc8bJieAAAA="
+      "width": 2880,
+      "height": 2422,
+      "blur": "data:image/webp;base64,UklGRjQAAABXRUJQVlA4ICgAAACwAQCdASoQAA0AAsBMJaQAAudLc9oAAP76Zh1XQUw9tqU9NlBAAAAA"
     }
   },
   "promote": {
     "alt": "Compare and promote page from staging to production with three variable changes to api and web, a secret that needs a production value, and Promote and deploy and Stage only buttons.",
     "caption": "See what staging has that production doesn't, then promote it in one step.",
+    "scale": 2,
     "light": {
-      "width": 1440,
-      "height": 900,
-      "blur": "data:image/webp;base64,UklGRjQAAABXRUJQVlA4ICgAAABwAQCdASoQAAoAAsBMJaV/2AGIAAD+9wXcHKEpZoMCQCvhLyLLgAAA"
+      "width": 2880,
+      "height": 1800,
+      "blur": "data:image/webp;base64,UklGRjQAAABXRUJQVlA4ICgAAABwAQCdASoQAAoAAsBMJaV/2AGIAAD+9wXcHKEpZoMCQCvhgeadTgAA"
     },
     "dark": {
-      "width": 1440,
-      "height": 900,
-      "blur": "data:image/webp;base64,UklGRjgAAABXRUJQVlA4ICwAAACwAQCdASoQAAoAAsBMJaQAAu054zAAAP76Zg30Z0PSCzQmxzWJ8oIOMAAAAA=="
+      "width": 2880,
+      "height": 1800,
+      "blur": "data:image/webp;base64,UklGRjYAAABXRUJQVlA4ICoAAACwAQCdASoQAAoAAsBMJaQAAu054zAAAP76Zg30Z0PSCzQmnbSXVUgQAAA="
     }
   },
   "restore-dialog": {
     "alt": "Confirmation dialog 'Restore as a new service?' explaining that a new database is added next to orders-db and nothing existing changes, with Cancel and Restore as new service buttons.",
     "caption": "Restores land next to your database first, so you can check before swapping in.",
+    "scale": 2,
     "light": {
       "width": 2880,
       "height": 2000,
-      "blur": "data:image/webp;base64,UklGRjQAAABXRUJQVlA4ICgAAACwAQCdASoQAAsAAsBMJaQAAud7YVAAAP7H1dbX9yDJTa1whYEQkQAA"
+      "blur": "data:image/webp;base64,UklGRjwAAABXRUJQVlA4IDAAAACwAQCdASoQAAsAAsBMJaQAAltJMYAAAP7D+SXzDBgkTtvQ6RUp5dQY6LdK+5H4wAA="
     },
     "dark": {
       "width": 2880,
       "height": 2000,
-      "blur": "data:image/webp;base64,UklGRjAAAABXRUJQVlA4ICQAAACwAQCdASoQAAsAAsBMJaQAAudljXAAAP77aNUodoSUm4AAAAA="
+      "blur": "data:image/webp;base64,UklGRjAAAABXRUJQVlA4ICQAAADQAQCdASoQAAsAAsBMJaQAAudVmeXAAAD++2qGTONTQ2s5AAA="
     }
   },
   "scaling": {
     "alt": "Scaling settings for web after an unsaved change: 3 replicas spread over control plane (1) and server-2 (2), server cards with CPU and memory headroom, a replica counter at 3 and a Save for next deploy bar.",
     "caption": "Pick how many replicas run and where. launchroom checks they fit first.",
+    "scale": 2,
     "light": {
-      "width": 1440,
-      "height": 960,
-      "blur": "data:image/webp;base64,UklGRj4AAABXRUJQVlA4IDIAAACwAQCdASoQAAsAAsBMJaQAAud9GNaAAP76Qk7OWEn8GQGlBzTKzFTqYvajyWHXfAAAAA=="
+      "width": 2880,
+      "height": 1920,
+      "blur": "data:image/webp;base64,UklGRkIAAABXRUJQVlA4IDYAAADwAQCdASoQAAsAAsBMJaQAAxZiLlZNngAA/vl4eV+FmSx88ldxejiPEKam6z7ErzSjzX+AAAA="
     },
     "dark": {
-      "width": 1440,
-      "height": 960,
-      "blur": "data:image/webp;base64,UklGRkQAAABXRUJQVlA4IDgAAACwAQCdASoQAAsAAsBMJaQAAu18sl4AAP76ZhcqVBDz5JA8quJNy0qGqN4Bba0tURl023ftB/cAAA=="
+      "width": 2880,
+      "height": 1920,
+      "blur": "data:image/webp;base64,UklGRkAAAABXRUJQVlA4IDQAAADQAQCdASoQAAsAAsBMJaQAAxf88nbCMAD++o7IpHL3NgZO+iJOxzsekgAIYbrQdSl8QAAA"
     }
   },
   "security-finding": {
-    "alt": "A finding for command injection in lodash 4.17.20: fixed in 4.17.21, a runtime dependency from package-lock.json, the rules it meets, an investigation that found nothing unusual in the container and 3 matching firewall requests, and the npm command to update it",
+    "alt": "A finding for an authorization bypass in Next.js middleware: critical, known to be exploited, next 14.1.0 fixed in 14.2.25, the rules it meets, and an investigation with 2 concerning findings (a new executable in /tmp and a process running from it), firewall matches from one network, and numbered next steps from updating the package to restoring the database from a backup",
     "caption": "A finding with its investigation report",
+    "scale": 2,
     "light": {
-      "width": 1440,
-      "height": 1700,
-      "blur": "data:image/webp;base64,UklGRkAAAABXRUJQVlA4IDQAAAAQAwCdASoQABMAPtFUo0uoJKMhsAgBABoJaQAAewEpxNAA/vISmHikeld+N4v9GaNAAAAA"
+      "width": 2880,
+      "height": 3400,
+      "blur": "data:image/webp;base64,UklGRkIAAABXRUJQVlA4IDYAAAAQAwCdASoQABMAPtFUo0uoJKMhsAgBABoJaQAAerXuLAAA/vISo3+DpzZkO6MYlmPLXvQAAAA="
     },
     "dark": {
-      "width": 1440,
-      "height": 1700,
-      "blur": "data:image/webp;base64,UklGRkQAAABXRUJQVlA4IDgAAAAwAwCdASoQABMAPtFUo0uoJKMhsAgBABoJaQAAetVZqxAAAP7xYenV4rARYVQiy4ykJguiYAAAAA=="
+      "width": 2880,
+      "height": 3400,
+      "blur": "data:image/webp;base64,UklGRkYAAABXRUJQVlA4IDoAAAAwAwCdASoQABMAPtFWo0uoJKMhsAgBABoJaQAAexd0dyuoAP7xYq59NK+L/THYShIhnZnmGtqtAAAA"
+    }
+  },
+  "security-firewall": {
+    "alt": "Web firewall section of the Security page: blocked requests per hour over the last 7 days with requests a Log only service would have blocked hatched, the attack mix led by scanners, SQL injection and cross-site scripting, an api service that only logs with a Turn on blocking button, recent blocks with method, path, kind, service and client network, and the most targeted services",
+    "caption": "What the web firewall blocked this week",
+    "scale": 2,
+    "light": {
+      "width": 2348,
+      "height": 1896,
+      "blur": "data:image/webp;base64,UklGRkwAAABXRUJQVlA4IEAAAADwAQCdASoQAA0AAsBMJZQCw7EPhsWTJgAA/vl5KoSrMO4RyKf/mTfxcr4vkZx3EMcNHb/IpINZkToNk0WFGoAA"
+    },
+    "dark": {
+      "width": 2348,
+      "height": 1896,
+      "blur": "data:image/webp;base64,UklGRkgAAABXRUJQVlA4IDwAAADQAQCdASoQAA0AAsBMJZQC7AEOphk+6AD++SuhAcxPGTi55CWH6cFS0HQLY5+uXVRyQYClTdD1IjmKOAA="
     }
   },
   "security-firewall-settings": {
     "alt": "Web firewall settings of a service in Block: mode tiles Off, Log only and Block, 11 blocked and 4 logged requests in the last 7 days, an exception for rule 942100 on ARGS:id, and the stricter rules and request body settings",
     "caption": "Web firewall settings of a service in Block",
+    "scale": 2,
     "light": {
-      "width": 1440,
-      "height": 1000,
-      "blur": "data:image/webp;base64,UklGRjAAAABXRUJQVlA4ICQAAABwAQCdASoQAAsAAsBMJaWDrAGIAAD+9rX+joSbWXTehEZqwAA="
+      "width": 2880,
+      "height": 2000,
+      "blur": "data:image/webp;base64,UklGRjYAAABXRUJQVlA4ICoAAABwAQCdASoQAAsAAsBMJaWDrAGIAAD+9rX+j6jNwxA2BrWgXh2jaogAAAA="
     },
     "dark": {
-      "width": 1440,
-      "height": 1000,
-      "blur": "data:image/webp;base64,UklGRjQAAABXRUJQVlA4ICgAAABwAQCdASoQAAsAAsBMJaV2AAGIAAD+9k7cMNANZRrxhIuWBs48wAAA"
+      "width": 2880,
+      "height": 2000,
+      "blur": "data:image/webp;base64,UklGRjYAAABXRUJQVlA4ICoAAAAwAQCdASoQAAsAAsBMJaQAA3AA/vYiZvnLKXP4j552RpvS0Q8TmsiDAAA="
+    }
+  },
+  "security-inventory": {
+    "alt": "Inventory search for lodash: version 4.17.20 runs in three services and has a high-severity command injection advisory, version 4.17.21 runs in a dozen other services",
+    "caption": "Which services run lodash, and in which version",
+    "scale": 2,
+    "light": {
+      "width": 2348,
+      "height": 724,
+      "blur": "data:image/webp;base64,UklGRioAAABXRUJQVlA4IB4AAAAwAQCdASoQAAUAAsBMJaQAA3AA/vbUom39gytgAAA="
+    },
+    "dark": {
+      "width": 2348,
+      "height": 724,
+      "blur": "data:image/webp;base64,UklGRioAAABXRUJQVlA4IB4AAAAwAQCdASoQAAUAAsBMJaQAA3AA/vYcdVZI86QAAAA="
     }
   },
   "security-page": {
-    "alt": "Security page: a status card saying 4 vulnerabilities need you, with vulnerability checks, the known exploited list, release cycles and the web firewall on, 424 packages watched, 14.2K attacks blocked this week and 16 of 17 services protected, then one Action needed card per vulnerability with the fix and each affected service with what its investigation found",
+    "alt": "Security page: a status card saying 2 vulnerabilities need you, in 3 services, one known to be exploited, with vulnerability checks, the known exploited list, release cycles and the web firewall on, 74 packages watched, 14.6K attacks blocked this week and 17 of 18 services protected, then Action needed cards for a Next.js authorization bypass and a lodash command injection with each affected service and what its investigation found, and the web firewall chart",
     "caption": "The Security page of a team with vulnerable packages",
+    "scale": 2,
     "light": {
-      "width": 1440,
-      "height": 1700,
-      "blur": "data:image/webp;base64,UklGRkgAAABXRUJQVlA4IDwAAAAwAwCdASoQABMAPtFUpEuoJKOhsAgBABoJaQAAexQlGtVoAP7xvCfKnxQQxDjJNx/3Dm4PufDTV1OAAAA="
+      "width": 2880,
+      "height": 3400,
+      "blur": "data:image/webp;base64,UklGRmIAAABXRUJQVlA4IFYAAACQAwCdASoQABMAPtFWo0uoJKMhsAgBABoJZ2VuJQAEpFrpATjgAP7xzC8NMISEyPdpyIyx+ExXzRM2+Jl/yt/YNx2rFlvvKNY/D/T0fbTktINcsLgAAA=="
     },
     "dark": {
-      "width": 1440,
-      "height": 1700,
-      "blur": "data:image/webp;base64,UklGRkwAAABXRUJQVlA4IEAAAABwAwCdASoQABMAPtFWo0uoJKMhsAgBABoJaQAAXfTyXrFFvgAA/vV9XG1ds64U122fAmKoByoBdNG+LwXIAAAA"
+      "width": 2880,
+      "height": 3400,
+      "blur": "data:image/webp;base64,UklGRmIAAABXRUJQVlA4IFYAAACQAwCdASoQABMAPtFWo0uoJKMhsAgBABoJaQAAXfT261PAcP/wAP71fVxtXZKQX5oKJxYAHPCJgkvLQyZ01XWgOPWa68CqcFHfIzzAd36+PEHzsAAAAA=="
     }
   },
   "server-detail": {
     "alt": "Server detail for control plane: online virtual machine in Berlin with Edge and Runtime roles, CPU, memory and disk usage charts, the services running there, a health checklist that is all good, and an at-a-glance summary.",
     "caption": "Each server shows its load, what runs on it and whether it is healthy.",
+    "scale": 2,
     "light": {
-      "width": 1440,
-      "height": 1679,
-      "blur": "data:image/webp;base64,UklGRj4AAABXRUJQVlA4IDIAAADwAgCdASoQABMAPtFUo0uoJKMhsAgBABoJaQAAerHYAAD+8hJPV4ZPn3w19LE9AAAAAA=="
+      "width": 2880,
+      "height": 3358,
+      "blur": "data:image/webp;base64,UklGRjwAAABXRUJQVlA4IDAAAADwAgCdASoQABMAPtFUo0uoJKMhsAgBABoJaQAAerHYAAD+8hJPV4ZPn3wvZGgAAAA="
     },
     "dark": {
-      "width": 1440,
-      "height": 1679,
-      "blur": "data:image/webp;base64,UklGRkYAAABXRUJQVlA4IDoAAAAQAwCdASoQABMAPtFUo0uoJKMhsAgBABoJaQAAewQG/wAA/vGpHsqrhtyCJuvq5mgUVZCI/RSRwgAA"
+      "width": 2880,
+      "height": 3358,
+      "blur": "data:image/webp;base64,UklGRkgAAABXRUJQVlA4IDwAAAAQAwCdASoQABMAPtFUpEuoJKOhsAgBABoJaQAAewQG/wAA/vGpHsqrhtyCJuvq5mgUVZCI/RNeJQEAAAA="
     }
   },
   "server-network": {
     "alt": "Network tab of control plane: public address and routes, private network links to server-2 and server-3 with round-trip times and measured bandwidth, and connection details.",
     "caption": "See every private link between servers, with latency and speed measured.",
+    "scale": 2,
     "light": {
-      "width": 1440,
-      "height": 1807,
-      "blur": "data:image/webp;base64,UklGRjwAAABXRUJQVlA4IDAAAADwAgCdASoQABQAPtFUpEuoJKOhsAgBABoJaQAAerHYAAD+8hSXGQZPn347X9AAAAA="
+      "width": 2880,
+      "height": 3406,
+      "blur": "data:image/webp;base64,UklGRjwAAABXRUJQVlA4IDAAAADwAgCdASoQABMAPtFUo0uoJKMhsAgBABoJaQAAerHYAAD+8hSXGQZPn36QY2UAAAA="
     },
     "dark": {
-      "width": 1440,
-      "height": 1807,
-      "blur": "data:image/webp;base64,UklGRkQAAABXRUJQVlA4IDgAAABQAwCdASoQABQAPtFUo0uoJKMhsAgBABoJaQAAXBtsz4Bi4AD+9X0xTtCpVvXbcrC0OaPCAAAAAA=="
+      "width": 2880,
+      "height": 3406,
+      "blur": "data:image/webp;base64,UklGRkYAAABXRUJQVlA4IDoAAABwAwCdASoQABMAPtFUo0uoJKMhsAgBABoJaQAAXBtszrGFSAAA/vV9MU7QqVb13CSMbMQUNRVSCAAA"
     }
   },
   "server-topology": {
     "alt": "Servers overview with system load chart, a world map connecting Berlin, Helsinki and New York, and a diagram showing traffic from the Internet to control plane and server-2 and builds on server-3, with link latency and bandwidth.",
     "caption": "How traffic, apps and builds flow across your servers.",
+    "scale": 2,
     "light": {
-      "width": 1440,
-      "height": 1000,
-      "blur": "data:image/webp;base64,UklGRi4AAABXRUJQVlA4ICIAAABwAQCdASoQAAsAAsBMJaV9qAGIAAD+9wSy7Je6LJhTMAAA"
+      "width": 2880,
+      "height": 2000,
+      "blur": "data:image/webp;base64,UklGRigAAABXRUJQVlA4IBwAAAAwAQCdASoQAAsAAsBMJaQAA3AA/vcFcCb9IAAA"
     },
     "dark": {
-      "width": 1440,
-      "height": 1000,
-      "blur": "data:image/webp;base64,UklGRjYAAABXRUJQVlA4ICoAAABwAQCdASoQAAsAAsBMJaVefAGIAAD+9k1rkwglUhPRdRmzTWvUpfwAAAA="
+      "width": 2880,
+      "height": 2000,
+      "blur": "data:image/webp;base64,UklGRjIAAABXRUJQVlA4ICYAAABwAQCdASoQAAsAAsBMJaWDrAGIAAD+9k1rkwAe6Kxe8biMpiMAAA=="
     }
   },
   "servers": {
     "alt": "Servers page: three server cards in Berlin, Helsinki and New York with roles, CPU and memory sparklines, then system load, a world map of locations, a 'How it fits together' diagram from Internet to edge and build servers, and an at-a-glance summary.",
     "caption": "Your servers, where they are, what they do and how they connect.",
+    "scale": 2,
     "light": {
-      "width": 1440,
-      "height": 1744,
-      "blur": "data:image/webp;base64,UklGRkAAAABXRUJQVlA4IDQAAADwAgCdASoQABMAPtFUo0uoJKMhsAgBABoJaQAAerKKwAD+8cQUzC2q8MhlTXhhjV5FcAAA"
+      "width": 2880,
+      "height": 3688,
+      "blur": "data:image/webp;base64,UklGRkgAAABXRUJQVlA4IDwAAABQAwCdASoQABQAPtFUpEuoJKOhsAgBABoJaQAAW+sXhjdPgAD+9NIf/DrUmwBrEFCtoWOS+qqlawAAAAA="
     },
     "dark": {
-      "width": 1440,
-      "height": 1744,
-      "blur": "data:image/webp;base64,UklGRk4AAABXRUJQVlA4IEIAAABQAwCdASoQABMAPtFUo0uoJKMhsAgBABoJaWDrAFIb9vFgAAD+8WZPI8ya6dC8/i9EPV6cuyOqd4Zp4pUCRkAAAAA="
+      "width": 2880,
+      "height": 3688,
+      "blur": "data:image/webp;base64,UklGRkoAAABXRUJQVlA4ID4AAACQAwCdASoQABQAPtFUo0uoJKMhsAgBABoJaQAAW+yOO1jbJACgAP71fS1sawcreVc2TqYprCdfszt6SKAAAA=="
     }
   },
   "service-panel": {
-    "alt": "Service panel for api open beside the canvas, Deployments tab: the live deployment 'fix: order totals with discounts' as the first row with its steps, View logs and Redeploy, and four earlier deployments that can be rolled back.",
+    "alt": "Service panel for api open beside the canvas, Deployments tab: the live deployment 'fix: order totals with discounts' with View logs and Redeploy, and four earlier deployments that can be rolled back.",
     "caption": "Click a service to see what is live and roll back in seconds, without a rebuild.",
+    "scale": 2,
     "light": {
-      "width": 1440,
-      "height": 900,
-      "blur": "data:image/webp;base64,UklGRiwAAABXRUJQVlA4ICAAAABwAQCdASoQAAoAAsBMJaWM+AGIAAD+9wTXo/NzkHuAAA=="
+      "width": 2880,
+      "height": 1800,
+      "blur": "data:image/webp;base64,UklGRjAAAABXRUJQVlA4ICQAAACwAQCdASoQAAoAAsBMJaQAAuje2RLgAP76QZ+uafBwnbMsAAA="
     },
     "dark": {
-      "width": 1440,
-      "height": 900,
-      "blur": "data:image/webp;base64,UklGRjAAAABXRUJQVlA4ICQAAACwAQCdASoQAAoAAsBMJaQAAujfYmFAAP768HzY6CCM+3tIAAA="
+      "width": 2880,
+      "height": 1800,
+      "blur": "data:image/webp;base64,UklGRjAAAABXRUJQVlA4ICQAAAAwAQCdASoQAAoAAsBMJaQAA3AA/vakjUYZaTOTBKfo+gwAAAA="
     }
   },
   "service-settings": {
     "alt": "Expanded settings for the node-hello service: a General page with summary cards for domains, build (Node 22, port 3000), scaling (3 replicas on control plane and server-2) and private network address, plus name and slug fields.",
     "caption": "Service settings start with a summary of what matters, one click from the details.",
+    "scale": 2,
     "light": {
-      "width": 1440,
-      "height": 960,
-      "blur": "data:image/webp;base64,UklGRjQAAABXRUJQVlA4ICgAAACwAQCdASoQAAsAAsBMJaQAAudFyYcAAP76Qk9ScmAEXg3phHVPwAAA"
+      "width": 2880,
+      "height": 1920,
+      "blur": "data:image/webp;base64,UklGRjAAAABXRUJQVlA4ICQAAABwAQCdASoQAAsAAsBMJaWM+AGIAAD+9wcxXty966/WpgkAAAA="
     },
     "dark": {
-      "width": 1440,
-      "height": 960,
-      "blur": "data:image/webp;base64,UklGRjAAAABXRUJQVlA4ICQAAAAwAQCdASoQAAsAAsBMJaQAA3AA/vZ4jzRD+0GeVMnRBxyAAAA="
+      "width": 2880,
+      "height": 1920,
+      "blur": "data:image/webp;base64,UklGRjgAAABXRUJQVlA4ICwAAACQAQCdASoQAAsAAsBMJaQAAltASAAA/vqOyKR0DdfndRtq/1hcWJPjHAAAAA=="
     }
   },
   "settings-search": {
     "alt": "Scaling settings of the web service scrolled to the Replicas section, highlighted after a settings search, with server cards and CPU and memory sliders below.",
     "caption": "Search settings and land right on the one you need.",
+    "scale": 2,
     "light": {
-      "width": 1440,
-      "height": 960,
-      "blur": "data:image/webp;base64,UklGRiwAAABXRUJQVlA4ICAAAABwAQCdASoQAAsAAsBMJaV9qAGIAAD+9tzeDNSL+hvgAA=="
+      "width": 2880,
+      "height": 1920,
+      "blur": "data:image/webp;base64,UklGRjAAAABXRUJQVlA4ICQAAABwAQCdASoQAAsAAsBMJaV2AAGIAAD+9tzeS5Hv+xWcWnAAAAA="
     },
     "dark": {
-      "width": 1440,
-      "height": 960,
-      "blur": "data:image/webp;base64,UklGRjYAAABXRUJQVlA4ICoAAADQAQCdASoQAAsAAsBMJaQAAudlxaHYmAD++mYXKkkB7SCklANmzWsAAAA="
+      "width": 2880,
+      "height": 1920,
+      "blur": "data:image/webp;base64,UklGRjQAAABXRUJQVlA4ICgAAAAwAQCdASoQAAsAAsBMJaQAA3AA/vZ4jzREiqvxHzzsiLMjz3xVIAAA"
     }
   },
   "setup": {
     "alt": "First-run screen: 'Your launchroom is installed' on fra-1, Hetzner Cloud, with a server illustration, beside a Create the owner account form.",
     "caption": "Install, open the address, create the owner account.",
+    "scale": 2,
     "light": {
-      "width": 1440,
-      "height": 900,
-      "blur": "data:image/webp;base64,UklGRj4AAABXRUJQVlA4IDIAAAAwAQCdASoQAAoAAsBMJaQAA3AA/vbejGUwFMV7DNxSpkDIR7JJ8L3UbcE3G9uAoMAAAA=="
+      "width": 2880,
+      "height": 1800,
+      "blur": "data:image/webp;base64,UklGRj4AAABXRUJQVlA4IDIAAADQAQCdASoQAAoAAsBMJaQAAujCE1tSAAD++hSKulvtZ7QAa10P1es6LASjFkcCyHuAAA=="
     },
     "dark": {
-      "width": 1440,
-      "height": 900,
-      "blur": "data:image/webp;base64,UklGRjwAAABXRUJQVlA4IDAAAACwAQCdASoQAAoAAsBMJaQAAudF+OAgAP76XV7YcrO40O3AKKaDSZfdRpSoBzAAAAA="
+      "width": 2880,
+      "height": 1800,
+      "blur": "data:image/webp;base64,UklGRj4AAABXRUJQVlA4IDIAAADQAQCdASoQAAoAAsBMJaQAAujbspX4AAD++l6TE2wP2ENxylAKKaDWmfaYBjMJZekAAA=="
     }
   },
   "staged-changes": {
     "alt": "Staged changes sheet listing 11 changes across api, cache and web: a start command and healthcheck changed from launchroom.json, a new DATABASE_URL connection and a new cache database, with a message field, a stage-without-traffic option and a Deploy button.",
     "caption": "Review every change, field by field, before anything deploys.",
+    "scale": 2,
     "light": {
-      "width": 1440,
-      "height": 900,
+      "width": 2880,
+      "height": 1800,
       "blur": "data:image/webp;base64,UklGRjYAAABXRUJQVlA4ICoAAADQAQCdASoQAAoAAsBMJaQAAud+STJW4AD+7gcLAgA5qEezezMPjIfAAAA="
     },
     "dark": {
-      "width": 1440,
-      "height": 900,
-      "blur": "data:image/webp;base64,UklGRjQAAABXRUJQVlA4ICgAAADQAQCdASoQAAoAAsBMJZwAAudcDpPLAAD++2tBtKOUatzAb0kekAAA"
+      "width": 2880,
+      "height": 1800,
+      "blur": "data:image/webp;base64,UklGRjYAAABXRUJQVlA4ICoAAADQAQCdASoQAAoAAsBMJZwAAudcCQN4AAD++2tBtKOUat6fggnwtGBAAAA="
     }
   },
   "staged-changes-blocked": {
     "alt": "Staged changes sheet with 4 changes and a warning that a broken reference blocks the deploy: web.ANALYTICS_URL refers to a service that does not exist in this environment. Deploy is disabled.",
     "caption": "A reference to a service that doesn't exist blocks the deploy before it can break production.",
+    "scale": 2,
     "light": {
-      "width": 1440,
-      "height": 900,
+      "width": 2880,
+      "height": 1800,
       "blur": "data:image/webp;base64,UklGRjIAAABXRUJQVlA4ICYAAADQAQCdASoQAAoAAsBMJaQAAud9G4LcAAD+7gcQ24tnI5X9JaAAAA=="
     },
     "dark": {
-      "width": 1440,
-      "height": 900,
-      "blur": "data:image/webp;base64,UklGRi4AAABXRUJQVlA4ICIAAACwAQCdASoQAAoAAsBMJaQAAudZBb8AAP77az/yh3TkAAAA"
+      "width": 2880,
+      "height": 1800,
+      "blur": "data:image/webp;base64,UklGRiwAAABXRUJQVlA4ICAAAAAwAQCdASoQAAoAAsBMJaQAA3AA/vb08zHSXBJwleoAAA=="
     }
   },
   "team-invite": {
     "alt": "Members page with the Invite people sheet open: email addresses and role cards Owner, Admin, Developer and Viewer, Developer selected.",
     "caption": "Invite people with the role they need: owner, admin, developer or viewer.",
+    "scale": 2,
     "light": {
-      "width": 1440,
-      "height": 900,
-      "blur": "data:image/webp;base64,UklGRjgAAABXRUJQVlA4ICwAAADQAQCdASoQAAoAAsBMJaQAAud9u9qXQAD+7gb9Am5bqfjhxEDEk5bpngrgAA=="
+      "width": 2880,
+      "height": 1800,
+      "blur": "data:image/webp;base64,UklGRjgAAABXRUJQVlA4ICwAAADQAQCdASoQAAoAAsBMJaQAAud9sHV2AAD+7gb9Am5bqFtAKN7rIFq5O4h0AA=="
     },
     "dark": {
-      "width": 1440,
-      "height": 900,
+      "width": 2880,
+      "height": 1800,
       "blur": "data:image/webp;base64,UklGRjQAAABXRUJQVlA4ICgAAADQAQCdASoQAAoAAsBMJaQAAuddTMv+AAD++2sTEUFaUJD2RwIQAAAA"
     }
   },
   "template-detail": {
     "alt": "Laravel, MySQL and Redis template sheet: a diagram of web, queue and scheduler connected to MySQL and Redis, resource totals, and project name and repository fields.",
     "caption": "See exactly which services a template creates before you deploy it.",
+    "scale": 2,
     "light": {
-      "width": 1440,
-      "height": 960,
-      "blur": "data:image/webp;base64,UklGRjIAAABXRUJQVlA4ICYAAABwAQCdASoQAAsAAsBMJaV/2AGIAAD+8qD/+mO/EkrVDIt+ggAAAA=="
+      "width": 2880,
+      "height": 1920,
+      "blur": "data:image/webp;base64,UklGRjAAAABXRUJQVlA4ICQAAABwAQCdASoQAAsAAsBMJaV/2AGIAAD+8qD/+mO+yKlA5Y5GwAA="
     },
     "dark": {
-      "width": 1440,
-      "height": 960,
-      "blur": "data:image/webp;base64,UklGRioAAABXRUJQVlA4IB4AAAAwAQCdASoQAAsAAsBMJaQAA3AA/vak5ro3smYAAAA="
+      "width": 2880,
+      "height": 1920,
+      "blur": "data:image/webp;base64,UklGRioAAABXRUJQVlA4IB4AAAAwAQCdASoQAAsAAsBMJaQAA3AA/vbM6TpI4sIAAAA="
     }
   },
   "templates": {
     "alt": "Start from a template: a searchable gallery with category filters and cards for Django, Laravel, Next.js and Rails stacks, Plausible, Umami, n8n, Ghost and Gitea, each with service count and resources.",
     "caption": "Apps and stacks ready to run. Secrets are generated and the first deploy starts right away.",
+    "scale": 2,
     "light": {
-      "width": 1440,
-      "height": 960,
-      "blur": "data:image/webp;base64,UklGRi4AAABXRUJQVlA4ICIAAABwAQCdASoQAAsAAsBMJaV2AAGIAAD+9t4xkpN9bXHeIIAA"
+      "width": 2880,
+      "height": 1920,
+      "blur": "data:image/webp;base64,UklGRi4AAABXRUJQVlA4ICIAAABwAQCdASoQAAsAAsBMJaWHgAGIAAD+9t4xkmeB4lK6CQAA"
     },
     "dark": {
-      "width": 1440,
-      "height": 960,
-      "blur": "data:image/webp;base64,UklGRjQAAABXRUJQVlA4ICgAAAAwAQCdASoQAAsAAsBMJaQAA3AA/vZMq8TU0dADlhlzrIHto4sUKwAA"
+      "width": 2880,
+      "height": 1920,
+      "blur": "data:image/webp;base64,UklGRjQAAABXRUJQVlA4ICgAAACwAQCdASoQAAsAAsBMJaQAAtz1MvgAAP76ZjEyC/99hkqsLJskAAAA"
     }
   },
   "two-factor": {
     "alt": "Account security settings: change password, two-factor authentication on with an authenticator app and recovery codes, and a Passkeys section with Add passkey.",
     "caption": "Two-factor sign-in and passkeys for every account.",
+    "scale": 2,
     "light": {
-      "width": 1440,
-      "height": 1101,
-      "blur": "data:image/webp;base64,UklGRjAAAABXRUJQVlA4ICQAAAAwAQCdASoQAAwAAsBMJaQAA3AA/vcHdie+I6vji6cy4CjDgAA="
+      "width": 2880,
+      "height": 2202,
+      "blur": "data:image/webp;base64,UklGRjAAAABXRUJQVlA4ICQAAACQAQCdASoQAAwAAsBMJaQAAud7WCAA/vpBHkTDWrFBR3x8AAA="
     },
     "dark": {
-      "width": 1440,
-      "height": 1101,
-      "blur": "data:image/webp;base64,UklGRjQAAABXRUJQVlA4ICgAAAAwAQCdASoQAAwAAsBMJaQAA3AA/vbJ/O7Ald6hnhMOEjjD6CIkgAAA"
+      "width": 2880,
+      "height": 2202,
+      "blur": "data:image/webp;base64,UklGRjIAAABXRUJQVlA4ICYAAAAwAQCdASoQAAwAAsBMJaQAA3AA/vbJ/O7Ald6hj+VRWlvXbccAAA=="
     }
   },
   "updates": {
     "alt": "Updates settings: launchroom is up to date on the stable channel, server versions for control plane, server-2 and server-3, and channel and automatic update settings.",
     "caption": "Updates back up first, then roll through your servers one at a time.",
+    "scale": 2,
     "light": {
-      "width": 1440,
-      "height": 900,
+      "width": 2880,
+      "height": 1800,
       "blur": "data:image/webp;base64,UklGRiwAAABXRUJQVlA4ICAAAACwAQCdASoQAAoAAsBMJaQAAud+86QAAP76QQmHxgAAAA=="
     },
     "dark": {
-      "width": 1440,
-      "height": 900,
-      "blur": "data:image/webp;base64,UklGRjIAAABXRUJQVlA4ICYAAACwAQCdASoQAAoAAsBMJaQAAup6TOsAAP768HxK+7iSTTb50AAAAA=="
+      "width": 2880,
+      "height": 1800,
+      "blur": "data:image/webp;base64,UklGRjAAAABXRUJQVlA4ICQAAACwAQCdASoQAAoAAsBMJaQAAup6fcNAAP768HxK+7JtDDwkAAA="
     }
   },
   "variables": {
-    "alt": "Variables page in the settings of the web service: variables including references like ${{api.PRIVATE_URL}} resolved to their values, masked secrets with a lock icon, per-environment badges and a broken reference flagged in red.",
+    "alt": "Variables tab of the web service: eight variables including references like ${{api.PRIVATE_URL}} resolved to their values, masked secrets with a lock icon, per-environment badges and a broken reference flagged in red.",
     "caption": "Reference other services instead of copying values. Secrets stay masked.",
+    "scale": 2,
     "light": {
-      "width": 1440,
-      "height": 900,
-      "blur": "data:image/webp;base64,UklGRkIAAABXRUJQVlA4IDYAAACwAQCdASoQAAoAAsBMJaQAAud7aLUgAP76Qk6htAtqLaAuCtpDbGQdqc7gvp3UU+a0+amoAAA="
+      "width": 2880,
+      "height": 1800,
+      "blur": "data:image/webp;base64,UklGRkoAAABXRUJQVlA4ID4AAADwAQCdASoQAAoAAsBMJaQAAxf/oHlDUAAA/vl4eV9z0OMq1g7HWryxh4XxnPCzFIexVyyIzR4nzGzHpAAAAA=="
     },
     "dark": {
-      "width": 1440,
-      "height": 900,
-      "blur": "data:image/webp;base64,UklGRkYAAABXRUJQVlA4IDoAAACwAQCdASoQAAoAAsBMJaQAAudGLuwAAP76Zhcnh01tHuYPhvWA32tYC/BeE7lzwz3Ytu9uVlCDgAAA"
+      "width": 2880,
+      "height": 1800,
+      "blur": "data:image/webp;base64,UklGRkgAAABXRUJQVlA4IDwAAADQAQCdASoQAAoAAsBMJaQAAxZr33rLAAD++o7IpHDBu5dB8Fhq7RhjX6VSW0SqjpJOnOxaTQsLLZLoAAA="
     }
   }
 }

@@ -18,6 +18,7 @@ final readonly class TemplateDefinition
      * @param  array<array-key, mixed>  $services
      * @param  list<string>  $notes  requirements and limits shown on the detail sheet
      * @param  array<array-key, mixed>  $configs  Compose top-level `configs` (inline content only)
+     * @param  list<string>  $repositories  canonical upstream repository URLs (D70)
      */
     public function __construct(
         public string $id,
@@ -33,6 +34,7 @@ final readonly class TemplateDefinition
         public YamlLineIndex $lines,
         public array $notes = [],
         public array $configs = [],
+        public array $repositories = [],
     ) {}
 
     public function input(string $id): ?TemplateInputData

@@ -99,6 +99,27 @@ Gitea and Forgejo connect the same way as GitLab:
 
 launchroom registers a repository webhook for push and pull request events, signed with HMAC-SHA256. It reports commit statuses and keeps one comment per pull request up to date.
 
+## Public repositories by URL
+
+You don't need to connect anything to deploy a public repository. On **New project**, paste its URL into the field at the top:
+
+```text
+https://github.com/owner/app
+github.com/owner/app
+https://gitlab.com/group/app
+https://codeberg.org/owner/app
+https://git.example.com/app.git
+```
+
+The `https://` is optional, and browser addresses such as `…/owner/app/tree/dev` work too (launchroom picks the branch from them). launchroom checks the repository over git's HTTPS protocol, shows its default branch and the number of branches, and reads nothing else. **Continue** opens the same "We looked at…" step as a connected repository, with the detected build plan, before anything is created.
+
+- Only HTTPS and only public repositories. For private repositories, connect the provider or add the repository over SSH below.
+- Pushes are picked up by polling: launchroom checks the tracked branch for new commits every minute. It asks the git server for that one branch, so polling stays small even on large repositories, and it waits when a server asks it to slow down.
+- Previews and deploy statuses need a connected provider. On GitHub, [connect the GitHub App](#github) for instant deploys and pull request previews.
+- If you paste the repository of an app launchroom has a template for, such as Umami or Plausible, New project recommends the template. It sets up the database and secrets for you. **Build from source** imports the repository instead.
+
+Anyone who can create projects can deploy a public repository this way. It shows up under **Settings → Git** as a git server repository, and pasting the same URL again reuses it.
+
 ## Any git server
 
 For a git server without a supported API, **Any git server** adds one repository at a time. Enter its URL in any of these forms:

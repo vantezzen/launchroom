@@ -15,6 +15,11 @@ The **Get started** page in the dashboard follows the same order and shows how f
 launchroom builds from your repositories, so it needs access to them first. Open **Settings → Git** and pick a
 provider.
 
+<Callout type="info" title="Public repository?">
+A public repository needs no connection. Paste its URL on **New project** and continue with step 3. launchroom then
+checks the branch for new commits every minute. See [Public repositories by URL](/docs/builds/git-providers#public-repositories-by-url).
+</Callout>
+
 ### GitHub
 
 launchroom uses GitHub's app manifest flow. GitHub creates a GitHub App with the permissions launchroom needs and sends
@@ -68,8 +73,11 @@ memory. A home server, a Raspberry Pi or a laptop works as a build server. See
 
 ## 3. Import a repository
 
-Go to **Projects** and start a new project from **Import a repository**. Pick a repository from the list. launchroom
-clones it and reads files such as `package.json`, `composer.json` and a `Dockerfile`.
+Go to **Projects** and click **New project**. Paste a repository URL into the field at the top (press <kbd>/</kbd> to
+focus it), or pick one from **Your repositories**. launchroom reads files such as `package.json`, `composer.json` and a
+`Dockerfile` on a build server.
+
+The same page starts a project from a template, from a Compose file or as a blank canvas that you fill yourself.
 
 It then shows what it found:
 

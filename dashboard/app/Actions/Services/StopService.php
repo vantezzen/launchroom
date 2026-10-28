@@ -16,7 +16,7 @@ use App\Models\Deployment;
 use App\Models\Placement;
 use App\Models\ServiceInstance;
 use App\Models\User;
-use App\Support\Deployments\RetiredWorkloads;
+use App\Services\Deployments\RetiredWorkloads;
 use App\Support\Services\ServiceProcesses;
 use Illuminate\Support\Facades\DB;
 

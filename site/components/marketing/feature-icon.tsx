@@ -1,11 +1,11 @@
-import { Activity, Database, Rocket, ServerCog, ShieldCheck } from 'lucide-react';
+import { ChartColumn, Database, Rocket, ServerCog, ShieldCheck } from 'lucide-react';
 import type { featurePages } from '@/lib/features';
 
 const icons = {
     rocket: Rocket,
     server: ServerCog,
     database: Database,
-    activity: Activity,
+    chart: ChartColumn,
     shield: ShieldCheck,
 } as const;
 

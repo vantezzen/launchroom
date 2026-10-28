@@ -22,17 +22,17 @@ export const featurePages = [
         icon: 'database',
     },
     {
-        href: '/features/observability',
-        title: 'Logs and metrics',
-        short: 'Observability',
-        summary: 'Load, logs and alerts for every server and service.',
-        icon: 'activity',
+        href: '/features/analytics',
+        title: 'Analytics and metrics',
+        short: 'Analytics',
+        summary: 'Traffic per service without a tracking script, plus load, logs and alerts.',
+        icon: 'chart',
     },
     {
         href: '/features/security',
         title: 'Security',
         short: 'Security',
-        summary: 'No SSH and no shell access. Servers run signed instructions.',
+        summary: 'A web firewall and vulnerability checks, on from the first deploy.',
         icon: 'shield',
     },
 ] as const;

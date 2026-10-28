@@ -5,10 +5,14 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Projects;
 
 use App\Actions\Deployments\DeployEnvironment;
+use App\Actions\Git\AddPublicRepository;
+use App\Actions\Git\CheckPublicRepository;
 use App\Actions\Projects\ImportRepository;
 use App\Contracts\Git\SourceRepository;
 use App\Contracts\PlanPreviewer;
 use App\Data\Canvas\DatabaseEngineOptionData;
+use App\Data\Git\GitRepositoryData;
+use App\Data\Git\PublicRepositoryUrlData;
 use App\Data\Projects\ImportRepositoryData;
 use App\Drivers\DatabaseEngines\DatabaseEngines;
 use App\Enums\DatabaseEngine;
@@ -32,7 +36,9 @@ use App\Services\Git\Exceptions\RepositoryFileUnavailable;
 use App\Services\Git\GitProviders;
 use App\Services\GitHub\Exceptions\GitHubRequestFailed;
 use App\Services\Projects\RepositoryInspector;
+use App\Services\Templates\TemplateCatalog;
 use App\Support\Git\GitRef;
+use App\Support\Templates\TemplateCompiler;
 use Closure;
 use Illuminate\Container\Attributes\CurrentUser;
 use Illuminate\Http\JsonResponse;
@@ -53,7 +59,7 @@ final class ImportController extends Controller
         private readonly GitProviders $providers,
     ) {}
 
-    public function create(#[CurrentUser] User $user, DatabaseEngines $engines): Response
+    public function create(#[CurrentUser] User $user, DatabaseEngines $engines, TemplateCatalog $catalog): Response
     {
         $team = TeamSettingsController::currentTeam($user);
         Gate::authorize('create', [Project::class, $team]);
@@ -73,6 +79,10 @@ final class ImportController extends Controller
                 ...$connections->map(static fn (GitConnection $connection): string => $connection->provider->value)->all(),
             ])),
             'installUrl' => $app?->installUrl(),
+            // Owners and admins connect providers (docs/19 §4); others see who to ask.
+            'canConnectGit' => Gate::allows('create', [GitConnection::class, $team]),
+            'templates' => $catalog->summaries(),
+            'categories' => TemplateCompiler::CATEGORIES,
             'buildServerOnline' => $this->hasBuildServer($team),
             'engines' => array_map(static function (DatabaseEngine $engine) use ($engines): DatabaseEngineOptionData {
                 $driver = $engines->for($engine);
@@ -80,6 +90,35 @@ final class ImportController extends Controller
                 return new DatabaseEngineOptionData($engine, $engine->label(), $driver->versions(), $driver->defaultVersion(), $engine->tagline());
             }, DatabaseEngine::cases()),
         ]);
+    }
+
+    /**
+     * "Paste a Git URL" (docs/19 §4.3): grammar, branches over smart HTTP and
+     * the matching template. Nothing is stored.
+     */
+    public function checkUrl(Request $request, #[CurrentUser] User $user, CheckPublicRepository $check): JsonResponse
+    {
+        $team = TeamSettingsController::currentTeam($user);
+        Gate::authorize('create', [Project::class, $team]);
+        $data = PublicRepositoryUrlData::validateAndCreate(['url' => $request->query('url')]);
+
+        return new JsonResponse($check->handle($data->url));
+    }
+
+    /**
+     * Continue with a pasted public repository: the picker row the import
+     * flow goes on with (a plain git connection, reused per URL).
+     */
+    public function addUrl(Request $request, PublicRepositoryUrlData $data, #[CurrentUser] User $user, AddPublicRepository $add): JsonResponse
+    {
+        $team = TeamSettingsController::currentTeam($user);
+        Gate::authorize('create', [Project::class, $team]);
+        Gate::authorize('addPublic', [GitConnection::class, $team]);
+
+        $repository = $add->handle($team, $user, $data->url, $this->auditActor($request, $user));
+        $repository->load('gitConnection');
+
+        return new JsonResponse(GitRepositoryData::fromSource($repository));
     }
 
     /**

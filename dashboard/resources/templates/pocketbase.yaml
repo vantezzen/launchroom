@@ -10,6 +10,8 @@ category: developer
 logo: pocketbase
 website: https://pocketbase.io
 license: MIT
+repositories:
+    - https://github.com/pocketbase/pocketbase
 inputs:
     - id: domain
       label: Domain

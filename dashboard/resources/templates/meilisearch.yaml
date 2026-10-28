@@ -10,6 +10,8 @@ category: search
 logo: meilisearch
 website: https://www.meilisearch.com
 license: MIT
+repositories:
+    - https://github.com/meilisearch/meilisearch
 inputs:
     - id: domain
       label: Domain

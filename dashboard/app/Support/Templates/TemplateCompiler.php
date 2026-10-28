@@ -17,6 +17,7 @@ use App\Support\Compose\ComposeTranslator;
 use App\Support\Compose\ComposeYaml;
 use App\Support\Compose\TranslationOptions;
 use App\Support\Compose\YamlLineIndex;
+use App\Support\Git\PublicRepositoryUrl;
 use App\Support\Hostname;
 use App\Support\Slug;
 use App\Support\Variables\GeneratedValues;
@@ -56,7 +57,10 @@ final class TemplateCompiler
 
     public const array INPUT_TYPES = ['text', 'email', 'domain', 'repository'];
 
-    private const array TOP_LEVEL = ['schema', 'id', 'name', 'tagline', 'description', 'category', 'logo', 'website', 'license', 'notes', 'inputs', 'services', 'configs'];
+    private const array TOP_LEVEL = ['schema', 'id', 'name', 'tagline', 'description', 'category', 'logo', 'website', 'license', 'repositories', 'notes', 'inputs', 'services', 'configs'];
+
+    /** Upstream repositories that recommend this template when pasted (D70). */
+    public const int MAX_REPOSITORIES = 4;
 
     /** Short notes on the detail sheet: requirements and limits (D65). */
     public const int MAX_NOTES = 6;
@@ -121,6 +125,26 @@ final class TemplateCompiler
 
         if ($website !== null && preg_match('#^https://[a-z0-9.-]+(?:/\S*)?$#iD', $website) !== 1) {
             $problems[] = 'website must be an https URL.';
+        }
+
+        $repositories = [];
+        $listed = $data['repositories'] ?? [];
+
+        if (! is_array($listed) || ! array_is_list($listed) || count($listed) > self::MAX_REPOSITORIES) {
+            $problems[] = 'repositories must be a list of at most '.self::MAX_REPOSITORIES.' repository URLs.';
+            $listed = [];
+        }
+
+        foreach ($listed as $index => $repository) {
+            $parsed = is_string($repository) ? PublicRepositoryUrl::tryParse($repository) : null;
+
+            if (! $parsed instanceof PublicRepositoryUrl || $parsed->canonical() !== $repository) {
+                $problems[] = "repositories.{$index} must be a canonical https URL of a repository (lowercase, no .git, no trailing slash), for example https://github.com/owner/app.";
+
+                continue;
+            }
+
+            $repositories[] = $repository;
         }
 
         $inputs = [];
@@ -194,7 +218,7 @@ final class TemplateCompiler
             throw new TemplateInvalid($problems === [] ? ['The template is incomplete.'] : $problems);
         }
 
-        return new TemplateDefinition($id, $name, $tagline, $description, $category, $logo, $website, $license, $inputs, $services, YamlLineIndex::of($yaml), $notes, $configs);
+        return new TemplateDefinition($id, $name, $tagline, $description, $category, $logo, $website, $license, $inputs, $services, YamlLineIndex::of($yaml), $notes, $configs, $repositories);
     }
 
     /**

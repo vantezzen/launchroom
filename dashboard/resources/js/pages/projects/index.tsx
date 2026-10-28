@@ -1,11 +1,10 @@
-import { Form, Head, Link, router } from '@inertiajs/react';
+import { Head, Link, router } from '@inertiajs/react';
 import { Plus, Search } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { ObjectCard } from '@/components/cards/object-card';
 import { formatCompact } from '@/components/charts/format';
 import { MiniBars } from '@/components/charts/mini-bars';
 import { Sparkline } from '@/components/charts/sparkline';
-import InputError from '@/components/input-error';
 import { CommitAvatar } from '@/components/commit-avatar';
 import { Logo } from '@/components/logo';
 import { MetaLine } from '@/components/patterns/meta-line';
@@ -13,20 +12,12 @@ import { Page, PageHeader } from '@/components/patterns/page';
 import { ProjectIcon } from '@/components/project-icon';
 import { Status } from '@/components/status';
 import { Button } from '@/components/ui/button';
-import {
-    Dialog,
-    DialogClose,
-    DialogContent,
-    DialogDescription,
-    DialogFooter,
-    DialogTitle,
-} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { compactAge, plural } from '@/features/canvas/format';
 import { MiniCanvas } from '@/features/canvas/mini-canvas';
 import { EnvironmentLiveUpdates } from '@/features/projects/environment-live-updates';
-import { importMethod, index, show, store } from '@/routes/projects';
+import { StartEmptyDialog } from '@/features/projects/start-empty-dialog';
+import { importMethod, index, show } from '@/routes/projects';
 
 type Summary = App.Data.Canvas.ProjectSummaryData;
 
@@ -37,55 +28,6 @@ type Props = {
 
 /** Frameworks on the "New project" card and the empty state (monochrome). */
 const GHOST_LOGOS = ['nextjs', 'laravel', 'python', 'postgres'];
-
-function StartEmptyDialog({
-    open,
-    onOpenChange,
-}: {
-    open: boolean;
-    onOpenChange: (open: boolean) => void;
-}) {
-    return (
-        <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-md">
-                <DialogTitle>Start an empty project</DialogTitle>
-                <DialogDescription>
-                    Add repositories, images and databases on its canvas
-                    afterwards.
-                </DialogDescription>
-                <Form {...store.form()} className="flex flex-col gap-6">
-                    {({ processing, errors }) => (
-                        <>
-                            <div className="grid gap-2">
-                                <Label htmlFor="project-name">Name</Label>
-                                <Input
-                                    id="project-name"
-                                    name="name"
-                                    required
-                                    maxLength={100}
-                                    autoComplete="off"
-                                    autoFocus
-                                    placeholder="shop"
-                                />
-                                <InputError message={errors.name} />
-                            </div>
-                            <DialogFooter className="gap-2">
-                                <DialogClose asChild>
-                                    <Button variant="ghost" type="button">
-                                        Cancel
-                                    </Button>
-                                </DialogClose>
-                                <Button type="submit" disabled={processing}>
-                                    Create project
-                                </Button>
-                            </DialogFooter>
-                        </>
-                    )}
-                </Form>
-            </DialogContent>
-        </Dialog>
-    );
-}
 
 /** The project's headline status: production's. */
 function productionOf(project: Summary) {
@@ -238,7 +180,7 @@ function NewProjectCard({ onStartEmpty }: { onStartEmpty: () => void }) {
                     </Link>
                 </h3>
                 <p className="type-body text-muted-foreground">
-                    Import a repository and deploy it.
+                    Deploy a repository or a template.
                 </p>
                 <button
                     type="button"
@@ -365,7 +307,7 @@ export default function ProjectsIndex({ projects, canCreate }: Props) {
                             <p className="type-heading">No projects yet</p>
                             <p className="type-body text-muted-foreground">
                                 {canCreate
-                                    ? 'Import a repository and launchroom works out how to build and run it.'
+                                    ? 'Paste a Git URL or pick a template. launchroom works out how to build and run it.'
                                     : 'Ask a team admin or developer to create one.'}
                             </p>
                         </div>
@@ -373,14 +315,14 @@ export default function ProjectsIndex({ projects, canCreate }: Props) {
                             <div className="flex items-center gap-3">
                                 <Button asChild>
                                     <Link href={importMethod()}>
-                                        Import a repository
+                                        New project
                                     </Link>
                                 </Button>
                                 <Button
                                     variant="ghost"
                                     onClick={() => setStartEmpty(true)}
                                 >
-                                    Start empty
+                                    Start with a blank canvas
                                 </Button>
                             </div>
                         )}

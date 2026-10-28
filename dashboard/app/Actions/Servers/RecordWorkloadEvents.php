@@ -16,10 +16,10 @@ use App\Models\Placement;
 use App\Models\Server;
 use App\Services\Backups\DataHolds;
 use App\Services\Deployments\DeploymentLogMasker;
+use App\Services\Deployments\RetiredWorkloads;
 use App\Support\Deployments\EffectiveDeploy;
 use App\Support\Deployments\LifecycleLines;
 use App\Support\Deployments\LogSections;
-use App\Support\Deployments\RetiredWorkloads;
 use App\Support\Logs\LogLevel;
 use Illuminate\Support\Facades\DB;
 

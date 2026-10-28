@@ -7,6 +7,7 @@ use App\Enums\ServiceKind;
 use App\Services\Blueprints\EngineVersions;
 use App\Services\Templates\TemplateCatalog;
 use App\Support\Compose\ComposeTranslation;
+use App\Support\Git\PublicRepositoryUrl;
 use App\Support\Templates\TemplateCompiler;
 use App\Support\Templates\TemplateDefinition;
 use App\Support\Templates\TemplateInvalid;
@@ -124,4 +125,17 @@ test('the file must follow the schema', function (string $from, string $to, stri
     ['id: demo', 'id: other', 'id must be'],
     ['category: analytics', 'category: games', 'Unknown category'],
     ['tagline: A demo.', 'slogan: A demo.', 'Unknown key'],
+    ['category: analytics', "category: analytics\nrepositories: [https://github.com/Acme/App.git]", 'repositories.0 must be a canonical'],
+    ['category: analytics', "category: analytics\nrepositories: [http://github.com/acme/app]", 'repositories.0 must be a canonical'],
+    ['category: analytics', 'category: analytics'."\nrepositories: https://github.com/acme/app", 'repositories must be a list'],
 ]);
+
+test('a template names its upstream repositories, matched however the URL is pasted (D70)', function (): void {
+    $template = tplParse(str_replace('category: analytics', "category: analytics\nrepositories: [https://github.com/acme/demo, https://codeberg.org/acme/demo]", TPL_DEMO));
+    $catalog = resolve(TemplateCatalog::class);
+
+    expect($template->repositories)->toBe(['https://github.com/acme/demo', 'https://codeberg.org/acme/demo'])
+        ->and($catalog->forRepository(PublicRepositoryUrl::parse('https://www.github.com/Umami-Software/Umami.git/'))?->id)->toBe('umami')
+        ->and($catalog->forRepository(PublicRepositoryUrl::parse('github.com/plausible/analytics/tree/master'))?->id)->toBe('plausible')
+        ->and($catalog->forRepository(PublicRepositoryUrl::parse('github.com/acme/shop')))->toBeNull();
+});

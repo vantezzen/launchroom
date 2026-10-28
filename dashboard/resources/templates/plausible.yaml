@@ -10,6 +10,8 @@ category: analytics
 logo: plausible
 website: https://plausible.io
 license: AGPL-3.0
+repositories:
+    - https://github.com/plausible/analytics
 inputs:
     - id: domain
       label: Domain

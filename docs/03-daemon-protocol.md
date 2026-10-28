@@ -717,7 +717,7 @@ Only for edges announcing `waf`; omitted means off.
 
 ### 13.4 Firewall state and results
 
-- `Report.ingress.waf` (`WafStatus`): `state` (`on`: at least one route runs the firewall; `off`: none asks for it; `error`: Caddy refused the config with the firewall and the routes are served without it; `unsupported`: the pinned Caddy has no firewall module), `engine` and `ruleSet` (compiled-in labels such as `coraza 3.8.1` and `OWASP CRS 4.25.0`; required unless unsupported), `routes` (> 0 exactly when on), `droppedRecords?` (audit records lost since start), `message?`.
+- `Report.ingress.waf` (`WafStatus`): `state` (`on`: at least one route runs the firewall; `off`: none asks for it; `error`: Caddy refused the config with the firewall and the routes are served without it, or Caddy hasn't been reachable for 5 minutes ([22](22-security-center.md) §6.6); `unsupported`: the pinned Caddy has no firewall module), `engine` and `ruleSet` (compiled-in labels such as `coraza 3.8.1` and `OWASP CRS 4.25.0`; required unless unsupported), `routes` (> 0 exactly when on), `droppedRecords?` (audit records lost since start), `message?`.
 - `Report.metrics.waf: [WafSample]` (≤ 1024), one per (route, 10-minute window), buffered and acknowledged like analytics (§9.4):
 
 ```jsonc

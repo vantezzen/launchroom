@@ -72,7 +72,7 @@ final class Placer
      */
     public function plan(Deployment $deployment, ServiceSpec $spec, ?int $replicas = null, array $existingServerIds = []): PlacementPlan
     {
-        $instance = $deployment->serviceInstance;
+        $instance = $deployment->loadMissing('serviceInstance')->serviceInstance;
         $instance->loadMissing(['volumes', 'service', 'environment']);
 
         $request = $this->request($instance, $spec->scaling, $deployment, $replicas ?? $spec->scaling->replicas, $existingServerIds);

@@ -1826,6 +1826,21 @@ export type ManifestRedirectData = {
 action: string,
 manifest: string,
 };
+export type PublicRepositoryData = {
+url: string,
+fullName: string,
+name: string,
+host: string,
+provider: string,
+defaultBranch: string | null,
+branches: string[],
+branch: string | null,
+template: string | null,
+problem: string | null,
+};
+export type PublicRepositoryUrlData = {
+url: string,
+};
 export type RefHeadUpdate = {
 previous: string | null,
 changed: boolean,

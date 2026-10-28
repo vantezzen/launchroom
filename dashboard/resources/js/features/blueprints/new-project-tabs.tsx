@@ -2,8 +2,8 @@ import { PillTabs } from '@/components/patterns/pill-tabs';
 import { compose, importMethod, templates } from '@/routes/projects';
 
 /**
- * The three ways to start a project (docs/17 §2.1): a repository, a
- * template or a Compose file, as one segmented row under the page title.
+ * Back to the New project start screen from the template gallery and the
+ * Compose import (docs/17 §2.1), as one segmented row under the page title.
  */
 export function NewProjectTabs({
     current,
@@ -15,12 +15,12 @@ export function NewProjectTabs({
             label="Ways to start"
             tabs={[
                 {
-                    label: 'Repository',
+                    label: 'New project',
                     href: importMethod().url,
                     active: current === 'repository',
                 },
                 {
-                    label: 'Template',
+                    label: 'Templates',
                     href: templates().url,
                     active: current === 'template',
                 },

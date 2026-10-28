@@ -31,6 +31,16 @@ final class GitConnectionPolicy
         return $user->hasTeamPermission($team, Permission::ManageServers);
     }
 
+    /**
+     * A public HTTPS repository pasted on New project (docs/19 §4.3, D70):
+     * no credentials, no private network, so anyone who creates projects may
+     * add one.
+     */
+    public function addPublic(User $user, Team $team): bool
+    {
+        return $user->hasTeamPermission($team, Permission::ManageProjects);
+    }
+
     public function update(User $user, GitConnection $connection): bool
     {
         return $user->hasTeamPermission($connection->team_id, Permission::ManageServers);

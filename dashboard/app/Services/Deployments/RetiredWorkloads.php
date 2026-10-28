@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Support\Deployments;
+namespace App\Services\Deployments;
 
 use App\Models\Placement;
 use Illuminate\Support\Facades\Cache;

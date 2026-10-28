@@ -7,6 +7,7 @@ namespace App\Services\Templates;
 use App\Data\Templates\TemplateSummaryData;
 use App\Services\Blueprints\EngineVersions;
 use App\Support\Blueprints\BlueprintPreview;
+use App\Support\Git\PublicRepositoryUrl;
 use App\Support\Templates\TemplateCompiler;
 use App\Support\Templates\TemplateDefinition;
 use App\Support\Templates\TemplateInvalid;
@@ -64,6 +65,17 @@ final class TemplateCatalog
     }
 
     /**
+     * The template whose upstream repository this is (D70): "This is Umami.
+     * The Umami template sets up its database and secrets for you."
+     */
+    public function forRepository(PublicRepositoryUrl $url): ?TemplateDefinition
+    {
+        $canonical = $url->canonical();
+
+        return array_find($this->all(), static fn (TemplateDefinition $template): bool => in_array($canonical, $template->repositories, true));
+    }
+
+    /**
      * @return array<string, string> id => path
      */
     public function paths(): array
@@ -89,10 +101,20 @@ final class TemplateCatalog
     public function lint(): array
     {
         $problems = [];
+        $owners = [];
 
         foreach ($this->paths() as $id => $path) {
             try {
-                $problems[$id] = TemplateCompiler::lint(TemplateCompiler::parse($this->files->get($path), $id), $this->engines->all());
+                $template = TemplateCompiler::parse($this->files->get($path), $id);
+                $problems[$id] = TemplateCompiler::lint($template, $this->engines->all());
+
+                foreach ($template->repositories as $repository) {
+                    if (isset($owners[$repository])) {
+                        $problems[$id][] = "{$repository} is already listed by {$owners[$repository]}: a repository recommends one template.";
+                    }
+
+                    $owners[$repository] ??= $id;
+                }
             } catch (TemplateInvalid $e) {
                 $problems[$id] = $e->problems;
             }

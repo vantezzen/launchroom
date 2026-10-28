@@ -54,3 +54,26 @@ export function providerLabel(provider: string): string {
             return 'Git';
     }
 }
+
+/**
+ * The mark of a picker repository: a plain git repository added by URL
+ * (`github.com/owner/app`) shows its host's mark (docs/19 §4.3).
+ */
+export function repositoryLogo(serverKind: string, fullName: string): string {
+    if (serverKind !== 'git') {
+        return providerLogo(serverKind);
+    }
+
+    const host = fullName
+        .split('/')[0]
+        ?.toLowerCase()
+        .replace(/^www\./, '');
+
+    return host === 'github.com'
+        ? 'github'
+        : host === 'gitlab.com'
+          ? 'gitlab'
+          : host === 'codeberg.org'
+            ? 'codeberg'
+            : 'git';
+}

@@ -7,6 +7,12 @@ const config = {
     // Dashboard screenshots (components/screenshot.tsx) use 85: at the default
     // 75 their faint canvas grid and thin borders smear.
     images: { qualities: [75, 85] },
+    async redirects() {
+        return [
+            // "Logs and metrics" became "Analytics and metrics" (docs/21 §2).
+            { source: '/features/observability', destination: '/features/analytics', permanent: true },
+        ];
+    },
     async headers() {
         return [
             // The installer: `curl -fsSL https://launchroom.vantezzen.io/install | sh`

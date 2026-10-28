@@ -27,6 +27,7 @@ import type { RepositoryChoice } from '@/features/templates/repository-field';
 import { cn } from '@/lib/utils';
 import {
     compose as composeRoute,
+    importMethod,
     index as projectsIndex,
 } from '@/routes/projects';
 import { preview as previewRoute, store } from '@/routes/projects/compose';
@@ -755,6 +756,7 @@ function ServiceCard({
 ImportCompose.layout = {
     breadcrumbs: [
         { title: 'Projects', href: projectsIndex() },
+        { title: 'New project', href: importMethod() },
         { title: 'Import a Compose file', href: composeRoute() },
     ],
 };

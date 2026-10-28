@@ -43,6 +43,7 @@ import {
     siBun,
     siCaddy,
     siClickhouse,
+    siCodeberg,
     siCloudflare,
     siDebian,
     siDeno,
@@ -159,6 +160,7 @@ const marks: Record<string, Mark> = {
     docker: { icon: siDocker, label: 'Image' },
     github: { icon: siGithub, label: 'GitHub repository' },
     gitlab: { icon: siGitlab, label: 'GitLab' },
+    codeberg: { icon: siCodeberg, label: 'Codeberg' },
     git: { icon: siGit, label: 'Git server' },
     // Providers and operating systems
     hetzner: { icon: siHetzner, label: 'Hetzner' },

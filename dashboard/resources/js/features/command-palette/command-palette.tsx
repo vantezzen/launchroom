@@ -39,6 +39,7 @@ import { index as paletteIndex } from '@/routes/palette';
 import { index as activityIndex } from '@/routes/activity';
 import {
     canvas,
+    importMethod as newProject,
     logs as projectLogs,
     index as projectsIndex,
 } from '@/routes/projects';
@@ -532,6 +533,13 @@ export function CommandPalette() {
                         <CommandSeparator />
 
                         <CommandGroup heading="Navigate">
+                            <CommandItem
+                                value="new project deploy repository url template"
+                                onSelect={() => go(newProject().url)}
+                            >
+                                <SquarePlus aria-hidden="true" />
+                                New project
+                            </CommandItem>
                             <CommandItem
                                 value="go projects"
                                 onSelect={() => go(projectsIndex().url)}

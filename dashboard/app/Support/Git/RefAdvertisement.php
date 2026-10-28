@@ -32,6 +32,54 @@ final class RefAdvertisement
     }
 
     /**
+     * The branch HEAD points at, from the v0 capabilities
+     * (`symref=HEAD:refs/heads/main`), else null.
+     */
+    public static function headSymref(string $body): ?string
+    {
+        foreach (self::lines($body) as $line) {
+            $caps = explode("\0", $line, 2)[1] ?? null;
+
+            if ($caps !== null && preg_match('#(?:^| )symref=HEAD:refs/heads/(\S+)#', $caps, $match) === 1 && GitRef::isValid('refs/heads/'.$match[1])) {
+                return $match[1];
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * A protocol v2 `ls-refs` answer: `<sha> <ref>[ symref-target:<ref>]`
+     * lines up to a flush packet.
+     *
+     * @return array{refs: array<string, string>, head: string|null}
+     */
+    public static function parseLsRefs(string $body): array
+    {
+        $refs = [];
+        $head = null;
+
+        foreach (self::lines($body) as $line) {
+            $parts = explode(' ', rtrim($line, "\n"));
+
+            if (count($parts) < 2 || ! GitRef::isSha($parts[0]) || ($parts[1] !== 'HEAD' && ! GitRef::isValid($parts[1]))) {
+                continue;
+            }
+
+            $refs[$parts[1]] ??= $parts[0];
+
+            foreach (array_slice($parts, 2) as $attribute) {
+                if ($parts[1] === 'HEAD' && str_starts_with($attribute, 'symref-target:refs/heads/')) {
+                    $target = substr($attribute, 25);
+                    $head = GitRef::isValid('refs/heads/'.$target) ? $target : null;
+                }
+            }
+        }
+
+        return ['refs' => $refs, 'head' => $head];
+    }
+
+    /**
      * Whether $buffer is a complete advertisement: whole pkt-lines up to a
      * flush packet after at least one ref line (or an empty repository's
      * immediate flush).

@@ -190,6 +190,8 @@ services:
       LARAVEL_SAIL: "1"
       TINI_KILL_PROCESS_GROUP: "1"
       VITE_PORT: ${LR_DEV_VITE_PORT:-5173}
+      # Caps the dev server's V8 heap (it grew past 1.5 GB on a long session).
+      NODE_OPTIONS: --max-old-space-size=${LR_DEV_VITE_HEAP_MB:-1024}
       # Browser-side Reverb settings (the browser connects via the host port).
       VITE_REVERB_APP_KEY: launchroom-dev-key
       VITE_REVERB_HOST: localhost
@@ -356,6 +358,9 @@ services:
     hostname: server-1
     # The ONLY privileged containers in the stack are the dind fake servers.
     privileged: true
+    # Everything deployed in dev runs inside this container: cap it so a busy
+    # test app can't take the whole machine.
+    cpus: ${LR_DEV_SERVER_CPUS:-2}
     restart: unless-stopped
     environment:
       LR_DEV_SERVER_NAME: server-1

@@ -1,5 +1,7 @@
 """Website product screenshots (site/public/screenshots, docs/21 §4), retaken
-from the live dev dashboard. Writes <id>-<theme>.png into /out/raw.
+from the live dev dashboard at 2x device pixels (1440 CSS px, 2880 px wide), so
+they stay sharp on retina screens and in close-up cards. Writes
+<id>-<theme>.png into /out/raw.
 
 docker run --rm --network launchroom-dev_default --label launchroom.dev=true \
   --name launchroom-dev-site-retake -v "$PWD/dev/screenshots/site-retake:/out" \
@@ -35,8 +37,9 @@ PLATFORM = "/p/prj_01M5ATSWHA7F120FW5CTMP6MJG/env_01M5ATSWKA8W2Z93PNBRJB84BD"
 PLATFORM_WEB = "svc_01M5ATSWMVFNZJWA4NCDW26NTJ"
 P3 = "/p/prj_01M59H7959N1M8KQ253NC9066S/env_01M59H795M937R9GMZEQ39H35V"
 P3_NODE = "svc_01M59H7967PV97FMSPRWJDHH86"
-CH = "/p/prj_01M5C60S9ZCVRFY69FJDEYK48E/env_01M5C60SAGPD2SPD61E202AGVN"
-CH_SVC = "svc_01M5C60SE383ATBV439S2V09HD"
+# The Data tab shots use the Postgres of p3exit, seeded with customers, orders
+# and pageviews (dev/screenshots/site-retake/data-seed.sql).
+P3_PG = "svc_01M59H797AY0BZ7PJY1R9RMR68"
 PITR = "/p/prj_01M5A9RC5PYA45XXGEZW10XNJ7/env_01M5A9RC6H8MENBN3K5Q58RF36"
 PITR_DB = "svc_01M5A9RC83EQQEE5P94WH0K8E9"
 MONGO = "/p/prj_01M5C60K8KG6WVZ22BRB4RD3SZ/env_01M5C60K9DSR6HCYNQHNBJHMWZ"
@@ -164,7 +167,7 @@ def a_data_query(page):
     open_data(page)
     page.get_by_text("Query", exact=True).first.click(); page.wait_for_timeout(800)
     ta = page.locator("textarea").first
-    ta.fill("SELECT path, count() AS views, round(avg(ms)) AS avg_ms\nFROM pageviews GROUP BY path ORDER BY views DESC")
+    ta.fill("SELECT path, count(*) AS views, round(avg(ms)) AS avg_ms\nFROM pageviews GROUP BY path ORDER BY views DESC")
     page.get_by_role("button", name="Run").first.click()
     page.get_by_text("rows", exact=False).first.wait_for(timeout=60000)
     page.wait_for_timeout(1500)
@@ -270,63 +273,93 @@ def a_promote(page):
 
 # id: (path, width, height, dpr, full_page, action)
 SHOTS = {
-    "activity": ("/activity", 1440, 900, 1, False, None),
-    "add-database": (MONGO, 1440, 1000, 1, False, a_add_database),
-    "add-server": ("/servers/new", 1440, 998, 1, True, a_add_server),
-    "add-server-roles": ("/servers/new", 1440, 900, 1, False, a_add_server_roles),
-    "ai-dockerfile": (f"{AIGEN}/s/{AIGEN_SITE}/settings/build", 1440, 900, 1, False, a_ai_dockerfile),
-    "alerts": ("/settings/notifications", 1440, 900, 1, True, None),
-    "api-tokens": ("/settings/api-tokens", 1440, 1000, 1, False, None),
-    "backup-settings": ("/settings/backups", 1440, 900, 1, True, None),
+    "activity": ("/activity", 1440, 900, 2, False, None),
+    "add-database": (MONGO, 1440, 1000, 2, False, a_add_database),
+    "add-server": ("/servers/new", 1440, 998, 2, True, a_add_server),
+    "add-server-roles": ("/servers/new", 1440, 900, 2, False, a_add_server_roles),
+    "ai-dockerfile": (f"{AIGEN}/s/{AIGEN_SITE}/settings/build", 1440, 900, 2, False, a_ai_dockerfile),
+    "alerts": ("/settings/notifications", 1440, 900, 2, True, None),
+    "api-tokens": ("/settings/api-tokens", 1440, 1000, 2, False, None),
+    "backup-settings": ("/settings/backups", 1440, 900, 2, True, None),
     "canvas": (SHOP, 1440, 900, 2, False, None),
-    "canvas-alt": (ACME, 1440, 900, 1, False, None),
-    "capabilities": (f"{JOBS}/s/{JOBS_WEB}/settings/advanced", 1440, 900, 1, False, a_capabilities),
-    "cli-sign-in": ("CLI", 1440, 1010, 1, True, None),
-    "command-palette": (ACME, 1440, 900, 1, False, a_command_palette),
-    "compose-import": ("/projects/new/compose", 1440, 900, 1, True, a_compose),
-    "config-managed": (f"{STORE}/s/{STORE_WEB}/settings/deploy", 1440, 900, 1, False, None),
-    "config-problems": (f"{STORE}/d/dpl_01M5AVH7T1RMNPAK5YPMP874AW", 1440, 900, 1, True, None),
-    "config-settings": (f"/p/{STORE_PRJ}/settings/config-file", 1440, 900, 1, True, None),
-    "console": (f"{P3}/s/{P3_NODE}/console", 1440, 1000, 1, False, a_console),
-    "cron": (f"{JOBS}/s/{JOBS_CRON}/settings/schedule", 1440, 900, 1, False, None),
-    "dashboard-domain": ("/settings/dashboard-domain", 1440, 900, 1, True, None),
+    "canvas-alt": (ACME, 1440, 900, 2, False, None),
+    "capabilities": (f"{JOBS}/s/{JOBS_WEB}/settings/advanced", 1440, 900, 2, False, a_capabilities),
+    "cli-sign-in": ("CLI", 1440, 1010, 2, True, None),
+    "command-palette": (ACME, 1440, 900, 2, False, a_command_palette),
+    "compose-import": ("/projects/new/compose", 1440, 900, 2, True, a_compose),
+    "config-managed": (f"{STORE}/s/{STORE_WEB}/settings/deploy", 1440, 900, 2, False, None),
+    "config-problems": (f"{STORE}/d/dpl_01M5AVH7T1RMNPAK5YPMP874AW", 1440, 900, 2, True, None),
+    "config-settings": (f"/p/{STORE_PRJ}/settings/config-file", 1440, 900, 2, True, None),
+    "console": (f"{P3}/s/{P3_NODE}/console", 1440, 1000, 2, False, a_console),
+    "cron": (f"{JOBS}/s/{JOBS_CRON}/settings/schedule", 1440, 900, 2, False, None),
+    "dashboard-domain": ("/settings/dashboard-domain", 1440, 900, 2, True, None),
     "database-backups": (f"{PITR}/s/{PITR_DB}/settings/backups", 1440, 1000, 2, False, None),
-    "database-browse": (f"{CH}/s/{CH_SVC}/data", 1440, 1000, 1, False, a_data_browse),
-    "database-data": (f"{CH}/s/{CH_SVC}/data", 1440, 1000, 1, False, a_data_query),
+    "database-browse": (f"{P3}/s/{P3_PG}/data", 1440, 1000, 2, False, a_data_browse),
+    "database-data": (f"{P3}/s/{P3_PG}/data", 1440, 1000, 2, False, a_data_query),
     "deployment": (f"{SHOP}/d/dpl_01M59SM3EQGV7HDQX9E43ZVRNB", 1440, 900, 2, False, None),
-    "deployment-failed": (f"{SHOP}/d/dpl_01M59SM3EG8YBF62G63W339RXC", 1440, 900, 1, True, None),
-    "domains": (f"{BLOG}/s/{BLOG_WEB}/settings/domains", 1440, 960, 1, False, None),
-    "domains-edges": (f"{BLOG}/s/{BLOG_WEB}/settings/domains", 1440, 960, 1, False, a_domains_edges),
+    "deployment-failed": (f"{SHOP}/d/dpl_01M59SM3EG8YBF62G63W339RXC", 1440, 900, 2, True, None),
+    "domains": (f"{BLOG}/s/{BLOG_WEB}/settings/domains", 1440, 960, 2, False, None),
+    "domains-edges": (f"{BLOG}/s/{BLOG_WEB}/settings/domains", 1440, 960, 2, False, a_domains_edges),
     "env-switcher": (SHOP, 1440, 900, 2, False, a_env_switcher),
-    "git-providers": ("/settings/git", 1440, 900, 1, True, None),
-    "git-source": (f"{PLATFORM}/s/{PLATFORM_WEB}/settings/source", 1440, 1000, 1, False, None),
-    "logs": (f"{SHOP}/logs", 1440, 1000, 1, False, a_logs),
-    "metrics": (f"{SHOP}/metrics", 1440, 900, 1, True, a_metrics),
-    "mtls": ("/settings/instance-security", 1440, 900, 1, True, None),
-    "onboarding": ("/onboarding", 1440, 900, 1, False, None),
+    "git-providers": ("/settings/git", 1440, 900, 2, True, None),
+    "git-source": (f"{PLATFORM}/s/{PLATFORM_WEB}/settings/source", 1440, 1000, 2, False, None),
+    "logs": (f"{SHOP}/logs", 1440, 1000, 2, False, a_logs),
+    "metrics": (f"{SHOP}/metrics", 1440, 900, 2, True, a_metrics),
+    "mtls": ("/settings/instance-security", 1440, 900, 2, True, None),
+    "onboarding": ("/onboarding", 1440, 900, 2, False, None),
     "pitr": (f"{PITR}/s/{PITR_DB}/settings/backups", 1440, 1000, 2, False, a_pitr),
-    "previews": ("/p/prj_01M5AVNP34QRTV484YQ4JK0MXC/previews", 1440, 900, 1, False, None),
-    "private-network": ("/settings/network", 1440, 900, 1, True, None),
-    "projects": ("/projects", 1440, 1211, 1, False, None),
-    "promote": (f"/p/{SHOP_PRJ}/promote?from={SHOP_STG}&to={SHOP_PRD}", 1440, 900, 1, False, None),
+    "previews": ("/p/prj_01M5AVNP34QRTV484YQ4JK0MXC/previews", 1440, 900, 2, False, None),
+    "private-network": ("/settings/network", 1440, 900, 2, True, None),
+    "projects": ("/projects", 1440, 1211, 2, False, None),
+    "promote": (f"/p/{SHOP_PRJ}/promote?from={SHOP_STG}&to={SHOP_PRD}", 1440, 900, 2, False, None),
     "restore-dialog": (f"{PITR}/s/{PITR_DB}/settings/backups", 1440, 1000, 2, False, a_restore_dialog),
-    "scaling": (f"{SHOP}/s/{SHOP_WEB}/settings/scaling", 1440, 960, 1, False, a_scaling),
-    "server-detail": (f"/servers/{SRV_CP}", 1440, 900, 1, True, None),
-    "server-network": (f"/servers/{SRV_CP}/network", 1440, 900, 1, True, None),
-    "server-topology": ("/servers", 1440, 1000, 1, False, a_server_topology),
-    "servers": ("/servers", 1440, 900, 1, True, None),
-    "service-panel": (f"{SHOP}/s/{SHOP_API}/deployments", 1440, 900, 1, False, None),
-    "service-settings": (f"{P3}/s/{P3_NODE}/settings/general", 1440, 960, 1, False, None),
-    "settings-search": (f"{SHOP}/s/{SHOP_WEB}/settings/general", 1440, 960, 1, False, a_settings_search),
-    "staged-changes": (STORE, 1440, 900, 1, False, a_staged),
-    "staged-changes-blocked": (ACME, 1440, 900, 1, False, a_staged),
-    "team-invite": ("/settings/team", 1440, 900, 1, False, a_team_invite),
-    "template-detail": ("/projects/new/templates", 1440, 960, 1, False, a_template_detail),
-    "templates": ("/projects/new/templates", 1440, 960, 1, False, None),
-    "two-factor": ("/settings/security", 1440, 900, 1, True, None),
-    "updates": ("/settings/updates", 1440, 900, 1, True, None),
-    "variables": (f"{ACME}/s/{ACME_WEB}/settings/variables", 1440, 900, 1, False, None),
+    "scaling": (f"{SHOP}/s/{SHOP_WEB}/settings/scaling", 1440, 960, 2, False, a_scaling),
+    "server-detail": (f"/servers/{SRV_CP}", 1440, 900, 2, True, None),
+    "server-network": (f"/servers/{SRV_CP}/network", 1440, 900, 2, True, None),
+    "server-topology": ("/servers", 1440, 1000, 2, False, a_server_topology),
+    "servers": ("/servers", 1440, 900, 2, True, None),
+    "setup": ("SETUP", 1440, 900, 2, False, None),
+    "service-panel": (f"{SHOP}/s/{SHOP_API}/deployments", 1440, 900, 2, False, None),
+    "service-settings": (f"{P3}/s/{P3_NODE}/settings/general", 1440, 960, 2, False, None),
+    "settings-search": (f"{SHOP}/s/{SHOP_WEB}/settings/general", 1440, 960, 2, False, a_settings_search),
+    "staged-changes": (STORE, 1440, 900, 2, False, a_staged),
+    "staged-changes-blocked": (ACME, 1440, 900, 2, False, a_staged),
+    "team-invite": ("/settings/team", 1440, 900, 2, False, a_team_invite),
+    "template-detail": ("/projects/new/templates", 1440, 960, 2, False, a_template_detail),
+    "templates": ("/projects/new/templates", 1440, 960, 2, False, None),
+    "two-factor": ("/settings/security", 1440, 900, 2, True, None),
+    "updates": ("/settings/updates", 1440, 900, 2, True, None),
+    "variables": (f"{ACME}/s/{ACME_WEB}/settings/variables", 1440, 900, 2, False, None),
 }
+
+
+# The first-run screen can't be reached once an owner exists: serve the login
+# page's HTML with the Inertia page swapped to `setup` (as v2/ws4/shoot_auth.py
+# does), so the real bundle renders the real component. Nothing is written.
+SETUP_SERVER = {
+    "id": "srv_demo", "name": "fra-1", "status": "online", "roles": ["edge", "runtime", "build"],
+    "isControlPlane": True, "daemonVersion": "0.5.0", "lastSeenAt": None, "mesh": None, "workloads": 0,
+    "device": {"kind": "cloud", "detected": "cloud", "overridden": False, "model": "Hetzner Cloud",
+               "provider": "hetzner", "providerName": "Hetzner", "virtualized": True},
+    "location": None,
+    "specs": {"cpus": 4, "memoryMb": 8192, "diskTotalMb": 163840, "arch": "amd64", "cpuModel": "AMD EPYC", "osName": "Ubuntu 24.04"},
+}
+
+
+def setup_page(b, page):
+    import re
+    anon = b.new_context()
+    html = anon.request.get(BASE + "/login").text()
+    anon.close()
+    m = re.search(r'(<script data-page="app" type="application/json">)(.*?)(</script>)', html, re.S)
+    data = json.loads(m.group(2))
+    data["component"] = "setup"
+    data["props"] = {**data["props"], "token": "lr_setup_demo", "passwordRules": "minlength: 8;",
+                     "server": SETUP_SERVER, "instanceUrl": "https://launchroom.acme.com"}
+    data["url"] = "/setup"
+    body = html[:m.start(2)] + json.dumps(data).replace("</", "<\\/") + html[m.end(2):]
+    page.route(BASE + "/__setup", lambda r: r.fulfill(status=200, content_type="text/html", body=body))
+    return "/__setup"
 
 
 def cli_code(page):
@@ -343,6 +376,8 @@ def shoot(b, state, sid, scheme):
     ctx = b.new_context(viewport={"width": w, "height": h}, color_scheme=scheme, storage_state=state, device_scale_factor=dpr)
     page = ctx.new_page(); page.route("**/*", reroute)
     try:
+        if path == "SETUP":
+            path = setup_page(b, page)
         if path == "CLI":
             path = cli_code(page)
             if path.startswith("http"):

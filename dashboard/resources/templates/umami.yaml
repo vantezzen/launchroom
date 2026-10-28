@@ -9,6 +9,8 @@ category: analytics
 logo: umami
 website: https://umami.is
 license: MIT
+repositories:
+    - https://github.com/umami-software/umami
 inputs:
     - id: domain
       label: Domain

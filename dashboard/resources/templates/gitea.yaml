@@ -10,6 +10,9 @@ category: developer
 logo: gitea
 website: https://about.gitea.com
 license: MIT
+repositories:
+    - https://github.com/go-gitea/gitea
+    - https://gitea.com/gitea/gitea
 inputs:
     - id: domain
       label: Domain

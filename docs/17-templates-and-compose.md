@@ -43,7 +43,7 @@ BlueprintService {
 
 ### 2.1 Flow (`/projects/new`, "Import a Compose file")
 
-`/projects/new` has three ways to start, as a segmented row above the page: **Repository**, **Template**, **Compose file**.
+`/projects/new` is the start screen ([08](08-dashboard-ux.md) §13): a field for any public Git URL, the team's repositories, a shelf of templates (with **All templates** to the gallery) and the cards **Start with a blank canvas** and **Import a Compose file**. The gallery and the Compose page carry a segmented row back to it: **New project**, **Templates**, **Compose file**.
 
 1. **Source**: paste or upload a file (`compose.yml`, `docker-compose.yml`, ≤ 256 KiB), or pick a repository and branch, from which we read `compose.yaml`, `compose.yml`, `docker-compose.yaml` or `docker-compose.yml` at the root (GitHub contents API, read-only token, like the repository inspector). Repository imports can build services (`build:` → app services rooted at the context); pasted files can't (those services are listed as needing a repository).
 2. **Preview** (`POST /projects/-/compose/preview`, pure, nothing stored): a picture of the resulting canvas (Public · App · Data columns with logos and edges), then one card per service: what it becomes ("Managed PostgreSQL 17", "Image · ghcr.io/…", "Worker of web"), and its notes, each with the line number (`line 14`) and one sentence. Choices sit on the cards: databases as option cards **Managed** (recommended: credentials, backups, clean stops) / **Keep as a container**; bind mounts with a **Convert to a volume** switch. Values the file interpolates (`${POSTGRES_PASSWORD}`) without a default appear as a short "Values" list: secret-looking names are generated for you (shown as "Generated"), the rest are optional fields. Files the services reference (`env_file: .env`) can be pasted there too (repository imports read them from the branch when present).
@@ -109,6 +109,8 @@ category: analytics             # stacks | analytics | automation | content | de
 logo: umami                     # glyph key
 website: https://umami.is
 license: MIT                    # the app's licence (shown)
+repositories:                   # optional, ≤ 4: upstream repositories that recommend this template when pasted (D70)
+  - https://github.com/umami-software/umami   # canonical: https, lowercase, no .git, no trailing slash
 notes:                          # optional, ≤ 6 lines on the detail sheet: requirements and limits
   - Plan for 1 GB of memory.
 inputs:                         # only what matters; everything else is generated
@@ -131,6 +133,7 @@ configs:                        # optional: Compose configs with inline content 
       CREATE EXTENSION IF NOT EXISTS pg_trgm;
 ```
 
+- `repositories` (D70): the app's own source repositories, written canonically (`PublicRepositoryUrl::canonical()`: lowercase, no `www.`, no `.git`, no trailing slash). When someone pastes one of them on New project, however it is written (`github.com/Umami-Software/umami.git/`, a browser URL with `/tree/master`), the page says "This is Umami. The Umami template sets up its database and secrets for you." with **Use the template** and **Build from source** ([19](19-git-providers.md) §4.3). Stacks list none (they build the user's code). A repository belongs to one template: the catalog lint refuses duplicates.
 - `services` is a Compose `services` map; the template compiler (`App\Support\Templates\TemplateCompiler`) turns it into a blueprint **through the Compose translator** in strict mode, so a template is valid only if the allow-list parser accepts every line (no refusals, no ignored keys).
 - `x-launchroom` per service: `name`, `logo`, `database {engine, version}` (a managed database; no image), `source: repository` (an app built from the repository input; `build.context` is its root directory), `parent` (worker of another service), `public` (override), `domain`, `connect {to: style}` (connection style per target; default `laravel` when the service's variables look like Laravel's `DB_*`, else `url`), `backup: pause` (volume backups freeze the service while reading its volumes, for data written in place such as a database kept as an image; kept on environment copies), `provides {KEY: value}` (what a connection to this service injects instead of `<SLUG>_URL`, values from `${self.public_url}` and `${self.env.VAR}`, ≤ 16; D65, docs/06 §3.2). Connection-injected variables that equal a template variable are stored once.
 - Expressions (resolved before Compose interpolation, so they never collide with `${VAR}`):
@@ -147,7 +150,7 @@ Logos are simple-icons glyphs (CC0 data; the marks are their owners' trademarks,
 
 ### 3.3 Validation in CI
 
-`make lint-templates` (`php artisan launchroom:templates:lint`) and a Pest test over the same code: schema and field grammar, id = file name, known category and logo, every `image:` digest-pinned (`@sha256:` + 64 hex) and from a mirrored registry, inputs used and declared, expressions well-formed and pointing at existing services, the Compose translation without a refusal or ignored key, and the resulting blueprint valid. Digests are bumped deliberately (like the database engine pins).
+`make lint-templates` (`php artisan launchroom:templates:lint`) and a Pest test over the same code: schema and field grammar, id = file name, `repositories` canonical and unique across the catalog, known category and logo, every `image:` digest-pinned (`@sha256:` + 64 hex) and from a mirrored registry, inputs used and declared, expressions well-formed and pointing at existing services, the Compose translation without a refusal or ignored key, and the resulting blueprint valid. Digests are bumped deliberately (like the database engine pins).
 
 ### 3.5 Supabase (D65)
 
@@ -172,6 +175,7 @@ Logos are simple-icons glyphs (CC0 data; the marks are their owners' trademarks,
 
 ## 4. UI
 
+- **On New project** (`/projects/new`): six templates as tiles (a recessed stage with the template's mark joined by hairlines to the services it brings, then name, category and one line), opening the same sheet in place; a pasted upstream repository recommends its template (§3.1 `repositories`).
 - **Template gallery** (`/projects/new/templates`, `Page size="wide"`): search, category pills, a 3/2/1 grid of app cards (44 px logo tile, name, one-line tagline, footer "2 services · 1 GB"). Opening one shows a `SidePanel` (lg): logo, name, tagline; **What you get** (the blueprint picture: Public · App · Data columns of logo tiles joined by quiet curves, one line per service); **Resources** (CPU, memory, volumes as a facts strip); **Set it up** (project name prefilled, the template's few inputs, repository picker for stacks); footer **Deploy**.
 - **Add from catalog** on the canvas: a "From the catalog" tile in the add sheet opens the same grid inside the sheet; picking one shows its detail with the inputs and **Add to canvas** (staged).
 - **Compose import** (`/projects/new/compose`): §2.1. The service cards follow "objects are cards": logo, name, what it becomes, then the notes as icon rows with the line number in `mono-small`.

@@ -11,6 +11,8 @@ category: data
 logo: supabase
 website: https://supabase.com
 license: Apache-2.0
+repositories:
+    - https://github.com/supabase/supabase
 notes:
     - Plan for 3 to 4 GB of memory for the whole stack.
     - Studio sits behind the gateway's sign-in. The user is supabase, the password is DASHBOARD_PASSWORD in the gateway's variables.

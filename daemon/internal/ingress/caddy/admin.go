@@ -3,6 +3,7 @@ package caddy
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -73,9 +74,35 @@ func (a *AdminClient) do(ctx context.Context, method, path string, body []byte, 
 	defer func() { _ = resp.Body.Close() }()
 	snippet, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
 	if resp.StatusCode/100 != 2 {
-		return fmt.Errorf("caddy admin: %s %s: HTTP %d: %s", method, path, resp.StatusCode, sanitize(snippet))
+		return &AdminStatusError{Method: method, Path: path, Status: resp.StatusCode, Body: sanitize(snippet)}
 	}
 	return nil
+}
+
+// AdminStatusError is an answer of Caddy's admin API other than 2xx.
+type AdminStatusError struct {
+	Method, Path string
+	Status       int
+	// Body is the start of Caddy's answer (printable text only).
+	Body string
+}
+
+func (e *AdminStatusError) Error() string {
+	return fmt.Sprintf("caddy admin: %s %s: HTTP %d: %s", e.Method, e.Path, e.Status, e.Body)
+}
+
+// IsConfigRefusal reports whether err is Caddy rejecting a config itself:
+// a 4xx answer, which POST /load gives when the config doesn't parse or a
+// module fails to provision. Everything else says nothing about the config
+// (docs/22 §6.6): no connection, a reset, a timeout, a 5xx while Caddy
+// starts or stops, 408 and 429. Those are retried with the same config.
+func IsConfigRefusal(err error) bool {
+	var se *AdminStatusError
+	if !errors.As(err, &se) {
+		return false
+	}
+	return se.Status >= 400 && se.Status < 500 &&
+		se.Status != http.StatusRequestTimeout && se.Status != http.StatusTooManyRequests
 }
 
 // Ready implements Admin.

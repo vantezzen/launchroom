@@ -7,6 +7,7 @@ import { NewProjectTabs } from '@/features/blueprints/new-project-tabs';
 import { TemplateGallery } from '@/features/templates/template-gallery';
 import { TemplateSetup } from '@/features/templates/template-setup';
 import {
+    importMethod,
     index as projectsIndex,
     templates as templatesRoute,
 } from '@/routes/projects';
@@ -81,6 +82,7 @@ export default function Templates({
 Templates.layout = {
     breadcrumbs: [
         { title: 'Projects', href: projectsIndex() },
+        { title: 'New project', href: importMethod() },
         { title: 'Start from a template', href: templatesRoute() },
     ],
 };

@@ -50,6 +50,13 @@ Route::middleware(['web', 'auth', 'verified'])
             ->middleware('throttle:60,1')
             ->name('projects.import.plan-preview');
         Route::post('projects/import', [ImportController::class, 'store'])->name('projects.import.store');
+        // "Paste a Git URL": check a public repository, then continue with it (docs/19 §4.3).
+        Route::get('projects/-/public-repository', [ImportController::class, 'checkUrl'])
+            ->middleware('throttle:30,1')
+            ->name('projects.import.check-url');
+        Route::post('projects/-/public-repository', [ImportController::class, 'addUrl'])
+            ->middleware('throttle:10,1')
+            ->name('projects.import.add-url');
         Route::get('p/{project}', [ProjectController::class, 'show'])->name('projects.show');
         // Per-service usage metrics JSON (canvas nodes, service panel Metrics tab).
         Route::get('p/{project}/-/metrics', ProjectMetricsController::class)->name('projects.metrics');

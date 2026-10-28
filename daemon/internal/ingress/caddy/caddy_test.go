@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"flag"
 	"net"
 	"net/http"
@@ -323,7 +322,7 @@ func TestManagerLifecycle(t *testing.T) {
 		t.Fatal("changed config not loaded")
 	}
 	// Load failure is reported.
-	admin.err = errors.New("boom")
+	admin.err = &AdminStatusError{Method: "POST", Path: "/load", Status: 400, Body: "boom"}
 	st = m.Sync(ctx, state.SystemContainer{Enabled: true, Image: image}, routes)
 	if st.State != state.IngressFailed || !strings.Contains(st.Message, "boom") {
 		t.Fatalf("%+v", st)

@@ -25,13 +25,11 @@ use App\Services\Git\Exceptions\GitConnectionUnusable;
 use App\Services\Git\Exceptions\RepositoryFileUnavailable;
 use App\Services\Git\GitConnectionSecrets;
 use App\Services\Git\GitCredentials;
+use App\Services\Git\PublicGitRemote;
 use App\Services\Git\Ssh\DeployKey;
-use App\Services\Http\SafeHttpClient;
 use App\Support\Git\HostKey;
-use App\Support\Git\RefAdvertisement;
 use App\Support\Git\SshUrl;
 use Illuminate\Contracts\Database\Query\Builder;
-use Throwable;
 
 /**
  * Any git server (docs/19 §4.2): one connection per repository, SSH with a
@@ -44,7 +42,7 @@ final readonly class PlainGitProvider implements GitProvider
     public function __construct(
         private SshRemotes $ssh,
         private GitConnectionSecrets $secrets,
-        private SafeHttpClient $http,
+        private PublicGitRemote $remote,
     ) {}
 
     public function kind(): GitProviderKind
@@ -98,7 +96,7 @@ final readonly class PlainGitProvider implements GitProvider
         }
 
         try {
-            $refs = $this->refs($row->gitConnection);
+            $refs = $this->refs($row->gitConnection, 'refs/heads/'.$branch);
         } catch (GitConnectionUnusable $e) {
             throw new GitHeadUnavailable($e->getMessage(), $e->getCode(), previous: $e);
         }
@@ -113,13 +111,15 @@ final readonly class PlainGitProvider implements GitProvider
     }
 
     /**
-     * Every advertised ref of a plain git connection (`refs/heads/main` => sha).
+     * The advertised branches of a plain git connection (`refs/heads/main` =>
+     * sha, plus `HEAD`). HTTPS remotes are read with smart HTTP
+     * ({@see PublicGitRemote}: protocol v2 `ls-refs` limited to `$prefix`).
      *
      * @return array<string, string>
      *
      * @throws GitConnectionUnusable
      */
-    public function refs(GitConnection $connection): array
+    public function refs(GitConnection $connection, string $prefix = 'refs/heads/'): array
     {
         if (str_starts_with($connection->base_url, 'ssh://')) {
             $url = SshUrl::parse($connection->base_url);
@@ -132,18 +132,7 @@ final readonly class PlainGitProvider implements GitProvider
             return $this->ssh->refs($url, self::hostKeys($connection), $key, $connection->allow_private_network);
         }
 
-        try {
-            $client = $connection->allow_private_network ? $this->http->withPrivateNetwork() : $this->http;
-            $response = $client->get(rtrim($connection->base_url, '/').'/info/refs', ['service' => 'git-upload-pack']);
-        } catch (Throwable $e) {
-            throw new GitConnectionUnusable("{$connection->host()} is not reachable: ".mb_substr($e->getMessage(), 0, 160), $e->getCode(), $e);
-        }
-
-        if (! $response->successful()) {
-            throw new GitConnectionUnusable("{$connection->host()} answered {$response->status()}. Is the repository public?");
-        }
-
-        return RefAdvertisement::parse($response->body());
+        return $this->remote->refs($connection->base_url, $prefix, $connection->allow_private_network)['refs'];
     }
 
     /**

@@ -24,6 +24,7 @@ final readonly class ExpirePreviews
     {
         $expired = 0;
         $candidates = Preview::query()
+            ->with('project')
             ->whereNotNull('environment_id')
             ->where('last_activity_at', '<', now()->subDay())
             ->oldest('last_activity_at')

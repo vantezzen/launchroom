@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -33,6 +34,9 @@ const (
 	ConfigVolume  = "lr-system-caddy-config"
 	// CacheFile is the last applied config inside the cache dir (<data>/caddy).
 	CacheFile = "config.json"
+	// AutosaveFile is Caddy's autosaved config inside its container
+	// (XDG_CONFIG_HOME=/config), which "caddy run --resume" loads at start.
+	AutosaveFile = "/config/caddy/autosave.json"
 	// specVersion changes whenever the built-in container spec changes (forces a recreate).
 	specVersion = "caddy-v1"
 )
@@ -50,7 +54,10 @@ type ManagerOptions struct {
 	Log      *slog.Logger
 	// ReadyTimeout bounds waiting for a (re)started Caddy's admin API (default 20 s).
 	ReadyTimeout time.Duration
-	Now          func() time.Time
+	// LoadRetry is the first wait before loading a config again when Caddy
+	// wasn't reachable (doubling, loadAttempts in all; default 500 ms).
+	LoadRetry time.Duration
+	Now       func() time.Time
 	// Spec returns the current NodeState's ingress section (nil: Caddy's
 	// defaults: local file storage, per-host certificates).
 	Spec func() *state.IngressSpec
@@ -111,7 +118,25 @@ type Manager struct {
 	wafRoutes  int
 	wafFailed  string
 	wafErr     string
+	// wafWanted counts the routes the firewall would cover in this pass's
+	// config (0: none, or the running Caddy has no module).
+	wafWanted int
+
+	// unreachableSince is when loading a config first failed in a row
+	// because Caddy's admin API wasn't reachable (zero: it was); unreachableErr
+	// is the last such error (docs/22 §6.6).
+	unreachableSince time.Time
+	unreachableErr   string
 }
+
+// Loading a config is tried loadAttempts times within one pass while Caddy
+// isn't reachable; after that the reconcile loop's own interval is the
+// backoff. The firewall's state turns to error only after
+// wafUnreachableAfter of it (docs/22 §6.6).
+const (
+	loadAttempts        = 5
+	wafUnreachableAfter = 5 * time.Minute
+)
 
 // logRefusedAuth logs protected routes whose forward-auth URL the local policy
 // refuses, once per change (they answer 403, docs/05 §4).
@@ -198,6 +223,9 @@ func NewManager(o ManagerOptions) *Manager {
 	if o.ReadyTimeout <= 0 {
 		o.ReadyTimeout = 20 * time.Second
 	}
+	if o.LoadRetry <= 0 {
+		o.LoadRetry = 500 * time.Millisecond
+	}
 	if o.Now == nil {
 		o.Now = time.Now
 	}
@@ -234,11 +262,20 @@ func (m *Manager) wafStatusLocked() *state.WafStatus {
 		return &state.WafStatus{State: state.WafStateUnsupported, Message: "The edge's Caddy has no web firewall module."}
 	}
 	st := &state.WafStatus{State: state.WafStateOff, Engine: m.wafSupport.Engine, RuleSet: m.wafSupport.RuleSet}
+	unreachable := !m.unreachableSince.IsZero() && m.wafWanted > 0
 	switch {
 	case m.wafErr != "":
 		st.State, st.Message = state.WafStateError, plainText(m.wafErr, 1024)
+	case unreachable && m.o.Now().Sub(m.unreachableSince) >= wafUnreachableAfter:
+		st.State = state.WafStateError
+		st.Message = plainText(fmt.Sprintf("Caddy hasn't been reachable since %s, so the firewall can't be applied; retrying: %s",
+			m.unreachableSince.UTC().Format(time.RFC3339), m.unreachableErr), 1024)
 	case m.wafRoutes > 0:
 		st.State, st.Routes = state.WafStateOn, m.wafRoutes
+	}
+	if unreachable && st.State != state.WafStateError {
+		// Caddy keeps serving its last config (--resume) meanwhile.
+		st.Message = "Caddy wasn't reachable yet; retrying."
 	}
 	if m.o.WafDropped != nil {
 		st.DroppedRecords = max(m.o.WafDropped(), 0)
@@ -292,7 +329,8 @@ func (m *Manager) Sync(ctx context.Context, sys state.SystemContainer, routes []
 		}
 		m.mu.Lock()
 		m.appliedKey, m.containerID, m.certs, m.storage = "", "", nil, nil
-		m.wafSupport, m.wafRoutes, m.wafErr, m.wafFailed = WafSupport{}, 0, "", ""
+		m.wafSupport, m.wafRoutes, m.wafErr, m.wafFailed, m.wafWanted = WafSupport{}, 0, "", "", 0
+		m.unreachableSince, m.unreachableErr = time.Time{}, ""
 		m.mu.Unlock()
 		return nil
 	}
@@ -347,6 +385,7 @@ func (m *Manager) Sync(ctx context.Context, sys state.SystemContainer, routes []
 	}
 	if m.appliedKey == key {
 		applied, n := m.appliedAt, m.routes
+		m.unreachableSince, m.unreachableErr = time.Time{}, ""
 		m.mu.Unlock()
 		return m.status(state.IngressApplied, n, ptr(applied), "")
 	}
@@ -355,8 +394,12 @@ func (m *Manager) Sync(ctx context.Context, sys state.SystemContainer, routes []
 	force := m.appliedFiles != files && m.appliedKey != ""
 	m.mu.Unlock()
 
+	unreachable := func(err error) *state.IngressStatus {
+		m.seedResume(ctx, c.ID, plan.files, fallback)
+		return m.unreachable(len(routes), err)
+	}
 	if err := m.waitReady(ctx); err != nil {
-		return m.status(state.IngressPending, len(routes), nil, "waiting for caddy: "+err.Error())
+		return unreachable(err)
 	}
 	if err := m.copyFiles(ctx, c.ID, plan.files); err != nil {
 		return fail("copy certificate files into caddy: %v", err)
@@ -365,7 +408,13 @@ func (m *Manager) Sync(ctx context.Context, sys state.SystemContainer, routes []
 	if r, ok := m.o.Admin.(Reloader); ok && force {
 		load = r.Reload
 	}
-	if err := load(ctx, cfg); err != nil {
+	if err := m.loadRetrying(ctx, load, cfg); err != nil {
+		if !IsConfigRefusal(err) {
+			// Caddy wasn't reachable (starting, restarting, slow after a
+			// reboot): that says nothing about the config. The next pass
+			// tries the same config, firewall included (docs/22 §6.6).
+			return unreachable(err)
+		}
 		if wafKey == "" {
 			return fail("load config: %v", err)
 		}
@@ -379,7 +428,10 @@ func (m *Manager) Sync(ctx context.Context, sys state.SystemContainer, routes []
 		cfg, wafRoutes, wafErr = fallback, 0, m.wafErr
 		sum = sha256.Sum256(cfg)
 		key = hex.EncodeToString(sum[:]) + "|" + files + "|" + c.ID + "|" + c.StartedAt.String()
-		if err := load(ctx, cfg); err != nil {
+		if err := m.loadRetrying(ctx, load, cfg); err != nil {
+			if !IsConfigRefusal(err) {
+				return unreachable(err)
+			}
 			return fail("load config: %v", err)
 		}
 	}
@@ -394,6 +446,7 @@ func (m *Manager) Sync(ctx context.Context, sys state.SystemContainer, routes []
 	m.mu.Lock()
 	m.appliedKey, m.appliedFiles, m.appliedAt, m.routes = key, files, now, len(routes)
 	m.wafRoutes, m.wafErr = wafRoutes, wafErr
+	m.unreachableSince, m.unreachableErr = time.Time{}, ""
 	m.mu.Unlock()
 	m.o.Log.Info("ingress config applied", "routes", len(routes))
 	select { // certificate statuses for the new route table
@@ -401,6 +454,58 @@ func (m *Manager) Sync(ctx context.Context, sys state.SystemContainer, routes []
 	default:
 	}
 	return m.status(state.IngressApplied, len(routes), ptr(now), "")
+}
+
+// loadRetrying loads cfg, trying again with a doubling wait while Caddy
+// isn't reachable. A refusal of the config returns at once; an availability
+// error returns once the attempts are spent.
+func (m *Manager) loadRetrying(ctx context.Context, load func(context.Context, []byte) error, cfg []byte) error {
+	wait := m.o.LoadRetry
+	for attempt := 1; ; attempt++ {
+		err := load(ctx, cfg)
+		if err == nil || IsConfigRefusal(err) || attempt == loadAttempts {
+			return err
+		}
+		m.o.Log.Info("caddy wasn't reachable; loading the config again", "err", err, "attempt", attempt, "wait", wait)
+		select {
+		case <-ctx.Done():
+			return err
+		case <-time.After(wait):
+		}
+		wait *= 2
+	}
+}
+
+// unreachable records that Caddy's admin API couldn't be reached and
+// reports the ingress as pending: nothing is marked as refused, so the next
+// pass loads the same config, firewall included (docs/22 §6.6).
+func (m *Manager) unreachable(routes int, err error) *state.IngressStatus {
+	m.mu.Lock()
+	if m.unreachableSince.IsZero() {
+		m.unreachableSince = m.o.Now()
+	}
+	m.unreachableErr = err.Error()
+	m.mu.Unlock()
+	m.o.Log.Warn("caddy wasn't reachable; the config is loaded again on the next pass", "err", err)
+	return m.status(state.IngressPending, routes, nil, "Caddy wasn't reachable yet; retrying: "+err.Error())
+}
+
+// seedResume writes cfg, with the secret files it reads, where "caddy run
+// --resume" finds it. While Caddy can't be reached, the config it resumes
+// may be what keeps it from starting: with a shared certificate storage
+// that is unreachable at boot (the mesh isn't up yet), the internal CA
+// fails to provision and Caddy exits, over and over, before launchroomd
+// can load anything. Its next start then resumes the config launchroomd
+// wants now (local storage while the shared one is unreachable, docs/05 §4).
+// cfg is the config without the firewall, which launchroomd loads as soon
+// as Caddy answers.
+func (m *Manager) seedResume(ctx context.Context, containerID string, files map[string]secret.Secret, cfg []byte) {
+	all := make(map[string]secret.Secret, len(files)+1)
+	maps.Copy(all, files)
+	all[AutosaveFile] = secret.Secret(cfg)
+	if err := m.copyFiles(ctx, containerID, all); err != nil {
+		m.o.Log.Warn("could not write caddy's resume config", "err", err)
+	}
 }
 
 // wafConfig renders the config with the web firewall when the running
@@ -423,10 +528,12 @@ func (m *Manager) wafConfig(routes []Route, t TLS, render Options, c docker.Cont
 	failed, failedErr := m.wafFailed, m.wafErr
 	m.mu.Unlock()
 	if !support.Available() || m.o.WafLogAddress == "" {
+		m.setWafWanted(0)
 		return nil, "", 0, ""
 	}
 	render.Waf = &WafOptions{LogAddress: m.o.WafLogAddress}
 	n = len(WafRoutes(routes, render))
+	m.setWafWanted(n)
 	if n == 0 {
 		return nil, "", 0, ""
 	}
@@ -441,6 +548,12 @@ func (m *Manager) wafConfig(routes []Route, t TLS, render Options, c docker.Cont
 		return nil, "", 0, failedErr
 	}
 	return cfg, key, n, ""
+}
+
+func (m *Manager) setWafWanted(n int) {
+	m.mu.Lock()
+	m.wafWanted = n
+	m.mu.Unlock()
 }
 
 // image returns the Caddy image to run for the requested one. Each release

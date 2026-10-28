@@ -10,6 +10,8 @@ category: storage
 logo: s3
 website: https://www.versity.com/products/versitygw/
 license: Apache-2.0
+repositories:
+    - https://github.com/versity/versitygw
 inputs:
     - id: domain
       label: Domain

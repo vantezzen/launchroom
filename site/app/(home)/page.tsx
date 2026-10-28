@@ -5,6 +5,7 @@ import { ButtonLink } from '@/components/marketing/button';
 import { CopyCommand } from '@/components/marketing/copy-command';
 import { DemoVideo } from '@/components/marketing/demo-video';
 import { GitHubMark } from '@/components/marketing/github-mark';
+import { CheckCard, PrivacyStrip, regions, ShotCard, ShotFrame } from '@/components/marketing/insights';
 import { ConnectMoment, JoinMoment } from '@/components/marketing/moments';
 import { Container, MoreLink, Section, SectionHeading } from '@/components/marketing/section';
 import {
@@ -22,6 +23,9 @@ const included = [
     'HTTPS on every domain',
     'Encrypted variables',
     'Backups to your S3',
+    'Request analytics',
+    'Web firewall',
+    'Vulnerability checks',
     'Logs, metrics and alerts',
     'Teams and 2FA',
     'API and CLI',
@@ -54,7 +58,7 @@ const faq = [
     },
     {
         q: 'Is it secure?',
-        a: 'The dashboard never logs into your servers. There is no SSH and no shell access: each server fetches signed instructions and checks them against its own rules. Secrets are encrypted, and every project environment has its own network.',
+        a: 'Every public service sits behind a web firewall with the OWASP Core Rule Set, and launchroom checks the packages of every running image against public vulnerability data. The dashboard never logs into your servers: there is no SSH and no shell access, and each server checks the signed instructions it fetches against its own rules. Secrets are encrypted, and every project environment has its own network.',
     },
 ];
 
@@ -169,18 +173,122 @@ export default function HomePage() {
                 </p>
             </Section>
 
-            {/* 4 · One screen */}
+            {/* 4 · Analytics */}
+            <Section labelledBy="analytics-title">
+                <SectionHeading
+                    id="analytics-title"
+                    label="Analytics"
+                    title="See your traffic without a tracking script."
+                    align="center"
+                >
+                    launchroom counts the requests to every service where they enter your server. Each service and
+                    project gets requests per hour by status, its top paths, referrers and clients. There is nothing to
+                    add to your app.
+                </SectionHeading>
+                <ShotFrame
+                    id="analytics-service"
+                    region={regions.analyticsTop}
+                    phoneRegion={regions.analyticsPhone}
+                    className="mx-auto mt-12 max-w-[1120px]"
+                />
+                <div className="mx-auto mt-4 grid max-w-[1120px] gap-4 md:grid-cols-2">
+                    <ShotCard
+                        id="analytics-service"
+                        region={regions.analyticsPaths}
+                        title="Paths, referrers and clients"
+                    >
+                        The most requested paths with their share of 4xx and 5xx, where visitors came from, and how many
+                        requests were bots.
+                    </ShotCard>
+                    <ShotCard
+                        id="analytics-overview"
+                        region={regions.overviewChartLeft}
+                        title="Every project in one view"
+                    >
+                        Requests per project for the whole team, with the change against the week before.
+                    </ShotCard>
+                </div>
+                <PrivacyStrip className="mx-auto mt-4 max-w-[1120px]" />
+                <div className="mt-8 flex justify-center">
+                    <MoreLink href="/features/analytics">Analytics and metrics</MoreLink>
+                </div>
+            </Section>
+
+            {/* 5 · Security */}
+            <Section tone="frame" labelledBy="security-title">
+                <SectionHeading
+                    id="security-title"
+                    label="Security"
+                    title="A web firewall and vulnerability checks, already on."
+                    align="center"
+                >
+                    Every public service sits behind a web firewall from its first deploy. launchroom checks the
+                    packages in each running image against public vulnerability data and alerts you only when you have
+                    to act.
+                </SectionHeading>
+                <ShotFrame
+                    id="security-page"
+                    region={regions.securityTop}
+                    phoneRegion={regions.securityPhone}
+                    className="mx-auto mt-12 max-w-[1120px]"
+                />
+                <div className="mx-auto mt-4 grid max-w-[1120px] gap-4 lg:grid-cols-12">
+                    <ShotCard
+                        id="security-firewall"
+                        region={regions.firewallChart}
+                        title="Web firewall, on by default"
+                        className="lg:col-span-7"
+                    >
+                        The OWASP Core Rule Set stops SQL injection, cross-site scripting and scanners before they reach
+                        your app. You see what it blocked and from which network.
+                    </ShotCard>
+                    <ShotCard
+                        id="security-finding"
+                        region={regions.findingFound}
+                        title="A look inside the container"
+                        className="lg:col-span-5"
+                    >
+                        After an alert, launchroom checks the running container for new files and processes and lists
+                        the next steps.
+                    </ShotCard>
+                    <ShotCard
+                        id="security-inventory"
+                        region={regions.inventoryLodash}
+                        title="Every package, one search"
+                        className="lg:col-span-7"
+                    >
+                        Find out which services run lodash 4.17.20 or Node.js 20, and which runtimes reached their end
+                        of life.
+                    </ShotCard>
+                    <CheckCard
+                        title="Alerts only when you need to act"
+                        items={[
+                            'The code runs in a live, public service',
+                            'High or critical, and a fix exists',
+                            'Or the flaw is known to be exploited',
+                        ]}
+                        className="lg:col-span-5"
+                    >
+                        Everything else is listed under Worth knowing and never notifies.
+                    </CheckCard>
+                </div>
+                <div className="mt-8 flex justify-center">
+                    <MoreLink href="/features/security">Security</MoreLink>
+                </div>
+            </Section>
+
+            {/* 6 · One screen */}
             <Section labelledBy="view-title">
                 <SectionHeading id="view-title" label="Overview" title="Everything on one screen." align="center">
                     See each server with its load, and which service takes how much CPU and memory.
                 </SectionHeading>
                 <ServerView className="mx-auto mt-12 max-w-[1080px]" />
                 <div className="mt-8 flex justify-center">
-                    <MoreLink href="/features/observability">Logs and metrics</MoreLink>
+                    <MoreLink href="/features/analytics">Analytics and metrics</MoreLink>
                 </div>
             </Section>
 
-            {/* 5 · Previews */}
+            {/* 7 · Previews */}
             <Section tone="frame" labelledBy="preview-title">
                 <div className="grid items-center gap-12 lg:grid-cols-2 lg:gap-16">
                     <div className="flex flex-col gap-6">
@@ -196,7 +304,7 @@ export default function HomePage() {
 
             <DemoVideo />
 
-            {/* 6 · Own it */}
+            {/* 8 · Own it */}
             <Section labelledBy="own-title">
                 <div className="grid gap-12 lg:grid-cols-[minmax(0,6fr)_minmax(0,5fr)] lg:gap-16">
                     <div className="flex flex-col gap-8">

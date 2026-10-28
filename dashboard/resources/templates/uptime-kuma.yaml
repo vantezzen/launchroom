@@ -9,6 +9,8 @@ category: monitoring
 logo: uptimekuma
 website: https://uptime.kuma.pet
 license: MIT
+repositories:
+    - https://github.com/louislam/uptime-kuma
 inputs:
     - id: domain
       label: Domain

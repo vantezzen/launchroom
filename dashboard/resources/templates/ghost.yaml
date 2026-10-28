@@ -9,6 +9,8 @@ category: content
 logo: ghost
 website: https://ghost.org
 license: MIT
+repositories:
+    - https://github.com/tryghost/ghost
 inputs:
     - id: domain
       label: Domain

@@ -1,17 +1,9 @@
 import { Head, Link, router } from '@inertiajs/react';
-import {
-    ArrowUpRight,
-    Check,
-    GitBranch,
-    Lock,
-    Plus,
-    Search,
-    X,
-} from 'lucide-react';
+import { Check, GitBranch, Plus, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Logo } from '@/components/logo';
-import { MetaDivider, MetaLine } from '@/components/patterns/meta-line';
+import { MetaLine } from '@/components/patterns/meta-line';
 import { Page, PageHeader } from '@/components/patterns/page';
 import { Section } from '@/components/patterns/section';
 import { Status, StatusIcon } from '@/components/status';
@@ -36,17 +28,17 @@ import {
     frameworkLogo,
     planParts,
 } from '@/features/add-service/framework-logo';
-import { providerLabel, providerLogo } from '@/features/git/providers';
-import { NewProjectTabs } from '@/features/blueprints/new-project-tabs';
-import { compactAge, plural } from '@/features/canvas/format';
+import { repositoryLogo } from '@/features/git/providers';
+import { NewProjectStart } from '@/features/new-project/new-project-start';
+import { plural } from '@/features/canvas/format';
 import { requestJson, RequestFailed } from '@/features/projects/http';
 import { usePlanPreview } from '@/features/add-service/use-plan-preview';
 import { cn } from '@/lib/utils';
-import { edit as gitSettings } from '@/routes/git';
 import {
     branches as branchesRoute,
     index as repositoriesRoute,
 } from '@/routes/git/repositories';
+import { edit as gitSettings } from '@/routes/git';
 import { importMethod, index as projectsIndex } from '@/routes/projects';
 import { inspect, planPreview, store } from '@/routes/projects/import';
 import { index as serversIndex } from '@/routes/servers';
@@ -62,8 +54,12 @@ type Props = {
     /** Connected providers (`github`, `gitlab`, `gitea`, `git`; docs/19). */
     providers: string[];
     installUrl: string | null;
+    /** Owners and admins connect git providers (docs/19 §4). */
+    canConnectGit: boolean;
     buildServerOnline: boolean;
     engines: Engine[];
+    templates: App.Data.Templates.TemplateSummaryData[];
+    categories: Record<string, string>;
 };
 
 type AppChoice = {
@@ -117,249 +113,6 @@ function remember(repository: string | null, branch: string | null): void {
         window.history.state,
         '',
         `${window.location.pathname}${search ? `?${search}` : ''}`,
-    );
-}
-
-/* ------------------------------------------------------------------ */
-/* Step 1: pick a repository                                           */
-/* ------------------------------------------------------------------ */
-
-function RepositoryPicker({
-    providers,
-    installUrl,
-    onPick,
-}: {
-    providers: string[];
-    installUrl: string | null;
-    onPick: (repository: Repository) => void;
-}) {
-    const connected = providers.length > 0;
-    const [provider, setProvider] = useState<string | null>(null);
-    const [search, setSearch] = useState('');
-    const [repositories, setRepositories] = useState<Repository[] | null>(null);
-    const [error, setError] = useState<string | null>(null);
-
-    useEffect(() => {
-        if (!connected) {
-            return;
-        }
-
-        const controller = new AbortController();
-        const timer = window.setTimeout(() => {
-            requestJson<{ repositories: Repository[] }>(
-                'get',
-                repositoriesRoute({
-                    query: {
-                        ...(search ? { search } : {}),
-                        ...(provider ? { provider } : {}),
-                    },
-                }).url,
-                undefined,
-                controller.signal,
-            )
-                .then((data) => {
-                    setRepositories(data.repositories);
-                    setError(null);
-                })
-                .catch((failure: unknown) => {
-                    if (!controller.signal.aborted) {
-                        setError(
-                            failure instanceof Error
-                                ? failure.message
-                                : 'Loading repositories failed.',
-                        );
-                    }
-                });
-        }, 200);
-
-        return () => {
-            window.clearTimeout(timer);
-            controller.abort();
-        };
-    }, [search, provider, connected]);
-
-    if (!connected) {
-        return (
-            <div className="flex flex-col items-center gap-4 rounded-[14px] border border-dashed px-6 py-14 text-center">
-                <div className="flex items-center gap-2">
-                    {['github', 'gitlab', 'forgejo', 'git'].map((kind) => (
-                        <Logo key={kind} kind={kind} size={32} decorative />
-                    ))}
-                </div>
-                <div className="flex flex-col gap-1">
-                    <p className="type-heading">Connect your git first</p>
-                    <p className="type-body text-muted-foreground">
-                        Connect GitHub, GitLab, Gitea, Forgejo or another git
-                        server to pick a repository to deploy.
-                    </p>
-                </div>
-                <Button asChild>
-                    <Link href={gitSettings()}>Connect a git provider</Link>
-                </Button>
-            </div>
-        );
-    }
-
-    return (
-        <div className="flex flex-col gap-3">
-            <div className="relative">
-                <Search
-                    aria-hidden="true"
-                    className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
-                />
-                <Input
-                    type="search"
-                    aria-label="Search repositories"
-                    placeholder="Search repositories"
-                    value={search}
-                    autoFocus
-                    onChange={(event) => setSearch(event.target.value)}
-                    className="h-10 pl-9"
-                />
-            </div>
-
-            {providers.length > 1 && (
-                <div
-                    role="group"
-                    aria-label="Provider"
-                    className="flex flex-wrap gap-1.5"
-                >
-                    {[null, ...providers].map((item) => (
-                        <button
-                            key={item ?? 'all'}
-                            type="button"
-                            aria-pressed={provider === item}
-                            onClick={() => {
-                                setProvider(item);
-                                setRepositories(null);
-                            }}
-                            className={cn(
-                                'inline-flex h-7 items-center gap-1.5 rounded-full border px-3 type-small transition-colors duration-fast',
-                                provider === item
-                                    ? 'border-foreground bg-foreground text-background'
-                                    : 'text-muted-foreground hover:bg-hover hover:text-foreground',
-                            )}
-                        >
-                            {item === null
-                                ? 'All'
-                                : item === 'gitea'
-                                  ? 'Gitea / Forgejo'
-                                  : item === 'git'
-                                    ? 'Git servers'
-                                    : providerLabel(item)}
-                        </button>
-                    ))}
-                </div>
-            )}
-
-            <div className="overflow-hidden rounded-[14px] border bg-card shadow-card">
-                {error && (
-                    <p className="px-4 py-6 type-body text-status-error">
-                        {error}
-                    </p>
-                )}
-                {repositories === null && !error && (
-                    <p className="flex items-center gap-2 px-4 py-6 type-body text-muted-foreground">
-                        <Spinner /> Loading repositories
-                    </p>
-                )}
-                {repositories?.length === 0 && (
-                    <p className="px-4 py-10 text-center type-body text-muted-foreground">
-                        {search
-                            ? `No repository matches “${search}”.`
-                            : provider === 'git'
-                              ? 'No git server repositories yet. Add one in Settings → Git.'
-                              : 'No repositories yet. Give launchroom access to the ones you deploy.'}
-                    </p>
-                )}
-                {repositories && repositories.length > 0 && (
-                    <ul
-                        aria-label="Repositories"
-                        className="flex max-h-[min(60vh,520px)] flex-col divide-y overflow-y-auto"
-                    >
-                        {repositories.map((repository) => {
-                            const cut = repository.fullName.lastIndexOf('/');
-                            const owner = repository.fullName.slice(0, cut);
-                            const name = repository.fullName.slice(cut + 1);
-
-                            return (
-                                <li key={repository.id}>
-                                    <button
-                                        type="button"
-                                        disabled={repository.archived}
-                                        onClick={() => onPick(repository)}
-                                        className="group flex w-full items-center gap-3 px-4 py-3 text-left transition-colors duration-fast hover:bg-hover focus-visible:bg-hover focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
-                                    >
-                                        <Logo
-                                            kind={providerLogo(
-                                                repository.serverKind,
-                                            )}
-                                            size={32}
-                                            name={providerLabel(
-                                                repository.provider,
-                                            )}
-                                        />
-                                        <span className="flex min-w-0 flex-1 flex-col">
-                                            <span className="truncate type-label">
-                                                <span className="font-normal text-muted-foreground">
-                                                    {owner}/
-                                                </span>
-                                                {name}
-                                            </span>
-                                            <span className="flex min-w-0 items-center gap-2 type-small text-muted-foreground">
-                                                <span className="truncate">
-                                                    {repository.archived
-                                                        ? 'Archived'
-                                                        : repository.pushedAt
-                                                          ? `Pushed ${compactAge(repository.pushedAt)} ago`
-                                                          : (repository.defaultBranch ??
-                                                            'main')}
-                                                </span>
-                                                {providers.length > 1 &&
-                                                    repository.provider !==
-                                                        'git' &&
-                                                    repository.connectionName !==
-                                                        null && (
-                                                        <>
-                                                            <MetaDivider />
-                                                            <span className="truncate">
-                                                                {
-                                                                    repository.connectionName
-                                                                }
-                                                            </span>
-                                                        </>
-                                                    )}
-                                            </span>
-                                        </span>
-                                        {repository.private && (
-                                            <Lock
-                                                aria-label="Private"
-                                                className="size-3.5 shrink-0 text-muted-foreground"
-                                            />
-                                        )}
-                                        <span className="shrink-0 type-label text-muted-foreground opacity-0 transition-opacity duration-fast group-hover:opacity-100 group-focus-visible:opacity-100">
-                                            Import
-                                        </span>
-                                    </button>
-                                </li>
-                            );
-                        })}
-                    </ul>
-                )}
-            </div>
-
-            {installUrl && (provider === null || provider === 'github') && (
-                <a
-                    href={installUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-1 self-center type-small text-muted-foreground hover:text-foreground"
-                >
-                    Don’t see it? Grant access on GitHub
-                    <ArrowUpRight aria-hidden="true" className="size-3.5" />
-                </a>
-            )}
-        </div>
     );
 }
 
@@ -711,10 +464,14 @@ function DatabaseRow({
 /* ------------------------------------------------------------------ */
 
 export default function ImportRepository({
+    githubConnected,
     providers,
     installUrl,
+    canConnectGit,
     buildServerOnline,
     engines,
+    templates,
+    categories,
 }: Props) {
     const [repository, setRepository] = useState<{
         id: string;
@@ -742,7 +499,7 @@ export default function ImportRepository({
         const params = query();
         const id = params.get('repository');
 
-        if (!id || providers.length === 0) {
+        if (!id) {
             return;
         }
 
@@ -986,19 +743,18 @@ export default function ImportRepository({
     if (!repository) {
         return (
             <>
-                <Head title="Import a repository" />
-                <Page size="narrow">
-                    <PageHeader
-                        title="Import a repository"
-                        description="Pick a repository. launchroom detects how to build and run it."
-                    />
-                    <NewProjectTabs current="repository" />
-                    <RepositoryPicker
-                        providers={providers}
-                        installUrl={installUrl}
-                        onPick={(picked) => pick(picked)}
-                    />
-                </Page>
+                <Head title="New project" />
+                <NewProjectStart
+                    providers={providers}
+                    installUrl={installUrl}
+                    githubConnected={githubConnected}
+                    canConnectGit={canConnectGit}
+                    templates={templates}
+                    categories={categories}
+                    onPick={(picked, pickedBranch) =>
+                        pick(picked, pickedBranch)
+                    }
+                />
             </>
         );
     }
@@ -1025,7 +781,10 @@ export default function ImportRepository({
                     }
                     media={
                         <Logo
-                            kind={providerLogo(repository.serverKind)}
+                            kind={repositoryLogo(
+                                repository.serverKind,
+                                repository.fullName,
+                            )}
                             size={44}
                             decorative
                         />
@@ -1306,13 +1065,35 @@ export default function ImportRepository({
                                 </p>
                             )}
                             <div className="flex flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
-                                <p className="type-small text-muted-foreground">
-                                    {summary} in production, tracking{' '}
-                                    <span className="type-mono-small text-foreground">
-                                        {branch}
-                                    </span>
-                                    .
-                                </p>
+                                <div className="flex flex-col gap-1 type-small text-muted-foreground">
+                                    <p>
+                                        {summary} in production, tracking{' '}
+                                        <span className="type-mono-small text-foreground">
+                                            {branch}
+                                        </span>
+                                        .
+                                    </p>
+                                    {repository.serverKind === 'git' && (
+                                        <p>
+                                            New commits are picked up within a
+                                            minute.{' '}
+                                            {!githubConnected &&
+                                                canConnectGit &&
+                                                repository.fullName.startsWith(
+                                                    'github.com/',
+                                                ) && (
+                                                    <Link
+                                                        href={gitSettings()}
+                                                        className="text-foreground underline-offset-4 hover:underline"
+                                                    >
+                                                        Connect GitHub for
+                                                        instant deploys and
+                                                        previews
+                                                    </Link>
+                                                )}
+                                        </p>
+                                    )}
+                                </div>
                                 <div className="flex shrink-0 flex-wrap gap-2 sm:justify-end">
                                     <Button
                                         variant="outline"
@@ -1349,6 +1130,6 @@ export default function ImportRepository({
 ImportRepository.layout = {
     breadcrumbs: [
         { title: 'Projects', href: projectsIndex() },
-        { title: 'Import a repository', href: importMethod() },
+        { title: 'New project', href: importMethod() },
     ],
 };
