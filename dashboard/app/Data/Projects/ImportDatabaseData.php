@@ -15,7 +15,9 @@ use Spatie\LaravelData\Data;
 final class ImportDatabaseData extends Data
 {
     /**
-     * @param  list<string>  $connectTo  root directories of the apps to connect
+     * @param  list<string|null>  $connectTo  root directories of the apps to connect
+     *                                        (the repository root arrives as null: empty
+     *                                        strings are converted by the middleware)
      */
     public function __construct(
         public DatabaseEngine $engine,
@@ -24,4 +26,14 @@ final class ImportDatabaseData extends Data
         #[Max(20)]
         public array $connectTo = [],
     ) {}
+
+    /**
+     * @return array<string, list<string>>
+     */
+    public static function rules(): array
+    {
+        return [
+            'connectTo.*' => ['nullable', 'string', 'max:255'],
+        ];
+    }
 }

@@ -194,3 +194,21 @@ test('importing creates the project, services and connections, then deploys righ
         ->and(Deployment::query()->where('environment_id', $production->id)->count())->toBe(4)
         ->and(AuditEvent::query()->where('action', 'project.imported')->sole()->meta)->toMatchArray(['repository' => 'octo-org/shop', 'apps' => 2]);
 });
+
+test('a database connects to an app in the repository root (sent as an empty folder)', function (): void {
+    Queue::fake();
+    Projects::server($this->team);
+
+    // The exact shape the New project page sends: the root app has no folder,
+    // and the empty string reaches the action as null (ConvertEmptyStringsToNull).
+    $this->actingAs($this->developer)->post(route('projects.import.store'), [
+        'name' => 'laravel-demo', 'repository' => $this->repository->public_id, 'branch' => 'main', 'deploy' => true,
+        'apps' => [['name' => 'laravel-demo', 'rootDirectory' => null, 'port' => null, 'framework' => null, 'processes' => []]],
+        'databases' => [['engine' => 'postgres', 'name' => 'postgres', 'connectTo' => ['']]],
+    ])->assertRedirect()->assertSessionHasNoErrors();
+
+    $project = Project::query()->sole();
+    $app = Service::query()->where('project_id', $project->id)->where('name', 'laravel-demo')->sole();
+
+    expect(Connection::query()->where('project_id', $project->id)->where('from_service_id', $app->id)->count())->toBe(1);
+});

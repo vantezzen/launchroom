@@ -114,7 +114,7 @@ final readonly class ImportRepository
                 ], 'databases.'.$index);
 
                 foreach (array_unique($database->connectTo) as $root) {
-                    $app = $apps[trim($root, '/')] ?? null;
+                    $app = $apps[trim($root ?? '', '/')] ?? null;
 
                     if ($app === null) {
                         continue;
