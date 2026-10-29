@@ -9,6 +9,7 @@ use App\Enums\DeploymentStepName;
 use App\Enums\DeploymentStepStatus;
 use App\Models\Deployment;
 use App\Models\DeploymentStep;
+use App\Services\Deployments\RolloutStatus;
 use Illuminate\Support\Collection;
 
 /**

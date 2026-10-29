@@ -16,6 +16,7 @@ use App\Models\Project;
 use App\Models\Service;
 use App\Models\User;
 use App\Queries\DeploymentSummaries;
+use App\Services\Deployments\ReleaseStep;
 use Illuminate\Container\Attributes\CurrentUser;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -26,7 +27,8 @@ use Illuminate\Support\Facades\Gate;
  * Service panel → Deployments (docs/08 §3.4): the active deployment and the
  * history of the service in one environment, plus "Redeploy". `current` is
  * the list's expanded first row (the deployment in progress, else the live
- * one) with its recorded steps.
+ * one, else the newest: a failed or cancelled first deploy stays readable)
+ * with its recorded steps and whether it shows a Release step.
  */
 final class ServiceDeploymentsController extends Controller
 {
@@ -41,19 +43,23 @@ final class ServiceDeploymentsController extends Controller
 
         ['active' => $active, 'rows' => $rows] = $summaries->forInstance($instance, self::HISTORY);
         $running = [DeploymentStatus::Queued, ...DeploymentStatus::inFlight()];
-        $current = array_values(array_filter($rows, static fn (DeploymentSummaryData $row): bool => in_array($row->status, $running, true)))[0] ?? $active;
-        $steps = $current === null ? [] : array_values(Deployment::query()
+        $current = array_values(array_filter($rows, static fn (DeploymentSummaryData $row): bool => in_array($row->status, $running, true)))[0] ?? $active ?? $rows[0] ?? null;
+        $deployment = $current === null ? null : Deployment::query()
             ->where('service_instance_id', $instance->id)
             ->where('public_id', $current->id)
-            ->first()
-            ?->steps()->orderBy('id')->get()
+            ->first();
+        $steps = $deployment === null ? [] : array_values($deployment->steps()->orderBy('id')->get()
             ->map(static fn (DeploymentStep $step): DeploymentStepData => DeploymentStepData::fromStep($step))
-            ->all() ?? []);
+            ->all());
 
         return response()->json([
             'active' => $active,
             'deployments' => $rows,
-            'current' => $current === null ? null : ['id' => $current->id, 'steps' => $steps],
+            'current' => $current === null ? null : [
+                'id' => $current->id,
+                'steps' => $steps,
+                'expectsRelease' => $deployment !== null && ReleaseStep::expected($deployment),
+            ],
             // A stopped service starts from its header (D68), not with Redeploy.
             'canDeploy' => $instance->stopped_at === null && Gate::allows('deploy', $environment),
         ]);

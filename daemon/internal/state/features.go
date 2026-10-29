@@ -104,8 +104,13 @@ const (
 // service's domains with its "stopped" page (D68).
 const FeatureServiceStop DaemonFeature = "serviceStop"
 
+// FeaturePhpExtensions announces BuilderSpec.phpExtensions and
+// BuildSummary.phpExtensions: PHP database drivers added to Railpack builds
+// (docs/04 §3.1). Older daemons refuse the field (strict decoding).
+const FeaturePhpExtensions DaemonFeature = "phpExtensions"
+
 // SupportedFeatures is what this launchroomd announces in every report.
-var SupportedFeatures = []DaemonFeature{FeatureDNSProviders, FeatureLinkProbe, FeatureShipLogs, FeaturePointInTime, FeatureVerifyRestore, FeatureStopSpec, FeatureGitProviders, FeatureControlPlaneURL, FeatureCronSchedule, FeatureGeneratedDockerfile, FeatureClientCertificates, FeatureMongoClickHouse, FeaturePreparedVolumes, FeatureRequestAnalytics, FeatureContainerInspection, FeatureInventory, FeatureConfigFiles, FeatureServiceStop}
+var SupportedFeatures = []DaemonFeature{FeatureDNSProviders, FeatureLinkProbe, FeatureShipLogs, FeaturePointInTime, FeatureVerifyRestore, FeatureStopSpec, FeatureGitProviders, FeatureControlPlaneURL, FeatureCronSchedule, FeatureGeneratedDockerfile, FeatureClientCertificates, FeatureMongoClickHouse, FeaturePreparedVolumes, FeatureRequestAnalytics, FeatureContainerInspection, FeatureInventory, FeatureConfigFiles, FeatureServiceStop, FeaturePhpExtensions}
 
 // maxFeatures bounds Report.host.features.
 const maxFeatures = 64

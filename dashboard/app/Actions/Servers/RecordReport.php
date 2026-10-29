@@ -342,7 +342,7 @@ final readonly class RecordReport
             if ($placement->phase !== $phase || $placement->health !== $health || $placement->message !== $message || ($placement->issue['kind'] ?? null) !== ($issue['kind'] ?? null)) {
                 $changed[] = $placement->deployment_id;
                 $instances[] = $placement->service_instance_id;
-            } elseif ($placement->pull != $pull || $placement->probe != $probe) { // jsonb doesn't keep key order
+            } elseif ($placement->pull != $pull || $this->probeMoved($placement->probe, $probe)) { // jsonb doesn't keep key order
                 // Only the pull moved: open deployment pages refetch, nothing to advance.
                 $progressed[] = $placement->deployment_id;
             }
@@ -374,6 +374,21 @@ final readonly class RecordReport
     }
 
     /**
+     * Whether a health probe moved in a way worth a refetch: its attempts,
+     * failures or error. `checkedAt` changes on every report of a running
+     * workload, so on its own it is not progress.
+     *
+     * @param  array<string, mixed>|null  $before
+     * @param  array<string, mixed>|null  $after
+     */
+    private function probeMoved(?array $before, ?array $after): bool
+    {
+        unset($before['checkedAt'], $after['checkedAt']);
+
+        return $before != $after;
+    }
+
+    /**
      * Pull progress moved without a phase change (docs/04 §11 "Pulls"): a
      * realtime nudge for open deployment pages, which refetch the step.
      *
@@ -391,6 +406,12 @@ final readonly class RecordReport
             ->get();
 
         foreach ($deployments as $deployment) {
+            // Only a rollout in flight has progress to show; a finished
+            // deployment's nudges would only cause refetches.
+            if (! $deployment->status->isInFlight()) {
+                continue;
+            }
+
             broadcast(new DeploymentUpdated(
                 $deployment->public_id,
                 $deployment->environment->public_id,

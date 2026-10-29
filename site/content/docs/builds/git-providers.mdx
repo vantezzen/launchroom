@@ -111,9 +111,11 @@ https://codeberg.org/owner/app
 https://git.example.com/app.git
 ```
 
+If one of your connections already reaches the repository, for example through the GitHub App, the pasted URL uses that connection: private repositories work, and the status line says whether pushes deploy right away. Otherwise launchroom treats it as a public repository.
+
 The `https://` is optional, and browser addresses such as `…/owner/app/tree/dev` work too (launchroom picks the branch from them). launchroom checks the repository over git's HTTPS protocol, shows its default branch and the number of branches, and reads nothing else. **Continue** opens the same "We looked at…" step as a connected repository, with the detected build plan, before anything is created.
 
-- Only HTTPS and only public repositories. For private repositories, connect the provider or add the repository over SSH below.
+- Only HTTPS. A private repository needs a connection: launchroom tells you to connect the provider, or to install the GitHub App on that account or repository.
 - Pushes are picked up by polling: launchroom checks the tracked branch for new commits every minute. It asks the git server for that one branch, so polling stays small even on large repositories, and it waits when a server asks it to slow down.
 - Previews and deploy statuses need a connected provider. On GitHub, [connect the GitHub App](#github) for instant deploys and pull request previews.
 - If you paste the repository of an app launchroom has a template for, such as Umami or Plausible, New project recommends the template. It sets up the database and secrets for you. **Build from source** imports the repository instead.

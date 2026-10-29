@@ -4,13 +4,14 @@ declare(strict_types=1);
 
 namespace App\Data\Canvas;
 
+use App\Data\Specs\EnvironmentSpec;
 use App\Enums\DeploymentStatus;
 use App\Enums\ServiceKind;
 use App\Models\Connection;
 use App\Models\Deployment;
 use App\Models\ServiceInstance;
 use App\Models\User;
-use App\Support\Services\ServiceProcesses;
+use App\Queries\ServiceProcesses;
 use App\Support\Services\StagedForService;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\Gate;
@@ -42,7 +43,7 @@ final class ServiceControlsData extends Data
         public int $dependents,
     ) {}
 
-    public static function for(ServiceInstance $instance, User $user, StagedForService $staged): self
+    public static function for(ServiceInstance $instance, User $user, StagedForService $staged, ?EnvironmentSpec $current = null): self
     {
         $instance->loadMissing(['service', 'environment']);
         $environment = $instance->environment;
@@ -56,7 +57,7 @@ final class ServiceControlsData extends Data
             stoppedAt: $instance->stopped_at,
             stoppedBy: is_string($stoppedBy) ? $stoppedBy : null,
             versioned: in_array($service->kind, [ServiceKind::App, ServiceKind::Image], true),
-            staged: $staged->has($instance),
+            staged: $staged->has($instance, $current),
             deploying: Deployment::query()
                 ->where('service_instance_id', $instance->id)
                 ->whereIn('status', DeploymentStatus::values([DeploymentStatus::Queued, ...DeploymentStatus::inFlight()]))

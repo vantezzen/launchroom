@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Builds;
 
 use App\Data\Git\RepositoryRef;
+use App\Data\Protocol\V1\PhpExtension;
 use App\Data\Services\BuildSettings;
 use App\Data\Services\GitSource;
 use App\Data\Specs\EnvironmentSpec;
@@ -21,6 +22,7 @@ use App\Scheduling\BuildRoutingFailed;
 use App\Services\Dockerfiles\GeneratedDockerfiles;
 use App\Services\Git\GitProviders;
 use App\Support\BuildKey;
+use App\Support\Builds\PhpExtensions;
 use App\Support\PublicId;
 use App\Support\Variables\SecretTaint;
 
@@ -70,7 +72,7 @@ final readonly class BuildTasks
             throw DomainRuleViolation::on('build', $e->getMessage());
         }
 
-        $inputs = $this->inputs($deployment->team_id, $service->id, $environment->environment->id, $service->build, $this->buildArgs($environment, $service), $source, $sha, $deployment->public_id, $platform, $deployment->git_ref);
+        $inputs = $this->inputs($deployment->team_id, $service->id, $environment->environment->id, $service->build, $this->buildArgs($environment, $service), $source, $sha, $deployment->public_id, $platform, $deployment->git_ref, phpExtensions: $service->phpExtensions);
         $keys = BuildKey::buildScopedKeys($environment, $service);
         $sticky = Deployment::query()
             ->where('service_instance_id', $deployment->service_instance_id)
@@ -99,7 +101,7 @@ final readonly class BuildTasks
      */
     public function plan(ServiceInstance $instance, EnvironmentSpec $environment, ServiceSpec $service, GitSource $source, string $sha): DaemonTask
     {
-        $inputs = $this->inputs($instance->team_id, $service->id, $environment->environment->id, $service->build, $this->buildArgs($environment, $service), $source, $sha, null, $this->routing->teamPlatform($instance->team_id));
+        $inputs = $this->inputs($instance->team_id, $service->id, $environment->environment->id, $service->build, $this->buildArgs($environment, $service), $source, $sha, null, $this->routing->teamPlatform($instance->team_id), phpExtensions: $service->phpExtensions);
         $keys = BuildKey::buildScopedKeys($environment, $service);
 
         return $this->create(
@@ -214,11 +216,12 @@ final readonly class BuildTasks
 
     /**
      * @param  list<string>  $buildArgs
+     * @param  list<PhpExtension>  $phpExtensions
      * @return array{spec: array<string, mixed>, seal: array<string, mixed>}
      *
      * @throws DomainRuleViolation
      */
-    private function inputs(int $teamId, string $serviceId, string $environmentId, BuildSettings $build, array $buildArgs, GitSource $source, string $sha, ?string $deploymentId, string $platform, ?string $ref = null, ?string $dockerfile = null): array
+    private function inputs(int $teamId, string $serviceId, string $environmentId, BuildSettings $build, array $buildArgs, GitSource $source, string $sha, ?string $deploymentId, string $platform, ?string $ref = null, ?string $dockerfile = null, array $phpExtensions = []): array
     {
         $cloneUrl = $this->cloneUrl($teamId, $source);
 
@@ -239,7 +242,10 @@ final readonly class BuildTasks
                 ...($source->provider === GitSource::PROVIDER_GIT && ! $source->isUnconnectedPlainGit() ? $this->fallbackRef($ref, $source) : []),
             ],
             ...($source->rootDirectory === '' ? [] : ['rootDir' => $this->relPath($source->rootDirectory, 'source.rootDirectory')]),
-            'builder' => $this->builder($build, $dockerfile ?? $this->generatedDockerfile($teamId, $serviceId, $build)),
+            'builder' => [
+                ...$this->builder($build, $dockerfile ?? $this->generatedDockerfile($teamId, $serviceId, $build)),
+                ...$this->phpExtensions($phpExtensions),
+            ],
             ...($buildArgs === [] ? [] : ['buildArgs' => $buildArgs]),
             'platform' => $platform,
             'cacheKey' => strtolower($serviceId),
@@ -323,6 +329,31 @@ final readonly class BuildTasks
         }
 
         return $builder;
+    }
+
+    /**
+     * PHP database drivers for the connected databases (docs/04 §3.1): every
+     * builder kind carries them (Dockerfile builds only warn). Checked against
+     * the allow-list again: a name launchroomd refuses would break its lease.
+     *
+     * @param  list<PhpExtension>  $extensions
+     * @return array{phpExtensions?: list<array{name: string, for: string}>}
+     *
+     * @throws DomainRuleViolation
+     */
+    private function phpExtensions(array $extensions): array
+    {
+        $list = [];
+
+        foreach ($extensions as $extension) {
+            if (! in_array($extension->name, PhpExtensions::NAMES, true) || ! in_array($extension->for, PhpExtensions::ENGINES, true) || isset($list[$extension->name])) {
+                throw DomainRuleViolation::on('build.phpExtensions', "{$extension->name} is not a PHP extension launchroom adds.");
+            }
+
+            $list[$extension->name] = ['name' => $extension->name, 'for' => $extension->for];
+        }
+
+        return $list === [] ? [] : ['phpExtensions' => array_values(array_slice($list, 0, 8))];
     }
 
     /**

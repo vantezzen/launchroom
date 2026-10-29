@@ -2,12 +2,12 @@ import { Form, Link } from '@inertiajs/react';
 import {
     ArrowUpRight,
     Check,
-    LoaderCircle,
     RotateCcw,
     Sparkles,
     TriangleAlert,
 } from 'lucide-react';
 import type { ReactNode } from 'react';
+import { ProgressRing } from '@/components/progress-ring';
 import { CopyValue } from '@/components/copy-value';
 import { MetaLine } from '@/components/patterns/meta-line';
 import { Status } from '@/components/status';
@@ -295,10 +295,7 @@ export function UpdateHero(
                 <HeroCard
                     icon={
                         <HeroIcon tone="progress">
-                            <LoaderCircle
-                                aria-hidden="true"
-                                className="size-5 motion-safe:animate-spin"
-                            />
+                            <ProgressRing tone="current" className="size-5" />
                         </HeroIcon>
                     }
                     title={

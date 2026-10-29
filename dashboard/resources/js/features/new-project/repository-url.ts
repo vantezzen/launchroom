@@ -94,7 +94,7 @@ export function parseRepositoryUrl(input: string): ParsedRepositoryUrl {
 
     if (twoSegments) {
         parts = parts.slice(0, 2);
-    } else if (host === 'gitlab.com' && parts.includes('-')) {
+    } else if (parts.includes('-')) {
         parts = parts.slice(0, parts.indexOf('-'));
     }
 

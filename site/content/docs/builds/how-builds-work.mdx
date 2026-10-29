@@ -49,6 +49,21 @@ Presets are versioned and compose with Railpack instead of replacing it.
 
 Railpack covers the rest, including Go, Bun, Deno, Ruby and other Node, Python and PHP apps. Rails 7.1 and later ship a production Dockerfile, which launchroom uses.
 
+### PHP database drivers
+
+A PHP app only gets the database drivers its `composer.json` asks for. An app written for SQLite has no `ext-pdo_pgsql`, so on Postgres it fails with "could not find driver". launchroom knows which databases you connected, so it adds their drivers to the build for you, for Laravel and any other PHP app that Railpack builds:
+
+| Connected database | PHP extension |
+|---|---|
+| PostgreSQL | `pdo_pgsql` |
+| MySQL | `pdo_mysql` |
+| Redis, Valkey | `redis` |
+| MongoDB | `mongodb` |
+
+Your repository stays as it is. The build log and the detected panel show what was added, for example "Adds PHP extensions: pdo_pgsql (for postgres)". Connecting a new database therefore rebuilds the app, and the staged changes say why: "adds the PostgreSQL driver (pdo_pgsql)". A worker or cron runs its app's image, so its connections count for the app.
+
+If the app builds from your own Dockerfile, install the extensions there (for example with `install-php-extensions pdo_pgsql`). launchroom shows a warning naming the ones it would need.
+
 ### The Next.js adapter
 
 On Next.js 16.2 and later, the Next.js preset injects the `@vantezzen/launchroom-next-adapter` deployment adapter without changing your repository. It builds Next's standalone output, ties static assets to the deployment, and starts the app with `node .next/standalone/server.js`. The image contains only the standalone output and the Node toolchain. In launchroom's tests this made it about a third smaller than `next start`. The build panel shows what the adapter found: routes, middleware, image optimization and ISR routes. If your `next.config` sets its own `adapterPath`, yours wins. Remove the decision chip to build with `next start` instead.

@@ -1,0 +1,1 @@
+Kept so the directory exists in the checkout (go:embed skips dotfiles).

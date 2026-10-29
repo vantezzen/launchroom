@@ -1,5 +1,5 @@
-import { LoaderCircle } from 'lucide-react';
 import { useSyncExternalStore } from 'react';
+import { ProgressRing } from '@/components/progress-ring';
 import { connectionState, subscribeConnection } from '@/lib/connection';
 import type { ConnectionState } from '@/lib/connection';
 
@@ -28,10 +28,7 @@ export function ReconnectBanner() {
         >
             {state === 'reconnecting' && (
                 <div className="pointer-events-auto flex max-w-full animate-enter items-center gap-2 rounded-full border bg-popover py-1.5 pr-3.5 pl-2.5 type-label text-foreground shadow-float">
-                    <LoaderCircle
-                        aria-hidden="true"
-                        className="size-4 shrink-0 text-status-progress motion-safe:animate-spin"
-                    />
+                    <ProgressRing className="size-4 shrink-0" />
                     <span className="truncate">
                         Reconnecting to launchroom…
                     </span>

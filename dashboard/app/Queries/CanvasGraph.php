@@ -10,6 +10,7 @@ use App\Data\Canvas\CanvasPositionData;
 use App\Data\Canvas\DetectedPlanData;
 use App\Data\Canvas\PlacementIssueData;
 use App\Data\Specs\ChangeItem;
+use App\Data\Specs\EnvironmentSpec;
 use App\Data\Specs\StagedChanges;
 use App\Enums\ChangeEffect;
 use App\Enums\DomainKind;
@@ -40,9 +41,10 @@ final readonly class CanvasGraph
     ) {}
 
     /**
+     * @param  EnvironmentSpec|null  $current  this environment's current spec, when the caller already built it
      * @return array{nodes: list<CanvasNodeData>, edges: list<CanvasEdgeData>}
      */
-    public function for(Environment $environment): array
+    public function for(Environment $environment, ?EnvironmentSpec $current = null): array
     {
         $environment->loadMissing(['project', 'lastAppliedRevision', 'canvasLayout']);
 
@@ -54,7 +56,7 @@ final readonly class CanvasGraph
 
         $latest = self::latestDeployments($instances);
         $placements = self::activePlacements($instances);
-        $changes = SpecDiff::between($environment->lastAppliedRevision?->spec, $this->currentSpec->get($environment));
+        $changes = SpecDiff::between($environment->lastAppliedRevision?->spec, $current ?? $this->currentSpec->get($environment));
         $positions = $environment->canvasLayout instanceof CanvasLayout ? $environment->canvasLayout->positions : [];
         $backups = $this->backups->forEnvironment($environment);
 

@@ -36,6 +36,7 @@ test('build, plan, failed-build and run_once completions decode into the Data mi
         ->and($plan->plan instanceof Optional ? null : $plan->plan?->summary->releaseCommand)->toBe(['php', 'artisan', 'migrate', '--force'])
         ->and($plan->plan instanceof Optional ? null : $plan->plan?->summary->processes[0]->args)->toBe(['php', 'artisan', 'horizon'])
         ->and($plan->plan instanceof Optional ? null : $plan->plan?->summary->runtimeEnv)->toBe(['RAILPACK_SKIP_MIGRATIONS' => 'true'])
+        ->and($plan->plan instanceof Optional ? null : $plan->plan?->summary->phpExtensions[0]->name)->toBe('pdo_pgsql')
         ->and($failed->failure instanceof Optional ? null : $failed->failure?->class)->toBe('build_error')
         ->and($failed->failure instanceof Optional ? null : $failed->failure?->hints[0]->code)->toBe('npm-ci-lockfile')
         ->and($failed->failure instanceof Optional ? null : $failed->failure?->summary?->port)->toBe(3000)
@@ -95,7 +96,7 @@ test('plan and run_once lease fixtures round-trip through the PHP task document'
 
     expect(ProtocolSchemas::errors('task-lease', $encoded))->toBe([])
         ->and(json_decode($encoded, true))->toEqual(json_decode(taskFixture($fixture), true));
-})->with(['task-lease.plan', 'task-lease.run-once', 'task-lease.build']);
+})->with(['task-lease.plan', 'task-lease.plan-php', 'task-lease.run-once', 'task-lease.build']);
 
 test('step-grouped build log lines are accepted', function (): void {
     $batch = LogBatch::validateAndCreate(['apiVersion' => 'launchroom.vantezzen.io/v1', 'kind' => 'LogBatch', 'chunks' => [[

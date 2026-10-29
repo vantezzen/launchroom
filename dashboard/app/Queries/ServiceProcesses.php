@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Support\Services;
+namespace App\Queries;
 
 use App\Enums\ServerRole;
 use App\Enums\ServerStatus;

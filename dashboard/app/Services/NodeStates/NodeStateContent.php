@@ -241,7 +241,7 @@ final readonly class NodeStateContent
             health: $port === null ? null : HealthSpec::fromSettings($effective->healthcheck),
             capabilities: $source instanceof DatabaseSource
                 ? $this->engines->for($source->engine)->capabilities()
-                : ($spec->deploy->capabilities === [] ? null : array_values(array_intersect($spec->deploy->capabilities, BlueprintValidator::CAPABILITIES))),
+                : $this->appCapabilities($spec->deploy->capabilities, $deployment),
             mounts: $mounts === [] ? null : $mounts,
             restart: $schedule !== null ? 'no' : 'unless-stopped',
             drainUntil: $placement->role === WorkloadRole::Draining && $placement->drain_until !== null
@@ -602,5 +602,27 @@ final readonly class NodeStateContent
         }
 
         return array_values($groups);
+    }
+
+    /**
+     * Capabilities of an app workload: the service's own (within the
+     * allow-list), plus NET_BIND_SERVICE for images Railpack built with its
+     * PHP provider. Their FrankenPHP binary carries that file capability, and
+     * with every capability dropped the kernel refuses to exec it ("Operation
+     * not permitted"), so the app could never start (docs/04 §3.1).
+     *
+     * @param  list<string>  $requested
+     * @return list<string>|null
+     */
+    private function appCapabilities(array $requested, Deployment $deployment): ?array
+    {
+        $capabilities = array_values(array_intersect($requested, BlueprintValidator::CAPABILITIES));
+        $summary = $deployment->plan['summary'] ?? null;
+
+        if (is_array($summary) && ($summary['builder'] ?? null) === 'railpack' && ($summary['provider'] ?? null) === 'php' && ! in_array('NET_BIND_SERVICE', $capabilities, true)) {
+            $capabilities[] = 'NET_BIND_SERVICE';
+        }
+
+        return $capabilities === [] ? null : $capabilities;
     }
 }

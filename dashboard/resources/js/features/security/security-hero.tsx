@@ -1,23 +1,23 @@
-import { ShieldAlert, ShieldCheck } from "lucide-react";
-import type { ReactNode } from "react";
-import { formatCompact } from "@/components/charts/format";
-import { Sparkline } from "@/components/charts/sparkline";
-import { Meter } from "@/components/charts/usage-meter";
-import { MetaLine } from "@/components/patterns/meta-line";
-import { StatusIcon } from "@/components/status";
-import type { StatusState } from "@/components/status";
-import { relativeTime } from "@/components/time-ago";
-import { delta } from "@/features/metrics/format";
-import { cn } from "@/lib/utils";
-import { card, plural } from "./format";
-import type { ActionGroup } from "./shape";
+import { ShieldAlert, ShieldCheck } from 'lucide-react';
+import type { ReactNode } from 'react';
+import { formatCompact } from '@/components/charts/format';
+import { Sparkline } from '@/components/charts/sparkline';
+import { Meter } from '@/components/charts/usage-meter';
+import { MetaLine } from '@/components/patterns/meta-line';
+import { StatusIcon } from '@/components/status';
+import type { StatusState } from '@/components/status';
+import { relativeTime } from '@/components/time-ago';
+import { delta } from '@/features/metrics/format';
+import { cn } from '@/lib/utils';
+import { card, plural } from './format';
+import type { ActionGroup } from './shape';
 
 type PageData = App.Data.Security.SecurityPageData;
 
 const RANGE_WORDS: Record<string, string> = {
-    "24h": "in the last 24 hours",
-    "7d": "in the last 7 days",
-    "30d": "in the last 30 days",
+    '24h': 'in the last 24 hours',
+    '7d': 'in the last 7 days',
+    '30d': 'in the last 30 days',
 };
 
 /**
@@ -44,17 +44,17 @@ export function SecurityHero({
     return (
         <section
             aria-label="Security status"
-            data-security-hero={needs > 0 ? "action" : "clear"}
-            className={cn(card, "overflow-hidden")}
+            data-security-hero={needs > 0 ? 'action' : 'clear'}
+            className={cn(card, 'overflow-hidden')}
         >
             <div className="flex items-center gap-4 px-5 py-5 sm:gap-5 sm:px-6 sm:py-6">
                 <span
                     aria-hidden="true"
                     className={cn(
-                        "flex size-12 shrink-0 items-center justify-center rounded-[14px] sm:size-14",
+                        'flex size-12 shrink-0 items-center justify-center rounded-[14px] sm:size-14',
                         needs > 0
-                            ? "bg-status-error-soft text-status-error"
-                            : "bg-status-ok-soft text-status-ok",
+                            ? 'bg-status-error-soft text-status-error'
+                            : 'bg-status-ok-soft text-status-ok',
                     )}
                 >
                     {needs > 0 ? (
@@ -66,16 +66,16 @@ export function SecurityHero({
                 <div className="flex min-w-0 flex-col gap-1">
                     <p className="type-title text-[22px] leading-7 sm:text-[26px] sm:leading-8">
                         {needs > 0
-                            ? `${plural(needs, "vulnerability", "vulnerabilities")} ${needs === 1 ? "needs" : "need"} you`
-                            : "Nothing needs you"}
+                            ? `${plural(needs, 'vulnerability', 'vulnerabilities')} ${needs === 1 ? 'needs' : 'need'} you`
+                            : 'Nothing needs you'}
                     </p>
                     <MetaLine className="type-body text-muted-foreground">
-                        {needs > 0 ? `In ${plural(services, "service")}` : null}
+                        {needs > 0 ? `In ${plural(services, 'service')}` : null}
                         {exploited > 0 ? (
                             <span className="inline-flex items-center gap-1.5 text-foreground">
                                 <StatusIcon state="warning" />
                                 {exploited === 1
-                                    ? "One is known to be exploited"
+                                    ? 'One is known to be exploited'
                                     : `${exploited} are known to be exploited`}
                             </span>
                         ) : null}
@@ -95,9 +95,9 @@ export function SecurityHero({
 }
 
 const FEED_WORDS: Record<string, string> = {
-    osv: "Vulnerability checks",
-    kev: "Known exploited list",
-    eol: "Release cycles",
+    osv: 'Vulnerability checks',
+    kev: 'Known exploited list',
+    eol: 'Release cycles',
 };
 
 /**
@@ -118,8 +118,8 @@ function Protections({ data }: { data: PageData }) {
         return {
             key: feed.feed,
             label: FEED_WORDS[feed.feed] ?? feed.label,
-            state: !feed.enabled ? "idle" : failing ? "warning" : "active",
-            word: !feed.enabled ? "Off" : failing ? "Unreachable" : "On",
+            state: !feed.enabled ? 'idle' : failing ? 'warning' : 'active',
+            word: !feed.enabled ? 'Off' : failing ? 'Unreachable' : 'On',
         };
     });
     const s = data.summary;
@@ -127,28 +127,28 @@ function Protections({ data }: { data: PageData }) {
     const edges = data.firewall.edges;
 
     rows.push({
-        key: "waf",
-        label: "Web firewall",
+        key: 'waf',
+        label: 'Web firewall',
         state:
             edges.length > 0
-                ? "warning"
+                ? 'warning'
                 : s.routedServices === 0
-                  ? "idle"
+                  ? 'idle'
                   : s.protectedServices > 0
-                    ? "active"
-                    : "warning",
+                    ? 'active'
+                    : 'warning',
         word:
             edges.length > 0
-                ? edges.every((edge) => edge.state === "unsupported")
-                    ? "Needs update"
-                    : "Not running"
+                ? edges.every((edge) => edge.state === 'unsupported')
+                    ? 'Needs update'
+                    : 'Not running'
                 : s.routedServices === 0
-                  ? "Ready"
+                  ? 'Ready'
                   : s.protectedServices > 0
-                    ? "On"
+                    ? 'On'
                     : s.watchingServices > 0
-                      ? "Log only"
-                      : "Off",
+                      ? 'Log only'
+                      : 'Off',
     });
 
     return (
@@ -175,7 +175,7 @@ function Protections({ data }: { data: PageData }) {
 
 /** "Checked 28 minutes ago", or why the checks aren't current. */
 function CheckedLine({ data }: { data: PageData }) {
-    const osv = data.feeds.find((feed) => feed.feed === "osv");
+    const osv = data.feeds.find((feed) => feed.feed === 'osv');
 
     if (data.checksOff || !osv?.enabled) {
         return <span>Vulnerability checks are off</span>;
@@ -197,7 +197,7 @@ function CheckedLine({ data }: { data: PageData }) {
         <span>
             {data.checkedAt
                 ? `Checked ${relativeTime(data.checkedAt)}`
-                : "Checking packages for the first time"}
+                : 'Checking packages for the first time'}
         </span>
     );
 }
@@ -249,7 +249,7 @@ function PackagesMetric({ data }: { data: PageData }) {
             <Metric
                 label="Packages watched"
                 value="…"
-                hint={`Reading packages of ${plural(s.pendingInventories, "image")}`}
+                hint={`Reading packages of ${plural(s.pendingInventories, 'image')}`}
             />
         );
     }
@@ -257,13 +257,13 @@ function PackagesMetric({ data }: { data: PageData }) {
     return (
         <Metric
             label="Packages watched"
-            value={s.packages.toLocaleString("en")}
+            value={s.packages.toLocaleString('en')}
             hint={
                 <span className="inline-flex items-center gap-1.5">
                     {stale && <StatusIcon state="warning" />}
                     {s.pendingInventories > 0
-                        ? `In ${plural(s.servicesChecked, "service")}, reading ${plural(s.pendingInventories, "more image")}`
-                        : `In ${plural(s.servicesChecked, "service")}`}
+                        ? `In ${plural(s.servicesChecked, 'service')}, reading ${plural(s.pendingInventories, 'more image')}`
+                        : `In ${plural(s.servicesChecked, 'service')}`}
                 </span>
             }
         />
@@ -285,12 +285,12 @@ function BlockedMetric({ data, range }: { data: PageData; range: string }) {
                     </span>
                 ) : undefined
             }
-            hint={RANGE_WORDS[range] ?? ""}
+            hint={RANGE_WORDS[range] ?? ''}
             visual={
                 s.blocked > 0 ? (
                     <Sparkline
                         values={s.blockedSeries}
-                        label={`Attacks blocked ${RANGE_WORDS[range] ?? ""}`}
+                        label={`Attacks blocked ${RANGE_WORDS[range] ?? ''}`}
                         height={28}
                         area
                         min={0}
@@ -304,17 +304,17 @@ function BlockedMetric({ data, range }: { data: PageData; range: string }) {
 function ProtectedMetric({ data }: { data: PageData }) {
     const s = data.summary;
     let state: StatusState | null = null;
-    let hint = "No public services yet";
+    let hint = 'No public services yet';
 
     if (s.routedServices > 0) {
         if (s.watchingServices > 0) {
-            state = "warning";
+            state = 'warning';
             hint = `${s.watchingServices} only log attacks`;
         } else if (s.protectedServices < s.routedServices) {
             hint = `${s.routedServices - s.protectedServices} with the firewall off`;
         } else {
-            state = "active";
-            hint = "Every public service blocks attacks";
+            state = 'active';
+            hint = 'Every public service blocks attacks';
         }
     }
 

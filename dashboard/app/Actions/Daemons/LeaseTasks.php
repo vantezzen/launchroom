@@ -90,6 +90,8 @@ final readonly class LeaseTasks
                     // COALESCE: a missing `inspect` is NULL, and NOT (… OR NULL) would drop every other task.
                     $generated->whereRaw("NOT ((spec->'builder'->>'dockerfile') IS NOT NULL OR COALESCE(spec->>'inspect', '') = 'true' OR (spec->'probe') IS NOT NULL)");
                 }))
+                // PHP database drivers in a build spec (docs/04 §3.1): older daemons refuse the field.
+                ->when(! $server->supportsDaemonFeature(DaemonFeature::PhpExtensions), static fn (Builder $query) => $query->whereRaw("(spec->'builder'->'phpExtensions') IS NULL"))
                 ->where(fn (\Illuminate\Contracts\Database\Query\Builder $query) => $query->whereNull('deadline_at')->orWhere('deadline_at', '>', now()))
                 ->orderBy('id')
                 ->limit($request->max)

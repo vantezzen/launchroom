@@ -94,7 +94,9 @@ test('progress alone nudges open pages without advancing the deployment', functi
     Queue::assertNotPushed(AdvanceDeploymentJob::class);
     Queue::assertPushed(BroadcastEvent::class, fn (BroadcastEvent $job): bool => $job->event instanceof DeploymentUpdated
         && $job->event->deploymentId === $deployment->public_id
-        && $job->event->status === $deployment->status->value);
+        && $job->event->status === $deployment->status->value
+        // A progress nudge, not a new outcome: deploy toasts ignore it.
+        && ! $job->event->statusChanged);
 });
 
 test('the health deadline counts from the end of the pull', function (): void {
@@ -140,4 +142,22 @@ test('pull messages: the slowest server speaks, sizes in decimal units', functio
         ->and(PullProgressMessage::for([$placement('downloading', 5, 0)]))->toBe('Downloading image')
         ->and(PullProgressMessage::for([]))->toBeNull()
         ->and(PullProgressMessage::bytes(400_000))->toBe('< 1 MB');
+});
+
+test('a live deployment sends no nudges for routine health checks', function (): void {
+    [$server, $web, $placement] = pullingDeployment();
+    $w = $placement->workload_id;
+    $health = static fn (string $at): array => [$w => ['health' => ['state' => 'passing', 'consecutiveFailures' => 0, 'lastCheckedAt' => $at]]];
+
+    for ($i = 0; $i < 5 && pullDeploymentOf($web)->status !== DeploymentStatus::Active; $i++) {
+        Projects::report($server, 'healthy', fields: $health(now()->addSeconds($i)->utc()->format('Y-m-d\TH:i:s\Z')));
+    }
+
+    expect(pullDeploymentOf($web)->status)->toBe(DeploymentStatus::Active);
+    Queue::fake();
+
+    // Only the time of the last check moved: nothing for open pages or toasts.
+    Projects::report($server, 'healthy', fields: $health(now()->addMinute()->utc()->format('Y-m-d\TH:i:s\Z')));
+
+    Queue::assertNotPushed(BroadcastEvent::class, fn (BroadcastEvent $job): bool => $job->event instanceof DeploymentUpdated);
 });

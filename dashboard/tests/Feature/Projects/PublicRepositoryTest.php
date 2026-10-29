@@ -111,7 +111,7 @@ test('a missing or private repository is a calm problem, not an error', function
         ->getJson(route('projects.import.check-url', ['url' => 'github.com/acme/secret']))
         ->assertOk()
         ->assertJsonPath('branches', [])
-        ->assertJsonPath('problem', 'github.com doesn’t show this repository publicly. Check the URL, or connect your account for private repositories.');
+        ->assertJsonPath('problem', 'github.com doesn’t show acme/secret publicly. If it’s private, connect GitHub in Settings → Git.');
 });
 
 test('a host that asks to slow down is left alone for a while', function (): void {
@@ -231,4 +231,115 @@ test('the start page offers the templates and who may connect git', function ():
             ->where('canConnectGit', false)
             ->has('templates')
             ->has('categories'));
+});
+
+/*
+| A pasted URL that one of the team's connections reaches goes through that
+| connection: its row, branches and push delivery, never the public path.
+*/
+
+function prGitHub(Team $team, bool $private = true, bool $healthy = false): array
+{
+    $app = GitHubFake::app($team);
+
+    if ($healthy) {
+        $app->forceFill(['webhook_last_received_at' => now()->subMinutes(5)])->save();
+    }
+
+    $repository = GitHubFake::repository(GitHubFake::installation($app), 555, 'octo-org/Shop');
+    $repository->forceFill(['private' => $private])->save();
+
+    return [$app, $repository];
+}
+
+function prBranchesFake(): void
+{
+    Http::fake([
+        'https://api.github.com/app/installations/100/access_tokens' => GitHubFake::tokenResponse(),
+        'https://api.github.com/repos/octo-org/Shop/branches*' => Http::response([
+            ['name' => 'main', 'commit' => ['sha' => str_repeat('a', 40)], 'protected' => false],
+            ['name' => 'dev', 'commit' => ['sha' => str_repeat('b', 40)], 'protected' => false],
+        ]),
+    ]);
+}
+
+test('a private repository the GitHub app reaches is found through the app', function (): void {
+    [, $repository] = prGitHub($this->team);
+    prBranchesFake();
+
+    $this->actingAs($this->developer)
+        ->getJson(route('projects.import.check-url', ['url' => 'https://github.com/octo-org/shop.git']))
+        ->assertOk()
+        ->assertJson([
+            'problem' => null,
+            'private' => true,
+            'via' => 'your GitHub app',
+            'pushes' => 'polling',
+            'defaultBranch' => 'main',
+            'branches' => ['main', 'dev'],
+            'repository' => ['id' => $repository->public_id, 'provider' => 'github'],
+        ]);
+
+    Http::assertNotSent(fn (Request $request): bool => str_starts_with($request->url(), 'https://github.com/'));
+
+    // Continue hands back the same row as Import, nothing new is added.
+    $this->actingAs($this->developer)
+        ->postJson(route('projects.import.add-url'), ['url' => 'github.com/octo-org/shop'])
+        ->assertOk()
+        ->assertJsonPath('id', $repository->public_id);
+    expect(GitConnection::query()->count())->toBe(0);
+});
+
+test('an own public repository with healthy webhooks says pushes deploy right away', function (): void {
+    prGitHub($this->team, private: false, healthy: true);
+    prBranchesFake();
+
+    $this->actingAs($this->developer)
+        ->getJson(route('projects.import.check-url', ['url' => 'github.com/octo-org/shop/tree/dev']))
+        ->assertOk()
+        ->assertJson(['private' => false, 'pushes' => 'webhook', 'branch' => 'dev']);
+});
+
+test('a repository the app doesn’t cover is read publicly and polled', function (): void {
+    prGitHub($this->team);
+    Http::fake(['https://github.com/someone/public.git/git-upload-pack' => Http::response(...prLsRefs(['main' => $this->a]))]);
+
+    $this->actingAs($this->developer)
+        ->getJson(route('projects.import.check-url', ['url' => 'github.com/someone/public']))
+        ->assertOk()
+        ->assertJson(['repository' => null, 'pushes' => 'polling', 'problem' => null]);
+});
+
+test('a private repository nothing covers says how to get access', function (bool $hasApp, string $fix): void {
+    if ($hasApp) {
+        prGitHub($this->team);
+    }
+
+    Http::fake([
+        'https://github.com/acme/secret.git/git-upload-pack' => Http::response('', 404),
+        'https://github.com/acme/secret.git/info/refs*' => Http::response('', 404),
+    ]);
+
+    $this->actingAs($this->developer)
+        ->getJson(route('projects.import.check-url', ['url' => 'github.com/acme/secret']))
+        ->assertOk()
+        ->assertJsonPath('problem', "github.com doesn’t show acme/secret publicly. {$fix}");
+})->with([
+    'with the app' => [true, 'If it’s private, install your GitHub app on acme or give it access to this repository.'],
+    'without' => [false, 'If it’s private, connect GitHub in Settings → Git.'],
+]);
+
+test('another team’s connections are never used', function (): void {
+    $other = Team::factory()->create();
+    prGitHub($other);
+    Http::fake([
+        'https://github.com/octo-org/Shop.git/git-upload-pack' => Http::response('', 404),
+        'https://github.com/octo-org/Shop.git/info/refs*' => Http::response('', 404),
+    ]);
+
+    $this->actingAs($this->developer)
+        ->getJson(route('projects.import.check-url', ['url' => 'github.com/octo-org/Shop']))
+        ->assertOk()
+        ->assertJsonPath('repository', null)
+        ->assertJson(fn ($json) => $json->where('problem', fn (string $problem): bool => str_contains($problem, 'connect GitHub'))->etc());
 });

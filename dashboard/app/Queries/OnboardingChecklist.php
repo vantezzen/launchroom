@@ -49,35 +49,11 @@ final readonly class OnboardingChecklist
     public function for(User $user): OnboardingData
     {
         $settings = InstanceSettings::current();
-        // The session's user model may be partial (strict mode); read the team id fresh.
-        $teamId = User::query()->whereKey($user->id)->value('current_team_id');
-        $team = is_int($teamId) ? Team::query()->whereKey($teamId)->first() : null;
-        $server = Server::query()->where('is_control_plane', true)->orderBy('id')->first();
-        $app = $team instanceof Team ? GitHubApp::query()->where('team_id', $team->id)->orderBy('id')->first() : null;
-        $installation = $app instanceof GitHubApp ? GitHubInstallation::query()
-            ->where('github_app_id', $app->id)
-            ->whereNull('removed_at')
-            ->whereNull('suspended_at')
-            ->withCount('repositories')
-            ->orderBy('id')
-            ->first() : null;
+        ['team' => $team, 'server' => $server, 'app' => $app, 'installation' => $installation, 'recoveryKit' => $recoveryKit, 'projectCount' => $projectCount, 'confirmed' => $confirmed, 'steps' => $steps] = $this->state($user, $settings);
         $githubConnected = $installation instanceof GitHubInstallation;
-        $recoveryKit = RecoveryKitStatusData::fromSettings($settings, BackupDestination::forInstance() instanceof BackupDestination);
-        $projectCount = $team instanceof Team ? Project::query()->where('team_id', $team->id)->count() : 0;
         $ipv4 = ServerAddress::ipv4($server?->public_ipv4);
         $address = $ipv4 ?? ServerAddress::ipv6($server?->public_ipv6);
         $domainConfirmed = $settings->onboarding['domainConfirmed'] ?? null;
-        $confirmed = is_string($settings->apps_domain) && $settings->apps_domain !== ''
-            && is_array($domainConfirmed) && $domainConfirmed['domain'] === $settings->apps_domain;
-
-        $steps = $this->steps($settings, [
-            'server' => $server instanceof Server && $server->status === ServerStatus::Online,
-            'github' => $githubConnected,
-            // Done once the owner continued after the DNS check (saving alone isn't).
-            'domain' => $confirmed,
-            'backups' => ! $recoveryKit->needsAttention,
-            'project' => $projectCount > 0,
-        ]);
 
         return new OnboardingData(
             steps: $steps,
@@ -99,7 +75,7 @@ final readonly class OnboardingChecklist
             githubRepositories: is_numeric($installation?->getAttribute('repositories_count')) ? (int) $installation->getAttribute('repositories_count') : 0,
             canConnectGitHub: $team instanceof Team && Gate::forUser($user)->allows('create', [GitHubApp::class, $team]),
             recommendTwoFactor: $this->recommendTwoFactor($settings, $user),
-            appsDomainVerified: $confirmed ? ($domainConfirmed['verified'] ?? null) : null,
+            appsDomainVerified: $confirmed && is_array($domainConfirmed) ? ($domainConfirmed['verified'] ?? null) : null,
             smallServerHint: $team instanceof Team ? $this->smallServer->for($user, $team) : null,
         );
     }
@@ -124,7 +100,49 @@ final readonly class OnboardingChecklist
             return null;
         }
 
-        return $this->for($user)->progress;
+        // Only what the steps need: the rest of the checklist page (edge
+        // addresses, the small-server hint, …) would cost queries on every page.
+        $settings = InstanceSettings::current();
+
+        return $this->progress($settings, $this->state($user, $settings)['steps']);
+    }
+
+    /**
+     * What the steps are derived from, shared by the checklist page and the
+     * sidebar's progress so both always agree.
+     *
+     * @return array{team: Team|null, server: Server|null, app: GitHubApp|null, installation: GitHubInstallation|null, recoveryKit: RecoveryKitStatusData, projectCount: int, confirmed: bool, steps: list<OnboardingStepData>}
+     */
+    private function state(User $user, InstanceSettings $settings): array
+    {
+        // The session's user model may be partial (strict mode); read the team id fresh.
+        $teamId = User::query()->whereKey($user->id)->value('current_team_id');
+        $team = is_int($teamId) ? Team::query()->whereKey($teamId)->first() : null;
+        $server = Server::query()->where('is_control_plane', true)->orderBy('id')->first();
+        $app = $team instanceof Team ? GitHubApp::query()->where('team_id', $team->id)->orderBy('id')->first() : null;
+        $installation = $app instanceof GitHubApp ? GitHubInstallation::query()
+            ->where('github_app_id', $app->id)
+            ->whereNull('removed_at')
+            ->whereNull('suspended_at')
+            ->withCount('repositories')
+            ->orderBy('id')
+            ->first() : null;
+        $recoveryKit = RecoveryKitStatusData::fromSettings($settings, BackupDestination::forInstance() instanceof BackupDestination);
+        $projectCount = $team instanceof Team ? Project::query()->where('team_id', $team->id)->count() : 0;
+        $domainConfirmed = $settings->onboarding['domainConfirmed'] ?? null;
+        $confirmed = is_string($settings->apps_domain) && $settings->apps_domain !== ''
+            && is_array($domainConfirmed) && $domainConfirmed['domain'] === $settings->apps_domain;
+
+        $steps = $this->steps($settings, [
+            'server' => $server instanceof Server && $server->status === ServerStatus::Online,
+            'github' => $installation instanceof GitHubInstallation,
+            // Done once the owner continued after the DNS check (saving alone isn't).
+            'domain' => $confirmed,
+            'backups' => ! $recoveryKit->needsAttention,
+            'project' => $projectCount > 0,
+        ]);
+
+        return ['team' => $team, 'server' => $server, 'app' => $app, 'installation' => $installation, 'recoveryKit' => $recoveryKit, 'projectCount' => $projectCount, 'confirmed' => $confirmed, 'steps' => $steps];
     }
 
     /**

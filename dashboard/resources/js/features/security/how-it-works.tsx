@@ -1,11 +1,11 @@
-import { ExternalLink } from "lucide-react";
+import { ExternalLink } from 'lucide-react';
 import {
     Dialog,
     DialogContent,
     DialogDescription,
     DialogTitle,
-} from "@/components/ui/dialog";
-import { useDocsUrl } from "@/features/settings/settings-card";
+} from '@/components/ui/dialog';
+import { useDocsUrl } from '@/features/settings/settings-card';
 
 /**
  * "How it works" (docs/22 §9.7): the page's only explanation, two or
@@ -23,29 +23,29 @@ export function HowItWorks({
     const docs = useDocsUrl();
     const sections = [
         {
-            title: "Vulnerability checks",
-            body: "launchroom reads the packages and runtimes of every live image when it is deployed. Every 6 hours it asks OSV which published advisories affect those versions, and checks CISA’s list of known exploited vulnerabilities and endoflife.date once a day. OSV receives package names and versions only, never project, service or user names.",
-            link: ["security/vulnerability-checks", "Vulnerability checks"],
+            title: 'Vulnerability checks',
+            body: 'launchroom reads the packages and runtimes of every live image when it is deployed. Every 6 hours it asks OSV which published advisories affect those versions, and checks CISA’s list of known exploited vulnerabilities and endoflife.date once a day. OSV receives package names and versions only, never project, service or user names.',
+            link: ['security/vulnerability-checks', 'Vulnerability checks'],
         },
         {
-            title: "Action needed and Worth knowing",
-            body: "A finding needs action when the vulnerable code can run while your service handles requests, the advisory is high or critical with a fix, and the service is public, or when it is known to be exploited. Everything else is listed under Worth knowing and never sends a notification.",
-            link: ["security/alert-levels", "Alert levels"],
+            title: 'Action needed and Worth knowing',
+            body: 'A finding needs action when the vulnerable code can run while your service handles requests, the advisory is high or critical with a fix, and the service is public, or when it is known to be exploited. Everything else is listed under Worth knowing and never sends a notification.',
+            link: ['security/alert-levels', 'Alert levels'],
         },
         {
-            title: "Web firewall",
-            body: `${ruleSet ?? "The OWASP Core Rule Set"} checks requests at the edge before they reach your services. Every service blocks attacks by default and can switch to Log only or Off. A blocked request shows a reference you can turn into an exception. It checks the first 32 KiB of each request body (more if you choose) and the first 256 fields; anything after that reaches your app unchecked, so treat it as a filter against common attacks, not a replacement for fixing a vulnerable app.`,
-            link: ["security/web-firewall", "Web firewall"],
+            title: 'Web firewall',
+            body: `${ruleSet ?? 'The OWASP Core Rule Set'} checks requests at the edge before they reach your services. Every service blocks attacks by default and can switch to Log only or Off. A blocked request shows a reference you can turn into an exception. It checks the first 32 KiB of each request body (more if you choose) and the first 256 fields; anything after that reaches your app unchecked, so treat it as a filter against common attacks, not a replacement for fixing a vulnerable app.`,
+            link: ['security/web-firewall', 'Web firewall'],
         },
         {
-            title: "Investigations",
-            body: "An investigation reads what changed in the running containers and which processes run, then adds the firewall’s results, the requests and what the service can reach. A clean result can’t prove nothing happened, because someone who got in can remove their traces.",
-            link: ["security/investigations", "Investigations"],
+            title: 'Investigations',
+            body: 'An investigation reads what changed in the running containers and which processes run, then adds the firewall’s results, the requests and what the service can reach. A clean result can’t prove nothing happened, because someone who got in can remove their traces.',
+            link: ['security/investigations', 'Investigations'],
         },
         {
-            title: "Your data",
-            body: "For requests the firewall blocks, launchroom keeps the client’s network (a /24 or /48), never the full address, for 7 days. Nothing else is stored per request.",
-            link: ["security/privacy-and-data", "Privacy and data"],
+            title: 'Your data',
+            body: 'For requests the firewall blocks, launchroom keeps the client’s network (a /24 or /48), never the full address, for 7 days. Nothing else is stored per request.',
+            link: ['security/privacy-and-data', 'Privacy and data'],
         },
     ];
 

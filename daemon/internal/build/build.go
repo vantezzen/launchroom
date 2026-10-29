@@ -337,8 +337,13 @@ func (b *Builder) resolve(dir, work string, job *Job, envNames []string, sink Lo
 		}
 	}
 
+	phpWarning, phpApp := dockerfilePhpWarning(bs.PhpExtensions, facts.Files["composer.json"])
 	if bs.Dockerfile != "" {
-		return b.resolveInline(work, bs.Dockerfile, r, sink)
+		inline, err := b.resolveInline(work, bs.Dockerfile, r, sink)
+		if err == nil && phpApp {
+			s.Warnings = append(s.Warnings, phpWarning)
+		}
+		return inline, err
 	}
 
 	dfPath, dfRel, err := b.findDockerfile(dir, bs.DockerfilePath)
@@ -384,6 +389,9 @@ func (b *Builder) resolve(dir, work string, job *Job, envNames []string, sink Lo
 		if df.DevOnly != "" {
 			s.Warnings = append(s.Warnings, state.BuildWarning{Code: "dockerfile-dev-only", Message: clipText("This Dockerfile looks like a development setup: "+df.DevOnly+". Switch to auto-build (Railpack) for a production image.", 1024)})
 		}
+		if phpApp {
+			s.Warnings = append(s.Warnings, phpWarning)
+		}
 		r.dockerfileDir, r.dockerfileName, r.dockerArgs = filepath.Dir(dfPath), filepath.Base(dfPath), df.Args
 		return r, nil
 	}
@@ -393,7 +401,9 @@ func (b *Builder) resolve(dir, work string, job *Job, envNames []string, sink Lo
 	}
 	sink.Line("plan", state.StreamStdout, "Planning with Railpack "+RailpackVersion)
 	var planLogs []string
-	rp, perr := planWithRailpack(dir, railpackEnv(bs, envNames), func(level, msg string) {
+	rpEnv := railpackEnv(bs, envNames)
+	withPhpExtensions(rpEnv, bs.PhpExtensions)
+	rp, perr := planWithRailpack(dir, rpEnv, func(level, msg string) {
 		stream := state.StreamStdout
 		if level == "error" || level == "warn" {
 			stream = state.StreamStderr
@@ -462,6 +472,10 @@ func (b *Builder) resolve(dir, work string, job *Job, envNames []string, sink Lo
 		s.HealthPath = "/"
 	}
 	railpackSummary(s, rp)
+	if rp.info.Provider == "php" && len(bs.PhpExtensions) > 0 {
+		s.PhpExtensions = slices.Clone(bs.PhpExtensions)
+		sink.Line("plan", state.StreamStdout, "Adds PHP extensions: "+describePhpExtensions(bs.PhpExtensions))
+	}
 	if preset != nil && preset.Framework != "" {
 		s.Framework = ident(preset.Framework)
 	}
@@ -470,6 +484,7 @@ func (b *Builder) resolve(dir, work string, job *Job, envNames []string, sink Lo
 	if rp.info.Provider == "node" && b.o.Resources != nil {
 		limitNodeBuild(rp.result.Plan, b.o.Resources(), job.Env)
 	}
+	dropConfigSecrets(rp.result.Plan, envNames)
 	raw, err := json.Marshal(rp.result.Plan)
 	if err != nil {
 		return nil, fail(state.FailureInternal, "plan", err)

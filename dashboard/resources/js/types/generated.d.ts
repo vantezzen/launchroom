@@ -1045,6 +1045,7 @@ missingVariables: string[],
 warnings: string[],
 planJson: Record<string, any> | null,
 next: App.Data.Protocol.V1.NextBuildInfo | null,
+phpExtensions: string[],
 };
 export type DnsRecordData = {
 type: string,
@@ -1434,6 +1435,7 @@ configErrors: App.Data.ConfigAsCode.DeploymentConfigErrorsData | null,
 buildServer: App.Data.Deployments.BuildServerData | null,
 servers: App.Data.Deployments.DeploymentServerData[],
 supersededBy: App.Data.Deployments.DeploymentRefData | null,
+expectsRelease: boolean,
 };
 export type DeploymentFailureData = {
 class: App.Enums.DeploymentFailureClass,
@@ -1837,6 +1839,10 @@ branches: string[],
 branch: string | null,
 template: string | null,
 problem: string | null,
+repository: App.Data.Git.GitRepositoryData | null,
+private: boolean,
+pushes: string,
+via: string | null,
 };
 export type PublicRepositoryUrlData = {
 url: string,
@@ -2562,7 +2568,7 @@ processes: App.Data.Projects.ImportProcessData[],
 export type ImportDatabaseData = {
 engine: App.Enums.DatabaseEngine,
 name: string,
-connectTo: string[],
+connectTo: (string| null)[],
 };
 export type ImportProcessData = {
 name: string,
@@ -2823,6 +2829,7 @@ buildEnv: string[] | null,
 envReferences: string[] | null,
 warnings: App.Data.Protocol.V1.BuildWarning[] | null,
 plan: Record<string, any> | null,
+phpExtensions: App.Data.Protocol.V1.PhpExtension[] | null,
 next: App.Data.Protocol.V1.NextBuildInfo | null,
 };
 export type BuildWarning = {
@@ -3118,6 +3125,10 @@ ingress: App.Data.Protocol.V1.IngressSpec | null,
 export type NudgeConfig = {
 key: string,
 url: string | null,
+};
+export type PhpExtension = {
+name: string,
+for: string,
 };
 export type PlanResult = {
 durationMs: number,
@@ -4556,6 +4567,7 @@ connectionVariables: Record<string, App.Data.Specs.VariableSpec>,
 sharedVariableIds: string[],
 domains: Record<string, App.Data.Specs.DomainSpec>,
 volumes: Record<string, App.Data.Specs.VolumeSpec>,
+phpExtensions: App.Data.Protocol.V1.PhpExtension[],
 };
 export type StagedChanges = {
 items: App.Data.Specs.ChangeItem[],
@@ -5104,7 +5116,7 @@ export type CliLoginStatus = 'pending' | 'approved' | 'denied' | 'consumed';
 export type ClientCertificateMode = 'off' | 'verify' | 'require';
 export type ConnectionMode = 'private' | 'public';
 export type ConnectionStyle = 'url' | 'laravel' | 'parts';
-export type DaemonFeature = 'linkProbe' | 'shipLogs' | 'pointInTime' | 'verifyRestore' | 'stopSpec' | 'consoleSessions' | 'dataSessions' | 'controlPlaneUrl' | 'gitProviders' | 'generatedDockerfile' | 'mongoClickhouse' | 'dnsProviders' | 'cronSchedule' | 'clientCertificates' | 'dataTransfer' | 'preparedVolumes' | 'requestAnalytics' | 'remoteAccessSsh' | 'remoteAccessDatabase' | 'remoteAccessVolume' | 'inventory' | 'containerInspection' | 'waf' | 'configFiles' | 'serviceStop';
+export type DaemonFeature = 'linkProbe' | 'shipLogs' | 'pointInTime' | 'verifyRestore' | 'stopSpec' | 'consoleSessions' | 'dataSessions' | 'controlPlaneUrl' | 'gitProviders' | 'generatedDockerfile' | 'mongoClickhouse' | 'dnsProviders' | 'cronSchedule' | 'clientCertificates' | 'dataTransfer' | 'preparedVolumes' | 'requestAnalytics' | 'remoteAccessSsh' | 'remoteAccessDatabase' | 'remoteAccessVolume' | 'inventory' | 'containerInspection' | 'waf' | 'configFiles' | 'serviceStop' | 'phpExtensions';
 export type DaemonNudge = 'state.changed' | 'task.available' | 'logs.requested';
 export type DaemonTaskStatus = 'pending' | 'leased' | 'succeeded' | 'failed' | 'cancelled';
 export type DaemonTaskType = 'build' | 'plan' | 'run_once' | 'backup' | 'restore' | 'backup_maintenance' | 'logs' | 'self_update' | 'backup_snapshots' | 'verify_restore' | 'session' | 'db_import' | 'volume_import' | 'db_export' | 'volume_export' | 'access' | 'inventory' | 'inspect_container';

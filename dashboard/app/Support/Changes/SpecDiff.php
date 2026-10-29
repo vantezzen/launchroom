@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Support\Changes;
 
+use App\Data\Protocol\V1\PhpExtension;
 use App\Data\Services\BuildSettings;
 use App\Data\Services\DeploySettings;
 use App\Data\Services\ScalingSettings;
@@ -21,6 +22,7 @@ use App\Enums\ChangeKind;
 use App\Enums\PromotionClass;
 use App\Enums\ServiceKind;
 use App\Enums\VariableType;
+use App\Support\Builds\PhpExtensions;
 use App\Support\CanonicalJson;
 use Spatie\LaravelData\Data;
 
@@ -132,6 +134,15 @@ final class SpecDiff
 
         foreach (array_diff($before->sharedVariableIds, $after->sharedVariableIds) as $variableId) {
             $this->add("{$path}.sharedVariables.{$variableId}", ChangeKind::Removed, ChangeEffect::Restart, PromotionClass::Structural, $prefix.'no longer uses a shared variable', $id);
+        }
+
+        // Derived from connections (docs/04 §3.1); its own item so the Deploy
+        // summary says why the app rebuilds ("adds the PostgreSQL driver").
+        $oldExtensions = CanonicalJson::encode(array_map(static fn (PhpExtension $extension): array => $extension->toArray(), $before->phpExtensions));
+        $newExtensions = CanonicalJson::encode(array_map(static fn (PhpExtension $extension): array => $extension->toArray(), $after->phpExtensions));
+
+        if ($oldExtensions !== $newExtensions) {
+            $this->add("{$path}.phpExtensions", ChangeKind::Changed, ChangeEffect::Rebuild, PromotionClass::Structural, $prefix.PhpExtensions::changeLabel($before->phpExtensions, $after->phpExtensions), $id, $oldExtensions, $newExtensions);
         }
 
         $this->diffKeyed($before->domains, $after->domains, "{$path}.domains", $id, ChangeEffect::Route, PromotionClass::EnvironmentSpecific, static fn (DomainSpec $domain): string => $prefix.'domain '.$domain->hostname);

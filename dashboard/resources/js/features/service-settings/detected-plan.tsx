@@ -278,6 +278,15 @@ export function DetectedPlan({
                 </dl>
             )}
 
+            {plan.phpExtensions.length > 0 && (
+                <p className="type-small text-muted-foreground">
+                    Adds PHP extensions:{' '}
+                    <span className="type-mono text-foreground">
+                        {plan.phpExtensions.join(', ')}
+                    </span>
+                </p>
+            )}
+
             {decisions.length > 0 && (
                 <div className="flex flex-col gap-2">
                     <span className="type-label text-muted-foreground">

@@ -8,7 +8,6 @@ import {
     EyeOff,
     FolderOpen,
     KeyRound,
-    LoaderCircle,
     Plus,
     ShieldCheck,
     SquareTerminal,
@@ -16,6 +15,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import type { ComponentType, ReactNode } from 'react';
+import { ProgressRing } from '@/components/progress-ring';
 import { TimeRangeSelect } from '@/components/charts/time-range-select';
 import { Duration } from '@/components/elapsed';
 import { Callout } from '@/components/patterns/callout';
@@ -696,12 +696,7 @@ function StartForm({
                     }
                     className="shrink-0"
                 >
-                    {busy && (
-                        <LoaderCircle
-                            aria-hidden="true"
-                            className="motion-safe:animate-spin"
-                        />
-                    )}
+                    {busy && <ProgressRing tone="current" className="size-4" />}
                     Start access for {durationLabel(Number(duration))}
                 </Button>
             </div>
@@ -881,10 +876,7 @@ function LiveAccess({
             ) : (
                 <div className="flex flex-col items-center gap-2 rounded-xl bg-recessed px-6 py-8 text-center">
                     <p className="flex items-center gap-2 type-label">
-                        <LoaderCircle
-                            aria-hidden="true"
-                            className="size-4 text-status-progress motion-safe:animate-spin"
-                        />
+                        <ProgressRing className="size-4" />
                         Opening a port on {access.serverName ?? 'the server'}
                     </p>
                     <p className="type-small text-muted-foreground">

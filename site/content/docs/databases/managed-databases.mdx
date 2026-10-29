@@ -49,7 +49,7 @@ ClickHouse has no separate application database. Apps use the `default` database
 Drag an edge from an app to a database on the canvas. The **Connect** popover previews the variables it will add to the app, named the way your framework expects:
 
 - **URL**: one variable such as `DATABASE_URL` or `REDIS_URL`, for Prisma, Node, Django and most libraries.
-- **Laravel**: `DB_CONNECTION`, `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD`.
+- **Laravel**: `DB_CONNECTION`, `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD`. `DB_CONNECTION` is set to the engine (`pgsql`, `mysql` or `mongodb`), so an app whose `.env.example` says `sqlite` uses the connected database: Laravel never lets a `.env` file override a real environment variable. launchroom also adds the PHP driver to the build, see [PHP database drivers](/docs/builds/how-builds-work#php-database-drivers).
 - **Parts**: separate host, port, user and password variables.
 
 These are ordinary [reference variables](/docs/projects/variables) such as `${{postgres.DATABASE_URL}}`. They resolve to the database in the same environment, so staging connects to staging's database and production to production's without per-environment setup. Removing the edge removes them, after a confirmation.

@@ -214,3 +214,28 @@ func checkEnvMap(e *errs, path string, m map[string]string, maxItems int) {
 		}
 	}
 }
+
+// PhpExtensionName is a PHP extension launchroom may add to a Railpack PHP
+// build because a connected database needs its driver (docs/04 §3.1). An
+// allow-list, not a grammar: the name reaches install-php-extensions.
+type PhpExtensionName string
+
+// PHP extensions a build may add.
+const (
+	PhpExtPdoPgsql PhpExtensionName = "pdo_pgsql"
+	PhpExtPgsql    PhpExtensionName = "pgsql"
+	PhpExtPdoMysql PhpExtensionName = "pdo_mysql"
+	PhpExtMysqli   PhpExtensionName = "mysqli"
+	PhpExtRedis    PhpExtensionName = "redis"
+	PhpExtMongoDB  PhpExtensionName = "mongodb"
+)
+
+var phpExtensionNames = []string{string(PhpExtPdoPgsql), string(PhpExtPgsql), string(PhpExtPdoMysql), string(PhpExtMysqli), string(PhpExtRedis), string(PhpExtMongoDB)}
+
+// ProtocolSchema implements SchemaDescriber.
+func (PhpExtensionName) ProtocolSchema() ScalarSchema { return enumSchema(phpExtensionNames) }
+
+// Validate checks the value.
+func (v PhpExtensionName) Validate() error {
+	return checkEnum("php extension", string(v), phpExtensionNames)
+}

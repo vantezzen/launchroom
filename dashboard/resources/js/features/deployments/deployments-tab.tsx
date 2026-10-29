@@ -22,7 +22,10 @@ import { compactAge } from '@/features/canvas/format';
 import { stepRows } from '@/features/deployment-detail/steps';
 import type { StepRow } from '@/features/deployment-detail/steps';
 import { requestJson } from '@/features/projects/http';
-import { StartButton } from '@/features/service-panel/service-controls';
+import {
+    DeployButton,
+    StartButton,
+} from '@/features/service-panel/service-controls';
 import { useNow } from '@/hooks/use-now';
 import { cn } from '@/lib/utils';
 import { rollback } from '@/routes/deployments';
@@ -45,6 +48,7 @@ import {
     shortSha,
     stoppedLine,
 } from './format';
+import { listHead, needsRetry } from './list-head';
 import type { DeploymentUpdatedEvent } from './realtime';
 import { ChannelEvents } from './realtime';
 
@@ -63,10 +67,12 @@ type Summary = App.Data.Deployments.DeploymentSummaryData;
 type ServiceDeployments = {
     active: Summary | null;
     deployments: Summary[];
-    /** The expanded first row: in progress, else live, with its steps. */
+    /** The expanded first row: in progress, else live, else the newest, with its steps. */
     current: {
         id: string;
         steps: App.Data.Deployments.DeploymentStepData[];
+        /** Show "Release" from the start (docs/04 §6). */
+        expectsRelease: boolean;
     } | null;
     canDeploy: boolean;
 };
@@ -88,7 +94,8 @@ const TRACK_LABELS: Record<string, string> = {
 /**
  * Service panel → Deployments (docs/08 §12, direction §9.5): one list,
  * newest first. The current deployment (the one in progress, else the live
- * one) is its first row, expanded: the same avatar column, title and meta
+ * one, else the newest: a failed first deploy with "Try again") is its
+ * first row, expanded: the same avatar column, title and meta
  * line as every other row, plus the steps with live status and times and
  * its actions. The rest are compact rows with Roll back on hover. Live over
  * the environment channel.
@@ -132,12 +139,7 @@ export function DeploymentsTab({
         }
     };
 
-    const head =
-        data?.deployments.find((deployment) =>
-            isInProgress(deployment.status),
-        ) ??
-        data?.active ??
-        null;
+    const head = data ? listHead(data) : null;
     const rest =
         data?.deployments.filter((deployment) => deployment.id !== head?.id) ??
         [];
@@ -163,16 +165,31 @@ export function DeploymentsTab({
                     icon={Rocket}
                     action={
                         <div className="flex flex-wrap justify-center gap-2">
-                            <Button variant="outline" asChild>
-                                <Link
-                                    href={
-                                        stagedChanges({ project, environment })
-                                            .url
-                                    }
-                                >
-                                    Review staged changes
-                                </Link>
-                            </Button>
+                            {controls?.staged === false ? (
+                                controls.canControl && (
+                                    <DeployButton
+                                        project={project}
+                                        environment={environment}
+                                        service={service}
+                                        name="this service"
+                                        staged={false}
+                                        versioned={controls.versioned}
+                                    />
+                                )
+                            ) : (
+                                <Button variant="outline" asChild>
+                                    <Link
+                                        href={
+                                            stagedChanges({
+                                                project,
+                                                environment,
+                                            }).url
+                                        }
+                                    >
+                                        Review staged changes
+                                    </Link>
+                                </Button>
+                            )}
                             {database && (
                                 <Button variant="ghost" asChild>
                                     <Link
@@ -193,7 +210,9 @@ export function DeploymentsTab({
                         </div>
                     }
                 >
-                    Not running here yet. Deploy the staged changes to start it.
+                    {controls?.staged === false
+                        ? 'Not deployed here yet.'
+                        : 'Not running here yet. Deploy the staged changes to start it.'}
                 </EmptyState>
             )}
 
@@ -211,6 +230,9 @@ export function DeploymentsTab({
                                 data.current?.id === head.id
                                     ? data.current.steps
                                     : [],
+                            expectsRelease:
+                                data.current?.id === head.id &&
+                                data.current.expectsRelease,
                             actions: head.stopped ? (
                                 <StoppedActions
                                     deployment={head}
@@ -232,6 +254,39 @@ export function DeploymentsTab({
                                     deployment={head}
                                     canDeploy={data.canDeploy}
                                     onAction={setAction}
+                                    retry={
+                                        needsRetry(head, data.active) &&
+                                        data.canDeploy ? (
+                                            controls?.canControl ? (
+                                                <DeployButton
+                                                    project={project}
+                                                    environment={environment}
+                                                    service={service}
+                                                    name={head.serviceName}
+                                                    staged={controls.staged}
+                                                    versioned={
+                                                        controls.versioned
+                                                    }
+                                                    label="Try again"
+                                                />
+                                            ) : (
+                                                <Button
+                                                    size="sm"
+                                                    onClick={() =>
+                                                        setAction({
+                                                            kind: 'redeploy-service',
+                                                            project,
+                                                            environment,
+                                                            service,
+                                                            name: head.serviceName,
+                                                        })
+                                                    }
+                                                >
+                                                    Try again
+                                                </Button>
+                                            )
+                                        ) : null
+                                    }
                                     redeployService={() =>
                                         setAction({
                                             kind: 'redeploy-service',
@@ -264,14 +319,24 @@ export function DeploymentsTab({
     );
 }
 
-/** The status word with its cue: "Building 41s", "Live", "Stopped", "Failed". */
-function RowStatus({ deployment }: { deployment: Summary }) {
+/**
+ * The status word with its cue: "Building 41s", "Live", "Stopped", "Failed".
+ * `icon` is off on the expanded row while it runs: its step track carries
+ * the spinner, so there is one per deployment.
+ */
+function RowStatus({
+    deployment,
+    icon = true,
+}: {
+    deployment: Summary;
+    icon?: boolean;
+}) {
     const running = isInProgress(deployment.status);
     const state = deploymentStatusState(deployment);
 
     return (
         <span className="inline-flex shrink-0 items-center gap-1.5">
-            <StatusIcon state={state} className="size-3" />
+            {icon && <StatusIcon state={state} className="size-3" />}
             <span
                 className={cn(
                     state === 'active' && 'text-foreground',
@@ -308,6 +373,7 @@ function DeploymentRow({
     onAction: (action: PendingAction) => void;
     expanded?: {
         steps: App.Data.Deployments.DeploymentStepData[];
+        expectsRelease: boolean;
         actions: ReactNode;
     };
 }) {
@@ -342,7 +408,10 @@ function DeploymentRow({
                     {deploymentTitle(deployment)}
                 </Link>
                 <MetaLine className="type-small text-muted-foreground tabular-nums">
-                    <RowStatus deployment={deployment} />
+                    <RowStatus
+                        deployment={deployment}
+                        icon={!(expanded && running && !deployment.stopped)}
+                    />
                     {sha && <span className="type-mono-small">{sha}</span>}
                     {expanded && branchName(deployment.gitRef)}
                     {deployment.commitAuthor ?? deployment.actorName}
@@ -372,6 +441,7 @@ function DeploymentRow({
                             rows={stepRows({
                                 deployment,
                                 steps: expanded.steps,
+                                expectsRelease: expanded.expectsRelease,
                             })}
                         />
                     )}
@@ -478,17 +548,23 @@ function StoppedActions({
     );
 }
 
-/** The expanded row's buttons: Cancel and View logs while it runs, else View logs and Redeploy. */
+/**
+ * The expanded row's buttons: Cancel and View logs while it runs, else
+ * View logs and Redeploy; a failed or cancelled first deploy has View logs
+ * and Try again (`retry`, the header's Deploy).
+ */
 function CurrentActions({
     deployment,
     canDeploy,
     onAction,
     redeployService,
+    retry,
 }: {
     deployment: Summary;
     canDeploy: boolean;
     onAction: (action: PendingAction) => void;
     redeployService: () => void;
+    retry: ReactNode;
 }) {
     const running = isInProgress(deployment.status);
     const cancellable =
@@ -510,11 +586,16 @@ function CurrentActions({
             <Button variant={running ? 'outline' : 'ghost'} size="sm" asChild>
                 <Link href={deploymentUrl(deployment)}>View logs</Link>
             </Button>
-            {!running && canDeploy && (
-                <Button variant="outline" size="sm" onClick={redeployService}>
-                    Redeploy
-                </Button>
-            )}
+            {retry ??
+                (!running && canDeploy && (
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={redeployService}
+                    >
+                        Redeploy
+                    </Button>
+                ))}
         </>
     );
 }

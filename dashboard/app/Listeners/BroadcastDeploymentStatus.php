@@ -31,6 +31,7 @@ final class BroadcastDeploymentStatus
             $deployment->environment->public_id,
             $deployment->serviceInstance->service->public_id,
             $event->to->value,
+            statusChanged: true,
         ));
 
         // Canvas nodes show the service's deployment status.

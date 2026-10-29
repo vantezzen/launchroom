@@ -1,25 +1,25 @@
-import { Status } from "@/components/status";
-import { MetaDivider } from "@/components/patterns/meta-line";
-import type { StatusState } from "@/components/status";
-import { TimeAgo } from "@/components/time-ago";
+import { Status } from '@/components/status';
+import { MetaDivider } from '@/components/patterns/meta-line';
+import type { StatusState } from '@/components/status';
+import { TimeAgo } from '@/components/time-ago';
 
 const states: Record<App.Enums.Git.WebhookHealth, StatusState> = {
-    healthy: "active",
-    stale: "warning",
-    never: "idle",
+    healthy: 'active',
+    stale: 'warning',
+    never: 'idle',
 };
 
 const labels: Record<App.Enums.Git.WebhookHealth, string> = {
-    healthy: "Pushes arrive right away",
-    stale: "A push didn’t arrive by webhook: checking every minute",
-    never: "Pushes are checked every minute until GitHub reaches this dashboard",
+    healthy: 'Pushes arrive right away',
+    stale: 'A push didn’t arrive by webhook: checking every minute',
+    never: 'Pushes are checked every minute until GitHub reaches this dashboard',
 };
 
 const deliveryLabels: Record<App.Enums.Git.WebhookDeliveryStatus, string> = {
-    received: "queued",
-    processed: "processed",
-    ignored: "ignored",
-    failed: "failed",
+    received: 'queued',
+    processed: 'processed',
+    ignored: 'ignored',
+    failed: 'failed',
 };
 
 /**

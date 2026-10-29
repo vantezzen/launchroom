@@ -4,6 +4,15 @@ All changes to launchroomd ↔ dashboard contract. Format: one section per proto
 
 ## v1 (unreleased)
 
+### PHP database drivers for connected databases (2026-10-29, D71)
+
+Additive. New daemon feature `phpExtensions`; the dashboard leases build and plan tasks carrying the field only to servers that announce it.
+
+- `BuilderSpec.phpExtensions?: [PhpExtension]` (≤ 8, unique by name, valid for every builder kind): `{name (PhpExtensionName: pdo_pgsql|pgsql|pdo_mysql|mysqli|redis|mongodb), for (DatabaseEngine)}`. Railpack builds append the names to `RAILPACK_PHP_EXTENSIONS`; Dockerfile builds of an app with `composer.json` get the warning `dockerfile-php-extensions`.
+- `BuildSummary.phpExtensions?: [PhpExtension]`: the extensions added to the Railpack plan (provider `php` only).
+- Fixtures: `task-lease.plan-php.json`, `task-completion.plan.json` (`summary.phpExtensions`). Design: docs/04 §3.1.
+- No schema change, behaviour: Railpack plans no longer list `RAILPACK_*` settings as plan secrets (the solve had no value for them, so any `railpackEnv` or command override failed the build); the dashboard renders `capabilities: ["NET_BIND_SERVICE"]` for workloads of Railpack PHP images.
+
 ### Service lifecycle and rollout diagnosis (2026-10-25, D68)
 
 Additive. One new daemon feature, `serviceStop`, for the one NodeState field; every report field is optional and needs none.

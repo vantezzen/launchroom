@@ -11,7 +11,6 @@ use App\Actions\Projects\ImportRepository;
 use App\Contracts\Git\SourceRepository;
 use App\Contracts\PlanPreviewer;
 use App\Data\Canvas\DatabaseEngineOptionData;
-use App\Data\Git\GitRepositoryData;
 use App\Data\Git\PublicRepositoryUrlData;
 use App\Data\Projects\ImportRepositoryData;
 use App\Drivers\DatabaseEngines\DatabaseEngines;
@@ -102,7 +101,7 @@ final class ImportController extends Controller
         Gate::authorize('create', [Project::class, $team]);
         $data = PublicRepositoryUrlData::validateAndCreate(['url' => $request->query('url')]);
 
-        return new JsonResponse($check->handle($data->url));
+        return new JsonResponse($check->handle($team, $data->url));
     }
 
     /**
@@ -116,9 +115,8 @@ final class ImportController extends Controller
         Gate::authorize('addPublic', [GitConnection::class, $team]);
 
         $repository = $add->handle($team, $user, $data->url, $this->auditActor($request, $user));
-        $repository->load('gitConnection');
 
-        return new JsonResponse(GitRepositoryData::fromSource($repository));
+        return new JsonResponse($repository->pickerData());
     }
 
     /**

@@ -376,6 +376,7 @@ All render with sample data in the "Visual primitives" section of `/dev/design` 
 | Component | API |
 |---|---|
 | `StepIcon` | `status: 'succeeded'\|'failed'\|'running'\|'pending'\|'skipped'\|'canceled'`, `size=18`. Pair with text (`STEP_STATUS_LABEL`). Spinner is static under reduced motion. |
+| `ProgressRing` | `components/progress-ring.tsx`, the one spinner: an amber arc on a faint amber ring (`tone="current"`: the text colour, for busy buttons). `StepIcon` running, `StatusIcon` progress, `Spinner`, toasts and banners all draw it. One spinner per thing in progress: a deployment row with a step track shows it on the running step only. Static under reduced motion. |
 | `StepList` | `steps: { id, name, status, summary?, duration?, chips?, content? }[]`, `defaultOpen?: string[]` (default: failed steps with content). Rows with content are buttons (`aria-expanded`); others are static rows. `StepChip` (`tone='neutral'\|'error'\|'warning'`) for "1 error". |
 | `ErrorExcerpt` | `lines: { number, text }[]`, `errorLine`, `context=5`, `totalLines?`, `onShowAll?`. Red left rule + soft background on the error line; ANSI as text. |
 | `StepPills` | `steps: { id, name, status }[]`: compact strip for cards and nodes. |

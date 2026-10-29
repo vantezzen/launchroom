@@ -223,6 +223,7 @@ const (
 	maxMaskEnvNames      = 1024
 	maxLabelText         = 256
 	maxInlineDockerfile  = 65536
+	maxPhpExtensions     = 8
 )
 
 // PresetNone disables launchroom presets for a build (BuilderSpec.Preset).
@@ -255,6 +256,34 @@ type BuilderSpec struct {
 	StartCommand   string `json:"startCommand,omitzero" jsonschema:"maxLength=4096"`
 	// RailpackEnv are non-secret Railpack settings (RAILPACK_SPA_OUTPUT_DIR, RAILPACK_NODE_VERSION, …).
 	RailpackEnv map[RailpackEnvName]string `json:"railpackEnv,omitzero" jsonschema:"nullable"`
+	// PhpExtensions are PHP extensions the app's connected databases need
+	// (daemon feature phpExtensions, docs/04 §3.1). Railpack PHP builds add
+	// them through RAILPACK_PHP_EXTENSIONS; Dockerfile builds of a PHP app
+	// only get a warning. Valid for every builder kind.
+	PhpExtensions []PhpExtension `json:"phpExtensions,omitzero" jsonschema:"nullable,maxItems=8"`
+}
+
+// validatePhpExtensions checks a list of PHP extensions: at most 8, each
+// name from the allow-list and unique, each with an engine.
+func validatePhpExtensions(e *errs, p string, xs []PhpExtension) {
+	checkCount(e, p, len(xs), 0, maxPhpExtensions)
+	seen := map[PhpExtensionName]bool{}
+	for i, x := range xs {
+		xp := idx(p, i)
+		e.check(xp+".name", x.Name)
+		e.check(xp+".for", x.For)
+		if seen[x.Name] {
+			e.addf(xp+".name", "duplicates %q", x.Name)
+		}
+		seen[x.Name] = true
+	}
+}
+
+// PhpExtension is one PHP extension a build adds and the database engine
+// that needs it (shown as "pdo_pgsql (for postgres)").
+type PhpExtension struct {
+	Name PhpExtensionName `json:"name"`
+	For  DatabaseEngine   `json:"for"`
 }
 
 // BuildInputs are the inputs shared by build and plan tasks.
@@ -352,6 +381,7 @@ func (b *BuildInputs) validate(e *errs) {
 			e.addf("builder.railpackEnv."+string(k), "value must be at most %d bytes without NUL", maxCommandLen)
 		}
 	}
+	validatePhpExtensions(e, "builder.phpExtensions", bs.PhpExtensions)
 	if b.Env != nil {
 		e.check("env", *b.Env)
 	}

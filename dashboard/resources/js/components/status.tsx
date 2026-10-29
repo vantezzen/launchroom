@@ -1,6 +1,7 @@
-import { LoaderCircle, TriangleAlert, X } from 'lucide-react';
+import { TriangleAlert, X } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { MetaDivider } from '@/components/patterns/meta-line';
+import { ProgressRing } from '@/components/progress-ring';
 import { cn } from '@/lib/utils';
 
 /**
@@ -48,16 +49,7 @@ export function StatusIcon({
 }) {
     switch (state) {
         case 'progress':
-            return (
-                <LoaderCircle
-                    aria-hidden="true"
-                    className={cn(
-                        'size-3.5 shrink-0 motion-safe:animate-spin',
-                        tone.progress,
-                        className,
-                    )}
-                />
-            );
+            return <ProgressRing className={cn('size-3.5', className)} />;
         case 'failed':
             return (
                 <X

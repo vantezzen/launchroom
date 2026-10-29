@@ -8,6 +8,7 @@ use App\Data\Protocol\V1\AppliedPreset;
 use App\Data\Protocol\V1\BuildSummary;
 use App\Data\Protocol\V1\BuildWarning;
 use App\Data\Protocol\V1\NextBuildInfo;
+use App\Data\Protocol\V1\PhpExtension;
 use App\Data\Protocol\V1\ResolvedPackage;
 use Spatie\LaravelData\Data;
 use Throwable;
@@ -48,6 +49,7 @@ final class DetectedPlanData extends Data
      * @param  list<string>  $missingVariables  referenced in code but not defined
      * @param  list<string>  $warnings
      * @param  array<string, mixed>|null  $planJson  Railpack's build plan (View plan JSON)
+     * @param  list<string>  $phpExtensions
      */
     public function __construct(
         /** `dockerfile` or `railpack`. */
@@ -82,6 +84,8 @@ final class DetectedPlanData extends Data
         public ?array $planJson = null,
         /** The Next.js adapter's build report (builds only; plan previews don't run the build). */
         public ?NextBuildInfo $next = null,
+        /** PHP database drivers launchroom added for connected databases: "pdo_pgsql (for postgres)" (docs/04 §3.1). */
+        public array $phpExtensions = [],
     ) {}
 
     /**
@@ -146,6 +150,7 @@ final class DetectedPlanData extends Data
             warnings: array_map(static fn (BuildWarning $warning): string => $warning->message, $summary->warnings ?? []),
             planJson: $summary->plan,
             next: $summary->next,
+            phpExtensions: array_map(static fn (PhpExtension $extension): string => "{$extension->name} (for {$extension->for})", $summary->phpExtensions ?? []),
         );
     }
 

@@ -1,9 +1,21 @@
-import ELK from 'elkjs/lib/elk.bundled.js';
+import type { ELK } from 'elkjs/lib/elk.bundled.js';
 
 export const NODE_WIDTH = 264;
 export const NODE_HEIGHT = 148;
 
-const elk = new ELK();
+let elkInstance: Promise<ELK> | undefined;
+
+/**
+ * elkjs is ~1.4 MB: loaded on first use of the layered layout, not with
+ * every canvas page (the canvas itself uses the grouped layout).
+ */
+function loadElk(): Promise<ELK> {
+    elkInstance ??= import('elkjs/lib/elk.bundled.js').then(
+        ({ default: ElkConstructor }) => new ElkConstructor(),
+    );
+
+    return elkInstance;
+}
 
 /**
  * Layered left-to-right layout: consumers left of what they connect to
@@ -20,6 +32,7 @@ export async function autoLayout(
     }
 
     const ids = new Set(nodes.map((node) => node.id));
+    const elk = await loadElk();
     const graph = await elk.layout({
         id: 'root',
         layoutOptions: {

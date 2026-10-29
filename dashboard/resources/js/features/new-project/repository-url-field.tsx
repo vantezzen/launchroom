@@ -1,6 +1,6 @@
 import { ArrowRight, GitBranch, Link2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Logo } from '@/components/logo';
+import { Logo, logoLabel } from '@/components/logo';
 import { MetaLine } from '@/components/patterns/meta-line';
 import { StatusIcon } from '@/components/status';
 import { Button } from '@/components/ui/button';
@@ -27,6 +27,27 @@ const PROVIDER_NAME: Record<string, string> = {
     codeberg: 'Codeberg',
     git: 'a git server',
 };
+
+/** The repository's place in one phrase: through a connection, or public. */
+function whereItLives(result: Checked): string {
+    const repository = result.repository;
+
+    // Added by URL before: still the public repository, polled.
+    if (!repository || (repository.provider === 'git' && !repository.private)) {
+        return `Public on ${PROVIDER_NAME[result.provider]}`;
+    }
+
+    const name =
+        repository.provider === 'github'
+            ? 'GitHub'
+            : repository.provider === 'git'
+              ? PROVIDER_NAME[result.provider]
+              : logoLabel(repository.serverKind);
+
+    return repository.private
+        ? `Private on ${name}, through ${result.via ?? 'your connection'}`
+        : `Your repository on ${name}`;
+}
 
 /** What a template sets up for you, in the recommendation's words. */
 function setsUp(template: Template): string {
@@ -170,6 +191,16 @@ export function RepositoryUrlField({
 
     const proceed = (checked: Checked) => {
         if (checked.problem !== null) {
+            return;
+        }
+
+        // A connection already reaches it: continue like Import on its row.
+        if (checked.repository) {
+            onContinue(
+                checked.repository,
+                checked.branch ?? checked.defaultBranch,
+            );
+
             return;
         }
 
@@ -353,7 +384,7 @@ export function RepositoryUrlField({
                     <MetaLine className="min-w-0">
                         <span className="inline-flex items-center gap-1.5 text-foreground">
                             <StatusIcon state="active" />
-                            Public on {PROVIDER_NAME[result.provider]}
+                            {whereItLives(result)}
                         </span>
                         <span className="inline-flex items-center gap-1 font-mono">
                             <GitBranch
@@ -367,7 +398,9 @@ export function RepositoryUrlField({
                                 ? '100+ branches'
                                 : `${result.branches.length} branches`)}
                         <span>
-                            New pushes are picked up every minute
+                            {result.pushes === 'webhook'
+                                ? 'Pushes deploy right away'
+                                : 'New pushes are picked up every minute'}
                         </span>
                     </MetaLine>
                 ) : parsed.ok ? (

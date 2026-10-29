@@ -1,7 +1,8 @@
-import { LoaderCircle, TriangleAlert } from 'lucide-react';
+import { TriangleAlert } from 'lucide-react';
 import { createContext, useContext, useState } from 'react';
 import type { ComponentProps, ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import { ProgressRing } from '@/components/progress-ring';
 import { MetaDivider } from '@/components/patterns/meta-line';
 import { cn } from '@/lib/utils';
 
@@ -112,12 +113,7 @@ export function FloatingBarButton({
             )}
             {...props}
         >
-            {busy && (
-                <LoaderCircle
-                    aria-hidden="true"
-                    className="size-3.5 motion-safe:animate-spin"
-                />
-            )}
+            {busy && <ProgressRing tone="current" className="size-3.5" />}
             {children}
         </button>
     );

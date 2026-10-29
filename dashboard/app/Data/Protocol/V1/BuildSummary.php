@@ -25,6 +25,7 @@ final class BuildSummary extends Data
      * @param  list<string>|null  $buildEnv
      * @param  list<string>|null  $envReferences
      * @param  list<BuildWarning>|null  $warnings
+     * @param  list<PhpExtension>|null  $phpExtensions
      * @param  array<string, mixed>|null  $plan
      */
     public function __construct(
@@ -61,6 +62,8 @@ final class BuildSummary extends Data
         public ?array $envReferences = null,
         public ?array $warnings = null,
         public ?array $plan = null,
+        /** PHP database drivers added to the Railpack plan for connected databases (docs/04 §3.1). */
+        public ?array $phpExtensions = null,
         /** What the launchroom Next.js deployment adapter reported (build tasks of Next ≥ 16.2 apps). */
         public ?NextBuildInfo $next = null,
     ) {}
@@ -79,6 +82,7 @@ final class BuildSummary extends Data
             'buildEnv.*' => ['string', 'max:256'],
             'envReferences' => ['nullable', 'array', 'max:256'],
             'envReferences.*' => ['string', 'max:256'],
+            'phpExtensions' => ['nullable', 'array', 'max:8'],
         ];
     }
 }

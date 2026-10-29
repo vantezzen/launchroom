@@ -135,8 +135,21 @@ func TestProbeTCP(t *testing.T) {
 func TestMonitorSync(t *testing.T) {
 	var calls atomic.Int32
 	changed := make(chan struct{}, 16)
+	// Probes of container c2 wait until the test has seen the reset state:
+	// a new runner probes at once, which would otherwise race the check.
+	release := make(chan struct{})
 	m := NewMonitor(t.Context(), MonitorOptions{
-		Probe:    func(context.Context, Target) error { calls.Add(1); return nil },
+		Probe: func(ctx context.Context, tgt Target) error {
+			calls.Add(1)
+			if tgt.ContainerID == "c2" {
+				select {
+				case <-release:
+				case <-ctx.Done():
+					return ctx.Err()
+				}
+			}
+			return nil
+		},
 		OnChange: func() { changed <- struct{}{} },
 	})
 	defer m.Close()
@@ -160,6 +173,7 @@ func TestMonitorSync(t *testing.T) {
 	if st, _ := m.Status(tgt.Workload); st.State != state.ProbeStarting {
 		t.Fatalf("not reset: %+v", st)
 	}
+	close(release)
 	m.Sync(nil)
 	if _, ok := m.Status(tgt.Workload); ok {
 		t.Fatal("status kept after removal")

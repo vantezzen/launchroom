@@ -33,6 +33,7 @@ use App\Models\Placement;
 use App\Models\Server;
 use App\Models\Service;
 use App\Services\Crypto\ProjectKeyring;
+use App\Services\Deployments\ReleaseStep;
 use App\Services\Git\GitProviders;
 use App\Support\Canvas\ServiceGlyph;
 use App\Support\Deployments\Failures\FailureCatalogue;
@@ -102,6 +103,7 @@ final readonly class DeploymentDetailView
             buildServer: $related['buildServer'],
             servers: $this->servers($deployment),
             supersededBy: $this->supersededBy($deployment),
+            expectsRelease: ReleaseStep::expected($deployment),
         );
     }
 

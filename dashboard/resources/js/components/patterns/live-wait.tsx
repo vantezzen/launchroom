@@ -1,6 +1,6 @@
-import { LoaderCircle } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
+import { ProgressRing } from '@/components/progress-ring';
 import { cn } from '@/lib/utils';
 
 type LiveWaitProps = {
@@ -54,10 +54,7 @@ export function LiveWait({
                     aria-live="polite"
                     className="flex items-center gap-2 type-label"
                 >
-                    <LoaderCircle
-                        aria-hidden="true"
-                        className="size-4 text-status-progress motion-safe:animate-spin"
-                    />
+                    <ProgressRing className="size-4" />
                     {status}
                 </p>
                 {hint && (

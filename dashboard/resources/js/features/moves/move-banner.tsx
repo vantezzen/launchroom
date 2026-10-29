@@ -1,5 +1,6 @@
 import { Link, usePage } from '@inertiajs/react';
-import { LoaderCircle, MoveRight } from 'lucide-react';
+import { MoveRight } from 'lucide-react';
+import { ProgressRing } from '@/components/progress-ring';
 import { edit } from '@/routes/move';
 
 /**
@@ -21,10 +22,7 @@ export function MoveBanner() {
         >
             {instanceMove.frozen ? (
                 <>
-                    <LoaderCircle
-                        aria-hidden="true"
-                        className="size-3.5 shrink-0 text-status-progress motion-safe:animate-spin"
-                    />
+                    <ProgressRing className="size-3.5 shrink-0" />
                     <span>
                         launchroom is moving to a new server. Changes are paused
                         for a few minutes.

@@ -94,6 +94,9 @@ type BuildSummary struct {
 	// EnvReferences are variable names referenced in the source (cheap static scan).
 	EnvReferences []EnvName      `json:"envReferences,omitzero" jsonschema:"nullable,maxItems=256"`
 	Warnings      []BuildWarning `json:"warnings,omitzero" jsonschema:"nullable,maxItems=64"`
+	// PhpExtensions are the BuilderSpec.phpExtensions added to the Railpack
+	// plan (PHP provider only; daemon feature phpExtensions).
+	PhpExtensions []PhpExtension `json:"phpExtensions,omitzero" jsonschema:"nullable,maxItems=8"`
 	// Plan is the resolved Railpack build plan (railpack builds); it lists secret names only.
 	Plan RawObject `json:"plan,omitzero"`
 	// Next is what the launchroom Next.js deployment adapter reported (build tasks of Next ≥ 16.2 apps).
@@ -255,6 +258,7 @@ func (s *BuildSummary) validate(e *errs, p string) {
 		e.check(wp+".code", w.Code)
 		checkText(e, wp+".message", w.Message, maxSummaryText)
 	}
+	validatePhpExtensions(e, p+".phpExtensions", s.PhpExtensions)
 	if len(s.Plan) > 0 {
 		e.check(p+".plan", s.Plan)
 	}

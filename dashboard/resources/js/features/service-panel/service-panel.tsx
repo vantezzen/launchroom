@@ -1,19 +1,16 @@
 import { Link } from '@inertiajs/react';
 import { ArrowUpRight, CircleX, Maximize2, Minimize2, X } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { StatusPill } from '@/components/status';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { compactAge } from '@/features/canvas/format';
 import { ServiceGlyph } from '@/features/canvas/service-glyph';
 import { ServiceControls } from '@/features/service-panel/service-controls';
-import { ConsoleTab } from '@/features/sessions/console-tab';
-import { DataTab } from '@/features/sessions/data-tab';
 import { placementLine, StagedChip } from '@/features/canvas/service-node';
 import { DeploymentsTab } from '@/features/deployments/deployments-tab';
 import { ServiceMetrics } from '@/features/metrics/service-metrics';
 import { ServiceLogs } from '@/features/project-logs/service-logs';
-import { SettingsTab } from '@/features/service-settings/settings-tab';
 import { ServiceStagedBar } from '@/features/staged-changes/service-staged-bar';
 import { prefersReducedMotion, sharedElement } from '@/lib/motion';
 import { cn } from '@/lib/utils';
@@ -22,6 +19,25 @@ import { index as securityRoute } from '@/routes/security';
 import { show as findingRoute } from '@/routes/security/findings';
 
 const EXPANDED_KEY = 'launchroom.panel.expanded';
+
+// Heavy tabs load with their first use, not with the canvas: the console's
+// terminal (xterm), the data browser and the settings pages. Settings is
+// warmed while the panel is open, so its first click doesn't wait.
+const loadSettingsTab = () =>
+    import('@/features/service-settings/settings-tab').then((module) => ({
+        default: module.SettingsTab,
+    }));
+const SettingsTab = lazy(loadSettingsTab);
+const ConsoleTab = lazy(() =>
+    import('@/features/sessions/console-tab').then((module) => ({
+        default: module.ConsoleTab,
+    })),
+);
+const DataTab = lazy(() =>
+    import('@/features/sessions/data-tab').then((module) => ({
+        default: module.DataTab,
+    })),
+);
 
 type Tab = {
     id: string;
@@ -82,6 +98,10 @@ export function ServicePanel({
     const meta = [node.subtitle, placement].filter((part): part is string =>
         Boolean(part),
     );
+
+    useEffect(() => {
+        void loadSettingsTab();
+    }, []);
 
     useEffect(() => {
         try {
@@ -273,59 +293,61 @@ export function ServicePanel({
                                 : 'max-w-none',
                         )}
                     >
-                        {panel.tab === 'deployments' && (
-                            <DeploymentsTab
-                                project={project}
-                                environment={environment}
-                                service={node.id}
-                                database={node.kind === 'database'}
-                                controls={panel.controls}
-                            />
-                        )}
-                        {panel.tab === 'metrics' && (
-                            <ServiceMetrics
-                                project={project}
-                                environment={environment}
-                                service={node.id}
-                            />
-                        )}
-                        {panel.tab === 'console' && panel.canConsole && (
-                            <ConsoleTab
-                                key={`${node.id}-${environment}`}
-                                project={project}
-                                environment={environment}
-                                service={node.id}
-                                dataHint={panel.canData}
-                            />
-                        )}
-                        {panel.tab === 'data' && panel.canData && (
-                            <DataTab
-                                key={`${node.id}-${environment}`}
-                                project={project}
-                                environment={environment}
-                                service={node.id}
-                            />
-                        )}
-                        {panel.tab === 'logs' && (
-                            <ServiceLogs
-                                project={project}
-                                environment={environment}
-                                service={node.id}
-                            />
-                        )}
-                        {panel.tab === 'settings' && panel.settings && (
-                            <SettingsTab
-                                key={`${node.id}-${environment}`}
-                                section={panel.section}
-                                context={{
-                                    route,
-                                    node,
-                                    settings: panel.settings,
-                                    canUpdate: panel.canUpdate,
-                                    canDelete: panel.canDelete,
-                                }}
-                            />
-                        )}
+                        <Suspense fallback={null}>
+                            {panel.tab === 'deployments' && (
+                                <DeploymentsTab
+                                    project={project}
+                                    environment={environment}
+                                    service={node.id}
+                                    database={node.kind === 'database'}
+                                    controls={panel.controls}
+                                />
+                            )}
+                            {panel.tab === 'metrics' && (
+                                <ServiceMetrics
+                                    project={project}
+                                    environment={environment}
+                                    service={node.id}
+                                />
+                            )}
+                            {panel.tab === 'console' && panel.canConsole && (
+                                <ConsoleTab
+                                    key={`${node.id}-${environment}`}
+                                    project={project}
+                                    environment={environment}
+                                    service={node.id}
+                                    dataHint={panel.canData}
+                                />
+                            )}
+                            {panel.tab === 'data' && panel.canData && (
+                                <DataTab
+                                    key={`${node.id}-${environment}`}
+                                    project={project}
+                                    environment={environment}
+                                    service={node.id}
+                                />
+                            )}
+                            {panel.tab === 'logs' && (
+                                <ServiceLogs
+                                    project={project}
+                                    environment={environment}
+                                    service={node.id}
+                                />
+                            )}
+                            {panel.tab === 'settings' && panel.settings && (
+                                <SettingsTab
+                                    key={`${node.id}-${environment}`}
+                                    section={panel.section}
+                                    context={{
+                                        route,
+                                        node,
+                                        settings: panel.settings,
+                                        canUpdate: panel.canUpdate,
+                                        canDelete: panel.canDelete,
+                                    }}
+                                />
+                            )}
+                        </Suspense>
                     </div>
                 </div>
                 {panel.tab === 'settings' && (

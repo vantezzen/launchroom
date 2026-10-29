@@ -1,34 +1,34 @@
-import { Link } from "@inertiajs/react";
-import { Eye, ShieldCheck, TriangleAlert } from "lucide-react";
-import { useState } from "react";
-import { toast } from "sonner";
-import { formatCompact } from "@/components/charts/format";
-import { StackedBars } from "@/components/charts/stacked-bars";
-import type { StackedSeries } from "@/components/charts/stacked-bars";
-import { Meter } from "@/components/charts/usage-meter";
-import { Callout } from "@/components/patterns/callout";
-import { MetaLine } from "@/components/patterns/meta-line";
-import { Section } from "@/components/patterns/section";
-import { SheetSection, SidePanel } from "@/components/patterns/sheet";
-import { TimeAgo } from "@/components/time-ago";
-import { Button } from "@/components/ui/button";
-import { requestJson } from "@/features/projects/http";
-import { cn } from "@/lib/utils";
-import { card, CATEGORY_LABEL, plural, SERIES_COLOR } from "./format";
+import { Link } from '@inertiajs/react';
+import { Eye, ShieldCheck, TriangleAlert } from 'lucide-react';
+import { useState } from 'react';
+import { toast } from 'sonner';
+import { formatCompact } from '@/components/charts/format';
+import { StackedBars } from '@/components/charts/stacked-bars';
+import type { StackedSeries } from '@/components/charts/stacked-bars';
+import { Meter } from '@/components/charts/usage-meter';
+import { Callout } from '@/components/patterns/callout';
+import { MetaLine } from '@/components/patterns/meta-line';
+import { Section } from '@/components/patterns/section';
+import { SheetSection, SidePanel } from '@/components/patterns/sheet';
+import { TimeAgo } from '@/components/time-ago';
+import { Button } from '@/components/ui/button';
+import { requestJson } from '@/features/projects/http';
+import { cn } from '@/lib/utils';
+import { card, CATEGORY_LABEL, plural, SERIES_COLOR } from './format';
 
 type Firewall = App.Data.Security.WafOverviewData;
 type WafEvent = App.Data.Security.WafEventData;
 type Summary = App.Data.Security.SecuritySummaryData;
 
 const RANGE_WORDS: Record<string, string> = {
-    "24h": "today",
-    "7d": "this week",
-    "30d": "this month",
+    '24h': 'today',
+    '7d': 'this week',
+    '30d': 'this month',
 };
 
 /** A category's colour: palette slots for the four named kinds, grey else. */
 export function categoryColor(category: string): string {
-    return SERIES_COLOR[category] ?? "var(--chart-other)";
+    return SERIES_COLOR[category] ?? 'var(--chart-other)';
 }
 
 /**
@@ -49,7 +49,7 @@ export function FirewallSection({
 }) {
     const [event, setEvent] = useState<WafEvent | null>(null);
     const total = firewall.blocked + firewall.detected;
-    const outdated = firewall.edges.filter((edge) => edge.state !== "error");
+    const outdated = firewall.edges.filter((edge) => edge.state !== 'error');
 
     return (
         <Section
@@ -62,7 +62,7 @@ export function FirewallSection({
         >
             <div className="flex flex-col gap-4">
                 {firewall.edges
-                    .filter((edge) => edge.state === "error")
+                    .filter((edge) => edge.state === 'error')
                     .map((edge) => (
                         <Callout
                             key={edge.serverId}
@@ -70,7 +70,7 @@ export function FirewallSection({
                             title={`The web firewall isn’t running on ${edge.server}`}
                         >
                             {edge.message ??
-                                "The server refused the firewall settings and serves requests without it."}
+                                'The server refused the firewall settings and serves requests without it.'}
                         </Callout>
                     ))}
                 {outdated.length > 0 && (
@@ -79,8 +79,8 @@ export function FirewallSection({
                         title={`Update ${listNames(outdated.map((edge) => edge.server))} to run the web firewall`}
                     >
                         {outdated.length === 1
-                            ? "This server’s edge doesn’t include the firewall yet, so it serves requests unchecked, whatever mode a service is set to."
-                            : "These servers’ edges don’t include the firewall yet, so they serve requests unchecked, whatever mode a service is set to."}
+                            ? 'This server’s edge doesn’t include the firewall yet, so it serves requests unchecked, whatever mode a service is set to.'
+                            : 'These servers’ edges don’t include the firewall yet, so they serve requests unchecked, whatever mode a service is set to.'}
                     </Callout>
                 )}
 
@@ -108,8 +108,8 @@ export function FirewallSection({
                                 onOpen={setEvent}
                                 className={
                                     firewall.services.length > 0
-                                        ? "lg:col-span-2"
-                                        : "lg:col-span-3"
+                                        ? 'lg:col-span-2'
+                                        : 'lg:col-span-3'
                                 }
                             />
                         )}
@@ -118,8 +118,8 @@ export function FirewallSection({
                                 firewall={firewall}
                                 className={
                                     firewall.recent.length > 0
-                                        ? ""
-                                        : "lg:col-span-3"
+                                        ? ''
+                                        : 'lg:col-span-3'
                                 }
                             />
                         )}
@@ -149,7 +149,7 @@ function QuietFirewall({
             data-firewall-quiet
             className={cn(
                 card,
-                "flex flex-col gap-5 p-5 sm:flex-row sm:items-center sm:gap-6 sm:p-6",
+                'flex flex-col gap-5 p-5 sm:flex-row sm:items-center sm:gap-6 sm:p-6',
             )}
         >
             <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-recessed text-muted-foreground">
@@ -161,8 +161,8 @@ function QuietFirewall({
                 </p>
                 <p className="type-body text-muted-foreground">
                     {summary.routedServices === 0
-                        ? "Services with a domain are protected as soon as they go live."
-                        : `Requests to ${plural(summary.protectedServices, "public service")} pass the firewall first.`}
+                        ? 'Services with a domain are protected as soon as they go live.'
+                        : `Requests to ${plural(summary.protectedServices, 'public service')} pass the firewall first.`}
                 </p>
             </div>
             {summary.routedServices > 0 && (
@@ -170,7 +170,7 @@ function QuietFirewall({
                     <span className="flex items-baseline justify-between type-small text-muted-foreground">
                         <span>Blocking attacks</span>
                         <span className="tabular-nums">
-                            {summary.protectedServices} of{" "}
+                            {summary.protectedServices} of{' '}
                             {summary.routedServices}
                         </span>
                     </span>
@@ -192,28 +192,28 @@ function QuietFirewall({
  */
 function ChartCard({ firewall }: { firewall: Firewall }) {
     const times = firewall.timestamps.map((t) => Date.parse(t));
-    const unit = firewall.range === "30d" ? "day" : "hour";
+    const unit = firewall.range === '30d' ? 'day' : 'hour';
     const blocked = times.map((_, i) =>
         firewall.series
-            .filter((s) => s.key !== "detected")
+            .filter((s) => s.key !== 'detected')
             .reduce((sum, s) => sum + (s.values[i] ?? 0), 0),
     );
     const detected =
-        firewall.series.find((s) => s.key === "detected")?.values ?? [];
+        firewall.series.find((s) => s.key === 'detected')?.values ?? [];
     const series: StackedSeries[] = [
         {
-            key: "blocked",
-            label: "Blocked",
-            color: "var(--signal)",
+            key: 'blocked',
+            label: 'Blocked',
+            color: 'var(--signal)',
             values: blocked,
         },
     ];
 
     if (firewall.watching.length > 0) {
         series.push({
-            key: "detected",
-            label: "Would have been blocked",
-            color: "var(--chart-other)",
+            key: 'detected',
+            label: 'Would have been blocked',
+            color: 'var(--chart-other)',
             hatched: true,
             values: detected,
         });
@@ -223,7 +223,7 @@ function ChartCard({ firewall }: { firewall: Firewall }) {
         <div
             className={cn(
                 card,
-                "grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_20rem]",
+                'grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_20rem]',
             )}
         >
             <div className="flex min-w-0 flex-col gap-1 p-5 sm:p-6">
@@ -254,7 +254,7 @@ function AttackMix({ firewall }: { firewall: Firewall }) {
         .sort((a, b) => b.count - a.count);
     const total = kinds.reduce((sum, c) => sum + c.count, 0);
     const named = kinds.filter(
-        (c) => c.category !== "other" && c.category in SERIES_COLOR,
+        (c) => c.category !== 'other' && c.category in SERIES_COLOR,
     );
     const rest = kinds.filter((c) => !named.includes(c));
     const rows = [
@@ -268,11 +268,11 @@ function AttackMix({ firewall }: { firewall: Firewall }) {
         ...(rest.length > 0
             ? [
                   {
-                      key: "other",
-                      label: "Other",
+                      key: 'other',
+                      label: 'Other',
                       count: rest.reduce((sum, c) => sum + c.count, 0),
-                      color: "var(--chart-other)",
-                      detail: rest.map((c) => c.label).join(", "),
+                      color: 'var(--chart-other)',
+                      detail: rest.map((c) => c.label).join(', '),
                   },
               ]
             : []),
@@ -287,7 +287,7 @@ function AttackMix({ firewall }: { firewall: Firewall }) {
             <h3 className="type-label text-muted-foreground">Attack mix</h3>
             <div
                 role="img"
-                aria-label={`Attack mix: ${rows.map((r) => `${r.label} ${share(r.count, total)}`).join(", ")}`}
+                aria-label={`Attack mix: ${rows.map((r) => `${r.label} ${share(r.count, total)}`).join(', ')}`}
                 className="flex h-2 w-full gap-0.5 overflow-hidden rounded-full"
             >
                 {rows.map((r) => (
@@ -336,7 +336,7 @@ function AttackMix({ firewall }: { firewall: Firewall }) {
 function share(value: number, total: number): string {
     const percent = total > 0 ? (value / total) * 100 : 0;
 
-    return percent > 0 && percent < 1 ? "<1%" : `${Math.round(percent)}%`;
+    return percent > 0 && percent < 1 ? '<1%' : `${Math.round(percent)}%`;
 }
 
 function MostTargeted({
@@ -350,7 +350,7 @@ function MostTargeted({
     const top = Math.max(1, ...rows.map((s) => s.blocked + s.detected));
 
     return (
-        <div className={cn(card, "flex min-w-0 flex-col", className)}>
+        <div className={cn(card, 'flex min-w-0 flex-col', className)}>
             <h3 className="px-5 pt-4 pb-3 type-label text-muted-foreground">
                 Most targeted
             </h3>
@@ -410,7 +410,7 @@ function Watching({
         setBusy(url);
 
         try {
-            await requestJson("patch", url, { mode: "block" });
+            await requestJson('patch', url, { mode: 'block' });
             toast.success(`${name} now blocks attacks`);
             onChanged();
         } catch (error) {
@@ -421,7 +421,7 @@ function Watching({
     };
 
     return (
-        <div className={cn(card, "flex flex-col overflow-hidden")}>
+        <div className={cn(card, 'flex flex-col overflow-hidden')}>
             <h3 className="flex items-center gap-2 border-b px-5 py-3 type-label text-muted-foreground">
                 <Eye aria-hidden="true" className="size-4" />
                 Watching, not blocking yet
@@ -438,17 +438,17 @@ function Watching({
                                     {w.service.name}
                                 </span>
                                 <span className="text-muted-foreground">
-                                    {" "}
-                                    in {w.service.environmentName}{" "}
+                                    {' '}
+                                    in {w.service.environmentName}{' '}
                                 </span>
                                 {w.detected > 0
-                                    ? `would have blocked ${plural(w.detected, "request")} in the last 7 days`
-                                    : "would have blocked nothing in the last 7 days"}
+                                    ? `would have blocked ${plural(w.detected, 'request')} in the last 7 days`
+                                    : 'would have blocked nothing in the last 7 days'}
                             </span>
                             {(w.categories.length > 0 || w.topPath) && (
                                 <MetaLine className="type-small text-muted-foreground">
                                     {w.categories.length > 0
-                                        ? w.categories.join(", ")
+                                        ? w.categories.join(', ')
                                         : null}
                                     {w.topPath ? (
                                         <code className="type-mono-small">
@@ -501,7 +501,7 @@ function RecentBlocks({
         <div
             className={cn(
                 card,
-                "flex min-w-0 flex-col overflow-hidden",
+                'flex min-w-0 flex-col overflow-hidden',
                 className,
             )}
         >
@@ -510,7 +510,7 @@ function RecentBlocks({
             </h3>
             <ul className="flex flex-col pb-2">
                 {shown.map((event) => {
-                    const category = event.categories[0] ?? "other";
+                    const category = event.categories[0] ?? 'other';
 
                     return (
                         <li key={event.id}>
@@ -526,7 +526,7 @@ function RecentBlocks({
                                 <code className="min-w-0 truncate type-mono-small">
                                     <span className="text-muted-foreground">
                                         {event.method}
-                                    </span>{" "}
+                                    </span>{' '}
                                     {event.path}
                                 </code>
                                 <span className="order-3 flex min-w-0 items-center gap-2 type-small md:order-none">
@@ -539,8 +539,8 @@ function RecentBlocks({
                                         }}
                                     />
                                     <span className="truncate">
-                                        {CATEGORY_LABEL[category] ?? "Other"}
-                                        {event.action === "detected" && (
+                                        {CATEGORY_LABEL[category] ?? 'Other'}
+                                        {event.action === 'detected' && (
                                             <span className="text-muted-foreground">
                                                 , logged
                                             </span>
@@ -570,7 +570,7 @@ function RecentBlocks({
                     className="w-full border-t px-5 py-2.5 text-left type-small text-muted-foreground hover:bg-hover hover:text-foreground"
                 >
                     {expanded
-                        ? "Show fewer"
+                        ? 'Show fewer'
                         : `Show ${events.length - RECENT_SHOWN} more`}
                 </button>
             )}
@@ -602,12 +602,12 @@ export function EventSheet({
         setBusy(true);
 
         try {
-            await requestJson("post", draft.exclusionsUrl, {
+            await requestJson('post', draft.exclusionsUrl, {
                 rule: draft.rule,
                 path: draft.path,
                 target: draft.target,
             });
-            toast.success("Requests like this are allowed now");
+            toast.success('Requests like this are allowed now');
             onOpenChange(false);
         } catch (error) {
             toast.error((error as Error).message);
@@ -627,12 +627,12 @@ export function EventSheet({
                         {event.method} {event.path}
                     </code>
                 ) : (
-                    ""
+                    ''
                 )
             }
             description={
                 event
-                    ? `${event.action === "blocked" ? "Blocked" : "Logged in Log only"} for ${event.service.name}, score ${event.score}`
+                    ? `${event.action === 'blocked' ? 'Blocked' : 'Logged in Log only'} for ${event.service.name}, score ${event.score}`
                     : undefined
             }
         >
@@ -656,10 +656,10 @@ export function EventSheet({
                     <SheetSection title="Request">
                         <dl className="grid grid-cols-[8rem_1fr] gap-x-4 gap-y-2 type-small">
                             <dt className="text-muted-foreground">Time</dt>
-                            <dd>{new Date(event.at).toLocaleString("en")}</dd>
+                            <dd>{new Date(event.at).toLocaleString('en')}</dd>
                             <dt className="text-muted-foreground">Matched</dt>
                             <dd className="font-mono">
-                                {event.targets.join(", ") || "Request"}
+                                {event.targets.join(', ') || 'Request'}
                             </dd>
                             {event.clientNetwork && (
                                 <>
@@ -684,27 +684,27 @@ export function EventSheet({
                         >
                             <div className="flex flex-col gap-3">
                                 <p className="type-small text-muted-foreground">
-                                    Rule{" "}
+                                    Rule{' '}
                                     <code className="font-mono">
                                         {draft.rule}
-                                    </code>{" "}
-                                    stops checking{" "}
+                                    </code>{' '}
+                                    stops checking{' '}
                                     {draft.target ? (
                                         <code className="font-mono">
                                             {draft.target}
                                         </code>
                                     ) : (
-                                        "requests"
+                                        'requests'
                                     )}
                                     {draft.path ? (
                                         <>
-                                            {" "}
-                                            under{" "}
+                                            {' '}
+                                            under{' '}
                                             <code className="font-mono">
                                                 {draft.path}
                                             </code>
                                         </>
-                                    ) : null}{" "}
+                                    ) : null}{' '}
                                     on {event.service.name}.
                                 </p>
                                 <div className="flex flex-wrap gap-2">
@@ -743,6 +743,6 @@ export function EventSheet({
 
 export function listNames(names: string[]): string {
     return names.length <= 1
-        ? (names[0] ?? "")
-        : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+        ? (names[0] ?? '')
+        : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
 }

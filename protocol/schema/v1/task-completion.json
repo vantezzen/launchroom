@@ -436,6 +436,21 @@
             }
           ]
         },
+        "phpExtensions": {
+          "oneOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/PhpExtension"
+              },
+              "type": "array",
+              "maxItems": 8,
+              "description": "PhpExtensions are the BuilderSpec.phpExtensions added to the Railpack\nplan (PHP provider only; daemon feature phpExtensions)."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "plan": {
           "type": "object",
           "description": "Plan is the resolved Railpack build plan (railpack builds); it lists secret names only."
@@ -1372,6 +1387,40 @@
         "edge"
       ],
       "description": "NextRouteCounts counts the user-facing outputs of a Next.js build."
+    },
+    "PhpExtension": {
+      "properties": {
+        "name": {
+          "type": "string",
+          "enum": [
+            "pdo_pgsql",
+            "pgsql",
+            "pdo_mysql",
+            "mysqli",
+            "redis",
+            "mongodb"
+          ]
+        },
+        "for": {
+          "type": "string",
+          "enum": [
+            "postgres",
+            "mysql",
+            "mariadb",
+            "redis",
+            "mongodb",
+            "valkey",
+            "clickhouse"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "name",
+        "for"
+      ],
+      "description": "PhpExtension is one PHP extension a build adds and the database engine that needs it (shown as \"pdo_pgsql (for postgres)\")."
     },
     "PlanResult": {
       "properties": {

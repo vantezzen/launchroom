@@ -93,6 +93,23 @@ func railpackEnv(b state.BuilderSpec, buildEnv []string) map[string]string {
 	return env
 }
 
+// dropConfigSecrets removes Railpack's own settings (RAILPACK_*: railpackEnv,
+// command overrides, PHP extensions) from the plan's secrets. Railpack makes
+// every planning variable a plan secret, but only build variables get a value
+// in the solve; BuildKit fails a step on a secret it can't find. A build
+// variable that happens to be named RAILPACK_* keeps its secret.
+func dropConfigSecrets(p *rpplan.BuildPlan, buildEnv []string) {
+	config := func(name string) bool {
+		return strings.HasPrefix(name, "RAILPACK_") && !slices.Contains(buildEnv, name)
+	}
+	p.Secrets = slices.DeleteFunc(p.Secrets, config)
+	for i := range p.Steps {
+		if p.Steps[i].Secrets != nil {
+			p.Steps[i].Secrets = slices.DeleteFunc(p.Steps[i].Secrets, config)
+		}
+	}
+}
+
 // planWithRailpack runs Railpack's planner in-process. A nil plan with a
 // nil error means Railpack could not plan the app (plan_error, see logs).
 func planWithRailpack(dir string, env map[string]string, logf func(level, msg string)) (*railpackPlan, error) {

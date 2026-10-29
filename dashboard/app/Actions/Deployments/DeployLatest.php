@@ -25,7 +25,10 @@ use App\Support\Services\StagedForService;
  * With staged changes for the service, Deploy is the environment's "Deploy
  * changes" instead (they go out with the new version), so this refuses and
  * the panel shows that flow. Stopped services start first; databases,
- * workers and crons have no version of their own to deploy (Restart).
+ * workers and crons have no version of their own to deploy (Restart),
+ * except before anything of them runs: then Deploy tries the last
+ * deployed configuration again ({@see RedeployService}), the retry of a
+ * failed first deploy.
  */
 final readonly class DeployLatest
 {
@@ -44,12 +47,18 @@ final readonly class DeployLatest
             throw DomainRuleViolation::on('service', 'This service is stopped. Start it first.');
         }
 
-        if (! in_array($service->kind, [ServiceKind::App, ServiceKind::Image], true)) {
+        $versioned = in_array($service->kind, [ServiceKind::App, ServiceKind::Image], true);
+
+        if (! $versioned && $instance->active_deployment_id !== null) {
             throw DomainRuleViolation::on('service', 'Only apps and image services deploy a new version. Restart this one instead.');
         }
 
         if ($this->staged->has($instance)) {
             throw DomainRuleViolation::conflict('This service has staged changes. Deploy them with the environment’s Deploy changes, so they go out with the new version.');
+        }
+
+        if (! $versioned) {
+            return $this->redeploy->handle($instance, null, $user, $actor);
         }
 
         return match (true) {

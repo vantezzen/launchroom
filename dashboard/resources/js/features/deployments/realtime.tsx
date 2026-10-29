@@ -10,6 +10,8 @@ export type DeploymentUpdatedEvent = {
     environmentId: string;
     serviceId: string;
     status: App.Enums.DeploymentStatus;
+    /** Only true when the status just changed (not for progress nudges). */
+    statusChanged?: boolean;
 };
 
 function Subscription<T>({

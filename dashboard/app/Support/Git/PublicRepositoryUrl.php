@@ -83,7 +83,8 @@ final readonly class PublicRepositoryUrl
             }
 
             $parts = array_slice($parts, 0, 2);
-        } elseif ($host === 'gitlab.com') {
+        } else {
+            // GitLab browser URLs: everything after `/-/` is a page of the project.
             $cut = array_search('-', $parts, true);
 
             if ($cut !== false) {

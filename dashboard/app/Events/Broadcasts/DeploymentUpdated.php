@@ -9,9 +9,12 @@ use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
 use Illuminate\Foundation\Events\Dispatchable;
 
 /**
- * Realtime nudge: a deployment changed status (docs/08 §4 "realtime by
- * default"). Carries ids and the status only; clients refetch what they show
- * through authorized endpoints. Channels are authorized in routes/channels.php.
+ * Realtime nudge about a deployment (docs/08 §4 "realtime by default").
+ * Carries ids and the status only; clients refetch what they show through
+ * authorized endpoints. Channels are authorized in routes/channels.php.
+ * `statusChanged` is true only when the status itself just changed: other
+ * nudges (pull progress, a build being picked up) resend the current status,
+ * and outcome toasts must not announce those again.
  */
 final readonly class DeploymentUpdated implements ShouldBroadcast
 {
@@ -22,6 +25,7 @@ final readonly class DeploymentUpdated implements ShouldBroadcast
         public string $environmentId,
         public string $serviceId,
         public string $status,
+        public bool $statusChanged = false,
     ) {}
 
     /**

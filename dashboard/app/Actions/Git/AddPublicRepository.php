@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace App\Actions\Git;
 
+use App\Contracts\Git\SourceRepository;
 use App\Data\Audit\AuditActor;
 use App\Data\Git\AddGitServerData;
+use App\Data\Git\GitRepositoryData;
 use App\Enums\Git\GitAuthMethod;
 use App\Enums\Git\GitConnectionStatus;
 use App\Enums\Git\GitProviderKind;
@@ -13,6 +15,7 @@ use App\Exceptions\DomainRuleViolation;
 use App\Models\Git\GitRepository;
 use App\Models\Team;
 use App\Models\User;
+use App\Services\Git\GitProviders;
 use App\Support\Git\PublicRepositoryUrl;
 use Illuminate\Contracts\Database\Query\Builder;
 use InvalidArgumentException;
@@ -30,14 +33,24 @@ final readonly class AddPublicRepository
     public function __construct(
         private CheckPublicRepository $check,
         private AddGitServer $add,
+        private GitProviders $providers,
     ) {}
 
     /**
      * @throws DomainRuleViolation when the URL isn't a readable public repository
      */
-    public function handle(Team $team, User $user, string $input, AuditActor $actor): GitRepository
+    public function handle(Team $team, User $user, string $input, AuditActor $actor): SourceRepository
     {
-        $checked = $this->check->handle($input);
+        $checked = $this->check->handle($team, $input);
+
+        if ($checked->repository instanceof GitRepositoryData) {
+            // A connection already reaches it: the same row as Import.
+            $connected = $this->providers->repository($team, $checked->repository->id);
+
+            if ($connected instanceof SourceRepository) {
+                return $connected;
+            }
+        }
 
         if ($checked->problem !== null) {
             throw DomainRuleViolation::on('url', $checked->problem);

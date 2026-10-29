@@ -28,6 +28,9 @@ final readonly class PublicGitRemote
 {
     private const string USER_AGENT = 'git/2.47.0 (launchroom)';
 
+    /** Exception code: the server hides the repository (missing or private). */
+    public const int NOT_PUBLIC = 404;
+
     public function __construct(
         private SafeHttpClient $http,
         private Cache $cache,
@@ -85,7 +88,7 @@ final readonly class PublicGitRemote
         $this->backOff($response, $pause);
 
         if (in_array($response->status(), [401, 403, 404], true)) {
-            throw new GitConnectionUnusable("{$host} doesn’t show this repository publicly. Check the URL, or connect your account for private repositories.");
+            throw new GitConnectionUnusable("{$host} doesn’t show this repository publicly. Check the URL, or connect your account for private repositories.", self::NOT_PUBLIC);
         }
 
         if (! $response->successful()) {

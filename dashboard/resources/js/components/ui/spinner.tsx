@@ -1,15 +1,12 @@
-import { Loader2Icon } from "lucide-react"
-
+import { ProgressRing } from "@/components/progress-ring"
 import { cn } from "@/lib/utils"
 
-function Spinner({ className, ...props }: React.ComponentProps<"svg">) {
+/** Busy state of a button or a loading line: the one spinner shape, in the text colour. */
+function Spinner({ className }: { className?: string }) {
   return (
-    <Loader2Icon
-      role="status"
-      aria-label="Loading"
-      className={cn("size-4 animate-spin", className)}
-      {...props}
-    />
+    <span role="status" aria-label="Loading" className="inline-flex shrink-0">
+      <ProgressRing tone="current" className={cn("size-4", className)} />
+    </span>
   )
 }
 

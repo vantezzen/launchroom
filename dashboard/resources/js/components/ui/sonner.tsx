@@ -2,10 +2,10 @@ import {
     CircleAlert,
     CircleCheck,
     Info,
-    LoaderCircle,
     TriangleAlert,
 } from 'lucide-react';
 import { Toaster as Sonner, type ToasterProps } from 'sonner';
+import { ProgressRing } from '@/components/progress-ring';
 import { useAppearance } from '@/hooks/use-appearance';
 import { useFlashToast } from '@/hooks/use-flash-toast';
 
@@ -33,7 +33,7 @@ function Toaster({ ...props }: ToasterProps) {
                 warning: <TriangleAlert className="size-4 text-status-progress" />,
                 info: <Info className="size-4 text-muted-foreground" />,
                 loading: (
-                    <LoaderCircle className="size-4 text-status-progress motion-safe:animate-spin" />
+                    <ProgressRing className="size-4" />
                 ),
             }}
             toastOptions={{

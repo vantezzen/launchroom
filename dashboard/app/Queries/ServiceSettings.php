@@ -30,6 +30,7 @@ use App\Data\Services\GitSource;
 use App\Data\Services\ImageSource;
 use App\Data\Services\ScalingSettings;
 use App\Data\Services\ServicePlanData;
+use App\Data\Specs\EnvironmentSpec;
 use App\Data\Specs\ServiceSpec;
 use App\Drivers\DatabaseEngines\DatabaseEngines;
 use App\Enums\DomainKind;
@@ -68,7 +69,10 @@ final readonly class ServiceSettings
         private DockerfileGenerationView $dockerfiles,
     ) {}
 
-    public function for(ServiceInstance $instance, User $user): ServiceSettingsData
+    /**
+     * @param  EnvironmentSpec|null  $current  the instance environment's current spec, when the caller already built it
+     */
+    public function for(ServiceInstance $instance, User $user, ?EnvironmentSpec $current = null): ServiceSettingsData
     {
         $instance->loadMissing(['service.parent', 'environment.lastAppliedRevision', 'domains', 'volumes.server', 'activeDeployment']);
         $service = $instance->service;
@@ -80,7 +84,7 @@ final readonly class ServiceSettings
             ->latest('id')
             ->first();
         $plan = ServicePlanData::forInstance($instance);
-        $definedKeys = $this->definedKeys($instance);
+        $definedKeys = $this->definedKeys($instance, $current);
         $detected = DetectedPlanData::fromStored($instance->plan['summary'] ?? null, $definedKeys)
             ?? DetectedPlanData::fromStored($latestPlanned?->plan['summary'] ?? null, $definedKeys);
 
@@ -325,9 +329,9 @@ final readonly class ServiceSettings
      *
      * @return list<string>
      */
-    private function definedKeys(ServiceInstance $instance): array
+    private function definedKeys(ServiceInstance $instance, ?EnvironmentSpec $current): array
     {
-        $environment = $this->currentSpec->get($instance->environment);
+        $environment = $current ?? $this->currentSpec->get($instance->environment);
         $service = $environment->service($instance->service->public_id);
 
         if (! $service instanceof ServiceSpec) {

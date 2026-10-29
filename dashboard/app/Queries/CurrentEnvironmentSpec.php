@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Queries;
 
 use App\Casts\ServiceSourceCast;
+use App\Data\Protocol\V1\PhpExtension;
+use App\Data\Services\DatabaseSource;
 use App\Data\Specs\ConnectionSpec;
 use App\Data\Specs\DomainSpec;
 use App\Data\Specs\EnvironmentMetaSpec;
@@ -12,6 +14,8 @@ use App\Data\Specs\EnvironmentSpec;
 use App\Data\Specs\ServiceSpec;
 use App\Data\Specs\VariableSpec;
 use App\Data\Specs\VolumeSpec;
+use App\Enums\ConnectionStyle;
+use App\Enums\DatabaseEngine;
 use App\Enums\EnvironmentKind;
 use App\Enums\PreviewStrategy;
 use App\Enums\VariableType;
@@ -22,7 +26,9 @@ use App\Models\ServiceInstance;
 use App\Models\Variable;
 use App\Models\VariableTarget;
 use App\Models\Volume;
+use App\Support\Builds\PhpExtensions;
 use App\Support\Variables\VariableTargeting;
+use Illuminate\Support\Collection;
 
 /**
  * Snapshots an environment's current intent (docs/06 §4: "intent tables are
@@ -94,6 +100,7 @@ final class CurrentEnvironmentSpec
             }
         }
 
+        $phpExtensions = $this->phpExtensions($byServiceId, $connections);
         $services = [];
 
         foreach ($byServiceId as $serviceId => $instance) {
@@ -140,6 +147,7 @@ final class CurrentEnvironmentSpec
                 sharedVariableIds: $shared,
                 domains: $domains,
                 volumes: $volumes,
+                phpExtensions: $phpExtensions[$serviceId] ?? [],
             );
         }
 
@@ -189,6 +197,66 @@ final class CurrentEnvironmentSpec
             sharedVariables: $sharedVariables,
             sharedServices: $sharedServices,
         );
+    }
+
+    /**
+     * The PHP database drivers each PHP app's build adds (docs/04 §3.1): one
+     * per engine it, or one of its processes (which run its image), is
+     * connected to. A service counts as a PHP app when its last plan detected
+     * Railpack's PHP provider or one of its connections uses Laravel names.
+     *
+     * @param  array<int, ServiceInstance>  $byServiceId
+     * @param  Collection<int, Connection>  $connections
+     * @return array<int, list<PhpExtension>> keyed by service id
+     */
+    private function phpExtensions(array $byServiceId, Collection $connections): array
+    {
+        /** @var array<int, list<DatabaseEngine>> $engines */
+        $engines = [];
+        $laravel = [];
+
+        foreach ($connections as $connection) {
+            $from = $byServiceId[$connection->from_service_id] ?? null;
+            $to = $byServiceId[$connection->to_service_id] ?? null;
+
+            if ($from === null || $to === null) {
+                continue;
+            }
+
+            $app = $from->service->parent_service_id ?? $from->service_id;
+
+            if ($to->service->source instanceof DatabaseSource) {
+                $engines[$app][] = $to->service->source->engine;
+            }
+
+            if ($connection->style === ConnectionStyle::Laravel) {
+                $laravel[$app] = true;
+            }
+        }
+
+        $extensions = [];
+
+        foreach ($engines as $app => $list) {
+            $instance = $byServiceId[$app] ?? null;
+            $kind = $instance?->service->kind;
+
+            if ($instance === null || $kind === null || ! $kind->isBuilt() || $kind->requiresParent()) {
+                continue;
+            }
+
+            if (isset($laravel[$app]) || $this->detectedPhp($instance)) {
+                $extensions[$app] = PhpExtensions::forEngines($list);
+            }
+        }
+
+        return $extensions;
+    }
+
+    private function detectedPhp(ServiceInstance $instance): bool
+    {
+        $summary = $instance->plan['summary'] ?? null;
+
+        return is_array($summary) && ($summary['provider'] ?? null) === 'php';
     }
 
     private function variableSpec(Variable $variable, Environment $environment, ?string $branch): ?VariableSpec

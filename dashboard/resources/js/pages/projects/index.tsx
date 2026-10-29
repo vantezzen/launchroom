@@ -17,7 +17,7 @@ import { compactAge, plural } from '@/features/canvas/format';
 import { MiniCanvas } from '@/features/canvas/mini-canvas';
 import { EnvironmentLiveUpdates } from '@/features/projects/environment-live-updates';
 import { StartEmptyDialog } from '@/features/projects/start-empty-dialog';
-import { importMethod, index, show } from '@/routes/projects';
+import { canvas, importMethod, index, show } from '@/routes/projects';
 
 type Summary = App.Data.Canvas.ProjectSummaryData;
 
@@ -55,7 +55,16 @@ function Card({ project }: { project: Summary }) {
     return (
         <ObjectCard
             title={project.name}
-            href={show(project.id)}
+            // Straight to the production canvas (no redirect hop through
+            // /p/{project}); prefetched on hover with a short cache so the
+            // canvas isn't served older than a click would fetch.
+            href={
+                production?.kind === 'production'
+                    ? canvas([project.id, production.id])
+                    : show(project.id)
+            }
+            prefetch
+            cacheFor="3s"
             titleMedia={
                 <ProjectIcon
                     name={project.name}

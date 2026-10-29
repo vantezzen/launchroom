@@ -30,6 +30,9 @@
       ],
       "releaseCommand": ["php", "artisan", "migrate", "--force"],
       "healthPath": "/up",
+      "phpExtensions": [
+        { "name": "pdo_pgsql", "for": "postgres" }
+      ],
       "warnings": [{ "code": "app-key", "message": "Laravel needs APP_KEY at runtime. Generate one in the service variables if it is not set." }]
     }
   }

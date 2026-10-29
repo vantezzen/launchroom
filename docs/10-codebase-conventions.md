@@ -145,6 +145,16 @@ Deliberately **not** used: `lorisleiva/laravel-actions` (plain final classes are
 - **Scheduler**: property-style tests (anti-affinity holds, stateful services never move, capacity respected).
 - `phpunit.xml` forces the `launchroom_test` DB and array/sync drivers via both `<env>` and `<server>`, so tests can never touch dev data, whichever shell runs them. Parallel workstreams override the database with `TEST_DB` (AGENTS.md). It sets `memory_limit=2048M` for the full suite in one process.
 
+### 2.5 Page props and query budgets
+
+Pages should stay fast without caches that make data stale:
+
+- **Props a partial reload doesn't ask for cost nothing.** Anything beyond a few fields is a closure (`'nodes' => fn () => …`), so Inertia only evaluates it when the visit includes it. The canvas is the model: opening a service or switching tabs reloads `only: ['panel']` (`panelVisitOptions`), so the canvas graph and the top bar's lists (`ProjectScope::shellProps`) are closures; when two props share one computation, memoise it inside the request (`$built ??= …`). Shared props in `HandleInertiaRequests` are closures for the same reason, and compute only what the sidebar shows (`OnboardingChecklist::progressFor` skips the checklist page's extras).
+- **Build expensive read models once per request, explicitly.** `CurrentEnvironmentSpec` is not memoised globally (actions read it before and after a change); a read path that needs it in several places builds it once and passes it on (`CanvasGraph::for`, `StagedForService::has`, `ServiceSettings::for` take an optional `EnvironmentSpec`).
+- **No N+1**: eager loads, `whereIn` batches and aggregate subqueries. Hot pages have **query budget tests**: the count is measured with `DB::enableQueryLog()` after a warm-up request, must not grow when services are added, and stays under a fixed upper bound (`tests/Feature/Canvas/CanvasQueryBudgetTest.php`, `ProjectCardDataTest`). Raise a budget only with a reason.
+- **Index foreign keys you filter or eager-load by.** Postgres doesn't index them by itself; add the index in the migration that adds the column.
+- `Inertia::defer()` suits a prop that is slow and below the fold; the pages measured so far didn't need one (each JSON prop is small; streams and history go through TanStack Query endpoints).
+
 ## 3. Frontend (React) conventions
 
 ```
@@ -165,6 +175,8 @@ Rules:
 - No business rules in the frontend (e.g. the build/runtime classification of a variable comes from the server).
 - Optimistic updates through Inertia `router` options or TanStack mutations, always with rollback.
 - Accessibility: keyboard-reachable canvas actions, focus management in panels, `prefers-reduced-motion`.
+- **Heavy code loads with its first use**: libraries or tabs that only some visits need (elkjs, the console's xterm, the settings pages of the service panel) are `lazy()` / dynamic `import()`, so the page chunk stays small. Warm a chunk the user is likely to need next (the panel warms Settings). Check the build's chunk sizes when adding a large dependency.
+- **Prefetch** links that are likely next (`<Link prefetch>`); a prefetched page is served until `cacheFor` expires (no revalidation on use), so links into live views (project cards → canvas) use a short `cacheFor`.
 - `vp check` / ESLint / `tsc --noEmit` in CI (already in the starter kit's scripts).
 
 ## 4. Daemon (Go) conventions

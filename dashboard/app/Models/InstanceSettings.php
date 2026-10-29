@@ -72,10 +72,17 @@ final class InstanceSettings extends Model
     public const int ID = 1;
 
     /**
-     * The singleton row, created on first use.
+     * The singleton row, created on first use. Read first: the row exists on
+     * every request but the very first, and this runs several times per page.
      */
     public static function current(): self
     {
+        $settings = self::query()->find(self::ID);
+
+        if ($settings instanceof self) {
+            return $settings;
+        }
+
         self::ensureExists();
 
         return self::query()->findOrFail(self::ID);

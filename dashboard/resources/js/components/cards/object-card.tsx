@@ -8,6 +8,9 @@ export type ObjectCardProps = {
     title: ReactNode;
     /** Whole card links here; the title is the single tab stop. */
     href?: NonNullable<InertiaLinkProps['href']>;
+    /** Prefetch the linked page on hover, kept for `cacheFor` (Inertia). */
+    prefetch?: InertiaLinkProps['prefetch'];
+    cacheFor?: InertiaLinkProps['cacheFor'];
     /** 150 px recessed stage on top (device, mini canvas, preview). */
     media?: ReactNode;
     /** Small chip at the top-left of the stage ("Hetzner, Frankfurt"). */
@@ -43,6 +46,8 @@ export type ObjectCardProps = {
 export function ObjectCard({
     title,
     href,
+    prefetch,
+    cacheFor,
     media,
     mediaLabel,
     mediaMeta,
@@ -95,6 +100,8 @@ export function ObjectCard({
                             {href ? (
                                 <Link
                                     href={href}
+                                    prefetch={prefetch}
+                                    cacheFor={cacheFor}
                                     data-card-link
                                     className="outline-none after:absolute after:inset-0 after:content-['']"
                                 >

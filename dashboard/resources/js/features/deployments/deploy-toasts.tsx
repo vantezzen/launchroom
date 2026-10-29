@@ -27,8 +27,11 @@ export function DeployOutcomeToasts({
     names: Record<string, string>;
 }) {
     const onEvent = (event: DeploymentUpdatedEvent | null) => {
+        // Only a status that just changed is an outcome: progress nudges
+        // resend the current status of deployments that finished long ago.
         if (
             !event ||
+            !event.statusChanged ||
             (event.status !== 'active' && event.status !== 'failed')
         ) {
             return;

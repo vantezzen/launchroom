@@ -98,6 +98,7 @@ test('status changes and stored logs are broadcast as nudges without content', f
     Queue::assertPushed(BroadcastEvent::class, fn (BroadcastEvent $job): bool => $job->event instanceof DeploymentUpdated
         && $job->event->deploymentId === $deployment->public_id
         && $job->event->status === 'active'
+        && $job->event->statusChanged
         && array_map(fn (PrivateChannel $channel): string => $channel->name, $job->event->broadcastOn()) === ["private-environments.{$world->production->public_id}", "private-deployments.{$deployment->public_id}"]);
     Queue::assertPushed(BroadcastEvent::class, fn (BroadcastEvent $job): bool => $job->event instanceof DeploymentLogsAppended && $job->event->deploymentId === $deployment->public_id);
 });

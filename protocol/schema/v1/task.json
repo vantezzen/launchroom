@@ -483,6 +483,21 @@
               "type": "null"
             }
           ]
+        },
+        "phpExtensions": {
+          "oneOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/PhpExtension"
+              },
+              "type": "array",
+              "maxItems": 8,
+              "description": "PhpExtensions are PHP extensions the app's connected databases need\n(daemon feature phpExtensions, docs/04 §3.1). Railpack PHP builds add\nthem through RAILPACK_PHP_EXTENSIONS; Dockerfile builds of a PHP app\nonly get a warning. Valid for every builder kind."
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "additionalProperties": false,
@@ -850,6 +865,40 @@
         "subnet"
       ],
       "description": "NetworkSpec is a Docker bridge network with a dashboard-allocated subnet."
+    },
+    "PhpExtension": {
+      "properties": {
+        "name": {
+          "type": "string",
+          "enum": [
+            "pdo_pgsql",
+            "pgsql",
+            "pdo_mysql",
+            "mysqli",
+            "redis",
+            "mongodb"
+          ]
+        },
+        "for": {
+          "type": "string",
+          "enum": [
+            "postgres",
+            "mysql",
+            "mariadb",
+            "redis",
+            "mongodb",
+            "valkey",
+            "clickhouse"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "name",
+        "for"
+      ],
+      "description": "PhpExtension is one PHP extension a build adds and the database engine that needs it (shown as \"pdo_pgsql (for postgres)\")."
     },
     "PlanSpec": {
       "properties": {

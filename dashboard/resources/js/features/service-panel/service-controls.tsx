@@ -5,6 +5,11 @@ import { toast } from 'sonner';
 import { ConfirmPopover } from '@/components/patterns/confirm-popover';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
+import {
+    Tooltip,
+    TooltipContent,
+    TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { deployStaged } from '@/features/staged-changes/staged-changes-sheet';
 import lifecycle from '@/routes/services/lifecycle';
 
@@ -14,7 +19,9 @@ type Controls = App.Data.Canvas.ServiceControlsData;
  * The service panel header's actions (D68, docs/08 §13): Deploy (or Deploy
  * changes when the service has staged changes, the environment's existing
  * flow), Restart and Stop while it runs, Start while it is stopped. Each
- * changes the service in this environment only.
+ * changes the service in this environment only. Before anything of it
+ * runs (a first deploy in progress or failed), Deploy tries again and
+ * Restart and Stop stay in place, disabled, saying why.
  */
 export function ServiceControls({
     project,
@@ -32,7 +39,7 @@ export function ServiceControls({
     const [busy, setBusy] = useState<string | null>(null);
     const [processes, setProcesses] = useState(true);
 
-    if (!controls.canControl || (!controls.running && !controls.stopped)) {
+    if (!controls.canControl) {
         return null;
     }
 
@@ -79,6 +86,23 @@ export function ServiceControls({
                     name={name}
                     processes={controls.processes}
                 />
+            </div>
+        );
+    }
+
+    if (!controls.running) {
+        return (
+            <div className="flex flex-wrap items-center gap-2">
+                <DeployButton
+                    project={project}
+                    environment={environment}
+                    service={service}
+                    name={name}
+                    staged={controls.staged}
+                    versioned={controls.versioned}
+                />
+                <NotRunning icon={RotateCw} label="Restart" />
+                <NotRunning icon={Square} label="Stop" />
             </div>
         );
     }
@@ -226,6 +250,32 @@ export function StartButton({
     );
 }
 
+/**
+ * Restart or Stop before anything runs: in place so the header doesn't
+ * change shape once the first deploy succeeds, disabled with the reason.
+ */
+function NotRunning({
+    icon: Icon,
+    label,
+}: {
+    icon: typeof RotateCw;
+    label: string;
+}) {
+    return (
+        <Tooltip>
+            <TooltipTrigger asChild>
+                <span tabIndex={0} className="rounded-md">
+                    <Button size="sm" variant="outline" disabled>
+                        <Icon aria-hidden="true" />
+                        {label}
+                    </Button>
+                </span>
+            </TooltipTrigger>
+            <TooltipContent>Nothing is running yet</TooltipContent>
+        </Tooltip>
+    );
+}
+
 function ProcessChoice({
     count,
     checked,
@@ -250,8 +300,10 @@ function ProcessChoice({
 
 /**
  * Deploy: the latest commit of the tracked branch (or the image's tag
- * again); with staged changes, the environment's Deploy changes. Shown in
- * the panel header and on the Deployments tab.
+ * again; a database, worker or cron that never ran: its last deployed
+ * configuration); with staged changes, the environment's Deploy changes.
+ * Shown in the panel header and as "Try again" on a failed first deploy
+ * in the Deployments tab.
  */
 export function DeployButton({
     project,
@@ -259,6 +311,8 @@ export function DeployButton({
     service,
     name,
     staged,
+    versioned = true,
+    label,
     disabled = false,
     variant = 'default',
 }: {
@@ -267,6 +321,9 @@ export function DeployButton({
     service: string;
     name: string;
     staged: boolean;
+    versioned?: boolean;
+    /** In place of "Deploy" (not with staged changes): "Try again". */
+    label?: string;
     disabled?: boolean;
     variant?: 'default' | 'outline';
 }) {
@@ -306,11 +363,13 @@ export function DeployButton({
             title={
                 staged
                     ? 'Deploys the staged changes of this environment'
-                    : 'Builds and deploys the latest version'
+                    : versioned
+                      ? 'Builds and deploys the latest version'
+                      : 'Deploys the last deployed configuration again'
             }
         >
             <Rocket aria-hidden="true" />
-            {staged ? 'Deploy changes' : 'Deploy'}
+            {staged ? 'Deploy changes' : (label ?? 'Deploy')}
         </Button>
     );
 }

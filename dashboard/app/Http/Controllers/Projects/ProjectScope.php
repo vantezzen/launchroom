@@ -17,6 +17,7 @@ use App\Models\Project;
 use App\Models\Service;
 use App\Models\ServiceInstance;
 use App\Queries\EdgeOverview;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Gate;
 
 /**
@@ -77,24 +78,29 @@ final class ProjectScope
     public static function shellProps(Project $project, ?Environment $environment): array
     {
         // Every environment for the switcher (docs/08 §1): production,
-        // persistent ones, then previews (newest first, bounded).
-        $environments = $project->environments()
-            ->where('kind', '!=', EnvironmentKind::Preview->value)
-            ->orderByRaw("case when kind = 'production' then 0 else 1 end")
-            ->orderBy('name')
-            ->get()
-            ->concat($project->environments()
-                ->where('kind', EnvironmentKind::Preview->value)
-                ->latest('id')
-                ->limit(20)
-                ->get());
+        // persistent ones, then previews (newest first, bounded). Loaded at
+        // most once, and only when needed: partial reloads (the service
+        // panel, realtime refreshes) don't ask for the top bar's lists.
+        $loaded = null;
+        $environments = static function () use ($project, &$loaded): Collection {
+            return $loaded ??= $project->environments()
+                ->where('kind', '!=', EnvironmentKind::Preview->value)
+                ->orderByRaw("case when kind = 'production' then 0 else 1 end")
+                ->orderBy('name')
+                ->get()
+                ->concat($project->environments()
+                    ->where('kind', EnvironmentKind::Preview->value)
+                    ->latest('id')
+                    ->limit(20)
+                    ->get());
+        };
 
-        $current = $environment ?? $environments->first();
+        $current = $environment ?? $environments()->first();
 
         return [
             'project' => ProjectData::fromProject($project),
             'environment' => $current instanceof Environment ? EnvironmentData::fromEnvironment($current) : null,
-            'projects' => Project::query()
+            'projects' => static fn (): array => Project::query()
                 ->where('team_id', $project->team_id)
                 ->orderBy('name')
                 ->limit(50)
@@ -102,7 +108,7 @@ final class ProjectScope
                 ->map(static fn (Project $item): ProjectLinkData => new ProjectLinkData($item->public_id, $item->name, $item->iconUrl()))
                 ->values()
                 ->all(),
-            'environments' => $environments->map(static fn (Environment $item): EnvironmentData => EnvironmentData::fromEnvironment($item))->values()->all(),
+            'environments' => static fn (): array => $environments()->map(static fn (Environment $item): EnvironmentData => EnvironmentData::fromEnvironment($item))->values()->all(),
             // Single point of failure badge (docs/02 §5), lazily evaluated.
             'edgeOverview' => static fn (): EdgeOverviewData => resolve(EdgeOverview::class)->for($project->team_id),
             'abilities' => new ProjectAbilitiesData(

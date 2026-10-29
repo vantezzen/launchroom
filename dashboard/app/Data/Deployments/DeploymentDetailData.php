@@ -50,5 +50,7 @@ final class DeploymentDetailData extends Data
         public array $servers = [],
         /** The deployment that replaced this one (superseded only). */
         public ?DeploymentRefData $supersededBy = null,
+        /** The step list shows "Release" from the start (docs/04 §6), skipped when the build reveals no release command. */
+        public bool $expectsRelease = false,
     ) {}
 }

@@ -9,6 +9,8 @@ use App\Data\Canvas\CanvasLayoutData;
 use App\Data\Canvas\DatabaseEngineOptionData;
 use App\Data\Canvas\ServiceControlsData;
 use App\Data\Canvas\ServicePanelData;
+use App\Data\Previews\PreviewCanvasData;
+use App\Data\Specs\EnvironmentSpec;
 use App\Drivers\DatabaseEngines\DatabaseEngines;
 use App\Enums\DatabaseEngine;
 use App\Enums\EnvironmentKind;
@@ -24,6 +26,7 @@ use App\Models\Service;
 use App\Models\Sessions\InteractiveSession;
 use App\Models\User;
 use App\Queries\CanvasGraph;
+use App\Queries\CurrentEnvironmentSpec;
 use App\Queries\Previews\PreviewCanvas;
 use App\Queries\ServiceSettings;
 use App\Support\Services\StagedForService;
@@ -45,6 +48,7 @@ final class CanvasController extends Controller
     public function __construct(
         private readonly DatabaseEngines $engines,
         private readonly StagedForService $staged,
+        private readonly CurrentEnvironmentSpec $currentSpec,
     ) {}
 
     /** Service panel tabs, in display order (`console`/`data`: docs/08 §15, only with their permission). */
@@ -90,10 +94,14 @@ final class CanvasController extends Controller
             ->pluck('public_id')
             ->all(), is_string(...)));
 
+        // One snapshot of the environment's intent for the whole request: the
+        // controls, the settings and the canvas graph each diff against it.
+        $spec = $this->currentSpec->get($environment);
+
         $panel = new ServicePanelData(
             serviceId: $service->public_id,
             tab: $tab,
-            settings: $tab === 'settings' ? $settings->for($instance, $user) : null,
+            settings: $tab === 'settings' ? $settings->for($instance, $user, $spec) : null,
             canUpdate: $instance->removed_at === null && Gate::allows('update', $instance),
             canDelete: $instance->removed_at === null && Gate::allows('delete', $instance),
             canConsole: $canConsole,
@@ -101,10 +109,10 @@ final class CanvasController extends Controller
             section: $tab === 'settings' ? $section : null,
             actionNeeded: count($findings),
             actionNeededFinding: count($findings) === 1 ? $findings[0] : null,
-            controls: ServiceControlsData::for($instance, $user, $this->staged),
+            controls: ServiceControlsData::for($instance, $user, $this->staged, $spec),
         );
 
-        return $this->render($project, $environment, $graph, $panel);
+        return $this->render($project, $environment, $graph, $panel, $spec);
     }
 
     /**
@@ -154,15 +162,21 @@ final class CanvasController extends Controller
         return response()->noContent();
     }
 
-    private function render(Project $project, Environment $environment, CanvasGraph $graph, ?ServicePanelData $panel): Response
+    private function render(Project $project, Environment $environment, CanvasGraph $graph, ?ServicePanelData $panel, ?EnvironmentSpec $spec = null): Response
     {
         $engines = $this->engines;
-        $canvas = $graph->for($environment);
+        // Built once, and only when asked for: opening a service or switching
+        // tabs reloads just `panel` (panelVisitOptions), realtime refreshes
+        // ask for nodes, edges and panel.
+        $built = null;
+        $canvas = static function () use ($graph, $environment, $spec, &$built): array {
+            return $built ??= $graph->for($environment, $spec);
+        };
 
         return Inertia::render('projects/canvas', [
             ...ProjectScope::shellProps($project, $environment),
-            'nodes' => $canvas['nodes'],
-            'edges' => $canvas['edges'],
+            'nodes' => static fn (): array => $canvas()['nodes'],
+            'edges' => static fn (): array => $canvas()['edges'],
             'panel' => $panel,
             'parentCandidates' => fn (): array => $project->services()
                 ->where('kind', 'app')
@@ -173,7 +187,7 @@ final class CanvasController extends Controller
                 ->all(),
             'isPreview' => $environment->kind === EnvironmentKind::Preview,
             // Pull request context + shared/cloned database badges (docs/06 §5).
-            'preview' => resolve(PreviewCanvas::class)->for($environment),
+            'preview' => static fn (): ?PreviewCanvasData => resolve(PreviewCanvas::class)->for($environment),
             'engines' => fn (): array => array_map(static function (DatabaseEngine $engine) use ($engines): DatabaseEngineOptionData {
                 $driver = $engines->for($engine);
 

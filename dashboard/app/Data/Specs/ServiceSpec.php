@@ -7,6 +7,7 @@ namespace App\Data\Specs;
 use App\Casts\ServiceSourceCast;
 use App\Data\Attributes\ChangeAffects;
 use App\Data\Attributes\Promotion;
+use App\Data\Protocol\V1\PhpExtension;
 use App\Data\Services\BuildSettings;
 use App\Data\Services\DeploySettings;
 use App\Data\Services\ScalingSettings;
@@ -29,6 +30,8 @@ final class ServiceSpec extends Data
      * @param  list<string>  $sharedVariableIds  shared variables this service opted into
      * @param  array<string, DomainSpec>  $domains  keyed by hostname
      * @param  array<string, VolumeSpec>  $volumes  keyed by volume id
+     * @param  list<PhpExtension>  $phpExtensions  database drivers its build adds (docs/04 §3.1): derived
+     *                                             from the connections of the app and its processes, only for PHP apps; build-affecting
      */
     public function __construct(
         public string $id,
@@ -54,6 +57,7 @@ final class ServiceSpec extends Data
         public array $sharedVariableIds = [],
         public array $domains = [],
         public array $volumes = [],
+        public array $phpExtensions = [],
     ) {}
 
     public function source(): ServiceSource

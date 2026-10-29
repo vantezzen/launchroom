@@ -119,7 +119,7 @@ final env for (service instance S in environment E, branch B) =
 ### 3.2 Canvas connections
 
 Dragging an edge from `api` to `postgres` opens a **Connect** popover that previews the variables to inject, using framework-aware naming:
-- Laravel: `DB_CONNECTION=pgsql`, `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD` (or `DB_URL`)
+- Laravel: `DB_CONNECTION=pgsql` (`mysql` for MySQL, `mongodb` with `MONGODB_URI`/`MONGODB_DATABASE` for MongoDB), `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD`; Redis/Valkey as `REDIS_HOST`/`REDIS_PORT`/`REDIS_PASSWORD`. These are runtime variables, which Laravel's `.env` loader never overrides, so an app whose `.env.example` says `sqlite` uses the connected database. A connected database also adds its PHP driver (`pdo_pgsql`, …) to the app's Railpack build ([04](04-build-and-deploy.md) §3.1)
 - Prisma/Node: `DATABASE_URL`
 - Django: `DATABASE_URL` (dj-database-url)
 - Redis: `REDIS_URL` or `REDIS_HOST`/`REDIS_PORT`/`REDIS_PASSWORD`

@@ -1,5 +1,5 @@
 import { Head, Link, router } from '@inertiajs/react';
-import { Check, GitBranch, Plus, X } from 'lucide-react';
+import { Check, GitBranch } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Logo } from '@/components/logo';
@@ -8,12 +8,6 @@ import { Page, PageHeader } from '@/components/patterns/page';
 import { Section } from '@/components/patterns/section';
 import { Status, StatusIcon } from '@/components/status';
 import { Button } from '@/components/ui/button';
-import {
-    DropdownMenu,
-    DropdownMenuContent,
-    DropdownMenuItem,
-    DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -29,6 +23,8 @@ import {
     planParts,
 } from '@/features/add-service/framework-logo';
 import { repositoryLogo } from '@/features/git/providers';
+import { DatabasePicker } from '@/features/new-project/database-picker';
+import type { DatabaseChoice } from '@/features/new-project/database-picker';
 import { NewProjectStart } from '@/features/new-project/new-project-start';
 import { plural } from '@/features/canvas/format';
 import { requestJson, RequestFailed } from '@/features/projects/http';
@@ -65,15 +61,6 @@ type Props = {
 type AppChoice = {
     rootDirectory: string;
     name: string;
-    selected: boolean;
-};
-
-type DatabaseChoice = {
-    key: string;
-    engine: App.Enums.DatabaseEngine;
-    name: string;
-    reason: string | null;
-    connectTo: string[];
     selected: boolean;
 };
 
@@ -407,58 +394,6 @@ function AppCard({
     );
 }
 
-function DatabaseRow({
-    database,
-    engines,
-    apps,
-    onChange,
-    onRemove,
-}: {
-    database: DatabaseChoice;
-    engines: Engine[];
-    apps: AppChoice[];
-    onChange: (database: DatabaseChoice) => void;
-    onRemove?: () => void;
-}) {
-    const label =
-        engines.find((engine) => engine.engine === database.engine)?.label ??
-        database.engine;
-    const targets = apps.filter(
-        (app) => app.selected && database.connectTo.includes(app.rootDirectory),
-    );
-
-    return (
-        <li className="flex items-center gap-4 px-5 py-4">
-            <Logo kind={database.engine} size={32} name={label} />
-            <div className="flex min-w-0 flex-1 flex-col">
-                <span className="truncate type-label">{label}</span>
-                <MetaLine className="type-small text-muted-foreground">
-                    {targets.length > 0
-                        ? `Connects to ${targets.map((app) => app.name).join(', ')}`
-                        : 'Not connected yet'}
-                    {database.reason}
-                </MetaLine>
-            </div>
-            {onRemove ? (
-                <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label={`Remove ${label}`}
-                    onClick={onRemove}
-                >
-                    <X aria-hidden="true" />
-                </Button>
-            ) : (
-                <Checkbox
-                    checked={database.selected}
-                    onChange={(selected) => onChange({ ...database, selected })}
-                    label={`Add ${label}`}
-                />
-            )}
-        </li>
-    );
-}
-
 /* ------------------------------------------------------------------ */
 /* Page                                                                */
 /* ------------------------------------------------------------------ */
@@ -659,9 +594,6 @@ export default function ImportRepository({
 
     const selectedApps = apps.filter((app) => app.selected);
     const selectedDatabases = databases.filter((db) => db.selected);
-    const unusedEngines = engines.filter(
-        (engine) => !databases.some((db) => db.engine === engine.engine),
-    );
 
     const summary = useMemo(() => {
         const parts = [plural(selectedApps.length, 'app')];
@@ -946,88 +878,28 @@ export default function ImportRepository({
                         title="Databases"
                         description={
                             databases.some((db) => db.reason)
-                                ? 'Suggested from .env.example and connected to your apps.'
+                                ? 'Found in your code and .env.example, connected for you.'
                                 : undefined
                         }
-                        actions={
-                            unusedEngines.length > 0 && (
-                                <DropdownMenu>
-                                    <DropdownMenuTrigger asChild>
-                                        <Button variant="outline" size="sm">
-                                            <Plus aria-hidden="true" />
-                                            Add database
-                                        </Button>
-                                    </DropdownMenuTrigger>
-                                    <DropdownMenuContent align="end">
-                                        {unusedEngines.map((engine) => (
-                                            <DropdownMenuItem
-                                                key={engine.engine}
-                                                onSelect={() =>
-                                                    setDatabases((current) => [
-                                                        ...current,
-                                                        {
-                                                            key: `${engine.engine}-${Date.now()}`,
-                                                            engine: engine.engine,
-                                                            name: engine.engine,
-                                                            reason: null,
-                                                            connectTo:
-                                                                selectedApps.map(
-                                                                    (app) =>
-                                                                        app.rootDirectory,
-                                                                ),
-                                                            selected: true,
-                                                        },
-                                                    ])
-                                                }
-                                            >
-                                                <Logo
-                                                    kind={engine.engine}
-                                                    size={20}
-                                                    decorative
-                                                />
-                                                {engine.label}
-                                            </DropdownMenuItem>
-                                        ))}
-                                    </DropdownMenuContent>
-                                </DropdownMenu>
-                            )
-                        }
                     >
-                        {databases.length === 0 ? (
-                            <p className="rounded-[14px] border border-dashed px-5 py-6 type-body text-muted-foreground">
-                                Nothing in the repository asks for a database.
-                                Add one if your app needs it.
-                            </p>
-                        ) : (
-                            <ul className="divide-y overflow-hidden rounded-[14px] border bg-card shadow-card">
-                                {databases.map((database, index) => (
-                                    <DatabaseRow
-                                        key={database.key}
-                                        database={database}
-                                        engines={engines}
-                                        apps={apps}
-                                        onChange={(next) =>
-                                            setDatabases((current) =>
-                                                current.map((item, i) =>
-                                                    i === index ? next : item,
-                                                ),
-                                            )
-                                        }
-                                        onRemove={
-                                            database.reason === null
-                                                ? () =>
-                                                      setDatabases((current) =>
-                                                          current.filter(
-                                                              (_, i) =>
-                                                                  i !== index,
-                                                          ),
-                                                      )
-                                                : undefined
-                                        }
-                                    />
-                                ))}
-                            </ul>
-                        )}
+                        <DatabasePicker
+                            engines={engines}
+                            databases={databases}
+                            apps={apps}
+                            frameworks={[
+                                ...Object.values(plans).map(
+                                    (preview) => preview?.plan?.framework ?? '',
+                                ),
+                                ...inspection.apps.map((app) => app.runtime),
+                            ].filter(Boolean)}
+                            processes={Object.values(plans).flatMap((preview) =>
+                                (preview?.suggestions?.processes ?? []).map(
+                                    (process) =>
+                                        `${process.name} ${process.command.join(' ')}`,
+                                ),
+                            )}
+                            onChange={setDatabases}
+                        />
                     </Section>
                 )}
 

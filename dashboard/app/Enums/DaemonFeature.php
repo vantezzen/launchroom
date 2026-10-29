@@ -65,4 +65,6 @@ enum DaemonFeature: string
     case ConfigFiles = 'configFiles';
     /** `RouteSpec.stopped`: the edge answers a stopped service's domains with its "stopped" page (D68). */
     case ServiceStop = 'serviceStop';
+    /** `BuilderSpec.phpExtensions` and `BuildSummary.phpExtensions`: database drivers added to PHP builds (docs/04 §3.1). */
+    case PhpExtensions = 'phpExtensions';
 }

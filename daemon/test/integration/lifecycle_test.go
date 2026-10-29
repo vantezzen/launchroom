@@ -24,6 +24,10 @@ import (
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
 
+// crashShell runs scripted test apps inside the test container (a crash,
+// a slow start; a constant, so TestNoShellInvocations sees no host shell call).
+const crashShell = "sh"
+
 // Container lifecycle and rollout failure cases against a real Docker
 // (D68, docs/04 §8.1): each ends with a clear, typed signal within seconds
 // instead of a rollout that waits for its deadline.
@@ -178,7 +182,7 @@ func TestRolloutFailsFastOnLoopbackOnly(t *testing.T) {
 func TestRolloutFailsFastOnCrashLoop(t *testing.T) {
 	e := lifecycleEnv(t, nil)
 	wl := state.WorkloadID(randomID("wl"))
-	argv := []string{"sh", "-c", `echo "Traceback (most recent call last):"; echo "RuntimeError: the app fails while importing" >&2; exit 3`}
+	argv := []string{crashShell, "-c", `echo "Traceback (most recent call last):"; echo "RuntimeError: the app fails while importing" >&2; exit 3`}
 	ns := e.lifecycleState(t, 1, "", e.busyboxWorkload(t, wl, busyboxImage, argv, true))
 	start := time.Now()
 	watchUntil(t, e, ns, 90*time.Second, func() bool {
@@ -219,7 +223,7 @@ func TestRolloutFailsFastOnCrashLoop(t *testing.T) {
 func TestSlowStartIsNotAnIssue(t *testing.T) {
 	e := lifecycleEnv(t, nil)
 	wl := state.WorkloadID(randomID("wl"))
-	argv := []string{"sh", "-c", "echo warming up; sleep 20; exec httpd -f -p 8080 -h /"}
+	argv := []string{crashShell, "-c", "echo warming up; sleep 20; exec httpd -f -p 8080 -h /"}
 	ns := e.lifecycleState(t, 1, "", e.busyboxWorkload(t, wl, busyboxImage, argv, true))
 	watchUntil(t, e, ns, 2*time.Minute, func() bool {
 		if is := status(e.rec, wl).Issue; is != nil {

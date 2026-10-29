@@ -46,10 +46,10 @@ function rollingOut(): array
     $web = Projects::image($project, 'web', port: 8000);
     resolve(DeployEnvironment::class)->handle($project->production()->sole(), null, AuditActor::system());
 
-    return [$server, $web, latestOf($web)->placements()->sole()];
+    return [$server, $web, rolloutLatestOf($web)->placements()->sole()];
 }
 
-function latestOf(Service $service): Deployment
+function rolloutLatestOf(Service $service): Deployment
 {
     return Deployment::query()->whereHas('serviceInstance', static fn (Builder $query) => $query->where('service_id', $service->id))->latest('id')->firstOrFail();
 }
@@ -77,11 +77,11 @@ test('a crash loop fails the rollout at once, with the last output', function ()
         'seq' => 10, 'workload' => $w, 'at' => stamp(), 'kind' => 'exited', 'exitCode' => 1,
         'output' => [['time' => stamp(), 'stream' => 'stderr', 'text' => 'RuntimeError: FIXTURE_MODE=crash: the app fails while importing']],
     ]]);
-    expect(latestOf($web)->status)->toBe(DeploymentStatus::HealthChecking);
+    expect(rolloutLatestOf($web)->status)->toBe(DeploymentStatus::HealthChecking);
 
     Projects::report($server, 'unhealthy', fields: [$w => ['restartCount' => 3, 'issue' => ['kind' => 'crash_loop', 'since' => stamp(), 'exitCode' => 1, 'restarts' => 3]]]);
 
-    $deployment = latestOf($web);
+    $deployment = rolloutLatestOf($web);
     expect($deployment->status)->toBe(DeploymentStatus::Failed)
         ->and($deployment->failure_class)->toBe(DeploymentFailureClass::RuntimeError)
         ->and($deployment->failure_message)->toContain('keeps crashing: it exited with code 1 and was restarted 3 times')
@@ -92,7 +92,7 @@ test('an app listening on 127.0.0.1 fails as a port mismatch that says how to bi
     [$server, $web, $placement] = rollingOut();
     Projects::report($server, 'starting', fields: [$placement->workload_id => ['issue' => ['kind' => 'loopback_only', 'since' => stamp(), 'port' => 8000, 'listening' => [8000]]]]);
 
-    $deployment = latestOf($web);
+    $deployment = rolloutLatestOf($web);
     expect($deployment->failure_class)->toBe(DeploymentFailureClass::PortMismatch)
         ->and($deployment->failure_message)->toContain('listens on 127.0.0.1:8000')
         ->and($deployment->failure_message)->toContain('0.0.0.0:8000');
@@ -102,8 +102,8 @@ test('an app on another port names the port to set', function (): void {
     [$server, $web, $placement] = rollingOut();
     Projects::report($server, 'starting', fields: [$placement->workload_id => ['issue' => ['kind' => 'wrong_port', 'since' => stamp(), 'port' => 8000, 'listening' => [3000]]]]);
 
-    expect(latestOf($web)->failure_message)->toContain('The app listens on 3000, not 8000')
-        ->and(latestOf($web)->failure_message)->toContain('Set the service port to 3000');
+    expect(rolloutLatestOf($web)->failure_message)->toContain('The app listens on 3000, not 8000')
+        ->and(rolloutLatestOf($web)->failure_message)->toContain('Set the service port to 3000');
 });
 
 test('the running steps say what they wait for', function (): void {
@@ -112,10 +112,10 @@ test('the running steps say what they wait for', function (): void {
 
     // The server hasn't applied the rendered state yet.
     $server->refresh()->forceFill(['observed_version' => 0])->save();
-    expect(stepMessage(latestOf($web), DeploymentStepName::Rollout))->toBe("Waiting for {$server->name} to pick up the change");
+    expect(stepMessage(rolloutLatestOf($web), DeploymentStepName::Rollout))->toBe("Waiting for {$server->name} to pick up the change");
 
     Projects::report($server, 'starting', fields: [$w => ['health' => ['state' => 'starting', 'consecutiveFailures' => 0, 'lastError' => 'connection refused', 'attempts' => 3]]]);
-    expect(stepMessage(latestOf($web), DeploymentStepName::Health))->toBe('Waiting for GET / on :8000 to answer (attempt 3: connection refused)');
+    expect(stepMessage(rolloutLatestOf($web), DeploymentStepName::Health))->toBe('Waiting for GET / on :8000 to answer (attempt 3: connection refused)');
 });
 
 test('a download that stops moving fails and names the path', function (): void {
@@ -127,7 +127,7 @@ test('a download that stops moving fails and names the path', function (): void 
     Projects::report($server, 'pulling', pulls: [$placement->workload_id => ['stage' => 'downloading', 'downloadedBytes' => 100_000_000, 'totalBytes' => 412_000_000, 'updatedAt' => $stuck]]);
     resolve(SweepDeployments::class)->handle();
 
-    $deployment = latestOf($web);
+    $deployment = rolloutLatestOf($web);
     expect($deployment->failure_class)->toBe(DeploymentFailureClass::Transient)
         ->and($deployment->failure_message)->toContain("{$server->name} couldn't download the image")
         ->and($deployment->failure_message)->toContain('no data for 2 minutes')
@@ -143,8 +143,8 @@ test('a download that crawls ends at the Roll out timeout', function (): void {
         resolve(SweepDeployments::class)->handle();
     }
 
-    expect(latestOf($web)->failure_message)->toContain('was still downloading the image')
-        ->and(latestOf($web)->failure_message)->toContain('after 10 minutes');
+    expect(rolloutLatestOf($web)->failure_message)->toContain('was still downloading the image')
+        ->and(rolloutLatestOf($web)->failure_message)->toContain('after 10 minutes');
 });
 
 test('a refused desired state fails the rollout with the server and its reason', function (): void {
@@ -153,9 +153,9 @@ test('a refused desired state fails the rollout with the server and its reason',
 
     resolve(SweepDeployments::class)->handle();
 
-    expect(latestOf($web)->failure_class)->toBe(DeploymentFailureClass::ConfigError)
-        ->and(latestOf($web)->failure_message)->toContain("{$server->name} refused the new desired state")
-        ->and(latestOf($web)->failure_message)->toContain('unknown field');
+    expect(rolloutLatestOf($web)->failure_class)->toBe(DeploymentFailureClass::ConfigError)
+        ->and(rolloutLatestOf($web)->failure_message)->toContain("{$server->name} refused the new desired state")
+        ->and(rolloutLatestOf($web)->failure_message)->toContain('unknown field');
 });
 
 test('lifecycle events become management lines in the deployment log, once', function (): void {
@@ -169,7 +169,7 @@ test('lifecycle events become management lines in the deployment log, once', fun
     Projects::report($server, 'starting', events: $events);
     Projects::report($server, 'starting', events: $events); // re-sent: stored once
 
-    $lines = resolve(DeploymentLogs::class)->page(latestOf($web))->lines;
+    $lines = resolve(DeploymentLogs::class)->page(rolloutLatestOf($web))->lines;
     $texts = array_map(static fn (LogLineData $line): string => $line->text, $lines);
 
     expect($texts)->toBe([
@@ -189,7 +189,7 @@ test('a failed rollout keeps its lifecycle lines after its placement is gone', f
 
     Projects::report($server, 'starting', events: [['seq' => 20, 'workload' => $w, 'at' => stamp(), 'kind' => 'removed', 'reason' => 'not_desired']]);
 
-    $texts = array_map(static fn (LogLineData $line): string => $line->text, resolve(DeploymentLogs::class)->page(latestOf($web))->lines);
+    $texts = array_map(static fn (LogLineData $line): string => $line->text, resolve(DeploymentLogs::class)->page(rolloutLatestOf($web))->lines);
     expect($texts)->toContain("Container removed by launchroom (the deployment didn't go live, {$server->name})");
 });
 
@@ -198,15 +198,15 @@ test('a service without an observed container is not running', function (): void
     Projects::report($server);
     Projects::report($server);
     $instance = ServiceInstance::query()->where('service_id', $web->id)->with('activeDeployment', 'service')->sole();
-    expect(latestOf($web)->status)->toBe(DeploymentStatus::Active);
+    expect(rolloutLatestOf($web)->status)->toBe(DeploymentStatus::Active);
 
     $active = Placement::query()->where('service_instance_id', $instance->id)->get();
-    expect(NodeStatus::for($instance, latestOf($web), $active)->label)->toBe('Live');
+    expect(NodeStatus::for($instance, rolloutLatestOf($web), $active)->label)->toBe('Live');
 
     // Its server lost the container (or never created it).
     $active->each(static fn (Placement $p) => $p->forceFill(['phase' => WorkloadPhase::Pending, 'created_at' => now()->subHour()])->save());
-    $status = NodeStatus::for($instance, latestOf($web), $active->fresh());
+    $status = NodeStatus::for($instance, rolloutLatestOf($web), $active->fresh());
     expect($status->state)->toBe(CanvasNodeState::Warning)->and($status->label)->toBe('Not running');
 
-    expect(NodeStatus::for($instance, latestOf($web), [])->label)->toBe('Not running');
+    expect(NodeStatus::for($instance, rolloutLatestOf($web), [])->label)->toBe('Not running');
 });

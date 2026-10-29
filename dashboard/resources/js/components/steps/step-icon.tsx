@@ -1,3 +1,4 @@
+import { ProgressRing } from '@/components/progress-ring';
 import { cn } from '@/lib/utils';
 
 export type StepStatus =
@@ -79,28 +80,7 @@ export function StepIcon({
                 </svg>
             );
         case 'running':
-            return (
-                <svg
-                    {...common}
-                    className={cn(common.className, 'motion-safe:animate-spin')}
-                >
-                    <circle
-                        cx="10"
-                        cy="10"
-                        r="8"
-                        fill="none"
-                        strokeWidth="2"
-                        style={{ stroke: 'var(--status-progress-soft)' }}
-                    />
-                    <path
-                        d="M10 2a8 8 0 0 1 8 8"
-                        fill="none"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        style={{ stroke: 'var(--status-progress)' }}
-                    />
-                </svg>
-            );
+            return <ProgressRing size={size} className={className} />;
         case 'canceled':
             return (
                 <svg {...common}>

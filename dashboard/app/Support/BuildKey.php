@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Support;
 
+use App\Data\Protocol\V1\PhpExtension;
 use App\Data\Specs\EnvironmentSpec;
 use App\Data\Specs\ServiceSpec;
 
@@ -12,8 +13,10 @@ use App\Data\Specs\ServiceSpec;
  * keys mean an existing image can be reused instead of rebuilding.
  *
  * Inputs: commit SHA, source (repository, root directory), build settings
- * (builder, overrides, Railpack version), branch override, and a keyed MAC of
- * the build-scoped variable values (so the key never makes secrets guessable).
+ * (builder, overrides, Railpack version), branch override, the PHP extensions
+ * added for connected databases (docs/04 §3.1; only when there are any, so
+ * existing keys stay valid), and a keyed MAC of the build-scoped variable
+ * values (so the key never makes secrets guessable).
  */
 final class BuildKey
 {
@@ -55,6 +58,7 @@ final class BuildKey
             'build' => $service->build->toArray(),
             'branch' => $service->branchOverride,
             'secrets' => $buildSecretsMac,
+            ...($service->phpExtensions === [] ? [] : ['phpExtensions' => array_map(static fn (PhpExtension $extension): array => $extension->toArray(), $service->phpExtensions)]),
         ]));
     }
 }

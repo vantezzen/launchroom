@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Support\Deployments;
+namespace App\Services\Deployments;
 
 use App\Data\Services\HealthcheckSettings;
 use App\Enums\DeploymentFailureClass;
@@ -10,6 +10,8 @@ use App\Enums\ServerStatus;
 use App\Enums\WorkloadPhase;
 use App\Models\Placement;
 use App\Models\Server;
+use App\Support\Deployments\LifecycleLines;
+use App\Support\Deployments\PullProgressMessage;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Collection;

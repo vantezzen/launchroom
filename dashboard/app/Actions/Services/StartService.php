@@ -17,8 +17,8 @@ use App\Models\Deployment;
 use App\Models\Environment;
 use App\Models\ServiceInstance;
 use App\Models\User;
+use App\Queries\ServiceProcesses;
 use App\Services\Deployments\ImageRerun;
-use App\Support\Services\ServiceProcesses;
 use Illuminate\Support\Facades\DB;
 
 /**

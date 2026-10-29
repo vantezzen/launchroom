@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Support\Services;
 
 use App\Data\Specs\ChangeItem;
+use App\Data\Specs\EnvironmentSpec;
 use App\Models\ServiceInstance;
 use App\Queries\CurrentEnvironmentSpec;
 use App\Support\Changes\SpecDiff;
@@ -20,11 +21,14 @@ final readonly class StagedForService
         private CurrentEnvironmentSpec $currentSpec,
     ) {}
 
-    public function has(ServiceInstance $instance): bool
+    /**
+     * @param  EnvironmentSpec|null  $current  the instance environment's current spec, when the caller already built it
+     */
+    public function has(ServiceInstance $instance, ?EnvironmentSpec $current = null): bool
     {
         $instance->loadMissing(['environment.lastAppliedRevision', 'service']);
         $environment = $instance->environment;
-        $changes = SpecDiff::between($environment->lastAppliedRevision?->spec, $this->currentSpec->get($environment));
+        $changes = SpecDiff::between($environment->lastAppliedRevision?->spec, $current ?? $this->currentSpec->get($environment));
         $id = $instance->service->public_id;
 
         return isset($changes->services[$id]) || array_any($changes->items, static fn (ChangeItem $item): bool => $item->serviceId === $id);
