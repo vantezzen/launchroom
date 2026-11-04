@@ -33,7 +33,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 
 # restic (docs/14 §2): a pinned, checksum-verified static binary. The daemon
 # runs it as a child process with argv only (internal/backup).
-FROM --platform=$BUILDPLATFORM debian:bookworm-slim@sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587 AS restic
+FROM --platform=$BUILDPLATFORM debian:bookworm-slim@sha256:99c0b25c46d0214d5a2091092e7908907dcaecd6a962cde0ac700acee222b6f3 AS restic
 ARG TARGETARCH
 ARG RESTIC_VERSION=0.19.1
 ARG RESTIC_SHA256_AMD64=f415415624dcc452f2a02b8c33641791a8c6d6d3b65bbb3543fcf9a25151585c
