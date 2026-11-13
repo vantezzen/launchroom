@@ -46,6 +46,7 @@ use App\Models\Server;
 use App\Models\ServiceInstance;
 use App\Models\User;
 use App\Models\Volume;
+use App\Models\VolumeMount;
 use App\Scheduling\PlacementFailed;
 use App\Scheduling\PlacementRequest;
 use App\Scheduling\SchedulableServer;
@@ -53,7 +54,9 @@ use App\Scheduling\Scheduler;
 use App\Services\Deployments\Placer;
 use App\Services\Dns\EdgeAddresses;
 use App\Services\Volumes\StagedVolumes;
+use App\Support\Servers\HostCapacity;
 use App\Support\Servers\ServerLocations;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 
 /**
@@ -185,8 +188,16 @@ final readonly class ServiceSettings
     {
         $applied = StagedVolumes::appliedPaths($instance);
         $removing = StagedVolumes::pendingRemovals($instance)->load('server');
+        $volumes = $instance->volumes->concat($removing);
+        // Other services that mount them too (shared volumes, D73), by volume id.
+        /** @var array<int, list<string>> $sharedWith */
+        $sharedWith = [];
 
-        return array_values($instance->volumes->concat($removing)->map(static fn (Volume $volume): VolumeData => new VolumeData(
+        foreach ($volumes->isEmpty() ? [] : VolumeMount::query()->whereIn('volume_id', $volumes->modelKeys())->with('serviceInstance.service:id,name')->orderBy('id')->get() as $mount) {
+            $sharedWith[$mount->volume_id][] = $mount->serviceInstance->service->name;
+        }
+
+        return array_values($volumes->map(static fn (Volume $volume): VolumeData => new VolumeData(
             id: $volume->public_id,
             mountPath: $volume->mount_path,
             sizeBytes: $volume->size_bytes,
@@ -197,6 +208,7 @@ final readonly class ServiceSettings
             serverStatus: $volume->server?->status,
             removing: $volume->removed_at !== null,
             deployedMountPath: isset($applied[$volume->public_id]) && $applied[$volume->public_id] !== $volume->mount_path ? $applied[$volume->public_id] : null,
+            sharedWith: $sharedWith[$volume->id] ?? [],
         ))->all());
     }
 
@@ -220,9 +232,9 @@ final readonly class ServiceSettings
     {
         $request = $this->placer->request($instance, $instance->scaling, $instance->activeDeployment, $instance->scaling->replicas);
         $views = $this->placer->servers($instance->team_id, $instance->id);
-        [$memoryOvercommit, $cpuOvercommit] = $this->placer->overcommit();
         [$planned, $planError] = $this->plan($views, $request);
         $servers = Server::query()->where('team_id', $instance->team_id)->get()->keyBy('id');
+        $usage = $this->usageNow(array_map(static fn (SchedulableServer $view): int => $view->id, $views));
         $replicas = $instance->active_deployment_id === null ? [] : Placement::query()
             ->where('deployment_id', $instance->active_deployment_id)
             ->groupBy('server_id')
@@ -239,6 +251,7 @@ final readonly class ServiceSettings
             }
 
             $reason = Scheduler::rejection($view, $request);
+            $available = HostCapacity::availableMemory($server);
             $options[] = new PlacementServerOptionData(
                 id: $server->public_id,
                 name: $server->name,
@@ -254,8 +267,11 @@ final readonly class ServiceSettings
                 cpus: $view->cpus,
                 memoryMb: $view->memoryMb,
                 reservedMemoryMb: $view->reservedMemoryMb,
-                allocatedMemoryMb: $view->allocatedMemoryMb,
-                allocatedCpus: $view->allocatedCpus,
+                cpuInUse: isset($usage[$view->id]['cpu']) && $view->cpus !== null ? round($usage[$view->id]['cpu'] / 100 * $view->cpus, 2) : null,
+                memoryInUseMb: $usage[$view->id]['memory'] ?? ($available !== null && $view->memoryMb !== null ? max(0, $view->memoryMb - $available[0]) : null),
+                freeMemoryMb: Scheduler::freeMemory($view),
+                limitCpus: $view->allocatedCpus,
+                limitMemoryMb: $view->limitMemoryMb,
                 allowPreviews: $server->allow_previews,
                 allowProduction: $server->allow_production,
             );
@@ -270,8 +286,8 @@ final readonly class ServiceSettings
             planError: $planError,
             stateful: $request->stateful,
             pinnedServer: $pinned instanceof Server ? $pinned->name : null,
-            memoryOvercommit: $memoryOvercommit,
-            cpuOvercommit: $cpuOvercommit,
+            measuredMemoryMb: $this->placer->measuredMemory([$instance->id])[$instance->id] ?? null,
+            replicaMemoryMb: config()->integer('launchroom.scheduling.replica_memory_mb'),
         );
     }
 
@@ -309,7 +325,7 @@ final readonly class ServiceSettings
     private function plan(array $views, PlacementRequest $request): array
     {
         try {
-            $plan = Scheduler::place($views, $request, ...$this->placer->overcommit());
+            $plan = Scheduler::place($views, $request);
         } catch (PlacementFailed $failed) {
             return [[], $failed->getMessage()];
         }
@@ -321,6 +337,39 @@ final readonly class ServiceSettings
         }
 
         return [$counts, null];
+    }
+
+    /**
+     * What each server really uses now: CPU (percent of its cores) and
+     * memory from its latest per-minute sample.
+     *
+     * @param  list<int>  $serverIds
+     * @return array<int, array{cpu?: float, memory?: int}>
+     */
+    private function usageNow(array $serverIds): array
+    {
+        if ($serverIds === []) {
+            return [];
+        }
+
+        $usage = [];
+        $rows = DB::table('server_metric_samples')
+            ->whereIn('server_id', $serverIds)
+            ->where('resolution', 1)
+            ->where('at', '>=', now()->subMinutes(ServerMetrics::CURRENT_WITHIN_MINUTES))
+            ->orderBy('at')
+            ->get(['server_id', 'cpu_pct', 'mem_used_mb']);
+
+        foreach ($rows as $row) {
+            $id = is_numeric($row->server_id) ? (int) $row->server_id : 0;
+            // Later minutes win.
+            $usage[$id] = array_filter([
+                'cpu' => is_numeric($row->cpu_pct) ? (float) $row->cpu_pct : null,
+                'memory' => is_numeric($row->mem_used_mb) ? (int) $row->mem_used_mb : null,
+            ], static fn (int|float|null $value): bool => $value !== null);
+        }
+
+        return $usage;
     }
 
     /**

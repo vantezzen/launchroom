@@ -7,9 +7,15 @@ namespace App\Scheduling;
 use App\Enums\ServerRole;
 
 /**
- * A server as the scheduler sees it. `allocated*` are the limits of the
- * workloads already placed there, excluding the replica set being placed
+ * A server as the scheduler sees it, excluding the replica set being placed
  * (the scheduler adds `PlacementRequest::$existingServerIds` itself).
+ *
+ * Limits are caps, not reservations (D72): `availableMemoryMb` (what the
+ * server really has free, from its latest report) decides whether a replica
+ * fits. Without a fresh report the scheduler estimates from `memoryMb`,
+ * `reservedMemoryMb` and `allocatedMemoryMb` (what the placed workloads are
+ * expected to use, not their limits). CPU limits never add up against the
+ * cores: one replica only needs a server with at least as many cores.
  */
 final readonly class SchedulableServer
 {
@@ -22,11 +28,13 @@ final readonly class SchedulableServer
         public array $roles,
         public array $labels = [],
         public bool $online = true,
-        /** Total memory; null when unknown (no memory check). */
+        /** Total memory; null when unknown. */
         public ?int $memoryMb = null,
+        /** Memory the placed workloads are expected to use (measured, else a small share each; never more than their limits). */
         public int $allocatedMemoryMb = 0,
         /** Cores; null when unknown (no CPU check). */
         public ?int $cpus = null,
+        /** CPU limits of the placed workloads (shown, never checked: CPU is shared). */
         public float $allocatedCpus = 0.0,
         /** Server setting "Allow previews" (docs/06 §5). */
         public bool $allowPreviews = true,
@@ -43,6 +51,15 @@ final readonly class SchedulableServer
          * §13.2): only services still pinned here by their volumes may stay.
          */
         public bool $draining = false,
+        /**
+         * Memory free for new workloads right now: the latest report's
+         * available memory minus the headroom and what workloads not yet in
+         * that report are expected to use. Null without a fresh report
+         * (estimated from the fields above instead).
+         */
+        public ?int $availableMemoryMb = null,
+        /** Memory limits of the placed workloads (shown, never checked). */
+        public int $limitMemoryMb = 0,
     ) {}
 
     public function hasRole(ServerRole $role): bool

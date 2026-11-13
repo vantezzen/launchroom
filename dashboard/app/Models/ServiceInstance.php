@@ -152,6 +152,16 @@ final class ServiceInstance extends Model
     }
 
     /**
+     * Volumes of other services this service mounts too (shared volumes, D73).
+     *
+     * @return HasMany<VolumeMount, $this>
+     */
+    public function volumeMounts(): HasMany
+    {
+        return $this->hasMany(VolumeMount::class);
+    }
+
+    /**
      * @return HasMany<Placement, $this>
      */
     public function placements(): HasMany

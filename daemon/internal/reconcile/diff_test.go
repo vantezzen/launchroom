@@ -278,6 +278,36 @@ func TestDiffVolumeOwnership(t *testing.T) {
 				return mounting(s, volA)
 			}()},
 			want: []string{}, blocked: true},
+		// A shared volume (D73): declared with its service, mounted by
+		// workloads of other services of the same environment.
+		{name: "shared volume mounted by two services", vols: []state.VolumeSpec{{ID: volA, Name: "lr-v_a", Service: svcA}},
+			spec: []state.WorkloadSpec{mounting(wspec(wlA), volA), func() state.WorkloadSpec {
+				s := wspec(wlB)
+				s.Service, s.Environment = svcB, envA
+				return mounting(s, volA)
+			}()},
+			actual: []docker.Volume{vol("lr-v_a", owned)}, want: []string{"create:" + string(wlA), "create:" + string(wlB)}},
+		{name: "shared volume mounted only by another service", vols: []state.VolumeSpec{{ID: volA, Name: "lr-v_a", Service: svcA}},
+			spec: []state.WorkloadSpec{func() state.WorkloadSpec {
+				s := wspec(wlB)
+				s.Service, s.Environment = svcB, envA
+				return mounting(s, volA)
+			}()},
+			actual: []docker.Volume{vol("lr-v_a", owned)}, want: []string{"create:" + string(wlB)}},
+		{name: "shared volume declared for a service it does not belong to", vols: []state.VolumeSpec{{ID: volA, Name: "lr-v_a", Service: svcB}},
+			spec: []state.WorkloadSpec{func() state.WorkloadSpec {
+				s := wspec(wlB)
+				s.Service, s.Environment = svcB, envA
+				return mounting(s, volA)
+			}()},
+			actual: []docker.Volume{vol("lr-v_a", owned)}, want: []string{}, blocked: true},
+		{name: "shared volume never crosses environments", vols: []state.VolumeSpec{{ID: volA, Name: "lr-v_a", Service: svcA}},
+			spec: []state.WorkloadSpec{mounting(wspec(wlA), volA), func() state.WorkloadSpec {
+				s := wspec(wlB)
+				s.Service, s.Environment = svcB, state.EnvironmentID("env_01J9Z8X7W6V5T4S3R2Q1P0N9E2")
+				return mounting(s, volA)
+			}()},
+			actual: []docker.Volume{vol("lr-v_a", owned)}, want: []string{}, blocked: true},
 		// A prepared volume (docs/14 §13.2): created without an owner before
 		// the service that moves here runs.
 		{name: "unmounted volume is created without an owner", vols: []state.VolumeSpec{{ID: volA, Name: "lr-v_a"}}, spec: []state.WorkloadSpec{wspec(wlA)},
@@ -308,6 +338,14 @@ func TestDiffVolumeOwnership(t *testing.T) {
 	// A created volume carries its owner.
 	d := Desired{Networks: []state.NetworkSpec{netSpec()}, Volumes: []state.VolumeSpec{{ID: volA, Name: "lr-v_a"}}, Workloads: []DesiredWorkload{{Spec: mounting(wspec(wlA), volA), Hash: "h1"}}}
 	p := Diff(d, Actual{Networks: []docker.Network{net}, Images: imgs}, t0, time.Second)
+	if p.Actions[0].Kind != CreateVolume || p.Actions[0].VolumeOwner != (VolumeOwner{Service: svcA, Environment: envA}) {
+		t.Fatalf("%+v", p.Actions)
+	}
+	// A shared volume created for another service's workload carries its own service.
+	borrower := wspec(wlB)
+	borrower.Service, borrower.Environment = svcB, envA
+	d = Desired{Networks: []state.NetworkSpec{netSpec()}, Volumes: []state.VolumeSpec{{ID: volA, Name: "lr-v_a", Service: svcA}}, Workloads: []DesiredWorkload{{Spec: mounting(borrower, volA), Hash: "h1"}}}
+	p = Diff(d, Actual{Networks: []docker.Network{net}, Images: imgs}, t0, time.Second)
 	if p.Actions[0].Kind != CreateVolume || p.Actions[0].VolumeOwner != (VolumeOwner{Service: svcA, Environment: envA}) {
 		t.Fatalf("%+v", p.Actions)
 	}

@@ -67,4 +67,6 @@ enum DaemonFeature: string
     case ServiceStop = 'serviceStop';
     /** `BuilderSpec.phpExtensions` and `BuildSummary.phpExtensions`: database drivers added to PHP builds (docs/04 §3.1). */
     case PhpExtensions = 'phpExtensions';
+    /** `NodeState.volumes[].service`: a volume mounted by several services of one environment (D73, docs/03 §8). */
+    case SharedVolumes = 'sharedVolumes';
 }

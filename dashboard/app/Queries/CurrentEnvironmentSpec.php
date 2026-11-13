@@ -26,6 +26,7 @@ use App\Models\ServiceInstance;
 use App\Models\Variable;
 use App\Models\VariableTarget;
 use App\Models\Volume;
+use App\Models\VolumeMount;
 use App\Support\Builds\PhpExtensions;
 use App\Support\Variables\VariableTargeting;
 use Illuminate\Support\Collection;
@@ -47,11 +48,12 @@ final class CurrentEnvironmentSpec
         $instances = ServiceInstance::query()
             ->current()
             ->where('environment_id', $environment->id)
-            ->with(['service', 'domains', 'volumes'])
+            ->with(['service', 'domains', 'volumes', 'volumeMounts.volume'])
             ->get();
 
         /** @var array<int, ServiceInstance> $byServiceId */
         $byServiceId = $instances->keyBy('service_id')->all();
+        $owners = $instances->keyBy('id');
         $serviceIds = $instances->pluck('service_id')->all();
 
         $variables = Variable::query()
@@ -119,6 +121,18 @@ final class CurrentEnvironmentSpec
             foreach ($instance->volumes->sortBy('public_id') as $volume) {
                 /** @var Volume $volume */
                 $volumes[$volume->public_id] = new VolumeSpec($volume->public_id, $volume->mount_path);
+            }
+
+            // Volumes of other services it mounts too (D73): only while the
+            // owner and its volume are part of this environment's intent.
+
+            foreach ($instance->volumeMounts->sortBy(static fn (VolumeMount $mount): string => $mount->volume->public_id) as $mount) {
+                /** @var VolumeMount $mount */
+                $owner = $owners->get($mount->volume->service_instance_id);
+
+                if ($mount->volume->removed_at === null && $owner instanceof ServiceInstance && $owner->id !== $instance->id) {
+                    $volumes[$mount->volume->public_id] = new VolumeSpec($mount->volume->public_id, $mount->mount_path, $owner->service->public_id);
+                }
             }
 
             $own = $serviceVariables[$serviceId] ?? [];

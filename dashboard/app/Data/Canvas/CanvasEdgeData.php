@@ -9,8 +9,9 @@ use App\Enums\ConnectionStyle;
 use Spatie\LaravelData\Data;
 
 /**
- * A canvas edge: a connection (injects variables) or the process link of a
- * worker/cron to its parent app (not removable).
+ * A canvas edge: a connection (injects variables), the process link of a
+ * worker/cron to its parent app (not removable), or an inherited connection:
+ * a worker/cron gets what its app's connection injects (`via` = the app).
  */
 final class CanvasEdgeData extends Data
 {
@@ -19,7 +20,7 @@ final class CanvasEdgeData extends Data
      */
     public function __construct(
         public string $id,
-        /** `connection` or `process`. */
+        /** `connection`, `process` or `inherited`. */
         public string $type,
         public string $source,
         public string $target,
@@ -27,5 +28,7 @@ final class CanvasEdgeData extends Data
         public ?ConnectionMode $mode = null,
         public ?ConnectionStyle $style = null,
         public bool $staged = false,
+        /** Inherited edges: the app whose connection this is. */
+        public ?string $via = null,
     ) {}
 }

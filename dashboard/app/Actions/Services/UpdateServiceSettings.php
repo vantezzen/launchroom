@@ -12,6 +12,7 @@ use App\Exceptions\DomainRuleViolation;
 use App\Jobs\PlanServiceJob;
 use App\Models\ServiceInstance;
 use App\Models\Volume;
+use App\Models\VolumeMount;
 use App\Services\Deployments\PlacementConstraints;
 use App\Services\Dockerfiles\GeneratedDockerfiles;
 use App\Support\Cron\CronGrammar;
@@ -90,7 +91,11 @@ final readonly class UpdateServiceSettings
         }
 
         /** @var list<string> $mounts */
-        $mounts = Volume::query()->where('service_instance_id', $instance->id)->whereNull('removed_at')->pluck('mount_path')->all();
+        $mounts = [
+            ...Volume::query()->where('service_instance_id', $instance->id)->whereNull('removed_at')->pluck('mount_path')->all(),
+            // Shared volumes it mounts (D73).
+            ...VolumeMount::query()->where('service_instance_id', $instance->id)->pluck('mount_path')->all(),
+        ];
         $errors = ConfigFileRules::errors($files, $mounts);
 
         if ($errors !== []) {

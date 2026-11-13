@@ -153,6 +153,21 @@ the current setup until then:
 Both are refused while a backup, restore, import, export or server move works with the volume. A database's volume is
 managed by launchroom and can't be changed here.
 
+### Share a volume between services
+
+Volumes show up on the canvas next to the services that use them. To let a second service read and write the same
+files, for example a queue worker that processes uploads, drag from that service onto the volume and pick where it
+appears in that service. Each service can use its own path. The change applies with the next deploy.
+
+A volume lives on one server, so every service that uses it runs on that server. If the service runs somewhere else,
+launchroom tells you it moves with the next deploy. If it can't run there, because it keeps its own data on another
+server or its placement settings exclude that server, sharing is refused before anything changes.
+
+Click a volume to see who uses it and where. **Detach** stops a service from using it with the next deploy. The volume,
+its backups and its files stay with the service that created it, so changing its path, removing it or connecting with
+SFTP happens in that service's settings. Removing the volume removes it from every service that shares it. Database
+volumes can't be shared: connect to the database instead.
+
 ## Change the image
 
 An image service shows **Change image** under **Settings → Source**. Enter a tag or an `@sha256:` digest from Docker Hub

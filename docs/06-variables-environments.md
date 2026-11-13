@@ -128,6 +128,8 @@ A service can say itself what a connection to it injects (`services.connection_v
 
 Accepting stores a **connection** row plus the injected references. These are ordinary reference variables, marked as connection-owned (deleting the edge removes them, after confirmation). An app → app edge (`web` → `api`) offers `API_URL` as private (`http://api:8000`) or public (`https://api…`). Browser-facing (`NEXT_PUBLIC_*`) variables are forced to public, with a warning explaining why.
 
+**Workers and crons inherit their app's connections**: they run the app's code, so the variables the app's connections inject apply to them too (`SpecVariableResolver` through `EnvironmentSpec::connectionVariablesOf`), between the system/shared layers and their own variables. A key a process's own connection also injects is left to that connection (own edge wins). The rows stay owned by the app's connection: the canvas draws a quieter dashed **inherited** edge from the process to the target (none when the process has its own edge there; the popover says to change it on the app), and the process's Variables tab lists them read-only ("From api"). When the app's connections change, its processes restart with the next deploy (§4.1). Rejected: copying the connection to each process (two edges to keep in sync, and new processes would miss existing connections).
+
 ### 3.3 Build vs runtime (automatic)
 
 Each variable has an effective **exposure**: `runtime` (default), `build`, or `build+runtime`, computed automatically and overridable in the visible **Available at** field:
@@ -207,7 +209,7 @@ Code: `App\Support\Changes\SpecDiff`, `App\Queries\CurrentEnvironmentSpec`.
   - `restart`: runtime fields, runtime variables, volumes, connections, shared-variable usage
   - `route`: domains (applied immediately by their own revision, see the exceptions above; still listed for new services and never-deployed environments)
   - `none`: name, icon, watch paths, seed command, triggers
-- Never-built kinds turn `rebuild` into `restart`. Services whose variables reference a changed service (`${{postgres.X}}`) or a changed shared variable get at least `restart` (`rebuild` if the referencing variable is build-scoped), transitively.
+- Never-built kinds turn `rebuild` into `restart`. A worker or cron whose inherited connection variables changed (§3.2) gets at least `restart`. Services whose variables reference a changed service (`${{postgres.X}}`) or a changed shared variable get at least `restart` (`rebuild` if the referencing variable is build-scoped), transitively.
 - Item paths: `services.<svc>`, `services.<svc>.<field>`, `services.<svc>.(build|deploy|scaling).<property>`, `services.<svc>.(variables|connectionVariables|sharedVariables).<var>`, `services.<svc>.domains.<hostname>`, `services.<svc>.volumes.<vol>`, `connections.<con>`, `sharedVariables.<var>`, `environment.(name|triggers)`. Items never carry variable values.
 - **Removing a service** is staged (`service_instances.removed_at`); Deploy tears it down (workloads gone, volumes kept).
 - **Discard** restores rows with their recorded ids (variables with their recorded version and ciphertext). A removed variable is restored targeted at this environment only (the revision records how it applied here, not all its targets).

@@ -8,8 +8,10 @@ use App\Enums\Backups\VolumeConsistency;
 use App\Models\Concerns\BelongsToTeam;
 use App\Models\Concerns\HasPublicId;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 
 /**
@@ -26,6 +28,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property-read ServiceInstance $serviceInstance
+ * @property-read Collection<int, VolumeMount> $mounts
  */
 #[Fillable(['team_id', 'service_instance_id', 'mount_path', 'server_id', 'backup_consistency'])]
 final class Volume extends Model
@@ -56,6 +59,16 @@ final class Volume extends Model
     public function serviceInstance(): BelongsTo
     {
         return $this->belongsTo(ServiceInstance::class);
+    }
+
+    /**
+     * Other services of the environment that mount this volume too (D73).
+     *
+     * @return HasMany<VolumeMount, $this>
+     */
+    public function mounts(): HasMany
+    {
+        return $this->hasMany(VolumeMount::class);
     }
 
     /**

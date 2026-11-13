@@ -136,6 +136,8 @@ final class NodeStateValidator
 
         $volIds = [];
         $volNames = [];
+        /** @var array<string, string> $volServices shared volumes (D73): volume id => the service it belongs to */
+        $volServices = [];
 
         foreach ($volumes as $i => $volume) {
             $id = $this->str($volume['id'] ?? null);
@@ -148,6 +150,10 @@ final class NodeStateValidator
             $volIds[$id] = true;
             $this->unique('volumes.name', $i, $name, $volNames);
 
+            if (isset($volume['service']) && is_string($volume['service']) && $volume['service'] !== '') {
+                $volServices[$id] = $volume['service'];
+            }
+
             if (! str_starts_with($name, 'lr-v_')) {
                 $this->add("volumes[{$i}].name", "volume {$name} is not a workload volume (lr-v_…)");
             }
@@ -158,7 +164,7 @@ final class NodeStateValidator
         $volumeOwners = [];
 
         foreach ($workloads as $i => $workload) {
-            $this->workload($i, $workload, $netIds, $volIds, $volumeOwners);
+            $this->workload($i, $workload, $netIds, $volIds, $volumeOwners, $volServices);
             $this->unique('workloads.id', $i, $this->str($workload['id'] ?? null), $wlIds);
 
             $mesh = $workload['publishOnMesh'] ?? null;
@@ -273,8 +279,9 @@ final class NodeStateValidator
      * @param  array<string, true>  $netIds
      * @param  array<string, true>  $volIds
      * @param  array<string, string>  $volumeOwners  volume id => "service|environment"
+     * @param  array<string, string>  $volServices  shared volumes: volume id => the service it belongs to
      */
-    private function workload(int $i, array $w, array $netIds, array $volIds, array &$volumeOwners): void
+    private function workload(int $i, array $w, array $netIds, array $volIds, array &$volumeOwners, array $volServices = []): void
     {
         $p = "workloads[{$i}]";
         $hasPort = isset($w['port']);
@@ -304,18 +311,19 @@ final class NodeStateValidator
         }
 
         $targets = [];
-        $owner = $this->str($w['service'] ?? null).'|'.$this->str($w['environment'] ?? null);
-
         foreach ($this->list($w['mounts'] ?? []) as $j => $mount) {
             $volume = $this->str($mount['volume'] ?? null);
             $target = $this->str($mount['target'] ?? null);
+            // A shared volume belongs to its declared service; workloads of
+            // other services of one environment may mount it (D73).
+            $owner = ($volServices[$volume] ?? $this->str($w['service'] ?? null)).'|'.$this->str($w['environment'] ?? null);
 
             if (! isset($volIds[$volume])) {
                 $this->add("{$p}.mounts[{$j}].volume", "references unknown volume {$volume}");
             }
 
             if (isset($volumeOwners[$volume]) && $volumeOwners[$volume] !== $owner) {
-                // launchroomd refuses it (policy floor): one volume, one service in one environment.
+                // launchroomd refuses it (policy floor): one volume, one service (or one declared owner) in one environment.
                 $this->add("{$p}.mounts[{$j}].volume", "volume {$volume} is mounted by workloads of different services or environments");
             }
 

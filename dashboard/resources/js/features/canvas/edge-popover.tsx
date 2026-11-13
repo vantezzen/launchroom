@@ -20,6 +20,7 @@ export function EdgePopover({
     edge,
     from,
     to,
+    via,
     anchor,
     canDelete,
     onClose,
@@ -29,6 +30,8 @@ export function EdgePopover({
     edge: App.Data.Canvas.CanvasEdgeData;
     from: string;
     to: string;
+    /** Inherited edges: the app whose connection it is. */
+    via?: string;
     anchor: { x: number; y: number };
     canDelete: boolean;
     onClose: () => void;
@@ -60,6 +63,13 @@ export function EdgePopover({
                     <h2 className="type-heading">
                         {from} → {to}
                     </h2>
+                    {via !== undefined && (
+                        <p className="type-small text-muted-foreground">
+                            {from} runs the code of {via}, so it gets the
+                            variables of the connection from {via}. Change or
+                            remove it on {via}.
+                        </p>
+                    )}
                     <p className="type-small text-muted-foreground">
                         {edge.mode === 'public'
                             ? 'Through the public URL'
@@ -81,7 +91,7 @@ export function EdgePopover({
                     ))}
                 </ul>
 
-                {canDelete && (
+                {canDelete && via === undefined && (
                     <div className="flex items-center justify-end gap-2">
                         {confirming ? (
                             <>

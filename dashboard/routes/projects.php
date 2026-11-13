@@ -18,6 +18,7 @@ use App\Http\Controllers\Projects\ProjectMetricsPageController;
 use App\Http\Controllers\Projects\ProjectSettingsController;
 use App\Http\Controllers\Projects\ServiceController;
 use App\Http\Controllers\Projects\ServiceSettingsController;
+use App\Http\Controllers\Projects\VolumeMountController;
 use App\Support\PublicId;
 use Illuminate\Support\Facades\Route;
 
@@ -147,6 +148,16 @@ Route::middleware(['web', 'auth', 'verified'])
         Route::delete('p/{project}/{environment}/s/{service}/volumes/{volume}', [ServiceSettingsController::class, 'removeVolume'])
             ->where('volume', 'vol_[0-9A-HJKMNP-TV-Z]{26}')
             ->name('projects.services.volumes.destroy');
+        // Shared volumes (D73): {service} mounts a volume of another service of the environment.
+        Route::get('p/{project}/{environment}/s/{service}/volumes/{volume}/mount', [VolumeMountController::class, 'preview'])
+            ->where('volume', 'vol_[0-9A-HJKMNP-TV-Z]{26}')
+            ->name('projects.services.volume-mounts.preview');
+        Route::post('p/{project}/{environment}/s/{service}/volumes/{volume}/mount', [VolumeMountController::class, 'store'])
+            ->where('volume', 'vol_[0-9A-HJKMNP-TV-Z]{26}')
+            ->name('projects.services.volume-mounts.store');
+        Route::delete('p/{project}/{environment}/s/{service}/volumes/{volume}/mount', [VolumeMountController::class, 'destroy'])
+            ->where('volume', 'vol_[0-9A-HJKMNP-TV-Z]{26}')
+            ->name('projects.services.volume-mounts.destroy');
         Route::patch('p/{project}/{environment}/s/{service}/image', [ServiceSettingsController::class, 'changeImage'])->name('projects.services.image');
         Route::post('p/{project}/{environment}/s/{service}/plan', [ServiceSettingsController::class, 'replan'])
             ->middleware('throttle:10,1')

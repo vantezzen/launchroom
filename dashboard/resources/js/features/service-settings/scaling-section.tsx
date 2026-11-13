@@ -358,6 +358,15 @@ export function ScalingSection({ context }: { context: SettingsContext }) {
                 (server) => (server.memoryMb ?? 0) - server.reservedMemoryMb,
             ),
         ) || null;
+    // Limits are caps: a replica needs what it really uses (its measured
+    // peak, or a small default before it ran), never more than its limit.
+    const memoryNeedMb = Math.min(
+        draft.memoryMb,
+        Math.max(
+            placement?.replicaMemoryMb ?? 128,
+            placement?.measuredMemoryMb ?? 0,
+        ),
+    );
     const cpuSteps = stepsFor(CPU_STEPS, biggestCpu, draft.cpus, 1);
     const memorySteps = stepsFor(
         MEMORY_STEPS,
@@ -485,14 +494,7 @@ export function ScalingSection({ context }: { context: SettingsContext }) {
                                 <ServerPlacementCard
                                     key={server.id}
                                     server={server}
-                                    cpus={draft.cpus}
-                                    memoryMb={draft.memoryMb}
-                                    memoryOvercommit={
-                                        placement?.memoryOvercommit ?? 1
-                                    }
-                                    cpuOvercommit={
-                                        placement?.cpuOvercommit ?? null
-                                    }
+                                    memoryNeedMb={memoryNeedMb}
                                     rule={draft.rules[server.id] ?? 'any'}
                                     onRule={
                                         stateful
@@ -601,7 +603,7 @@ export function ScalingSection({ context }: { context: SettingsContext }) {
                 <SettingsCard
                     setting="replica-size"
                     title="Size of each replica"
-                    description="Limits for each replica. The sliders stop at the largest server that can run it."
+                    description="The most each replica may use. Services only take what they need, so limits can add up to more than a server has."
                 >
                     <SettingsBody className="grid gap-8 @xl/page:grid-cols-2">
                         <ResourceSlider

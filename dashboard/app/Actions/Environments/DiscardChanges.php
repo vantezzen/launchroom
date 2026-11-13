@@ -15,6 +15,7 @@ use App\Data\Specs\ChangeItem;
 use App\Data\Specs\EnvironmentSpec;
 use App\Data\Specs\ServiceSpec;
 use App\Data\Specs\VariableSpec;
+use App\Data\Specs\VolumeSpec;
 use App\Enums\AuditAction;
 use App\Enums\Backups\DeletionRequestStatus;
 use App\Enums\ChangeKind;
@@ -29,9 +30,11 @@ use App\Models\ServiceInstance;
 use App\Models\Variable;
 use App\Models\VariableTarget;
 use App\Models\Volume;
+use App\Models\VolumeMount;
 use App\Queries\CurrentEnvironmentSpec;
 use App\Services\Variables\VariableStore;
 use App\Support\Changes\SpecDiff;
+use Illuminate\Contracts\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
 use Spatie\LaravelData\Data;
 
@@ -323,6 +326,13 @@ final class DiscardChanges
         $volume = Volume::query()->where('service_instance_id', $instance->id)->where('public_id', $volumeId)->first();
         $recorded = $spec->volumes[$volumeId] ?? null;
 
+        // A volume of another service it mounts (D73): only the mount changes.
+        if ($volume === null && ($recorded?->sharedFrom !== null || VolumeMount::query()->where('service_instance_id', $instance->id)->whereHas('volume', static fn (Builder $query) => $query->where('public_id', $volumeId))->exists())) {
+            $this->discardSharedMount($instance, $recorded, $volumeId, $kind);
+
+            return;
+        }
+
         if ($kind === ChangeKind::Added) {
             // Never delete a volume that may hold data.
             if ($volume !== null && $volume->server_id === null) {
@@ -343,6 +353,31 @@ final class DiscardChanges
 
         // A staged removal (docs/14 §9.12) comes back with its files.
         $volume->forceFill(['mount_path' => $recorded->mountPath, 'removed_at' => null])->save();
+    }
+
+    private function discardSharedMount(ServiceInstance $instance, ?VolumeSpec $recorded, string $volumeId, ChangeKind $kind): void
+    {
+        $mount = VolumeMount::query()->where('service_instance_id', $instance->id)->whereHas('volume', static fn (Builder $query) => $query->where('public_id', $volumeId))->first();
+
+        if ($kind === ChangeKind::Added || ! $recorded instanceof VolumeSpec) {
+            $mount?->delete();
+
+            return;
+        }
+
+        // Only a volume of the same environment that still exists comes back.
+        $volume = Volume::query()
+            ->where('team_id', $instance->team_id)
+            ->where('public_id', $volumeId)
+            ->whereIn('service_instance_id', ServiceInstance::query()->where('environment_id', $instance->environment_id)->select('id'))
+            ->first();
+
+        if (! $volume instanceof Volume) {
+            return;
+        }
+
+        $mount ??= new VolumeMount(['team_id' => $instance->team_id, 'volume_id' => $volume->id, 'service_instance_id' => $instance->id]);
+        $mount->forceFill(['mount_path' => $recorded->mountPath])->save();
     }
 
     private function discardConnection(Environment $environment, EnvironmentSpec $base, string $connectionId, ChangeKind $kind): void

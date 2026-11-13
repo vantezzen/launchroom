@@ -13,6 +13,7 @@ use App\Enums\ServiceKind;
 use App\Exceptions\DomainRuleViolation;
 use App\Models\ServiceInstance;
 use App\Models\Volume;
+use App\Models\VolumeMount;
 use App\Services\Volumes\StagedVolumes;
 use App\Support\Services\VolumeMountRules;
 use Illuminate\Support\Facades\DB;
@@ -47,7 +48,8 @@ final readonly class AddServiceVolume
                 throw DomainRuleViolation::on('mountPath', 'Volumes can be added to app and image services. Databases already have theirs.');
             }
 
-            $problem = VolumeMountRules::problem($path, $instance->volumes->map(static fn (Volume $volume): string => $volume->mount_path)->all());
+            // Shared volumes it mounts take their paths too (D73).
+            $problem = VolumeMountRules::problem($path, [...$instance->volumes->map(static fn (Volume $volume): string => $volume->mount_path)->all(), ...VolumeMount::query()->where('service_instance_id', $instance->id)->get()->map(static fn (VolumeMount $mount): string => $mount->mount_path)->all()]);
 
             if ($problem !== null) {
                 throw DomainRuleViolation::on('mountPath', $problem);

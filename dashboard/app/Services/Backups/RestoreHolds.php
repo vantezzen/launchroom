@@ -13,8 +13,10 @@ use App\Models\Connection;
 use App\Models\Placement;
 use App\Models\Service;
 use App\Models\ServiceInstance;
+use App\Models\Volume;
 use App\Services\Moves\MoveHolds;
 use App\Services\Transfers\ImportHolds;
+use App\Services\Volumes\MountedVolumes;
 use Carbon\CarbonInterface;
 use Illuminate\Contracts\Database\Query\Builder;
 use Illuminate\Database\Eloquent\Collection;
@@ -25,7 +27,8 @@ use Illuminate\Database\Eloquent\Collection;
  * NodeStates (App\Services\NodeStates\NodeStateContent), so launchroomd
  * stops them; the restore's end re-renders those servers and they start again.
  *
- * - Volume restores hold the service whose volume is replaced.
+ * - Volume restores hold the service whose volume is replaced, and the
+ *   services that share its volumes (D73).
  * - In-place database restores hold the database's dependents: the current
  *   instances in the same environment of every service connected to it,
  *   and of those services' workers and crons.
@@ -78,7 +81,8 @@ final class RestoreHolds
         }
 
         if ($run->subject === BackupSubject::Volume) {
-            return [$run->target_service_instance_id];
+            // Services that share its volumes stop too (D73): the volume is replaced under them.
+            return [$run->target_service_instance_id, ...MountedVolumes::borrowersOf(Volume::query()->where('service_instance_id', $run->target_service_instance_id)->pluck('id')->map(static fn (mixed $id): int => is_numeric($id) ? (int) $id : 0)->values()->all())];
         }
 
         if ($run->subject === BackupSubject::BaseBackup) {

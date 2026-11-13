@@ -23,6 +23,8 @@ use App\Support\Variables\VariableResolver;
  *
  *     system < shared (opted-in) < connection-injected < environment-targeted < branch override
  *
+ * Workers and crons also get the variables their app's connections inject.
+ *
  * Shared variables a service didn't opt into are reachable only through
  * `${{shared.KEY}}`. Values are decrypted in memory only. Browser-inlined
  * variables that embed a secret block resolution like broken references.
@@ -120,7 +122,8 @@ final readonly class SpecVariableResolver
                 }
             }
 
-            foreach ($service->connectionVariables as $variable) {
+            // A worker or cron also gets what its app's connections inject.
+            foreach ($spec->connectionVariablesOf($service) as $variable) {
                 $values[$variable->key] = ['value' => $this->decrypt($project, $variable), 'secret' => $variable->type === VariableType::Secret];
             }
 

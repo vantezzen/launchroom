@@ -103,6 +103,8 @@ enum AuditAction: string
     case ServiceVolumeAdded = 'service.volume_added';
     case ServiceVolumeChanged = 'service.volume_changed';
     case ServiceVolumeRemoved = 'service.volume_removed';
+    case ServiceVolumeAttached = 'service.volume_attached';
+    case ServiceVolumeDetached = 'service.volume_detached';
     case ServiceImageChanged = 'service.image_changed';
     case ServiceStopped = 'service.stopped';
     case ServiceStarted = 'service.started';

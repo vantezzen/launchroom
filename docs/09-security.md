@@ -156,7 +156,7 @@ Most critical CVEs in comparable self-hosted platforms (command injection, IDOR,
   - no privileged containers, host namespaces, devices, bind mounts or socket mounts;
   - a capabilities allow-list, hardened defaults, log size limits;
   - route address upstreams only in the mesh range or launchroomd's local `LR_ALLOWED_LOCAL_UPSTREAMS`;
-  - only per-service workload volumes (`lr-v_…`, owner-labelled, never `lr-system-…`) and environment networks (`lr-e_…`);
+  - only per-service workload volumes (`lr-v_…`, owner-labelled, never `lr-system-…`) and environment networks (`lr-e_…`); a volume the NodeState declares as shared (`volumes[].service`, D73) may be mounted by other services of the same environment, never across environments, and keeps its owner label;
   - nftables network isolation of workloads and builds in its own `inet launchroom` table: no metadata, mesh, other environments, other Docker networks, private ranges unless allow-listed locally, or host ports except the ingress; fail closed ([05](05-networking-ingress.md) §1).
 - R23a Cross-server traffic ([05](05-networking-ingress.md) §1, §3):
   - Workload ports are published only on the mesh IP (never `0.0.0.0`; policy floor), and only for the peers in `firewall.meshAllow` (servers hosting workloads of the same environment, plus edges for web services), enforced by nftables before Docker's DNAT on every provider.

@@ -26,6 +26,7 @@ type Props = ProjectShellProps & {
     environment: App.Data.Canvas.EnvironmentData;
     nodes: App.Data.Canvas.CanvasNodeData[];
     edges: App.Data.Canvas.CanvasEdgeData[];
+    volumes: App.Data.Canvas.CanvasVolumeData[];
     panel: App.Data.Canvas.ServicePanelData | null;
     parentCandidates: { id: string; name: string }[];
     engines: App.Data.Canvas.DatabaseEngineOptionData[];
@@ -38,6 +39,7 @@ export default function ProjectCanvas({
     environment,
     nodes,
     edges,
+    volumes,
     panel,
     abilities,
     parentCandidates,
@@ -96,7 +98,7 @@ export default function ProjectCanvas({
             />
             <EnvironmentLiveUpdates
                 environments={[environment.id]}
-                only={['nodes', 'edges', 'panel']}
+                only={['nodes', 'edges', 'volumes', 'panel']}
             />
 
             <Page size="full">
@@ -153,6 +155,7 @@ export default function ProjectCanvas({
                                     environment={environment.id}
                                     nodes={nodes}
                                     edges={edges}
+                                    volumes={volumes}
                                     abilities={abilities}
                                     activeServiceId={panel?.serviceId ?? null}
                                     onOpenService={openService}

@@ -167,7 +167,8 @@ final readonly class ConfigExporter
                 $out['domains'] = $domains;
             }
 
-            $volumes = array_values(array_map(static fn (VolumeSpec $volume): string => $volume->mountPath, $service->volumes));
+            // Shared volumes (D73) belong to another service: not part of this one's file.
+            $volumes = array_values(array_map(static fn (VolumeSpec $volume): string => $volume->mountPath, array_filter($service->volumes, static fn (VolumeSpec $volume): bool => $volume->sharedFrom === null)));
             sort($volumes);
 
             if ($volumes !== []) {

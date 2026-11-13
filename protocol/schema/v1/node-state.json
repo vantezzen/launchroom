@@ -1007,6 +1007,11 @@
         "name": {
           "type": "string",
           "pattern": "^lr-[a-z0-9][a-z0-9_-]{0,59}$"
+        },
+        "service": {
+          "type": "string",
+          "pattern": "^svc_[0-9A-HJKMNP-TV-Z]{26}$",
+          "description": "Service is the service the volume belongs to, set when workloads of\nother services of the same environment mount it too (a shared volume,\ndaemon feature sharedVolumes, D73). Without it every workload that\nmounts the volume must belong to one service. Never across environments."
         }
       },
       "additionalProperties": false,

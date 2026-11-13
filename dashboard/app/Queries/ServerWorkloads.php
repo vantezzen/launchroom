@@ -10,11 +10,13 @@ use App\Enums\WorkloadRole;
 use App\Models\Placement;
 use App\Models\Server;
 use App\Scheduling\SchedulableServer;
+use App\Scheduling\Scheduler;
 use App\Services\Deployments\Placer;
 
 /**
- * The placement section of a server's page: settings, scheduler capacity
- * and the replicas placed there (docs/02 §2, docs/08).
+ * The placement section of a server's page: settings, the replicas placed
+ * there with their limits, and the memory new services can still get
+ * (docs/02 §2, docs/08; limits are caps, not reservations, D72).
  */
 final readonly class ServerWorkloads
 {
@@ -49,7 +51,6 @@ final readonly class ServerWorkloads
         ))->sortBy([['projectName', 'asc'], ['environmentName', 'asc'], ['serviceName', 'asc'], ['slot', 'asc']])->values()->all();
 
         $view = array_find($this->placer->servers($server->team_id), static fn (SchedulableServer $s): bool => $s->id === $server->id);
-        [$memoryOvercommit, $cpuOvercommit] = $this->placer->overcommit();
         $serving = $placements->filter(static fn (Placement $placement): bool => $placement->role === WorkloadRole::Serving);
 
         return new ServerPlacementData(
@@ -58,9 +59,8 @@ final readonly class ServerWorkloads
             allowProduction: $server->allow_production,
             canUpdate: $canUpdate,
             allocatedMemoryMb: $serving->sum(static fn (Placement $placement): int => $placement->memory_mb),
-            schedulableMemoryMb: $view?->memoryMb === null ? null : max(0, (int) floor($view->memoryMb * $memoryOvercommit) - $view->reservedMemoryMb),
+            freeMemoryMb: $view === null ? null : Scheduler::freeMemory($view),
             allocatedCpus: round($serving->sum(static fn (Placement $placement): float => $placement->cpus), 2),
-            schedulableCpus: $view?->cpus === null ? null : $view->cpus * $cpuOvercommit,
             workloads: array_values($workloads),
             measureLinks: $server->measure_links,
         );

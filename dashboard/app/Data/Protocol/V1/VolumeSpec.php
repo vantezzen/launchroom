@@ -9,18 +9,21 @@ use Spatie\LaravelData\Data;
 
 /**
  * NodeState `volumes[]`: named, launchroom-labelled volumes (never deleted
- * because they leave this list; see VolumeDeletion).
+ * because they leave this list; see VolumeDeletion). `service` is the
+ * owner's service id of a volume other services of its environment mount
+ * too (shared volume, daemon feature `sharedVolumes`, D73).
  */
 final class VolumeSpec extends Data
 {
     public function __construct(
         public string $id,
         public string $name,
+        public ?string $service = null,
     ) {}
 
     public static function fromProtocol(object $wire): self
     {
-        return new self(Wire::string($wire, 'id'), Wire::string($wire, 'name'));
+        return new self(Wire::string($wire, 'id'), Wire::string($wire, 'name'), Wire::nullableString($wire, 'service'));
     }
 
     /**
@@ -28,6 +31,6 @@ final class VolumeSpec extends Data
      */
     public function toProtocol(): array
     {
-        return ['id' => $this->id, 'name' => $this->name];
+        return ['id' => $this->id, 'name' => $this->name, ...($this->service === null ? [] : ['service' => $this->service])];
     }
 }

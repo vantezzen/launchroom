@@ -74,9 +74,10 @@ test('the server page lists placed workloads and capacity; the list counts them'
         ->assertOk()
         ->assertInertia(fn ($page) => $page->component('servers/show')
             ->where('placement.canUpdate', false)
+            // Limits are shown, never subtracted (D72).
             ->where('placement.allocatedMemoryMb', 512)
-            // 8192 × 1.5 − 256 reserved.
-            ->where('placement.schedulableMemoryMb', 12032)
+            // No report yet: 8192 − 256 reserved − 128 the idle replica is expected to use.
+            ->where('placement.freeMemoryMb', 7808)
             ->has('placement.workloads', 1)
             ->where('placement.workloads.0.serviceName', 'web')
             ->where('placement.workloads.0.projectName', 'shop'));
@@ -86,8 +87,14 @@ test('the server page lists placed workloads and capacity; the list counts them'
 
     $this->actingAs($this->admin)->get(route('servers.show', $server->public_id))
         ->assertInertia(fn ($page) => $page->where('placement.canUpdate', true)
-            ->where('placement.schedulableMemoryMb', 5888)
-            ->where('placement.schedulableCpus', 8));
+            ->where('placement.freeMemoryMb', 3712));
+
+    // A fresh measurement decides: what is really available, minus headroom
+    // and the replica that hasn't started yet.
+    $server->forceFill(['host_status' => ['cpus' => 2, 'memoryMb' => 4096, 'health' => ['collectedAt' => now()->toIso8601String(), 'memory' => ['totalMb' => 4096, 'availableMb' => 3000]]], 'host_status_at' => now()])->save();
+
+    $this->actingAs($this->admin)->get(route('servers.show', $server->public_id))
+        ->assertInertia(fn ($page) => $page->where('placement.freeMemoryMb', 3000 - 256 - 128));
 
     $this->actingAs($this->viewer)->get(route('servers.index'))
         ->assertInertia(fn ($page) => $page->where('servers.0.workloads', 1));

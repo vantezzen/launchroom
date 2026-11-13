@@ -12,6 +12,7 @@ use App\Models\Transfers\DataImportRun;
 use App\Services\Backups\DataHolds;
 use App\Services\Backups\HoldBlocker;
 use App\Services\Backups\RestoreHolds;
+use App\Services\Volumes\MountedVolumes;
 
 /**
  * Services held while an import runs (docs/14 §12.5), the same way restores
@@ -29,7 +30,7 @@ final class ImportHolds
         $held = [];
         $runs = DataImportRun::query()
             ->whereIn('status', [ImportRunStatus::Holding->value, ImportRunStatus::Importing->value])
-            ->get(['id', 'subject', 'stop_dependents', 'service_instance_id']);
+            ->get(['id', 'subject', 'stop_dependents', 'service_instance_id', 'volume_id']);
 
         foreach ($runs as $run) {
             foreach (self::heldBy($run) as $id) {
@@ -46,7 +47,8 @@ final class ImportHolds
     public static function heldBy(DataImportRun $run): array
     {
         if ($run->subject === DataSubject::Volume) {
-            return [$run->service_instance_id];
+            // Services that share the volume stop too (D73).
+            return [$run->service_instance_id, ...($run->volume_id === null ? [] : MountedVolumes::borrowersOf([$run->volume_id]))];
         }
 
         if (! $run->stop_dependents) {

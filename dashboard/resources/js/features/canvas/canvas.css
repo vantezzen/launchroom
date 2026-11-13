@@ -133,6 +133,12 @@
     stroke-dasharray: 2 4;
 }
 
+/* A worker or cron using its app's connection: quieter, long dashes. */
+.launchroom-canvas .react-flow__edge.inherited .react-flow__edge-path {
+    stroke: var(--canvas-edge-muted);
+    stroke-dasharray: 6 5;
+}
+
 .launchroom-canvas .react-flow__edge.staged .react-flow__edge-path {
     stroke: var(--signal);
     stroke-dasharray: 6 4;
@@ -191,4 +197,9 @@
 .launchroom-canvas .react-flow__background-pattern.dots,
 .launchroom-canvas .react-flow__background circle {
     fill: var(--canvas-dot);
+}
+
+/* A service mounting a volume (D73): a quiet solid line, no arrow. */
+.launchroom-canvas .react-flow__edge.mount:not(.staged) .react-flow__edge-path {
+    stroke: var(--canvas-edge-muted);
 }

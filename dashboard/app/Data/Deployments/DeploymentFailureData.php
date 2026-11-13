@@ -30,7 +30,7 @@ final class DeploymentFailureData extends Data
             DeploymentFailureClass::PortMismatch => ['The app listens on another port', 'Update the port in the service settings to the one the app listens on.'],
             DeploymentFailureClass::HealthTimeout => ['Health check timed out', 'The app did not answer its health check in time. Check the health check path and start period in the service settings.'],
             DeploymentFailureClass::ConfigError => ['Configuration error', 'Fix the configuration named in the message and deploy again.'],
-            DeploymentFailureClass::PlacementError => ['No server can run this service', 'Check server roles and capacity, or bring the server that holds the volume back online.'],
+            DeploymentFailureClass::PlacementError => ['No server can run this service', 'Check server roles and free memory, or bring the server that holds the volume back online.'],
         };
 
         return new self($class, $title, $message, $hint);

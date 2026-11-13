@@ -90,6 +90,11 @@ final readonly class PromotionSnapshots
             }
 
             foreach ($service->volumes as $volume) {
+                // A shared volume (D73) points at a volume of this environment: never promoted.
+                if ($volume->sharedFrom !== null) {
+                    continue;
+                }
+
                 $entries["{$path}.volumes.{$volume->mountPath}"] = new PromotionEntry(
                     type: PromotionEntryType::Volume,
                     fingerprint: 'mounted',

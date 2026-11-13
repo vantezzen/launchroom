@@ -34,6 +34,7 @@ use App\Models\Environment;
 use App\Models\Placement;
 use App\Models\Server;
 use App\Models\ServiceInstance;
+use App\Models\Volume;
 use App\Services\Backups\PointInTimeRecovery;
 use App\Services\Backups\RestoreHolds;
 use App\Services\Crypto\ProjectKeyring;
@@ -46,6 +47,7 @@ use App\Support\Crypto\WorkloadEnvSealer;
 use App\Support\Deployments\EffectiveDeploy;
 use App\Support\Hostname;
 use Illuminate\Contracts\Database\Query\Builder;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
@@ -108,6 +110,10 @@ final readonly class NodeStateContent
         $links = $this->meshLinks->for($server, array_values($placements->all()));
         // Restores hold services (volume: the service; database in place: its dependents) until they finished (docs/14 §5.1).
         $held = RestoreHolds::instanceIds();
+        // Volumes of other services that workloads here mount too (D73).
+        $sharedVolumes = $this->sharedVolumes($server, $placements);
+        /** @var array<string, string> $sharedOwners volume id => owner service id */
+        $sharedOwners = [];
 
         foreach ($placements as $placement) {
             // A stopped service runs nothing (D68); held ones wait for a restore.
@@ -115,7 +121,7 @@ final readonly class NodeStateContent
                 continue;
             }
 
-            $workload = $this->workload($server, $placement, $previews, $links['publish'][$placement->workload_id] ?? null);
+            $workload = $this->workload($server, $placement, $previews, $links['publish'][$placement->workload_id] ?? null, $sharedVolumes);
 
             if (! $workload instanceof WorkloadSpec) {
                 continue;
@@ -138,6 +144,20 @@ final readonly class NodeStateContent
                     $volumes[$volume->public_id] = new VolumeSpec($volume->public_id, $volume->dockerName());
                 }
             }
+
+            foreach ($workload->mounts ?? [] as $mount) {
+                $volume = $sharedVolumes[$mount['volume']] ?? null;
+
+                if ($volume instanceof Volume && $volume->service_instance_id !== $placement->service_instance_id) {
+                    $volumes[$volume->public_id] ??= new VolumeSpec($volume->public_id, $volume->dockerName());
+                    $sharedOwners[$volume->public_id] = $volume->serviceInstance->service->public_id;
+                }
+            }
+        }
+
+        // A volume mounted by workloads of several services names its owner (D73).
+        foreach ($sharedOwners as $id => $owner) {
+            $volumes[$id] = new VolumeSpec($id, $volumes[$id]->name, $owner);
         }
 
         // A service moving here is held while its volumes are copied in: they
@@ -161,7 +181,10 @@ final readonly class NodeStateContent
         ];
     }
 
-    private function workload(Server $server, Placement $placement, PreviewRoutes $previews, ?int $meshPort): ?WorkloadSpec
+    /**
+     * @param  array<string, Volume>  $shared  volumes of other services, by public id ({@see sharedVolumes})
+     */
+    private function workload(Server $server, Placement $placement, PreviewRoutes $previews, ?int $meshPort, array $shared = []): ?WorkloadSpec
     {
         $deployment = $placement->deployment;
         $instance = $placement->serviceInstance;
@@ -191,6 +214,31 @@ final readonly class NodeStateContent
             }
 
             $mounts[] = ['volume' => $volume->public_id, 'target' => $recorded->mountPath ?? $volume->mount_path];
+        }
+
+        // Volumes of other services (D73), as the revision recorded them. A
+        // workload runs only with all of them: one that is missing, belongs
+        // to another environment or service, lives on another server, or a
+        // server that can't share volumes keeps the workload out (fail
+        // closed; placement co-locates them, App\Services\Deployments\Placer).
+        foreach ($spec->volumes as $id => $recorded) {
+            if ($recorded->sharedFrom === null) {
+                continue;
+            }
+
+            $volume = $shared[(string) $id] ?? null;
+
+            if (! $volume instanceof Volume
+                || $volume->serviceInstance->environment_id !== $instance->environment_id
+                || $volume->serviceInstance->service->public_id !== $recorded->sharedFrom
+                || $volume->server_id !== $server->id
+                || ! $server->supportsDaemonFeature(DaemonFeature::SharedVolumes)) {
+                Log::warning('Workload left out: its shared volume is not usable on this server', ['workload' => $placement->workload_id, 'volume' => (string) $id, 'server' => $server->public_id]);
+
+                return null;
+            }
+
+            $mounts[] = ['volume' => $volume->public_id, 'target' => $recorded->mountPath];
         }
 
         $argv = $effective->argv($effective->startCommand);
@@ -624,5 +672,42 @@ final readonly class NodeStateContent
         }
 
         return $capabilities === [] ? null : $capabilities;
+    }
+
+    /**
+     * The volumes of other services that the placements' revisions mount
+     * (shared volumes, D73), by public id, with their owner. Same team only.
+     *
+     * @param  Collection<int, Placement>  $placements
+     * @return array<string, Volume>
+     */
+    private function sharedVolumes(Server $server, Collection $placements): array
+    {
+        $ids = [];
+
+        foreach ($placements as $placement) {
+            $spec = $placement->deployment->revision?->spec->service($placement->serviceInstance->service->public_id);
+
+            foreach ($spec instanceof ServiceSpec ? $spec->volumes : [] as $id => $volume) {
+                if ($volume->sharedFrom !== null) {
+                    $ids[(string) $id] = true;
+                }
+            }
+        }
+
+        if ($ids === []) {
+            return [];
+        }
+
+        /** @var array<string, Volume> $volumes */
+        $volumes = Volume::query()
+            ->where('team_id', $server->team_id)
+            ->whereIn('public_id', array_keys($ids))
+            ->with('serviceInstance.service')
+            ->get()
+            ->keyBy('public_id')
+            ->all();
+
+        return $volumes;
     }
 }

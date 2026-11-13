@@ -96,14 +96,46 @@ test('missing labels and offline servers are named in the error', function (): v
         ->toThrow(PlacementFailed::class, 'no approved server with the runtime role');
 });
 
-test('CPU limits are reserved when CPU checking is on; reserved memory is kept free', function (): void {
-    $servers = [schedServer(1, ['cpus' => 2, 'allocatedCpus' => 1.0]), schedServer(2, ['cpus' => 2])];
+test('limits never add up; one replica only needs a server at least as big as its limits', function (): void {
+    // Limits are caps, not reservations (D72): eight 1-core replicas on two 2-core servers is fine.
+    $servers = [schedServer(1, ['cpus' => 2, 'allocatedCpus' => 12.0]), schedServer(2, ['cpus' => 2])];
 
-    // Server 1 has one core left: the third replica can only go to server 2.
-    expect(Scheduler::place($servers, schedRequest(3, ['cpus' => 1.0]), 1.0, 1.0)->serverIds)->toBe([1, 2, 2])
-        ->and(fn (): PlacementPlan => Scheduler::place($servers, schedRequest(4, ['cpus' => 1.0]), 1.0, 1.0))->toThrow(PlacementFailed::class, '1 CPU')
-        ->and(Scheduler::place($servers, schedRequest(4, ['cpus' => 1.0]))->serverIds)->toHaveCount(4)
-        ->and(fn (): PlacementPlan => Scheduler::place([schedServer(1, ['memoryMb' => 1024, 'reservedMemoryMb' => 768])], schedRequest(1)))->toThrow(PlacementFailed::class, '512 MB');
+    expect(Scheduler::place($servers, schedRequest(8, ['cpus' => 1.0]))->serverIds)->toHaveCount(8)
+        ->and(Scheduler::place([schedServer(1, ['cpus' => 2]), schedServer(2, ['cpus' => 8])], schedRequest(2, ['cpus' => 4.0]))->serverIds)->toBe([2, 2])
+        ->and(fn (): PlacementPlan => Scheduler::place([schedServer(1, ['cpus' => 2])], schedRequest(1, ['cpus' => 4.0])))
+        ->toThrow(PlacementFailed::class, 's1: has 2 cores, fewer than the CPU limit')
+        // The same for one replica's memory limit against the server's memory.
+        ->and(fn (): PlacementPlan => Scheduler::place([schedServer(1, ['memoryMb' => 2048])], schedRequest(1, ['memoryMb' => 4096, 'expectedMemoryMb' => 128])))
+        ->toThrow(PlacementFailed::class, 's1: has 2 GB of memory, less than the memory limit');
+});
+
+test('without a fresh report, memory is estimated from what placed workloads are expected to use; reserved memory is kept free', function (): void {
+    expect(fn (): PlacementPlan => Scheduler::place([schedServer(1, ['memoryMb' => 1024, 'reservedMemoryMb' => 768])], schedRequest(1)))
+        ->toThrow(PlacementFailed::class, 'A replica needs about 512 MB, and the most any server has left is 256 MB')
+        // Expected use, not the limit, is what has to fit.
+        ->and(Scheduler::place([schedServer(1, ['memoryMb' => 1024, 'reservedMemoryMb' => 768])], schedRequest(2, ['expectedMemoryMb' => 128]))->serverIds)->toBe([1, 1]);
+});
+
+test('a fresh report decides: real free memory, never the sum of limits', function (): void {
+    // 8 GB of limits on a 4 GB server, but only 1.5 GB really in use.
+    $busyOnPaper = schedServer(1, ['memoryMb' => 4096, 'allocatedMemoryMb' => 8192, 'availableMemoryMb' => 2304]);
+    // Few limits, but its memory is really used up.
+    $reallyFull = schedServer(2, ['memoryMb' => 4096, 'allocatedMemoryMb' => 512, 'availableMemoryMb' => 100]);
+
+    expect(Scheduler::place([$busyOnPaper, $reallyFull], schedRequest(1, ['expectedMemoryMb' => 300]))->serverIds)->toBe([1])
+        // Four replicas of 512 MB fit in 2304 MB, a fifth doesn't.
+        ->and(Scheduler::place([$busyOnPaper], schedRequest(4))->serverIds)->toBe([1, 1, 1, 1])
+        ->and(fn (): PlacementPlan => Scheduler::place([$busyOnPaper, $reallyFull], schedRequest(5)))
+        ->toThrow(PlacementFailed::class, "There isn't enough free memory for all 5 replicas of this service right now");
+});
+
+test('spread prefers the server with the most real headroom', function (): void {
+    $servers = [
+        schedServer(1, ['memoryMb' => 16384, 'availableMemoryMb' => 1024]),
+        schedServer(2, ['memoryMb' => 4096, 'allocatedMemoryMb' => 6000, 'availableMemoryMb' => 3000]),
+    ];
+
+    expect(Scheduler::place($servers, schedRequest(1))->serverIds)->toBe([2]);
 });
 
 test('existing replicas of the set count for anti-affinity and capacity (rescheduling)', function (): void {
@@ -155,6 +187,7 @@ function randomCluster(): array
             'allowProduction' => mt_rand(0, 3) !== 0,
             'platform' => [null, 'linux/amd64', 'linux/arm64'][mt_rand(0, 2)],
             'reservedMemoryMb' => mt_rand(0, 1) * 256,
+            'availableMemoryMb' => $memory !== null && mt_rand(0, 2) === 0 ? mt_rand(0, 16) * 256 : null,
         ]);
     }
 
@@ -177,6 +210,7 @@ function randomRequest(int $servers): PlacementRequest
         'platform' => [null, 'linux/amd64'][mt_rand(0, 1)],
         'previousServerIds' => mt_rand(0, 1) === 1 ? [mt_rand(1, $servers)] : [],
         'existingServerIds' => mt_rand(0, 3) === 0 ? [mt_rand(1, $servers)] : [],
+        'expectedMemoryMb' => mt_rand(0, 1) === 1 ? mt_rand(1, 4) * 128 : null,
     ]);
 }
 
@@ -188,14 +222,11 @@ function schedEligible(SchedulableServer $server, PlacementRequest $request): bo
 /**
  * Room for one more replica on $server given $placed replicas of this set.
  */
-function schedRoom(SchedulableServer $server, PlacementRequest $request, int $placed, float $overcommit, ?float $cpuOvercommit): bool
+function schedRoom(SchedulableServer $server, PlacementRequest $request, int $placed): bool
 {
-    $memoryOk = $server->memoryMb === null || $server->memoryMb <= 0
-        || $server->allocatedMemoryMb + ($placed + 1) * $request->memoryMb <= (int) floor($server->memoryMb * $overcommit) - $server->reservedMemoryMb;
-    $cpuOk = $cpuOvercommit === null || $server->cpus === null
-        || $server->allocatedCpus + ($placed + 1) * $request->cpus <= $server->cpus * $cpuOvercommit + 1e-9;
+    $free = Scheduler::freeMemory($server);
 
-    return $memoryOk && $cpuOk;
+    return $free === null || ($placed + 1) * $request->memoryNeedMb() <= $free;
 }
 
 test('property: eligibility, capacity, anti-affinity, failure domains, pack and determinism hold for random clusters', function (): void {
@@ -205,11 +236,9 @@ test('property: eligibility, capacity, anti-affinity, failure domains, pack and 
     for ($run = 0; $run < 3000; $run++) {
         $servers = randomCluster();
         $request = randomRequest(count($servers));
-        $overcommit = [1.0, 1.5][mt_rand(0, 1)];
-        $cpuOvercommit = [null, 1.0, 4.0][mt_rand(0, 2)];
 
         try {
-            $plan = Scheduler::place($servers, $request, $overcommit, $cpuOvercommit);
+            $plan = Scheduler::place($servers, $request);
         } catch (PlacementFailed) {
             // Failing is only allowed when there is no way to place every replica:
             // at least one server must then be ineligible or full. Checked by the
@@ -229,7 +258,7 @@ test('property: eligibility, capacity, anti-affinity, failure domains, pack and 
         // Determinism: the input order doesn't matter.
         $shuffled = $servers;
         shuffle($shuffled);
-        expect(Scheduler::place($shuffled, $request, $overcommit, $cpuOvercommit)->serverIds)->toBe($plan->serverIds);
+        expect(Scheduler::place($shuffled, $request)->serverIds)->toBe($plan->serverIds);
 
         $counts = array_count_values($plan->serverIds);
         $total = $counts;
@@ -246,7 +275,7 @@ test('property: eligibility, capacity, anti-affinity, failure domains, pack and 
                 ->and($server->online)->toBeTrue();
 
             // Capacity (existing replicas of the set included).
-            expect(schedRoom($server, $request, $total[$serverId] - 1, $overcommit, $cpuOvercommit))->toBeTrue();
+            expect(schedRoom($server, $request, $total[$serverId] - 1))->toBeTrue();
         }
 
         if ($total === []) {
@@ -261,14 +290,14 @@ test('property: eligibility, capacity, anti-affinity, failure domains, pack and 
             foreach ($servers as $server) {
                 $placed = $total[$server->id] ?? 0;
 
-                if (schedEligible($server, $request) && schedRoom($server, $request, $placed, $overcommit, $cpuOvercommit)) {
+                if (schedEligible($server, $request) && schedRoom($server, $request, $placed)) {
                     expect($placed)->toBeGreaterThanOrEqual($max - 1);
                 }
             }
 
             // Failure domains: with unlimited room and no existing replicas,
             // as many distinct domains as possible are used.
-            $unlimited = array_all($servers, static fn (SchedulableServer $s): bool => $s->memoryMb === null && ($cpuOvercommit === null || $s->cpus === null));
+            $unlimited = array_all($servers, static fn (SchedulableServer $s): bool => $s->memoryMb === null);
 
             if ($unlimited && $request->existingServerIds === []) {
                 $eligibleDomains = array_unique(array_map(static fn (SchedulableServer $s): string => $s->failureDomain(), array_filter($servers, static fn (SchedulableServer $s): bool => schedEligible($s, $request))));
@@ -293,7 +322,7 @@ test('property: eligibility, capacity, anti-affinity, failure domains, pack and 
             foreach ($plan->serverIds as $id) {
                 if (! isset($used[$id])) {
                     foreach (array_keys($used) as $other) {
-                        expect(schedRoom($byId[$other], $request, $placed[$other] ?? 0, $overcommit, $cpuOvercommit))->toBeFalse();
+                        expect(schedRoom($byId[$other], $request, $placed[$other] ?? 0))->toBeFalse();
                     }
                 }
 
@@ -315,7 +344,7 @@ test('property: a failure means no eligible server had room, never a wrong refus
         $request = randomRequest(count($servers));
 
         try {
-            Scheduler::place($servers, $request, 1.0, 1.0);
+            Scheduler::place($servers, $request);
         } catch (PlacementFailed $e) {
             $eligible = array_values(array_filter($servers, static fn (SchedulableServer $s): bool => schedEligible($s, $request)));
 
@@ -325,7 +354,7 @@ test('property: a failure means no eligible server had room, never a wrong refus
                 continue;
             }
 
-            expect($e->getMessage())->toContain('room for another replica');
+            expect($e->getMessage())->toContain('enough free memory');
 
             // Greedy fill can't place every replica: total room across eligible servers is short.
             $room = 0;
@@ -333,7 +362,7 @@ test('property: a failure means no eligible server had room, never a wrong refus
             foreach ($eligible as $server) {
                 $placed = count(array_keys($request->existingServerIds, $server->id, true));
 
-                for ($k = $placed; $k < $placed + $request->replicas + 1 && schedRoom($server, $request, $k, 1.0, 1.0); $k++) {
+                for ($k = $placed; $k < $placed + $request->replicas + 1 && schedRoom($server, $request, $k); $k++) {
                     $room++;
                 }
             }

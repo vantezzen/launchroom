@@ -175,7 +175,7 @@ Primitives in `resources/js/components/`, composites in `components/patterns/`. 
 | `InfraGroup` | Titled group frame with status rows (icon, label, value right). |
 | `StatTile`, `Sparkline`, `MiniBars`, `UsageMeter`, `Donut`, `TimeRangeSelect` | Data viz rules in §9. |
 | `StepList`, `StepPills`, `ErrorExcerpt`, `RunStrip` | Steps with status icons and right-aligned durations; failing step auto-expands to ±5 lines with the error line highlighted (red left rule + soft background). |
-| `LogExplorer` | Query bar, histogram with deploy markers, filter rail with counts, virtualized mono table, detail drawer. Logs are text, never rendered as HTML; ANSI colours toned to the palette. |
+| `LogExplorer` | Query bar, histogram with deploy markers (markers within 8 px share one tick with a hollow cap and a count, labels that would touch another tick or label are left out; hover, focus or tap lists the events), filter rail with counts, virtualized mono table, detail drawer. Logs are text, never rendered as HTML; ANSI colours toned to the palette. |
 | `ChoiceTiles`, `OptionCards`, `Wizard`, `LiveWait` | Guided setup: "choose your X" tiles, mode cards with a check, numbered steps with collapsed summaries, live waiting states. |
 | `Sheet`, `ServicePanel` | Right sheets at elevation 2, 480/560/720 px, 12 px inset on desktop, full screen on phones; sections with headings; toggles right-aligned. |
 | `UnsavedBar`, `StagedBar` | Floating, centred at the bottom of the sheet/page, inverse colours. Replace per-section Save buttons: "Unsaved changes · Reset · Save" (instant settings), "2 changes · api will restart · Discard · Deploy" (staged). |
@@ -185,7 +185,7 @@ Primitives in `resources/js/components/`, composites in `components/patterns/`. 
 | Callouts | `Callout` (`components/patterns/callout.tsx`): `tone="info|warning|error"`, `title`, children (one or two sentences, optional numbered steps), `actions?` (links, one button), `icon?`. A bordered card with a 28 px recessed icon tile (muted ⓘ, amber ⚠, red ✕) and a screen-reader prefix for the tone; the frame stays neutral. Amber when something needs action, red only when it's broken. Never a red border around a whole section. |
 | Confirmation | Reversible-but-consequential: confirm popover with the consequence in one sentence. Irreversible data loss: dialog with typed confirmation. |
 | Command palette | cmdk; sections Actions (context first), Navigate, Projects, Services, Deployments, Servers; rich rows (logo, status, environment); shortcut hints in `mono-small`. |
-| Canvas | Node: 264 px, logo tile, name, subtitle, status line (+ progress while deploying), one key fact, footer strip (sparkline, replicas, servers). Groups: Public / App / Data frames. Edges: 1.5 px, label pill `DB_* · 6`, staged dashed signal, shared-with-production red dashed + chip. Floating toolbar bottom-centre, minimap bottom-right. |
+| Canvas | Node: 264 px, logo tile, name, subtitle, status line (+ progress while deploying), one key fact, footer strip (sparkline, replicas, servers). Groups: Public / App / Data frames. Edges: 1.5 px, label pill `DB_* · 6`, staged dashed signal, shared-with-production red dashed + chip, a worker's or cron's inherited connection (from its app) muted long dashes with a quieter pill. Floating toolbar bottom-centre, minimap bottom-right. |
 
 ## 7. Illustration & iconography
 

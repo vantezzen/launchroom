@@ -22,8 +22,12 @@ final class ServicePlacementData extends Data
         public bool $stateful = false,
         /** The server holding the stateful service's volume, once placed. */
         public ?string $pinnedServer = null,
-        /** Memory and CPU overcommit factors the scheduler applies (1.0 = none; CPU null = not checked). */
-        public float $memoryOvercommit = 1.0,
-        public ?float $cpuOvercommit = null,
+        /** The most one replica used in the last 6 hours (null: not measured yet). */
+        public ?int $measuredMemoryMb = null,
+        /**
+         * Memory a replica is expected to use without a measurement. A
+         * replica needs min(limit, max(this, measured)) free (D72).
+         */
+        public int $replicaMemoryMb = 128,
     ) {}
 }

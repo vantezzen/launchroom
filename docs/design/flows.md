@@ -120,7 +120,7 @@ Plan preview states, each designed: Inspecting (skeleton card with the repo name
 
 ## 11. Scale and place replicas
 
-- The Scaling page shows the live picture first: one card per runtime server with its device render and the replicas standing on it ("2 on fra-1, 1 on hel-1"), CPU and memory bars against capacity, and the per-server rule. Every change asks the real scheduler.
+- The Scaling page shows the live picture first: one card per runtime server with its device render and the replicas standing on it ("2 on fra-1, 1 on hel-1"), CPU and memory bars with what the server really uses and has free (other services' limits only as a footnote: they are caps), and the per-server rule. Every change asks the real scheduler.
 - Replicas use a **stepper** (Umbrel Machines style: − 3 +); size per replica uses sliders that end at the biggest eligible server. Spread/Pack and required labels follow below.
 - Changes surface in the floating bar ("api: restart · 3 replicas across 2 servers").
 - On the canvas node footer: "×3 · fra-1, hel-1".

@@ -39,18 +39,50 @@ import type {
     ServiceFlowNode,
     ServiceNodeData,
 } from './types';
+import {
+    AttachVolumePopover,
+    canMountVolume,
+    isVolumeId,
+    MountEdge,
+    VOLUME_NODE_WIDTH,
+    VolumeNode,
+    VolumePopover,
+} from './volume-layer';
+import type { MountFlowEdge, VolumeFlowNode } from './volume-layer';
 import './canvas.css';
 
-const nodeTypes = { service: ServiceNode, 'group-frame': GroupFrame };
+const nodeTypes = {
+    service: ServiceNode,
+    volume: VolumeNode,
+    'group-frame': GroupFrame,
+};
 
-type CanvasNode = ServiceFlowNode | GroupFlowNode;
+type CanvasNode = ServiceFlowNode | VolumeFlowNode | GroupFlowNode;
+type CanvasEdge = ConnectionFlowEdge | MountFlowEdge;
 
 function isService(node: Node): node is ServiceFlowNode {
     return node.type === 'service';
 }
-const edgeTypes = { connection: ConnectionEdge };
+
+function isVolume(node: Node): node is VolumeFlowNode {
+    return node.type === 'volume';
+}
+const edgeTypes = { connection: ConnectionEdge, mount: MountEdge };
 
 type XY = { x: number; y: number };
+
+const NO_VOLUMES: App.Data.Canvas.CanvasVolumeData[] = [];
+
+/** Volume → service mounts, as layout edges. */
+function mountLinks(volumes: App.Data.Canvas.CanvasVolumeData[]) {
+    return volumes.flatMap((volume) =>
+        volume.mounts.map((mount) => ({
+            id: `mount-${volume.id}-${mount.serviceId}`,
+            source: mount.serviceId,
+            target: volume.id,
+        })),
+    );
+}
 
 /** The floating service panel's width on desktop (service-panel.tsx). */
 export const PANEL_WIDTH = 680;
@@ -87,6 +119,8 @@ export type ServiceCanvasProps = {
     onAdd?: () => void;
     /** Previews: badges on edges into shared/cloned databases. */
     edgeBadges?: App.Data.Previews.PreviewEdgeBadgeData[];
+    /** App volumes as nodes, shared between services (D73). */
+    volumes?: App.Data.Canvas.CanvasVolumeData[];
 };
 
 /**
@@ -107,10 +141,22 @@ export function ServiceCanvas({
     onRedeploy,
     onAdd,
     edgeBadges,
+    volumes = NO_VOLUMES,
 }: ServiceCanvasProps) {
-    const flow = useReactFlow<CanvasNode, ConnectionFlowEdge>();
+    const flow = useReactFlow<CanvasNode, CanvasEdge>();
     const [flowNodes, setFlowNodes, onNodesChange] =
         useNodesState<ServiceFlowNode>([]);
+    const [volumeNodes, setVolumeNodes, onVolumeNodesChange] =
+        useNodesState<VolumeFlowNode>([]);
+    const [openVolume, setOpenVolume] = useState<{
+        id: string;
+        anchor: XY;
+    } | null>(null);
+    const [pendingAttach, setPendingAttach] = useState<{
+        service: string;
+        volume: string;
+        anchor: XY;
+    } | null>(null);
     const [pendingConnection, setPendingConnection] = useState<{
         from: string;
         to: string;
@@ -129,6 +175,10 @@ export function ServiceCanvas({
     const byId = useMemo(
         () => new Map(nodes.map((node) => [node.id, node])),
         [nodes],
+    );
+    const volumesById = useMemo(
+        () => new Map(volumes.map((volume) => [volume.id, volume])),
+        [volumes],
     );
 
     const savePositions = useCallback(
@@ -186,17 +236,82 @@ export function ServiceCanvas({
         setFlowNodes,
     ]);
 
+    // Volumes → volume nodes. A volume without a saved spot sits right of
+    // its own service.
+    useEffect(() => {
+        setVolumeNodes((current) => {
+            const existing = new Map(current.map((node) => [node.id, node]));
+            const perOwner = new Map<string, number>();
+
+            return volumes.map((data): VolumeFlowNode => {
+                const previous = existing.get(data.id);
+                const owner =
+                    flow.getNode(data.ownerId)?.position ??
+                    byId.get(data.ownerId)?.position ??
+                    null;
+                const index = perOwner.get(data.ownerId) ?? 0;
+                perOwner.set(data.ownerId, index + 1);
+                const connectable =
+                    abilities.manage && abilities.connect && !data.removing;
+
+                return {
+                    ...previous,
+                    id: data.id,
+                    type: 'volume',
+                    position: previous?.position ??
+                        data.position ?? {
+                            x: (owner?.x ?? 0) + NODE_WIDTH + 96,
+                            y: (owner?.y ?? 0) + index * 84,
+                        },
+                    data: {
+                        ...data,
+                        connectable,
+                        sharedBy: data.mounts.filter(
+                            (mount) => !mount.owner && !mount.removing,
+                        ).length,
+                    },
+                    selected: openVolume?.id === data.id,
+                    draggable: abilities.manage,
+                    connectable,
+                    deletable: false,
+                    ariaLabel: `Volume ${data.mountPath}${data.server ? ` on ${data.server}` : ''}`,
+                };
+            });
+        });
+        // flow and byId only seed a new volume's first spot.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [
+        volumes,
+        openVolume?.id,
+        abilities.manage,
+        abilities.connect,
+        setVolumeNodes,
+    ]);
+
     const tidyUp = useCallback(
         async (save: boolean) => {
             const positions = await autoLayout(
-                nodes.map((node) => ({
-                    id: node.id,
-                    partition: groupIndex(groupOf(node)),
-                })),
-                edges,
+                [
+                    ...nodes.map((node) => ({
+                        id: node.id,
+                        partition: groupIndex(groupOf(node)),
+                    })),
+                    // Volumes sit with the data (D73).
+                    ...volumes.map((volume) => ({
+                        id: volume.id,
+                        partition: groupIndex('data'),
+                    })),
+                ],
+                [...edges, ...mountLinks(volumes)],
             );
 
             setFlowNodes((current) =>
+                current.map((node) => ({
+                    ...node,
+                    position: positions[node.id] ?? node.position,
+                })),
+            );
+            setVolumeNodes((current) =>
                 current.map((node) => ({
                     ...node,
                     position: positions[node.id] ?? node.position,
@@ -215,7 +330,15 @@ export function ServiceCanvas({
                 }),
             );
         },
-        [nodes, edges, flow, savePositions, setFlowNodes],
+        [
+            nodes,
+            edges,
+            volumes,
+            flow,
+            savePositions,
+            setFlowNodes,
+            setVolumeNodes,
+        ],
     );
 
     // New projects (nothing placed yet) get an elkjs layout, saved once.
@@ -289,13 +412,15 @@ export function ServiceCanvas({
         (_event, _node, dragged) => {
             savePositions(
                 Object.fromEntries(
-                    dragged.filter(isService).map((node) => [
-                        node.id,
-                        {
-                            x: Math.round(node.position.x),
-                            y: Math.round(node.position.y),
-                        },
-                    ]),
+                    dragged
+                        .filter((node) => isService(node) || isVolume(node))
+                        .map((node) => [
+                            node.id,
+                            {
+                                x: Math.round(node.position.x),
+                                y: Math.round(node.position.y),
+                            },
+                        ]),
                 ),
             );
         },
@@ -304,8 +429,8 @@ export function ServiceCanvas({
 
     // Group frames (Public / App / Data) follow the nodes, also while dragging.
     const frameNodes = useMemo((): GroupFlowNode[] => {
-        const frames = framesFor(
-            flowNodes.map((node) => ({
+        const frames = framesFor([
+            ...flowNodes.map((node) => ({
                 id: node.id,
                 group: groupOf(node.data),
                 x: node.position.x,
@@ -313,7 +438,15 @@ export function ServiceCanvas({
                 width: node.measured?.width ?? NODE_WIDTH,
                 height: node.measured?.height ?? NODE_HEIGHT,
             })),
-        );
+            ...volumeNodes.map((node) => ({
+                id: node.id,
+                group: 'data' as const,
+                x: node.position.x,
+                y: node.position.y,
+                width: node.measured?.width ?? VOLUME_NODE_WIDTH,
+                height: node.measured?.height ?? 64,
+            })),
+        ]);
 
         return frames.map((frame) => ({
             id: `group-${frame.id}`,
@@ -330,11 +463,11 @@ export function ServiceCanvas({
             zIndex: -1,
             ariaRole: 'presentation',
         }));
-    }, [flowNodes]);
+    }, [flowNodes, volumeNodes]);
 
     const allNodes = useMemo(
-        (): CanvasNode[] => [...frameNodes, ...flowNodes],
-        [frameNodes, flowNodes],
+        (): CanvasNode[] => [...frameNodes, ...flowNodes, ...volumeNodes],
+        [frameNodes, flowNodes, volumeNodes],
     );
 
     const flowEdges = useMemo(
@@ -361,12 +494,15 @@ export function ServiceCanvas({
                 selectable: false,
                 deletable: false,
                 markerEnd:
-                    edge.type === 'connection'
+                    edge.type === 'connection' || edge.type === 'inherited'
                         ? {
                               type: MarkerType.ArrowClosed,
                               width: 16,
                               height: 16,
-                              color: 'var(--canvas-edge)',
+                              color:
+                                  edge.type === 'inherited'
+                                      ? 'var(--canvas-edge-muted)'
+                                      : 'var(--canvas-edge)',
                           }
                         : undefined,
                 data: {
@@ -382,34 +518,81 @@ export function ServiceCanvas({
                 ariaLabel:
                     edge.type === 'process'
                         ? `${byId.get(edge.target)?.name ?? ''} runs the image of ${byId.get(edge.source)?.name ?? ''}`
-                        : `${byId.get(edge.source)?.name ?? ''} connects to ${byId.get(edge.target)?.name ?? ''}`,
+                        : edge.type === 'inherited'
+                          ? `${byId.get(edge.source)?.name ?? ''} uses the connection of ${byId.get(edge.via ?? '')?.name ?? ''} to ${byId.get(edge.target)?.name ?? ''}`
+                          : `${byId.get(edge.source)?.name ?? ''} connects to ${byId.get(edge.target)?.name ?? ''}`,
             })),
         [edges, byId, edgeBadges],
     );
 
-    const isValidConnection: IsValidConnection<ConnectionFlowEdge> =
-        useCallback(
-            (connection) => {
-                const { source, target } = connection;
-                const to = byId.get(target);
+    // Service → volume mounts (D73): the owner's quiet, shared ones labelled.
+    const mountEdges = useMemo(
+        (): MountFlowEdge[] =>
+            volumes.flatMap((volume) =>
+                volume.mounts.map((mount): MountFlowEdge => ({
+                    id: `mount-${volume.id}-${mount.serviceId}`,
+                    source: mount.serviceId,
+                    target: volume.id,
+                    type: 'mount',
+                    className: [
+                        'mount',
+                        mount.staged || mount.removing ? 'staged' : '',
+                    ]
+                        .filter(Boolean)
+                        .join(' '),
+                    focusable: false,
+                    selectable: false,
+                    deletable: false,
+                    data: {
+                        volumeId: volume.id,
+                        mountPath: mount.mountPath,
+                        owner: mount.owner,
+                        staged: mount.staged,
+                        removing: mount.removing,
+                        onOpen: (id, anchor) => setOpenVolume({ id, anchor }),
+                    },
+                    ariaLabel: `${byId.get(mount.serviceId)?.name ?? ''} mounts ${volume.mountPath} at ${mount.mountPath}`,
+                })),
+            ),
+        [volumes, byId],
+    );
 
+    const allEdges = useMemo(
+        (): CanvasEdge[] => [...flowEdges, ...mountEdges],
+        [flowEdges, mountEdges],
+    );
+
+    const isValidConnection: IsValidConnection<CanvasEdge> = useCallback(
+        (connection) => {
+            const { source, target } = connection;
+
+            // Onto a volume: share it with the service (D73).
+            if (isVolumeId(target)) {
                 return (
-                    source !== target &&
-                    to !== undefined &&
-                    !to.removed &&
-                    (to.kind === 'database' ||
-                        to.kind === 'app' ||
-                        to.kind === 'image') &&
-                    !edges.some(
-                        (edge) =>
-                            edge.type === 'connection' &&
-                            edge.source === source &&
-                            edge.target === target,
-                    )
+                    abilities.manage &&
+                    canMountVolume(byId.get(source), volumesById.get(target))
                 );
-            },
-            [byId, edges],
-        );
+            }
+
+            const to = byId.get(target);
+
+            return (
+                source !== target &&
+                to !== undefined &&
+                !to.removed &&
+                (to.kind === 'database' ||
+                    to.kind === 'app' ||
+                    to.kind === 'image') &&
+                !edges.some(
+                    (edge) =>
+                        edge.type === 'connection' &&
+                        edge.source === source &&
+                        edge.target === target,
+                )
+            );
+        },
+        [byId, edges, volumesById, abilities.manage],
+    );
 
     const anchorFor = useCallback((id: string): XY => {
         const element = document.querySelector<HTMLElement>(
@@ -427,6 +610,16 @@ export function ServiceCanvas({
 
     const onConnect = useCallback(
         (connection: Connection) => {
+            if (isVolumeId(connection.target)) {
+                setPendingAttach({
+                    service: connection.source,
+                    volume: connection.target,
+                    anchor: anchorFor(connection.target),
+                });
+
+                return;
+            }
+
             setPendingConnection({
                 from: connection.source,
                 to: connection.target,
@@ -464,6 +657,16 @@ export function ServiceCanvas({
                     targetHandle: null,
                 })
             ) {
+                if (isVolumeId(destination)) {
+                    setPendingAttach({
+                        service: source,
+                        volume: destination,
+                        anchor: anchorFor(destination),
+                    });
+
+                    return;
+                }
+
                 setPendingConnection({
                     from: source,
                     to: destination,
@@ -475,8 +678,18 @@ export function ServiceCanvas({
     );
 
     const onNodeClick: NodeMouseHandler<CanvasNode> = useCallback(
-        (_event, node) => isService(node) && onOpenService(node.id),
-        [onOpenService],
+        (_event, node) => {
+            if (isVolume(node)) {
+                setOpenVolume({ id: node.id, anchor: anchorFor(node.id) });
+
+                return;
+            }
+
+            if (isService(node)) {
+                onOpenService(node.id);
+            }
+        },
+        [onOpenService, anchorFor],
     );
 
     const onNodeContextMenu: NodeMouseHandler<CanvasNode> = useCallback(
@@ -531,6 +744,13 @@ export function ServiceCanvas({
 
             if (event.key === 'Enter' || event.key === ' ') {
                 event.preventDefault();
+
+                if (isVolumeId(id)) {
+                    setOpenVolume({ id, anchor: anchorFor(id) });
+
+                    return;
+                }
+
                 onOpenService(id);
 
                 return;
@@ -592,7 +812,7 @@ export function ServiceCanvas({
                 focusNode(best.id);
             }
         },
-        [flow, focusNode, onOpenService],
+        [flow, focusNode, onOpenService, anchorFor],
     );
 
     const onMenuAction = useCallback(
@@ -642,29 +862,44 @@ export function ServiceCanvas({
         ? edges.find((edge) => edge.id === openEdge.id)
         : undefined;
     const menuNode = menu ? byId.get(menu.id) : undefined;
+    const openVolumeData = openVolume
+        ? volumesById.get(openVolume.id)
+        : undefined;
+    const attachService = pendingAttach
+        ? byId.get(pendingAttach.service)
+        : undefined;
+    const attachVolume = pendingAttach
+        ? volumesById.get(pendingAttach.volume)
+        : undefined;
     const removingNode = removing ? byId.get(removing) : undefined;
 
     return (
         <div className="absolute inset-0" onKeyDown={onKeyDown}>
-            <ReactFlow<CanvasNode, ConnectionFlowEdge>
+            <ReactFlow<CanvasNode, CanvasEdge>
                 className={
                     connecting
                         ? 'launchroom-canvas connecting'
                         : 'launchroom-canvas'
                 }
                 nodes={allNodes}
-                edges={flowEdges}
+                edges={allEdges}
                 nodeTypes={nodeTypes}
                 edgeTypes={edgeTypes}
-                onNodesChange={(changes) =>
+                onNodesChange={(changes) => {
                     onNodesChange(
                         changes.filter(
                             (change) =>
                                 !('id' in change) ||
-                                !change.id.startsWith('group-'),
+                                (!change.id.startsWith('group-') &&
+                                    !isVolumeId(change.id)),
                         ) as Parameters<typeof onNodesChange>[0],
-                    )
-                }
+                    );
+                    onVolumeNodesChange(
+                        changes.filter(
+                            (change) => 'id' in change && isVolumeId(change.id),
+                        ) as Parameters<typeof onVolumeNodesChange>[0],
+                    );
+                }}
                 onNodeDragStop={onNodeDragStop}
                 onNodeClick={onNodeClick}
                 onNodeContextMenu={onNodeContextMenu}
@@ -770,9 +1005,38 @@ export function ServiceCanvas({
                     edge={edgeDetails}
                     from={byId.get(edgeDetails.source)?.name ?? 'service'}
                     to={byId.get(edgeDetails.target)?.name ?? 'service'}
+                    via={
+                        edgeDetails.via
+                            ? (byId.get(edgeDetails.via)?.name ?? 'its app')
+                            : undefined
+                    }
                     anchor={openEdge.anchor}
                     canDelete={abilities.connect}
                     onClose={() => setOpenEdge(null)}
+                />
+            )}
+
+            {openVolume && openVolumeData && (
+                <VolumePopover
+                    project={project}
+                    environment={environment}
+                    volume={openVolumeData}
+                    services={byId}
+                    anchor={openVolume.anchor}
+                    canChange={abilities.manage}
+                    onClose={() => setOpenVolume(null)}
+                />
+            )}
+
+            {pendingAttach && attachService && attachVolume && (
+                <AttachVolumePopover
+                    project={project}
+                    environment={environment}
+                    service={attachService}
+                    volume={attachVolume}
+                    owner={byId.get(attachVolume.ownerId)}
+                    anchor={pendingAttach.anchor}
+                    onClose={() => setPendingAttach(null)}
                 />
             )}
 

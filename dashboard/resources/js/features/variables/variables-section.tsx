@@ -153,7 +153,11 @@ function Badges({ row }: { row: Row }) {
             />
             {row.connection !== null && (
                 <Hint
-                    label={`Added by the connection to ${row.connection}. Remove the connection on the canvas to remove it.`}
+                    label={
+                        row.inheritedFrom !== null
+                            ? `Comes from the connection of ${row.inheritedFrom} to ${row.connection}, because this runs ${row.inheritedFrom}'s code. Change it on ${row.inheritedFrom}.`
+                            : `Added by the connection to ${row.connection}. Remove the connection on the canvas to remove it.`
+                    }
                 >
                     <Plug aria-hidden="true" />
                 </Hint>
@@ -767,7 +771,9 @@ function VariableRow({
                 <span className="flex flex-wrap gap-1">
                     {row.connection !== null ? (
                         <span className="type-small text-muted-foreground">
-                            Where connected
+                            {row.inheritedFrom !== null
+                                ? `From ${row.inheritedFrom}`
+                                : 'Where connected'}
                         </span>
                     ) : (
                         row.targets.map((target) => (

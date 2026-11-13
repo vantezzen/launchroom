@@ -45,11 +45,16 @@ Two sliders set the limits per replica:
 The sliders end at the biggest server the service may run on. A replica that goes over its memory limit is restarted.
 Previews cap each replica at half a CPU by default.
 
-launchroom places a replica only where it fits:
+Limits are caps, not reservations. A service that idles at 80 MB only uses 80 MB, whatever its limit, so the limits of
+all services on a server can add up to more than the server has. launchroom places a replica where it really fits:
 
-- Memory counts against each server's memory, with a small overcommit and a reserve for the system (larger on the main
-  server).
-- CPU counts against the server's cores with a large overcommit, because most services are idle most of the time.
+- Memory is what counts. A replica needs about as much as it used at its busiest in the last few hours (128 MB before it
+  has run, never more than its limit), and the server needs that much actually free, plus a small reserve for the system.
+- CPU never stops a deploy. Services share the cores, and a busy one can use up to its limit when the others are idle.
+- A single replica can't ask for more cores or memory than the server has.
+
+If no server has enough free memory, the deploy stops and tells you how much it needed. Stop services you don't need or
+add a server, then deploy again.
 
 ## Where it may run
 

@@ -936,6 +936,7 @@ variables: string[],
 mode: App.Enums.ConnectionMode | null,
 style: App.Enums.ConnectionStyle | null,
 staged: boolean,
+via: string | null,
 };
 export type CanvasLayoutData = {
 positions: Record<string, App.Data.Canvas.CanvasPositionData>,
@@ -984,6 +985,24 @@ logo: string,
 x: number,
 y: number,
 name: string | null,
+};
+export type CanvasVolumeData = {
+id: string,
+ownerId: string,
+mountPath: string,
+sizeBytes: number | null,
+server: string | null,
+staged: boolean,
+removing: boolean,
+mounts: App.Data.Canvas.CanvasVolumeMountData[],
+position: App.Data.Canvas.CanvasPositionData | null,
+};
+export type CanvasVolumeMountData = {
+serviceId: string,
+mountPath: string,
+owner: boolean,
+staged: boolean,
+removing: boolean,
 };
 export type CapabilityOptionData = {
 name: string,
@@ -1124,8 +1143,11 @@ location: App.Data.Servers.LocationData | null,
 cpus: number | null,
 memoryMb: number | null,
 reservedMemoryMb: number,
-allocatedMemoryMb: number,
-allocatedCpus: number,
+cpuInUse: number | null,
+memoryInUseMb: number | null,
+freeMemoryMb: number | null,
+limitCpus: number,
+limitMemoryMb: number,
 allowPreviews: boolean,
 allowProduction: boolean,
 };
@@ -1224,8 +1246,8 @@ environmentKind: string,
 planError: string | null,
 stateful: boolean,
 pinnedServer: string | null,
-memoryOvercommit: number,
-cpuOvercommit: number | null,
+measuredMemoryMb: number | null,
+replicaMemoryMb: number,
 };
 export type ServiceSettingsData = {
 source: App.Data.Canvas.ServiceSourceData,
@@ -1260,6 +1282,11 @@ versions: string[],
 parentName: string | null,
 provider: string | null,
 };
+export type VolumeAttachPreviewData = {
+problem: string | null,
+notices: string[],
+suggestedPath: string,
+};
 export type VolumeData = {
 id: string,
 mountPath: string,
@@ -1271,6 +1298,7 @@ serverDevice: App.Data.Servers.DeviceData | null,
 serverStatus: App.Enums.ServerStatus | null,
 removing: boolean,
 deployedMountPath: string | null,
+sharedWith: string[],
 };
 export type WorkloadData = {
 id: string,
@@ -3390,6 +3418,7 @@ message?: string,
 export type VolumeSpec = {
 id: string,
 name: string,
+service: string | null,
 };
 export type WafStatus = {
 state: string,
@@ -4203,9 +4232,8 @@ allowPreviews: boolean,
 allowProduction: boolean,
 canUpdate: boolean,
 allocatedMemoryMb: number,
-schedulableMemoryMb: number | null,
+freeMemoryMb: number | null,
 allocatedCpus: number,
-schedulableCpus: number | null,
 workloads: App.Data.Servers.ServerWorkloadData[],
 measureLinks: boolean,
 };
@@ -4290,6 +4318,9 @@ authKey: string,
 }
 namespace Services {
 export type AddVolumeData = {
+mountPath: string,
+};
+export type AttachVolumeData = {
 mountPath: string,
 };
 export type BuildSettings = {
@@ -4589,6 +4620,7 @@ withheld: boolean,
 export type VolumeSpec = {
 id: string,
 mountPath: string,
+sharedFrom: string | null,
 };
 }
 namespace StagedChanges {
@@ -5079,6 +5111,7 @@ targets: App.Data.Variables.VariableTargetChipData[],
 canEdit: boolean,
 canReveal: boolean,
 managedByFile: boolean,
+inheritedFrom: string | null,
 };
 export type VariableTargetChipData = {
 environmentId: string | null,
@@ -5106,7 +5139,7 @@ export type ActorType = 'user' | 'server' | 'system';
 export type AnalyticsRange = '24h' | '7d' | '30d';
 export type ApiAbility = 'read' | 'deploy' | 'env:read' | 'env:write' | 'secrets:read' | 'domains:write' | 'data:transfer';
 export type ApiTokenClient = 'dashboard' | 'cli';
-export type AuditAction = 'instance.setup_token_created' | 'instance.owner_created' | 'instance.team_claimed' | 'instance.owner_two_factor_reset' | 'team.created' | 'team.member_invited' | 'team.invitation_revoked' | 'team.invitation_accepted' | 'team.member_role_changed' | 'team.member_removed' | 'instance.signing_key_created' | 'server.enrollment_created' | 'server.enrollment_canceled' | 'server.enrolled' | 'server.approved' | 'server.revoked' | 'server.volume_deletion_confirmed' | 'instance.mesh_enabled' | 'instance.mesh_own_tailscale_configured' | 'server.mesh_node_removed' | 'project.created' | 'project.imported' | 'project.deleted' | 'project.renamed' | 'project.secrets_policy_changed' | 'project.icon_changed' | 'environment.created' | 'environment.deployed' | 'environment.changes_discarded' | 'environment.updated' | 'environment.deleted' | 'environment.reverted' | 'environment.changes_promoted' | 'environment.auto_deploy_resumed' | 'deployment.promoted' | 'service.created' | 'service.removed' | 'service.renamed' | 'variable.created' | 'variable.updated' | 'variable.deleted' | 'variable.imported' | 'variable.secret_revealed' | 'connection.created' | 'connection.deleted' | 'domain.added' | 'domain.removed' | 'domain.www_redirect_changed' | 'instance.apps_domain_changed' | 'instance.dashboard_domain_started' | 'instance.dashboard_domain_cancelled' | 'instance.dashboard_domain_switched' | 'instance.dashboard_domain_reverted' | 'instance.dashboard_domain_reset' | 'deployment.rolled_back' | 'deployment.redeployed' | 'deployment.cancelled' | 'variable.raw_edited' | 'github.app_created' | 'github.app_disconnected' | 'github.installation_linked' | 'git.connection_created' | 'git.connection_authorized' | 'git.connection_disconnected' | 'git.connection_private_network_allowed' | 'git.host_keys_confirmed' | 'git.webhook_secret_revealed' | 'backup.destination_created' | 'backup.destination_updated' | 'backup.destination_deleted' | 'backup.destination_private_network_allowed' | 'backup.schedule_updated' | 'backup.started' | 'backup.restore_started' | 'data.import_started' | 'data.import_finished' | 'data.import_cancelled' | 'data.import_source_checked' | 'data.import_prepared' | 'data.export_started' | 'data.export_downloaded' | 'backup.restore_swapped' | 'backup.volume_updated' | 'backup.final_backup_skipped' | 'backup.point_in_time_updated' | 'backup.verification_started' | 'service.volume_added' | 'service.volume_changed' | 'service.volume_removed' | 'service.image_changed' | 'service.stopped' | 'service.started' | 'service.restarted' | 'server.replaced' | 'instance.recovery_finished' | 'backup.recovery_passphrase_set' | 'backup.recovery_kit_downloaded' | 'backup.recovery_kit_confirmed' | 'preview.settings_updated' | 'preview.strategy_changed' | 'preview.approved' | 'preview.destroyed' | 'preview.share_link_created' | 'preview.share_link_revoked' | 'preview.bypass_rotated' | 'instance.update_started' | 'instance.update_finished' | 'instance.fleet_update_started' | 'instance.fleet_update_finished' | 'instance.update_preferences_changed' | 'instance.dns_provider_changed' | 'server.shared_edge_changed' | 'domain.hsts_changed' | 'instance.registry_storage_configured' | 'instance.registry_storage_private_network_allowed' | 'instance.registry_storage_removed' | 'instance.registry_config_written' | 'server.settings_updated' | 'server.roles_updated' | 'server.appearance_updated' | 'server.replicas_rescheduled' | 'service.degraded' | 'session.console_started' | 'session.console_ended' | 'session.data_started' | 'session.data_ended' | 'database.statement_executed' | 'session.recording_viewed' | 'team.console_recording_changed' | 'team.member_permissions_changed' | 'api_token.created' | 'api_token.revoked' | 'api_token.cli_login_approved' | 'api_token.cli_login_denied' | 'variable.env_exported' | 'deployment.requested' | 'alerts.channel_created' | 'alerts.channel_updated' | 'alerts.channel_deleted' | 'audit.sink_created' | 'audit.sink_updated' | 'audit.sink_deleted' | 'alerts.rules_updated' | 'config_file.applied' | 'config_file.invalid' | 'config_file.exported' | 'config_file.settings_updated' | 'ai_provider.updated' | 'team.dockerfile_generation_changed' | 'dockerfile_generation.started' | 'dockerfile_generation.used' | 'dockerfile_generation.pull_request_opened' | 'instance.client_certificates_changed' | 'server.client_certificate_issued' | 'server.client_certificates_revoked' | 'server.client_certificate_reissue_allowed' | 'server.move_started' | 'server.move_item_finished' | 'server.move_item_retried' | 'server.move_cancelled' | 'server.move_completed' | 'instance.control_plane_move_started' | 'instance.control_plane_move_claimed' | 'instance.control_plane_move_approved' | 'instance.control_plane_move_cancelled' | 'instance.control_plane_handover_started' | 'instance.control_plane_handover_aborted' | 'instance.control_plane_handed_over' | 'instance.control_plane_taken_over' | 'instance.control_plane_move_finished' | 'access.ssh_started' | 'access.ssh_ended' | 'access.database_started' | 'access.database_ended' | 'access.volume_started' | 'access.volume_ended' | 'access.connected' | 'access.auth_failed' | 'access.locked' | 'waf.mode_changed' | 'waf.paranoia_changed' | 'waf.inspect_body_changed' | 'waf.exclusion_added' | 'waf.exclusion_removed' | 'security.finding_dismissed' | 'security.finding_reopened' | 'security.investigation_started' | 'instance.security_sources_changed';
+export type AuditAction = 'instance.setup_token_created' | 'instance.owner_created' | 'instance.team_claimed' | 'instance.owner_two_factor_reset' | 'team.created' | 'team.member_invited' | 'team.invitation_revoked' | 'team.invitation_accepted' | 'team.member_role_changed' | 'team.member_removed' | 'instance.signing_key_created' | 'server.enrollment_created' | 'server.enrollment_canceled' | 'server.enrolled' | 'server.approved' | 'server.revoked' | 'server.volume_deletion_confirmed' | 'instance.mesh_enabled' | 'instance.mesh_own_tailscale_configured' | 'server.mesh_node_removed' | 'project.created' | 'project.imported' | 'project.deleted' | 'project.renamed' | 'project.secrets_policy_changed' | 'project.icon_changed' | 'environment.created' | 'environment.deployed' | 'environment.changes_discarded' | 'environment.updated' | 'environment.deleted' | 'environment.reverted' | 'environment.changes_promoted' | 'environment.auto_deploy_resumed' | 'deployment.promoted' | 'service.created' | 'service.removed' | 'service.renamed' | 'variable.created' | 'variable.updated' | 'variable.deleted' | 'variable.imported' | 'variable.secret_revealed' | 'connection.created' | 'connection.deleted' | 'domain.added' | 'domain.removed' | 'domain.www_redirect_changed' | 'instance.apps_domain_changed' | 'instance.dashboard_domain_started' | 'instance.dashboard_domain_cancelled' | 'instance.dashboard_domain_switched' | 'instance.dashboard_domain_reverted' | 'instance.dashboard_domain_reset' | 'deployment.rolled_back' | 'deployment.redeployed' | 'deployment.cancelled' | 'variable.raw_edited' | 'github.app_created' | 'github.app_disconnected' | 'github.installation_linked' | 'git.connection_created' | 'git.connection_authorized' | 'git.connection_disconnected' | 'git.connection_private_network_allowed' | 'git.host_keys_confirmed' | 'git.webhook_secret_revealed' | 'backup.destination_created' | 'backup.destination_updated' | 'backup.destination_deleted' | 'backup.destination_private_network_allowed' | 'backup.schedule_updated' | 'backup.started' | 'backup.restore_started' | 'data.import_started' | 'data.import_finished' | 'data.import_cancelled' | 'data.import_source_checked' | 'data.import_prepared' | 'data.export_started' | 'data.export_downloaded' | 'backup.restore_swapped' | 'backup.volume_updated' | 'backup.final_backup_skipped' | 'backup.point_in_time_updated' | 'backup.verification_started' | 'service.volume_added' | 'service.volume_changed' | 'service.volume_removed' | 'service.volume_attached' | 'service.volume_detached' | 'service.image_changed' | 'service.stopped' | 'service.started' | 'service.restarted' | 'server.replaced' | 'instance.recovery_finished' | 'backup.recovery_passphrase_set' | 'backup.recovery_kit_downloaded' | 'backup.recovery_kit_confirmed' | 'preview.settings_updated' | 'preview.strategy_changed' | 'preview.approved' | 'preview.destroyed' | 'preview.share_link_created' | 'preview.share_link_revoked' | 'preview.bypass_rotated' | 'instance.update_started' | 'instance.update_finished' | 'instance.fleet_update_started' | 'instance.fleet_update_finished' | 'instance.update_preferences_changed' | 'instance.dns_provider_changed' | 'server.shared_edge_changed' | 'domain.hsts_changed' | 'instance.registry_storage_configured' | 'instance.registry_storage_private_network_allowed' | 'instance.registry_storage_removed' | 'instance.registry_config_written' | 'server.settings_updated' | 'server.roles_updated' | 'server.appearance_updated' | 'server.replicas_rescheduled' | 'service.degraded' | 'session.console_started' | 'session.console_ended' | 'session.data_started' | 'session.data_ended' | 'database.statement_executed' | 'session.recording_viewed' | 'team.console_recording_changed' | 'team.member_permissions_changed' | 'api_token.created' | 'api_token.revoked' | 'api_token.cli_login_approved' | 'api_token.cli_login_denied' | 'variable.env_exported' | 'deployment.requested' | 'alerts.channel_created' | 'alerts.channel_updated' | 'alerts.channel_deleted' | 'audit.sink_created' | 'audit.sink_updated' | 'audit.sink_deleted' | 'alerts.rules_updated' | 'config_file.applied' | 'config_file.invalid' | 'config_file.exported' | 'config_file.settings_updated' | 'ai_provider.updated' | 'team.dockerfile_generation_changed' | 'dockerfile_generation.started' | 'dockerfile_generation.used' | 'dockerfile_generation.pull_request_opened' | 'instance.client_certificates_changed' | 'server.client_certificate_issued' | 'server.client_certificates_revoked' | 'server.client_certificate_reissue_allowed' | 'server.move_started' | 'server.move_item_finished' | 'server.move_item_retried' | 'server.move_cancelled' | 'server.move_completed' | 'instance.control_plane_move_started' | 'instance.control_plane_move_claimed' | 'instance.control_plane_move_approved' | 'instance.control_plane_move_cancelled' | 'instance.control_plane_handover_started' | 'instance.control_plane_handover_aborted' | 'instance.control_plane_handed_over' | 'instance.control_plane_taken_over' | 'instance.control_plane_move_finished' | 'access.ssh_started' | 'access.ssh_ended' | 'access.database_started' | 'access.database_ended' | 'access.volume_started' | 'access.volume_ended' | 'access.connected' | 'access.auth_failed' | 'access.locked' | 'waf.mode_changed' | 'waf.paranoia_changed' | 'waf.inspect_body_changed' | 'waf.exclusion_added' | 'waf.exclusion_removed' | 'security.finding_dismissed' | 'security.finding_reopened' | 'security.investigation_started' | 'instance.security_sources_changed';
 export type BlueprintNoteKind = 'translated' | 'ignored' | 'refused' | 'warning';
 export type CanvasNodeState = 'active' | 'progress' | 'failed' | 'idle' | 'warning';
 export type CertStatus = 'issued' | 'pending' | 'failed';
@@ -5116,7 +5149,7 @@ export type CliLoginStatus = 'pending' | 'approved' | 'denied' | 'consumed';
 export type ClientCertificateMode = 'off' | 'verify' | 'require';
 export type ConnectionMode = 'private' | 'public';
 export type ConnectionStyle = 'url' | 'laravel' | 'parts';
-export type DaemonFeature = 'linkProbe' | 'shipLogs' | 'pointInTime' | 'verifyRestore' | 'stopSpec' | 'consoleSessions' | 'dataSessions' | 'controlPlaneUrl' | 'gitProviders' | 'generatedDockerfile' | 'mongoClickhouse' | 'dnsProviders' | 'cronSchedule' | 'clientCertificates' | 'dataTransfer' | 'preparedVolumes' | 'requestAnalytics' | 'remoteAccessSsh' | 'remoteAccessDatabase' | 'remoteAccessVolume' | 'inventory' | 'containerInspection' | 'waf' | 'configFiles' | 'serviceStop' | 'phpExtensions';
+export type DaemonFeature = 'linkProbe' | 'shipLogs' | 'pointInTime' | 'verifyRestore' | 'stopSpec' | 'consoleSessions' | 'dataSessions' | 'controlPlaneUrl' | 'gitProviders' | 'generatedDockerfile' | 'mongoClickhouse' | 'dnsProviders' | 'cronSchedule' | 'clientCertificates' | 'dataTransfer' | 'preparedVolumes' | 'requestAnalytics' | 'remoteAccessSsh' | 'remoteAccessDatabase' | 'remoteAccessVolume' | 'inventory' | 'containerInspection' | 'waf' | 'configFiles' | 'serviceStop' | 'phpExtensions' | 'sharedVolumes';
 export type DaemonNudge = 'state.changed' | 'task.available' | 'logs.requested';
 export type DaemonTaskStatus = 'pending' | 'leased' | 'succeeded' | 'failed' | 'cancelled';
 export type DaemonTaskType = 'build' | 'plan' | 'run_once' | 'backup' | 'restore' | 'backup_maintenance' | 'logs' | 'self_update' | 'backup_snapshots' | 'verify_restore' | 'session' | 'db_import' | 'volume_import' | 'db_export' | 'volume_export' | 'access' | 'inventory' | 'inspect_container';

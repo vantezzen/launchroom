@@ -335,8 +335,13 @@ func volumeIndex(d Desired) volumes {
 		}
 	}
 	for _, w := range d.Workloads {
-		o := VolumeOwner{Service: w.Spec.Service, Environment: w.Spec.Environment}
 		for _, m := range w.Spec.Mounts {
+			// A shared volume (D73) belongs to its declared service; workloads
+			// of other services may mount it, but only from one environment.
+			o := VolumeOwner{Service: w.Spec.Service, Environment: w.Spec.Environment}
+			if spec, ok := v.spec[m.Volume]; ok && spec.Service != "" {
+				o.Service = spec.Service
+			}
 			have, ok := v.owner[m.Volume]
 			switch {
 			case !ok:
@@ -354,7 +359,8 @@ func volumeIndex(d Desired) volumes {
 // volumes (Caddy's ACME keys, BuildKit state) or another service's data into
 // a workload: names must be per-service volume names, and an existing
 // volume must carry the declared volume id and, when it records one, the
-// same service and environment.
+// same service and environment. A shared volume (D73) records the service
+// the NodeState declares for it, never the mounting workload's.
 func volumeMountError(s state.WorkloadSpec, vols volumes, have map[string]docker.Volume) string {
 	for _, m := range s.Mounts {
 		if reason := vols.bad[m.Volume]; reason != "" {
@@ -369,10 +375,14 @@ func volumeMountError(s state.WorkloadSpec, vols volumes, have map[string]docker
 			continue // created this pass with this workload's owner labels
 		}
 		l := got.Labels
+		service := s.Service
+		if spec.Service != "" {
+			service = spec.Service
+		}
 		switch {
 		case l[docker.LabelSystem] != "" || l[docker.LabelVolume] != string(m.Volume):
 			return fmt.Sprintf("policy: mounts: volume %s exists but does not belong to %s", spec.Name, m.Volume)
-		case l[docker.LabelService] != "" && (l[docker.LabelService] != string(s.Service) || l[docker.LabelEnvironment] != string(s.Environment)):
+		case l[docker.LabelService] != "" && (l[docker.LabelService] != string(service) || l[docker.LabelEnvironment] != string(s.Environment)):
 			return fmt.Sprintf("policy: mounts: volume %s belongs to another service", spec.Name)
 		}
 	}

@@ -58,7 +58,7 @@ final class SecretTaint
                 }
             }
 
-            foreach ($service->connectionVariables as $variable) {
+            foreach ($spec->connectionVariablesOf($service) as $variable) {
                 $values[$variable->key] = $meta($variable);
             }
 

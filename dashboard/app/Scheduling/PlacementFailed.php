@@ -35,10 +35,20 @@ final class PlacementFailed extends DomainException
         return new self('The server holding this service\'s volume is not available. Services with data are not moved automatically. Bring the server back online, or restore from a backup on another server.');
     }
 
-    public static function insufficientCapacity(int $memoryMb, float $cpus): self
+    /**
+     * No eligible server has $needMb free (limits are caps, D72: only real
+     * memory blocks a deploy, never CPU).
+     */
+    public static function insufficientMemory(int $needMb, int $mostFreeMb, int $replicas = 1): self
     {
-        $cpu = rtrim(rtrim(number_format($cpus, 2, '.', ''), '0'), '.');
+        $what = $replicas > 1 ? "all {$replicas} replicas of this service" : 'this service';
 
-        return new self("No eligible server has room for another replica ({$memoryMb} MB memory, {$cpu} CPU). Lower the limits or replicas, or add a server.");
+        return new self("There isn't enough free memory for {$what} right now. A replica needs about ".self::mb($needMb).', and the most any server has left is '.self::mb($mostFreeMb).'. Stop services you don\'t need or add a server, then deploy again.');
+    }
+
+    /** "512 MB", "1.5 GB". */
+    public static function mb(int $mb): string
+    {
+        return $mb >= 1024 ? rtrim(rtrim(number_format($mb / 1024, 1, '.', ''), '0'), '.').' GB' : "{$mb} MB";
     }
 }

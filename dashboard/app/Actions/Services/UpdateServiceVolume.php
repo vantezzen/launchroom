@@ -13,6 +13,7 @@ use App\Enums\ServiceKind;
 use App\Exceptions\DomainRuleViolation;
 use App\Models\ServiceInstance;
 use App\Models\Volume;
+use App\Models\VolumeMount;
 use App\Services\Volumes\StagedVolumes;
 use App\Support\Services\ConfigFileRules;
 use App\Support\Services\VolumeMountRules;
@@ -57,7 +58,11 @@ final readonly class UpdateServiceVolume
                 return $volume;
             }
 
-            $problem = VolumeMountRules::problem($path, $instance->volumes->reject(static fn (Volume $other): bool => $other->id === $volume->id)->map(static fn (Volume $other): string => $other->mount_path)->all());
+            $problem = VolumeMountRules::problem($path, [
+                ...$instance->volumes->reject(static fn (Volume $other): bool => $other->id === $volume->id)->map(static fn (Volume $other): string => $other->mount_path)->all(),
+                // Shared volumes it mounts (D73).
+                ...VolumeMount::query()->where('service_instance_id', $instance->id)->get()->map(static fn (VolumeMount $mount): string => $mount->mount_path)->all(),
+            ]);
 
             if ($problem !== null) {
                 throw DomainRuleViolation::on('mountPath', $problem);

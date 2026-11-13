@@ -109,8 +109,13 @@ const FeatureServiceStop DaemonFeature = "serviceStop"
 // (docs/04 §3.1). Older daemons refuse the field (strict decoding).
 const FeaturePhpExtensions DaemonFeature = "phpExtensions"
 
+// FeatureSharedVolumes announces NodeState.volumes[].service: a volume
+// mounted by workloads of several services of one environment (D73, docs/03
+// §8). Older daemons refuse the field (strict decoding).
+const FeatureSharedVolumes DaemonFeature = "sharedVolumes"
+
 // SupportedFeatures is what this launchroomd announces in every report.
-var SupportedFeatures = []DaemonFeature{FeatureDNSProviders, FeatureLinkProbe, FeatureShipLogs, FeaturePointInTime, FeatureVerifyRestore, FeatureStopSpec, FeatureGitProviders, FeatureControlPlaneURL, FeatureCronSchedule, FeatureGeneratedDockerfile, FeatureClientCertificates, FeatureMongoClickHouse, FeaturePreparedVolumes, FeatureRequestAnalytics, FeatureContainerInspection, FeatureInventory, FeatureConfigFiles, FeatureServiceStop, FeaturePhpExtensions}
+var SupportedFeatures = []DaemonFeature{FeatureDNSProviders, FeatureLinkProbe, FeatureShipLogs, FeaturePointInTime, FeatureVerifyRestore, FeatureStopSpec, FeatureGitProviders, FeatureControlPlaneURL, FeatureCronSchedule, FeatureGeneratedDockerfile, FeatureClientCertificates, FeatureMongoClickHouse, FeaturePreparedVolumes, FeatureRequestAnalytics, FeatureContainerInspection, FeatureInventory, FeatureConfigFiles, FeatureServiceStop, FeaturePhpExtensions, FeatureSharedVolumes}
 
 // maxFeatures bounds Report.host.features.
 const maxFeatures = 64

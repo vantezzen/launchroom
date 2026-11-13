@@ -8,6 +8,8 @@ use App\Data\Canvas\CanvasLayoutData;
 use App\Models\CanvasLayout;
 use App\Models\Environment;
 use App\Models\Service;
+use App\Models\ServiceInstance;
+use App\Models\Volume;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -24,7 +26,11 @@ final class SaveCanvasLayout
                 ?? CanvasLayout::query()->create(['environment_id' => $environment->id]);
 
             /** @var list<string> $known */
-            $known = Service::query()->where('project_id', $environment->project_id)->pluck('public_id')->all();
+            $known = [
+                ...Service::query()->where('project_id', $environment->project_id)->pluck('public_id')->all(),
+                // Volume nodes (D73) of this environment.
+                ...Volume::query()->whereIn('service_instance_id', ServiceInstance::query()->where('environment_id', $environment->id)->select('id'))->pluck('public_id')->all(),
+            ];
             $known = array_flip($known);
             $positions = array_intersect_key($layout->positions, $known);
 

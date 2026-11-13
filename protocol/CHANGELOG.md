@@ -4,6 +4,13 @@ All changes to launchroomd ↔ dashboard contract. Format: one section per proto
 
 ## v1 (unreleased)
 
+### Shared volumes (2026-11-13, D73)
+
+Additive. New daemon feature `sharedVolumes`; the dashboard renders the field, and the workloads that need it, only for servers that announce it.
+
+- `VolumeSpec.service?: ServiceID`: the service a volume belongs to when workloads of other services of the same environment mount it too. Workloads of one environment may then mount it whatever their service; it is created with (and an existing one must carry) the declared service's label. Without the field nothing changes: all workloads mounting a volume must belong to one service. Deletions are unchanged (never while declared, never while a container uses it).
+- Fixture `node-state.shared-volume.json`. Design: docs/03 §8.
+
 ### PHP database drivers for connected databases (2026-10-29, D71)
 
 Additive. New daemon feature `phpExtensions`; the dashboard leases build and plan tasks carrying the field only to servers that announce it.

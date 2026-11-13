@@ -507,15 +507,20 @@ return [
     */
 
     'scheduling' => [
-        // Memory limits may add up to this multiple of a server's memory.
-        'memory_overcommit' => (float) env('LAUNCHROOM_MEMORY_OVERCOMMIT', 1.5),
-        // CPU limits may add up to this multiple of a server's cores (limits
-        // are caps, not reservations, so this is generous).
-        'cpu_overcommit' => (float) env('LAUNCHROOM_CPU_OVERCOMMIT', 4.0),
-        // Memory kept free on every server (launchroomd, Caddy, Tailscale,
-        // BuildKit), plus the control plane's own stack on its server.
+        // Limits are caps, not reservations (D72): CPU never blocks a
+        // deploy, and memory admission looks at what a server really has
+        // free. A replica is expected to use its measured peak (last
+        // 6 hours), at least this much, never more than its limit.
+        'replica_memory_mb' => (int) env('LAUNCHROOM_REPLICA_MEMORY_MB', 128),
+        // Memory kept free on every server on top of what it reports in
+        // use (headroom for spikes; launchroomd, Caddy, BuildKit).
         'reserved_memory_mb' => (int) env('LAUNCHROOM_RESERVED_MEMORY_MB', 256),
+        // Without a fresh report the scheduler estimates instead: the control
+        // plane's own stack is kept free on its server as well.
         'control_plane_reserved_memory_mb' => (int) env('LAUNCHROOM_CONTROL_PLANE_RESERVED_MEMORY_MB', 768),
+        // A memory measurement older than this doesn't count as the server's
+        // real usage (launchroomd measures every 5 minutes).
+        'memory_report_max_age_seconds' => 600,
         // Rescheduling (docs/02 §6): a server unseen this long is dead for
         // scheduling and its stateless replicas move to healthy servers.
         // Liveness runs every 15 s, so replicas move 90–105 s after the last

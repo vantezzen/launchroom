@@ -37,5 +37,15 @@ final readonly class PlacementRequest
         /** The image's platform (built images); null: multi-platform or unknown. */
         public ?string $platform = null,
         public array $existingServerIds = [],
+        /** What one replica is expected to use (measured peak or a small default, at most the limit); null: the limit. */
+        public ?int $expectedMemoryMb = null,
     ) {}
+
+    /**
+     * The memory a replica must find free on a server to be placed there.
+     */
+    public function memoryNeedMb(): int
+    {
+        return $this->expectedMemoryMb === null ? $this->memoryMb : min($this->memoryMb, $this->expectedMemoryMb);
+    }
 }

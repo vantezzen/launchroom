@@ -27,7 +27,8 @@ export function edgeLabel(variables: string[]): string {
 
 /**
  * A connection edge with its injected variables as the label (docs/08
- * §3.3). Process links of workers/crons are dotted and unlabelled.
+ * §3.3). Process links of workers/crons are dotted and unlabelled; the
+ * connections a worker or cron gets from its app are dashed and quieter.
  */
 export function ConnectionEdge({
     id,
@@ -49,8 +50,11 @@ export function ConnectionEdge({
         targetPosition,
     });
 
+    const inherited = data?.type === 'inherited';
     const label =
-        data?.type === 'connection' ? edgeLabel(data.variables) : null;
+        data && (data.type === 'connection' || data.type === 'inherited')
+            ? edgeLabel(data.variables)
+            : null;
 
     return (
         <>
@@ -62,6 +66,8 @@ export function ConnectionEdge({
                         className={cn(
                             'nodrag nopan pointer-events-auto absolute flex flex-col items-center rounded-full border bg-card px-2 py-0.5 type-mono-small text-muted-foreground shadow-card',
                             'transition-colors duration-fast hover:border-border-strong hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
+                            inherited &&
+                                'bg-background text-muted-foreground/80 shadow-none',
                             data.staged &&
                                 'border-dashed border-signal text-signal',
                             data.badge && 'rounded-[10px]',
@@ -71,7 +77,7 @@ export function ConnectionEdge({
                         style={{
                             transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
                         }}
-                        aria-label={`Connection: ${data.variables.join(', ')}${data.staged ? ' (staged)' : ''}${data.badge ? ` (${data.badge.label})` : ''}`}
+                        aria-label={`${inherited ? 'Connection of its app' : 'Connection'}: ${data.variables.join(', ')}${data.staged ? ' (staged)' : ''}${data.badge ? ` (${data.badge.label})` : ''}`}
                         onClick={(event) => {
                             const rect =
                                 event.currentTarget.getBoundingClientRect();

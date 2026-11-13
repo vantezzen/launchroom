@@ -41,5 +41,7 @@ final class VariableRowData extends Data
         public bool $canReveal,
         /** Set by launchroom.json (docs/18 §3.5): config values are edited in the file. */
         public bool $managedByFile = false,
+        /** Workers and crons: the app whose connection injects it (read-only here). */
+        public ?string $inheritedFrom = null,
     ) {}
 }

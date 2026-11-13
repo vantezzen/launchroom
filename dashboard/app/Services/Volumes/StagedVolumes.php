@@ -68,12 +68,15 @@ final class StagedVolumes
     }
 
     /**
-     * Whether a deployment that still has workloads mounts the volume.
+     * Whether a deployment that still has workloads mounts the volume: its
+     * own service's, or one of another service that shares it (D73; any
+     * that ever did, so a detach waits for the deploy that applies it).
      */
     public static function mounted(Volume $volume): bool
     {
+        $volume->loadMissing('serviceInstance');
         $placements = Placement::query()
-            ->where('service_instance_id', $volume->service_instance_id)
+            ->whereIn('service_instance_id', ServiceInstance::query()->where('environment_id', $volume->serviceInstance->environment_id)->select('id'))
             ->with(['deployment.revision', 'serviceInstance.service'])
             ->get();
 

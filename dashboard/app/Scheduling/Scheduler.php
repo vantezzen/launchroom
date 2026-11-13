@@ -22,10 +22,18 @@ use App\Enums\ServerRole;
  * - a server being moved away from (draining, docs/14 §13.2) only keeps
  *   services pinned to it by their volumes.
  *
- * Capacity: memory limits fit `total × memoryOvercommit − reserved −
- * allocated` when the server's memory is known; CPU limits fit `cores ×
- * cpuOvercommit − allocated` when CPU checking is on and cores are known.
- * Replicas of the set that stay running (`existingServerIds`) count.
+ * - a replica's CPU limit is at most the server's cores (Docker refuses
+ *   more) and its memory limit at most the server's memory. Limits of
+ *   different replicas are never summed: they are caps, not reservations
+ *   (D72).
+ *
+ * Capacity is memory only, and limits are caps, not reservations (D72):
+ * each replica needs `PlacementRequest::memoryNeedMb()` (its measured peak
+ * or a small default, at most the limit) free. Free is the server's
+ * reported available memory (`availableMemoryMb`, net of headroom and of
+ * workloads the report doesn't show yet) when fresh, else the estimate
+ * `total − reserved − allocated`; unknown memory skips the check. Replicas
+ * of the set that stay running (`existingServerIds`) count.
  *
  * Choice per replica slot, lowest key wins:
  * - spread (default): replicas on the server, then replicas in its failure
@@ -43,7 +51,7 @@ final class Scheduler
      *
      * @throws PlacementFailed
      */
-    public static function place(array $servers, PlacementRequest $request, float $memoryOvercommit = 1.0, ?float $cpuOvercommit = null): PlacementPlan
+    public static function place(array $servers, PlacementRequest $request): PlacementPlan
     {
         $replicas = $request->stateful ? min(1, $request->replicas) : $request->replicas;
 
@@ -53,18 +61,16 @@ final class Scheduler
 
         $eligible = self::eligible($servers, $request);
 
-        /** @var array<int, int> $memory */
+        $need = $request->memoryNeedMb();
+        /** @var array<int, int> $memory memory this replica set takes per server */
         $memory = [];
-        /** @var array<int, float> $cpu */
-        $cpu = [];
         /** @var array<int, int> $counts */
         $counts = [];
         /** @var array<string, int> $domains */
         $domains = [];
 
         foreach ($servers as $server) {
-            $memory[$server->id] = $server->allocatedMemoryMb;
-            $cpu[$server->id] = $server->allocatedCpus;
+            $memory[$server->id] = 0;
             $counts[$server->id] = 0;
             $domains[$server->failureDomain()] ??= 0;
         }
@@ -80,8 +86,7 @@ final class Scheduler
                 continue;
             }
 
-            $memory[$id] += $request->memoryMb;
-            $cpu[$id] += $request->cpus;
+            $memory[$id] += $need;
             $counts[$id]++;
             $domains[$byId[$id]->failureDomain()]++;
         }
@@ -91,17 +96,14 @@ final class Scheduler
         for ($slot = 0; $slot < $replicas; $slot++) {
             $best = null;
             $bestKey = null;
+            $mostFree = null;
 
             foreach ($eligible as $server) {
-                $free = self::freeMemory($server, $memory[$server->id], $memoryOvercommit);
+                $free = self::freeMemory($server, $memory[$server->id]);
 
-                if ($free !== null && $free < $request->memoryMb) {
-                    continue;
-                }
+                if ($free !== null && $free < $need) {
+                    $mostFree = max($mostFree ?? $free, $free);
 
-                $freeCpu = $cpuOvercommit === null ? null : self::freeCpus($server, $cpu[$server->id], $cpuOvercommit);
-
-                if ($freeCpu !== null && $freeCpu + 1e-9 < $request->cpus) {
                     continue;
                 }
 
@@ -118,12 +120,11 @@ final class Scheduler
             }
 
             if ($best === null) {
-                throw PlacementFailed::insufficientCapacity($request->memoryMb, $request->cpus);
+                throw PlacementFailed::insufficientMemory($need, max(0, $mostFree ?? 0), $replicas);
             }
 
             $slots[] = $best->id;
-            $memory[$best->id] += $request->memoryMb;
-            $cpu[$best->id] += $request->cpus;
+            $memory[$best->id] += $need;
             $counts[$best->id]++;
             $domains[$best->failureDomain()]++;
         }
@@ -200,27 +201,28 @@ final class Scheduler
             $request->preview && ! $server->allowPreviews => 'doesn\'t allow previews',
             $request->production && ! $server->allowProduction => 'doesn\'t allow production',
             $request->platform !== null && $server->platform !== null && $server->platform !== $request->platform => "runs {$server->platform}, the image is {$request->platform}",
+            $server->cpus !== null && $server->cpus > 0 && $request->cpus > $server->cpus + 1e-9 => "has {$server->cpus} ".($server->cpus === 1 ? 'core' : 'cores').', fewer than the CPU limit',
+            $server->memoryMb !== null && $server->memoryMb > 0 && $request->memoryMb > $server->memoryMb => 'has '.PlacementFailed::mb($server->memoryMb).' of memory, less than the memory limit',
             $checkOnline && ! $server->online => 'offline',
             $server->draining && $request->pinnedServerId !== $server->id => 'being moved to another server',
             default => null,
         };
     }
 
-    private static function freeMemory(SchedulableServer $server, int $allocated, float $overcommit): ?int
+    /**
+     * Memory still free on $server once $taken more is placed there; null
+     * when unknown (no check).
+     */
+    public static function freeMemory(SchedulableServer $server, int $taken = 0): ?int
     {
+        if ($server->availableMemoryMb !== null) {
+            return $server->availableMemoryMb - $taken;
+        }
+
         if ($server->memoryMb === null || $server->memoryMb <= 0) {
             return null;
         }
 
-        return (int) floor($server->memoryMb * $overcommit) - $server->reservedMemoryMb - $allocated;
-    }
-
-    private static function freeCpus(SchedulableServer $server, float $allocated, float $overcommit): ?float
-    {
-        if ($server->cpus === null || $server->cpus <= 0) {
-            return null;
-        }
-
-        return $server->cpus * $overcommit - $allocated;
+        return $server->memoryMb - $server->reservedMemoryMb - $server->allocatedMemoryMb - $taken;
     }
 }

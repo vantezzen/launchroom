@@ -234,3 +234,52 @@ func TestDeleteVolumes(t *testing.T) {
 		t.Fatalf("volumes %v", vols)
 	}
 }
+
+// TestSharedVolume (D73): a volume declared with its service is mounted by
+// workloads of two services of one environment, labelled with the declared
+// service only, and never deleted while it is declared or any container
+// still mounts it.
+func TestSharedVolume(t *testing.T) {
+	h := newHarness(t)
+	ctx := t.Context()
+	h.d.AddImage(string(imgA))
+	const svcOwner = state.ServiceID("svc_01J9Z8X7W6V5T4S3R2Q1P0N9N2")
+	const svcOther = state.ServiceID("svc_01J9Z8X7W6V5T4S3R2Q1P0N9N3")
+	owner := h.workload(t, wlA, nil)
+	other := h.workload(t, wlB, nil)
+	other.Service = svcOther
+	other.Port, other.Health = nil, nil
+
+	ns := h.nodeState(t, 1, owner, other)
+	ns.Workloads[0].Mounts = []state.Mount{{Volume: volA, Target: "/data"}}
+	ns.Workloads[1].Mounts = []state.Mount{{Volume: volA, Target: "/srv/shared"}}
+	ns.Volumes = []state.VolumeSpec{{ID: volA, Name: "lr-v_a", Service: svcOwner}}
+	if err := ns.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.r.Reconcile(ctx, ns); err != nil {
+		t.Fatal(err)
+	}
+	vols, _ := h.d.ListVolumes(ctx)
+	if len(vols) != 1 || vols[0].Labels[docker.LabelService] != string(svcOwner) || vols[0].Labels[docker.LabelEnvironment] != string(owner.Environment) {
+		t.Fatalf("volumes %+v", vols)
+	}
+	cs, _ := h.d.ListContainers(ctx, nil)
+	users := 0
+	for _, c := range cs {
+		if slices.Contains(c.Volumes, "lr-v_a") {
+			users++
+		}
+	}
+	if users != 2 {
+		t.Fatalf("containers mounting the volume: %d (%+v)", users, cs)
+	}
+
+	// While any workload mounts it the volume is declared, and a NodeState
+	// that also asks to delete it is invalid; a container left behind keeps
+	// it through Docker's in-use check (TestDeleteVolumes).
+	ns.DeleteVolumes = []state.VolumeDeletion{{ID: volA, Name: "lr-v_a", Service: svcOwner, Environment: owner.Environment, RequestedAt: t0}}
+	if err := ns.Validate(); err == nil {
+		t.Fatal("a NodeState that declares and deletes a volume validated")
+	}
+}

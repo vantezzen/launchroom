@@ -177,6 +177,8 @@ final class CanvasController extends Controller
             ...ProjectScope::shellProps($project, $environment),
             'nodes' => static fn (): array => $canvas()['nodes'],
             'edges' => static fn (): array => $canvas()['edges'],
+            // App volumes as their own nodes, shared between services (D73).
+            'volumes' => static fn (): array => $canvas()['volumes'],
             'panel' => $panel,
             'parentCandidates' => fn (): array => $project->services()
                 ->where('kind', 'app')

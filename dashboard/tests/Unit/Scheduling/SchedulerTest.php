@@ -50,11 +50,11 @@ test('an unpinned stateful service is placed like any other', function (): void 
     expect(Scheduler::place([runtimeServer(1), runtimeServer(2, allocated: 100)], new PlacementRequest(1, 512, stateful: true))->serverIds)->toBe([1]);
 });
 
-test('capacity is respected, with overcommit', function (): void {
+test('capacity is respected; a replica needs what it is expected to use, not its limit', function (): void {
     $servers = [runtimeServer(1, memoryMb: 1024, allocated: 800)];
 
     expect(fn (): PlacementPlan => Scheduler::place($servers, new PlacementRequest(1, 512)))->toThrow(PlacementFailed::class)
-        ->and(Scheduler::place($servers, new PlacementRequest(1, 512), 1.5)->serverIds)->toBe([1]);
+        ->and(Scheduler::place($servers, new PlacementRequest(1, 512, expectedMemoryMb: 128))->serverIds)->toBe([1]);
 });
 
 test('unknown memory means no capacity check', function (): void {

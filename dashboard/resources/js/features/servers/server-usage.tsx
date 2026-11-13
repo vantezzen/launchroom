@@ -206,17 +206,19 @@ export function WhatRunsHere({
     const total = metrics?.current?.memTotalMb ?? 0;
     // Build servers: the builder's CPU, beside the services it competes with.
     const buildCpu = metrics?.current?.buildCpuCores ?? null;
-    const reserved =
-        placement.schedulableMemoryMb !== null
-            ? `${formatMb(placement.allocatedMemoryMb)} of ${formatMb(placement.schedulableMemoryMb)} reserved`
-            : `${formatMb(placement.allocatedMemoryMb)} reserved`;
+    // Limits are caps, not reservations: what's left for new services is
+    // the memory the server really has free.
+    const free =
+        placement.freeMemoryMb !== null
+            ? `${formatMb(Math.max(0, placement.freeMemoryMb))} free for new services`
+            : null;
 
     return (
         <Section
             title="What runs here"
             description={
                 list.length > 0
-                    ? `${list.length} ${list.length === 1 ? 'service' : 'services'}, ${reserved}`
+                    ? `${list.length} ${list.length === 1 ? 'service' : 'services'}${free ? `, ${free}` : ''}`
                     : undefined
             }
         >

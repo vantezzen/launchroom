@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { KeyboardEvent } from 'react';
 import { cn } from '@/lib/utils';
 import { formatCompact, formatTick, formatTooltipTime } from './format';
+import { groupMarkers, LABEL_OFFSET } from './marker-groups';
 import type { ChartMarker } from './time-series-chart';
 import { useMeasuredWidth } from './use-measure';
 
@@ -35,8 +36,11 @@ const AXIS = 18;
  * Log explorer timeline (design-system §5.5): one bar per
  * bucket in a quiet neutral, errors stacked in red, deploy markers as signal
  * ticks with their label, a recessive time axis. Hover or arrow keys show a
- * one-line readout; Enter/click selects the bucket. Renders nothing without
- * buckets; all-zero buckets keep the axis so "no lines" reads as a fact.
+ * one-line readout; Enter/click selects the bucket. Markers a few pixels
+ * apart share one tick with a count ("3 deploys"), labels that would collide
+ * are left out, and hovering, focusing or tapping a tick lists its events.
+ * Renders nothing without buckets; all-zero buckets keep the axis so
+ * "no lines" reads as a fact.
  */
 export function Histogram({
     buckets,
@@ -50,6 +54,7 @@ export function Histogram({
 }: HistogramProps) {
     const [ref, width] = useMeasuredWidth<HTMLDivElement>();
     const [active, setActive] = useState<number | null>(null);
+    const [activeMarker, setActiveMarker] = useState<number | null>(null);
 
     if (buckets.length === 0) {
         return null;
@@ -75,6 +80,15 @@ export function Histogram({
         (_, index) => t0 + (span * index) / 4,
     );
     const current = active !== null ? buckets[active] : null;
+    const groups =
+        width > 0
+            ? groupMarkers(
+                  markers.filter((marker) => marker.t >= t0 && marker.t <= t1),
+                  x,
+                  width,
+              )
+            : [];
+    const openGroup = activeMarker !== null ? groups[activeMarker] : null;
 
     const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
         const last = buckets.length - 1;
@@ -191,30 +205,54 @@ export function Histogram({
                                 </g>
                             );
                         })}
-                        {markers
-                            .filter(
-                                (marker) => marker.t >= t0 && marker.t <= t1,
-                            )
-                            .map((marker) => (
-                                <g key={`${marker.t}-${marker.label}`}>
-                                    <line
-                                        x1={x(marker.t)}
-                                        x2={x(marker.t)}
-                                        y1={0}
-                                        y2={plotH}
-                                        strokeWidth={1.5}
-                                        style={{ stroke: 'var(--signal)' }}
+                        {groups.map((group, index) => (
+                            <g
+                                key={`${group.markers[0].t}-${group.label}`}
+                                opacity={
+                                    activeMarker !== null &&
+                                    activeMarker !== index
+                                        ? 0.45
+                                        : 1
+                                }
+                            >
+                                <line
+                                    x1={group.x}
+                                    x2={group.x}
+                                    y1={group.markers.length > 1 ? 3 : 0}
+                                    y2={plotH}
+                                    strokeWidth={1.5}
+                                    style={{ stroke: 'var(--signal)' }}
+                                />
+                                {group.markers.length > 1 && (
+                                    // A group: a small hollow cap on the tick.
+                                    <circle
+                                        cx={group.x}
+                                        cy={3}
+                                        r={2.5}
+                                        strokeWidth={1.25}
+                                        style={{
+                                            fill: 'var(--background)',
+                                            stroke: 'var(--signal)',
+                                        }}
                                     />
+                                )}
+                                {group.showLabel && (
                                     <text
-                                        x={x(marker.t) + 4}
+                                        x={
+                                            group.anchor === 'start'
+                                                ? group.x + LABEL_OFFSET
+                                                : group.x - LABEL_OFFSET
+                                        }
                                         y={9}
+                                        textAnchor={group.anchor}
                                         className="font-mono text-[10px]"
                                         style={{ fill: 'var(--signal)' }}
                                     >
-                                        {marker.label}
+                                        {group.label}
                                     </text>
-                                </g>
-                            ))}
+                                )}
+                            </g>
+                        ))}
                         {ticks.map((tick, index) => (
                             <text
                                 key={tick}
@@ -235,7 +273,86 @@ export function Histogram({
                     </svg>
                 )}
             </div>
-            {current && (
+            {groups.map((group, index) => {
+                const labelLeft = group.showLabel
+                    ? group.anchor === 'start'
+                        ? group.x
+                        : group.x - LABEL_OFFSET - group.labelWidth
+                    : group.x - 8;
+                const hitWidth = group.showLabel
+                    ? group.labelWidth + LABEL_OFFSET + 4
+                    : 16;
+
+                return (
+                    <button
+                        key={`${group.markers[0].t}-${group.label}`}
+                        type="button"
+                        aria-label={`${group.markers.length === 1 ? 'Event' : `${group.markers.length} events`}: ${group.markers
+                            .map(
+                                (marker) =>
+                                    `${marker.detail ?? marker.label} at ${formatTooltipTime(marker.t, span)}`,
+                            )
+                            .join(', ')}`}
+                        aria-expanded={activeMarker === index}
+                        className="absolute top-0 h-3.5 cursor-default rounded-[3px] outline-none focus-visible:ring-2 focus-visible:ring-(--signal)"
+                        style={{
+                            left: Math.max(0, labelLeft - 2),
+                            width: hitWidth,
+                        }}
+                        onPointerEnter={(event) => {
+                            if (event.pointerType === 'mouse') {
+                                setActive(null);
+                                setActiveMarker(index);
+                            }
+                        }}
+                        onPointerLeave={(event) => {
+                            if (event.pointerType === 'mouse') {
+                                setActiveMarker(null);
+                            }
+                        }}
+                        onFocus={() => setActiveMarker(index)}
+                        onBlur={() => setActiveMarker(null)}
+                        // Touch: a tap opens the list, tapping elsewhere closes it.
+                        onClick={() => setActiveMarker(index)}
+                        onKeyDown={(event) => {
+                            if (event.key === 'Escape') {
+                                setActiveMarker(null);
+                            }
+                        }}
+                    />
+                );
+            })}
+            {openGroup && (
+                <div
+                    aria-live="polite"
+                    className="pointer-events-none absolute -top-1 z-10 flex max-w-[calc(100%-8px)] -translate-y-full flex-col gap-0.5 rounded-md border bg-popover px-2 py-1 type-small tabular-nums shadow-[0_8px_30px_rgb(0_0_0/0.10)] dark:border-(--border-strong)"
+                    style={
+                        openGroup.x > width / 2
+                            ? { right: Math.max(0, width - openGroup.x - 12) }
+                            : { left: Math.max(0, openGroup.x - 12) }
+                    }
+                >
+                    {openGroup.markers.slice(0, 8).map((marker) => (
+                        <span
+                            key={`${marker.t}-${marker.label}`}
+                            className="flex min-w-0 gap-2 whitespace-nowrap"
+                        >
+                            <span className="shrink-0 text-muted-foreground">
+                                {formatTooltipTime(marker.t, span)}
+                            </span>
+                            <span className="truncate font-mono">
+                                {marker.detail ?? marker.label}
+                            </span>
+                        </span>
+                    ))}
+                    {openGroup.markers.length > 8 && (
+                        <span className="text-muted-foreground">
+                            and {openGroup.markers.length - 8} more
+                        </span>
+                    )}
+                </div>
+            )}
+            {current && !openGroup && (
                 <div
                     aria-live="polite"
                     className="pointer-events-none absolute -top-1 z-10 -translate-y-full rounded-md border bg-popover px-2 py-1 type-small whitespace-nowrap tabular-nums shadow-[0_8px_30px_rgb(0_0_0/0.10)] dark:border-(--border-strong)"

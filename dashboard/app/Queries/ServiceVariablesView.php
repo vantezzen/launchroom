@@ -68,7 +68,10 @@ final readonly class ServiceVariablesView
         $scopes = $this->resolver->annotatedScopes($project, $spec);
         $preview = new ReferencePreview($scopes);
 
-        $ids = [...array_keys($serviceSpec->variables), ...array_keys($serviceSpec->connectionVariables)];
+        // A worker or cron also gets its app's connection variables (read-only here).
+        $inherited = $spec->inheritedConnectionVariables($serviceSpec);
+        $inheritedFrom = $inherited === [] || $serviceSpec->parentId === null ? null : $spec->service($serviceSpec->parentId)?->name;
+        $ids = [...array_keys($serviceSpec->variables), ...array_keys($serviceSpec->connectionVariables), ...array_keys($inherited)];
         /** @var array<string, Variable> $models */
         $models = Variable::query()
             ->where('project_id', $project->id)
@@ -83,7 +86,7 @@ final readonly class ServiceVariablesView
         $environmentIds = $environments->mapWithKeys(static fn (Environment $env): array => [$env->id => $env->public_id])->all();
 
         $canRevealSecrets = $user->hasTeamPermission($project->team_id, Permission::RevealSecrets);
-        $winners = $this->winners($serviceSpec);
+        $winners = $this->winners($serviceSpec, $inherited);
         $rows = [];
 
         foreach ([...$serviceSpec->connectionVariables, ...$serviceSpec->variables] as $id => $variable) {
@@ -94,6 +97,14 @@ final readonly class ServiceVariablesView
             }
 
             $rows[] = $this->row($project, $variable, $model, $serviceSpec, $preview, $winners, $environmentNames, $environmentIds, $user, $managed);
+        }
+
+        foreach ($inherited as $id => $variable) {
+            $model = $models[$id] ?? null;
+
+            if ($model !== null) {
+                $rows[] = $this->row($project, $variable, $model, $serviceSpec, $preview, $winners, $environmentNames, $environmentIds, $user, inheritedFrom: $inheritedFrom);
+            }
         }
 
         usort($rows, static fn (VariableRowData $a, VariableRowData $b): int => [$a->key, $a->connection !== null] <=> [$b->key, $b->connection !== null]);
@@ -155,8 +166,9 @@ final readonly class ServiceVariablesView
      * @param  array<int, string>  $environmentNames
      * @param  array<int, string>  $environmentIds
      * @param  list<string>  $managed  keys launchroom.json sets
+     * @param  string|null  $inheritedFrom  the app whose connection injects it (workers and crons)
      */
-    private function row(Project $project, VariableSpec $variable, Variable $model, ServiceSpec $service, ReferencePreview $preview, array $winners, array $environmentNames, array $environmentIds, User $user, array $managed = []): VariableRowData
+    private function row(Project $project, VariableSpec $variable, Variable $model, ServiceSpec $service, ReferencePreview $preview, array $winners, array $environmentNames, array $environmentIds, User $user, array $managed = [], ?string $inheritedFrom = null): VariableRowData
     {
         $isSecret = $variable->type === VariableType::Secret;
         // Secrets are decrypted only to check their references; never returned.
@@ -191,23 +203,26 @@ final readonly class ServiceVariablesView
                 branchPattern: $target->branch_pattern,
             ))->all()),
             // A secret the file requires keeps its value in the dashboard.
-            canEdit: Gate::forUser($user)->allows('update', $model) && (! in_array($variable->key, $managed, true) || $isSecret),
+            canEdit: $inheritedFrom === null && Gate::forUser($user)->allows('update', $model) && (! in_array($variable->key, $managed, true) || $isSecret),
             canReveal: Gate::forUser($user)->allows('reveal', $model),
             managedByFile: $model->connection_id === null && in_array($variable->key, $managed, true),
+            inheritedFrom: $inheritedFrom,
         );
     }
 
     /**
      * Which row's value applies per key (docs/06 §3.1 precedence:
-     * connection < environment-targeted < branch override).
+     * connection < environment-targeted < branch override; the app's
+     * connections before the worker's own).
      *
+     * @param  array<string, VariableSpec>  $inherited
      * @return array<string, string>
      */
-    private function winners(ServiceSpec $service): array
+    private function winners(ServiceSpec $service, array $inherited = []): array
     {
         $winners = [];
 
-        foreach ($service->connectionVariables as $id => $variable) {
+        foreach ([...$inherited, ...$service->connectionVariables] as $id => $variable) {
             $winners[$variable->key] = $id;
         }
 

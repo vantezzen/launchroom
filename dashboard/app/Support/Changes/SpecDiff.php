@@ -68,6 +68,7 @@ final class SpecDiff
         $diff->diffServices($base->services ?? [], $current->services);
         $diff->diffConnections($base->connections ?? [], $current->connections, $current);
         $diff->diffSharedVariables($base->sharedVariables ?? [], $current->sharedVariables);
+        $diff->diffInherited($base, $current);
         $diff->propagate($current);
 
         return new StagedChanges($diff->items, $diff->effects);
@@ -254,6 +255,35 @@ final class SpecDiff
     }
 
     /**
+     * A worker or cron restarts when the connection variables it takes from
+     * its app change (a connection of the app added, changed or removed).
+     * The change itself is the app's item; this only adds the effect.
+     */
+    private function diffInherited(?EnvironmentSpec $base, EnvironmentSpec $current): void
+    {
+        if (! $base instanceof EnvironmentSpec) {
+            return;
+        }
+
+        $fingerprint = fn (EnvironmentSpec $spec, ServiceSpec $service): string => CanonicalJson::encode(array_map(
+            $this->variableFingerprint(...),
+            $spec->inheritedConnectionVariables($service),
+        ));
+
+        foreach ($current->services as $id => $service) {
+            $old = $base->service($id);
+
+            if (! $service->enabled || ! $old instanceof ServiceSpec || ! $service->kind->requiresParent()) {
+                continue;
+            }
+
+            if ($fingerprint($base, $old) !== $fingerprint($current, $service)) {
+                $this->effects[$id] = ($this->effects[$id] ?? ChangeEffect::None)->max(ChangeEffect::Restart->forKind($service->kind));
+            }
+        }
+    }
+
+    /**
      * Shared variables affect only the services that use them; that is
      * resolved in propagate().
      *
@@ -306,7 +336,7 @@ final class SpecDiff
                     continue;
                 }
 
-                $needed = $this->propagatedEffect($service, $changedSlugs);
+                $needed = $this->propagatedEffect($current, $service, $changedSlugs);
 
                 if (! $needed instanceof ChangeEffect) {
                     continue;
@@ -330,7 +360,7 @@ final class SpecDiff
     /**
      * @param  array<string, true>  $changedSlugs
      */
-    private function propagatedEffect(ServiceSpec $service, array $changedSlugs): ?ChangeEffect
+    private function propagatedEffect(EnvironmentSpec $current, ServiceSpec $service, array $changedSlugs): ?ChangeEffect
     {
         $needed = null;
 
@@ -338,7 +368,7 @@ final class SpecDiff
             $needed = ChangeEffect::Restart;
         }
 
-        foreach ([...$service->variables, ...$service->connectionVariables] as $variable) {
+        foreach ([...$service->variables, ...$current->connectionVariablesOf($service)] as $variable) {
             foreach ($variable->references as $reference) {
                 $scope = str_contains($reference, '.') ? strstr($reference, '.', true) : null;
                 $key = str_contains($reference, '.') ? substr($reference, strpos($reference, '.') + 1) : $reference;

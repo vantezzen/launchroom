@@ -142,6 +142,11 @@ type NetworkSpec struct {
 type VolumeSpec struct {
 	ID   VolumeID `json:"id"`
 	Name HostName `json:"name"`
+	// Service is the service the volume belongs to, set when workloads of
+	// other services of the same environment mount it too (a shared volume,
+	// daemon feature sharedVolumes, D73). Without it every workload that
+	// mounts the volume must belong to one service. Never across environments.
+	Service ServiceID `json:"service,omitzero"`
 }
 
 // WorkloadSpec is one app container (one replica of one service in one deployment).
@@ -459,6 +464,9 @@ func (s *NodeState) Validate() error {
 		p := idx("volumes", i)
 		e.check(p+".id", v.ID)
 		e.check(p+".name", v.Name)
+		if v.Service != "" {
+			e.check(p+".service", v.Service)
+		}
 		if vols[v.ID] {
 			e.addf(p+".id", "duplicate volume id %s", v.ID)
 		}

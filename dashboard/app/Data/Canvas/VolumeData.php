@@ -10,6 +10,9 @@ use Spatie\LaravelData\Data;
 
 final class VolumeData extends Data
 {
+    /**
+     * @param  list<string>  $sharedWith
+     */
     public function __construct(
         public string $id,
         public string $mountPath,
@@ -25,5 +28,7 @@ final class VolumeData extends Data
         public bool $removing = false,
         /** Where the running deployment mounts it, when that differs from $mountPath (a staged move). */
         public ?string $deployedMountPath = null,
+        /** Names of other services that mount it too (shared volume, D73). */
+        public array $sharedWith = [],
     ) {}
 }

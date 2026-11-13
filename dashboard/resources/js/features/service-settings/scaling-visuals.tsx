@@ -102,20 +102,26 @@ export function ReplicaUnits({
 }
 
 /**
- * Capacity bar: what other services hold (grey), what this service would
- * take (signal) and what is free (track). Amber only past the total.
+ * Capacity bar: what the server really uses now (grey), what this service
+ * would add (signal) and what is free (track). Limits are caps, not
+ * reservations, so other services' limits never fill it. Amber only when
+ * this service doesn't fit in what is free.
  */
 export function CapacityBar({
     label,
     used,
-    mine,
+    mine = 0,
     total,
+    free,
     format,
 }: {
     label: string;
-    used: number;
-    mine: number;
+    /** Really in use now; null when not reported. */
+    used: number | null;
+    mine?: number;
     total: number | null;
+    /** Free for this service; defaults to total minus used. */
+    free?: number | null;
     format: (value: number) => string;
 }) {
     if (total === null || total <= 0) {
@@ -127,8 +133,10 @@ export function CapacityBar({
         );
     }
 
-    const over = used + mine > total;
-    const pct = (value: number) => `${Math.min(100, (value / total) * 100)}%`;
+    const room = free ?? (used === null ? null : total - used);
+    const over = room !== null && mine > room;
+    const pct = (value: number) =>
+        `${Math.min(100, (Math.max(0, value) / total) * 100)}%`;
 
     return (
         <div className="flex flex-col gap-1.5">
@@ -144,18 +152,22 @@ export function CapacityBar({
                         <span className="text-foreground">{format(mine)}</span>
                     )}
                     {mine > 0 && <MetaDivider className="mx-1.5" />}
-                    {format(Math.max(0, total - used - mine))} free
+                    {room === null
+                        ? format(total)
+                        : over
+                          ? `only ${format(Math.max(0, room))} free`
+                          : `${format(Math.max(0, room - mine))} free`}
                 </span>
             </div>
             <div
                 role="meter"
-                aria-label={`${label}: ${format(mine)} for this service, ${format(used)} used by others, of ${format(total)}`}
+                aria-label={`${label}: ${used === null ? 'usage not reported' : `${format(used)} in use`}${mine > 0 ? `, ${format(mine)} for this service` : ''}, of ${format(total)}`}
                 aria-valuemin={0}
                 aria-valuemax={total}
-                aria-valuenow={used + mine}
+                aria-valuenow={(used ?? 0) + mine}
                 className="flex h-1.5 gap-[2px] overflow-hidden rounded-full bg-hover"
             >
-                {used > 0 && (
+                {used !== null && used > 0 && (
                     <span
                         className="h-full bg-chart-other"
                         style={{ width: pct(used) }}
@@ -242,15 +254,14 @@ export type ServerTile = App.Data.Canvas.PlacementServerOptionData & {
 
 /**
  * One server as the scheduler sees it for this service: the device with
- * its LED, the replicas it would hold, its CPU and memory against what
- * others use, and the rule for this service (may / only / never).
+ * its LED, the replicas it would hold, its CPU and memory in use now with
+ * what this service would add, and the rule for this service (may / only
+ * / never). Other services' limits are a footnote: they are caps that may
+ * add up to more than the server has, which is normal.
  */
 export function ServerPlacementCard({
     server,
-    cpus,
-    memoryMb,
-    memoryOvercommit,
-    cpuOvercommit,
+    memoryNeedMb,
     rule,
     onRule,
     staged,
@@ -259,10 +270,8 @@ export function ServerPlacementCard({
     logo,
 }: {
     server: ServerTile;
-    cpus: number;
-    memoryMb: number;
-    memoryOvercommit: number;
-    cpuOvercommit: number | null;
+    /** Memory one replica is expected to need (measured, at most its limit). */
+    memoryNeedMb: number;
     rule: ServerRule;
     onRule?: (rule: ServerRule) => void;
     staged: boolean;
@@ -272,16 +281,13 @@ export function ServerPlacementCard({
     logo: string;
 }) {
     const planned = server.draftPlanned;
-    const memoryTotal =
-        server.memoryMb === null
-            ? null
-            : Math.max(
-                  0,
-                  Math.round(server.memoryMb * memoryOvercommit) -
-                      server.reservedMemoryMb,
-              );
-    const cpuTotal =
-        server.cpus === null ? null : server.cpus * (cpuOvercommit ?? 1);
+    const formatCores = (value: number) =>
+        `${Number(value.toFixed(2))} ${value === 1 ? 'core' : 'cores'}`;
+    const memory = (value: number) => formatMb(value) ?? '0 MB';
+    const limits = [
+        server.limitCpus > 0 ? formatCores(server.limitCpus) : null,
+        server.limitMemoryMb > 0 ? memory(server.limitMemoryMb) : null,
+    ].filter((part): part is string => part !== null);
     const place = placeLabel(server);
     const eligible = server.draftEligible;
 
@@ -355,20 +361,24 @@ export function ServerPlacementCard({
                 <div className="flex flex-col gap-2.5">
                     <CapacityBar
                         label="CPU"
-                        used={server.allocatedCpus}
-                        mine={planned * cpus}
-                        total={cpuTotal}
-                        format={(value) =>
-                            `${Number(value.toFixed(2))} ${value === 1 ? 'core' : 'cores'}`
-                        }
+                        used={server.cpuInUse}
+                        total={server.cpus}
+                        format={formatCores}
                     />
                     <CapacityBar
                         label="Memory"
-                        used={server.allocatedMemoryMb}
-                        mine={planned * memoryMb}
-                        total={memoryTotal}
-                        format={(value) => formatMb(value) ?? '0 MB'}
+                        used={server.memoryInUseMb}
+                        mine={planned * memoryNeedMb}
+                        total={server.memoryMb}
+                        free={server.freeMemoryMb}
+                        format={memory}
                     />
+                    {limits.length > 0 && (
+                        <p className="type-small text-muted-foreground">
+                            Limits of other services add up to{' '}
+                            {limits.join(' and ')}.
+                        </p>
+                    )}
                 </div>
             </div>
             {onRule && (

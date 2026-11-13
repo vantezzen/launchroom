@@ -42,6 +42,13 @@ import type { SettingsContext } from './settings-context';
 
 type Volume = App.Data.Canvas.VolumeData;
 
+/** "reader", "reader and worker", "api, reader and worker". */
+function joinNames(names: string[]): string {
+    return names.length < 2
+        ? (names[0] ?? '')
+        : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+}
+
 function formatBytes(bytes: number): string {
     const gb = bytes / 1024 ** 3;
 
@@ -216,6 +223,11 @@ function VolumeCard({
                             )}
                         </div>
                     </div>
+                    {volume.sharedWith.length > 0 && !volume.removing && (
+                        <p className="-mt-1 px-5 pb-3 type-small text-muted-foreground">
+                            Also used by {joinNames(volume.sharedWith)}.
+                        </p>
+                    )}
                     {volume.deployedMountPath && !volume.removing && (
                         <p className="-mt-1 px-5 pb-3 type-small text-muted-foreground">
                             Running containers still use{' '}
@@ -497,6 +509,15 @@ function RemoveVolumeDialog({
                                 deleted. If it was backed up, an owner or admin
                                 allows the deletion on the server page.
                             </li>
+                            {volume && volume.sharedWith.length > 0 && (
+                                <li>
+                                    {joinNames(volume.sharedWith)}{' '}
+                                    {volume.sharedWith.length === 1
+                                        ? 'stops'
+                                        : 'stop'}{' '}
+                                    using it with the same deploy.
+                                </li>
+                            )}
                             <li>Snapshots stay in your backup destination.</li>
                         </ul>
                     )}
