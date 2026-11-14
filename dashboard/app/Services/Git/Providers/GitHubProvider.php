@@ -31,6 +31,7 @@ use App\Services\GitHub\JsonObject;
 use App\Services\GitHub\TokenScope;
 use App\Services\Previews\PreviewGitHub;
 use App\Support\Git\GitHubAvatar;
+use App\Support\Git\GitWebPath;
 use Illuminate\Contracts\Database\Query\Builder;
 use Throwable;
 
@@ -213,6 +214,11 @@ final readonly class GitHubProvider implements GitProvider, OpensPullRequests
     public function compareUrl(RepositoryRef $repository, string $from, string $to): string
     {
         return "https://github.com/{$repository->fullName}/compare/{$from}...{$to}";
+    }
+
+    public function repositoryUrl(RepositoryRef $repository, ?string $branch = null): string
+    {
+        return "https://github.com/{$repository->fullName}".($branch === null ? '' : '/tree/'.GitWebPath::branch($branch));
     }
 
     public function reportDeployment(DeploymentStatusReport $report): void

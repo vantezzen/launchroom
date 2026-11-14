@@ -24,6 +24,7 @@ use App\Models\Placement;
 use App\Models\Server;
 use App\Models\User;
 use App\Queries\EdgeOverview;
+use App\Queries\OpenAlerts;
 use App\Queries\ServerHealth;
 use App\Queries\ServerMesh;
 use App\Queries\ServerRetiredVolumes;
@@ -42,7 +43,7 @@ use Inertia\Response;
 
 final class ServerController extends Controller
 {
-    public function index(#[CurrentUser] User $user, ServerMesh $mesh, EdgeOverview $edges, ServerTopology $topology, SmallServerHint $smallServer): Response
+    public function index(#[CurrentUser] User $user, ServerMesh $mesh, EdgeOverview $edges, ServerTopology $topology, SmallServerHint $smallServer, OpenAlerts $openAlerts): Response
     {
         $team = TeamSettingsController::currentTeam($user);
         Gate::authorize('viewAny', [Server::class, $team]);
@@ -63,8 +64,9 @@ final class ServerController extends Controller
         // Private-network links between this team's servers (topology view).
         $links = $topology->links($servers);
 
+        $alerts = $openAlerts->forServers($team->id, array_values(array_map(intval(...), $servers->modelKeys())));
         $servers = $servers
-            ->map(fn (Server $server): ServerData => ServerData::fromServer($server, $mesh->summary($server, $controlPlaneIp), is_numeric($workloads[$server->id] ?? null) ? (int) $workloads[$server->id] : 0))
+            ->map(fn (Server $server): ServerData => ServerData::fromServer($server, $mesh->summary($server, $controlPlaneIp), is_numeric($workloads[$server->id] ?? null) ? (int) $workloads[$server->id] : 0, $alerts[$server->id] ?? []))
             ->all();
 
         return Inertia::render('servers/index', [
@@ -102,7 +104,20 @@ final class ServerController extends Controller
         ]);
     }
 
-    public function show(Server $server, #[CurrentUser] User $user, ServerHealth $health, ServerRetiredVolumes $retiredVolumes, ServerMesh $mesh, ServerWorkloads $workloads, ServerRoleHints $roleHints, SmallServerHint $smallServer, ?ServerTab $tab = null): Response
+    /**
+     * `/servers/{server}/metrics`, the tab's former name (D75): alerts and
+     * bookmarks still link there, so it redirects with the query.
+     */
+    public function movedMetrics(Request $request, Server $server): RedirectResponse
+    {
+        Gate::authorize('view', $server);
+        $url = route('servers.tab', [$server, ServerTab::Resources->value], false);
+        $query = $request->query();
+
+        return redirect()->to($query === [] ? $url : $url.'?'.http_build_query($query), 301);
+    }
+
+    public function show(Server $server, #[CurrentUser] User $user, OpenAlerts $openAlerts, ServerHealth $health, ServerRetiredVolumes $retiredVolumes, ServerMesh $mesh, ServerWorkloads $workloads, ServerRoleHints $roleHints, SmallServerHint $smallServer, ?ServerTab $tab = null): Response
     {
         Gate::authorize('view', $server);
         $tab ??= ServerTab::Overview;
@@ -119,6 +134,7 @@ final class ServerController extends Controller
                 Gate::allows('revoke', $server),
                 // Device and location overrides (PATCH servers/{server}/appearance).
                 Gate::allows('update', $server),
+                $openAlerts->forServers($server->team_id, [$server->id])[$server->id] ?? [],
             ),
             // Mesh state and address (docs/05 §2): Overview's glance, Network.
             'mesh' => $mesh->summary($server),

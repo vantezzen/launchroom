@@ -1,4 +1,5 @@
 import { ChevronRight, Plus } from 'lucide-react';
+import { AlertsChip } from '@/components/attention-chip';
 import { Status } from '@/components/status';
 import { Button } from '@/components/ui/button';
 import { compactAge } from './format';
@@ -8,7 +9,8 @@ import { StagedChip } from './service-node';
 
 /**
  * The canvas on phones (design-system §4.3): services as cards grouped
- * Public / App / Data; a tap opens the panel full screen. Doubles as the
+ * Public / App / Data, with their open alerts; a tap opens the panel full
+ * screen. Doubles as the
  * accessible alternative to the canvas.
  */
 export function CanvasList({
@@ -61,18 +63,28 @@ export function CanvasList({
                                                     />
                                                 )}
                                             </span>
-                                            <Status
-                                                state={node.status.state}
-                                                label={node.status.label}
-                                                detail={
-                                                    node.status.since
-                                                        ? compactAge(
-                                                              node.status.since,
-                                                          )
-                                                        : undefined
-                                                }
-                                                className="type-small"
-                                            />
+                                            <span className="flex min-w-0 items-center gap-2">
+                                                <Status
+                                                    state={node.status.state}
+                                                    label={node.status.label}
+                                                    detail={
+                                                        node.status.since
+                                                            ? compactAge(
+                                                                  node.status
+                                                                      .since,
+                                                              )
+                                                            : undefined
+                                                    }
+                                                    className="min-w-0 type-small"
+                                                />
+                                                {node.openAlerts.length > 0 && (
+                                                    <AlertsChip
+                                                        alerts={node.openAlerts}
+                                                        size="sm"
+                                                        linked={false}
+                                                    />
+                                                )}
+                                            </span>
                                         </span>
                                         <ChevronRight
                                             aria-hidden="true"

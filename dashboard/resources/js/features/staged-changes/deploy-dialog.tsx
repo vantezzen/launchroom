@@ -21,8 +21,9 @@ import type { StagedChanges } from './use-staged-changes';
 import { effectSummary } from './use-staged-changes';
 
 /**
- * Deploy the staged changes with an optional message (docs/06 §4). Lands on
- * the project's deployments with live progress.
+ * Apply the staged changes with an optional message (docs/06 §4, D75): the
+ * affected services redeploy. Lands on the project's deployments with live
+ * progress.
  */
 export function DeployDialog({
     project,
@@ -65,10 +66,9 @@ export function DeployDialog({
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent>
                 <DialogTitle>
-                    Deploy{' '}
                     {changes.neverDeployed
-                        ? changes.environmentName
-                        : `${changes.count} ${changes.count === 1 ? 'change' : 'changes'}`}
+                        ? `Deploy ${changes.environmentName}`
+                        : `Apply ${changes.count} ${changes.count === 1 ? 'change' : 'changes'}`}
                 </DialogTitle>
                 <DialogDescription>
                     {changes.neverDeployed
@@ -96,7 +96,7 @@ export function DeployDialog({
                                 onError: (errors) =>
                                     setError(
                                         Object.values(errors)[0] ??
-                                            'The deploy failed.',
+                                            'The changes could not be applied.',
                                     ),
                                 onSuccess: () => onOpenChange(false),
                                 onFinish: () => setProcessing(false),
@@ -131,8 +131,8 @@ export function DeployDialog({
                         <div role="alert" className="flex flex-col gap-2">
                             <p className="type-label text-status-error">
                                 {blockers.length === 1
-                                    ? 'One reference is broken. Fix it before deploying:'
-                                    : `${blockers.length} references are broken. Fix them before deploying:`}
+                                    ? 'One reference is broken. Fix it before applying:'
+                                    : `${blockers.length} references are broken. Fix them before applying:`}
                             </p>
                             <ul className="flex flex-col gap-1">
                                 {blockers.slice(0, 8).map((blocker) => (
@@ -178,10 +178,10 @@ export function DeployDialog({
                             disabled={processing || blockers.length > 0}
                         >
                             {processing
-                                ? 'Deploying…'
-                                : canStage && stage
-                                  ? 'Deploy staged'
-                                  : 'Deploy'}
+                                ? 'Applying…'
+                                : changes.neverDeployed
+                                  ? 'Deploy'
+                                  : 'Apply'}
                         </Button>
                     </DialogFooter>
                 </form>

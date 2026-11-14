@@ -9,6 +9,7 @@ use App\Data\Canvas\CanvasLayoutData;
 use App\Data\Canvas\DatabaseEngineOptionData;
 use App\Data\Canvas\ServiceControlsData;
 use App\Data\Canvas\ServicePanelData;
+use App\Data\Deployments\ServiceDeploymentsData;
 use App\Data\Previews\PreviewCanvasData;
 use App\Data\Specs\EnvironmentSpec;
 use App\Drivers\DatabaseEngines\DatabaseEngines;
@@ -28,8 +29,11 @@ use App\Models\User;
 use App\Queries\CanvasGraph;
 use App\Queries\CurrentEnvironmentSpec;
 use App\Queries\Previews\PreviewCanvas;
+use App\Queries\ServiceDeployments;
+use App\Queries\ServiceOrigin;
 use App\Queries\ServiceSettings;
 use App\Support\Services\StagedForService;
+use Closure;
 use Illuminate\Container\Attributes\CurrentUser;
 use Illuminate\Contracts\Database\Query\Builder;
 use Illuminate\Http\RedirectResponse;
@@ -52,7 +56,7 @@ final class CanvasController extends Controller
     ) {}
 
     /** Service panel tabs, in display order (`console`/`data`: docs/08 §15, only with their permission). */
-    public const array TABS = ['deployments', 'metrics', 'logs', 'console', 'data', 'settings'];
+    public const array TABS = ['deployments', 'logs', 'console', 'data', 'settings'];
 
     /** Pages of the Settings tab (`/s/{service}/settings/{section}`, docs/08 §16; `backups`: databases and services with volumes). */
     public const array SETTINGS_SECTIONS = ['general', 'source', 'variables', 'build', 'deploy', 'schedule', 'domains', 'networking', 'firewall', 'scaling', 'volumes', 'backups', 'advanced', 'danger'];
@@ -85,34 +89,50 @@ final class CanvasController extends Controller
         $canData = $service->kind === ServiceKind::Database && Gate::allows('viewAny', [InteractiveSession::class, $instance, InteractiveSessionKind::Data]);
         abort_if(($tab === 'console' && ! $canConsole) || ($tab === 'data' && ! $canData), 404);
 
-        // The header chip (docs/22 §9.1): open "Action needed" findings of this instance.
-        $findings = array_values(array_filter(SecurityFinding::query()
-            ->where('team_id', $project->team_id)
-            ->where('service_instance_id', $instance->id)
-            ->where('level', FindingLevel::ActionNeeded->value)
-            ->where('status', SecurityFindingStatus::Open->value)
-            ->pluck('public_id')
-            ->all(), is_string(...)));
-
         // One snapshot of the environment's intent for the whole request: the
         // controls, the settings and the canvas graph each diff against it.
-        $spec = $this->currentSpec->get($environment);
+        // Taken only when one of them is asked for.
+        $snapshot = null;
+        $spec = function () use (&$snapshot, $environment): EnvironmentSpec {
+            return $snapshot ??= $this->currentSpec->get($environment);
+        };
 
-        $panel = new ServicePanelData(
-            serviceId: $service->public_id,
-            tab: $tab,
-            settings: $tab === 'settings' ? $settings->for($instance, $user, $spec) : null,
-            canUpdate: $instance->removed_at === null && Gate::allows('update', $instance),
-            canDelete: $instance->removed_at === null && Gate::allows('delete', $instance),
-            canConsole: $canConsole,
-            canData: $canData,
-            section: $tab === 'settings' ? $section : null,
-            actionNeeded: count($findings),
-            actionNeededFinding: count($findings) === 1 ? $findings[0] : null,
-            controls: ServiceControlsData::for($instance, $user, $this->staged, $spec),
-        );
+        // Lazy: realtime refreshes that ask for nodes and edges only don't build it.
+        $panel = function () use ($project, $instance, $service, $tab, $section, $settings, $user, $canConsole, $canData, $spec): ServicePanelData {
+            // The header chip (docs/22 §9.1): open "Action needed" findings of this instance.
+            $findings = array_values(array_filter(SecurityFinding::query()
+                ->where('team_id', $project->team_id)
+                ->where('service_instance_id', $instance->id)
+                ->where('level', FindingLevel::ActionNeeded->value)
+                ->where('status', SecurityFindingStatus::Open->value)
+                ->pluck('public_id')
+                ->all(), is_string(...)));
 
-        return $this->render($project, $environment, $graph, $panel, $spec);
+            return new ServicePanelData(
+                serviceId: $service->public_id,
+                tab: $tab,
+                settings: $tab === 'settings' ? $settings->for($instance, $user, $spec()) : null,
+                canUpdate: $instance->removed_at === null && Gate::allows('update', $instance),
+                canDelete: $instance->removed_at === null && Gate::allows('delete', $instance),
+                canConsole: $canConsole,
+                canData: $canData,
+                section: $tab === 'settings' ? $section : null,
+                actionNeeded: count($findings),
+                actionNeededFinding: count($findings) === 1 ? $findings[0] : null,
+                controls: ServiceControlsData::for($instance, $user, $this->staged, $spec()),
+                origin: resolve(ServiceOrigin::class)->for($instance),
+            );
+        };
+
+        // A deep link (or any full visit) to the Deployments tab arrives with
+        // its list, so the panel draws complete from one request. Opening
+        // the panel from the canvas reloads only `panel` and leaves this out:
+        // the client fetches the list in parallel (docs/10 §3).
+        $deployments = $tab === 'deployments'
+            ? static fn (): ServiceDeploymentsData => resolve(ServiceDeployments::class)->for($instance)
+            : null;
+
+        return $this->render($project, $environment, $graph, $panel, $spec, $deployments);
     }
 
     /**
@@ -162,7 +182,12 @@ final class CanvasController extends Controller
         return response()->noContent();
     }
 
-    private function render(Project $project, Environment $environment, CanvasGraph $graph, ?ServicePanelData $panel, ?EnvironmentSpec $spec = null): Response
+    /**
+     * @param  (Closure(): ServicePanelData)|null  $panel
+     * @param  (Closure(): EnvironmentSpec)|null  $spec
+     * @param  (Closure(): ServiceDeploymentsData)|null  $deployments
+     */
+    private function render(Project $project, Environment $environment, CanvasGraph $graph, ?Closure $panel, ?Closure $spec = null, ?Closure $deployments = null): Response
     {
         $engines = $this->engines;
         // Built once, and only when asked for: opening a service or switching
@@ -170,7 +195,7 @@ final class CanvasController extends Controller
         // ask for nodes, edges and panel.
         $built = null;
         $canvas = static function () use ($graph, $environment, $spec, &$built): array {
-            return $built ??= $graph->for($environment, $spec);
+            return $built ??= $graph->for($environment, $spec instanceof Closure ? $spec() : null);
         };
 
         return Inertia::render('projects/canvas', [
@@ -180,6 +205,7 @@ final class CanvasController extends Controller
             // App volumes as their own nodes, shared between services (D73).
             'volumes' => static fn (): array => $canvas()['volumes'],
             'panel' => $panel,
+            'deployments' => $deployments,
             'parentCandidates' => fn (): array => $project->services()
                 ->where('kind', 'app')
                 ->whereHas('instances', fn (Builder $query) => $query->where('environment_id', $environment->id)->whereNull('removed_at'))

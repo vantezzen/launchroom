@@ -62,7 +62,7 @@ function Revisions({
                 </h2>
                 <p className="type-small text-muted-foreground">
                     Reverting stages an older configuration for you to review
-                    and deploy.
+                    and apply.
                 </p>
             </div>
             <ul className="flex flex-col">
@@ -121,7 +121,7 @@ function Revisions({
                         Services, settings and variables go back to how revision{' '}
                         {target?.number} had them, as staged changes. Edits
                         staged now are replaced. Nothing goes live until you
-                        deploy.
+                        apply them.
                     </DialogDescription>
                     <DialogFooter className="gap-2">
                         <DialogClose asChild>
@@ -199,9 +199,7 @@ export default function StagedChangesPage({
                             : changes.neverDeployed
                               ? `${changes.environmentName} has never been deployed. Deploying starts every service in it.`
                               : `${changes.count} ${changes.count === 1 ? 'change' : 'changes'} in ${changes.environmentName} since revision ${changes.revision}.`}
-                        {effects !== '' && !nothing && (
-                            <span className="type-mono-small"> {effects}</span>
-                        )}
+                        {effects !== '' && !nothing && <span> {effects}</span>}
                     </p>
                 </header>
 
@@ -240,7 +238,7 @@ export default function StagedChangesPage({
                     <section className="flex flex-col items-start gap-3">
                         <p className="max-w-[65ch] type-body text-muted-foreground">
                             Edits to services, variables, domains and settings
-                            are collected here until you deploy them together.
+                            are collected here until you apply them together.
                         </p>
                         <Button variant="outline" size="sm" asChild>
                             <Link
@@ -352,7 +350,11 @@ export default function StagedChangesPage({
                                         changes.blockers.length > 0
                                     }
                                 >
-                                    {processing ? 'Deploying…' : 'Deploy'}
+                                    {processing
+                                        ? 'Applying…'
+                                        : changes.neverDeployed
+                                          ? 'Deploy'
+                                          : `Apply ${changes.count} ${changes.count === 1 ? 'change' : 'changes'}`}
                                 </Button>
                                 {canDiscard && (
                                     <Button

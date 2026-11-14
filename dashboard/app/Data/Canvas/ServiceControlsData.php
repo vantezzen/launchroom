@@ -33,7 +33,7 @@ final class ServiceControlsData extends Data
         public ?string $stoppedBy,
         /** Apps and image services deploy a new version; databases, workers and crons restart. */
         public bool $versioned,
-        /** It has staged changes: Deploy is the environment's "Deploy changes". */
+        /** It has staged changes: Deploy is the environment's "Review & apply". */
         public bool $staged,
         /** A deployment of it hasn't finished (Restart waits for it). */
         public bool $deploying,

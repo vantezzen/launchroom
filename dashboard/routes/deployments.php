@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Http\Controllers\CommandPalette\CommandPaletteController;
 use App\Http\Controllers\Deployments\DeploymentController;
+use App\Http\Controllers\Deployments\DeploymentLinkController;
 use App\Http\Controllers\Deployments\DeploymentLogsController;
 use App\Http\Controllers\Deployments\ProjectDeploymentsController;
 use App\Http\Controllers\Deployments\ServiceDeploymentsController;
@@ -39,6 +40,7 @@ Route::middleware(['web', 'auth', 'verified'])
 
         Route::get('p/{project}/deployments', ProjectDeploymentsController::class)->name('deployments.project');
 
+        Route::get('d/{deployment}', DeploymentLinkController::class)->name('deployments.link');
         Route::get('p/{project}/{environment}/d/{deployment}', [DeploymentController::class, 'show'])->name('deployments.show');
         Route::get('p/{project}/{environment}/d/{deployment}/logs', DeploymentLogsController::class)
             ->middleware('throttle:600,1')

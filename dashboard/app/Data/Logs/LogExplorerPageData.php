@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Data\Logs;
 
+use App\Data\Metrics\DeployMarkerData;
 use Spatie\LaravelData\Data;
 
 /**
@@ -17,7 +18,7 @@ final class LogExplorerPageData extends Data
 {
     /**
      * @param  list<LogEntryData>  $entries
-     * @param  list<LogMarkerData>  $markers
+     * @param  list<DeployMarkerData>  $markers
      * @param  list<LogBucketData>  $buckets
      */
     public function __construct(

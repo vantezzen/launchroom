@@ -49,7 +49,7 @@ final class ConfigFileController extends Controller
             ConfigFileStatus::Invalid => ['type' => 'error', 'message' => $outcome->summary],
             ConfigFileStatus::Missing => ['type' => 'info', 'message' => "There is no {$outcome->record->path} on that branch yet."],
             ConfigFileStatus::Unchanged => ['type' => 'success', 'message' => "{$environment->name} already matches {$outcome->record->path}."],
-            default => ['type' => 'success', 'message' => "{$outcome->record->path} changes are staged in {$environment->name}. Review and deploy them."],
+            default => ['type' => 'success', 'message' => "{$outcome->record->path} changes are staged in {$environment->name}. Review and apply them."],
         });
 
         return back();

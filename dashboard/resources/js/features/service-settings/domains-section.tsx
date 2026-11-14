@@ -606,7 +606,10 @@ function DomainCard({
     };
 
     return (
-        <li className="overflow-hidden rounded-xl border bg-card shadow-card">
+        <li
+            id={domain.hostname}
+            className="scroll-mt-20 overflow-hidden rounded-xl border bg-card shadow-card"
+        >
             <div className="flex items-start gap-3 px-5 py-4">
                 <span
                     aria-hidden="true"

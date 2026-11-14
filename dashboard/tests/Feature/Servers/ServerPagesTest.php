@@ -207,8 +207,8 @@ test('a server page has deep-linkable tabs that load only their own props', func
             ->missing('measureLinks')
             ->loadDeferredProps(fn ($reload) => $reload->has('meshPeers')));
 
-    $this->actingAs($this->viewer)->get(route('servers.tab', [$server->public_id, 'metrics']))
-        ->assertInertia(fn ($page) => $page->where('tab', 'metrics')
+    $this->actingAs($this->viewer)->get(route('servers.tab', [$server->public_id, 'resources']))
+        ->assertInertia(fn ($page) => $page->where('tab', 'resources')
             ->where('server.id', $server->public_id)
             ->has('teamId')
             ->missing('health')
@@ -238,4 +238,16 @@ test('tabs of another team’s server are not found', function (): void {
     $foreign = Server::factory()->create();
 
     $this->actingAs($this->admin)->get(route('servers.tab', [$foreign->public_id, 'settings']))->assertNotFound();
+});
+
+test('the former Metrics tab of a server redirects to Resources with its query', function (): void {
+    $server = Server::factory()->online()->create(['team_id' => $this->team->id]);
+
+    $this->actingAs($this->viewer)->get("/servers/{$server->public_id}/metrics?range=1h")
+        ->assertStatus(301)
+        ->assertRedirect("/servers/{$server->public_id}/resources?range=1h");
+
+    $this->actingAs(memberOf(Team::factory()->create(), TeamRole::Owner))
+        ->get("/servers/{$server->public_id}/metrics")
+        ->assertNotFound();
 });

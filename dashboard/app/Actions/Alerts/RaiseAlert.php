@@ -13,8 +13,10 @@ use App\Models\Environment;
 use App\Models\Project;
 use App\Models\Server;
 use App\Models\ServiceInstance;
+use App\Services\Alerts\AlertChanged;
 use App\Services\Alerts\AlertNotifier;
 use App\Services\Alerts\AlertRuleSettings;
+use App\Support\Links;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 
@@ -48,7 +50,9 @@ final readonly class RaiseAlert
             return null;
         }
 
-        return DB::transaction(function () use ($signal): Alert {
+        $changed = false;
+
+        $alert = DB::transaction(function () use ($signal, &$changed): Alert {
             DB::select('SELECT pg_advisory_xact_lock(hashtext(?))', ["alert|{$signal->team->id}|{$signal->rule->value}|{$signal->subject}"]);
 
             $now = CarbonImmutable::now();
@@ -61,6 +65,7 @@ final readonly class RaiseAlert
                 $newOccurrence = $signal->occurrence !== null && $signal->occurrence !== $firing->occurrence;
                 $notify = $escalated || ($newOccurrence && $repeat !== null && ($firing->notified_at === null || $firing->notified_at->lessThanOrEqualTo($now->subMinutes($repeat))));
 
+                $changed = $escalated;
                 $this->fill($firing, $signal, $now);
                 $firing->occurrences++;
                 $firing->save();
@@ -75,6 +80,7 @@ final readonly class RaiseAlert
             $recent = $this->latest($signal, AlertStatus::Resolved);
 
             if ($recent instanceof Alert && $recent->resolved_at?->greaterThanOrEqualTo($now->subMinutes(AlertRule::COOLDOWN_MINUTES)) === true) {
+                $changed = true;
                 $this->fill($recent, $signal, $now);
                 $recent->occurrences++;
                 $recent->transitionTo(AlertStatus::Firing);
@@ -95,9 +101,16 @@ final readonly class RaiseAlert
             $this->fill($alert, $signal, $now);
             $alert->save();
             $this->notify($alert, AlertDeliveryEvent::Fired, $now);
+            $changed = true;
 
             return $alert;
         });
+
+        if ($changed) {
+            AlertChanged::broadcastFor($alert);
+        }
+
+        return $alert;
     }
 
     private function latest(AlertSignal $signal, AlertStatus $status): ?Alert
@@ -148,24 +161,20 @@ final readonly class RaiseAlert
      */
     private function defaultHref(AlertSignal $signal): string
     {
-        $instance = $signal->serviceInstance;
-
-        if ($instance instanceof ServiceInstance) {
-            $instance->loadMissing(['service', 'environment.project']);
-
-            return "/p/{$instance->environment->project->public_id}/{$instance->environment->public_id}/s/{$instance->service->public_id}/deployments";
+        if ($signal->serviceInstance instanceof ServiceInstance) {
+            return Links::service($signal->serviceInstance, 'deployments');
         }
 
         if ($signal->server instanceof Server) {
-            return "/servers/{$signal->server->public_id}";
+            return Links::server($signal->server);
         }
 
         if ($signal->environment instanceof Environment) {
             $signal->environment->loadMissing('project');
 
-            return "/p/{$signal->environment->project->public_id}/{$signal->environment->public_id}";
+            return route('projects.canvas', [$signal->environment->project->public_id, $signal->environment->public_id], false);
         }
 
-        return $signal->project instanceof Project ? "/p/{$signal->project->public_id}" : '/activity';
+        return $signal->project instanceof Project ? route('projects.show', [$signal->project->public_id], false) : route('activity.index', [], false);
     }
 }

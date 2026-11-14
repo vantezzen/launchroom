@@ -13,6 +13,7 @@ import { PillTabs } from '@/components/patterns/pill-tabs';
 import type { PillTab } from '@/components/patterns/pill-tabs';
 import { TopBar } from '@/components/patterns/top-bar';
 import { ProjectIcon } from '@/components/project-icon';
+import { Status } from '@/components/status';
 import { Button } from '@/components/ui/button';
 import {
     DropdownMenu,
@@ -22,10 +23,17 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { usePaletteIndex } from '@/features/command-palette/command-palette';
 import { AutoDeployPausedBanner } from '@/features/projects/auto-deploy-paused-banner';
 import { requestJson } from '@/features/projects/http';
+import {
+    environmentSwitchHref,
+    projectSwitchHref,
+} from '@/features/projects/switch-targets';
 import type { ProjectShellProps } from '@/features/projects/types';
 import { StagedChangesPill } from '@/features/staged-changes/staged-changes-pill';
+import { useLocationSearch } from '@/hooks/use-observe-scope';
+import { readScope, withScope } from '@/lib/observe-scope';
 import { project as projectDeployments } from '@/routes/deployments';
 import {
     activity,
@@ -33,7 +41,6 @@ import {
     canvas,
     index,
     logs as projectLogs,
-    metricsPage as projectMetrics,
     previews as projectPreviews,
     settings,
     show,
@@ -210,9 +217,9 @@ function ProjectTabs({
 
 /**
  * Project top bar (design-system §4.1, direction §3.2): one 52 px row with
- * `project ▾ / environment ▾`, the project tabs inline (Canvas ·
- * Deployments · Logs · Metrics · Analytics · Previews · Settings) and the staged-changes button
- * right. Project activity lives in the project menu (the team Activity page
+ * `project ▾ / environment ▾`, the project tabs inline (Canvas,
+ * Deployments, Logs, Analytics, Previews, Settings) and the staged-changes
+ * button right. Project activity lives in the project menu (the team Activity page
  * in the sidebar is the main feed).
  */
 export function ProjectTopBar() {
@@ -231,6 +238,12 @@ export function ProjectTopBar() {
     const persistent = environments.filter((item) => item.kind !== 'preview');
     const previews = environments.filter((item) => item.kind === 'preview');
     const environmentId = environment?.id ?? environments[0]?.id;
+    const search = useLocationSearch();
+    const observing = ['projects/logs', 'projects/analytics'].includes(
+        page.component,
+    );
+    const scope = observing ? readScope(search) : null;
+    const carried = { range: scope?.range, service: scope?.service };
 
     const tabs: Tab[] = [
         {
@@ -245,21 +258,24 @@ export function ProjectTopBar() {
             href: projectDeployments(project.id).url,
             active: page.component.startsWith('projects/deployments'),
         },
+        // Logs and Analytics keep the observe scope (range and service)
+        // between each other (docs/08 §1).
         ...(environmentId
             ? [
                   {
                       label: 'Logs',
-                      href: projectLogs([project.id, environmentId]).url,
+                      href: withScope(
+                          projectLogs([project.id, environmentId]).url,
+                          carried,
+                      ),
                       active: page.component === 'projects/logs',
                   },
                   {
-                      label: 'Metrics',
-                      href: projectMetrics([project.id, environmentId]).url,
-                      active: page.component === 'projects/metrics',
-                  },
-                  {
                       label: 'Analytics',
-                      href: projectAnalytics([project.id, environmentId]).url,
+                      href: withScope(
+                          projectAnalytics([project.id, environmentId]).url,
+                          carried,
+                      ),
                       active: page.component === 'projects/analytics',
                   },
               ]
@@ -285,10 +301,16 @@ export function ProjectTopBar() {
             {projects.map((item) => (
                 <DropdownMenuItem
                     key={item.id}
-                    onSelect={() => router.visit(show(item.id))}
+                    {...switchTo(
+                        projectSwitchHref(page.component, page.url, item),
+                    )}
                 >
                     <ProjectIcon name={item.name} iconUrl={item.iconUrl} />
                     <span className="flex-1 truncate">{item.name}</span>
+                    <ProjectStatus
+                        project={item.id}
+                        environment={environment?.id ?? null}
+                    />
                     {item.id === project.id && (
                         <Check
                             aria-label="Current project"
@@ -318,7 +340,12 @@ export function ProjectTopBar() {
             {persistent.map((item) => (
                 <EnvironmentItem
                     key={item.id}
-                    project={project.id}
+                    href={environmentSwitchHref(
+                        page.component,
+                        project.id,
+                        item.id,
+                        page.url,
+                    )}
                     item={item}
                     current={item.id === environment?.id}
                 />
@@ -332,7 +359,12 @@ export function ProjectTopBar() {
                     {previews.map((item) => (
                         <EnvironmentItem
                             key={item.id}
-                            project={project.id}
+                            href={environmentSwitchHref(
+                                page.component,
+                                project.id,
+                                item.id,
+                                page.url,
+                            )}
                             item={item}
                             current={item.id === environment?.id}
                         />
@@ -378,7 +410,7 @@ export function ProjectTopBar() {
         'projects/changes': 'Changes',
     };
     const pageLabel = pageLabels[page.component] ?? null;
-    // On the canvas the floating toolbar carries "Review & deploy" (§13.9);
+    // On the canvas the floating toolbar carries "Review & apply" (§13.9);
     // the top bar keeps it everywhere else.
     const stagedInToolbar = onCanvas && (page.props.nodes?.length ?? 0) > 0;
 
@@ -516,12 +548,65 @@ export function ProjectTopBar() {
     );
 }
 
-function EnvironmentItem({
+/**
+ * A project's status in the switcher (production's, or this environment's
+ * for the current project). Mounted only while the menu is open, so the
+ * palette index it shares with ⌘K loads on open, not with every page.
+ */
+function ProjectStatus({
     project,
+    environment,
+}: {
+    project: string;
+    environment: string | null;
+}) {
+    const { data } = usePaletteIndex(environment, true);
+    const status = data?.projects.find(
+        (item) => item.id === project,
+    )?.nodeStatus;
+
+    if (!status || status.label === 'No services') {
+        return null;
+    }
+
+    return (
+        <Status
+            state={status.state}
+            label={status.label}
+            className="max-w-32 shrink-0 truncate type-small text-muted-foreground"
+        />
+    );
+}
+
+/**
+ * A switcher entry: opens `href`, and starts loading it while the pointer
+ * or the keyboard rests on it.
+ */
+function switchTo(href: string) {
+    let timer: number | undefined;
+    const prefetch = () => {
+        window.clearTimeout(timer);
+        timer = window.setTimeout(
+            () => router.prefetch(href, {}, { cacheFor: '5s' }),
+            75,
+        );
+    };
+
+    return {
+        onSelect: () => router.visit(href),
+        onPointerEnter: prefetch,
+        onFocus: prefetch,
+        onPointerLeave: () => window.clearTimeout(timer),
+    };
+}
+
+function EnvironmentItem({
+    href,
     item,
     current,
 }: {
-    project: string;
+    /** The same page in this environment where it has one (switch-targets.ts). */
+    href: string;
     item: App.Data.Canvas.EnvironmentData;
     current: boolean;
 }) {
@@ -529,9 +614,7 @@ function EnvironmentItem({
         item.branch ?? (item.tagPattern ? `tags ${item.tagPattern}` : null);
 
     return (
-        <DropdownMenuItem
-            onSelect={() => router.visit(canvas([project, item.id]))}
-        >
+        <DropdownMenuItem {...switchTo(href)}>
             <span className="flex-1 truncate">{item.name}</span>
             {trigger && (
                 <span className="type-mono-small text-muted-foreground">

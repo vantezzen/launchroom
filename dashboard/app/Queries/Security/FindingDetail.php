@@ -7,6 +7,7 @@ namespace App\Queries\Security;
 use App\Data\Security\AdvisoryDetailData;
 use App\Data\Security\FindingCardData;
 use App\Data\Security\FindingCheckData;
+use App\Data\Security\FindingDeploymentData;
 use App\Data\Security\FindingDetailData;
 use App\Data\Security\InvestigationDetailData;
 use App\Data\Security\InvestigationLineData;
@@ -14,11 +15,13 @@ use App\Data\Security\InvestigationLinkData;
 use App\Data\Security\InvestigationReplicaData;
 use App\Data\Security\InvestigationReportData;
 use App\Enums\Security\SecurityFindingStatus;
+use App\Models\Deployment;
 use App\Models\Security\Advisory;
 use App\Models\Security\SecurityFinding;
 use App\Models\Security\SecurityInvestigation;
 use App\Models\ServiceInstance;
 use App\Models\User;
+use App\Support\Links;
 use App\Support\Metrics\Cast;
 use App\Support\Security\Lockfiles;
 use Illuminate\Contracts\Database\Query\Builder;
@@ -91,6 +94,23 @@ final readonly class FindingDetail
             canInvestigate: $gate->allows('create', [SecurityInvestigation::class, $instance]),
             canChangeFirewall: $gate->allows('update', $instance),
             firewallUrl: "{$card->service->href}/firewall",
+            deployment: $this->deployment($finding),
+        );
+    }
+
+    private function deployment(SecurityFinding $finding): ?FindingDeploymentData
+    {
+        $deployment = $finding->deployment;
+
+        // Same team by construction; checked anyway so a link never crosses teams.
+        if (! $deployment instanceof Deployment || $deployment->team_id !== $finding->team_id) {
+            return null;
+        }
+
+        return new FindingDeploymentData(
+            $deployment->public_id,
+            $deployment->commit_sha === null ? null : substr($deployment->commit_sha, 0, 7),
+            Links::deployment($deployment),
         );
     }
 

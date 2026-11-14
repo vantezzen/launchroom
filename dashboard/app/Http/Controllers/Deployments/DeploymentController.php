@@ -8,7 +8,10 @@ use App\Actions\Deployments\ApplyFailureFix;
 use App\Actions\Deployments\CancelDeployment;
 use App\Actions\Deployments\RedeployService;
 use App\Actions\Deployments\RollbackDeployment;
+use App\Data\Deployments\DeploymentDetailData;
+use App\Data\Deployments\DeploymentImpactData;
 use App\Data\Deployments\FailureFixData;
+use App\Data\Deployments\LogPageData;
 use App\Events\CanvasChanged;
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Projects\ProjectScope;
@@ -17,6 +20,7 @@ use App\Models\Environment;
 use App\Models\Project;
 use App\Models\User;
 use App\Queries\DeploymentDetailView;
+use App\Queries\DeploymentImpact;
 use App\Queries\DeploymentLogs;
 use Illuminate\Container\Attributes\CurrentUser;
 use Illuminate\Http\RedirectResponse;
@@ -32,15 +36,20 @@ final class DeploymentController extends Controller
 {
     use ScopesProjectRoutes;
 
-    public function show(Project $project, Environment $environment, Deployment $deployment, DeploymentDetailView $view, DeploymentLogs $logs): Response
+    public function show(Project $project, Environment $environment, Deployment $deployment, DeploymentDetailView $view, DeploymentLogs $logs, DeploymentImpact $impact): Response
     {
         $this->scopeDeployment($project, $environment, $deployment);
         Gate::authorize('view', $deployment);
 
         return Inertia::render('projects/deployments/show', [
             ...ProjectScope::shellProps($project, $environment),
-            'detail' => $view->get($deployment),
-            'logs' => $logs->page($deployment),
+            // Lazy: a live deploy reloads `detail` on every status event
+            // without building the first page of lines again.
+            'detail' => static fn (): DeploymentDetailData => $view->get($deployment),
+            'logs' => static fn (): LogPageData => $logs->page($deployment),
+            // "Since this deploy" (docs/08 §12): its own prop, so status
+            // reloads of `detail` don't recompute it.
+            'impact' => static fn (): ?DeploymentImpactData => $impact->for($deployment),
         ]);
     }
 
@@ -81,7 +90,7 @@ final class DeploymentController extends Controller
         broadcast(new CanvasChanged($environment->public_id));
 
         if (! $created instanceof Deployment) {
-            Inertia::flash('toast', ['type' => 'success', 'message' => 'Fix staged. Other changes are staged too: review and deploy them together.']);
+            Inertia::flash('toast', ['type' => 'success', 'message' => 'Fix staged. Other changes are staged too: review and apply them together.']);
 
             return to_route('staged-changes.show', [$project->public_id, $environment->public_id]);
         }

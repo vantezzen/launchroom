@@ -104,8 +104,19 @@ final class ProjectScope
                 ->where('team_id', $project->team_id)
                 ->orderBy('name')
                 ->limit(50)
-                ->get(['public_id', 'name', 'icon_path', 'icon_version'])
-                ->map(static fn (Project $item): ProjectLinkData => new ProjectLinkData($item->public_id, $item->name, $item->iconUrl()))
+                ->select(['id', 'public_id', 'name', 'icon_path', 'icon_version'])
+                // The switcher links straight to the production canvas (no redirect hop).
+                ->addSelect(['production_environment' => Environment::query()
+                    ->select('public_id')
+                    ->whereColumn('environments.project_id', 'projects.id')
+                    ->where('kind', EnvironmentKind::Production->value)
+                    ->limit(1)])
+                ->get()
+                ->map(static function (Project $item): ProjectLinkData {
+                    $production = $item->getAttribute('production_environment');
+
+                    return new ProjectLinkData($item->public_id, $item->name, $item->iconUrl(), is_string($production) ? $production : null);
+                })
                 ->values()
                 ->all(),
             'environments' => static fn (): array => $environments()->map(static fn (Environment $item): EnvironmentData => EnvironmentData::fromEnvironment($item))->values()->all(),

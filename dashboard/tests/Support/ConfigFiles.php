@@ -99,6 +99,11 @@ final readonly class ConfigFiles implements GitProvider
         return $this->real->compareUrl($repository, $from, $to);
     }
 
+    public function repositoryUrl(RepositoryRef $repository, ?string $branch = null): ?string
+    {
+        return $this->real->repositoryUrl($repository, $branch);
+    }
+
     public function reportDeployment(DeploymentStatusReport $report): void
     {
         $this->real->reportDeployment($report);

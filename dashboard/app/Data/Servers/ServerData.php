@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Data\Servers;
 
+use App\Data\Alerts\OpenAlertData;
 use App\Enums\ServerRole;
 use App\Enums\ServerStatus;
 use App\Models\Server;
@@ -36,9 +37,18 @@ final class ServerData extends Data
         public ?DeviceData $device = null,
         public ?LocationData $location = null,
         public ?ServerSpecsData $specs = null,
+        /**
+         * Firing alerts about the server (docs/15 §3.6).
+         *
+         * @var list<OpenAlertData>
+         */
+        public array $openAlerts = [],
     ) {}
 
-    public static function fromServer(Server $server, ?ServerMeshData $mesh = null, int $workloads = 0): self
+    /**
+     * @param  list<OpenAlertData>  $openAlerts
+     */
+    public static function fromServer(Server $server, ?ServerMeshData $mesh = null, int $workloads = 0, array $openAlerts = []): self
     {
         return new self(
             $server->public_id,
@@ -53,6 +63,7 @@ final class ServerData extends Data
             DeviceData::fromServer($server),
             ServerLocations::for($server),
             ServerSpecsData::fromServer($server),
+            $openAlerts,
         );
     }
 }

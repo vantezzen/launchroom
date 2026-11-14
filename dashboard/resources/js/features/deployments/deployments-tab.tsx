@@ -2,7 +2,6 @@ import { Link, router } from '@inertiajs/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { MoreHorizontal, Rocket } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
-import type { ReactNode } from 'react';
 import { CommitAvatar } from '@/components/commit-avatar';
 import { Duration, Elapsed } from '@/components/elapsed';
 import { ConfirmPopover } from '@/components/patterns/confirm-popover';
@@ -21,11 +20,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { compactAge } from '@/features/canvas/format';
 import { stepRows } from '@/features/deployment-detail/steps';
 import type { StepRow } from '@/features/deployment-detail/steps';
-import { requestJson } from '@/features/projects/http';
-import {
-    DeployButton,
-    StartButton,
-} from '@/features/service-panel/service-controls';
+import { DeployButton } from '@/features/service-panel/service-controls';
 import { useNow } from '@/hooks/use-now';
 import { cn } from '@/lib/utils';
 import { rollback } from '@/routes/deployments';
@@ -36,8 +31,8 @@ import {
     DeploymentActionDialog,
     deploymentArgs,
     deploymentUrl,
-    serviceDeploymentsUrl,
 } from './deployment-actions';
+import { DeploymentLink } from './deployment-link';
 import {
     branchName,
     deploymentStatusState,
@@ -48,9 +43,16 @@ import {
     shortSha,
     stoppedLine,
 } from './format';
-import { listHead, needsRetry } from './list-head';
+import { listHead } from './list-head';
+import { optimisticQueued, rollbackToast } from './optimistic';
 import type { DeploymentUpdatedEvent } from './realtime';
 import { ChannelEvents } from './realtime';
+import {
+    flushDeploymentPages,
+    serviceDeploymentsQuery,
+} from './service-deployments';
+
+export { serviceDeploymentsKey } from './service-deployments';
 
 export type DeploymentsTabProps = {
     project: string;
@@ -60,26 +62,11 @@ export type DeploymentsTabProps = {
     database?: boolean;
     /** The panel header's actions (D68): Start on the stopped row. */
     controls?: App.Data.Canvas.ServiceControlsData | null;
+    /** The service's logo: the deployment page opens with it (instant visit). */
+    logo?: string;
 };
 
 type Summary = App.Data.Deployments.DeploymentSummaryData;
-
-type ServiceDeployments = {
-    active: Summary | null;
-    deployments: Summary[];
-    /** The expanded first row: in progress, else live, else the newest, with its steps. */
-    current: {
-        id: string;
-        steps: App.Data.Deployments.DeploymentStepData[];
-        /** Show "Release" from the start (docs/04 §6). */
-        expectsRelease: boolean;
-    } | null;
-    canDeploy: boolean;
-};
-
-export function serviceDeploymentsKey(environment: string, service: string) {
-    return ['service-deployments', environment, service] as const;
-}
 
 /** Short step names for the row's track ("Release command" is long). */
 const TRACK_LABELS: Record<string, string> = {
@@ -94,11 +81,12 @@ const TRACK_LABELS: Record<string, string> = {
 /**
  * Service panel → Deployments (docs/08 §12, direction §9.5): one list,
  * newest first. The current deployment (the one in progress, else the live
- * one, else the newest: a failed first deploy with "Try again") is its
- * first row, expanded: the same avatar column, title and meta
- * line as every other row, plus the steps with live status and times and
- * its actions. The rest are compact rows with Roll back on hover. Live over
- * the environment channel.
+ * one, else the newest) is its first row, expanded: the same avatar
+ * column, title and meta line as every other row, plus the steps with live
+ * status and times. Every row is one link to its deployment (its logs);
+ * actions live in the row's `⋯` menu, and the service's own (Deploy,
+ * Start) in the panel header. The rest are compact rows with Roll back on
+ * hover. Live over the environment channel.
  */
 export function DeploymentsTab({
     project,
@@ -106,9 +94,11 @@ export function DeploymentsTab({
     service,
     database = false,
     controls = null,
+    logo,
 }: DeploymentsTabProps) {
     const queryClient = useQueryClient();
-    const key = serviceDeploymentsKey(environment, service);
+    const query = serviceDeploymentsQuery(project, environment, service);
+    const key = query.queryKey;
     const [action, setAction] = useState<PendingAction | null>(null);
     const stoppedAt = controls?.stoppedAt ?? null;
     const seenStop = useRef(stoppedAt);
@@ -122,19 +112,14 @@ export function DeploymentsTab({
         }
     }, [stoppedAt, queryClient, key]);
 
-    const { data, isPending, isError, error } = useQuery({
-        queryKey: key,
-        queryFn: ({ signal }) =>
-            requestJson<ServiceDeployments>(
-                'get',
-                serviceDeploymentsUrl(project, environment, service),
-                undefined,
-                signal,
-            ),
-    });
+    // Usually already loading or loaded: the canvas starts it on hover and
+    // on click, in parallel with the panel (docs/10 §3).
+    const { data, isPending, isError, error } = useQuery(query);
 
     const refresh = (event: DeploymentUpdatedEvent | null) => {
         if (event === null || event.serviceId === service) {
+            // Prefetched deployment pages of this service are stale now.
+            flushDeploymentPages(environment, service);
             void queryClient.invalidateQueries({ queryKey: key });
         }
     };
@@ -225,6 +210,7 @@ export function DeploymentsTab({
                         deployment={head}
                         canDeploy={data.canDeploy}
                         onAction={setAction}
+                        logo={logo}
                         expanded={{
                             steps:
                                 data.current?.id === head.id
@@ -233,71 +219,6 @@ export function DeploymentsTab({
                             expectsRelease:
                                 data.current?.id === head.id &&
                                 data.current.expectsRelease,
-                            actions: head.stopped ? (
-                                <StoppedActions
-                                    deployment={head}
-                                    start={
-                                        controls?.canControl &&
-                                        controls.stopped ? (
-                                            <StartButton
-                                                project={project}
-                                                environment={environment}
-                                                service={service}
-                                                name={head.serviceName}
-                                                processes={controls.processes}
-                                            />
-                                        ) : null
-                                    }
-                                />
-                            ) : (
-                                <CurrentActions
-                                    deployment={head}
-                                    canDeploy={data.canDeploy}
-                                    onAction={setAction}
-                                    retry={
-                                        needsRetry(head, data.active) &&
-                                        data.canDeploy ? (
-                                            controls?.canControl ? (
-                                                <DeployButton
-                                                    project={project}
-                                                    environment={environment}
-                                                    service={service}
-                                                    name={head.serviceName}
-                                                    staged={controls.staged}
-                                                    versioned={
-                                                        controls.versioned
-                                                    }
-                                                    label="Try again"
-                                                />
-                                            ) : (
-                                                <Button
-                                                    size="sm"
-                                                    onClick={() =>
-                                                        setAction({
-                                                            kind: 'redeploy-service',
-                                                            project,
-                                                            environment,
-                                                            service,
-                                                            name: head.serviceName,
-                                                        })
-                                                    }
-                                                >
-                                                    Try again
-                                                </Button>
-                                            )
-                                        ) : null
-                                    }
-                                    redeployService={() =>
-                                        setAction({
-                                            kind: 'redeploy-service',
-                                            project,
-                                            environment,
-                                            service,
-                                            name: head.serviceName,
-                                        })
-                                    }
-                                />
-                            ),
                         }}
                     />
                     {rest.map((deployment) => (
@@ -306,6 +227,7 @@ export function DeploymentsTab({
                             deployment={deployment}
                             canDeploy={data.canDeploy}
                             onAction={setAction}
+                            logo={logo}
                         />
                     ))}
                 </ol>
@@ -360,21 +282,23 @@ function RowStatus({
  * One deployment of the list. Every row has the same three columns: the
  * commit author's avatar, the message over a meta line (status, sha,
  * branch, who, age, duration) and the row's menu. `expanded` (the first
- * row) adds the steps and the actions under the text column.
+ * row) adds the steps under the text column. The title's link covers
+ * the whole row, so a click anywhere but the menu opens the deployment.
  */
 function DeploymentRow({
     deployment,
     canDeploy,
     onAction,
+    logo,
     expanded,
 }: {
     deployment: Summary;
     canDeploy: boolean;
     onAction: (action: PendingAction) => void;
+    logo?: string;
     expanded?: {
         steps: App.Data.Deployments.DeploymentStepData[];
         expectsRelease: boolean;
-        actions: ReactNode;
     };
 }) {
     const sha = shortSha(deployment.commitSha);
@@ -389,8 +313,8 @@ function DeploymentRow({
             aria-current={expanded ? 'true' : undefined}
             className={cn(
                 'group relative grid grid-cols-[24px_minmax(0,1fr)_auto] gap-x-3 px-4 transition-colors duration-fast',
-                'border-b last:border-b-0',
-                expanded ? 'gap-y-4 py-4' : 'py-3 hover:bg-hover',
+                'border-b last:border-b-0 hover:bg-hover',
+                expanded ? 'gap-y-4 py-4' : 'py-3',
             )}
         >
             <span className="flex h-5 items-center pt-px">
@@ -401,12 +325,20 @@ function DeploymentRow({
                 />
             </span>
             <div className="flex min-w-0 flex-col gap-1">
-                <Link
-                    href={deploymentUrl(deployment)}
+                {/* The expanded row is the one people open: its page is
+                    loaded as soon as the row appears. */}
+                <DeploymentLink
+                    deployment={deployment}
+                    eager={expanded !== undefined}
+                    preview={{
+                        logo,
+                        steps: expanded?.steps,
+                        expectsRelease: expanded?.expectsRelease,
+                    }}
                     className="truncate type-body font-medium outline-none after:absolute after:inset-0 focus-visible:after:ring-2 focus-visible:after:ring-ring focus-visible:after:ring-inset"
                 >
                     {deploymentTitle(deployment)}
-                </Link>
+                </DeploymentLink>
                 <MetaLine className="type-small text-muted-foreground tabular-nums">
                     <RowStatus
                         deployment={deployment}
@@ -432,8 +364,10 @@ function DeploymentRow({
                 onAction={onAction}
                 rollbackOnHover={!expanded}
             />
+            {/* Under the text column, inside the row's link: a click on
+                the steps opens the deployment like the rest of the row. */}
             {expanded && (
-                <div className="relative z-10 col-span-2 col-start-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
+                <div className="col-span-2 col-start-2 min-w-0">
                     {deployment.stopped ? (
                         <StoppedNote stopped={deployment.stopped} />
                     ) : (
@@ -445,9 +379,6 @@ function DeploymentRow({
                             })}
                         />
                     )}
-                    <div className="flex shrink-0 items-center gap-2">
-                        {expanded.actions}
-                    </div>
                 </div>
             )}
         </li>
@@ -530,76 +461,6 @@ function StoppedNote({
     );
 }
 
-/** The stopped row's buttons: View logs and Start (it runs this version again). */
-function StoppedActions({
-    deployment,
-    start,
-}: {
-    deployment: Summary;
-    start: ReactNode;
-}) {
-    return (
-        <>
-            <Button variant="ghost" size="sm" asChild>
-                <Link href={deploymentUrl(deployment)}>View logs</Link>
-            </Button>
-            {start}
-        </>
-    );
-}
-
-/**
- * The expanded row's buttons: Cancel and View logs while it runs, else
- * View logs and Redeploy; a failed or cancelled first deploy has View logs
- * and Try again (`retry`, the header's Deploy).
- */
-function CurrentActions({
-    deployment,
-    canDeploy,
-    onAction,
-    redeployService,
-    retry,
-}: {
-    deployment: Summary;
-    canDeploy: boolean;
-    onAction: (action: PendingAction) => void;
-    redeployService: () => void;
-    retry: ReactNode;
-}) {
-    const running = isInProgress(deployment.status);
-    const cancellable =
-        deployment.status === 'queued' ||
-        deployment.status === 'building' ||
-        deployment.status === 'ready';
-
-    return (
-        <>
-            {running && canDeploy && cancellable && (
-                <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => onAction({ kind: 'cancel', deployment })}
-                >
-                    Cancel
-                </Button>
-            )}
-            <Button variant={running ? 'outline' : 'ghost'} size="sm" asChild>
-                <Link href={deploymentUrl(deployment)}>View logs</Link>
-            </Button>
-            {retry ??
-                (!running && canDeploy && (
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={redeployService}
-                    >
-                        Redeploy
-                    </Button>
-                ))}
-        </>
-    );
-}
-
 /**
  * Roll back on hover for compact rows (wide panels; phones use the menu)
  * and the `⋯` menu: open, roll back, redeploy this version.
@@ -629,15 +490,16 @@ function RowMenu({
                     consequence="Traffic switches back within seconds. Database migrations are not reverted, and new pushes to production wait until you resume auto-deploy."
                     confirmLabel="Roll back"
                     onConfirm={() =>
-                        new Promise<void>((resolve) =>
-                            router.post(
-                                rollback(deploymentArgs(deployment)).url,
-                                {},
-                                {
-                                    preserveScroll: true,
-                                    onFinish: () => resolve(),
-                                },
-                            ),
+                        router.post(
+                            rollback(deploymentArgs(deployment)).url,
+                            {},
+                            {
+                                preserveScroll: true,
+                                optimistic: optimisticQueued(
+                                    deployment.serviceId,
+                                ),
+                                ...rollbackToast('Couldn’t roll back.'),
+                            },
                         )
                     }
                 >
@@ -684,9 +546,28 @@ function RowMenu({
                             Redeploy this version
                         </DropdownMenuItem>
                     )}
+                    {cancellable(deployment) && (
+                        <DropdownMenuItem
+                            variant="destructive"
+                            onSelect={() =>
+                                onAction({ kind: 'cancel', deployment })
+                            }
+                        >
+                            Cancel deployment
+                        </DropdownMenuItem>
+                    )}
                 </DropdownMenuContent>
             </DropdownMenu>
         </div>
+    );
+}
+
+/** It can still be stopped before it goes live. */
+function cancellable(deployment: Summary): boolean {
+    return (
+        deployment.status === 'queued' ||
+        deployment.status === 'building' ||
+        deployment.status === 'ready'
     );
 }
 

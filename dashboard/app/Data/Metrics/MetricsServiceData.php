@@ -7,7 +7,7 @@ namespace App\Data\Metrics;
 use Spatie\LaravelData\Data;
 
 /**
- * A service row of the project Metrics page (docs/15 §2.3): name, slug
+ * A service row of Analytics → Resources (docs/15 §2.3): name, slug
  * (panel links) and its logo key (canvas glyph vocabulary).
  */
 final class MetricsServiceData extends Data

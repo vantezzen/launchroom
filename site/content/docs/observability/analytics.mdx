@@ -3,7 +3,9 @@ title: Analytics
 description: How many requests each service serves and of what kind, measured at the edge without storing who visited.
 ---
 
-Analytics gives an overview of the traffic your services serve: requests per hour, how many failed, which paths are requested most, which sites link to you and how much of it comes from bots. It needs no setup and no script in your app. It doesn't track visitors or sessions.
+Analytics gives an overview of the traffic your services serve and the resources they use. A project's **Analytics**
+tab has two views: **Traffic**, described here, and [Resources](/docs/observability/metrics) for CPU, memory, latency
+and bandwidth. Traffic shows requests per hour, how many failed, which paths are requested most, which sites link to you and how much of it comes from bots. It needs no setup and no script in your app. It doesn't track visitors or sessions.
 
 ## Where to find it
 
@@ -14,9 +16,11 @@ Select **Analytics** in the sidebar. The overview shows every project of your te
 - one row per project with its requests, the change, the error rate and a small chart
 - the most requested paths across all projects, and which servers answered when more than one serves your domains
 
-Select a project to open its analytics. The project page shows one environment at a time. Pick a service in the service menu, or in the Services list, to narrow the page to that service. The address bar keeps the service (`?service=…`), so you can share the link. The breadcrumbs at the top lead back to the project and to all projects. The project's **Analytics** tab opens the same page.
+Select a project to open its analytics. The project page shows one environment at a time. Pick a service in the service menu, or in the Services list, to narrow the page to that service. The address bar keeps the service (`?service=…`), so you can share the link. The breadcrumbs at the top lead back to the project and to all projects. The project's **Analytics** tab opens the same page, and **Traffic** and **Resources** under its title switch views while keeping the range and service.
 
-Choose **Day**, **Week** or **Month** at the top right of either page.
+From a service, **Analytics** in the service panel's tab row (also in the node menu and ⌘K) opens this page filtered to it: Traffic when it has a domain, Resources otherwise.
+
+Choose **Day**, **Week** or **Month** at the top right of either page. Resources offers Hour, Day and Week.
 
 Each project card on the projects page also shows production's requests of the last 24 hours as a small chart.
 
@@ -84,6 +88,6 @@ curl -H "Authorization: Bearer $LAUNCHROOM_TOKEN" \
 `/api/v1/analytics` returns the overview of every project of the token's team. `/api/v1/environments/{environment}/analytics` returns one environment, and `/api/v1/environments/{environment}/services/{service}/analytics` one service. `range` is `24h`, `7d` (default) or `30d`. See the [API reference](/docs/reference/api).
 
 <Cards>
-  <Card title="Metrics" href="/docs/observability/metrics" description="Requests per second, latency and bandwidth, CPU and memory." />
+  <Card title="Resources" href="/docs/observability/metrics" description="CPU and memory, latency and bandwidth per service and server." />
   <Card title="Alerts" href="/docs/observability/alerts" description="Get told when the error rate climbs." />
 </Cards>

@@ -39,6 +39,7 @@ interface GitProvider
     public function changedFiles(RepositoryRef $repository, int $number, string $baseRef, string $headSha): ?array;
     public function pullRequestOpen(Preview $preview): ?bool;
     public function compareUrl(RepositoryRef $repository, string $from, string $to): ?string;
+    public function repositoryUrl(RepositoryRef $repository, ?string $branch = null): ?string; // the service panel's source link; null for plain git
     public function reportDeployment(DeploymentStatusReport $report): void;            // never throws
     public function reportPreview(Preview $preview): void;                              // never throws
 }

@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { listHead, needsRetry } from './list-head';
+import { listHead } from './list-head';
 
 type Summary = App.Data.Deployments.DeploymentSummaryData;
 
@@ -46,7 +46,6 @@ test('a failed first deploy is the head, not an empty list', () => {
     });
 
     expect(head?.id).toBe('dpl_f');
-    expect(needsRetry(failed, null)).toBe(true);
 });
 
 test('without current, the newest deployment still heads the list', () => {
@@ -75,7 +74,7 @@ test('the deployment in progress wins over the live one', () => {
     ).toBe('dpl_new');
 });
 
-test('a failure after a live deployment keeps the live one first, without retry', () => {
+test('a failure after a live deployment keeps the live one first', () => {
     const live = summary({ id: 'dpl_live', status: 'active', isActive: true });
     const failed = summary({ id: 'dpl_f', status: 'failed' });
 
@@ -86,7 +85,6 @@ test('a failure after a live deployment keeps the live one first, without retry'
     });
 
     expect(head?.id).toBe('dpl_live');
-    expect(needsRetry(failed, live)).toBe(false);
 });
 
 test('a live deployment beyond the loaded history still heads the list', () => {

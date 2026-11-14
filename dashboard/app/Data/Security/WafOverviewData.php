@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Data\Security;
 
+use App\Data\Metrics\DeployMarkerData;
 use Spatie\LaravelData\Data;
 
 /**
@@ -19,6 +20,7 @@ final class WafOverviewData extends Data
      * @param  list<WafServiceCountData>  $watching  services in Log only
      * @param  list<WafEventData>  $recent
      * @param  list<WafEdgeProblemData>  $edges
+     * @param  list<DeployMarkerData>  $deploys  deploy markers of the firewalled services
      */
     public function __construct(
         public string $range,
@@ -34,5 +36,6 @@ final class WafOverviewData extends Data
         public array $edges,
         public ?string $ruleSet,
         public bool $networksVisible,
+        public array $deploys = [],
     ) {}
 }

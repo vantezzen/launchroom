@@ -12,7 +12,7 @@ use App\Support\Changes\SpecDiff;
 
 /**
  * Whether a service has staged changes in its environment (docs/06 §4):
- * then Deploy is the environment's "Deploy changes", never a second path
+ * then Deploy is the environment's "Review & apply", never a second path
  * that would build a new version without them (D68).
  */
 final readonly class StagedForService

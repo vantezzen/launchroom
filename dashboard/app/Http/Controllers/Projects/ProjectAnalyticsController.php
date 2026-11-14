@@ -7,6 +7,7 @@ namespace App\Http\Controllers\Projects;
 use App\Data\Analytics\AnalyticsData;
 use App\Data\Analytics\AnalyticsQueryData;
 use App\Data\Metrics\MetricsServiceData;
+use App\Enums\AnalyticsView;
 use App\Enums\EnvironmentKind;
 use App\Http\Controllers\Controller;
 use App\Models\Environment;
@@ -22,9 +23,11 @@ use Inertia\Inertia;
 use Inertia\Response;
 
 /**
- * The project Analytics tab (docs/15 §5.4): `/p/{project}/{environment}/analytics`
- * carries the shell and the service list; `GET /p/{project}/-/analytics
- * ?environment=&service=&range=` returns the numbers (JSON, refetched).
+ * The project Analytics tab (docs/15 §2.3, §5.4, D75), one page with two
+ * views: Traffic at `/p/{project}/{environment}/analytics` and Resources at
+ * `…/analytics/resources`. Both carry the shell and the service list; the
+ * numbers come from `GET /p/{project}/-/analytics?environment=&service=&range=`
+ * (Traffic) and `projects.metrics` (Resources), JSON, refetched.
  * Ids are resolved inside the project only.
  */
 final class ProjectAnalyticsController extends Controller
@@ -34,22 +37,15 @@ final class ProjectAnalyticsController extends Controller
         ProjectScope::environment($project, $environment);
         Gate::authorize('view', $environment);
 
-        $services = $project->services()
-            ->whereHas('instances', static fn (Builder $q) => $q->where('environment_id', $environment->id)->whereNull('removed_at'))
-            ->orderBy('name')
-            ->get()
-            ->map(static fn (Service $service): MetricsServiceData => new MetricsServiceData($service->public_id, $service->name, $service->slug, ServiceGlyph::logo($service)))
-            ->values()
-            ->all();
-        $wanted = $request->query('service');
-        $initial = array_find($services, static fn (MetricsServiceData $s): bool => $s->id === $wanted);
+        return $this->render($request, $project, $environment, AnalyticsView::Traffic);
+    }
 
-        return Inertia::render('projects/analytics', [
-            ...ProjectScope::shellProps($project, $environment),
-            'services' => $services,
-            // ?service= preselects a service of this environment (links from the service panel).
-            'initialService' => $initial?->id,
-        ]);
+    public function resources(Request $request, Project $project, Environment $environment): Response
+    {
+        ProjectScope::environment($project, $environment);
+        Gate::authorize('view', $environment);
+
+        return $this->render($request, $project, $environment, AnalyticsView::Resources);
     }
 
     public function data(Request $request, Project $project, RequestAnalytics $analytics): AnalyticsData
@@ -95,5 +91,26 @@ final class ProjectAnalyticsController extends Controller
         }
 
         return [array_keys($names), $names];
+    }
+
+    private function render(Request $request, Project $project, Environment $environment, AnalyticsView $view): Response
+    {
+        $services = $project->services()
+            ->whereHas('instances', static fn (Builder $q) => $q->where('environment_id', $environment->id)->whereNull('removed_at'))
+            ->orderBy('name')
+            ->get()
+            ->map(static fn (Service $service): MetricsServiceData => new MetricsServiceData($service->public_id, $service->name, $service->slug, ServiceGlyph::logo($service)))
+            ->values()
+            ->all();
+        $wanted = $request->query('service');
+        $initial = array_find($services, static fn (MetricsServiceData $s): bool => $s->id === $wanted || $s->slug === $wanted);
+
+        return Inertia::render('projects/analytics', [
+            ...ProjectScope::shellProps($project, $environment),
+            'view' => $view,
+            'services' => $services,
+            // ?service= (public id or slug) preselects a service of this environment.
+            'initialService' => $initial?->id,
+        ]);
     }
 }

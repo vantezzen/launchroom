@@ -21,6 +21,8 @@ final class EnvironmentData extends Data
         public ?string $tagPattern = null,
         /** Production after a rollback: pushes don't go live (docs/04 §8). */
         public bool $autoDeployPaused = false,
+        /** Runtime log retention is on (docs/08 §12): otherwise logs are live only. */
+        public bool $keepsRuntimeLogs = false,
     ) {}
 
     public static function fromEnvironment(Environment $environment): self
@@ -33,6 +35,7 @@ final class EnvironmentData extends Data
             $environment->triggers->branch,
             $environment->triggers->tagPattern,
             $environment->auto_deploy_paused,
+            $environment->runtime_log_retention_days !== null,
         );
     }
 }

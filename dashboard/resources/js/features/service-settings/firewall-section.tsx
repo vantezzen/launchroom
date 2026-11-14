@@ -1,3 +1,4 @@
+import { Link } from '@inertiajs/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Eye, Plus, ShieldCheck, ShieldOff, Trash2 } from 'lucide-react';
 import { useState } from 'react';
@@ -27,6 +28,7 @@ import {
 } from '@/components/ui/select';
 import { requestJson } from '@/features/projects/http';
 import { SettingsCard, SettingsRow } from '@/features/settings/settings-card';
+import { index as securityRoute } from '@/routes/security';
 import { show as firewallRoute } from '@/routes/security/firewall';
 import { listNames } from '@/features/security/firewall-section';
 import { SettingsPage } from './section';
@@ -222,7 +224,24 @@ export function FirewallSection({ context }: { context: SettingsContext }) {
                             </Callout>
                         )}
 
-                    <SettingsCard title="Last 7 days">
+                    <SettingsCard
+                        title="Last 7 days"
+                        actions={
+                            data.blocked + data.detected > 0 ? (
+                                <Button variant="ghost" size="sm" asChild>
+                                    <Link
+                                        href={
+                                            securityRoute({
+                                                query: { service },
+                                            }).url + '#firewall'
+                                        }
+                                    >
+                                        See them on the Security page
+                                    </Link>
+                                </Button>
+                            ) : undefined
+                        }
+                    >
                         <div className="flex flex-col gap-4 px-5 py-4 sm:flex-row sm:items-center">
                             <div className="flex gap-8">
                                 <div className="flex flex-col">

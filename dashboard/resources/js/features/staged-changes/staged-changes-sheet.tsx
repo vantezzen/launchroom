@@ -70,7 +70,10 @@ const gutters: Record<
     },
 };
 
-/** Deploys everything staged in the environment (the one Deploy everywhere). */
+/**
+ * Applies everything staged in the environment (the one Apply everywhere):
+ * a new revision, and the services it affects redeploy.
+ */
 export function deployStaged(
     project: string,
     environment: string,
@@ -95,7 +98,8 @@ export function deployStaged(
             onSuccess: () => options.onSuccess?.(),
             onError: (errors) =>
                 options.onError?.(
-                    Object.values(errors)[0] ?? 'The deploy failed.',
+                    Object.values(errors)[0] ??
+                        'The changes could not be applied.',
                 ),
             onFinish: () => options.onFinish?.(),
         },
@@ -209,7 +213,7 @@ export function Blockers({ blockers }: { blockers: string[] }) {
                     aria-hidden="true"
                     className="size-4 text-status-error"
                 />
-                Broken references block this deploy.
+                Broken references keep these changes from being applied.
             </p>
             <ul className="flex flex-col gap-0.5">
                 {blockers.map((blocker) => (
@@ -222,17 +226,20 @@ export function Blockers({ blockers }: { blockers: string[] }) {
                 ))}
             </ul>
             <p className="type-small text-muted-foreground">
-                Fix them in the service’s settings under Variables, then deploy.
+                Fix them in the service’s settings under Variables, then apply
+                the changes.
             </p>
         </div>
     );
 }
 
 /**
- * "Review & deploy" (direction §9.9, flows §5): the staged changes as a
+ * "Review & apply" (direction §9.9, flows §5, D75): the staged changes as a
  * sheet over the page, grouped by service with +/~/− gutters and one effect
- * per service, per-item discard, an optional message and Deploy. Deploying
- * keeps you where you are, so the canvas shows the nodes going live.
+ * per service, a sentence naming the services that rebuild, restart or
+ * start, per-item discard, an optional message and "Apply N changes".
+ * Applying keeps you where you are, so the canvas shows the nodes
+ * redeploying.
  */
 export function StagedChangesSheet({
     project,
@@ -361,7 +368,9 @@ export function StagedChangesSheet({
                                 }}
                             >
                                 {processing && <Spinner />}
-                                Deploy
+                                {data.neverDeployed
+                                    ? 'Deploy'
+                                    : `Apply ${data.count} ${data.count === 1 ? 'change' : 'changes'}`}
                             </Button>
                         </div>
                     </div>

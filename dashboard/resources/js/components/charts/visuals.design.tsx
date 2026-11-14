@@ -22,11 +22,14 @@ import {
     UsageMeter,
 } from '@/components/charts';
 import type { MiniBar, TimeRange, TimeSeries } from '@/components/charts';
+import { AttentionChip } from '@/components/attention-chip';
+import { REQUEST_CLASS } from '@/components/charts/request-breakdown';
 import { DEVICE_LABEL, DeviceImage } from '@/components/devices';
 import type { DeviceKind, DeviceStatus } from '@/components/devices';
 import { ServerMap } from '@/components/map';
 import type { MapLink, MapLocation } from '@/components/map';
 import { MetaLine } from '@/components/patterns/meta-line';
+import { formatWindow } from '@/lib/observe-scope';
 import { Status } from '@/components/status';
 import {
     ActivityGroup,
@@ -549,7 +552,10 @@ function ChartsSection() {
                 </Panel>
             </div>
             <Panel>
-                <Label>Requests per hour by status: stacked bars</Label>
+                <Label>
+                    Requests per hour by class: stacked bars with deploy
+                    markers; click a bar to drill into its logs
+                </Label>
                 <StackedBars
                     title="Requests per hour, last 24 hours"
                     times={Array.from(
@@ -557,11 +563,32 @@ function ChartsSection() {
                         (_, i) => NOW - (23 - i) * 3_600_000,
                     )}
                     bucketMs={3_600_000}
+                    markers={[
+                        {
+                            t: NOW - 16 * 3_600_000,
+                            label: '3b7d5e1',
+                            detail: 'web 3b7d5e1: live',
+                            href: '#',
+                        },
+                        {
+                            t: NOW - 6 * 3_600_000,
+                            label: '9c2e1aa',
+                            tone: 'error',
+                            detail: 'web 9c2e1aa: failed',
+                            href: '#',
+                        },
+                    ]}
+                    drill={(window) => [
+                        {
+                            label: `Logs from ${formatWindow(window)}`,
+                            href: '#',
+                        },
+                        { label: 'Errors only', href: '#' },
+                    ]}
                     series={[
                         {
                             key: '2xx',
-                            label: 'Success (2xx)',
-                            color: 'var(--signal)',
+                            ...REQUEST_CLASS.success,
                             values: Array.from(
                                 { length: 24 },
                                 (_, i) =>
@@ -570,29 +597,45 @@ function ChartsSection() {
                         },
                         {
                             key: '3xx',
-                            label: 'Redirects (3xx)',
-                            color: 'var(--chart-other)',
+                            ...REQUEST_CLASS.redirect,
                             values: Array.from({ length: 24 }, () => 40),
                         },
                         {
                             key: '4xx',
-                            label: 'Client errors (4xx)',
-                            color: 'var(--status-progress)',
+                            ...REQUEST_CLASS.clientError,
                             values: Array.from({ length: 24 }, (_, i) =>
                                 i % 5 === 0 ? 60 : 12,
                             ),
                         },
                         {
+                            key: 'blocked',
+                            ...REQUEST_CLASS.blocked,
+                            values: Array.from({ length: 24 }, (_, i) =>
+                                i > 10 && i < 14 ? 70 : 4,
+                            ),
+                        },
+                        {
                             key: '5xx',
-                            label: 'Server errors (5xx)',
-                            color: 'var(--status-error)',
-                            hatched: true,
+                            ...REQUEST_CLASS.serverError,
                             values: Array.from({ length: 24 }, (_, i) =>
                                 i === 17 ? 90 : 0,
                             ),
                         },
                     ]}
                 />
+            </Panel>
+            <Panel>
+                <Label>Attention chips: open alerts, Action needed</Label>
+                <div className="flex flex-wrap items-center gap-2">
+                    <AttentionChip label="Unhealthy" tone="error" more={1} />
+                    <AttentionChip label="Errors 8%" />
+                    <AttentionChip label="Disk 93%" size="sm" />
+                    <AttentionChip
+                        label="Action needed"
+                        tone="error"
+                        count={3}
+                    />
+                </div>
             </Panel>
             <Panel>
                 <Label>

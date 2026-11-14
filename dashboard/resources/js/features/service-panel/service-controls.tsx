@@ -1,27 +1,62 @@
 import { router } from '@inertiajs/react';
-import { Play, RotateCw, Rocket, Square } from 'lucide-react';
-import { useState } from 'react';
+import { MoreHorizontal } from 'lucide-react';
+import { useId, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
 import { toast } from 'sonner';
 import { ConfirmPopover } from '@/components/patterns/confirm-popover';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
     Tooltip,
     TooltipContent,
     TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { deployStaged } from '@/features/staged-changes/staged-changes-sheet';
+import {
+    optimisticQueued,
+    optimisticService,
+    rollbackToast,
+} from '@/features/deployments/optimistic';
+import {
+    LIFECYCLE_CONSEQUENCE,
+    LIFECYCLE_ICON,
+} from '@/features/service-panel/lifecycle';
+import { openStagedChanges } from '@/features/staged-changes/staged-changes-sheet';
+import { cn } from '@/lib/utils';
+import { redeploy as redeployService } from '@/routes/deployments/service';
 import lifecycle from '@/routes/services/lifecycle';
 
 type Controls = App.Data.Canvas.ServiceControlsData;
 
+const RestartIcon = LIFECYCLE_ICON.restart;
+const StopIcon = LIFECYCLE_ICON.stop;
+const StartIcon = LIFECYCLE_ICON.start;
+const DeployIcon = LIFECYCLE_ICON.deploy;
+const RedeployIcon = LIFECYCLE_ICON.redeploy;
+
+type MenuAction = 'redeploy' | 'restart' | 'stop';
+
 /**
- * The service panel header's actions (D68, docs/08 §13): Deploy (or Deploy
- * changes when the service has staged changes, the environment's existing
- * flow), Restart and Stop while it runs, Start while it is stopped. Each
- * changes the service in this environment only. Before anything of it
- * runs (a first deploy in progress or failed), Deploy tries again and
- * Restart and Stop stay in place, disabled, saying why.
+ * The service panel header's actions (D68, docs/08 §13, design-system
+ * §13.4): the one primary action and a `⋯` menu, always the same shape for
+ * a service so nothing moves when its state changes.
+ *
+ * - Primary: Deploy (apps and images), Review & apply while the service
+ *   has staged changes, Start while it is stopped. Databases, workers and
+ *   crons have nothing new to deploy, so theirs is an outline Redeploy once
+ *   they run.
+ * - `⋯`: Redeploy… (apps and images), Restart… and Stop…. They never
+ *   disappear; one that can't run now stays in the menu, disabled, with the
+ *   reason on its second line.
+ *
+ * Everything that changes the service asks first in a confirm popover
+ * anchored to the cluster; Stop in the destructive tone. Every action is
+ * optimistic (docs/10 §3).
  */
 export function ServiceControls({
     project,
@@ -36,36 +71,56 @@ export function ServiceControls({
     name: string;
     controls: Controls;
 }) {
-    const [busy, setBusy] = useState<string | null>(null);
+    const [busy, setBusy] = useState(false);
     const [processes, setProcesses] = useState(true);
+    const [confirming, setConfirming] = useState<MenuAction | null>(null);
+    // Set on select, read when the menu closes (before the next render).
+    const opening = useRef(false);
 
     if (!controls.canControl) {
         return null;
     }
 
     const args = { project, environment, service };
+    // Lands on the new deployment's page; the node says "Queued" at once.
+    const redeploy = () => {
+        setBusy(true);
+        router.post(
+            redeployService(args).url,
+            {},
+            {
+                optimistic: optimisticQueued(service),
+                ...rollbackToast(`Couldn’t redeploy ${name}.`),
+                onFinish: () => setBusy(false),
+            },
+        );
+    };
     const post = (kind: 'restart' | 'stop', done: string) =>
-        new Promise<void>((resolve) => {
-            setBusy(kind);
-            router.post(
-                lifecycle[kind](args).url,
-                { processes },
-                {
-                    preserveScroll: true,
-                    preserveState: true,
-                    onSuccess: () => toast.success(done),
-                    onError: (errors) =>
-                        toast.error(
-                            Object.values(errors)[0] ??
-                                `Couldn’t ${kind} ${name}.`,
-                        ),
-                    onFinish: () => {
-                        setBusy(null);
-                        resolve();
-                    },
-                },
-            );
-        });
+        router.post(
+            lifecycle[kind](args).url,
+            { processes },
+            {
+                preserveScroll: true,
+                preserveState: true,
+                optimistic:
+                    kind === 'stop'
+                        ? optimisticService(
+                              service,
+                              { state: 'idle', label: 'Stopped' },
+                              {
+                                  stopped: true,
+                                  stoppedAt: new Date().toISOString(),
+                              },
+                          )
+                        : optimisticService(
+                              service,
+                              { state: 'progress', label: 'Restarting' },
+                              { deploying: true },
+                          ),
+                onSuccess: () => toast.success(done),
+                ...rollbackToast(`Couldn’t ${kind} ${name}.`),
+            },
+        );
 
     const processChoice =
         controls.processes > 0 ? (
@@ -76,105 +131,295 @@ export function ServiceControls({
             />
         ) : null;
 
-    if (controls.stopped) {
-        return (
-            <div className="flex flex-wrap items-center gap-2">
-                <StartButton
-                    project={project}
-                    environment={environment}
-                    service={service}
-                    name={name}
-                    processes={controls.processes}
-                />
-            </div>
-        );
-    }
+    const restartBlocked = !controls.running
+        ? 'Nothing is running yet'
+        : controls.stopped
+          ? 'Start it first'
+          : controls.deploying
+            ? 'Possible once the deployment has finished'
+            : null;
+    const stopBlocked = !controls.running
+        ? 'Nothing is running yet'
+        : controls.stopped
+          ? 'It is already stopped'
+          : null;
+    const redeployBlocked = restartBlocked;
+    // Databases, workers and crons: Redeploy is their primary once they run.
+    const redeployPrimary =
+        !controls.versioned &&
+        controls.running &&
+        !controls.staged &&
+        !controls.stopped;
 
-    if (!controls.running) {
-        return (
-            <div className="flex flex-wrap items-center gap-2">
-                <DeployButton
-                    project={project}
-                    environment={environment}
-                    service={service}
-                    name={name}
-                    staged={controls.staged}
-                    versioned={controls.versioned}
-                />
-                <NotRunning icon={RotateCw} label="Restart" />
-                <NotRunning icon={Square} label="Stop" />
-            </div>
-        );
-    }
+    const ask = (action: MenuAction) => {
+        opening.current = true;
+        setConfirming(action);
+    };
+
+    const primary = controls.stopped ? (
+        <StartButton
+            project={project}
+            environment={environment}
+            service={service}
+            name={name}
+            processes={controls.processes}
+            align="end"
+        />
+    ) : redeployPrimary ? (
+        redeployBlocked !== null ? (
+            <BlockedButton label="Redeploy" reason={redeployBlocked}>
+                <RedeployIcon aria-hidden="true" />
+                Redeploy
+            </BlockedButton>
+        ) : (
+            <Button
+                size="sm"
+                variant="outline"
+                disabled={busy}
+                onClick={() => setConfirming('redeploy')}
+            >
+                <RedeployIcon aria-hidden="true" />
+                Redeploy
+            </Button>
+        )
+    ) : (
+        <DeployButton
+            project={project}
+            environment={environment}
+            service={service}
+            name={name}
+            staged={controls.staged}
+            versioned={controls.versioned}
+            disabled={busy}
+        />
+    );
+
+    const confirm: Record<
+        MenuAction,
+        {
+            title: string;
+            consequence: ReactNode;
+            label: string;
+            run: () => void;
+        }
+    > = {
+        redeploy: {
+            title: `Redeploy ${name}?`,
+            consequence: LIFECYCLE_CONSEQUENCE.redeploy,
+            label: 'Redeploy',
+            run: redeploy,
+        },
+        restart: {
+            title: `Restart ${name}?`,
+            consequence: (
+                <>
+                    {LIFECYCLE_CONSEQUENCE.restart}
+                    {processChoice}
+                </>
+            ),
+            label: 'Restart',
+            run: () => post('restart', `Restarting ${name}`),
+        },
+        stop: {
+            title: `Stop ${name}?`,
+            consequence: (
+                <>
+                    {LIFECYCLE_CONSEQUENCE.stop}
+                    {controls.dependents > 0 &&
+                        ` ${controls.dependents === 1 ? 'One service uses' : `${controls.dependents} services use`} it and loses the connection until it starts again.`}
+                    {processChoice}
+                </>
+            ),
+            label: 'Stop',
+            run: () => post('stop', `${name} is stopped`),
+        },
+    };
+    const current = confirm[confirming ?? 'restart'];
 
     return (
-        <div className="flex flex-wrap items-center gap-2">
-            {controls.versioned && (
-                <DeployButton
-                    project={project}
-                    environment={environment}
-                    service={service}
-                    name={name}
-                    staged={controls.staged}
-                    disabled={busy !== null}
-                />
-            )}
-            <ConfirmPopover
-                align="start"
-                title={`Restart ${name}?`}
-                consequence={
-                    controls.deploying ? (
-                        'A deployment of it is in progress. Restart once it has finished.'
-                    ) : (
-                        <>
-                            New containers of the running version replace the
-                            current ones, one replica at a time when there are
-                            several.
-                            {processChoice}
-                        </>
-                    )
-                }
-                confirmLabel="Restart"
-                onConfirm={() => post('restart', `Restarting ${name}`)}
+        <ConfirmPopover
+            open={confirming !== null}
+            onOpenChange={(open) => !open && setConfirming(null)}
+            tone={confirming === 'stop' ? 'destructive' : 'default'}
+            title={current.title}
+            consequence={current.consequence}
+            confirmLabel={current.label}
+            onConfirm={current.run}
+        >
+            <div
+                role="group"
+                aria-label={`${name} actions`}
+                className="flex shrink-0 items-center gap-2"
             >
-                <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={busy !== null || controls.deploying}
-                >
-                    <RotateCw aria-hidden="true" />
-                    Restart
-                </Button>
-            </ConfirmPopover>
-            <ConfirmPopover
-                align="start"
-                tone="destructive"
-                title={`Stop ${name}?`}
-                consequence={
-                    <>
-                        Its containers stop and its domains show a stopped page.
-                        Settings, domains, volumes and deployments stay.
-                        {controls.dependents > 0 &&
-                            ` ${controls.dependents === 1 ? 'One service uses' : `${controls.dependents} services use`} it and lose the connection until it starts again.`}
-                        {processChoice}
-                    </>
-                }
-                confirmLabel="Stop"
-                onConfirm={() => post('stop', `${name} is stopped`)}
-            >
-                <Button size="sm" variant="outline" disabled={busy !== null}>
-                    <Square aria-hidden="true" />
-                    Stop
-                </Button>
-            </ConfirmPopover>
+                {primary}
+                <DropdownMenu>
+                    <Tooltip>
+                        <DropdownMenuTrigger asChild>
+                            <TooltipTrigger asChild>
+                                <Button
+                                    size="icon-sm"
+                                    variant="outline"
+                                    aria-label="More actions"
+                                    className="size-8"
+                                >
+                                    <MoreHorizontal aria-hidden="true" />
+                                </Button>
+                            </TooltipTrigger>
+                        </DropdownMenuTrigger>
+                        <TooltipContent>More actions</TooltipContent>
+                    </Tooltip>
+                    <DropdownMenuContent
+                        align="end"
+                        className="w-64"
+                        // The confirm popover takes focus, not the trigger.
+                        onCloseAutoFocus={(event) => {
+                            if (opening.current) {
+                                opening.current = false;
+                                event.preventDefault();
+                            }
+                        }}
+                    >
+                        {!redeployPrimary && controls.versioned && (
+                            <ActionItem
+                                icon={RedeployIcon}
+                                label="Redeploy…"
+                                hint="The running version again, without new commits"
+                                blocked={redeployBlocked}
+                                onSelect={() => ask('redeploy')}
+                            />
+                        )}
+                        <ActionItem
+                            icon={RestartIcon}
+                            label="Restart…"
+                            hint="New containers of the running version"
+                            blocked={restartBlocked}
+                            onSelect={() => ask('restart')}
+                        />
+                        <ActionItem
+                            icon={StopIcon}
+                            label="Stop…"
+                            hint="Its domains show a stopped page until it starts"
+                            blocked={stopBlocked}
+                            destructive
+                            onSelect={() => ask('stop')}
+                        />
+                    </DropdownMenuContent>
+                </DropdownMenu>
+            </div>
+        </ConfirmPopover>
+    );
+}
+
+/**
+ * Holds the controls' place while the panel's request runs (docs/08 §2):
+ * the same shape, invisible, so the title doesn't move when they arrive.
+ */
+export function ServiceControlsPlaceholder({
+    node,
+}: {
+    node: App.Data.Canvas.CanvasNodeData;
+}) {
+    const versioned = node.kind === 'app' || node.kind === 'image';
+
+    return (
+        <div aria-hidden="true" className="invisible flex shrink-0 gap-2">
+            <div className={cn('h-8', versioned ? 'w-[86px]' : 'w-[104px]')} />
+            <div className="size-8" />
         </div>
     );
 }
 
 /**
+ * One action of the `⋯` menu: icon, the verb (ending in "…": it asks
+ * first) and one quiet line, what it does or, disabled, why it can't run.
+ */
+function ActionItem({
+    icon: Icon,
+    label,
+    hint,
+    blocked,
+    destructive = false,
+    onSelect,
+}: {
+    icon: typeof RestartIcon;
+    label: string;
+    hint: string;
+    blocked: string | null;
+    destructive?: boolean;
+    onSelect: () => void;
+}) {
+    const disabled = blocked !== null;
+
+    return (
+        <DropdownMenuItem
+            disabled={disabled}
+            variant={destructive && !disabled ? 'destructive' : 'default'}
+            onSelect={onSelect}
+            className="items-start data-[disabled]:opacity-100"
+        >
+            <Icon
+                aria-hidden="true"
+                className={cn('mt-0.5', disabled && 'opacity-50')}
+            />
+            <span className="flex flex-col">
+                <span className={cn(disabled && 'text-muted-foreground')}>
+                    {label}
+                </span>
+                <span className="type-small text-muted-foreground">
+                    {blocked ?? hint}
+                </span>
+            </span>
+        </DropdownMenuItem>
+    );
+}
+
+/**
+ * An action that can't run right now: in place, focusable and hoverable
+ * (`aria-disabled`, not `disabled`), with a tooltip naming it and why.
+ */
+function BlockedButton({
+    label,
+    reason,
+    children,
+}: {
+    label: string;
+    reason: string;
+    children: ReactNode;
+}) {
+    const id = useId();
+
+    return (
+        <Tooltip>
+            <TooltipTrigger asChild>
+                <Button
+                    size="sm"
+                    variant="outline"
+                    aria-label={label}
+                    aria-disabled="true"
+                    aria-describedby={id}
+                    onClick={(event) => event.preventDefault()}
+                    className="cursor-not-allowed text-muted-foreground/60 hover:bg-background hover:text-muted-foreground/60 dark:hover:bg-transparent"
+                >
+                    {children}
+                    <span id={id} className="sr-only">
+                        {reason}
+                    </span>
+                </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+                <span className="flex flex-col">
+                    <span className="font-medium">{label}</span>
+                    <span className="opacity-70">{reason}</span>
+                </span>
+            </TooltipContent>
+        </Tooltip>
+    );
+}
+
+/**
  * Start of a stopped service: a popover that says what runs and, for an
- * app with workers or crons, whether they start too. In the panel header
- * and on the stopped row of the Deployments tab.
+ * app with workers or crons, whether they start too. The header's primary
+ * while stopped and on the stopped row of the Deployments tab.
  */
 export function StartButton({
     project,
@@ -183,6 +428,7 @@ export function StartButton({
     name,
     processes: processCount,
     size = 'sm',
+    align = 'start',
     onStarted,
 }: {
     project: string;
@@ -191,45 +437,38 @@ export function StartButton({
     name: string;
     processes: number;
     size?: 'sm' | 'default';
+    align?: 'start' | 'end';
     onStarted?: () => void;
 }) {
-    const [busy, setBusy] = useState(false);
     const [processes, setProcesses] = useState(true);
 
     const start = () =>
-        new Promise<void>((resolve) => {
-            setBusy(true);
-            router.post(
-                lifecycle.start({ project, environment, service }).url,
-                { processes },
-                {
-                    preserveScroll: true,
-                    preserveState: true,
-                    onSuccess: () => {
-                        toast.success(`Starting ${name}`);
-                        onStarted?.();
-                    },
-                    onError: (errors) =>
-                        toast.error(
-                            Object.values(errors)[0] ??
-                                `Couldn’t start ${name}.`,
-                        ),
-                    onFinish: () => {
-                        setBusy(false);
-                        resolve();
-                    },
+        router.post(
+            lifecycle.start({ project, environment, service }).url,
+            { processes },
+            {
+                preserveScroll: true,
+                preserveState: true,
+                optimistic: optimisticService(
+                    service,
+                    { state: 'progress', label: 'Starting' },
+                    { stopped: false, stoppedAt: null, stoppedBy: null },
+                ),
+                onSuccess: () => {
+                    toast.success(`Starting ${name}`);
+                    onStarted?.();
                 },
-            );
-        });
+                ...rollbackToast(`Couldn’t start ${name}.`),
+            },
+        );
 
     return (
         <ConfirmPopover
-            align="start"
+            align={align}
             title={`Start ${name}?`}
             consequence={
                 <>
-                    It runs the version that was live when it stopped, with the
-                    configuration deployed last.
+                    {LIFECYCLE_CONSEQUENCE.start}
                     {processCount > 0 && (
                         <ProcessChoice
                             count={processCount}
@@ -242,37 +481,11 @@ export function StartButton({
             confirmLabel="Start"
             onConfirm={start}
         >
-            <Button size={size} disabled={busy}>
-                <Play aria-hidden="true" />
+            <Button size={size}>
+                <StartIcon aria-hidden="true" />
                 Start
             </Button>
         </ConfirmPopover>
-    );
-}
-
-/**
- * Restart or Stop before anything runs: in place so the header doesn't
- * change shape once the first deploy succeeds, disabled with the reason.
- */
-function NotRunning({
-    icon: Icon,
-    label,
-}: {
-    icon: typeof RotateCw;
-    label: string;
-}) {
-    return (
-        <Tooltip>
-            <TooltipTrigger asChild>
-                <span tabIndex={0} className="rounded-md">
-                    <Button size="sm" variant="outline" disabled>
-                        <Icon aria-hidden="true" />
-                        {label}
-                    </Button>
-                </span>
-            </TooltipTrigger>
-            <TooltipContent>Nothing is running yet</TooltipContent>
-        </Tooltip>
     );
 }
 
@@ -286,7 +499,7 @@ function ProcessChoice({
     onChange: (checked: boolean) => void;
 }) {
     return (
-        <label className="mt-1 flex items-center gap-2 type-small text-foreground">
+        <label className="mt-2 flex items-center gap-2 type-small text-foreground">
             <Checkbox
                 checked={checked}
                 onCheckedChange={(value) => onChange(value === true)}
@@ -301,9 +514,10 @@ function ProcessChoice({
 /**
  * Deploy: the latest commit of the tracked branch (or the image's tag
  * again; a database, worker or cron that never ran: its last deployed
- * configuration); with staged changes, the environment's Deploy changes.
- * Shown in the panel header and as "Try again" on a failed first deploy
- * in the Deployments tab.
+ * configuration); with staged changes, "Review & apply", which opens the
+ * environment's staged changes (D75).
+ * The header's primary, and the action of the Deployments tab's empty
+ * state.
  */
 export function DeployButton({
     project,
@@ -312,9 +526,9 @@ export function DeployButton({
     name,
     staged,
     versioned = true,
-    label,
     disabled = false,
     variant = 'default',
+    className,
 }: {
     project: string;
     environment: string;
@@ -322,54 +536,55 @@ export function DeployButton({
     name: string;
     staged: boolean;
     versioned?: boolean;
-    /** In place of "Deploy" (not with staged changes): "Try again". */
-    label?: string;
     disabled?: boolean;
     variant?: 'default' | 'outline';
+    className?: string;
 }) {
     const [busy, setBusy] = useState(false);
 
     const deploy = () => {
-        setBusy(true);
-
         if (staged) {
-            deployStaged(project, environment, {
-                onFinish: () => setBusy(false),
-                onError: (message) => toast.error(message),
-            });
+            openStagedChanges();
 
             return;
         }
 
+        setBusy(true);
+
+        // The node says "Queued" on the click; the answer opens the new
+        // deployment's page.
         router.post(
             lifecycle.deploy({ project, environment, service }).url,
             {},
             {
-                onError: (errors) =>
-                    toast.error(
-                        Object.values(errors)[0] ?? `Couldn’t deploy ${name}.`,
-                    ),
+                optimistic: optimisticQueued(service),
+                ...rollbackToast(`Couldn’t deploy ${name}.`),
                 onFinish: () => setBusy(false),
             },
         );
     };
 
     return (
-        <Button
-            size="sm"
-            variant={variant}
-            onClick={deploy}
-            disabled={disabled || busy}
-            title={
-                staged
-                    ? 'Deploys the staged changes of this environment'
+        <Tooltip>
+            <TooltipTrigger asChild>
+                <Button
+                    size="sm"
+                    variant={variant}
+                    onClick={deploy}
+                    disabled={disabled || busy}
+                    className={className}
+                >
+                    <DeployIcon aria-hidden="true" />
+                    {staged ? 'Review & apply' : 'Deploy'}
+                </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+                {staged
+                    ? 'Review the staged changes of this environment and apply them'
                     : versioned
                       ? 'Builds and deploys the latest version'
-                      : 'Deploys the last deployed configuration again'
-            }
-        >
-            <Rocket aria-hidden="true" />
-            {staged ? 'Deploy changes' : (label ?? 'Deploy')}
-        </Button>
+                      : 'Deploys the last deployed configuration again'}
+            </TooltipContent>
+        </Tooltip>
     );
 }

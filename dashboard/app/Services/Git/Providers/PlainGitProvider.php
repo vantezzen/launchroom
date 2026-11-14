@@ -206,6 +206,14 @@ final readonly class PlainGitProvider implements GitProvider
         return null;
     }
 
+    /**
+     * A plain git server has no known web view.
+     */
+    public function repositoryUrl(RepositoryRef $repository, ?string $branch = null): ?string
+    {
+        return null;
+    }
+
     public function reportDeployment(DeploymentStatusReport $report): void {}
 
     public function reportPreview(Preview $preview): void {}

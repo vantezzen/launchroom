@@ -5,15 +5,18 @@ import { index } from '@/routes/security';
 
 /**
  * Security (sidebar; docs/22 §9): inventory, advisories, the web firewall
- * and investigations of every project of the team.
+ * and investigations of every project of the team, or of one project or
+ * service (`?project=`, `?service=`).
  */
 export default function SecurityPage({
     inventoryQuery,
     service,
+    project,
 }: {
     team: { name: string };
     inventoryQuery: string | null;
     service: string | null;
+    project: string | null;
 }) {
     return (
         <>
@@ -22,6 +25,7 @@ export default function SecurityPage({
                 <SecurityOverview
                     inventoryQuery={inventoryQuery}
                     service={service}
+                    project={project}
                 />
             </Page>
         </>

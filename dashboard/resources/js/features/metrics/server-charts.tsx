@@ -13,14 +13,9 @@ import {
     formatRate,
     points,
 } from '@/features/metrics/format';
+import { rangeWords } from '@/lib/observe-scope';
 
 type Metrics = App.Data.Metrics.ServerMetricsData;
-
-const RANGE_WORDS: Record<string, string> = {
-    '1h': 'last hour',
-    '24h': 'last 24 hours',
-    '7d': 'last 7 days',
-};
 
 function last(values: (number | null)[]): number | null {
     for (let i = values.length - 1; i >= 0; i--) {
@@ -57,7 +52,7 @@ function ChartCard({
 }
 
 /**
- * Server page → Metrics (docs/15 §2.4): full-size charts of CPU, memory,
+ * Server page → Resources (docs/15 §2.4): full-size charts of CPU, memory,
  * disk and network over the page's range, and public traffic for edges,
  * each with the deploy markers of the services that ran here. Charts
  * without data are left out (design-system §9); without any, the section
@@ -70,7 +65,7 @@ export function ServerCharts({
 }: {
     metrics: Metrics | undefined;
     range: string;
-    /** The range select (server page → Metrics tab). */
+    /** The range select (server page → Resources tab). */
     actions?: ReactNode;
 }) {
     const times = useMemo(
@@ -79,18 +74,18 @@ export function ServerCharts({
     );
     const markers = useMemo(() => deployMarkers(metrics?.deploys), [metrics]);
 
-    const description = RANGE_WORDS[range] ?? undefined;
+    const description = rangeWords(range);
 
     if (!metrics) {
         return (
             <Section
-                title="Metrics"
+                title="Resources"
                 description={description}
                 actions={actions}
             >
                 <div
                     aria-busy="true"
-                    aria-label="Loading metrics"
+                    aria-label="Loading resources"
                     className="grid grid-cols-1 gap-4 lg:grid-cols-2"
                 >
                     {[0, 1, 2, 3].map((card) => (
@@ -234,11 +229,11 @@ export function ServerCharts({
     if (charts.length === 0) {
         return (
             <Section
-                title="Metrics"
+                title="Resources"
                 description={description}
                 actions={actions}
             >
-                <EmptyState icon={ChartLine} title="No metrics yet">
+                <EmptyState icon={ChartLine} title="No data yet">
                     Charts appear a few minutes after this server starts
                     reporting.
                 </EmptyState>
@@ -247,7 +242,7 @@ export function ServerCharts({
     }
 
     return (
-        <Section title="Metrics" description={description} actions={actions}>
+        <Section title="Resources" description={description} actions={actions}>
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
                 {charts.map((chart) => (
                     <ChartCard

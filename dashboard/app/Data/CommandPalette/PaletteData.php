@@ -27,5 +27,7 @@ final class PaletteData extends Data
         public array $servers,
         public bool $canDeploy,
         public bool $canWriteVariables,
+        /** Open a database's Data tab (docs/08 §15). */
+        public bool $canData = false,
     ) {}
 }

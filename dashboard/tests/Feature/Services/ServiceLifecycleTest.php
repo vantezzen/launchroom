@@ -120,7 +120,7 @@ test('deploy: a new version, unless changes are staged or the service is stopped
     Projects::report($world->server);
     Projects::report($world->server);
 
-    // Staged changes go out with the environment's Deploy changes instead.
+    // Staged changes go out with the environment's Review & apply instead.
     $instance = lifecycleInstance($world);
     $deploy = clone $instance->deploy;
     $deploy->drainSeconds = 30;

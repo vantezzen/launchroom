@@ -37,5 +37,7 @@ final class FindingDetailData extends Data
         public bool $canInvestigate,
         public bool $canChangeFirewall,
         public string $firewallUrl,
+        /** The deployment it was found in; null when that deployment is gone. */
+        public ?FindingDeploymentData $deployment = null,
     ) {}
 }

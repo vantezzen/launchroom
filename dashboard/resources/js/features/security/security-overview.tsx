@@ -4,7 +4,6 @@ import { Info, RefreshCw, ShieldCheck } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { TimeRangeSelect } from '@/components/charts/time-range-select';
-import type { TimeRangeOption } from '@/components/charts/time-range-select';
 import { Callout } from '@/components/patterns/callout';
 import { EmptyState } from '@/components/patterns/empty-state';
 import { PageHeader } from '@/components/patterns/page';
@@ -18,9 +17,15 @@ import {
     TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { requestJson } from '@/features/projects/http';
+import { useObserveScope } from '@/hooks/use-observe-scope';
+import { RANGE_SETS, rangeOptions } from '@/lib/observe-scope';
 import { cn } from '@/lib/utils';
 import { investigate as investigateRoute } from '@/routes/security/findings';
-import { check as checkRoute, data as dataRoute } from '@/routes/security';
+import {
+    check as checkRoute,
+    data as dataRoute,
+    index as indexRoute,
+} from '@/routes/security';
 import { FindingSheet } from './finding-detail';
 import { ActionNeededList } from './action-needed';
 import { FirewallSection } from './firewall-section';
@@ -33,37 +38,42 @@ import { WorthKnowing } from './worth-knowing';
 
 type PageData = App.Data.Security.SecurityPageData;
 type Finding = App.Data.Security.FindingCardData;
-type Range = '24h' | '7d' | '30d';
 
-const RANGES: TimeRangeOption<Range>[] = [
-    { value: '24h', label: 'Day' },
-    { value: '7d', label: 'Week' },
-    { value: '30d', label: 'Month' },
-];
+const RANGES = rangeOptions(RANGE_SETS.analytics);
 
 /**
  * The Security page (docs/22 §9.2): what runs, what affects it, what the
  * web firewall stops. The protections show through their numbers; the one
- * explanation is "How it works". Refetched every minute.
+ * explanation is "How it works". Refetched every minute. `service` or
+ * `project` (validated by the server) narrow every section; the range
+ * follows the observe scope (`?range=`, lib/observe-scope.ts).
  */
 export function SecurityOverview({
     inventoryQuery,
     service,
+    project = null,
 }: {
     inventoryQuery: string | null;
     service: string | null;
+    project?: string | null;
 }) {
-    const [range, setRange] = useState<Range>('7d');
+    const { range, setRange, snapped } = useObserveScope(RANGE_SETS.analytics);
     const [howOpen, setHowOpen] = useState(false);
     const [finding, setFinding] = useState<string | null>(null);
     const client = useQueryClient();
 
     const { data, isError } = useQuery({
-        queryKey: ['security', range],
+        queryKey: ['security', range, service, project],
         queryFn: ({ signal }) =>
             requestJson<PageData>(
                 'get',
-                dataRoute({ query: { range } }).url,
+                dataRoute({
+                    query: {
+                        range,
+                        ...(service ? { service } : {}),
+                        ...(project ? { project } : {}),
+                    },
+                }).url,
                 undefined,
                 signal,
             ),
@@ -101,19 +111,16 @@ export function SecurityOverview({
     };
 
     const groups = useMemo(
-        () =>
-            groupActionNeeded(
-                (data?.actionNeeded ?? []).filter(
-                    (f) => service === null || f.service.id === service,
-                ),
-            ),
-        [data, service],
+        () => groupActionNeeded(data?.actionNeeded ?? []),
+        [data],
     );
-    const serviceName =
-        service === null
-            ? null
-            : (data?.actionNeeded.find((f) => f.service.id === service)?.service
-                  .name ?? null);
+    const scope = data?.scope ?? null;
+    const scoped = service !== null || project !== null;
+    const scopeName = scope
+        ? scope.kind === 'service' && scope.projectName
+            ? `${scope.name} in ${scope.projectName}`
+            : scope.name
+        : null;
 
     return (
         <>
@@ -136,12 +143,33 @@ export function SecurityOverview({
 
             <PageHeader
                 title="Security"
+                description={
+                    [
+                        scoped
+                            ? `Only ${scopeName ?? (service ? 'one service' : 'one project')}.`
+                            : null,
+                        snapped,
+                    ]
+                        .filter(Boolean)
+                        .join(' ') || undefined
+                }
                 actions={
-                    <TimeRangeSelect<Range>
-                        value={range}
-                        onChange={setRange}
-                        options={RANGES}
-                    />
+                    <div className="flex flex-wrap items-center justify-end gap-2">
+                        {scoped && (
+                            <Button variant="ghost" size="sm" asChild>
+                                <Link href={indexRoute().url}>
+                                    {service
+                                        ? 'Show every service'
+                                        : 'Show every project'}
+                                </Link>
+                            </Button>
+                        )}
+                        <TimeRangeSelect
+                            value={range}
+                            onChange={setRange}
+                            options={RANGES}
+                        />
+                    </div>
                 }
             />
 
@@ -179,25 +207,8 @@ export function SecurityOverview({
 
                     <SecurityHero data={data} groups={groups} range={range} />
 
-                    {(groups.length > 0 || service !== null) && (
-                        <Section
-                            id="action-needed"
-                            title="Action needed"
-                            description={
-                                service !== null
-                                    ? `Only ${serviceName ?? 'one service'}`
-                                    : undefined
-                            }
-                            actions={
-                                service !== null ? (
-                                    <Button variant="ghost" size="sm" asChild>
-                                        <Link href="/security">
-                                            Show every service
-                                        </Link>
-                                    </Button>
-                                ) : undefined
-                            }
-                        >
+                    {(groups.length > 0 || scoped) && (
+                        <Section id="action-needed" title="Action needed">
                             {groups.length > 0 ? (
                                 <ActionNeededList
                                     groups={groups}
@@ -207,13 +218,16 @@ export function SecurityOverview({
                                 />
                             ) : (
                                 <EmptyState icon={ShieldCheck} variant="framed">
-                                    Nothing needs action in this service.
+                                    {service
+                                        ? 'Nothing needs action in this service.'
+                                        : 'Nothing needs action in this project.'}
                                 </EmptyState>
                             )}
                         </Section>
                     )}
 
                     <FirewallSection
+                        id="firewall"
                         firewall={data.firewall}
                         summary={data.summary}
                         canManage={data.canManage}

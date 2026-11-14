@@ -20,10 +20,10 @@ Secret values are masked before lines are stored. If a variable marked secret sh
 
 Open a project and choose **Logs**. The explorer has one toolbar, a histogram, a filter rail and the lines themselves.
 
-- **Range**: 15m, 1h, 24h, 7d or 30d. When nothing matches, the empty state has options to widen the range or follow live.
-- **Histogram**: lines over time, with errors stacked in red and a marker for every deploy (failed deploys in red). Hover a marker to see its service and commit.
+- **Range**: 15 min, Hour, Day, Week or Month, starting on Day. When nothing matches, the empty state has options to widen the range or follow live. Logs and both views of Analytics keep the range and service when you switch between them.
+- **Histogram**: lines over time, with errors stacked in red and a marker for every deploy (failed deploys in red). Hover a marker to see its service and commit, and click it to open the deployment. Click a bar to look at just that stretch of time; the chip above the histogram takes you back to the whole range.
 - **Filter rail**: counts per level, environment, service, deployment and server. Click a value to filter by it.
-- **Detail drawer**: click a line to see its facts (service, replica, server, commit), similar lines and a shortcut to show only that service.
+- **Detail drawer**: click a line to see its facts (service, replica, server, commit), similar lines and shortcuts to show only that service or only that deployment. The deployment and server link to their pages.
 
 Each service also has a **Logs** tab in its panel with the same explorer, scoped to that service.
 
@@ -112,10 +112,10 @@ cd launchroom
 
 ## Through the API
 
-`GET /api/v1/environments/{environment}/logs` runs the explorer's query (with `range`, `source`, `service` and `q`), and `…/logs/stream` follows lines as server-sent events. See the [API reference](/docs/reference/api#follow-logs).
+`GET /api/v1/environments/{environment}/logs` runs the explorer's query (with `range`, `source`, `service` and `q`, or `from` and `to` in epoch seconds for a fixed window), and `…/logs/stream` follows lines as server-sent events. See the [API reference](/docs/reference/api#follow-logs).
 
 <Cards>
-  <Card title="Metrics" href="/docs/observability/metrics" description="Requests, errors, latency and resource usage per service." />
+  <Card title="Resources" href="/docs/observability/metrics" description="CPU, memory, latency and bandwidth per service and server." />
   <Card title="Alerts" href="/docs/observability/alerts" description="Hear about failed deploys, crashing services and full disks." />
   <Card title="Troubleshooting builds" href="/docs/troubleshooting/builds" description="Read a failed build log and fix the usual causes." />
 </Cards>

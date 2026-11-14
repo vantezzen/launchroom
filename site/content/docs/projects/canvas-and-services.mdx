@@ -1,11 +1,11 @@
 ---
 title: Canvas and services
-description: A project is a canvas of services joined by connections. Add apps, images, databases, workers and cron jobs, then review and deploy.
+description: A project is a canvas of services joined by connections. Add apps, images, databases, workers and cron jobs, then review and apply your changes.
 ---
 
 Every project in launchroom is a canvas. Each box on it is a service: an app built from your repository, a prebuilt
 image, a managed database, a worker or a cron job. Lines between them are connections. A connection wires credentials and
-addresses into your app. Your changes collect as staged changes until you press **Review & deploy**.
+addresses into your app. Your changes collect as staged changes until you press **Review & apply**.
 
 <Screenshot id="canvas" />
 
@@ -93,9 +93,11 @@ Click a service to open its panel next to the canvas. The tabs are:
 - **Deployments**: every deployment of the service, newest first. The current one (in progress, else live) is the
   first row and shows its steps with **View logs**, **Redeploy** and **Cancel**. Earlier deployments can be rolled
   back to.
-- **Metrics** and **Logs**: this service only. See [Logs](/docs/observability/logs) and
-  [Metrics](/docs/observability/metrics).
+- **Logs**: this service only. See [Logs](/docs/observability/logs).
 - **Settings**: everything else, including **Variables** and **Backups**.
+
+**Analytics** at the end of the tab row opens the project's [Analytics](/docs/observability/analytics) filtered to the
+service: its traffic when it has a domain, its CPU and memory otherwise.
 - **Console**, and for databases **Data**, for members with the permission. See
   [Console and data](/docs/observability/console-and-data).
 
@@ -179,16 +181,17 @@ the domains and variables over.
 
 ## Staged changes
 
-Most edits wait for a deploy. New services, settings, variables, connections and scaling collect as **staged
+Most edits wait until you apply them. New services, settings, variables, connections and scaling collect as **staged
 changes** for the environment you're in. Staged services show a dashed outline and a **New**, **Changed** or
-**Removed** chip, and the canvas toolbar shows "4 changes · Review & deploy".
+**Removed** chip, and the canvas toolbar shows "4 changes" with **Review & apply**.
 
 <Screenshot id="canvas-alt" />
 
-**Review & deploy** (or Shift+D on the canvas) opens the list of staged changes, grouped by service, with the effect of each
-change: a new service, a rebuild, a restart or no effect. Discard single items or everything, add a
-message for the activity feed, and press **Deploy**. Deploying creates one revision of the environment and starts the
-deployments it needs.
+**Review & apply** (or Shift+D on the canvas) opens the list of staged changes, grouped by service, with the effect of each
+change: a new service, a rebuild, a restart or no effect. A sentence at the top says which services redeploy, for example
+"Applying rebuilds web, and restarts api and worker." Discard single items or everything, add a message for the
+activity feed, and press **Apply 4 changes**. Applying creates one revision of the environment, and the services it
+affects redeploy. Only services deploy: applying changes their configuration, which can restart them.
 
 <Screenshot id="staged-changes" />
 

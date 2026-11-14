@@ -110,7 +110,7 @@ test('the service panel runs a fixed number of queries and builds the environmen
     expect(count($after))->toBe(count($before))
         ->and(count($after))->toBeLessThanOrEqual($tab === 'settings' ? 68 : 55)
         ->and(specBuilds($after))->toBe(1);
-})->with(['deployments', 'metrics', 'logs', 'settings']);
+})->with(['deployments', 'logs', 'settings']);
 
 test('opening a service reloads the panel without rebuilding the canvas', function (): void {
     addServices($this);
@@ -124,7 +124,7 @@ test('opening a service reloads the panel without rebuilding the canvas', functi
         ->assertJsonMissingPath('props.nodes')
         ->assertJsonMissingPath('props.projects'));
 
-    $canvasOnly = array_filter($queries, static fn (string $sql): bool => str_contains($sql, '"canvas_layouts"') || str_contains($sql, 'select "public_id", "name", "icon_path"'));
+    $canvasOnly = array_filter($queries, static fn (string $sql): bool => str_contains($sql, '"canvas_layouts"') || str_contains($sql, '"icon_path"'));
 
     expect($canvasOnly)->toBe([])
         ->and(specBuilds($queries))->toBe(1)

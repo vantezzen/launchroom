@@ -7,7 +7,7 @@ namespace App\Data\Metrics;
 use Spatie\LaravelData\Data;
 
 /**
- * One environment as a whole (docs/15 §2.3, the project Metrics page):
+ * One environment as a whole (docs/15 §2.3, Analytics → Resources):
  * requests of every service summed (percentiles from the summed
  * histograms), CPU and memory summed over services per bucket, and their
  * averages over the range and the period before it (for deltas).

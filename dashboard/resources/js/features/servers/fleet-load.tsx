@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { TimeRangeSelect } from '@/components/charts/time-range-select';
-import type { TimeRange } from '@/components/charts/time-range-select';
 import { TimeSeriesChart } from '@/components/charts/time-series-chart';
 import { formatMb } from '@/features/servers/format';
 import { useFleetMetrics } from '@/features/servers/use-server-metrics';
+import { useObserveScope } from '@/hooks/use-observe-scope';
+import { RANGE_SETS, rangeOptions, rangeWords } from '@/lib/observe-scope';
 import { cn } from '@/lib/utils';
 
 type Metric = 'cpu' | 'memory' | 'disk';
@@ -12,13 +13,6 @@ type Capacity = {
     cpus: number;
     memoryMb: number;
     diskMb: number;
-};
-
-const RANGE_WORDS: Record<TimeRange, string> = {
-    '1h': 'last hour',
-    '24h': 'last day',
-    '7d': 'last week',
-    '30d': 'last 30 days',
 };
 
 function cores(value: number): string {
@@ -40,7 +34,7 @@ export function FleetLoad({
     capacity: Capacity;
     serverCount: number;
 }) {
-    const [range, setRange] = useState<TimeRange>('1h');
+    const { range, setRange } = useObserveScope(RANGE_SETS.resources);
     const [metric, setMetric] = useState<Metric>('cpu');
     const { data } = useFleetMetrics(range);
     const totals = data?.totals;
@@ -102,7 +96,11 @@ export function FleetLoad({
                         How much of {servers} is in use.
                     </p>
                 </div>
-                <TimeRangeSelect value={range} onChange={setRange} />
+                <TimeRangeSelect
+                    value={range}
+                    onChange={setRange}
+                    options={rangeOptions(RANGE_SETS.resources)}
+                />
             </div>
 
             <div
@@ -149,7 +147,7 @@ export function FleetLoad({
             <div role="tabpanel" aria-label={active.label} className="mt-auto">
                 <TimeSeriesChart
                     key={`${metric}-${range}`}
-                    title={`${active.label} in use, ${RANGE_WORDS[range]}`}
+                    title={`${active.label} in use, ${rangeWords(range)}`}
                     height={170}
                     yMax={100}
                     formatValue={(v) => `${Math.round(v)}%`}

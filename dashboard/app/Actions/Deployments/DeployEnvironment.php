@@ -90,7 +90,7 @@ final readonly class DeployEnvironment
             $pins = $pinned instanceof EnvironmentPromotion ? $pinned->images : [];
 
             if ($base !== null && $changes->isEmpty() && $pins === [] && $commits === []) {
-                throw DomainRuleViolation::on('environment', 'Nothing to deploy: there are no staged changes.');
+                throw DomainRuleViolation::on('environment', 'Nothing to apply: there are no staged changes.');
             }
 
             if (in_array($environment->kind, [EnvironmentKind::Production, EnvironmentKind::Preview], true)) {

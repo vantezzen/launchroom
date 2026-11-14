@@ -9,6 +9,7 @@ use App\Enums\Alerts\AlertRule;
 use App\Enums\Alerts\AlertStatus;
 use App\Models\Alerts\Alert;
 use App\Models\Team;
+use App\Services\Alerts\AlertChanged;
 use App\Services\Alerts\AlertNotifier;
 use Illuminate\Support\Facades\DB;
 
@@ -29,7 +30,7 @@ final readonly class ResolveAlert
     {
         $teamId = $team instanceof Team ? $team->id : $team;
 
-        return DB::transaction(function () use ($teamId, $rule, $subject, $reason, $notify): ?Alert {
+        $resolved = DB::transaction(function () use ($teamId, $rule, $subject, $reason, $notify): ?Alert {
             DB::select('SELECT pg_advisory_xact_lock(hashtext(?))', ["alert|{$teamId}|{$rule->value}|{$subject}"]);
 
             $alert = Alert::query()
@@ -52,5 +53,11 @@ final readonly class ResolveAlert
 
             return $alert;
         });
+
+        if ($resolved instanceof Alert) {
+            AlertChanged::broadcastFor($resolved);
+        }
+
+        return $resolved;
     }
 }

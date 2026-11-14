@@ -85,6 +85,15 @@ href: string | null,
 openedAt: string,
 resolvedAt: string | null,
 };
+export type OpenAlertData = {
+id: string,
+rule: App.Enums.Alerts.AlertRule,
+severity: App.Enums.Alerts.AlertSeverity,
+label: string,
+title: string,
+href: string | null,
+openedAt: string,
+};
 }
 namespace Analytics {
 export type AnalyticsAgentsData = {
@@ -110,12 +119,15 @@ referrers: App.Data.Analytics.AnalyticsReferrerData[],
 referrerRequests: number,
 agents: App.Data.Analytics.AnalyticsAgentsData | null,
 serversWithoutPaths: string[],
+blocked: number[],
+deploys: App.Data.Metrics.DeployMarkerData[],
 };
 export type AnalyticsPathData = {
 path: string,
 requests: number,
 status4xx: number,
 status5xx: number,
+blocked: number,
 };
 export type AnalyticsProjectData = {
 id: string,
@@ -127,6 +139,7 @@ previousRequests: number | null,
 errorRatePct: number | null,
 clientErrorPct: number | null,
 requestsSeries: number[],
+blocked: number,
 };
 export type AnalyticsQueryData = {
 range: App.Enums.AnalyticsRange,
@@ -152,6 +165,7 @@ path: string,
 requests: number,
 status4xx: number,
 status5xx: number,
+blocked: number,
 };
 export type AnalyticsTotalsData = {
 requests: number,
@@ -162,6 +176,8 @@ status5xx: number,
 errorRatePct: number | null,
 previousRequests: number | null,
 previousErrorRatePct: number | null,
+blocked: number,
+previousBlocked: number | null,
 };
 export type TeamAnalyticsData = {
 range: string,
@@ -465,6 +481,19 @@ categories: App.Data.Security.WafCategoryCountData[],
 services: App.Data.Security.WafServiceCountData[],
 };
 }
+namespace Attention {
+export type AttentionItemData = {
+key: string,
+kind: string,
+state: App.Enums.AttentionState,
+title: string,
+context: string | null,
+detail: string | null,
+at: string | null,
+href: string,
+action: string,
+};
+}
 namespace Audit {
 export type AuditActor = {
 type: App.Enums.ActorType,
@@ -588,6 +617,7 @@ nextRunAt: string | null,
 health: App.Data.Backups.ServiceBackupStatusData,
 canManage: boolean,
 cronDescription: string | null,
+href: string | null,
 };
 export type BackupScheduleInput = {
 cron: string,
@@ -962,6 +992,7 @@ parentId: string | null,
 position: App.Data.Canvas.CanvasPositionData | null,
 backup: App.Data.Backups.ServiceBackupStatusData | null,
 placementIssue: App.Data.Canvas.PlacementIssueData | null,
+openAlerts: App.Data.Alerts.OpenAlertData[],
 };
 export type CanvasPositionData = {
 x: number,
@@ -1102,6 +1133,7 @@ kind: App.Enums.EnvironmentKind,
 branch: string | null,
 tagPattern: string | null,
 autoDeployPaused: boolean,
+keepsRuntimeLogs: boolean,
 };
 export type EnvironmentSummaryData = {
 id: string,
@@ -1109,6 +1141,7 @@ name: string,
 kind: App.Enums.EnvironmentKind,
 services: number,
 status: App.Data.Canvas.NodeStatusData,
+problems: App.Data.Canvas.ServiceProblemData[],
 };
 export type NodeStatusData = {
 state: App.Enums.CanvasNodeState,
@@ -1191,6 +1224,7 @@ export type ProjectLinkData = {
 id: string,
 name: string,
 iconUrl: string | null,
+environmentId: string | null,
 };
 export type ProjectSummaryData = {
 id: string,
@@ -1206,6 +1240,7 @@ deploys: App.Data.Canvas.DeployDayData[],
 canvas: App.Data.Canvas.CanvasThumbnailData | null,
 iconUrl: string | null,
 requests: number[] | null,
+openAlerts: App.Data.Alerts.OpenAlertData[],
 };
 export type RenameProjectData = {
 name: string,
@@ -1226,6 +1261,13 @@ deploying: boolean,
 processes: number,
 dependents: number,
 };
+export type ServiceOriginData = {
+kind: string,
+label: string,
+href: string | null,
+branch: string | null,
+host: string | null,
+};
 export type ServicePanelData = {
 serviceId: string,
 tab: string,
@@ -1238,6 +1280,7 @@ section: string | null,
 actionNeeded: number,
 actionNeededFinding: string | null,
 controls: App.Data.Canvas.ServiceControlsData | null,
+origin: App.Data.Canvas.ServiceOriginData | null,
 };
 export type ServicePlacementData = {
 servers: App.Data.Canvas.PlacementServerOptionData[],
@@ -1248,6 +1291,13 @@ stateful: boolean,
 pinnedServer: string | null,
 measuredMemoryMb: number | null,
 replicaMemoryMb: number,
+};
+export type ServiceProblemData = {
+serviceId: string,
+serviceName: string,
+status: App.Data.Canvas.NodeStatusData,
+sentence: string,
+href: string,
 };
 export type ServiceSettingsData = {
 source: App.Data.Canvas.ServiceSourceData,
@@ -1317,6 +1367,7 @@ deployments: App.Data.CommandPalette.PaletteItemData[],
 servers: App.Data.CommandPalette.PaletteItemData[],
 canDeploy: boolean,
 canWriteVariables: boolean,
+canData: boolean,
 };
 export type PaletteItemData = {
 kind: string,
@@ -1327,6 +1378,10 @@ projectId: string | null,
 environmentId: string | null,
 status: string | null,
 iconUrl: string | null,
+nodeStatus: App.Data.Canvas.NodeStatusData | null,
+domain: string | null,
+logo: string | null,
+serviceKind: App.Enums.ServiceKind | null,
 };
 }
 namespace ConfigAsCode {
@@ -1471,6 +1526,26 @@ title: string,
 message: string | null,
 hint: string,
 };
+export type DeploymentImpactData = {
+liveAt: string,
+minutesAfter: number,
+replaced: boolean,
+before: App.Data.Deployments.DeploymentImpactWindowData | null,
+after: App.Data.Deployments.DeploymentImpactWindowData,
+bucketSeconds: number,
+timestamps: string[],
+requestsPerSecond: (number| null)[],
+errorRatePct: (number| null)[],
+thresholdPct: number,
+worse: boolean,
+rollbackTo: App.Data.Deployments.DeploymentSummaryData | null,
+};
+export type DeploymentImpactWindowData = {
+requests: number,
+requestsPerSecond: number,
+errorRatePct: number | null,
+p95Ms: number | null,
+};
 export type DeploymentRefData = {
 id: string,
 commitSha: string | null,
@@ -1564,10 +1639,19 @@ lines: App.Data.Deployments.LogLineData[],
 cursor: number,
 hasMore: boolean,
 };
+export type RecentDeploymentData = {
+deployment: App.Data.Deployments.DeploymentSummaryData,
+projectName: string,
+};
 export type ResolvedConfigEntryData = {
 group: string,
 key: string,
 value: string,
+};
+export type ServiceDeploymentCurrentData = {
+id: string,
+steps: App.Data.Deployments.DeploymentStepData[],
+expectsRelease: boolean,
 };
 export type ServiceDeploymentStatsData = {
 serviceId: string,
@@ -1575,6 +1659,12 @@ environmentId: string,
 medianDurationSeconds: number | null,
 weekTotal: number,
 weekFailed: number,
+};
+export type ServiceDeploymentsData = {
+active: App.Data.Deployments.DeploymentSummaryData | null,
+deployments: App.Data.Deployments.DeploymentSummaryData[],
+current: App.Data.Deployments.ServiceDeploymentCurrentData | null,
+canDeploy: boolean,
 };
 export type ServiceStoppedData = {
 at: string,
@@ -2126,10 +2216,11 @@ stream: string,
 message: string,
 environment: string | null,
 project: string | null,
+serverId: string | null,
 };
 export type LogExplorerPageData = {
 entries: App.Data.Logs.LogEntryData[],
-markers: App.Data.Logs.LogMarkerData[],
+markers: App.Data.Metrics.DeployMarkerData[],
 from: string,
 to: string,
 cursor: number,
@@ -2138,18 +2229,14 @@ tailing: number,
 buckets: App.Data.Logs.LogBucketData[],
 matches: number,
 };
-export type LogMarkerData = {
-deploymentId: string,
-at: string,
-label: string,
-status: string,
-};
 export type LogQueryData = {
 range: string,
 source: string,
 service: string | null,
 after: number,
 q: string | null,
+from: number | null,
+to: number | null,
 };
 export type LogTailData = {
 service: string | null,
@@ -2168,6 +2255,7 @@ at: string,
 status: string,
 serviceName: string | null,
 sha: string | null,
+href: string | null,
 };
 export type EnvironmentTotalsData = {
 requests: App.Data.Metrics.RequestSeriesData | null,
@@ -3720,6 +3808,11 @@ rule: string,
 passed: boolean,
 label: string,
 };
+export type FindingDeploymentData = {
+id: string,
+sha: string | null,
+href: string,
+};
 export type FindingDetailData = {
 finding: App.Data.Security.FindingCardData,
 kind: string,
@@ -3741,6 +3834,7 @@ canDismiss: boolean,
 canInvestigate: boolean,
 canChangeFirewall: boolean,
 firewallUrl: string,
+deployment: App.Data.Security.FindingDeploymentData | null,
 };
 export type FindingInvestigationData = {
 id: string,
@@ -3843,6 +3937,13 @@ runtimes: App.Data.Security.RuntimeCardData[],
 baseImages: App.Data.Security.RuntimeCardData[],
 notices: string[],
 dismissed: number,
+scope: App.Data.Security.SecurityScopeData | null,
+};
+export type SecurityScopeData = {
+kind: string,
+id: string,
+name: string,
+projectName: string | null,
 };
 export type SecurityServiceRefData = {
 id: string,
@@ -3872,6 +3973,7 @@ blockedSeries: number[],
 protectedServices: number,
 watchingServices: number,
 routedServices: number,
+requests: number | null,
 };
 export type ServerCertificateReadinessData = {
 id: string,
@@ -3968,6 +4070,7 @@ recent: App.Data.Security.WafEventData[],
 edges: App.Data.Security.WafEdgeProblemData[],
 ruleSet: string | null,
 networksVisible: boolean,
+deploys: App.Data.Metrics.DeployMarkerData[],
 };
 export type WafRuleData = {
 id: number,
@@ -4183,6 +4286,7 @@ workloads: number,
 device: App.Data.Servers.DeviceData | null,
 location: App.Data.Servers.LocationData | null,
 specs: App.Data.Servers.ServerSpecsData | null,
+openAlerts: App.Data.Alerts.OpenAlertData[],
 };
 export type ServerDetailData = {
 id: string,
@@ -4206,6 +4310,7 @@ device: App.Data.Servers.DeviceData | null,
 location: App.Data.Servers.LocationData | null,
 specs: App.Data.Servers.ServerSpecsData | null,
 canUpdateAppearance: boolean,
+openAlerts: App.Data.Alerts.OpenAlertData[],
 };
 export type ServerHealthData = {
 state: App.Enums.HealthCheckState,
@@ -5137,8 +5242,10 @@ onlyEnvironment?: string,
 namespace Enums {
 export type ActorType = 'user' | 'server' | 'system';
 export type AnalyticsRange = '24h' | '7d' | '30d';
+export type AnalyticsView = 'traffic' | 'resources';
 export type ApiAbility = 'read' | 'deploy' | 'env:read' | 'env:write' | 'secrets:read' | 'domains:write' | 'data:transfer';
 export type ApiTokenClient = 'dashboard' | 'cli';
+export type AttentionState = 'failed' | 'warning' | 'staged' | 'idle';
 export type AuditAction = 'instance.setup_token_created' | 'instance.owner_created' | 'instance.team_claimed' | 'instance.owner_two_factor_reset' | 'team.created' | 'team.member_invited' | 'team.invitation_revoked' | 'team.invitation_accepted' | 'team.member_role_changed' | 'team.member_removed' | 'instance.signing_key_created' | 'server.enrollment_created' | 'server.enrollment_canceled' | 'server.enrolled' | 'server.approved' | 'server.revoked' | 'server.volume_deletion_confirmed' | 'instance.mesh_enabled' | 'instance.mesh_own_tailscale_configured' | 'server.mesh_node_removed' | 'project.created' | 'project.imported' | 'project.deleted' | 'project.renamed' | 'project.secrets_policy_changed' | 'project.icon_changed' | 'environment.created' | 'environment.deployed' | 'environment.changes_discarded' | 'environment.updated' | 'environment.deleted' | 'environment.reverted' | 'environment.changes_promoted' | 'environment.auto_deploy_resumed' | 'deployment.promoted' | 'service.created' | 'service.removed' | 'service.renamed' | 'variable.created' | 'variable.updated' | 'variable.deleted' | 'variable.imported' | 'variable.secret_revealed' | 'connection.created' | 'connection.deleted' | 'domain.added' | 'domain.removed' | 'domain.www_redirect_changed' | 'instance.apps_domain_changed' | 'instance.dashboard_domain_started' | 'instance.dashboard_domain_cancelled' | 'instance.dashboard_domain_switched' | 'instance.dashboard_domain_reverted' | 'instance.dashboard_domain_reset' | 'deployment.rolled_back' | 'deployment.redeployed' | 'deployment.cancelled' | 'variable.raw_edited' | 'github.app_created' | 'github.app_disconnected' | 'github.installation_linked' | 'git.connection_created' | 'git.connection_authorized' | 'git.connection_disconnected' | 'git.connection_private_network_allowed' | 'git.host_keys_confirmed' | 'git.webhook_secret_revealed' | 'backup.destination_created' | 'backup.destination_updated' | 'backup.destination_deleted' | 'backup.destination_private_network_allowed' | 'backup.schedule_updated' | 'backup.started' | 'backup.restore_started' | 'data.import_started' | 'data.import_finished' | 'data.import_cancelled' | 'data.import_source_checked' | 'data.import_prepared' | 'data.export_started' | 'data.export_downloaded' | 'backup.restore_swapped' | 'backup.volume_updated' | 'backup.final_backup_skipped' | 'backup.point_in_time_updated' | 'backup.verification_started' | 'service.volume_added' | 'service.volume_changed' | 'service.volume_removed' | 'service.volume_attached' | 'service.volume_detached' | 'service.image_changed' | 'service.stopped' | 'service.started' | 'service.restarted' | 'server.replaced' | 'instance.recovery_finished' | 'backup.recovery_passphrase_set' | 'backup.recovery_kit_downloaded' | 'backup.recovery_kit_confirmed' | 'preview.settings_updated' | 'preview.strategy_changed' | 'preview.approved' | 'preview.destroyed' | 'preview.share_link_created' | 'preview.share_link_revoked' | 'preview.bypass_rotated' | 'instance.update_started' | 'instance.update_finished' | 'instance.fleet_update_started' | 'instance.fleet_update_finished' | 'instance.update_preferences_changed' | 'instance.dns_provider_changed' | 'server.shared_edge_changed' | 'domain.hsts_changed' | 'instance.registry_storage_configured' | 'instance.registry_storage_private_network_allowed' | 'instance.registry_storage_removed' | 'instance.registry_config_written' | 'server.settings_updated' | 'server.roles_updated' | 'server.appearance_updated' | 'server.replicas_rescheduled' | 'service.degraded' | 'session.console_started' | 'session.console_ended' | 'session.data_started' | 'session.data_ended' | 'database.statement_executed' | 'session.recording_viewed' | 'team.console_recording_changed' | 'team.member_permissions_changed' | 'api_token.created' | 'api_token.revoked' | 'api_token.cli_login_approved' | 'api_token.cli_login_denied' | 'variable.env_exported' | 'deployment.requested' | 'alerts.channel_created' | 'alerts.channel_updated' | 'alerts.channel_deleted' | 'audit.sink_created' | 'audit.sink_updated' | 'audit.sink_deleted' | 'alerts.rules_updated' | 'config_file.applied' | 'config_file.invalid' | 'config_file.exported' | 'config_file.settings_updated' | 'ai_provider.updated' | 'team.dockerfile_generation_changed' | 'dockerfile_generation.started' | 'dockerfile_generation.used' | 'dockerfile_generation.pull_request_opened' | 'instance.client_certificates_changed' | 'server.client_certificate_issued' | 'server.client_certificates_revoked' | 'server.client_certificate_reissue_allowed' | 'server.move_started' | 'server.move_item_finished' | 'server.move_item_retried' | 'server.move_cancelled' | 'server.move_completed' | 'instance.control_plane_move_started' | 'instance.control_plane_move_claimed' | 'instance.control_plane_move_approved' | 'instance.control_plane_move_cancelled' | 'instance.control_plane_handover_started' | 'instance.control_plane_handover_aborted' | 'instance.control_plane_handed_over' | 'instance.control_plane_taken_over' | 'instance.control_plane_move_finished' | 'access.ssh_started' | 'access.ssh_ended' | 'access.database_started' | 'access.database_ended' | 'access.volume_started' | 'access.volume_ended' | 'access.connected' | 'access.auth_failed' | 'access.locked' | 'waf.mode_changed' | 'waf.paranoia_changed' | 'waf.inspect_body_changed' | 'waf.exclusion_added' | 'waf.exclusion_removed' | 'security.finding_dismissed' | 'security.finding_reopened' | 'security.investigation_started' | 'instance.security_sources_changed';
 export type BlueprintNoteKind = 'translated' | 'ignored' | 'refused' | 'warning';
 export type CanvasNodeState = 'active' | 'progress' | 'failed' | 'idle' | 'warning';
@@ -5182,7 +5289,7 @@ export type PromotionKind = 'created' | 'promoted';
 export type ServerReplacementStatus = 'running' | 'completed' | 'failed';
 export type ServerRole = 'edge' | 'runtime' | 'build' | 'registry';
 export type ServerStatus = 'pending_approval' | 'online' | 'unreachable' | 'offline' | 'revoked';
-export type ServerTab = 'overview' | 'metrics' | 'network' | 'settings';
+export type ServerTab = 'overview' | 'resources' | 'network' | 'settings';
 export type ServiceKind = 'app' | 'image' | 'database' | 'worker' | 'cron';
 export type SigningKeyStatus = 'active' | 'retired';
 export type TeamRole = 'owner' | 'admin' | 'developer' | 'viewer';

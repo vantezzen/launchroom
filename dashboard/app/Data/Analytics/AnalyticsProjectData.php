@@ -27,8 +27,10 @@ final class AnalyticsProjectData extends Data
         public ?int $previousRequests,
         /** 5xx share in percent. */
         public ?float $errorRatePct,
-        /** 4xx share in percent. */
+        /** 4xx share in percent (the app's own, without blocked requests). */
         public ?float $clientErrorPct,
         public array $requestsSeries,
+        /** Requests the web firewall refused. */
+        public int $blocked = 0,
     ) {}
 }

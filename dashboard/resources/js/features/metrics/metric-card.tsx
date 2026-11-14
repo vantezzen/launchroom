@@ -20,7 +20,7 @@ const deltaTone = {
 } as const;
 
 /**
- * Metric card of the project Metrics page (docs/15 §2.3, the CDN overview
+ * Metric card of Analytics → Resources (docs/15 §2.3, the CDN overview
  * pattern): label and delta chip, the range value in `stat`, then up to
  * three stacked sparklines (one per top service, value right). The whole
  * card selects which metric the big chart below shows (`aria-pressed`).

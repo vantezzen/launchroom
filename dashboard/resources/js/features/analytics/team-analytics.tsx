@@ -1,13 +1,12 @@
 import { Link } from '@inertiajs/react';
 import { useQuery } from '@tanstack/react-query';
 import { ChartColumnStacked, ChevronRight } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { formatCompact } from '@/components/charts/format';
 import { Sparkline } from '@/components/charts/sparkline';
 import { StackedBars } from '@/components/charts/stacked-bars';
 import { StatTile } from '@/components/charts/stat-tile';
 import { TimeRangeSelect } from '@/components/charts/time-range-select';
-import type { TimeRangeOption } from '@/components/charts/time-range-select';
 import { EmptyState } from '@/components/patterns/empty-state';
 import { MetaLine } from '@/components/patterns/meta-line';
 import { PageHeader } from '@/components/patterns/page';
@@ -15,33 +14,33 @@ import { Section } from '@/components/patterns/section';
 import { formatShare, projectSeries, share } from '@/features/analytics/shape';
 import { delta, formatErrorRate } from '@/features/metrics/format';
 import { requestJson } from '@/features/projects/http';
+import { useObserveScope } from '@/hooks/use-observe-scope';
+import {
+    RANGE_SETS,
+    rangeOptions,
+    rangeWords,
+    withScope,
+} from '@/lib/observe-scope';
 import { cn } from '@/lib/utils';
 import { data as dataRoute } from '@/routes/analytics';
 import { analyticsPage } from '@/routes/projects';
+import { index as securityRoute } from '@/routes/security';
 
 type Team = App.Data.Analytics.TeamAnalyticsData;
 type Project = App.Data.Analytics.AnalyticsProjectData;
-type Range = '24h' | '7d' | '30d';
+type Range = (typeof RANGE_SETS.analytics)[number];
 
-const RANGES: TimeRangeOption<Range>[] = [
-    { value: '24h', label: 'Day' },
-    { value: '7d', label: 'Week' },
-    { value: '30d', label: 'Month' },
-];
-
-const RANGE_WORDS: Record<Range, string> = {
-    '24h': 'last 24 hours',
-    '7d': 'last 7 days',
-    '30d': 'last 30 days',
-};
+const RANGES = rangeOptions(RANGE_SETS.analytics);
 
 const card =
     'rounded-[14px] border bg-card shadow-[0_1px_2px_rgb(0_0_0/0.04)] dark:shadow-none';
 
-/** The drill-down link of a project: its production Analytics tab. */
-function projectHref(project: Project): string | null {
+/** The drill-down link of a project: its production Analytics tab, same range. */
+function projectHref(project: Project, range: Range): string | null {
     return project.environmentId
-        ? analyticsPage([project.id, project.environmentId]).url
+        ? withScope(analyticsPage([project.id, project.environmentId]).url, {
+              range,
+          })
         : null;
 }
 
@@ -53,7 +52,7 @@ function projectHref(project: Project): string | null {
  * projects and the split by server. Refetched every minute.
  */
 export function TeamAnalytics({ teamName }: { teamName: string }) {
-    const [range, setRange] = useState<Range>('7d');
+    const { range, setRange, snapped } = useObserveScope(RANGE_SETS.analytics);
 
     const { data, isError } = useQuery({
         queryKey: ['team-analytics', range],
@@ -80,9 +79,9 @@ export function TeamAnalytics({ teamName }: { teamName: string }) {
         <>
             <PageHeader
                 title="Analytics"
-                description={`All projects and environments of ${teamName}, ${RANGE_WORDS[range]}`}
+                description={`All projects and environments of ${teamName}, ${rangeWords(range)}.${snapped ? ` ${snapped}` : ''}`}
                 actions={
-                    <TimeRangeSelect<Range>
+                    <TimeRangeSelect
                         value={range}
                         onChange={setRange}
                         options={RANGES}
@@ -99,8 +98,8 @@ export function TeamAnalytics({ teamName }: { teamName: string }) {
                     aria-hidden="true"
                     className="flex animate-skeleton-in flex-col gap-4"
                 >
-                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                        {[0, 1, 2].map((i) => (
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                        {[0, 1, 2, 3].map((i) => (
                             <div key={i} className={cn(card, 'h-[112px]')} />
                         ))}
                     </div>
@@ -135,7 +134,7 @@ function Overview({
 
     return (
         <div className="flex flex-col gap-8">
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 <StatTile
                     label="Requests"
                     value={formatCompact(totals.requests)}
@@ -164,15 +163,33 @@ function Overview({
                     )}
                     hint={`${formatCompact(totals.status4xx)} responses with 4xx`}
                 />
+                <StatTile
+                    label="Blocked"
+                    value={formatCompact(totals.blocked)}
+                    delta={delta(totals.blocked, totals.previousBlocked)}
+                    hint={
+                        totals.blocked > 0
+                            ? `${formatShare(share(totals.blocked, totals.requests))} of requests, refused by the firewall`
+                            : 'Nothing refused by the firewall'
+                    }
+                    action={
+                        <Link
+                            href={`${securityRoute().url}#firewall`}
+                            className="type-small text-muted-foreground hover:text-foreground"
+                        >
+                            Security
+                        </Link>
+                    }
+                />
             </div>
 
             <Section
                 title={`Requests per ${unit}`}
-                description={`By project, ${RANGE_WORDS[range]}`}
+                description={`By project, ${rangeWords(range)}`}
             >
                 <div className={cn(card, 'p-5')}>
                     <StackedBars
-                        title={`Requests per ${unit} by project, ${RANGE_WORDS[range]}`}
+                        title={`Requests per ${unit} by project, ${rangeWords(range)}`}
                         times={times}
                         bucketMs={data.bucketSeconds * 1000}
                         series={series}
@@ -190,6 +207,7 @@ function Overview({
                         <ProjectRow
                             key={project.id}
                             project={project}
+                            range={range}
                             total={totals.requests}
                             color={colors.get(project.id) ?? null}
                         />
@@ -267,14 +285,16 @@ function Overview({
 
 function ProjectRow({
     project,
+    range,
     total,
     color,
 }: {
     project: Project;
+    range: Range;
     total: number;
     color: string | null;
 }) {
-    const href = projectHref(project);
+    const href = projectHref(project, range);
     const change = delta(project.requests, project.previousRequests);
     const facts = [
         `${formatCompact(project.requests)} ${project.requests === 1 ? 'request' : 'requests'}`,
@@ -282,6 +302,9 @@ function ProjectRow({
         change ? `${change.label} vs. previous period` : null,
         project.errorRatePct
             ? `${formatErrorRate(project.errorRatePct)} errors`
+            : null,
+        project.blocked > 0
+            ? `${formatCompact(project.blocked)} blocked`
             : null,
     ].filter(Boolean);
     const content = (

@@ -18,7 +18,7 @@ use Illuminate\Support\Facades\Gate;
 /**
  * GET /p/{project}/-/metrics?range=&environment=&service= (docs/15): per-service
  * usage of one environment (default: production) for canvas nodes and the
- * service panel's Metrics tab. Ids are resolved inside the project only.
+ * Resources view of the Analytics tab. Ids are resolved inside the project only.
  */
 final class ProjectMetricsController extends Controller
 {

@@ -211,10 +211,10 @@ Code: `App\Support\Changes\SpecDiff`, `App\Queries\CurrentEnvironmentSpec`.
   - `none`: name, icon, watch paths, seed command, triggers
 - Never-built kinds turn `rebuild` into `restart`. A worker or cron whose inherited connection variables changed (§3.2) gets at least `restart`. Services whose variables reference a changed service (`${{postgres.X}}`) or a changed shared variable get at least `restart` (`rebuild` if the referencing variable is build-scoped), transitively.
 - Item paths: `services.<svc>`, `services.<svc>.<field>`, `services.<svc>.(build|deploy|scaling).<property>`, `services.<svc>.(variables|connectionVariables|sharedVariables).<var>`, `services.<svc>.domains.<hostname>`, `services.<svc>.volumes.<vol>`, `connections.<con>`, `sharedVariables.<var>`, `environment.(name|triggers)`. Items never carry variable values.
-- **Removing a service** is staged (`service_instances.removed_at`); Deploy tears it down (workloads gone, volumes kept).
+- **Removing a service** is staged (`service_instances.removed_at`); applying tears it down (workloads gone, volumes kept).
 - **Discard** restores rows with their recorded ids (variables with their recorded version and ciphertext). A removed variable is restored targeted at this environment only (the revision records how it applied here, not all its targets).
 - **Identity fields** (name, icon, source) are shared by all environments, so discarding them affects every environment.
-- **Deploy** refuses when nothing is staged (after the first deploy) and when any enabled service has a broken reference (every offender is listed).
+- **Apply** (the UI's "Review & apply" and "Apply N changes", D75; route `staged-changes.deploy`, CLI `deploy --staged`) refuses when nothing is staged (after the first deploy; "Nothing to apply") and when any enabled service has a broken reference (every offender is listed). Applying writes a revision; the services it affects redeploy.
 
 ## 5. Previews
 

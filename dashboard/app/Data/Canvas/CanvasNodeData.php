@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Data\Canvas;
 
+use App\Data\Alerts\OpenAlertData;
 use App\Data\Backups\ServiceBackupStatusData;
 use App\Enums\ChangeEffect;
 use App\Enums\ServiceKind;
@@ -46,5 +47,11 @@ final class CanvasNodeData extends Data
         public ?ServiceBackupStatusData $backup = null,
         /** Degraded: its server is down, or replicas found no other server (docs/02 §6). */
         public ?PlacementIssueData $placementIssue = null,
+        /**
+         * Firing alerts about this service (docs/15 §3.6), most severe first.
+         *
+         * @var list<OpenAlertData>
+         */
+        public array $openAlerts = [],
     ) {}
 }

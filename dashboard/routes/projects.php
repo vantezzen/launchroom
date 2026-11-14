@@ -8,13 +8,13 @@ use App\Http\Controllers\Projects\ConnectionController;
 use App\Http\Controllers\Projects\DomainController;
 use App\Http\Controllers\Projects\ImportController;
 use App\Http\Controllers\Projects\LogRetentionController;
+use App\Http\Controllers\Projects\MetricsRedirectController;
 use App\Http\Controllers\Projects\PlanPreviewController;
 use App\Http\Controllers\Projects\ProjectAnalyticsController;
 use App\Http\Controllers\Projects\ProjectController;
 use App\Http\Controllers\Projects\ProjectIconController;
 use App\Http\Controllers\Projects\ProjectLogsController;
 use App\Http\Controllers\Projects\ProjectMetricsController;
-use App\Http\Controllers\Projects\ProjectMetricsPageController;
 use App\Http\Controllers\Projects\ProjectSettingsController;
 use App\Http\Controllers\Projects\ServiceController;
 use App\Http\Controllers\Projects\ServiceSettingsController;
@@ -59,7 +59,7 @@ Route::middleware(['web', 'auth', 'verified'])
             ->middleware('throttle:10,1')
             ->name('projects.import.add-url');
         Route::get('p/{project}', [ProjectController::class, 'show'])->name('projects.show');
-        // Per-service usage metrics JSON (canvas nodes, service panel Metrics tab).
+        // Per-service usage metrics JSON (canvas nodes, Analytics → Resources).
         Route::get('p/{project}/-/metrics', ProjectMetricsController::class)->name('projects.metrics');
         // Request analytics JSON (docs/15 §5.4).
         Route::get('p/{project}/-/analytics', [ProjectAnalyticsController::class, 'data'])
@@ -105,10 +105,12 @@ Route::middleware(['web', 'auth', 'verified'])
         Route::get('p/{project}/{environment}', [CanvasController::class, 'show'])->name('projects.canvas');
         // The project Logs tab and the log explorer behind it.
         Route::get('p/{project}/{environment}/logs', [ProjectLogsController::class, 'show'])->name('projects.logs');
-        // The project Metrics tab (docs/15 §2.3); numbers come from projects.metrics.
-        Route::get('p/{project}/{environment}/metrics', [ProjectMetricsPageController::class, 'show'])->name('projects.metrics-page');
-        // The project Analytics tab (docs/15 §5.4); numbers come from projects.analytics.
+        // The project Analytics tab (D75): Traffic (docs/15 §5.4, numbers from
+        // projects.analytics) and Resources (docs/15 §2.3, from projects.metrics).
         Route::get('p/{project}/{environment}/analytics', [ProjectAnalyticsController::class, 'show'])->name('projects.analytics-page');
+        Route::get('p/{project}/{environment}/analytics/resources', [ProjectAnalyticsController::class, 'resources'])->name('projects.resources-page');
+        // The former Metrics tab: redirects to Resources with its query.
+        Route::get('p/{project}/{environment}/metrics', [MetricsRedirectController::class, 'project'])->name('projects.metrics-page');
         // The log explorer's lines and live runtime tails (JSON).
         Route::get('p/{project}/{environment}/-/logs', [ProjectLogsController::class, 'entries'])
             ->middleware('throttle:120,1')
@@ -130,6 +132,9 @@ Route::middleware(['web', 'auth', 'verified'])
         Route::get('p/{project}/{environment}/s/{service}/{tab}', [CanvasController::class, 'movedTab'])
             ->whereIn('tab', CanvasController::MOVED_TABS)
             ->name('projects.services.moved');
+        // The former Metrics tab of the panel: the service's Analytics view (D75).
+        Route::get('p/{project}/{environment}/s/{service}/metrics', [MetricsRedirectController::class, 'service'])
+            ->name('projects.services.metrics');
         Route::get('p/{project}/{environment}/s/{service}/{tab?}', [CanvasController::class, 'service'])
             ->whereIn('tab', CanvasController::TABS)
             ->name('projects.services.show');

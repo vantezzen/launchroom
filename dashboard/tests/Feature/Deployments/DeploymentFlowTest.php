@@ -181,7 +181,7 @@ test('nothing to deploy without staged changes', function (): void {
     deployEnvironment($production);
     converge($server);
 
-    expect(fn (): DeployResult => deployEnvironment($production))->toThrow(DomainRuleViolation::class, 'Nothing to deploy');
+    expect(fn (): DeployResult => deployEnvironment($production))->toThrow(DomainRuleViolation::class, 'Nothing to apply');
 });
 
 test('a runtime change rolls out next to the old workload, drains it and supersedes the old deployment', function (): void {

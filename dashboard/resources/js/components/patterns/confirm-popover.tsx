@@ -3,9 +3,15 @@ import type { ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import {
     Popover,
+    PopoverAnchor,
     PopoverContent,
     PopoverTrigger,
 } from '@/components/ui/popover';
+import {
+    Tooltip,
+    TooltipContent,
+    TooltipTrigger,
+} from '@/components/ui/tooltip';
 
 type ConfirmPopoverProps = {
     /** The trigger (a Button). */
@@ -19,6 +25,14 @@ type ConfirmPopoverProps = {
     /** `destructive` for removals (outline red). */
     tone?: 'default' | 'destructive';
     align?: 'start' | 'center' | 'end';
+    /** A tooltip on the trigger (icon-only buttons name themselves here). */
+    tooltip?: ReactNode;
+    /**
+     * Controlled: the popover opens from elsewhere (a menu item) and
+     * `children` is only where it points (`PopoverAnchor`), not a trigger.
+     */
+    open?: boolean;
+    onOpenChange?: (open: boolean) => void;
 };
 
 /**
@@ -34,9 +48,21 @@ export function ConfirmPopover({
     onConfirm,
     tone = 'default',
     align = 'end',
+    tooltip,
+    open: controlledOpen,
+    onOpenChange,
 }: ConfirmPopoverProps) {
-    const [open, setOpen] = useState(false);
+    const [ownOpen, setOwnOpen] = useState(false);
     const [busy, setBusy] = useState(false);
+    const controlled = controlledOpen !== undefined;
+    const open = controlled ? controlledOpen : ownOpen;
+    const setOpen = (next: boolean) => {
+        if (!controlled) {
+            setOwnOpen(next);
+        }
+
+        onOpenChange?.(next);
+    };
 
     const confirm = async () => {
         setBusy(true);
@@ -51,7 +77,18 @@ export function ConfirmPopover({
 
     return (
         <Popover open={open} onOpenChange={setOpen}>
-            <PopoverTrigger asChild>{children}</PopoverTrigger>
+            {controlled ? (
+                <PopoverAnchor asChild>{children}</PopoverAnchor>
+            ) : tooltip ? (
+                <Tooltip>
+                    <PopoverTrigger asChild>
+                        <TooltipTrigger asChild>{children}</TooltipTrigger>
+                    </PopoverTrigger>
+                    <TooltipContent>{tooltip}</TooltipContent>
+                </Tooltip>
+            ) : (
+                <PopoverTrigger asChild>{children}</PopoverTrigger>
+            )}
             <PopoverContent align={align} className="flex w-80 flex-col gap-3">
                 <div className="flex flex-col gap-1">
                     {title && <p className="type-label">{title}</p>}

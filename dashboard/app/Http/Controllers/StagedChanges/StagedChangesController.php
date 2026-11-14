@@ -87,9 +87,9 @@ final class StagedChangesController extends Controller
 
         Inertia::flash('toast', ['type' => 'success', 'message' => $count === 0
             ? "Revision {$result->revision->number} applied. No service needed a new deployment."
-            : "Revision {$result->revision->number}: deploying {$count} ".($count === 1 ? 'service' : 'services').'.']);
+            : "Revision {$result->revision->number} applied. Deploying {$count} ".($count === 1 ? 'service' : 'services').'.']);
 
-        // From the review sheet on the canvas: stay and watch the nodes deploy (flows §5).
+        // From the review sheet on the canvas: stay and watch the nodes redeploy (flows §5).
         if ($request->boolean('stay')) {
             return back();
         }

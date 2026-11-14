@@ -12,7 +12,8 @@ namespace App\Enums;
 enum ServerTab: string
 {
     case Overview = 'overview';
-    case Metrics = 'metrics';
+    /** Server health: CPU, memory, disk and network over time (formerly `metrics`, D75). */
+    case Resources = 'resources';
     case Network = 'network';
     case Settings = 'settings';
 
@@ -23,6 +24,6 @@ enum ServerTab: string
      */
     public static function segments(): array
     {
-        return [self::Metrics->value, self::Network->value, self::Settings->value];
+        return [self::Resources->value, self::Network->value, self::Settings->value];
     }
 }

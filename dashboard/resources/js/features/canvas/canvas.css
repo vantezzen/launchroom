@@ -203,3 +203,8 @@
 .launchroom-canvas .react-flow__edge.mount:not(.staged) .react-flow__edge-path {
     stroke: var(--canvas-edge-muted);
 }
+
+/* A node focused by keyboard shows its toolbar (service-node.tsx). */
+.react-flow__node:focus-visible .service-node-toolbar {
+    opacity: 1;
+}

@@ -1,8 +1,7 @@
 import { Head, Link, usePage } from '@inertiajs/react';
 import { Ban, ShieldCheck } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { TimeRangeSelect } from '@/components/charts/time-range-select';
-import type { TimeRange } from '@/components/charts/time-range-select';
 import { ConfirmAction } from '@/components/confirm-action';
 import { EmptyState } from '@/components/patterns/empty-state';
 import { Page } from '@/components/patterns/page';
@@ -31,6 +30,8 @@ import {
     useServerMetrics,
 } from '@/features/servers/use-server-metrics';
 import { SettingsCard, SettingsRow } from '@/features/settings/settings-card';
+import { useObserveScope } from '@/hooks/use-observe-scope';
+import { RANGE_SETS } from '@/lib/observe-scope';
 import { edit as moveLaunchroom } from '@/routes/move';
 import {
     approve,
@@ -114,7 +115,7 @@ function ApprovalCallout({
 
 const TAB_LABELS: Record<App.Enums.ServerTab, string> = {
     overview: 'Overview',
-    metrics: 'Metrics',
+    resources: 'Resources',
     network: 'Network',
     settings: 'Settings',
 };
@@ -240,9 +241,11 @@ export default function ShowServer({
     edge,
     teamId,
 }: Props) {
-    const [range, setRange] = useState<TimeRange>('1h');
+    // The observe scope's range (lib/observe-scope.ts): kept in the URL,
+    // so an alert's `?range=1h` and the project pages agree.
+    const { range, setRange } = useObserveScope(RANGE_SETS.resources);
     const revoked = server.status === 'revoked';
-    // Usage tiles (Overview) and charts (Metrics) share one query and range.
+    // Usage tiles (Overview) and charts (Resources) share one query and range.
     const metrics = useServerMetrics(server.id, range);
     const barRef = useRef<HTMLDivElement>(null);
 
@@ -258,7 +261,7 @@ export default function ShowServer({
 
     const tabs: App.Enums.ServerTab[] = revoked
         ? ['overview', 'network', 'settings']
-        : ['overview', 'metrics', 'network', 'settings'];
+        : ['overview', 'resources', 'network', 'settings'];
 
     return (
         <>
@@ -345,7 +348,7 @@ export default function ShowServer({
                     </>
                 )}
 
-                {tab === 'metrics' && (
+                {tab === 'resources' && (
                     <ServerCharts
                         metrics={metrics.data}
                         range={range}

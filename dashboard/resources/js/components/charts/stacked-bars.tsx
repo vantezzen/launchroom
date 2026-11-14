@@ -2,12 +2,17 @@ import { Table2 } from 'lucide-react';
 import { useState } from 'react';
 import type { KeyboardEvent } from 'react';
 import { cn } from '@/lib/utils';
+import { ChartDrillPopover } from './chart-drill';
+import type { ChartDrill } from './chart-drill';
 import {
     formatCompact,
     formatTick,
     formatTooltipTime,
     niceMax,
 } from './format';
+import { groupMarkers, LABEL_OFFSET } from './marker-groups';
+import { MarkerLayer } from './marker-layer';
+import type { ChartMarker } from './time-series-chart';
 import { useMeasuredWidth } from './use-measure';
 
 export type StackedSeries = {
@@ -34,10 +39,16 @@ export type StackedBarsProps = {
     formatValue?: (value: number) => string;
     /** Show the "Table" toggle (full-size charts must have one). */
     table?: boolean;
+    /** Deploy markers (design-system §9): ticks with the short SHA, linking to the deployment. */
+    markers?: ChartMarker[];
+    /** Click or Enter on a bucket opens these links for its time (logs at that moment). */
+    drill?: ChartDrill;
     className?: string;
 };
 
 const PAD = { top: 8, right: 4, bottom: 22, left: 40 };
+/** Room for marker labels above the bars. */
+const MARKER_ROW = 14;
 
 /**
  * Counts per time bucket, stacked by category (design-system §13.8), e.g.
@@ -55,11 +66,15 @@ export function StackedBars({
     height = 220,
     formatValue = formatCompact,
     table = true,
+    markers = [],
+    drill,
     className,
 }: StackedBarsProps) {
     const [ref, width] = useMeasuredWidth<HTMLDivElement>();
     const [active, setActive] = useState<number | null>(null);
     const [showTable, setShowTable] = useState(false);
+    const [drilled, setDrilled] = useState<number | null>(null);
+    const [openMarker, setOpenMarker] = useState<number | null>(null);
 
     const visible = series.filter((s) => s.values.some((v) => v > 0));
     const totals = times.map((_, i) =>
@@ -71,14 +86,26 @@ export function StackedBars({
     }
 
     const top = niceMax(Math.max(...totals));
+    const t0 = times[0];
+    const span = times[times.length - 1] + bucketMs - t0;
+    const inRange = markers.filter((m) => m.t >= t0 && m.t <= t0 + span);
+    const padTop = PAD.top + (inRange.length > 0 ? MARKER_ROW : 0);
     const plotW = Math.max(0, width - PAD.left - PAD.right);
-    const plotH = height - PAD.top - PAD.bottom;
+    const plotH = height - padTop - PAD.bottom;
     const slot = plotW / times.length;
     const gap = slot > 8 ? 2 : slot > 3 ? 1 : 0;
     const barW = Math.max(1, slot - gap);
-    const t0 = times[0];
-    const span = times[times.length - 1] + bucketMs - t0;
-    const y = (v: number) => PAD.top + plotH - (v / top) * plotH;
+    const y = (v: number) => padTop + plotH - (v / top) * plotH;
+    const groups =
+        plotW > 0
+            ? groupMarkers(inRange, (t) => ((t - t0) / span) * plotW, plotW)
+            : [];
+    const windowOf = (index: number) => ({
+        from: times[index],
+        to: times[index] + bucketMs,
+    });
+    const drillActions =
+        drill && drilled !== null ? drill(windowOf(drilled)) : [];
     const xTicks = tickIndexes(
         times,
         bucketMs,
@@ -100,6 +127,13 @@ export function StackedBars({
         } else if (event.key === 'Home' || event.key === 'End') {
             event.preventDefault();
             setActive(event.key === 'Home' ? 0 : last);
+        } else if (
+            (event.key === 'Enter' || event.key === ' ') &&
+            drill &&
+            drill(windowOf(index)).length > 0
+        ) {
+            event.preventDefault();
+            setDrilled(index);
         } else if (event.key === 'Escape') {
             setActive(null);
         }
@@ -206,11 +240,23 @@ export function StackedBars({
                             height={height}
                             className="block outline-none focus-visible:rounded-md focus-visible:ring-2 focus-visible:ring-(--signal)"
                             role="img"
-                            aria-label={`${title}. Use the arrow keys to read values.`}
+                            aria-label={`${title}. Use the arrow keys to read values${drill ? ', Enter to open logs and deployments of that time' : ''}.`}
                             tabIndex={0}
                             onKeyDown={onKeyDown}
                             onBlur={() => setActive(null)}
                             onPointerLeave={() => setActive(null)}
+                            onClick={() => {
+                                if (
+                                    drill &&
+                                    active !== null &&
+                                    drill(windowOf(active)).length > 0
+                                ) {
+                                    setDrilled(active);
+                                }
+                            }}
+                            style={{
+                                cursor: drill ? 'pointer' : undefined,
+                            }}
                             onPointerMove={(event) => {
                                 const rect =
                                     event.currentTarget.getBoundingClientRect();
@@ -316,6 +362,62 @@ export function StackedBars({
                                     </g>
                                 );
                             })}
+                            {groups.map((group, index) => {
+                                const gx = PAD.left + group.x;
+                                const color =
+                                    group.tone === 'error'
+                                        ? 'var(--status-error)'
+                                        : 'var(--signal)';
+
+                                return (
+                                    <g
+                                        key={`${group.markers[0].t}-${group.label}`}
+                                        opacity={
+                                            openMarker !== null &&
+                                            openMarker !== index
+                                                ? 0.45
+                                                : 1
+                                        }
+                                    >
+                                        <line
+                                            x1={gx}
+                                            x2={gx}
+                                            y1={padTop - 4}
+                                            y2={padTop + plotH}
+                                            strokeWidth={1}
+                                            strokeDasharray="3 3"
+                                            style={{ stroke: color }}
+                                        />
+                                        {group.markers.length > 1 && (
+                                            <circle
+                                                cx={gx}
+                                                cy={padTop - 6}
+                                                r={2.5}
+                                                strokeWidth={1.25}
+                                                style={{
+                                                    fill: 'var(--card)',
+                                                    stroke: color,
+                                                }}
+                                            />
+                                        )}
+                                        {group.showLabel && (
+                                            <text
+                                                x={
+                                                    group.anchor === 'start'
+                                                        ? gx + LABEL_OFFSET
+                                                        : gx - LABEL_OFFSET
+                                                }
+                                                y={padTop - 6}
+                                                textAnchor={group.anchor}
+                                                className="font-mono text-[10px]"
+                                                style={{ fill: color }}
+                                            >
+                                                {group.label}
+                                            </text>
+                                        )}
+                                    </g>
+                                );
+                            })}
                             {xTicks.map((index) => (
                                 <text
                                     key={index}
@@ -335,7 +437,30 @@ export function StackedBars({
                             ))}
                         </svg>
                     )}
-                    {active !== null && width > 0 && (
+                    {width > 0 && groups.length > 0 && (
+                        <MarkerLayer
+                            groups={groups}
+                            offset={PAD.left}
+                            top={PAD.top - 2}
+                            span={span}
+                            onActiveChange={setOpenMarker}
+                        />
+                    )}
+                    {drill && width > 0 && (
+                        <ChartDrillPopover
+                            window={drilled === null ? null : windowOf(drilled)}
+                            actions={drillActions}
+                            x={
+                                drilled === null
+                                    ? 0
+                                    : PAD.left + (drilled + 1) * slot
+                            }
+                            top={padTop}
+                            height={plotH}
+                            onClose={() => setDrilled(null)}
+                        />
+                    )}
+                    {active !== null && drilled === null && width > 0 && (
                         <div
                             aria-live="polite"
                             className="pointer-events-none absolute top-0 z-10 flex w-52 flex-col gap-1 rounded-md border bg-popover px-2.5 py-2 type-small whitespace-nowrap tabular-nums shadow-[0_8px_30px_rgb(0_0_0/0.10)] dark:border-(--border-strong)"

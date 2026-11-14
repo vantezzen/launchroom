@@ -14,6 +14,7 @@ use App\Models\Security\SecurityFinding;
 use App\Models\User;
 use App\Queries\Security\InventorySearch;
 use App\Queries\Security\SecurityOverview;
+use App\Support\Security\SecurityScope;
 use Illuminate\Container\Attributes\CurrentUser;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -36,12 +37,15 @@ final class SecurityController extends Controller
         $team = TeamSettingsController::currentTeam($user);
         Gate::authorize('viewAny', [SecurityFinding::class, $team]);
 
-        $service = $request->query('service');
+        $scope = SecurityScope::resolve($team, $request->query('project'), $request->query('service'));
 
         return Inertia::render('security', [
             'team' => ['name' => $team->name],
             'inventoryQuery' => null,
-            'service' => is_string($service) && preg_match('/^svc_[0-9A-HJKMNP-TV-Z]{26}$/D', $service) === 1 ? $service : null,
+            // ?service= or ?project= narrows the page (docs/22 §9.2); ids
+            // outside the team are ignored.
+            'service' => $scope?->data->kind === 'service' ? $scope->data->id : null,
+            'project' => $scope?->data->kind === 'project' ? $scope->data->id : null,
         ]);
     }
 
@@ -55,15 +59,25 @@ final class SecurityController extends Controller
             'team' => ['name' => $team->name],
             'inventoryQuery' => is_string($query) ? mb_substr($query, 0, 200) : '',
             'service' => null,
+            'project' => null,
         ]);
     }
 
-    public function data(AnalyticsQuery $query, #[CurrentUser] User $user, SecurityOverview $overview): SecurityPageData
+    /**
+     * `?project=prj_…` or `?service=svc_…` narrows every section; an id
+     * that isn't the team's is a 404.
+     */
+    public function data(Request $request, AnalyticsQuery $query, #[CurrentUser] User $user, SecurityOverview $overview): SecurityPageData
     {
         $team = TeamSettingsController::currentTeam($user);
         Gate::authorize('viewAny', [SecurityFinding::class, $team]);
 
-        return $overview->handle($team, $user, $query->range);
+        $project = $request->query('project');
+        $service = $request->query('service');
+        $scope = SecurityScope::resolve($team, $project, $service);
+        abort_if(! $scope instanceof SecurityScope && SecurityScope::requested($project, $service), 404);
+
+        return $overview->handle($team, $user, $query->range, $scope);
     }
 
     public function search(Request $request, #[CurrentUser] User $user, InventorySearch $search): InventorySearchData

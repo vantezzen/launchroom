@@ -3,6 +3,7 @@ import { Eye, ShieldCheck, TriangleAlert } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { formatCompact } from '@/components/charts/format';
+import { REQUEST_CLASS } from '@/components/charts/request-breakdown';
 import { StackedBars } from '@/components/charts/stacked-bars';
 import type { StackedSeries } from '@/components/charts/stacked-bars';
 import { Meter } from '@/components/charts/usage-meter';
@@ -12,19 +13,15 @@ import { Section } from '@/components/patterns/section';
 import { SheetSection, SidePanel } from '@/components/patterns/sheet';
 import { TimeAgo } from '@/components/time-ago';
 import { Button } from '@/components/ui/button';
+import { deployMarkers } from '@/features/metrics/format';
 import { requestJson } from '@/features/projects/http';
+import { rangeWords } from '@/lib/observe-scope';
 import { cn } from '@/lib/utils';
 import { card, CATEGORY_LABEL, plural, SERIES_COLOR } from './format';
 
 type Firewall = App.Data.Security.WafOverviewData;
 type WafEvent = App.Data.Security.WafEventData;
 type Summary = App.Data.Security.SecuritySummaryData;
-
-const RANGE_WORDS: Record<string, string> = {
-    '24h': 'today',
-    '7d': 'this week',
-    '30d': 'this month',
-};
 
 /** A category's colour: palette slots for the four named kinds, grey else. */
 export function categoryColor(category: string): string {
@@ -37,11 +34,14 @@ export function categoryColor(category: string): string {
  * in Log only, the latest blocks and the most targeted services.
  */
 export function FirewallSection({
+    id,
     firewall,
     summary,
     canManage,
     onChanged,
 }: {
+    /** Anchor for links into the section (`/security#firewall`). */
+    id?: string;
     firewall: Firewall;
     summary: Summary;
     canManage: boolean;
@@ -53,6 +53,8 @@ export function FirewallSection({
 
     return (
         <Section
+            id={id}
+            className="scroll-mt-20"
             title="Web firewall"
             description={
                 firewall.ruleSet
@@ -157,7 +159,7 @@ function QuietFirewall({
             </span>
             <div className="flex min-w-0 flex-1 flex-col gap-0.5">
                 <p className="type-heading">
-                    No attacks blocked {RANGE_WORDS[firewall.range]}
+                    No attacks blocked in the {rangeWords(firewall.range)}
                 </p>
                 <p className="type-body text-muted-foreground">
                     {summary.routedServices === 0
@@ -203,8 +205,10 @@ function ChartCard({ firewall }: { firewall: Firewall }) {
     const series: StackedSeries[] = [
         {
             key: 'blocked',
-            label: 'Blocked',
-            color: 'var(--signal)',
+            // The same look as "Blocked by firewall" in Analytics.
+            label: REQUEST_CLASS.blocked.short,
+            color: REQUEST_CLASS.blocked.color,
+            hatched: REQUEST_CLASS.blocked.hatched,
             values: blocked,
         },
     ];
@@ -212,9 +216,9 @@ function ChartCard({ firewall }: { firewall: Firewall }) {
     if (firewall.watching.length > 0) {
         series.push({
             key: 'detected',
-            label: 'Would have been blocked',
-            color: 'var(--chart-other)',
-            hatched: true,
+            label: REQUEST_CLASS.detected.label,
+            color: REQUEST_CLASS.detected.color,
+            hatched: REQUEST_CLASS.detected.hatched,
             values: detected,
         });
     }
@@ -236,6 +240,7 @@ function ChartCard({ firewall }: { firewall: Firewall }) {
                     bucketMs={firewall.bucketSeconds * 1000}
                     series={series}
                     height={240}
+                    markers={deployMarkers(firewall.deploys)}
                 />
             </div>
             <AttackMix firewall={firewall} />

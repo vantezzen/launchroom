@@ -7,6 +7,7 @@ namespace App\Models;
 use App\Enums\ClientCertificateMode;
 use App\Enums\DnsProvider;
 use App\Enums\Mesh\MeshMode;
+use Illuminate\Container\Container;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Attributes\Table;
 use Illuminate\Database\Eloquent\Attributes\WithoutIncrementing;
@@ -71,11 +72,48 @@ final class InstanceSettings extends Model
 {
     public const int ID = 1;
 
+    /** Container key of the per-request copy (scoped: a new request or queued job reads the row again). */
+    private const string CURRENT = 'launchroom.instance-settings';
+
     /**
-     * The singleton row, created on first use. Read first: the row exists on
-     * every request but the very first, and this runs several times per page.
+     * The singleton row, created on first use. Read once per request (or
+     * queued job) and shared: a full page asks for it about nine times.
+     * Saving or deleting any copy of the row forgets the shared one, so a
+     * write followed by a read in the same request sees the write.
      */
     public static function current(): self
+    {
+        $container = Container::getInstance();
+
+        if (! $container->bound(self::CURRENT)) {
+            $container->scoped(self::CURRENT, static fn (): self => self::read());
+        }
+
+        $settings = $container->make(self::CURRENT);
+
+        return $settings instanceof self ? $settings : self::read();
+    }
+
+    /**
+     * Drops the per-request copy. Model writes do it themselves; call it
+     * after writing the row with a query builder update.
+     */
+    public static function forgetCurrent(): void
+    {
+        Container::getInstance()->forgetInstance(self::CURRENT);
+    }
+
+    protected static function booted(): void
+    {
+        self::saved(static function (): void {
+            self::forgetCurrent();
+        });
+        self::deleted(static function (): void {
+            self::forgetCurrent();
+        });
+    }
+
+    private static function read(): self
     {
         $settings = self::query()->find(self::ID);
 

@@ -154,7 +154,7 @@ curl -sN https://launchroom.example.com/api/v1/deployments/$DEPLOYMENT_ID/logs/s
 | `end` | The deployment finished. The stream closes |
 | `reconnect` | The stream closes after 5 minutes. Reconnect with `Last-Event-ID` (or `?after=`) and you lose nothing |
 
-A `: ping` comment arrives every 15 seconds. `GET /environments/{environment}/logs/stream` follows the runtime logs of a whole environment the same way, like **Live** in the Logs explorer, and `GET /environments/{environment}/logs` runs a search with `range` (`15m`, `1h`, `24h`, `7d`, `30d`), `source` (`all`, `runtime`, `build`), `service` and `q`.
+A `: ping` comment arrives every 15 seconds. `GET /environments/{environment}/logs/stream` follows the runtime logs of a whole environment the same way, like **Live** in the Logs explorer, and `GET /environments/{environment}/logs` runs a search with `range` (`15m`, `1h`, `24h`, `7d`, `30d`) or a fixed window (`from` and `to`, epoch seconds, within the last 30 days), `source` (`all`, `runtime`, `build`), `service` and `q`. Its `markers` are the deploys of the window, each with a link to the deployment.
 
 ## What the API covers
 

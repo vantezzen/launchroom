@@ -9,3 +9,4 @@ export * from './time-range-select';
 export * from './time-series-chart';
 export * from './usage-meter';
 export * from './stacked-bars';
+export * from './request-breakdown';

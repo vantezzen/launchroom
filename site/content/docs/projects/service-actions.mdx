@@ -9,7 +9,7 @@ the Developer role or higher, and every use is in the audit log.
 | Action | What it does |
 |---|---|
 | **Deploy** | Builds and deploys the latest commit of the branch the service tracks. For an image service, launchroom looks up its tag again and runs what it points to now. |
-| **Deploy changes** | Shown instead of Deploy while the service has staged changes. It deploys the environment's staged changes, as **Review & deploy** does, so the new version goes out with them. |
+| **Review & apply** | Shown instead of Deploy while the service has staged changes. It opens the environment's staged changes, so you apply them and the new version goes out with them. |
 | **Restart** | Starts new containers of the running version and switches traffic to them. Nothing is built and the release command doesn't run again. |
 | **Stop** | Stops the service's containers. It keeps its settings, variables, domains, volumes and deployments. |
 | **Start** | Shown while the service is stopped. Runs the version that was live when it stopped. |

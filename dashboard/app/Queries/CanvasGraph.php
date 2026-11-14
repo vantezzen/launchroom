@@ -44,6 +44,7 @@ final readonly class CanvasGraph
     public function __construct(
         private CurrentEnvironmentSpec $currentSpec,
         private BackupStatuses $backups,
+        private OpenAlerts $alerts,
     ) {}
 
     /**
@@ -65,6 +66,7 @@ final readonly class CanvasGraph
         $changes = SpecDiff::between($environment->lastAppliedRevision?->spec, $current ?? $this->currentSpec->get($environment));
         $positions = $environment->canvasLayout instanceof CanvasLayout ? $environment->canvasLayout->positions : [];
         $backups = $this->backups->forEnvironment($environment);
+        $alerts = $this->alerts->forEnvironment($environment->team_id, $environment->id);
 
         $nodes = [];
         $present = [];
@@ -108,6 +110,7 @@ final readonly class CanvasGraph
                 position: is_array($position) ? new CanvasPositionData((float) $position['x'], (float) $position['y']) : null,
                 backup: $instance->removed_at === null ? ($backups[$service->public_id] ?? null) : null,
                 placementIssue: PlacementIssueData::fromStored($instance->placement_issue),
+                openAlerts: $instance->removed_at === null ? ($alerts[$instance->id] ?? []) : [],
             );
         }
 

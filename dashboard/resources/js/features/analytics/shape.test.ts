@@ -30,18 +30,28 @@ const data = (over: Partial<Analytics> = {}): Analytics => ({
         errorRatePct: 2.94,
         previousRequests: null,
         previousErrorRatePct: null,
+        blocked: 3,
+        previousBlocked: null,
     },
     servers: [],
     services: [],
     paths: [
-        { path: '/', requests: 20, status4xx: 0, status5xx: 0 },
-        { path: '/users/:id', requests: 10, status4xx: 2, status5xx: 1 },
+        { path: '/', requests: 20, status4xx: 0, status5xx: 0, blocked: 0 },
+        {
+            path: '/users/:id',
+            requests: 10,
+            status4xx: 2,
+            status5xx: 1,
+            blocked: 3,
+        },
     ],
     pathRequests: 34,
     referrers: [{ host: 'news.ycombinator.com', requests: 6 }],
     referrerRequests: 8,
     agents: { browsers: 30, bots: 4, other: 0 },
     serversWithoutPaths: [],
+    blocked: [3, 0],
+    deploys: [],
     ...over,
 });
 
@@ -53,11 +63,21 @@ describe('analytics shaping', () => {
             '2xx',
             '3xx',
             '4xx',
+            'blocked',
             '5xx',
             '1xx',
         ]);
         expect(series[0].values).toEqual([10, 20]);
         expect(series.find((s) => s.key === '5xx')?.hatched).toBe(true);
+    });
+
+    test('blocked requests are their own hatched series, named like on Security', () => {
+        const blocked = statusSeries(data()).find((s) => s.key === 'blocked');
+
+        expect(blocked?.label).toBe('Blocked by firewall');
+        expect(blocked?.values).toEqual([3, 0]);
+        expect(blocked?.hatched).toBe(true);
+        expect(blocked?.color).toBe('var(--chart-7)');
     });
 
     test('path rows add an "other" row for what the list does not cover', () => {
@@ -70,6 +90,7 @@ describe('analytics shaping', () => {
         ]);
         expect(rows[1].clientErrorPct).toBe(20);
         expect(rows[1].serverErrorPct).toBe(10);
+        expect(rows[1].blocked).toBe(3);
         expect(rows[2].other).toBe(true);
         expect(pathRows(data({ pathRequests: 30 }))).toHaveLength(2);
     });
@@ -132,6 +153,7 @@ const project = (
     errorRatePct: null,
     clientErrorPct: null,
     requestsSeries: [requests - 1, 1],
+    blocked: 0,
 });
 
 describe('team project series', () => {

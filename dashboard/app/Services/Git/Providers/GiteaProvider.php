@@ -15,6 +15,7 @@ use App\Models\Git\GitConnection;
 use App\Models\Git\GitRepository;
 use App\Services\Git\Exceptions\GitProviderRequestFailed;
 use App\Services\GitHub\JsonObject;
+use App\Support\Git\GitWebPath;
 use Illuminate\Http\Client\Response;
 use Throwable;
 
@@ -178,6 +179,13 @@ final class GiteaProvider extends ApiGitProvider
         $row = $this->row($repository);
 
         return $row instanceof GitRepository ? $row->gitConnection->origin().'/'.$row->full_name.'/compare/'.$from.'...'.$to : null;
+    }
+
+    public function repositoryUrl(RepositoryRef $repository, ?string $branch = null): ?string
+    {
+        $row = $this->row($repository);
+
+        return $row instanceof GitRepository ? $row->gitConnection->origin().'/'.$row->full_name.($branch === null ? '' : '/src/branch/'.GitWebPath::branch($branch)) : null;
     }
 
     protected function statusRequest(GitRepository $repository, string $sha, string $context, string $state, string $description, ?string $url): array

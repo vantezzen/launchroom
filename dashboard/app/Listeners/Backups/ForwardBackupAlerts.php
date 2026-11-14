@@ -13,6 +13,7 @@ use App\Events\Backups\BackupAlertRaised;
 use App\Events\Backups\BackupAlertResolved;
 use App\Models\ServiceInstance;
 use App\Models\Team;
+use App\Support\Links;
 
 /**
  * Backup problems → alerts (docs/15 §3.2). Every backup problem uses the
@@ -44,7 +45,7 @@ final readonly class ForwardBackupAlerts
             title: $event->title,
             summary: $event->summary,
             severity: $event->kind->critical() ? AlertSeverity::Critical : AlertSeverity::Warning,
-            href: route('projects.services.section', ['project' => $instance->environment->project, 'environment' => $instance->environment, 'service' => $instance->service, 'section' => 'backups']),
+            href: Links::serviceSettings($instance, 'backups'),
             project: $instance->environment->project,
             environment: $instance->environment,
             serviceInstance: $instance,

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Data\Canvas;
 
+use App\Data\Alerts\OpenAlertData;
 use Carbon\CarbonInterface;
 use Spatie\LaravelData\Data;
 
@@ -33,5 +34,11 @@ final class ProjectSummaryData extends Data
         /** The project icon (docs/08 §13); null → the card shows no icon. */
         public ?string $iconUrl = null,
         public ?array $requests = null,
+        /**
+         * Firing alerts in the project, most severe first (docs/15 §3.6).
+         *
+         * @var list<OpenAlertData>
+         */
+        public array $openAlerts = [],
     ) {}
 }

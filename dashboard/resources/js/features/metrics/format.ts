@@ -91,7 +91,9 @@ type Deploy = App.Data.Metrics.DeployMarkerData;
 
 /**
  * Deploy markers for time charts (design-system §9): signal ticks labelled
- * with the short SHA, red for failed deploys, the service and outcome on hover.
+ * with the short SHA, red for failed deploys, the service and outcome on
+ * hover, each linking to its deployment. The one mapping for every chart
+ * (Analytics, Logs, Security, server pages) over `DeployMarkerData`.
  */
 export function deployMarkers(
     deploys: Deploy[] | undefined,
@@ -114,6 +116,7 @@ export function deployMarkers(
                 detail: `${[deploy.serviceName, deploy.sha]
                     .filter(Boolean)
                     .join(' ')}: ${outcome}`,
+                href: deploy.href ?? undefined,
             };
         });
 }

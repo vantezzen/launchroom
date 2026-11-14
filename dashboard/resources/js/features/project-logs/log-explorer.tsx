@@ -1,10 +1,9 @@
-import { http } from '@inertiajs/react';
-import { Radio, ScrollText } from 'lucide-react';
+import { http, Link } from '@inertiajs/react';
+import { useQuery } from '@tanstack/react-query';
+import { Radio, ScrollText, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Histogram } from '@/components/charts/histogram';
-import type { ChartMarker } from '@/components/charts/time-series-chart';
 import { TimeRangeSelect } from '@/components/charts/time-range-select';
-import type { TimeRangeOption } from '@/components/charts/time-range-select';
 import { EmptyState } from '@/components/patterns/empty-state';
 import { MetaLine } from '@/components/patterns/meta-line';
 import { SidePanel } from '@/components/patterns/sheet';
@@ -21,7 +20,20 @@ import {
     toggleFilter,
 } from '@/features/logs/explorer';
 import type { LogEntry, LogLevel, QueryKey } from '@/features/logs/explorer';
+import { deployMarkers } from '@/features/metrics/format';
 import { requestJson } from '@/features/projects/http';
+import { deploymentHref, serverHref } from '@/lib/links';
+import {
+    DEFAULT_RANGE,
+    formatWindow,
+    RANGE_SETS,
+    rangeOptions,
+    rangeWords,
+    readScope,
+    replaceQuery as updateUrl,
+    snapRange,
+} from '@/lib/observe-scope';
+import type { ObserveWindow } from '@/lib/observe-scope';
 import { cn } from '@/lib/utils';
 import { entries as teamEntriesRoute } from '@/routes/logs';
 import {
@@ -33,16 +45,10 @@ import { stop as stopTailRoute } from '@/routes/projects/logs/tail';
 
 type Page = App.Data.Logs.LogExplorerPageData;
 type Entry = App.Data.Logs.LogEntryData;
-type Range = '15m' | '1h' | '24h' | '7d' | '30d';
+type Range = (typeof RANGE_SETS.logs)[number];
 type Scope = 'environment' | 'project' | 'team';
 
-const RANGES: TimeRangeOption<Range>[] = [
-    { value: '15m', label: '15m' },
-    { value: '1h', label: '1h' },
-    { value: '24h', label: '24h' },
-    { value: '7d', label: '7d' },
-    { value: '30d', label: '30d' },
-];
+const RANGES = rangeOptions(RANGE_SETS.logs);
 /**
  * Build output (plan, build, release) belongs to its deployment's Steps,
  * not here (docs/08 §12): the explorer asks for everything else, which is
@@ -64,9 +70,11 @@ const MAX_LIVE = 20_000;
 const SEARCH_DEBOUNCE_MS = 300;
 
 /** The server's line → the explorer's row (features/logs/explorer). */
-function toEntry(
-    entry: Entry,
-): LogEntry & { source: string; deploymentId: string | null } {
+function toEntry(entry: Entry): LogEntry & {
+    source: string;
+    deploymentId: string | null;
+    serverId: string | null;
+} {
     return {
         id: entry.id,
         time: entry.time,
@@ -81,24 +89,11 @@ function toEntry(
         project: entry.project,
         source: entry.source,
         deploymentId: entry.deploymentId,
+        serverId: entry.serverId ?? null,
     };
 }
 
 type Row = ReturnType<typeof toEntry>;
-
-function updateUrl(params: Record<string, string | null>) {
-    const url = new URL(window.location.href);
-
-    for (const [key, value] of Object.entries(params)) {
-        if (value === null || value === '') {
-            url.searchParams.delete(key);
-        } else {
-            url.searchParams.set(key, value);
-        }
-    }
-
-    window.history.replaceState(window.history.state, '', url);
-}
 
 /**
  * The log explorer (direction §9.8): query bar, range, Live; the histogram with deploy markers and errors stacked in
@@ -115,7 +110,9 @@ function updateUrl(params: Record<string, string | null>) {
  * and admins). Wide scopes add a "where" column and have no Live.
  *
  * `service` scopes it to one service (the service panel's Logs tab): no
- * rail, no service column.
+ * rail, no service column. `autoLive` starts Live by itself, once: `now`
+ * (nothing is stored for this environment) or `when-empty` (the first load
+ * found no lines).
  */
 export function LogExplorer({
     project,
@@ -125,6 +122,7 @@ export function LogExplorer({
     service = null,
     initialQuery = '',
     syncUrl = false,
+    autoLive,
     className,
 }: {
     project?: string;
@@ -138,6 +136,8 @@ export function LogExplorer({
     initialQuery?: string;
     /** Keep `?q=`, `?range=`, `?scope=` in the address bar. */
     syncUrl?: boolean;
+    /** Start Live by itself (one environment only). */
+    autoLive?: 'now' | 'when-empty';
     className?: string;
 }) {
     const [scope, setScope] = useState<Scope>(() => {
@@ -156,25 +156,42 @@ export function LogExplorer({
             ? 'project'
             : 'environment';
     });
-    const [range, setRange] = useState<Range>(() => {
-        const value = syncUrl
-            ? new URLSearchParams(window.location.search).get('range')
-            : null;
-
-        return value && value in WIDER ? (value as Range) : '1h';
-    });
-    const [query, setQuery] = useState(initialQuery);
-    const [searched, setSearched] = useState(initialQuery);
-    const [page, setPage] = useState<Page | null>(null);
+    // The observe scope (lib/observe-scope.ts): the range and an absolute
+    // window from a chart or an alert (`?from=&to=`) come from the URL.
+    const [urlScope] = useState(() =>
+        syncUrl && typeof window !== 'undefined'
+            ? readScope(window.location.search)
+            : null,
+    );
+    const [range, setRange] = useState<Range>(() =>
+        snapRange(urlScope?.range, RANGE_SETS.logs),
+    );
+    const [span, setSpan] = useState<ObserveWindow | null>(
+        () => urlScope?.window ?? null,
+    );
+    const [query, setQuery] = useState(() =>
+        initialQuery === '' && syncUrl && typeof window !== 'undefined'
+            ? (new URLSearchParams(window.location.search).get('q') ?? '')
+            : initialQuery,
+    );
+    const [searched, setSearched] = useState(query);
     const [rows, setRows] = useState<Row[]>([]);
-    const [error, setError] = useState<string | null>(null);
-    const [loading, setLoading] = useState(true);
-    const [live, setLive] = useState(false);
+    const [live, setLive] = useState(
+        () => autoLive === 'now' && Boolean(project && environment && !team),
+    );
+    const autoLiveChecked = useRef(autoLive !== 'when-empty');
     const [following, setFollowing] = useState<number | null>(null);
     const [selectedId, setSelectedId] = useState<string | null>(null);
     const cursor = useRef(0);
     const args = { project: project ?? '', environment: environment ?? '' };
-    const canLive = scope === 'environment';
+    const canLive = scope === 'environment' && span === null;
+
+    // A window from the URL is a moment in the past: never live.
+    useEffect(() => {
+        if (span !== null) {
+            setLive(false);
+        }
+    }, [span]);
 
     // Search on the server once typing pauses.
     useEffect(() => {
@@ -191,6 +208,12 @@ export function LogExplorer({
             const options = {
                 query: {
                     range,
+                    ...(span
+                        ? {
+                              from: Math.floor(span.from / 1000),
+                              to: Math.ceil(span.to / 1000),
+                          }
+                        : {}),
                     source: SOURCE,
                     ...(searched !== '' ? { q: searched } : {}),
                     ...(service ? { service } : {}),
@@ -209,7 +232,7 @@ export function LogExplorer({
             return entriesRoute(args, options).url;
         },
         // eslint-disable-next-line react-hooks/exhaustive-deps
-        [project, environment, scope, range, service, searched],
+        [project, environment, scope, range, span, service, searched],
     );
 
     // Live polling reads the latest search without restarting the tails.
@@ -218,36 +241,48 @@ export function LogExplorer({
         urlRef.current = url;
     }, [url]);
 
-    // Load the range.
+    // Load the range through the shared query cache (docs/10 §3): coming
+    // back to the same logs shows the lines at once and refreshes them
+    // behind; the first visit is the one wait.
+    const firstUrl = url();
+    const first = useQuery({
+        queryKey: ['log-explorer', firstUrl],
+        queryFn: ({ signal }) =>
+            requestJson<Page>('get', firstUrl, undefined, signal),
+        // Live lines arrive by polling; focus must not reset the list.
+        refetchOnWindowFocus: false,
+    });
+    const page = first.data ?? null;
+    const loading = first.isPending;
+    const error = first.isError
+        ? first.error instanceof Error
+            ? first.error.message
+            : 'Logs could not be loaded.'
+        : null;
+
+    // Each first page (cached or fresh) seeds the rows, newest first.
+    const [seeded, setSeeded] = useState<Page | null>(null);
+
+    if (first.data && first.data !== seeded) {
+        setSeeded(first.data);
+        setRows(first.data.entries.map(toEntry).reverse());
+    }
+
     useEffect(() => {
-        const controller = new AbortController();
-        setLoading(true);
-        setError(null);
+        if (!first.data) {
+            return;
+        }
 
-        requestJson<Page>('get', url(), undefined, controller.signal)
-            .then((result) => {
-                setPage(result);
-                // Newest first.
-                setRows(result.entries.map(toEntry).reverse());
-                cursor.current = result.cursor;
-            })
-            .catch((reason: unknown) => {
-                if (!controller.signal.aborted) {
-                    setError(
-                        reason instanceof Error
-                            ? reason.message
-                            : 'Logs could not be loaded.',
-                    );
-                }
-            })
-            .finally(() => {
-                if (!controller.signal.aborted) {
-                    setLoading(false);
-                }
-            });
+        cursor.current = first.data.cursor;
 
-        return () => controller.abort();
-    }, [url]);
+        if (!autoLiveChecked.current) {
+            autoLiveChecked.current = true;
+
+            if (first.data.entries.length === 0) {
+                setLive(true);
+            }
+        }
+    }, [first.data]);
 
     // Live: start/renew tails, poll newer chunks, stop when done.
     useEffect(() => {
@@ -366,11 +401,7 @@ export function LogExplorer({
         // eslint-disable-next-line react-hooks/exhaustive-deps
         [rows, parsed, page, live],
     );
-    const markers: ChartMarker[] = (page?.markers ?? []).map((marker) => ({
-        t: Date.parse(marker.at),
-        label: marker.label,
-        tone: marker.status === 'failed' ? 'error' : 'signal',
-    }));
+    const markers = useMemo(() => deployMarkers(page?.markers), [page]);
     const selected = visible.find((row) => row.id === selectedId) ?? null;
     const index = selected ? visible.indexOf(selected) : -1;
 
@@ -383,9 +414,25 @@ export function LogExplorer({
     };
     const changeRange = (next: Range) => {
         setRange(next);
+        setSpan(null);
 
         if (syncUrl) {
-            updateUrl({ range: next === '1h' ? null : next });
+            updateUrl({
+                range: next === DEFAULT_RANGE ? null : next,
+                from: null,
+                to: null,
+            });
+        }
+    };
+    const changeSpan = (next: ObserveWindow | null) => {
+        setSpan(next);
+        setSelectedId(null);
+
+        if (syncUrl) {
+            updateUrl({
+                from: next ? String(Math.floor(next.from / 1000)) : null,
+                to: next ? String(Math.ceil(next.to / 1000)) : null,
+            });
         }
     };
     const changeScope = (next: Scope) => {
@@ -411,13 +458,43 @@ export function LogExplorer({
             ? [{ label: 'Environment', value: row.environment }]
             : []),
         ...(row.deployment
-            ? [{ label: 'Deployment', value: row.deployment, mono: true }]
+            ? [
+                  {
+                      label: 'Deployment',
+                      value: row.deploymentId ? (
+                          <Link
+                              href={deploymentHref(row.deploymentId)}
+                              className="text-signal underline-offset-4 hover:underline"
+                          >
+                              {row.deployment}
+                          </Link>
+                      ) : (
+                          row.deployment
+                      ),
+                      mono: true,
+                  },
+              ]
             : []),
         ...(row.replica
             ? [{ label: 'Replica', value: row.replica, mono: true }]
             : []),
         ...(row.server
-            ? [{ label: 'Server', value: row.server, mono: true }]
+            ? [
+                  {
+                      label: 'Server',
+                      value: row.serverId ? (
+                          <Link
+                              href={serverHref(row.serverId)}
+                              className="text-signal underline-offset-4 hover:underline"
+                          >
+                              {row.server}
+                          </Link>
+                      ) : (
+                          row.server
+                      ),
+                      mono: true,
+                  },
+              ]
             : []),
         ...(row.stream
             ? [{ label: 'Stream', value: row.stream, mono: true }]
@@ -457,29 +534,54 @@ export function LogExplorer({
                                 : 'The only line like this in this range.';
                         })()}
                     </p>
-                    {!service && (
+                    {(!service || selected.deployment) && (
                         <div className="flex flex-wrap gap-2">
-                            <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() =>
-                                    changeQuery(
-                                        toggleFilter(
-                                            query,
-                                            'service',
-                                            selected.service,
-                                        ),
+                            {!service && (
+                                <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() =>
+                                        changeQuery(
+                                            toggleFilter(
+                                                query,
+                                                'service',
+                                                selected.service,
+                                            ),
+                                        )
+                                    }
+                                >
+                                    {parsed.filters.some(
+                                        (f) =>
+                                            f.key === 'service' &&
+                                            f.value === selected.service,
                                     )
-                                }
-                            >
-                                {parsed.filters.some(
-                                    (f) =>
-                                        f.key === 'service' &&
-                                        f.value === selected.service,
-                                )
-                                    ? `All services`
-                                    : `Only ${selected.service}`}
-                            </Button>
+                                        ? `All services`
+                                        : `Only ${selected.service}`}
+                                </Button>
+                            )}
+                            {selected.deployment && (
+                                <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() =>
+                                        changeQuery(
+                                            toggleFilter(
+                                                query,
+                                                'deployment',
+                                                selected.deployment ?? '',
+                                            ),
+                                        )
+                                    }
+                                >
+                                    {parsed.filters.some(
+                                        (f) =>
+                                            f.key === 'deployment' &&
+                                            f.value === selected.deployment,
+                                    )
+                                        ? 'Every deployment'
+                                        : 'Only this deployment'}
+                                </Button>
+                            )}
                         </div>
                     )}
                 </div>
@@ -516,7 +618,11 @@ export function LogExplorer({
             variant="plain"
             className="py-16"
             action={
-                WIDER[range] ? (
+                span ? (
+                    <Button variant="outline" onClick={() => changeSpan(null)}>
+                        Show the {rangeWords(range)}
+                    </Button>
+                ) : WIDER[range] ? (
                     <Button
                         variant="outline"
                         onClick={() => changeRange(WIDER[range] as Range)}
@@ -534,9 +640,11 @@ export function LogExplorer({
                 )
             }
         >
-            {canLive
-                ? 'Nothing logged in this time range. Runtime logs are shown live unless the environment keeps them: turn on Live to follow your services.'
-                : 'Nothing logged in this time range. Runtime logs are searchable here when an environment keeps them (project settings → Logs).'}
+            {span
+                ? `Nothing logged from ${formatWindow(span)}.`
+                : canLive
+                  ? 'Nothing logged in this time range. Runtime logs are shown live unless the environment keeps them: turn on Live to follow your services.'
+                  : 'Nothing logged in this time range. Runtime logs are searchable here when an environment keeps them (project settings → Logs).'}
         </EmptyState>
     );
 
@@ -569,11 +677,25 @@ export function LogExplorer({
                             className="max-sm:order-3"
                         />
                     )}
+                    {span && (
+                        <span className="inline-flex h-8 items-center gap-1 rounded-lg border border-border-strong pr-1 pl-2.5 type-label tabular-nums">
+                            {formatWindow(span)}
+                            <button
+                                type="button"
+                                onClick={() => changeSpan(null)}
+                                aria-label={`Show the ${rangeWords(range)} instead`}
+                                className="inline-flex size-6 items-center justify-center rounded-md text-muted-foreground hover:bg-(--hover) hover:text-foreground focus-visible:outline-2 focus-visible:outline-(--signal)"
+                            >
+                                <X aria-hidden="true" className="size-3.5" />
+                            </button>
+                        </span>
+                    )}
                     <TimeRangeSelect<Range>
                         value={range}
                         onChange={changeRange}
                         options={RANGES}
                         label="Time range"
+                        className={span ? 'opacity-60' : undefined}
                     />
                     {canLive && (
                         <Button
@@ -591,10 +713,24 @@ export function LogExplorer({
                 <div className="flex flex-col gap-1">
                     <Histogram
                         buckets={buckets}
-                        label={`Log lines over the last ${range}`}
+                        label={
+                            span
+                                ? `Log lines from ${formatWindow(span)}`
+                                : `Log lines over the ${rangeWords(range)}`
+                        }
                         markers={markers}
                         height={64}
                         highlight={selected ? Date.parse(selected.time) : null}
+                        // A bucket narrows the explorer to its time.
+                        onSelect={
+                            live
+                                ? undefined
+                                : (bucket) =>
+                                      changeSpan({
+                                          from: bucket.start,
+                                          to: bucket.end,
+                                      })
+                        }
                     />
                     <p
                         className="type-small text-muted-foreground"

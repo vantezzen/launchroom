@@ -10,7 +10,7 @@ use Spatie\LaravelData\Data;
 /**
  * GET /p/{project}/-/metrics?range=&environment=&service=: per-service CPU
  * and memory of one environment (canvas node footers; with `service`, the
- * service panel's Metrics tab including per-replica series) plus deploy
+ * Resources view of one service including per-replica series) plus deploy
  * markers in the range.
  */
 final class ProjectMetricsData extends Data

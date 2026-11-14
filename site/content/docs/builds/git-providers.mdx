@@ -159,7 +159,7 @@ Use **Watch paths** (Settings → Build → When to build) so a push only deploy
 
 ## Push to deploy
 
-Each environment has a trigger: a branch (globs like `release/*` work) or a tag pattern (`v*`). A push to a matching branch deploys every service in that environment that builds from the repository, using the environment's last deployed configuration. A push never applies staged changes. You deploy them yourself with **Review & deploy**. A service can override its environment's branch in Settings → Source.
+Each environment has a trigger: a branch (globs like `release/*` work) or a tag pattern (`v*`). A push to a matching branch deploys every service in that environment that builds from the repository, using the environment's last deployed configuration. A push never applies staged changes. You apply them yourself with **Review & apply**. A service can override its environment's branch in Settings → Source.
 
 - A newer push replaces queued deployments and cancels a build still running for an older commit.
 - Put `[skip deploy]` or `[skip ci]` (also `[ci skip]`, `[no ci]`, `[deploy skip]`) in the head commit message to skip a push.

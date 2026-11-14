@@ -261,3 +261,53 @@ test('the evaluator is idempotent and the command runs', function (): void {
     $this->artisan('launchroom:alerts:prune')->assertSuccessful();
     expect(Alert::query()->count())->toBe(1);
 });
+
+test('alert links land on the filtered view of what is wrong', function (): void {
+    $environment = $this->project->production()->sole();
+    $service = "/p/{$this->project->public_id}/{$environment->public_id}/s/{$this->instance->service->public_id}";
+    $now = CarbonImmutable::now();
+
+    hostMinutes($this->server->id, 10, ['cpu_pct' => 95.0, 'disk_used_mb' => 92_000]);
+    $domain = Domain::query()->create(['team_id' => $this->team->id, 'service_instance_id' => $this->instance->id, 'hostname' => 'shop.example.com', 'kind' => 'custom']);
+    $domain->forceFill(['cert_expires_at' => now()->addDays(2)])->save();
+    $this->server->forceFill(['waf_status' => ['state' => 'error', 'since' => $now->subMinutes(10)->toIso8601String(), 'message' => 'refused']])->save();
+    ($this->evaluate)();
+
+    expect(firing(AlertRule::CpuHigh)?->href)->toBe("/servers/{$this->server->public_id}/resources?range=1h")
+        ->and(firing(AlertRule::DiskFull)?->href)->toBe("/servers/{$this->server->public_id}#disk")
+        ->and(firing(AlertRule::CertificateExpiring)?->href)->toBe("{$service}/settings/domains#shop.example.com")
+        ->and(firing(AlertRule::WafUnavailable)?->href)->toBe('/security#firewall');
+
+    $this->placement->forceFill(['phase' => WorkloadPhase::Unhealthy])->save();
+    ($this->evaluate)();
+    CarbonImmutable::setTestNow('2026-10-20 12:04:00');
+    ($this->evaluate)();
+    $now = CarbonImmutable::now();
+    expect(firing(AlertRule::ServiceUnhealthy)?->href)
+        ->toBe("{$service}/logs?q=level%3Aerror&from={$now->subMinutes(10)->getTimestamp()}&to={$now->getTimestamp()}");
+});
+
+test('an error-rate alert right after a deploy names the deploy and links to it', function (): void {
+    $deployment = Deployment::query()->whereKey($this->placement->deployment_id)->sole();
+    $deployment->forceFill(['status' => DeploymentStatus::Active, 'commit_sha' => '3b7d5e1aaaaaaa', 'finished_at' => CarbonImmutable::now()->subMinutes(4)])->save();
+
+    foreach (range(1, 4) as $m) {
+        DB::table('request_metric_samples')->upsert([[
+            'server_id' => $this->server->id, 'route_id' => 'rt_01JB7Z6X9Q3T8M5N2P4R6S8V0W', 'resolution' => 1,
+            'at' => CarbonImmutable::now()->startOfMinute()->subMinutes($m)->toIso8601String(),
+            'service_instance_id' => $this->instance->id, 'project_id' => $this->project->id, 'requests' => 100, 'status_5xx' => 30,
+        ]], ['server_id', 'route_id', 'resolution', 'at'], ['requests', 'status_5xx']);
+    }
+
+    ($this->evaluate)();
+    $alert = firing(AlertRule::ErrorRateHigh);
+    $environment = $this->project->production()->sole();
+
+    expect($alert?->facts['Started'] ?? null)->toBe('4 minutes after deploy 3b7d5e1')
+        ->and($alert?->href)->toBe("/p/{$this->project->public_id}/{$environment->public_id}/d/{$deployment->public_id}");
+
+    // A minute later the fact still measures from when the alert opened.
+    CarbonImmutable::setTestNow('2026-10-20 12:01:30');
+    ($this->evaluate)();
+    expect(firing(AlertRule::ErrorRateHigh)?->facts['Started'] ?? null)->toBe('4 minutes after deploy 3b7d5e1');
+});

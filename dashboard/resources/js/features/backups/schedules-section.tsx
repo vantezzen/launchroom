@@ -1,4 +1,4 @@
-import { useForm } from '@inertiajs/react';
+import { Link, useForm } from '@inertiajs/react';
 import { Database, HardDrive, Shield } from 'lucide-react';
 import { useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
@@ -454,8 +454,21 @@ export function ScheduleRow({
                         {schedule.projectName !== null && (
                             <span className="font-normal text-muted-foreground">
                                 {' '}
-                                in {schedule.projectName} (
-                                {schedule.environmentName})
+                                in{' '}
+                                {schedule.href ? (
+                                    <Link
+                                        href={schedule.href}
+                                        className="underline-offset-4 hover:text-foreground hover:underline"
+                                    >
+                                        {schedule.projectName} (
+                                        {schedule.environmentName})
+                                    </Link>
+                                ) : (
+                                    <>
+                                        {schedule.projectName} (
+                                        {schedule.environmentName})
+                                    </>
+                                )}
                             </span>
                         )}
                     </span>

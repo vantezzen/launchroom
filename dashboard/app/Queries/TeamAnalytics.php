@@ -91,6 +91,24 @@ final readonly class TeamAnalytics
 
         $previousRequests = array_sum(array_column($previous, 0));
         $previousErrors = array_sum(array_column($previous, 1));
+
+        // Requests the firewall refused are 403s in the access log: carve
+        // them out of each project's 4xx (docs/15 §5.4).
+        $scope = $this->teamScope($team);
+        $blocked = 0;
+
+        foreach (BlockedRequests::series($scope, $range, $now, $w['start'], $w['bucket'], $w['count'], 'project_id') as $project => $buckets) {
+            if (! isset($byProject[$project])) {
+                continue;
+            }
+
+            $refused = min(array_sum($buckets), $byProject[$project]['s4']);
+            $byProject[$project]['s4'] -= $refused;
+            $byProject[$project]['blocked'] = $refused;
+            $blocked += $refused;
+        }
+
+        $totals['s4'] -= $blocked;
         [$paths, $pathRequests] = $this->paths($team, $range, $now, $w['from']);
 
         return new TeamAnalyticsData(
@@ -102,12 +120,24 @@ final readonly class TeamAnalytics
                 $this->rate($totals['s5'], $totals['requests']),
                 $previousRequests > 0 ? $previousRequests : null,
                 $previousRequests > 0 ? $this->rate($previousErrors, $previousRequests) : null,
+                $blocked,
+                BlockedRequests::total($scope, $range, $now, $w['previousFrom'], $w['from']),
             ),
             projects: $this->projects($team, $byProject, $previous),
             servers: $this->servers($byServer),
             paths: $paths,
             pathRequests: $pathRequests,
         );
+    }
+
+    /**
+     * Restricts `waf_samples` to the team's projects.
+     *
+     * @return \Closure(Builder): Builder
+     */
+    private function teamScope(Team $team): \Closure
+    {
+        return static fn (Builder $q): Builder => $q->whereIn('project_id', DB::table('projects')->select('id')->where('team_id', $team->id));
     }
 
     /**
@@ -124,7 +154,7 @@ final readonly class TeamAnalytics
     }
 
     /**
-     * @param  array<int, array{requests: int, s4: int, s5: int, series: array<int, int>}>  $byProject
+     * @param  array<int, array{requests: int, s4: int, s5: int, series: array<int, int>, blocked?: int}>  $byProject
      * @param  array<int, array{int, int}>  $previous
      * @return list<AnalyticsProjectData>
      */
@@ -161,6 +191,7 @@ final readonly class TeamAnalytics
                 $this->rate($agg['s5'], $agg['requests']),
                 $this->rate($agg['s4'], $agg['requests']),
                 array_values($agg['series']),
+                $agg['blocked'] ?? 0,
             );
         }
 
@@ -218,13 +249,17 @@ final readonly class TeamAnalytics
             ->limit(self::TOP_PATHS)
             ->get();
         $names = Project::query()->where('team_id', $team->id)->whereKey($rows->pluck('project_id')->all())->get(['id', 'public_id', 'name'])->keyBy('id');
+        $blocked = BlockedRequests::paths($this->teamScope($team), $range, $now, $from, 'project_id');
         $out = [];
 
         foreach ($rows as $row) {
             $project = $names->get(Cast::id($row->project_id ?? null));
 
             if ($project instanceof Project) {
-                $out[] = new AnalyticsTeamPathData($project->public_id, $project->name, Cast::string($row->path ?? null), Cast::int($row->r ?? null) ?? 0, Cast::int($row->e4 ?? null) ?? 0, Cast::int($row->e5 ?? null) ?? 0);
+                $path = Cast::string($row->path ?? null);
+                $e4 = Cast::int($row->e4 ?? null) ?? 0;
+                $refused = min($blocked[$project->id][$path] ?? 0, $e4);
+                $out[] = new AnalyticsTeamPathData($project->public_id, $project->name, $path, Cast::int($row->r ?? null) ?? 0, $e4 - $refused, Cast::int($row->e5 ?? null) ?? 0, $refused);
             }
         }
 

@@ -10,7 +10,7 @@ use Spatie\LaravelData\Data;
  * Usage of one service in one environment (summed over its replicas, or
  * over the replicas on one server for the server page), aligned with the
  * response's `timestamps`. `replicas` is filled only when the request asked
- * for a single service (service panel Metrics tab).
+ * for a single service (Analytics → Resources filtered to it).
  */
 final class ServiceUsageSeriesData extends Data
 {

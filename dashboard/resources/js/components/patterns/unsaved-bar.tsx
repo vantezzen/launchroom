@@ -172,17 +172,18 @@ type StagedBarProps = {
     /** Consequence in a few words: "api will restart". */
     summary?: string;
     onDiscard: () => void;
+    /** Applies the staged changes (the affected services redeploy). */
     onDeploy: () => void;
     deploying?: boolean;
     deployLabel?: string;
-    /** Deploy needs a permission the viewer lacks: explain instead. */
+    /** Applying needs a permission the viewer lacks: explain instead. */
     disabledReason?: string;
     placement?: 'page' | 'inline';
 };
 
 /**
- * "2 changes · api will restart · Discard · Deploy" for staged changes
- * (direction §5.7). The count uses the staged (dashed) cue.
+ * "2 changes, api will restart, Discard, Apply" for staged changes
+ * (direction §5.7, D75). The count uses the staged (dashed) cue.
  */
 export function StagedBar({
     count,
@@ -190,7 +191,7 @@ export function StagedBar({
     onDiscard,
     onDeploy,
     deploying = false,
-    deployLabel = 'Deploy',
+    deployLabel = 'Apply',
     disabledReason,
     placement = 'page',
 }: StagedBarProps) {

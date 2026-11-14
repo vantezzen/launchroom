@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Data\Servers;
 
+use App\Data\Alerts\OpenAlertData;
 use App\Enums\ServerRole;
 use App\Enums\ServerStatus;
 use App\Models\Server;
@@ -44,9 +45,18 @@ final class ServerDetailData extends Data
         public ?ServerSpecsData $specs = null,
         /** May change "Looks like" and the location (PATCH /servers/{server}/appearance). */
         public bool $canUpdateAppearance = false,
+        /**
+         * Firing alerts about the server (docs/15 §3.6).
+         *
+         * @var list<OpenAlertData>
+         */
+        public array $openAlerts = [],
     ) {}
 
-    public static function fromServer(Server $server, bool $canApprove, bool $canRevoke, bool $canUpdateAppearance = false): self
+    /**
+     * @param  list<OpenAlertData>  $openAlerts
+     */
+    public static function fromServer(Server $server, bool $canApprove, bool $canRevoke, bool $canUpdateAppearance = false, array $openAlerts = []): self
     {
         return new self(
             $server->public_id,
@@ -70,6 +80,7 @@ final class ServerDetailData extends Data
             ServerLocations::for($server),
             ServerSpecsData::fromServer($server),
             $canUpdateAppearance,
+            $openAlerts,
         );
     }
 }

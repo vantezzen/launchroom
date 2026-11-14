@@ -14,6 +14,7 @@ import {
 } from '@/components/ui/select';
 import type { PendingAction } from '@/features/deployments/deployment-actions';
 import { DeploymentActionDialog } from '@/features/deployments/deployment-actions';
+import { liveReload } from '@/features/projects/environment-live-updates';
 import { formatDuration } from '@/features/deployments/format';
 import { ChannelEvents } from '@/features/deployments/realtime';
 import {
@@ -194,7 +195,7 @@ export default function ProjectDeployments({
 
         reloadTimer.current = window.setTimeout(() => {
             reloadTimer.current = null;
-            router.reload({ only: ['deployments', 'stats'] });
+            liveReload(['deployments', 'stats']);
         }, 400);
     };
 
@@ -232,7 +233,7 @@ export default function ProjectDeployments({
                     description={
                         stats.weekTotal > 0
                             ? summary
-                            : 'Every push, redeploy, rollback and config change.'
+                            : 'Deployments of every service in this project, from pushes, redeploys, rollbacks and applied changes.'
                     }
                     actions={
                         <>
@@ -310,7 +311,8 @@ export default function ProjectDeployments({
                                 )
                             }
                         >
-                            No deployments yet. Push to main or press Deploy.
+                            No deployments yet. A service deploys when you push
+                            to its branch, press Deploy or apply staged changes.
                         </EmptyState>
                     )
                 ) : (

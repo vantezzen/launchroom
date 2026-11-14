@@ -34,7 +34,7 @@ function Divider() {
 /**
  * The floating canvas toolbar (direction §9.4, Laravel Cloud): Add, Fit,
  * Tidy, zoom and ⌘K, bottom centre of the visible canvas; with staged
- * changes it ends in "N changes · Review & deploy" (design-system §13.9).
+ * changes it ends in "N changes" and "Review & apply" (design-system §13.9).
  */
 export function CanvasToolbar({
     onAdd,
@@ -44,7 +44,7 @@ export function CanvasToolbar({
 }: {
     onAdd?: () => void;
     onTidy?: () => void;
-    /** The staged changes' "Review & deploy" (StagedToolbarButton), last. */
+    /** The staged changes' "Review & apply" (StagedToolbarButton), last. */
     staged?: ReactNode;
     className?: string;
 }) {

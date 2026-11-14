@@ -17,11 +17,18 @@ import type {
 } from '@xyflow/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
+import { router, usePage } from '@inertiajs/react';
 import { toast } from 'sonner';
 import { useClipboard } from '@/hooks/use-clipboard';
+import { serviceAnalyticsHref } from '@/lib/links';
 import { requestJson } from '@/features/projects/http';
 import { RemoveServiceDialog } from '@/features/service-settings/remove-service-dialog';
+import {
+    optimisticService,
+    rollbackToast,
+} from '@/features/deployments/optimistic';
 import { layout as layoutRoute } from '@/routes/projects';
+import lifecycle from '@/routes/services/lifecycle';
 import { autoLayout, NODE_HEIGHT, NODE_WIDTH } from './auto-layout';
 import { StagedToolbarButton } from '@/features/staged-changes/staged-changes-pill';
 import { CanvasToolbar } from './canvas-toolbar';
@@ -31,9 +38,10 @@ import { EdgePopover } from './edge-popover';
 import { GroupFrame } from './group-frame';
 import type { GroupFlowNode } from './group-frame';
 import { framesFor, groupIndex, groupOf } from './groups';
-import { NodeContextMenu } from './node-context-menu';
+import { NodeActionConfirm, NodeContextMenu } from './node-context-menu';
 import type { NodeMenuAction } from './node-context-menu';
-import { ServiceNode } from './service-node';
+import { NodeActionsContext, ServiceNode } from './service-node';
+import type { NodeActions } from './service-node';
 import type {
     ConnectionFlowEdge,
     ServiceFlowNode,
@@ -113,6 +121,8 @@ export type ServiceCanvasProps = {
     abilities: App.Data.Canvas.ProjectAbilitiesData;
     activeServiceId: string | null;
     onOpenService: (serviceId: string, tab?: string) => void;
+    /** The pointer rests on a service (null: it left): its panel starts loading. */
+    onHoverService?: (serviceId: string | null) => void;
     onClosePanel: () => void;
     onRedeploy: (serviceId: string) => void;
     /** Opens the add sheet (toolbar "Add"); absent without the permission. */
@@ -137,6 +147,7 @@ export function ServiceCanvas({
     abilities,
     activeServiceId,
     onOpenService,
+    onHoverService,
     onClosePanel,
     onRedeploy,
     onAdd,
@@ -167,10 +178,19 @@ export function ServiceCanvas({
         anchor: XY;
     } | null>(null);
     const [menu, setMenu] = useState<{ id: string; position: XY } | null>(null);
+    // Redeploy and Restart from the node menu ask first (design-system §6).
+    const [confirming, setConfirming] = useState<{
+        id: string;
+        kind: 'redeploy' | 'restart';
+        position: XY;
+    } | null>(null);
     const [removing, setRemoving] = useState<string | null>(null);
     const [connecting, setConnecting] = useState(false);
     const [, copy] = useClipboard();
     const initialFit = useRef(false);
+    // The panel's Console tab rule (InteractiveSessionPolicy::viewAny).
+    const canConsole =
+        usePage().props.teams?.permissions.includes('containers.exec') ?? false;
 
     const byId = useMemo(
         () => new Map(nodes.map((node) => [node.id, node])),
@@ -828,6 +848,19 @@ export function ServiceCanvas({
                 case 'open':
                     onOpenService(node.id);
                     break;
+                case 'logs':
+                    onOpenService(node.id, action);
+                    break;
+                case 'analytics':
+                    router.visit(
+                        serviceAnalyticsHref({
+                            project,
+                            environment,
+                            service: node.id,
+                            hasDomain: node.domain !== null,
+                        }),
+                    );
+                    break;
                 case 'settings':
                 case 'variables':
                     onOpenService(node.id, action);
@@ -842,14 +875,21 @@ export function ServiceCanvas({
                     }
                     break;
                 case 'redeploy':
-                    onRedeploy(node.id);
+                case 'restart':
+                    if (menu) {
+                        setConfirming({
+                            id: node.id,
+                            kind: action,
+                            position: menu.position,
+                        });
+                    }
                     break;
                 case 'delete':
                     setRemoving(node.id);
                     break;
             }
         },
-        [menu, byId, onOpenService, onRedeploy, copy],
+        [menu, byId, onOpenService, onRedeploy, copy, project, environment],
     );
 
     const pendingFrom = pendingConnection
@@ -862,6 +902,31 @@ export function ServiceCanvas({
         ? edges.find((edge) => edge.id === openEdge.id)
         : undefined;
     const menuNode = menu ? byId.get(menu.id) : undefined;
+    const confirmingNode = confirming ? byId.get(confirming.id) : undefined;
+    const nodeActions = useMemo<NodeActions>(
+        () => ({
+            openService: onOpenService,
+            openMenu: (id, position) => setMenu({ id, position }),
+            canConsole,
+        }),
+        [onOpenService, canConsole],
+    );
+    const restart = (node: App.Data.Canvas.CanvasNodeData) =>
+        router.post(
+            lifecycle.restart({ project, environment, service: node.id }).url,
+            { processes: true },
+            {
+                preserveScroll: true,
+                preserveState: true,
+                optimistic: optimisticService(
+                    node.id,
+                    { state: 'progress', label: 'Restarting' },
+                    { deploying: true },
+                ),
+                onSuccess: () => toast.success(`Restarting ${node.name}`),
+                ...rollbackToast(`Couldn’t restart ${node.name}.`),
+            },
+        );
     const openVolumeData = openVolume
         ? volumesById.get(openVolume.id)
         : undefined;
@@ -874,192 +939,213 @@ export function ServiceCanvas({
     const removingNode = removing ? byId.get(removing) : undefined;
 
     return (
-        <div className="absolute inset-0" onKeyDown={onKeyDown}>
-            <ReactFlow<CanvasNode, CanvasEdge>
-                className={
-                    connecting
-                        ? 'launchroom-canvas connecting'
-                        : 'launchroom-canvas'
-                }
-                nodes={allNodes}
-                edges={allEdges}
-                nodeTypes={nodeTypes}
-                edgeTypes={edgeTypes}
-                onNodesChange={(changes) => {
-                    onNodesChange(
-                        changes.filter(
-                            (change) =>
-                                !('id' in change) ||
-                                (!change.id.startsWith('group-') &&
-                                    !isVolumeId(change.id)),
-                        ) as Parameters<typeof onNodesChange>[0],
-                    );
-                    onVolumeNodesChange(
-                        changes.filter(
-                            (change) => 'id' in change && isVolumeId(change.id),
-                        ) as Parameters<typeof onVolumeNodesChange>[0],
-                    );
-                }}
-                onNodeDragStop={onNodeDragStop}
-                onNodeClick={onNodeClick}
-                onNodeContextMenu={onNodeContextMenu}
-                onPaneClick={() => activeServiceId && onClosePanel()}
-                onConnect={onConnect}
-                onConnectStart={() => setConnecting(true)}
-                onConnectEnd={onConnectEnd}
-                isValidConnection={isValidConnection}
-                nodesDraggable={abilities.manage}
-                nodesConnectable={abilities.connect}
-                elementsSelectable
-                selectNodesOnDrag={false}
-                deleteKeyCode={null}
-                selectionKeyCode={null}
-                multiSelectionKeyCode={null}
-                disableKeyboardA11y
-                autoPanOnNodeFocus
-                minZoom={0.25}
-                maxZoom={1.75}
-                fitView={!initialFit.current}
-                fitViewOptions={{ padding: 0.25, maxZoom: 1 }}
-                onInit={() => {
-                    initialFit.current = true;
-                }}
-                proOptions={{ hideAttribution: true }}
-                aria-label="Services in this environment"
-            >
-                <Background
-                    variant={BackgroundVariant.Dots}
-                    gap={20}
-                    size={1.5}
-                    color="var(--canvas-dot)"
-                />
+        <NodeActionsContext.Provider value={nodeActions}>
+            <div className="absolute inset-0" onKeyDown={onKeyDown}>
+                <ReactFlow<CanvasNode, CanvasEdge>
+                    className={
+                        connecting
+                            ? 'launchroom-canvas connecting'
+                            : 'launchroom-canvas'
+                    }
+                    nodes={allNodes}
+                    edges={allEdges}
+                    nodeTypes={nodeTypes}
+                    edgeTypes={edgeTypes}
+                    onNodesChange={(changes) => {
+                        onNodesChange(
+                            changes.filter(
+                                (change) =>
+                                    !('id' in change) ||
+                                    (!change.id.startsWith('group-') &&
+                                        !isVolumeId(change.id)),
+                            ) as Parameters<typeof onNodesChange>[0],
+                        );
+                        onVolumeNodesChange(
+                            changes.filter(
+                                (change) =>
+                                    'id' in change && isVolumeId(change.id),
+                            ) as Parameters<typeof onVolumeNodesChange>[0],
+                        );
+                    }}
+                    onNodeDragStop={onNodeDragStop}
+                    onNodeClick={onNodeClick}
+                    onNodeMouseEnter={(_event, node) =>
+                        isService(node) && onHoverService?.(node.id)
+                    }
+                    onNodeMouseLeave={() => onHoverService?.(null)}
+                    onNodeContextMenu={onNodeContextMenu}
+                    onPaneClick={() => activeServiceId && onClosePanel()}
+                    onConnect={onConnect}
+                    onConnectStart={() => setConnecting(true)}
+                    onConnectEnd={onConnectEnd}
+                    isValidConnection={isValidConnection}
+                    nodesDraggable={abilities.manage}
+                    nodesConnectable={abilities.connect}
+                    elementsSelectable
+                    selectNodesOnDrag={false}
+                    deleteKeyCode={null}
+                    selectionKeyCode={null}
+                    multiSelectionKeyCode={null}
+                    disableKeyboardA11y
+                    autoPanOnNodeFocus
+                    minZoom={0.25}
+                    maxZoom={1.75}
+                    fitView={!initialFit.current}
+                    fitViewOptions={{ padding: 0.25, maxZoom: 1 }}
+                    onInit={() => {
+                        initialFit.current = true;
+                    }}
+                    proOptions={{ hideAttribution: true }}
+                    aria-label="Services in this environment"
+                >
+                    <Background
+                        variant={BackgroundVariant.Dots}
+                        gap={20}
+                        size={1.5}
+                        color="var(--canvas-dot)"
+                    />
+                    {nodes.length > 0 && (
+                        <MiniMap<CanvasNode>
+                            position="bottom-right"
+                            pannable
+                            zoomable
+                            ariaLabel="Canvas overview"
+                            nodeColor={(node) =>
+                                isService(node) ? 'var(--card)' : 'transparent'
+                            }
+                            nodeStrokeColor={(node) =>
+                                !isService(node)
+                                    ? 'transparent'
+                                    : node.data.staged
+                                      ? 'var(--signal)'
+                                      : 'var(--border-strong)'
+                            }
+                            nodeStrokeWidth={6}
+                            nodeBorderRadius={14}
+                            maskColor="color-mix(in oklab, var(--background) 55%, transparent)"
+                            maskStrokeColor="var(--signal)"
+                            maskStrokeWidth={1.5}
+                            className="hidden lg:block"
+                            style={{ width: 168, height: 108 }}
+                        />
+                    )}
+                </ReactFlow>
+
                 {nodes.length > 0 && (
-                    <MiniMap<CanvasNode>
-                        position="bottom-right"
-                        pannable
-                        zoomable
-                        ariaLabel="Canvas overview"
-                        nodeColor={(node) =>
-                            isService(node) ? 'var(--card)' : 'transparent'
-                        }
-                        nodeStrokeColor={(node) =>
-                            !isService(node)
-                                ? 'transparent'
-                                : node.data.staged
-                                  ? 'var(--signal)'
-                                  : 'var(--border-strong)'
-                        }
-                        nodeStrokeWidth={6}
-                        nodeBorderRadius={14}
-                        maskColor="color-mix(in oklab, var(--background) 55%, transparent)"
-                        maskStrokeColor="var(--signal)"
-                        maskStrokeWidth={1.5}
-                        className="hidden lg:block"
-                        style={{ width: 168, height: 108 }}
+                    <div
+                        className="pointer-events-none absolute inset-x-0 bottom-4 z-10 flex justify-center motion-safe:transition-[padding] motion-safe:duration-slow"
+                        style={{
+                            paddingRight: activeServiceId
+                                ? `min(${PANEL_WIDTH + 24}px, calc(62% + 24px))`
+                                : 0,
+                        }}
+                    >
+                        <CanvasToolbar
+                            onAdd={onAdd}
+                            onTidy={
+                                abilities.manage && nodes.length > 1
+                                    ? () => void tidyUp(true)
+                                    : undefined
+                            }
+                            staged={
+                                <StagedToolbarButton
+                                    project={project}
+                                    environment={environment}
+                                    divider
+                                />
+                            }
+                        />
+                    </div>
+                )}
+
+                {pendingConnection && pendingFrom && pendingTo && (
+                    <ConnectPopover
+                        project={project}
+                        environment={environment}
+                        from={pendingFrom}
+                        to={pendingTo}
+                        anchor={pendingConnection.anchor}
+                        onClose={() => setPendingConnection(null)}
                     />
                 )}
-            </ReactFlow>
 
-            {nodes.length > 0 && (
-                <div
-                    className="pointer-events-none absolute inset-x-0 bottom-4 z-10 flex justify-center motion-safe:transition-[padding] motion-safe:duration-slow"
-                    style={{
-                        paddingRight: activeServiceId
-                            ? `min(${PANEL_WIDTH + 24}px, calc(62% + 24px))`
-                            : 0,
-                    }}
-                >
-                    <CanvasToolbar
-                        onAdd={onAdd}
-                        onTidy={
-                            abilities.manage && nodes.length > 1
-                                ? () => void tidyUp(true)
+                {openEdge && edgeDetails && (
+                    <EdgePopover
+                        project={project}
+                        environment={environment}
+                        edge={edgeDetails}
+                        from={byId.get(edgeDetails.source)?.name ?? 'service'}
+                        to={byId.get(edgeDetails.target)?.name ?? 'service'}
+                        via={
+                            edgeDetails.via
+                                ? (byId.get(edgeDetails.via)?.name ?? 'its app')
                                 : undefined
                         }
-                        staged={
-                            <StagedToolbarButton
-                                project={project}
-                                environment={environment}
-                                divider
-                            />
-                        }
+                        anchor={openEdge.anchor}
+                        canDelete={abilities.connect}
+                        onClose={() => setOpenEdge(null)}
                     />
-                </div>
-            )}
+                )}
 
-            {pendingConnection && pendingFrom && pendingTo && (
-                <ConnectPopover
-                    project={project}
-                    environment={environment}
-                    from={pendingFrom}
-                    to={pendingTo}
-                    anchor={pendingConnection.anchor}
-                    onClose={() => setPendingConnection(null)}
-                />
-            )}
+                {openVolume && openVolumeData && (
+                    <VolumePopover
+                        project={project}
+                        environment={environment}
+                        volume={openVolumeData}
+                        services={byId}
+                        anchor={openVolume.anchor}
+                        canChange={abilities.manage}
+                        onClose={() => setOpenVolume(null)}
+                    />
+                )}
 
-            {openEdge && edgeDetails && (
-                <EdgePopover
-                    project={project}
-                    environment={environment}
-                    edge={edgeDetails}
-                    from={byId.get(edgeDetails.source)?.name ?? 'service'}
-                    to={byId.get(edgeDetails.target)?.name ?? 'service'}
-                    via={
-                        edgeDetails.via
-                            ? (byId.get(edgeDetails.via)?.name ?? 'its app')
-                            : undefined
-                    }
-                    anchor={openEdge.anchor}
-                    canDelete={abilities.connect}
-                    onClose={() => setOpenEdge(null)}
-                />
-            )}
+                {pendingAttach && attachService && attachVolume && (
+                    <AttachVolumePopover
+                        project={project}
+                        environment={environment}
+                        service={attachService}
+                        volume={attachVolume}
+                        owner={byId.get(attachVolume.ownerId)}
+                        anchor={pendingAttach.anchor}
+                        onClose={() => setPendingAttach(null)}
+                    />
+                )}
 
-            {openVolume && openVolumeData && (
-                <VolumePopover
-                    project={project}
-                    environment={environment}
-                    volume={openVolumeData}
-                    services={byId}
-                    anchor={openVolume.anchor}
-                    canChange={abilities.manage}
-                    onClose={() => setOpenVolume(null)}
-                />
-            )}
+                {menu && menuNode && (
+                    <NodeContextMenu
+                        node={menuNode}
+                        position={menu.position}
+                        canDeploy={abilities.deploy}
+                        canManage={abilities.manage}
+                        onAction={onMenuAction}
+                        onClose={() => setMenu(null)}
+                    />
+                )}
 
-            {pendingAttach && attachService && attachVolume && (
-                <AttachVolumePopover
-                    project={project}
-                    environment={environment}
-                    service={attachService}
-                    volume={attachVolume}
-                    owner={byId.get(attachVolume.ownerId)}
-                    anchor={pendingAttach.anchor}
-                    onClose={() => setPendingAttach(null)}
-                />
-            )}
+                {confirming && confirmingNode && (
+                    <NodeActionConfirm
+                        node={confirmingNode}
+                        kind={confirming.kind}
+                        position={confirming.position}
+                        onConfirm={() =>
+                            confirming.kind === 'redeploy'
+                                ? onRedeploy(confirmingNode.id)
+                                : restart(confirmingNode)
+                        }
+                        onClose={() => setConfirming(null)}
+                    />
+                )}
 
-            {menu && menuNode && (
-                <NodeContextMenu
-                    node={menuNode}
-                    position={menu.position}
-                    canDeploy={abilities.deploy}
-                    canManage={abilities.manage}
-                    onAction={onMenuAction}
-                    onClose={() => setMenu(null)}
-                />
-            )}
-
-            {removingNode && (
-                <RemoveServiceDialog
-                    project={project}
-                    environment={environment}
-                    service={removingNode}
-                    open
-                    onOpenChange={(open) => !open && setRemoving(null)}
-                />
-            )}
-        </div>
+                {removingNode && (
+                    <RemoveServiceDialog
+                        project={project}
+                        environment={environment}
+                        service={removingNode}
+                        open
+                        onOpenChange={(open) => !open && setRemoving(null)}
+                    />
+                )}
+            </div>
+        </NodeActionsContext.Provider>
     );
 }

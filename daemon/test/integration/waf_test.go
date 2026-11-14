@@ -25,6 +25,7 @@ import (
 	"github.com/vantezzen/launchroom/daemon/internal/ingress/caddy"
 	"github.com/vantezzen/launchroom/daemon/internal/policy"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
+	"github.com/vantezzen/launchroom/daemon/internal/traffic"
 	"github.com/vantezzen/launchroom/daemon/internal/waf"
 )
 
@@ -33,9 +34,10 @@ import (
 var wafPerf = flag.Bool("waf-perf", false, "run the web firewall performance measurements (docs/22 §6.7)")
 
 const (
-	wafLogAddr = "127.0.0.1:2033"
-	logHost    = "log.localhost"
-	plainHost  = "plain.localhost"
+	wafLogAddr    = "127.0.0.1:2033"
+	wafAccessAddr = "127.0.0.1:2034"
+	logHost       = "log.localhost"
+	plainHost     = "plain.localhost"
 )
 
 // wafEdge is an edge running launchroom's Caddy (with the firewall module)
@@ -43,6 +45,7 @@ const (
 type wafEdge struct {
 	*env
 	col    *waf.Collector
+	access *traffic.Collector // the access log: request metrics (docs/15 §1)
 	offset *atomic.Int64
 	image  state.ImageRef
 }
@@ -71,12 +74,18 @@ func setupWafEdge(t *testing.T) *wafEdge {
 			t.Errorf("waf receiver: %v", err)
 		}
 	}()
-	e := setupEdge(t, caddy.Options{}, nil, nil, func(mo *caddy.ManagerOptions, pol *policy.Config) {
+	access := traffic.New(traffic.Options{Now: func() time.Time { return time.Now().Add(time.Duration(offset.Load())) }})
+	go func() {
+		if err := access.Serve(ctx, wafAccessAddr); err != nil {
+			t.Errorf("access log receiver: %v", err)
+		}
+	}()
+	e := setupEdge(t, caddy.Options{AccessLogAddress: wafAccessAddr}, nil, nil, func(mo *caddy.ManagerOptions, pol *policy.Config) {
 		pol.SystemImageDigests[policy.SystemCaddy] = append(pol.SystemImageDigests[policy.SystemCaddy], digest)
 		mo.WafLogAddress = wafLogAddr
 		mo.WafDropped = col.Dropped
 	})
-	return &wafEdge{env: e, col: col, offset: offset, image: state.ImageRef("docker.io/library/launchroom-dev-caddy@" + digest)}
+	return &wafEdge{env: e, col: col, access: access, offset: offset, image: state.ImageRef("docker.io/library/launchroom-dev-caddy@" + digest)}
 }
 
 // wafState is the env's NodeState with launchroom's Caddy and three routes
@@ -95,6 +104,7 @@ func (w *wafEdge) wafState(t *testing.T, version int64, block, logOnly *state.Ro
 		t.Fatal(err)
 	}
 	w.col.SetRoutes(ns.Routes)
+	w.access.SetRoutes(ns.Routes)
 	return ns, wl
 }
 
@@ -196,6 +206,27 @@ func TestWafBlocksAndReports(t *testing.T) {
 	if code, _, err := wafDo(t, c, http.MethodGet, "https://"+testHost+"/?q=hello", nil, nil); err != nil || code != 200 {
 		t.Errorf("benign request: %d %v", code, err)
 	}
+
+	// A blocked request is still an access log line of the route: request
+	// metrics count it as a 4xx (docs/15 §5.4: analytics subtracts the
+	// firewall's blocked count from 4xx to show "Blocked by firewall").
+	var blocked4xx int64
+	for deadline := time.Now().Add(20 * time.Second); blocked4xx < 3 && time.Now().Before(deadline); {
+		time.Sleep(500 * time.Millisecond)
+		w.offset.Add(int64(time.Minute))
+		w.access.Roll()
+		pending := w.access.Pending()
+		for _, r := range pending {
+			if r.Route == ns.Routes[0].ID {
+				blocked4xx += r.Status4xx
+			}
+		}
+		w.access.Ack(pending)
+	}
+	if blocked4xx < 3 {
+		t.Errorf("request metrics counted %d 4xx on the Block route, want the 3 blocked requests", blocked4xx)
+	}
+	t.Logf("blocked requests counted as 4xx by request metrics: %d", blocked4xx)
 
 	// The report: blocked on the Block route with the page's reference, detected on Log only.
 	var samples []state.WafSample

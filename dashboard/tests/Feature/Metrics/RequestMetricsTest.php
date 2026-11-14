@@ -251,17 +251,36 @@ test('percentiles interpolate inside the bucket that holds them', function (): v
         ->and(RequestStats::quantile([...array_fill(0, 14, 0), 3], 0.95))->toEqual(30000);
 });
 
-test('the project Metrics page renders for members and is team-scoped', function (): void {
+test('the Resources view of Analytics renders for members and is team-scoped', function (): void {
     $environment = $this->project->production()->sole();
 
     $this->actingAs(memberOf($this->team, TeamRole::Viewer))
-        ->get("/p/{$this->project->public_id}/{$environment->public_id}/metrics")
+        ->get("/p/{$this->project->public_id}/{$environment->public_id}/analytics/resources")
         ->assertOk()
-        ->assertInertia(fn ($page) => $page->component('projects/metrics')
+        ->assertInertia(fn ($page) => $page->component('projects/analytics')
+            ->where('view', 'resources')
             ->where('services.0.name', 'web')
             ->where('environment.id', $environment->public_id));
 
     $this->actingAs(memberOf(Team::factory()->create(), TeamRole::Owner))
-        ->get("/p/{$this->project->public_id}/{$environment->public_id}/metrics")
+        ->get("/p/{$this->project->public_id}/{$environment->public_id}/analytics/resources")
+        ->assertNotFound();
+});
+
+test('the former Metrics page redirects to Resources with its range and service', function (): void {
+    $environment = $this->project->production()->sole();
+    $base = "/p/{$this->project->public_id}/{$environment->public_id}";
+    $service = $this->project->services()->sole()->public_id;
+
+    $this->actingAs(memberOf($this->team, TeamRole::Viewer))
+        ->get("{$base}/metrics?range=7d&service={$service}")
+        ->assertStatus(301)
+        ->assertRedirect("{$base}/analytics/resources?range=7d&service={$service}");
+    $this->actingAs(memberOf($this->team, TeamRole::Viewer))
+        ->get("{$base}/metrics")
+        ->assertRedirect("{$base}/analytics/resources");
+
+    $this->actingAs(memberOf(Team::factory()->create(), TeamRole::Owner))
+        ->get("{$base}/metrics")
         ->assertNotFound();
 });

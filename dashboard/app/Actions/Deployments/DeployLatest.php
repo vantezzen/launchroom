@@ -54,7 +54,7 @@ final readonly class DeployLatest
         }
 
         if ($this->staged->has($instance)) {
-            throw DomainRuleViolation::conflict('This service has staged changes. Deploy them with the environment’s Deploy changes, so they go out with the new version.');
+            throw DomainRuleViolation::conflict('This service has staged changes. Apply them with Review & apply, so they go out with the new version.');
         }
 
         if (! $versioned) {

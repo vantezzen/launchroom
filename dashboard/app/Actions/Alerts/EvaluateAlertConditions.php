@@ -8,10 +8,13 @@ use App\Data\Alerts\AlertSignal;
 use App\Enums\Alerts\AlertRule;
 use App\Enums\Alerts\AlertSeverity;
 use App\Enums\Alerts\AlertStatus;
+use App\Enums\DeploymentStatus;
 use App\Enums\EnvironmentKind;
 use App\Enums\ServerStatus;
+use App\Enums\ServerTab;
 use App\Enums\WorkloadPhase;
 use App\Models\Alerts\Alert;
+use App\Models\Deployment;
 use App\Models\Domain;
 use App\Models\Server;
 use App\Models\ServiceInstance;
@@ -19,6 +22,7 @@ use App\Models\Team;
 use App\Services\Alerts\AlertRuleSettings;
 use App\Services\Alerts\ResolvedRule;
 use App\Support\Hostname;
+use App\Support\Links;
 use App\Support\Metrics\Cast;
 use Carbon\CarbonImmutable;
 use Closure;
@@ -53,6 +57,9 @@ final readonly class EvaluateAlertConditions
     public const int MIN_REQUESTS = 50;
 
     private const int WINDOW_MINUTES = 30;
+
+    /** An error-rate alert names a deploy that went live this recently. */
+    public const int RECENT_DEPLOY_MINUTES = 30;
 
     public function __construct(
         private AlertRuleSettings $settings,
@@ -197,7 +204,7 @@ final readonly class EvaluateAlertConditions
                 continue;
             }
 
-            $out[$key] = function () use ($instance, $state): AlertSignal {
+            $out[$key] = function () use ($instance, $state, $now): AlertSignal {
                 $name = $instance->service->name;
                 $environment = $instance->environment;
                 $crashing = $state['restarts'] >= self::CRASH_RESTARTS;
@@ -222,7 +229,8 @@ final readonly class EvaluateAlertConditions
                             ? 'No replica is passing its health check. Its logs usually say why.'
                             : "{$state['down']} of {$state['total']} replicas are down. The others keep serving."),
                     severity: $environment->kind === EnvironmentKind::Production ? AlertSeverity::Critical : AlertSeverity::Warning,
-                    href: "/p/{$environment->project->public_id}/{$environment->public_id}/s/{$instance->service->public_id}/logs",
+                    // Lifecycle events (exits, OOM, failed health checks) are runtime log lines too.
+                    href: Links::serviceLogs($instance, 'level:error', $now->subMinutes(self::CRASH_WINDOW_MINUTES), $now),
                     project: $environment->project,
                     environment: $environment,
                     serviceInstance: $instance,
@@ -336,9 +344,25 @@ final readonly class EvaluateAlertConditions
                 continue;
             }
 
-            $out[$key] = function () use ($instance, $total, $rate, $rule): AlertSignal {
+            $out[$key] = function () use ($instance, $total, $rate, $rule, $now): AlertSignal {
                 $environment = $instance->environment;
                 $minutes = $rule->duration ?? 5;
+                $facts = ['Errors' => number_format($total['errors']).' of '.number_format($total['requests']).' requests'];
+                // Measured from when the alert opened, so the fact and the
+                // link stay the same while it fires.
+                $opened = Alert::query()
+                    ->where('team_id', $instance->team_id)
+                    ->where('rule', AlertRule::ErrorRateHigh->value)
+                    ->where('subject_key', 'service:'.$instance->public_id)
+                    ->where('status', AlertStatus::Firing->value)
+                    ->first(['opened_at'])?->opened_at;
+                $start = $opened !== null ? CarbonImmutable::instance($opened) : $now;
+                $deploy = $this->recentDeploy($instance, $start);
+
+                if ($deploy instanceof Deployment) {
+                    $after = max(0, (int) floor(CarbonImmutable::instance($deploy->finished_at ?? $start)->diffInMinutes($start)));
+                    $facts['Started'] = ($after === 1 ? '1 minute' : "{$after} minutes").' after deploy '.$this->deployName($deploy);
+                }
 
                 return new AlertSignal(
                     team: $this->team($instance->team_id),
@@ -347,11 +371,13 @@ final readonly class EvaluateAlertConditions
                     title: "{$instance->service->name} is answering with errors in {$environment->name}",
                     summary: $this->percent($rate)." of requests failed with a server error in the last {$minutes} minutes.",
                     severity: $rate >= 25 ? AlertSeverity::Critical : AlertSeverity::Warning,
-                    href: "/p/{$environment->project->public_id}/{$environment->public_id}/s/{$instance->service->public_id}/logs",
+                    href: $deploy instanceof Deployment
+                        ? Links::deployment($deploy)
+                        : Links::serviceLogs($instance, 'level:error', $now->subMinutes($minutes), $now),
                     project: $environment->project,
                     environment: $environment,
                     serviceInstance: $instance,
-                    facts: ['Errors' => number_format($total['errors']).' of '.number_format($total['requests']).' requests'],
+                    facts: $facts,
                 );
             };
         }
@@ -424,7 +450,7 @@ final readonly class EvaluateAlertConditions
                     subject: 'server:'.$server->public_id,
                     title: $rule === AlertRule::CpuHigh ? "{$server->name} is busy" : "{$server->name} is low on memory",
                     summary: "{$what} averaged ".$this->percent($average)." over the last {$minutes} minutes. The server page shows what uses it.",
-                    href: "/servers/{$server->public_id}",
+                    href: Links::server($server, ServerTab::Resources->value, ['range' => '1h']),
                     server: $server,
                     facts: [$what => $this->percent($average)],
                 );
@@ -481,7 +507,7 @@ final readonly class EvaluateAlertConditions
                 title: "{$server->name} is running out of disk space",
                 summary: $this->gigabytes($used).' of '.$this->gigabytes($total).' used. launchroom removes old images and build cache automatically, but not unused volumes or backups on the server.',
                 severity: $pct >= 95 ? AlertSeverity::Critical : AlertSeverity::Warning,
-                href: "/servers/{$server->public_id}",
+                href: Links::server($server, null, [], 'disk'),
                 server: $server,
                 facts: ['Disk' => $this->percent($pct).' full'],
             );
@@ -542,7 +568,7 @@ final readonly class EvaluateAlertConditions
                     title: "The certificate for {$domain->hostname} is about to expire",
                     summary: "It {$when} and renewing it keeps failing. Check that the domain still points at your servers.",
                     severity: $expires->lessThan($now->addDays(3)) ? AlertSeverity::Critical : AlertSeverity::Warning,
-                    href: "/p/{$environment->project->public_id}/{$environment->public_id}/s/{$instance->service->public_id}/settings",
+                    href: Links::serviceSettings($instance, 'domains', $domain->hostname),
                     project: $environment->project,
                     environment: $environment,
                     serviceInstance: $instance,
@@ -578,12 +604,33 @@ final readonly class EvaluateAlertConditions
                 subject: 'server:'.$server->public_id,
                 title: "The web firewall is off on {$server->name}",
                 summary: 'Its routes keep serving requests without the firewall until the server accepts the firewall settings again.'.($message === null ? '' : " The server said: {$message}"),
-                href: '/security',
+                href: Links::security(null, 'firewall'),
                 server: $server,
             );
         }
 
         return $out;
+    }
+
+    /**
+     * The instance's newest deployment that went live within the last 30
+     * minutes: an error spike right after it is most likely its doing.
+     */
+    private function recentDeploy(ServiceInstance $instance, CarbonImmutable $now): ?Deployment
+    {
+        return Deployment::query()
+            ->where('service_instance_id', $instance->id)
+            ->whereIn('status', [DeploymentStatus::Active->value, DeploymentStatus::Superseded->value])
+            ->whereNotNull('finished_at')
+            ->where('finished_at', '>=', $now->subMinutes(self::RECENT_DEPLOY_MINUTES))
+            ->where('finished_at', '<=', $now)
+            ->latest('finished_at')
+            ->first();
+    }
+
+    private function deployName(Deployment $deployment): string
+    {
+        return $deployment->commit_sha !== null ? substr($deployment->commit_sha, 0, 7) : $deployment->public_id;
     }
 
     /**

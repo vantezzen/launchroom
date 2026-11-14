@@ -11,6 +11,8 @@ use App\Data\Canvas\DeployDayData;
 use App\Data\Canvas\EnvironmentSummaryData;
 use App\Data\Canvas\ProjectLastDeploymentData;
 use App\Data\Canvas\ProjectSummaryData;
+use App\Data\Canvas\ServiceProblemData;
+use App\Enums\CanvasNodeState;
 use App\Enums\DeploymentStatus;
 use App\Enums\DomainKind;
 use App\Enums\EnvironmentKind;
@@ -24,6 +26,7 @@ use App\Models\ServiceInstance;
 use App\Models\Team;
 use App\Support\Canvas\NodeStatus;
 use App\Support\Canvas\ServiceGlyph;
+use App\Support\Canvas\ServiceProblems;
 use App\Support\Git\GitHubAvatar;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Query\Builder;
@@ -35,6 +38,8 @@ use Illuminate\Support\Facades\DB;
  * what the project card shows (direction.md §5.2): palette slot, primary
  * domain, last deployment, 14-day deploy bars and a mini canvas of
  * production. A fixed number of queries regardless of the project count.
+ * Projects whose production has a failed service come first, then ones that
+ * need attention, then the rest by name (docs/08 §13).
  */
 final readonly class ProjectSummaries
 {
@@ -95,17 +100,26 @@ final readonly class ProjectSummaries
         $deploys = $this->deployDays($projectIds);
         $thumbnails = $this->thumbnails($production, $grouped);
         $requests = $this->requests($production, $grouped);
+        $alerts = (new OpenAlerts)->forProjects($team->id, $projectIds);
 
-        return array_values($projects->map(static function (Project $project) use ($byEnvironment, $latest, $placements, $domains, $lastDeployments, $deploys, $thumbnails, $requests): ProjectSummaryData {
+        $summaries = array_values($projects->map(static function (Project $project) use ($byEnvironment, $latest, $placements, $domains, $lastDeployments, $deploys, $thumbnails, $requests, $alerts): ProjectSummaryData {
             $logos = [];
             $updated = $project->updated_at;
 
-            $environments = array_values($project->environments->map(static function (Environment $environment) use ($byEnvironment, $latest, $placements, &$logos, &$updated): EnvironmentSummaryData {
+            $environments = array_values($project->environments->map(static function (Environment $environment) use ($project, $byEnvironment, $latest, $placements, &$logos, &$updated): EnvironmentSummaryData {
                 $statuses = [];
+                $problems = [];
 
                 foreach ($byEnvironment->get($environment->id, []) as $instance) {
                     /** @var ServiceInstance $instance */
-                    $statuses[] = NodeStatus::for($instance, $latest[$instance->id] ?? null, $placements[$instance->id] ?? []);
+                    $status = NodeStatus::for($instance, $latest[$instance->id] ?? null, $placements[$instance->id] ?? []);
+                    $statuses[] = $status;
+                    $problem = ServiceProblems::for($project->public_id, $environment->public_id, $instance->service->public_id, $instance->service->name, $status);
+
+                    if ($problem instanceof ServiceProblemData) {
+                        $problems[] = $problem;
+                    }
+
                     $logos[$instance->service->public_id] ??= ServiceGlyph::logo($instance->service);
                     $deployedAt = ($latest[$instance->id] ?? null)?->queued_at;
 
@@ -120,6 +134,7 @@ final readonly class ProjectSummaries
                     $environment->kind,
                     count($statuses),
                     NodeStatus::aggregate($statuses),
+                    ServiceProblems::sorted($problems),
                 );
             })->all());
 
@@ -137,8 +152,32 @@ final readonly class ProjectSummaries
                 canvas: $thumbnails[$project->id] ?? null,
                 iconUrl: $project->iconUrl(),
                 requests: $requests[$project->id] ?? null,
+                openAlerts: $alerts[$project->id] ?? [],
             );
         })->all());
+
+        // Problems first (stable: by name within each group).
+        usort($summaries, static fn (ProjectSummaryData $a, ProjectSummaryData $b): int => self::urgency($b) <=> self::urgency($a));
+
+        return $summaries;
+    }
+
+    /**
+     * 2 when production has a failed service, 1 when one needs attention.
+     */
+    private static function urgency(ProjectSummaryData $summary): int
+    {
+        $production = $summary->environments[0] ?? null;
+
+        if (! $production instanceof EnvironmentSummaryData || $production->kind !== EnvironmentKind::Production) {
+            return 0;
+        }
+
+        return match ($production->status->state) {
+            CanvasNodeState::Failed => 2,
+            CanvasNodeState::Warning => 1,
+            default => 0,
+        };
     }
 
     /**

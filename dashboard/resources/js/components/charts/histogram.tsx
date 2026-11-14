@@ -3,6 +3,7 @@ import type { KeyboardEvent } from 'react';
 import { cn } from '@/lib/utils';
 import { formatCompact, formatTick, formatTooltipTime } from './format';
 import { groupMarkers, LABEL_OFFSET } from './marker-groups';
+import { MarkerLayer } from './marker-layer';
 import type { ChartMarker } from './time-series-chart';
 import { useMeasuredWidth } from './use-measure';
 
@@ -88,7 +89,6 @@ export function Histogram({
                   width,
               )
             : [];
-    const openGroup = activeMarker !== null ? groups[activeMarker] : null;
 
     const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
         const last = buckets.length - 1;
@@ -273,86 +273,21 @@ export function Histogram({
                     </svg>
                 )}
             </div>
-            {groups.map((group, index) => {
-                const labelLeft = group.showLabel
-                    ? group.anchor === 'start'
-                        ? group.x
-                        : group.x - LABEL_OFFSET - group.labelWidth
-                    : group.x - 8;
-                const hitWidth = group.showLabel
-                    ? group.labelWidth + LABEL_OFFSET + 4
-                    : 16;
+            {groups.length > 0 && (
+                <MarkerLayer
+                    groups={groups}
+                    top={-2}
+                    span={span}
+                    onActiveChange={(index) => {
+                        setActiveMarker(index);
 
-                return (
-                    <button
-                        key={`${group.markers[0].t}-${group.label}`}
-                        type="button"
-                        aria-label={`${group.markers.length === 1 ? 'Event' : `${group.markers.length} events`}: ${group.markers
-                            .map(
-                                (marker) =>
-                                    `${marker.detail ?? marker.label} at ${formatTooltipTime(marker.t, span)}`,
-                            )
-                            .join(', ')}`}
-                        aria-expanded={activeMarker === index}
-                        className="absolute top-0 h-3.5 cursor-default rounded-[3px] outline-none focus-visible:ring-2 focus-visible:ring-(--signal)"
-                        style={{
-                            left: Math.max(0, labelLeft - 2),
-                            width: hitWidth,
-                        }}
-                        onPointerEnter={(event) => {
-                            if (event.pointerType === 'mouse') {
-                                setActive(null);
-                                setActiveMarker(index);
-                            }
-                        }}
-                        onPointerLeave={(event) => {
-                            if (event.pointerType === 'mouse') {
-                                setActiveMarker(null);
-                            }
-                        }}
-                        onFocus={() => setActiveMarker(index)}
-                        onBlur={() => setActiveMarker(null)}
-                        // Touch: a tap opens the list, tapping elsewhere closes it.
-                        onClick={() => setActiveMarker(index)}
-                        onKeyDown={(event) => {
-                            if (event.key === 'Escape') {
-                                setActiveMarker(null);
-                            }
-                        }}
-                    />
-                );
-            })}
-            {openGroup && (
-                <div
-                    aria-live="polite"
-                    className="pointer-events-none absolute -top-1 z-10 flex max-w-[calc(100%-8px)] -translate-y-full flex-col gap-0.5 rounded-md border bg-popover px-2 py-1 type-small tabular-nums shadow-[0_8px_30px_rgb(0_0_0/0.10)] dark:border-(--border-strong)"
-                    style={
-                        openGroup.x > width / 2
-                            ? { right: Math.max(0, width - openGroup.x - 12) }
-                            : { left: Math.max(0, openGroup.x - 12) }
-                    }
-                >
-                    {openGroup.markers.slice(0, 8).map((marker) => (
-                        <span
-                            key={`${marker.t}-${marker.label}`}
-                            className="flex min-w-0 gap-2 whitespace-nowrap"
-                        >
-                            <span className="shrink-0 text-muted-foreground">
-                                {formatTooltipTime(marker.t, span)}
-                            </span>
-                            <span className="truncate font-mono">
-                                {marker.detail ?? marker.label}
-                            </span>
-                        </span>
-                    ))}
-                    {openGroup.markers.length > 8 && (
-                        <span className="text-muted-foreground">
-                            and {openGroup.markers.length - 8} more
-                        </span>
-                    )}
-                </div>
+                        if (index !== null) {
+                            setActive(null);
+                        }
+                    }}
+                />
             )}
-            {current && !openGroup && (
+            {current && activeMarker === null && (
                 <div
                     aria-live="polite"
                     className="pointer-events-none absolute -top-1 z-10 -translate-y-full rounded-md border bg-popover px-2 py-1 type-small whitespace-nowrap tabular-nums shadow-[0_8px_30px_rgb(0_0_0/0.10)] dark:border-(--border-strong)"

@@ -116,6 +116,7 @@ final class SnapshotTags
         if ($settings->instance_id === null) {
             InstanceSettings::query()->whereKey(InstanceSettings::ID)->whereNull('instance_id')
                 ->update(['instance_id' => PublicId::generate('ins')]);
+            InstanceSettings::forgetCurrent();
             $settings = InstanceSettings::current();
         }
 

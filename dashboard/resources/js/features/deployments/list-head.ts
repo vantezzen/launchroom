@@ -30,11 +30,3 @@ export function listHead(data: ServiceDeploymentList): Summary | null {
         null
     );
 }
-
-/** A head that never went live: Deploy again is its main action. */
-export function needsRetry(head: Summary, active: Summary | null): boolean {
-    return (
-        active === null &&
-        (head.status === 'failed' || head.status === 'cancelled')
-    );
-}

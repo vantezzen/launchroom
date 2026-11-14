@@ -30,9 +30,11 @@ use App\Models\Security\SecurityInvestigation;
 use App\Models\ServiceInstance;
 use App\Models\Team;
 use App\Models\User;
+use App\Queries\AnalyticsTiers;
 use App\Support\Metrics\Cast;
 use App\Support\Security\InvestigationSummary;
 use App\Support\Security\LifecycleProducts;
+use App\Support\Security\SecurityScope;
 use App\Support\Security\VersionOrder;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Query\Builder;
@@ -58,11 +60,20 @@ final readonly class SecurityOverview
         private WafOverview $waf,
     ) {}
 
-    public function handle(Team $team, User $user, AnalyticsRange $range): SecurityPageData
+    /**
+     * `$scope` narrows every section to a project's or a service's
+     * instances (docs/22 §9.2); null is the whole team.
+     */
+    public function handle(Team $team, User $user, AnalyticsRange $range, ?SecurityScope $scope = null): SecurityPageData
     {
         $now = CarbonImmutable::now();
         $refs = new SecurityServiceRefs;
         $live = $this->liveInstances($team->id);
+        $scoped = $scope instanceof SecurityScope ? $scope->instances : [];
+
+        if ($scope instanceof SecurityScope) {
+            $live = $scope->filter($live);
+        }
         $refs->load($team->id, array_keys($live));
 
         $feeds = AdvisorySources::all();
@@ -74,6 +85,7 @@ final readonly class SecurityOverview
         $findings = SecurityFinding::query()
             ->where('team_id', $team->id)
             ->whereIn('status', [SecurityFindingStatus::Open->value])
+            ->when($scope instanceof SecurityScope, static fn ($q) => $q->whereIn('service_instance_id', $scoped))
             ->get();
         $refs->load($team->id, array_values(array_unique(array_map(static fn (SecurityFinding $f): int => $f->service_instance_id, $findings->all()))));
         $titles = $this->titles(self::advisoryIds($findings->all()));
@@ -94,7 +106,12 @@ final readonly class SecurityOverview
 
         [$runtimes, $baseImages] = $this->runtimes($live, $now);
         $routed = $this->routedInstances($team->id);
-        $firewall = $this->waf->handle($team, $range, $refs, Gate::forUser($user)->allows('viewClientNetworks', [SecurityFinding::class, $team]));
+
+        if ($scope instanceof SecurityScope) {
+            $routed = $scope->filter($routed);
+        }
+
+        $firewall = $this->waf->handle($team, $range, $refs, Gate::forUser($user)->allows('viewClientNetworks', [SecurityFinding::class, $team]), $scope?->instances);
         $blockedSeries = array_fill(0, count($firewall->timestamps), 0);
 
         foreach ($firewall->series as $series) {
@@ -112,11 +129,12 @@ final readonly class SecurityOverview
             servicesChecked: count(array_filter($live, static fn (array $i): bool => $i['status'] === InventoryStatus::Ready->value)),
             pendingInventories: count(array_filter($live, static fn (array $i): bool => $i['status'] === null || $i['status'] === InventoryStatus::Pending->value)),
             blocked: $firewall->blocked,
-            previousBlocked: $this->waf->previousBlocked($team, $range),
+            previousBlocked: $this->waf->previousBlocked($team, $range, $scope?->instances),
             blockedSeries: array_values($blockedSeries),
             protectedServices: count(array_filter($routed, static fn (string $mode): bool => $mode === WafMode::Block->value)),
             watchingServices: count(array_filter($routed, static fn (string $mode): bool => $mode === WafMode::Log->value)),
             routedServices: count($routed),
+            requests: $this->requests($team, $range, $now, $scope),
         );
 
         return new SecurityPageData(
@@ -134,8 +152,11 @@ final readonly class SecurityOverview
             worthKnowing: $this->worthKnowing($findings->where('level', FindingLevel::WorthKnowing)->all(), $refs, $titles, $runtimes, $baseImages),
             runtimes: $runtimes,
             baseImages: $baseImages,
-            notices: $this->notices($team->id, $refs, $feeds, $now),
-            dismissed: SecurityFinding::query()->where('team_id', $team->id)->where('status', SecurityFindingStatus::Dismissed->value)->count(),
+            notices: $this->notices($team->id, $refs, $feeds, $now, $scope),
+            dismissed: SecurityFinding::query()->where('team_id', $team->id)->where('status', SecurityFindingStatus::Dismissed->value)
+                ->when($scope instanceof SecurityScope, static fn ($q) => $q->whereIn('service_instance_id', $scoped))
+                ->count(),
+            scope: $scope?->data,
         );
     }
 
@@ -183,6 +204,22 @@ final readonly class SecurityOverview
                 InvestigationSummary::sentences($investigation),
             ) : null,
         );
+    }
+
+    /**
+     * Requests the team's (or scope's) services served in the range, so the
+     * hero can say what share the firewall blocked; null without traffic.
+     */
+    private function requests(Team $team, AnalyticsRange $range, CarbonImmutable $now, ?SecurityScope $scope): ?int
+    {
+        $window = AnalyticsTiers::window($range, $now);
+        $scoped = $scope instanceof SecurityScope ? $scope->instances : [];
+        $query = DB::table('request_metric_samples')
+            ->whereIn('project_id', DB::table('projects')->select('id')->where('team_id', $team->id))
+            ->when($scope instanceof SecurityScope, static fn (Builder $q) => $q->whereIn('service_instance_id', $scoped));
+        $sum = Cast::int(AnalyticsTiers::apply($query, $range, $now, $window['from'], null, AnalyticsTiers::REQUESTS)->sum('requests'));
+
+        return $sum !== null && $sum > 0 ? $sum : null;
     }
 
     /**
@@ -559,7 +596,7 @@ final readonly class SecurityOverview
      * @param  list<FeedStateData>  $feeds
      * @return list<string>
      */
-    private function notices(int $teamId, SecurityServiceRefs $refs, array $feeds, CarbonImmutable $now): array
+    private function notices(int $teamId, SecurityServiceRefs $refs, array $feeds, CarbonImmutable $now, ?SecurityScope $scope = null): array
     {
         $out = [];
 
@@ -569,12 +606,14 @@ final readonly class SecurityOverview
             }
         }
 
+        $scoped = $scope instanceof SecurityScope ? $scope->instances : [];
         $failed = DB::table('image_inventories as i')
             ->join('deployments as d', 'd.inventory_id', '=', 'i.id')
             ->join('service_instances as si', 'si.active_deployment_id', '=', 'd.id')
             ->where('i.team_id', $teamId)
             ->where('i.status', InventoryStatus::Failed->value)
             ->where('i.retries', '>=', 2)
+            ->when($scope instanceof SecurityScope, static fn (Builder $q) => $q->whereIn('si.id', $scoped))
             ->get(['si.id', 'i.error']);
 
         $refs->load($teamId, array_values(array_map(static fn (object $row): int => Cast::id($row->id ?? null), $failed->all())));

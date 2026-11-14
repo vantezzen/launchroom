@@ -1,5 +1,6 @@
 import type { VisitOptions } from '@inertiajs/core';
 import type { CSSProperties } from 'react';
+import { flushSync } from 'react-dom';
 
 /** Motion tokens (design-system §8), for JS-driven animation. */
 export const motion = {
@@ -60,4 +61,24 @@ export function sharedElement(kind: string, id: string): CSSProperties {
     const ident = `${kind}-${id}`.replace(/[^a-zA-Z0-9_-]/g, '_');
 
     return { viewTransitionName: ident } as CSSProperties;
+}
+
+/**
+ * Runs a client-side state change inside a view transition, so motion
+ * starts on the click instead of after a response (design-system §8):
+ * shared elements morph (canvas node logo → panel header). Reduced motion
+ * and browsers without the API just apply it.
+ */
+export function withViewTransition(update: () => void): void {
+    if (
+        prefersReducedMotion() ||
+        typeof document === 'undefined' ||
+        typeof document.startViewTransition !== 'function'
+    ) {
+        update();
+
+        return;
+    }
+
+    document.startViewTransition(() => flushSync(update));
 }

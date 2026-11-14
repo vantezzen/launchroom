@@ -237,8 +237,8 @@ test('the analytics endpoint counts requests per hour by status class with the t
         ->and($response->json('servers'))->toHaveCount(2)
         ->and($response->json('servers.0'))->toMatchArray(['id' => $this->server->public_id, 'name' => 'fsn1-edge', 'requests' => 200])
         ->and($response->json('services.0'))->toMatchArray(['name' => 'web', 'requests' => 250])
-        ->and($response->json('paths.0'))->toBe(['path' => '/', 'requests' => 120, 'status4xx' => 0, 'status5xx' => 0])
-        ->and($response->json('paths.1'))->toBe(['path' => '/checkout', 'requests' => 100, 'status4xx' => 0, 'status5xx' => 20])
+        ->and($response->json('paths.0'))->toBe(['path' => '/', 'requests' => 120, 'status4xx' => 0, 'status5xx' => 0, 'blocked' => 0])
+        ->and($response->json('paths.1'))->toBe(['path' => '/checkout', 'requests' => 100, 'status4xx' => 0, 'status5xx' => 20, 'blocked' => 0])
         ->and($response->json('pathRequests'))->toBe(300)
         ->and($response->json('referrers.0'))->toBe(['host' => 'news.ycombinator.com', 'requests' => 24])
         ->and($response->json('referrerRequests'))->toBe(26)
@@ -398,7 +398,7 @@ test('the drill-down links resolve: project analytics and one service by URL', f
 
     $this->actingAs($viewer)->get("/p/{$this->project->public_id}/{$this->environment->public_id}/analytics")
         ->assertOk()
-        ->assertInertia(fn ($page) => $page->component('projects/analytics')->where('initialService', null)->where('project.name', 'Shop'));
+        ->assertInertia(fn ($page) => $page->component('projects/analytics')->where('view', 'traffic')->where('initialService', null)->where('project.name', 'Shop'));
     $this->actingAs($viewer)->get("/p/{$this->project->public_id}/{$this->environment->public_id}/analytics?service={$service}")
         ->assertOk()
         ->assertInertia(fn ($page) => $page->where('initialService', $service));
@@ -407,6 +407,36 @@ test('the drill-down links resolve: project analytics and one service by URL', f
     $this->actingAs($viewer)->get("/p/{$this->project->public_id}/{$this->environment->public_id}/analytics?service={$foreign->public_id}")
         ->assertOk()
         ->assertInertia(fn ($page) => $page->where('initialService', null));
+});
+
+test('a slug in ?service= preselects the service in both views', function (): void {
+    $viewer = memberOf($this->team, TeamRole::Viewer);
+    $base = "/p/{$this->project->public_id}/{$this->environment->public_id}/analytics";
+
+    $this->actingAs($viewer)->get("{$base}?service=web")
+        ->assertInertia(fn ($page) => $page->where('view', 'traffic')->where('initialService', $this->instance->service->public_id));
+    $this->actingAs($viewer)->get("{$base}/resources?service=web&range=1h")
+        ->assertInertia(fn ($page) => $page->where('view', 'resources')->where('initialService', $this->instance->service->public_id));
+});
+
+test('the service panel\'s former Metrics tab opens the service\'s Analytics', function (): void {
+    $viewer = memberOf($this->team, TeamRole::Viewer);
+    $base = "/p/{$this->project->public_id}/{$this->environment->public_id}";
+    $web = $this->instance->service->public_id;
+
+    // With a domain: Traffic, keeping the range.
+    $this->actingAs($viewer)->get("{$base}/s/{$web}/metrics?range=7d")
+        ->assertStatus(301)
+        ->assertRedirect("{$base}/analytics?service={$web}&range=7d");
+
+    // Without one: Resources.
+    $worker = Projects::image($this->project, 'worker', port: null);
+    $this->actingAs($viewer)->get("{$base}/s/{$worker->public_id}/metrics")
+        ->assertRedirect("{$base}/analytics/resources?service={$worker->public_id}");
+
+    $this->actingAs(memberOf(Team::factory()->create(), TeamRole::Owner))
+        ->get("{$base}/s/{$web}/metrics")
+        ->assertNotFound();
 });
 
 test('the public API returns the team overview of the token\'s team', function (): void {

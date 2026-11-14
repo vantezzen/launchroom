@@ -2,6 +2,7 @@ import { Link, router } from '@inertiajs/react';
 import { MapPin } from 'lucide-react';
 import { useState } from 'react';
 import type { ReactNode } from 'react';
+import { AlertsChip } from '@/components/attention-chip';
 import { DeviceImage, DEVICE_LABEL } from '@/components/devices/device-image';
 import { MetaLine } from '@/components/patterns/meta-line';
 import { StatusPill, serverStatus } from '@/components/status';
@@ -12,6 +13,7 @@ import {
     shortAge,
     shortDuration,
     specParts,
+    serverAlerts,
 } from '@/features/servers/format';
 import { RoleChipLabel } from '@/features/servers/server-status';
 import { useNow } from '@/hooks/use-now';
@@ -129,6 +131,7 @@ export function ServerHero({ server }: { server: Server }) {
                             label={label}
                             detail={since ? `for ${since}` : undefined}
                         />
+                        <AlertsChip alerts={serverAlerts(server.openAlerts)} />
                     </div>
                     <MetaLine className="type-body text-muted-foreground">
                         {describe(server)}

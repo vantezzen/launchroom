@@ -26,5 +26,7 @@ final class SecuritySummaryData extends Data
         public int $protectedServices,
         public int $watchingServices,
         public int $routedServices,
+        /** Requests served in the range (for the blocked share); null without traffic. */
+        public ?int $requests = null,
     ) {}
 }

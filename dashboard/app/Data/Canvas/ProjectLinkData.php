@@ -16,5 +16,7 @@ final class ProjectLinkData extends Data
         public string $name,
         /** The project icon (docs/08 §13); null → monogram. */
         public ?string $iconUrl = null,
+        /** Its production environment (`env_…`): the switcher opens that canvas directly. */
+        public ?string $environmentId = null,
     ) {}
 }

@@ -1,7 +1,12 @@
+import { useEffect } from 'react';
 import { useCurrentUrl } from '@/hooks/use-current-url';
 import AppLayoutTemplate from '@/layouts/app/app-sidebar-layout';
+import { warmPages } from '@/lib/idle';
 import { index as settingsHome } from '@/routes/settings';
 import type { BreadcrumbItem } from '@/types';
+
+/** Team pages lead into projects: the canvas code loads once the page is idle. */
+const NEXT_PAGES = ['projects/canvas'];
 
 export default function AppLayout({
     breadcrumbs = [],
@@ -11,6 +16,8 @@ export default function AppLayout({
     children: React.ReactNode;
 }) {
     const { currentUrl } = useCurrentUrl();
+
+    useEffect(() => warmPages(NEXT_PAGES), []);
 
     return (
         <AppLayoutTemplate

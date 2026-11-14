@@ -1,4 +1,5 @@
 import { usePage } from '@inertiajs/react';
+import { useEffect } from 'react';
 import type { ReactNode } from 'react';
 import { AppContent } from '@/components/app-content';
 import { AppShell } from '@/components/app-shell';
@@ -10,6 +11,7 @@ import {
 } from '@/components/patterns/unsaved-bar';
 import { ProjectDeployToasts } from '@/features/deployments/deploy-toasts';
 import { ProjectTopBar } from '@/features/projects/project-top-bar';
+import { warmPages } from '@/lib/idle';
 import { cn } from '@/lib/utils';
 
 /**
@@ -19,6 +21,15 @@ import { cn } from '@/lib/utils';
  */
 const FULL_BLEED = new Set(['projects/canvas', 'projects/logs']);
 
+/** The project pages one click away: their code loads once the page is idle. */
+const NEXT_PAGES = [
+    'projects/canvas',
+    'projects/deployments/show',
+    'projects/deployments/index',
+    'projects/logs',
+    'projects/metrics',
+];
+
 /**
  * Project pages: the app sidebar plus the project top bar (switchers, the
  * project tabs and the staged-changes button) instead of a breadcrumb.
@@ -26,6 +37,8 @@ const FULL_BLEED = new Set(['projects/canvas', 'projects/logs']);
 export default function ProjectLayout({ children }: { children: ReactNode }) {
     const { component } = usePage();
     const fullBleed = FULL_BLEED.has(component);
+
+    useEffect(() => warmPages(NEXT_PAGES), []);
 
     return (
         <AppShell variant="sidebar">

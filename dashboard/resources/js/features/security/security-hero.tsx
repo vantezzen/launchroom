@@ -7,18 +7,14 @@ import { MetaLine } from '@/components/patterns/meta-line';
 import { StatusIcon } from '@/components/status';
 import type { StatusState } from '@/components/status';
 import { relativeTime } from '@/components/time-ago';
+import { formatShare } from '@/features/analytics/shape';
 import { delta } from '@/features/metrics/format';
+import { rangeWords } from '@/lib/observe-scope';
 import { cn } from '@/lib/utils';
 import { card, plural } from './format';
 import type { ActionGroup } from './shape';
 
 type PageData = App.Data.Security.SecurityPageData;
-
-const RANGE_WORDS: Record<string, string> = {
-    '24h': 'in the last 24 hours',
-    '7d': 'in the last 7 days',
-    '30d': 'in the last 30 days',
-};
 
 /**
  * The top of the Security page (docs/22 §9.2 part 1): the verdict ("am I
@@ -273,6 +269,12 @@ function PackagesMetric({ data }: { data: PageData }) {
 function BlockedMetric({ data, range }: { data: PageData; range: string }) {
     const s = data.summary;
     const change = delta(s.blocked, s.previousBlocked);
+    const words = `in the ${rangeWords(range)}`;
+    // The share of all requests in the range, when there was traffic.
+    const share =
+        s.requests && s.blocked > 0
+            ? `${formatShare((s.blocked / s.requests) * 100)} of requests ${words}`
+            : null;
 
     return (
         <Metric
@@ -285,12 +287,12 @@ function BlockedMetric({ data, range }: { data: PageData; range: string }) {
                     </span>
                 ) : undefined
             }
-            hint={RANGE_WORDS[range] ?? ''}
+            hint={share ?? words}
             visual={
                 s.blocked > 0 ? (
                     <Sparkline
                         values={s.blockedSeries}
-                        label={`Attacks blocked ${RANGE_WORDS[range] ?? ''}`}
+                        label={`Attacks blocked ${words}`}
                         height={28}
                         area
                         min={0}

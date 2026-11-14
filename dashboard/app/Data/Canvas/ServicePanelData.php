@@ -31,5 +31,7 @@ final class ServicePanelData extends Data
         public ?string $actionNeededFinding = null,
         /** The header's Deploy, Restart, Stop and Start (D68). */
         public ?ServiceControlsData $controls = null,
+        /** The header's source link: repository, image, engine or parent app. */
+        public ?ServiceOriginData $origin = null,
     ) {}
 }

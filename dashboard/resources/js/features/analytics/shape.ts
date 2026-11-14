@@ -1,4 +1,5 @@
 import { colorForSlot, OTHER, PALETTE_SIZE } from '@/components/charts/palette';
+import { REQUEST_CLASS } from '@/components/charts/request-breakdown';
 import type { StackedSeries } from '@/components/charts/stacked-bars';
 
 type Analytics = App.Data.Analytics.AnalyticsData;
@@ -55,43 +56,33 @@ export function projectSeries(
 }
 
 /**
- * Requests per bucket stacked by status class (docs/15 §5.4): successes in
- * the signal colour, redirects grey, client errors amber and server errors
- * red and hatched. 1xx (WebSocket upgrades) only appear when present.
+ * Requests per bucket stacked by status class (docs/15 §5.4), named and
+ * coloured by the shared request breakdown (components/charts/
+ * request-breakdown.ts): successes in the signal colour, redirects grey,
+ * the app's client errors amber, requests the web firewall refused violet
+ * and hatched (carved out of 4xx by the server), server errors red and
+ * hatched. 1xx (WebSocket upgrades) only appear when present.
  */
 export function statusSeries(data: Analytics): StackedSeries[] {
+    const series = (
+        key: string,
+        kind: keyof typeof REQUEST_CLASS,
+        values: number[],
+    ): StackedSeries => ({
+        key,
+        label: REQUEST_CLASS[kind].label,
+        color: REQUEST_CLASS[kind].color,
+        hatched: REQUEST_CLASS[kind].hatched,
+        values,
+    });
+
     return [
-        {
-            key: '2xx',
-            label: 'Success (2xx)',
-            color: 'var(--signal)',
-            values: data.status2xx,
-        },
-        {
-            key: '3xx',
-            label: 'Redirects (3xx)',
-            color: 'var(--chart-other)',
-            values: data.status3xx,
-        },
-        {
-            key: '4xx',
-            label: 'Client errors (4xx)',
-            color: 'var(--status-progress)',
-            values: data.status4xx,
-        },
-        {
-            key: '5xx',
-            label: 'Server errors (5xx)',
-            color: 'var(--status-error)',
-            hatched: true,
-            values: data.status5xx,
-        },
-        {
-            key: '1xx',
-            label: 'Upgrades (1xx)',
-            color: 'color-mix(in oklab, var(--chart-other) 45%, transparent)',
-            values: data.statusOther,
-        },
+        series('2xx', 'success', data.status2xx),
+        series('3xx', 'redirect', data.status3xx),
+        series('4xx', 'clientError', data.status4xx),
+        series('blocked', 'blocked', data.blocked),
+        series('5xx', 'serverError', data.status5xx),
+        series('1xx', 'upgrade', data.statusOther),
     ];
 }
 
@@ -108,6 +99,8 @@ export type PathRow = {
     sharePct: number;
     clientErrorPct: number | null;
     serverErrorPct: number | null;
+    /** Requests to this path the web firewall refused. */
+    blocked: number;
     other: boolean;
 };
 
@@ -124,6 +117,7 @@ export function pathRows(data: Analytics): PathRow[] {
         sharePct: share(p.requests, total) ?? 0,
         clientErrorPct: share(p.status4xx, p.requests),
         serverErrorPct: share(p.status5xx, p.requests),
+        blocked: p.blocked,
         other: false,
     }));
     const listed = data.paths.reduce((sum, p) => sum + p.requests, 0);
@@ -137,6 +131,7 @@ export function pathRows(data: Analytics): PathRow[] {
             sharePct: share(rest, total) ?? 0,
             clientErrorPct: null,
             serverErrorPct: null,
+            blocked: 0,
             other: true,
         });
     }

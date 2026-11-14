@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Data\Analytics;
 
+use App\Data\Metrics\DeployMarkerData;
 use Spatie\LaravelData\Data;
 
 /**
@@ -14,6 +15,11 @@ use Spatie\LaravelData\Data;
  * the "other" row of the top routes is `pathRequests` minus the listed
  * paths. `serversWithoutPaths` names edges that served traffic in the range
  * but don't send paths yet (older servers).
+ *
+ * `blocked` counts requests the web firewall refused per bucket; they are
+ * carved out of `status4xx` (a blocked request is a 403 in the access log),
+ * so the classes still add up to the requests. `deploys` are the deploy
+ * markers of the range (App\Queries\DeployMarkers).
  */
 final class AnalyticsData extends Data
 {
@@ -24,11 +30,13 @@ final class AnalyticsData extends Data
      * @param  list<int>  $status4xx
      * @param  list<int>  $status5xx
      * @param  list<int>  $statusOther
+     * @param  list<int>  $blocked
      * @param  list<AnalyticsSplitData>  $servers
      * @param  list<AnalyticsSplitData>  $services
      * @param  list<AnalyticsPathData>  $paths
      * @param  list<AnalyticsReferrerData>  $referrers
      * @param  list<string>  $serversWithoutPaths
+     * @param  list<DeployMarkerData>  $deploys
      */
     public function __construct(
         public string $range,
@@ -48,5 +56,7 @@ final class AnalyticsData extends Data
         public int $referrerRequests,
         public ?AnalyticsAgentsData $agents,
         public array $serversWithoutPaths,
+        public array $blocked = [],
+        public array $deploys = [],
     ) {}
 }

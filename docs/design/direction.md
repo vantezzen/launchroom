@@ -50,7 +50,7 @@ Every page starts with the same **52 px top bar**, `px-6` (16 px on phones), hai
 | Page type | Left | Right |
 |---|---|---|
 | Team pages | Breadcrumb: `Servers / fra-1` | Page-level secondary actions (`Replace`, `⋯`) |
-| Project pages | `project ▾` / `environment ▾` (env pill with its status dot), then the project tabs inline as a segmented row: **Canvas · Deployments · Logs · Metrics · Previews · Settings** | The staged-changes button ("4 changes · Review & deploy") or nothing |
+| Project pages | `project ▾` / `environment ▾` (env pill with its status dot), then the project tabs inline as a segmented row: **Canvas · Deployments · Logs · Analytics · Previews · Settings** | The staged-changes button ("4 changes" with "Review & apply") or nothing |
 
 The project top bar is one row: tabs as a segmented control in the bar leave more height for the canvas and align project pages with team pages. Page titles live in the content, not in the bar.
 
@@ -180,7 +180,7 @@ All live in `resources/js/components/` (primitives) or `components/patterns/` (c
 
 ### 5.7 Sheets, panels and the floating bar
 - `Sheet` (right, 480/560/720 px, float level, 16 px radius, 12 px inset on desktop, full screen on phones): header (logo, title, status, close), sections with headings and dividers, toggles right-aligned (Laravel Cloud).
-- `ServicePanel`: a `Sheet` over the canvas with tabs **Deployments · Variables · Metrics · Logs · Settings** (+ Console, Data and Backups where they apply, [../08-dashboard-ux.md](../08-dashboard-ux.md) §1).
+- `ServicePanel`: a `Sheet` over the canvas with tabs **Deployments · Logs · Settings** (+ Console and Data where they apply) and an **Analytics ↗** link to the project's Analytics filtered to the service ([../08-dashboard-ux.md](../08-dashboard-ux.md) §1, D75).
 - `UnsavedBar` / `StagedBar`: floating, centred at the bottom of the sheet or page, inverse colours (black in light, white in dark): "⚠ Unsaved changes · Reset · Save" for instant settings, "2 changes · api will restart · Discard · Deploy" for staged ones. It replaces per-section Save buttons.
 
 ### 5.8 Canvas
@@ -304,11 +304,11 @@ JSON, authorized through team relations: `GET /servers/-/metrics?range=1h|24h|7d
 | Page | Charts | Data |
 |---|---|---|
 | Servers | Per card: CPU and memory sparklines (last hour), the top projects by memory, disk in the footer when ≥ 80 %. System load chart, map with bubbles and mesh arcs, topology. | Usage metrics, mesh peers |
-| Server detail | Usage stat tiles with sparklines; "what runs here" usage meter + per-workload rows; health; the Metrics tab's charts | Usage and request metrics, health |
+| Server detail | Usage stat tiles with sparklines; "what runs here" usage meter + per-workload rows; health; the Resources tab's charts | Usage and request metrics, health |
 | Projects | 14-day deploy bars per card (failures red, today blue); mini canvas thumbnail | Deployments |
 | Canvas nodes | Node footer: CPU sparkline and memory; replicas and servers; database nodes: last backup | Workload metrics, backups |
-| Service panel → Metrics tab | Requests, error rate, latency when there is traffic; CPU and memory (per replica when there are several); deploy markers on every chart | Usage and request metrics |
-| Project → Metrics | Six metric cards and the selected card's chart with deploy markers | Usage and request metrics |
+| Project → Analytics → Traffic | Requests, errors, blocked by firewall, requests per hour by status, paths, referrers, clients; also filtered to one service | Request analytics |
+| Project → Analytics → Resources | CPU, memory, latency and bandwidth cards and the selected card's chart with deploy markers (per replica for one service); also filtered to one service | Usage and request metrics |
 | Deployments list | Duration bar per row relative to the median of the service; a header strip "12 deploys this week · 1 failed · median 1m 20s" | Deployments |
 | Deployment detail | Build history sparkline in the related cards; step durations as text | Deployments |
 | Logs explorer | Histogram of lines per bucket, errors stacked, deploy markers | Log chunks; runtime lines need opt-in retention |
@@ -350,7 +350,7 @@ Overview: System load │ map · How it fits together │ At a glance
 - Private network, public traffic and certificates live on Settings → Network.
 
 ### 9.2 Server detail
-Hero (device 300 px on a recessed stage, name in `display`, status pill, one line "Hetzner Cloud CX32 in Frankfurt · runs this dashboard · joined 21 days ago", role and spec chips) → tabs **Overview · Metrics · Network · Settings** ([../08-dashboard-ux.md](../08-dashboard-ux.md) §14). Overview: usage stat tiles → "What runs here" (usage meter by project, rows per workload) beside Health (problems first, all checks in a sheet) → At a glance. Settings: "What this server does" role cards (instant, with a confirm popover for removing a role that has workloads), appearance, placement, retired volumes as one row opening a sheet, Danger zone.
+Hero (device 300 px on a recessed stage, name in `display`, status pill, one line "Hetzner Cloud CX32 in Frankfurt · runs this dashboard · joined 21 days ago", role and spec chips) → tabs **Overview · Resources · Network · Settings** ([../08-dashboard-ux.md](../08-dashboard-ux.md) §14). Overview: usage stat tiles → "What runs here" (usage meter by project, rows per workload) beside Health (problems first, all checks in a sheet) → At a glance. Settings: "What this server does" role cards (instant, with a confirm popover for removing a role that has workloads), appearance, placement, retired volumes as one row opening a sheet, Danger zone.
 
 ### 9.3 Projects
 3-column `ProjectCard` grid with search; sorted by last activity. The "New project" card is always last (dashed, framework logos). Empty state: the dashed card alone, centred, with "Import a repository" primary.
@@ -364,14 +364,14 @@ Hero (device 300 px on a recessed stage, name in `display`, status pill, one lin
   - footer strip (hairline above): CPU sparkline and memory, volume, replicas and servers ("×2 · fra-1, hel-1").
   - Selected: 2 px foreground ring. Staged: dashed signal outline 3 px offset + a "New/Changed/Removed" chip. Degraded: amber ring + chip. Failed: red status line, node stays otherwise normal ("still serving").
 - **Edges**: 1.5 px, muted foreground; database connections solid, app → app solid with arrow, "shared with production" in red dashed with a chip; label pill in mono-small (`DB_* · 6`); staged edges dashed signal.
-- **Toolbar**: floating bottom-centre: + Add, Fit, Tidy, zoom − 100 % +, ⌘K, and "4 changes · Review & deploy" while something is staged. **Minimap**: floating bottom-right with real node shapes, the viewport in signal blue, the staged nodes in signal.
+- **Toolbar**: floating bottom-centre: + Add, Fit, Tidy, zoom − 100 % +, ⌘K, and "4 changes" with **Review & apply** while something is staged. **Minimap**: floating bottom-right with real node shapes, the viewport in signal blue, the staged nodes in signal.
 - **Empty canvas**: the three group frames drawn empty with ghost tiles inside ("Add a repository", "Add a database"), not a modal.
 - **Phone**: the canvas becomes a list of group sections with node cards (tap opens the panel full screen).
 
 ### 9.5 Service panel tabs
 - **Deployments**: one list in one card. The current deployment (in progress, else live) is its first row, expanded: the same avatar column, title and meta line as the rest, plus the steps with live status and times and Cancel / View logs / Redeploy. Then the history rows (status word, message, sha, age, duration, failure reason in red, Roll back on hover). See design-system.md §13.9 "Service panel Deployments".
 - **Variables**: table stays (it's a list of key/values) with calmer chips (icon-only lucide icons with tooltips: lock for secret, link for reference, hammer for build, plug for connection), changed rows marked staged, the `StagedBar` at the bottom, "Raw .env" and "Import" as secondary, paste-anywhere.
-- **Metrics**: requests, error rate and p95 when there is traffic, then CPU and memory, with charts and deploy markers.
+- **Analytics ↗** (a link, not a tab; D75): the project's Analytics page filtered to the service, Traffic with a domain, else Resources. The charts need the page's width.
 - **Logs**: the log explorer scoped to this service.
 - **Settings**: full width with a sidebar of pages, a drill-down list on phones ([../08-dashboard-ux.md](../08-dashboard-ux.md) §16); controls aligned right; Detected + Override rows show the detected value muted with "Override"; the floating bars replace per-section Save.
 - **Console** and **Data**: [../08-dashboard-ux.md](../08-dashboard-ux.md) §15.

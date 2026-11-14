@@ -7,9 +7,8 @@ namespace App\Queries;
 use App\Data\Logs\LogBucketData;
 use App\Data\Logs\LogEntryData;
 use App\Data\Logs\LogExplorerPageData;
-use App\Data\Logs\LogMarkerData;
 use App\Data\Logs\LogQueryData;
-use App\Enums\DeploymentStatus;
+use App\Data\Metrics\DeployMarkerData;
 use App\Enums\LogSourceKind;
 use App\Models\DaemonTask;
 use App\Models\Deployment;
@@ -58,14 +57,13 @@ final class LogSearch
 
     public function page(LogScope $scope, LogQueryData $query, int $tailing = 0): LogExplorerPageData
     {
-        $to = CarbonImmutable::now();
-        $from = $to->subSeconds($query->seconds());
+        [$from, $to] = $query->window();
         $search = LogSearchQuery::parse($query->q);
 
         return DB::transaction(function () use ($scope, $query, $search, $from, $to, $tailing): LogExplorerPageData {
             DB::statement('SET LOCAL statement_timeout = '.self::TIMEOUT_MS);
 
-            $chunkFilter = $this->chunkFilter($scope, $query, $search, $from);
+            $chunkFilter = $this->chunkFilter($scope, $query, $search, $from, $query->absolute() ? $to : null);
 
             if (! $chunkFilter instanceof \Closure) {
                 return $this->empty($from, $to, $query->after, $tailing);
@@ -81,7 +79,7 @@ final class LogSearch
 
             return new LogExplorerPageData(
                 entries: array_reverse($entries),
-                markers: $query->after > 0 ? [] : $this->markers($scope, $query, $from),
+                markers: $query->after > 0 ? [] : $this->markers($scope, $query, $from, $to),
                 from: $from->toIso8601String(),
                 to: $to->toIso8601String(),
                 cursor: $cursor,
@@ -97,7 +95,7 @@ final class LogSearch
      * The chunk-level conditions; null when a filter can't match anything
      * (an unknown service or server name).
      */
-    private function chunkFilter(LogScope $scope, LogQueryData $query, LogSearchQuery $search, CarbonImmutable $from): ?\Closure
+    private function chunkFilter(LogScope $scope, LogQueryData $query, LogSearchQuery $search, CarbonImmutable $from, ?CarbonImmutable $to = null): ?\Closure
     {
         $ids = [];
 
@@ -125,8 +123,12 @@ final class LogSearch
         $columns = ['service' => 'c.service_id', 'environment' => 'c.environment_id', 'project' => 'c.project_id', 'server' => 'c.server_id', 'deployment' => 'c.deployment_id'];
         $errorsOnly = $search->positive('level') === ['error'];
 
-        return static function (Builder $q) use ($scope, $query, $search, $from, $ids, $columns, $service, $errorsOnly): void {
+        return static function (Builder $q) use ($scope, $query, $search, $from, $to, $ids, $columns, $service, $errorsOnly): void {
             $q->where('c.team_id', $scope->teamId)->where('c.created_at', '>=', $from);
+
+            if ($to instanceof CarbonImmutable) {
+                $q->where('c.created_at', '<', $to);
+            }
 
             if ($scope->projectId !== null) {
                 $q->where('c.project_id', $scope->projectId);
@@ -302,7 +304,7 @@ final class LogSearch
 
         $deployments = Deployment::query()->where('team_id', $scope->teamId)->whereIn('id', $pluck('deployment_id'))->get(['id', 'public_id', 'commit_sha'])->keyBy('id');
         $services = Service::query()->where('team_id', $scope->teamId)->whereIn('id', $pluck('service_id'))->get(['id', 'public_id', 'name'])->keyBy('id');
-        $servers = Server::query()->where('team_id', $scope->teamId)->whereIn('id', $pluck('server_id'))->pluck('name', 'id');
+        $servers = Server::query()->where('team_id', $scope->teamId)->whereIn('id', $pluck('server_id'))->get(['id', 'public_id', 'name'])->keyBy('id');
         $environments = $scope->kind === 'environment' ? collect() : Environment::query()->where('team_id', $scope->teamId)->whereIn('id', $pluck('environment_id'))->pluck('name', 'id');
         $projects = $scope->kind === 'team' ? Project::query()->where('team_id', $scope->teamId)->whereIn('id', $pluck('project_id'))->pluck('name', 'id') : collect();
         $tasks = DaemonTask::query()->where('team_id', $scope->teamId)->whereIn('id', $pluck('daemon_task_id'))->get(['id', 'spec'])->keyBy('id');
@@ -343,13 +345,14 @@ final class LogSearch
                 service: $service instanceof Service ? $service->name : 'launchroom',
                 serviceId: $service instanceof Service ? $service->public_id : null,
                 replica: is_int($slot) ? (string) ($slot + 1) : null,
-                server: is_string($server) ? $server : null,
+                server: $server instanceof Server ? $server->name : null,
                 deployment: $deployment instanceof Deployment ? ($deployment->commit_sha !== null ? substr($deployment->commit_sha, 0, 7) : $deployment->public_id) : null,
                 deploymentId: $deployment instanceof Deployment ? $deployment->public_id : null,
                 stream: in_array($stream, ['stdout', 'stderr', 'system'], true) ? $stream : 'stdout',
                 message: mb_substr($text, 0, 8000),
                 environment: is_string($environment) ? $environment : null,
                 project: is_string($project) ? $project : null,
+                serverId: $server instanceof Server ? $server->public_id : null,
             );
         }
 
@@ -357,34 +360,27 @@ final class LogSearch
     }
 
     /**
-     * @return list<LogMarkerData>
+     * Deploy markers of the scope in the window (App\Queries\DeployMarkers).
+     *
+     * @return list<DeployMarkerData>
      */
-    private function markers(LogScope $scope, LogQueryData $query, CarbonImmutable $from): array
+    private function markers(LogScope $scope, LogQueryData $query, CarbonImmutable $from, CarbonImmutable $to): array
     {
-        $deployments = Deployment::query()
-            ->where('team_id', $scope->teamId)
-            ->when($scope->environmentId !== null, static fn ($q) => $q->where('environment_id', $scope->environmentId))
-            ->when($scope->kind === 'project', static fn ($q) => $q->whereIn('environment_id', Environment::query()->select('id')->where('project_id', $scope->projectId)))
-            ->when($query->service !== null, static fn ($q) => $q->whereHas('serviceInstance.service', static fn (\Illuminate\Contracts\Database\Query\Builder $s) => $s->where('public_id', $query->service)))
-            ->whereIn('status', [DeploymentStatus::Active, DeploymentStatus::Superseded, DeploymentStatus::Failed])
-            ->where(static fn (\Illuminate\Contracts\Database\Query\Builder $q) => $q->where('finished_at', '>=', $from)->orWhere(static fn (\Illuminate\Contracts\Database\Query\Builder $w) => $w->whereNull('finished_at')->where('queued_at', '>=', $from)))
-            ->with('serviceInstance.service:id,name')
-            ->latest('queued_at')
-            ->limit(200)
-            ->get(['id', 'public_id', 'service_instance_id', 'commit_sha', 'status', 'queued_at', 'finished_at']);
+        return DeployMarkers::query(static function (Builder $q) use ($scope, $query): void {
+            $q->where('d.team_id', $scope->teamId);
 
-        $markers = [];
+            if ($scope->environmentId !== null) {
+                $q->where('d.environment_id', $scope->environmentId);
+            }
 
-        foreach ($deployments as $deployment) {
-            $markers[] = new LogMarkerData(
-                deploymentId: $deployment->public_id,
-                at: ($deployment->finished_at ?? $deployment->queued_at)->toIso8601String(),
-                label: ($deployment->status === DeploymentStatus::Failed ? 'failed ' : 'deploy ').($deployment->commit_sha !== null ? substr($deployment->commit_sha, 0, 7) : $deployment->serviceInstance->service->name),
-                status: $deployment->status->value,
-            );
-        }
+            if ($scope->kind === 'project') {
+                $q->where('e.project_id', $scope->projectId);
+            }
 
-        return array_reverse($markers);
+            if ($query->service !== null) {
+                $q->where('s.public_id', $query->service);
+            }
+        }, $from, $to->addMinute());
     }
 
     private function empty(CarbonImmutable $from, CarbonImmutable $to, int $after, int $tailing): LogExplorerPageData

@@ -64,7 +64,7 @@ Tags on every snapshot: `instance:<id>`, `kind:{control-plane|database|volume|ba
 - **Maintenance**: retention `forget` per schedule and one `prune` per repository per day (§9.3). launchroomd also supports `check` with a read subset as a `backup_maintenance` operation.
 - **Verification**: a weekly automatic test restore of each database and volume into a throwaway container, followed by engine checks (table and row counts, `pg_amcheck`, `CHECK TABLE`, `redis-check-rdb`, a full read of volume tars), shown as "Last verified 2 days ago" (§10.4). An unverified backup is a hope, not a backup.
 
-Visibility: every database and volume shows "last successful backup N hours ago" on its canvas node (a warning badge if stale or failing) and in its Backups settings page. Failures raise alerts (§10.6). Settings → Backups lists all destinations, schedules, sizes, failures and the recovery kit status.
+Visibility: every database and volume shows "last successful backup N hours ago" on its canvas node (a warning badge if stale or failing) and in its Backups settings page. Failures raise alerts (§10.6). Settings → Backups lists all destinations, schedules, sizes, failures and the recovery kit status; a schedule's "in shop (production)" links to that service's Settings → Backups (`BackupScheduleData.href`).
 
 ## 4. The recovery kit
 

@@ -8,7 +8,7 @@ import { TimeAgo } from '@/components/time-ago';
 import { formatDuration, shortSha } from '@/features/deployments/format';
 import { cn } from '@/lib/utils';
 import { show as showDeployment } from '@/routes/deployments';
-import { logs as projectLogs } from '@/routes/projects';
+import { logsHref } from '@/lib/links';
 
 type Detail = App.Data.Deployments.DeploymentDetailData;
 
@@ -41,6 +41,25 @@ function median(values: number[]): number | null {
 }
 
 /**
+ * The runtime logs of one deployment (docs/08 §12): the environment's log
+ * explorer filtered to `deployment:<id>`, from when it started.
+ */
+export function deploymentLogsHref(
+    deployment: App.Data.Deployments.DeploymentSummaryData,
+): string {
+    const from = Date.parse(deployment.startedAt ?? deployment.queuedAt);
+
+    return logsHref({
+        project: deployment.projectId,
+        environment: deployment.environmentId,
+        q: `deployment:${deployment.id}`,
+        window: Number.isNaN(from)
+            ? null
+            : { from, to: Math.max(Date.now(), from + 60_000) },
+    });
+}
+
+/**
  * Related features under the steps: runtime
  * logs of the service, the configuration it ran with (a sheet), compare
  * with the previous deployment, and the build history sparkline.
@@ -62,21 +81,13 @@ export function RelatedCards({ detail }: { detail: Detail }) {
         >
             <div className={cardClass}>
                 <Link
-                    href={
-                        projectLogs(
-                            {
-                                project: deployment.projectId,
-                                environment: deployment.environmentId,
-                            },
-                            { query: { service: deployment.serviceId } },
-                        ).url
-                    }
+                    href={deploymentLogsHref(deployment)}
                     className="after:absolute after:inset-0 focus-visible:outline-none"
                 >
                     <CardTitle>Runtime logs</CardTitle>
                 </Link>
                 <span className="type-small text-muted-foreground">
-                    What {deployment.serviceName} prints while it runs
+                    What {deployment.serviceName} printed in this deployment
                 </span>
             </div>
 

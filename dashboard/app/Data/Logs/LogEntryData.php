@@ -35,5 +35,7 @@ final class LogEntryData extends Data
         public ?string $environment = null,
         /** Project name, in team-wide searches. */
         public ?string $project = null,
+        /** Server public id (the detail drawer links the server). */
+        public ?string $serverId = null,
     ) {}
 }

@@ -13,6 +13,7 @@ use App\Enums\DeploymentStatus;
 use App\Enums\EnvironmentKind;
 use App\Events\DeploymentStatusChanged;
 use App\Models\Deployment;
+use App\Support\Links;
 use Throwable;
 
 /**
@@ -82,7 +83,7 @@ final readonly class RaiseDeployFailedAlerts
             title: "{$instance->service->name} failed to deploy to {$environment->name}",
             summary: $reason.$reassurance,
             severity: $environment->kind === EnvironmentKind::Production ? AlertSeverity::Critical : AlertSeverity::Warning,
-            href: "/p/{$environment->project->public_id}/{$environment->public_id}/d/{$deployment->public_id}",
+            href: Links::deployment($deployment),
             project: $environment->project,
             environment: $environment,
             serviceInstance: $instance,

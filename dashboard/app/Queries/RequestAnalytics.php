@@ -22,7 +22,8 @@ use Illuminate\Support\Facades\DB;
 /**
  * Request analytics reads (docs/15 §5.4). Request counts come from the
  * request metrics (`request_metric_samples`, §1.3); paths, referrers and
- * client classes from `request_analytics_samples`. Each read takes every
+ * client classes from `request_analytics_samples`; requests the web
+ * firewall refused from `waf_samples` (BlockedRequests), carved out of 4xx. Each read takes every
  * stored resolution where it is complete: the finest rows for the last two
  * hours (coarser rows are recomputed every ten minutes), hourly-capable rows
  * before that and, for daily buckets, daily rows before yesterday.
@@ -97,6 +98,20 @@ final readonly class RequestAnalytics
         $previousRequests = Cast::int($previous->requests ?? null);
         $previousErrors = Cast::int($previous->s5 ?? null) ?? 0;
 
+        // Requests the firewall refused are 403s in the access log: carve
+        // them out of 4xx per bucket (docs/15 §5.4).
+        $scope = static fn (Builder $q) => $q->whereIn('service_instance_id', $instances);
+        $blockedSeries = $empty;
+
+        if ($instances !== []) {
+            foreach (BlockedRequests::series($scope, $range, $now, $start, $bucket, $count)[0] ?? [] as $i => $blocked) {
+                $blocked = min($blocked, $series['s4'][$i]);
+                $blockedSeries[$i] = $blocked;
+                $series['s4'][$i] -= $blocked;
+                $totals['s4'] -= $blocked;
+            }
+        }
+
         $details = $this->details($instances, $range, $now, $from);
 
         return new AnalyticsData(
@@ -113,6 +128,8 @@ final readonly class RequestAnalytics
                 $this->rate($totals['s5'], $totals['requests']),
                 $previousRequests !== null && $previousRequests > 0 ? $previousRequests : null,
                 $previousRequests !== null && $previousRequests > 0 ? $this->rate($previousErrors, $previousRequests) : null,
+                array_sum($blockedSeries),
+                $instances === [] ? null : BlockedRequests::total($scope, $range, $now, $previousFrom, $from),
             ),
             servers: $this->servers($byServer),
             services: $this->split($byInstance, $names),
@@ -122,6 +139,8 @@ final readonly class RequestAnalytics
             referrerRequests: $details['referrerRequests'],
             agents: $details['agents'],
             serversWithoutPaths: $this->serversWithoutPaths(array_keys($byServer)),
+            blocked: array_values($blockedSeries),
+            deploys: DeployMarkers::forInstances($instances, $from),
         );
     }
 
@@ -205,6 +224,7 @@ final readonly class RequestAnalytics
             return $none;
         }
 
+        $blocked = BlockedRequests::paths(static fn (Builder $q) => $q->whereIn('service_instance_id', $instances), $range, $now, $from)[0] ?? [];
         $paths = DB::query()
             ->fromSub($this->analytics($instances, $range, $now, $from)->select('paths'), 's')
             ->crossJoin(DB::raw('jsonb_array_elements(s.paths) as e'))
@@ -214,12 +234,13 @@ final readonly class RequestAnalytics
             ->orderBy('path')
             ->limit(self::TOP_PATHS)
             ->get()
-            ->map(static fn (object $row): AnalyticsPathData => new AnalyticsPathData(
-                Cast::string($row->path ?? null),
-                Cast::int($row->r ?? null) ?? 0,
-                Cast::int($row->e4 ?? null) ?? 0,
-                Cast::int($row->e5 ?? null) ?? 0,
-            ))
+            ->map(static function (object $row) use ($blocked): AnalyticsPathData {
+                $path = Cast::string($row->path ?? null);
+                $e4 = Cast::int($row->e4 ?? null) ?? 0;
+                $refused = min($blocked[$path] ?? 0, $e4);
+
+                return new AnalyticsPathData($path, Cast::int($row->r ?? null) ?? 0, $e4 - $refused, Cast::int($row->e5 ?? null) ?? 0, $refused);
+            })
             ->values()
             ->all();
 

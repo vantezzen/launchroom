@@ -38,5 +38,7 @@ final class SecurityPageData extends Data
         public array $baseImages,
         public array $notices,
         public int $dismissed,
+        /** The project or service the page is narrowed to; null for the whole team. */
+        public ?SecurityScopeData $scope = null,
     ) {}
 }

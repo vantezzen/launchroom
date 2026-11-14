@@ -1510,6 +1510,28 @@
                             ],
                             "maxLength": 512
                         }
+                    },
+                    {
+                        "name": "from",
+                        "in": "query",
+                        "schema": {
+                            "type": [
+                                "integer",
+                                "null"
+                            ],
+                            "minimum": 0
+                        }
+                    },
+                    {
+                        "name": "to",
+                        "in": "query",
+                        "schema": {
+                            "type": [
+                                "integer",
+                                "null"
+                            ],
+                            "minimum": 0
+                        }
                     }
                 ],
                 "responses": {
@@ -1637,6 +1659,28 @@
                                 "null"
                             ],
                             "maxLength": 512
+                        }
+                    },
+                    {
+                        "name": "from",
+                        "in": "query",
+                        "schema": {
+                            "type": [
+                                "integer",
+                                "null"
+                            ],
+                            "minimum": 0
+                        }
+                    },
+                    {
+                        "name": "to",
+                        "in": "query",
+                        "schema": {
+                            "type": [
+                                "integer",
+                                "null"
+                            ],
+                            "minimum": 0
                         }
                     }
                 ],
@@ -4483,7 +4527,7 @@
             },
             "AnalyticsData": {
                 "type": "object",
-                "description": "Request analytics of an environment or one service. Status series are request counts per bucket, aligned with `timestamps` (bucket starts, UTC). `paths`, `referrers` and `agents` come from the edges' analytics windows; `pathRequests` is the traffic they cover, so the \"other\" row of the top routes is `pathRequests` minus the listed paths. `serversWithoutPaths` names edges that served traffic in the range but don't send paths yet (older servers).",
+                "description": "Request analytics of an environment or one service. Status series are request counts per bucket, aligned with `timestamps` (bucket starts, UTC). `paths`, `referrers` and `agents` come from the edges' analytics windows; `pathRequests` is the traffic they cover, so the \"other\" row of the top routes is `pathRequests` minus the listed paths. `serversWithoutPaths` names edges that served traffic in the range but don't send paths yet (older servers). `blocked` counts requests the web firewall refused per bucket; they are carved out of `status4xx` (a blocked request is a 403 in the access log), so the classes still add up to the requests. `deploys` are the deploy markers of the range (App\\Queries\\DeployMarkers).",
                 "properties": {
                     "range": {
                         "type": "string"
@@ -4575,6 +4619,18 @@
                         "items": {
                             "type": "string"
                         }
+                    },
+                    "blocked": {
+                        "type": "array",
+                        "items": {
+                            "type": "integer"
+                        }
+                    },
+                    "deploys": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/DeployMarkerData"
+                        }
                     }
                 },
                 "required": [
@@ -4600,7 +4656,7 @@
             },
             "AnalyticsPathData": {
                 "type": "object",
-                "description": "One normalised path of the top routes: ids appear as `:id`, there is never a query string.",
+                "description": "One normalised path of the top routes: ids appear as `:id`, there is never a query string. `blocked` counts requests to it the web firewall refused (from its own top paths); `status4xx` excludes them.",
                 "properties": {
                     "path": {
                         "type": "string"
@@ -4613,6 +4669,10 @@
                     },
                     "status5xx": {
                         "type": "integer"
+                    },
+                    "blocked": {
+                        "type": "integer",
+                        "default": 0
                     }
                 },
                 "required": [
@@ -4660,7 +4720,7 @@
                         ]
                     },
                     "clientErrorPct": {
-                        "description": "4xx share in percent.",
+                        "description": "4xx share in percent (the app's own, without blocked requests).",
                         "type": [
                             "number",
                             "null"
@@ -4671,6 +4731,11 @@
                         "items": {
                             "type": "integer"
                         }
+                    },
+                    "blocked": {
+                        "description": "Requests the web firewall refused.",
+                        "type": "integer",
+                        "default": 0
                     }
                 },
                 "required": [
@@ -4773,6 +4838,11 @@
                     },
                     "status5xx": {
                         "type": "integer"
+                    },
+                    "blocked": {
+                        "description": "Refused by the web firewall (not in `status4xx`).",
+                        "type": "integer",
+                        "default": 0
                     }
                 },
                 "required": [
@@ -4787,7 +4857,7 @@
             },
             "AnalyticsTotalsData": {
                 "type": "object",
-                "description": "Request counts over the range and the same length of time before it. Requests include 1xx (WebSocket upgrades), which are in no status class.",
+                "description": "Request counts over the range and the same length of time before it. Requests include 1xx (WebSocket upgrades), which are in no status class. `status4xx` is the app's own: requests the web firewall refused are counted in `blocked` instead.",
                 "properties": {
                     "requests": {
                         "type": "integer"
@@ -4821,6 +4891,18 @@
                     "previousErrorRatePct": {
                         "type": [
                             "number",
+                            "null"
+                        ]
+                    },
+                    "blocked": {
+                        "description": "Requests the web firewall refused (carved out of 4xx).",
+                        "type": "integer",
+                        "default": 0
+                    },
+                    "previousBlocked": {
+                        "description": "Blocked in the previous period; null when the firewall reported nothing then.",
+                        "type": [
+                            "integer",
                             "null"
                         ]
                     }
@@ -5606,6 +5688,51 @@
                 ],
                 "additionalProperties": false
             },
+            "DeployMarkerData": {
+                "type": "object",
+                "description": "A deploy on a time chart: when a deployment of a service finished (or started, while it runs). One shape for every chart (Metrics, Logs, Analytics, Security), built by App\\Queries\\DeployMarkers; `href` opens the deployment.",
+                "properties": {
+                    "deploymentId": {
+                        "type": "string"
+                    },
+                    "serviceId": {
+                        "type": "string"
+                    },
+                    "at": {
+                        "type": "string"
+                    },
+                    "status": {
+                        "type": "string"
+                    },
+                    "serviceName": {
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "sha": {
+                        "description": "Short commit SHA (7), when the deployment built a commit.",
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "href": {
+                        "description": "The deployment page.",
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    }
+                },
+                "required": [
+                    "deploymentId",
+                    "serviceId",
+                    "at",
+                    "status"
+                ],
+                "additionalProperties": false
+            },
             "DeploymentFailureClass": {
                 "type": "string",
                 "enum": [
@@ -6126,6 +6253,31 @@
                 ],
                 "additionalProperties": false
             },
+            "FindingDeploymentData": {
+                "type": "object",
+                "description": "The deployment whose image a finding was found in.",
+                "properties": {
+                    "id": {
+                        "type": "string"
+                    },
+                    "sha": {
+                        "description": "Short commit SHA, or null for an image without a commit.",
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "href": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "id",
+                    "sha",
+                    "href"
+                ],
+                "additionalProperties": false
+            },
             "FindingDetailData": {
                 "type": "object",
                 "description": "A finding's page or sheet.",
@@ -6227,6 +6379,17 @@
                     },
                     "firewallUrl": {
                         "type": "string"
+                    },
+                    "deployment": {
+                        "description": "The deployment it was found in; null when that deployment is gone.",
+                        "oneOf": [
+                            {
+                                "$ref": "#/components/schemas/FindingDeploymentData"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ]
                     }
                 },
                 "required": [
@@ -6911,6 +7074,13 @@
                     },
                     "project": {
                         "description": "Project name, in team-wide searches.",
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "serverId": {
+                        "description": "Server public id (the detail drawer links the server).",
                         "type": [
                             "string",
                             "null"

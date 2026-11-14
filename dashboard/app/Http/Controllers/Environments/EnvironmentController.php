@@ -94,7 +94,7 @@ final class EnvironmentController extends Controller
         broadcast(new CanvasChanged($environment->public_id));
         Inertia::flash('toast', ['type' => 'success', 'message' => $count === 0
             ? "Nothing to revert: {$environment->name} already matches revision {$revision->number}."
-            : "Revision {$revision->number} restored as {$count} staged ".($count === 1 ? 'change' : 'changes').'. Review and deploy them.']);
+            : "Revision {$revision->number} restored as {$count} staged ".($count === 1 ? 'change' : 'changes').'. Review and apply them.']);
 
         return to_route('staged-changes.show', [$project->public_id, $environment->public_id]);
     }

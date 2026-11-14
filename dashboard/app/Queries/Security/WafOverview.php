@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Queries\Security;
 
+use App\Data\Metrics\DeployMarkerData;
 use App\Data\Security\SecurityServiceRefData;
 use App\Data\Security\WafCategoryCountData;
 use App\Data\Security\WafEdgeProblemData;
@@ -22,6 +23,7 @@ use App\Enums\ServerRole;
 use App\Enums\ServerStatus;
 use App\Models\Server;
 use App\Models\Team;
+use App\Queries\DeployMarkers;
 use App\Support\Metrics\Cast;
 use App\Support\Security\CrsRules;
 use Carbon\CarbonImmutable;
@@ -40,7 +42,10 @@ final readonly class WafOverview
     /** Chart series in palette order (docs/22 §9.2): the rest folds into "Other". */
     public const array SERIES = ['sqli', 'xss', 'rce', 'scanner', 'other'];
 
-    public function handle(Team $team, AnalyticsRange $range, SecurityServiceRefs $refs, bool $networksVisible): WafOverviewData
+    /**
+     * @param  list<int>|null  $instances  narrow to these service instances (the page's scope)
+     */
+    public function handle(Team $team, AnalyticsRange $range, SecurityServiceRefs $refs, bool $networksVisible, ?array $instances = null): WafOverviewData
     {
         $now = CarbonImmutable::now();
         $bucket = $range->bucketSeconds();
@@ -58,7 +63,7 @@ final readonly class WafOverview
         $blocked = 0;
         $detected = 0;
 
-        foreach ($this->rows($team->id, $range, $start, $end) as $row) {
+        foreach ($this->rows($team->id, $range, $start, $end, $instances) as $row) {
             $at = CarbonImmutable::parse(Cast::string($row->at ?? null))->getTimestamp();
             $i = intdiv($at - $start->getTimestamp(), $bucket);
 
@@ -126,15 +131,19 @@ final readonly class WafOverview
             detected: $detected,
             categories: $categoryData,
             services: array_slice($services, 0, 5),
-            watching: $this->watching($team->id, $refs),
-            recent: $this->events($team->id, $refs, $networksVisible, 20),
+            watching: $this->watching($team->id, $refs, null, $instances),
+            recent: $this->events($team->id, $refs, $networksVisible, 20, null, $instances),
             edges: $this->edges($team->id),
             ruleSet: $this->ruleSet($team->id),
             networksVisible: $networksVisible,
+            deploys: $this->deploys($team->id, $start, $instances),
         );
     }
 
-    public function previousBlocked(Team $team, AnalyticsRange $range): ?int
+    /**
+     * @param  list<int>|null  $instances
+     */
+    public function previousBlocked(Team $team, AnalyticsRange $range, ?array $instances = null): ?int
     {
         $now = CarbonImmutable::now();
         $end = $now->subSeconds($range->seconds());
@@ -144,6 +153,7 @@ final readonly class WafOverview
         $resolution = $start->lessThan($now->subDays(7)) ? 60 : 10;
         $sum = DB::table('waf_samples')
             ->whereIn('service_instance_id', DB::table('service_instances')->select('id')->where('team_id', $team->id))
+            ->when($instances !== null, static fn (Builder $q) => $q->whereIn('service_instance_id', $instances ?? []))
             ->where('resolution', $resolution)
             ->where('at', '>=', $start->toIso8601String())
             ->where('at', '<', $end->toIso8601String())
@@ -154,15 +164,17 @@ final readonly class WafOverview
     }
 
     /**
-     * Events of the team (or of one instance), newest first.
+     * Events of the team (or of one instance, or of a scope), newest first.
      *
+     * @param  list<int>|null  $instances
      * @return list<WafEventData>
      */
-    public function events(int $teamId, SecurityServiceRefs $refs, bool $networksVisible, int $limit, ?int $instanceId = null): array
+    public function events(int $teamId, SecurityServiceRefs $refs, bool $networksVisible, int $limit, ?int $instanceId = null, ?array $instances = null): array
     {
         $rows = DB::table('waf_events')
             ->whereIn('service_instance_id', DB::table('service_instances')->select('id')->where('team_id', $teamId))
             ->when($instanceId !== null, static fn (Builder $q) => $q->where('service_instance_id', $instanceId))
+            ->when($instances !== null, static fn (Builder $q) => $q->whereIn('service_instance_id', $instances ?? []))
             ->where('at', '>=', CarbonImmutable::now()->subDays(7)->toIso8601String())
             ->orderByDesc('at')
             ->limit($limit)
@@ -205,9 +217,10 @@ final readonly class WafOverview
     /**
      * Log only services with their detections in the last 7 days.
      *
+     * @param  list<int>|null  $scope
      * @return list<WafServiceCountData>
      */
-    public function watching(int $teamId, SecurityServiceRefs $refs, ?int $instanceId = null): array
+    public function watching(int $teamId, SecurityServiceRefs $refs, ?int $instanceId = null, ?array $scope = null): array
     {
         $instances = DB::table('service_instances as si')
             ->join('environments as e', 'e.id', '=', 'si.environment_id')
@@ -216,6 +229,7 @@ final readonly class WafOverview
             ->where('si.waf_mode', WafMode::Log->value)
             ->where('e.kind', '!=', EnvironmentKind::Preview->value)
             ->when($instanceId !== null, static fn (Builder $q) => $q->where('si.id', $instanceId))
+            ->when($scope !== null, static fn (Builder $q) => $q->whereIn('si.id', $scope ?? []))
             ->whereExists(static fn (Builder $q) => $q->selectRaw('1')->from('domains')->whereColumn('domains.service_instance_id', 'si.id')->whereIn('domains.kind', ['custom', 'generated']))
             ->pluck('si.id')
             ->all();
@@ -320,12 +334,35 @@ final readonly class WafOverview
     }
 
     /**
+     * Deploy markers of the public services the firewall protects (or of
+     * the scope) in the range.
+     *
+     * @param  list<int>|null  $instances
+     * @return list<DeployMarkerData>
+     */
+    private function deploys(int $teamId, CarbonImmutable $start, ?array $instances): array
+    {
+        return DeployMarkers::query(static function (Builder $q) use ($teamId, $instances): void {
+            $q->where('d.team_id', $teamId)->where('e.kind', '!=', EnvironmentKind::Preview->value);
+
+            if ($instances !== null) {
+                $q->whereIn('d.service_instance_id', $instances);
+            } else {
+                $q->where('si.waf_mode', '!=', WafMode::Off->value)->whereNull('si.removed_at')
+                    ->whereExists(static fn (Builder $d) => $d->selectRaw('1')->from('domains')->whereColumn('domains.service_instance_id', 'si.id')->whereIn('domains.kind', ['custom', 'generated']));
+            }
+        }, $start);
+    }
+
+    /**
+     * @param  list<int>|null  $instances
      * @return iterable<object>
      */
-    private function rows(int $teamId, AnalyticsRange $range, CarbonImmutable $start, CarbonImmutable $end): iterable
+    private function rows(int $teamId, AnalyticsRange $range, CarbonImmutable $start, CarbonImmutable $end, ?array $instances = null): iterable
     {
         return DB::table('waf_samples')
             ->whereIn('service_instance_id', DB::table('service_instances')->select('id')->where('team_id', $teamId))
+            ->when($instances !== null, static fn (Builder $q) => $q->whereIn('service_instance_id', $instances ?? []))
             ->where('resolution', $range === AnalyticsRange::Month ? 60 : 10)
             ->where('at', '>=', $start->toIso8601String())
             ->where('at', '<', $end->toIso8601String())

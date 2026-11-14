@@ -1,6 +1,7 @@
 import { Link } from '@inertiajs/react';
 import { Plus } from 'lucide-react';
 import type { ReactNode } from 'react';
+import { AlertsChip } from '@/components/attention-chip';
 import { CardChip, ObjectCard } from '@/components/cards';
 import { colorForSlot } from '@/components/charts/palette';
 import { Sparkline } from '@/components/charts/sparkline';
@@ -19,6 +20,7 @@ import {
     formatMb,
     formatUsedOf,
     placeLabel,
+    serverAlerts,
     shortAge,
     shortDuration,
     specParts,
@@ -250,11 +252,19 @@ export function FleetCard({
                     />
                 ) : undefined
             }
-            chips={server.roles.map((role) => (
-                <CardChip key={role}>
-                    <RoleChipLabel role={role} />
-                </CardChip>
-            ))}
+            chips={[
+                <AlertsChip
+                    key="alerts"
+                    alerts={serverAlerts(server.openAlerts)}
+                    size="sm"
+                    className="relative z-10"
+                />,
+                ...server.roles.map((role) => (
+                    <CardChip key={role}>
+                        <RoleChipLabel role={role} />
+                    </CardChip>
+                )),
+            ]}
             footer={
                 specs.length > 0 || disk !== null ? (
                     <>

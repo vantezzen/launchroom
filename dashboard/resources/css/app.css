@@ -398,12 +398,6 @@
     }
 }
 
-@keyframes lr-leave {
-    to {
-        opacity: 0;
-    }
-}
-
 @layer base {
     * {
         @apply border-border;
@@ -422,8 +416,9 @@
 
 /*
  * Page transitions (§8): Inertia visits run inside the View Transitions API
- * (app.tsx). The sidebar and the top bar keep their place; only the page
- * content cross-fades with a 4 px settle.
+ * (app.tsx). The sidebar and the top bar keep their place; the old page
+ * content goes at once and the new one settles in with 4 px, so motion
+ * never adds to the wait for the response.
  */
 ::view-transition-old(root),
 ::view-transition-new(root) {
@@ -450,7 +445,7 @@
 }
 
 ::view-transition-old(lr-page) {
-    animation: lr-leave var(--motion-fast) cubic-bezier(0.4, 0, 1, 1) both;
+    display: none;
 }
 
 ::view-transition-new(lr-page) {

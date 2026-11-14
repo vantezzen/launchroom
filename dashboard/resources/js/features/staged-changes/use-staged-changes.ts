@@ -12,8 +12,10 @@ export function stagedChangesKey(environment: string) {
 
 /**
  * The environment's staged changes (count, groups, effects). Refetched after
- * every Inertia visit (edits elsewhere on the page), on window focus and on
- * realtime canvas changes.
+ * Inertia form submissions (edits elsewhere on the page stage changes), on
+ * window focus and on realtime canvas changes (StagedChangesPill). Plain
+ * navigations (opening a panel, switching tabs, live refreshes) change
+ * nothing staged and don't refetch it.
  */
 export function useStagedChanges(project: string, environment: string) {
     const queryClient = useQueryClient();
@@ -30,10 +32,14 @@ export function useStagedChanges(project: string, environment: string) {
 
     useEffect(
         () =>
-            router.on('success', () => {
-                void queryClient.invalidateQueries({
-                    queryKey: stagedChangesKey(environment),
-                });
+            router.on('finish', (event) => {
+                const visit = event.detail.visit;
+
+                if (visit.method !== 'get' && visit.completed) {
+                    void queryClient.invalidateQueries({
+                        queryKey: stagedChangesKey(environment),
+                    });
+                }
             }),
         [queryClient, environment],
     );
@@ -54,15 +60,45 @@ export function effectLabel(effect: App.Enums.ChangeEffect): string {
     return effectLabels[effect];
 }
 
+/** "web", "web and api", "web, api and worker". */
+function names(list: string[]): string {
+    return list.length < 2
+        ? (list[0] ?? '')
+        : `${list.slice(0, -1).join(', ')} and ${list[list.length - 1]}`;
+}
+
+/** What applying does to services, most disruptive first. */
+const effectVerbs: [App.Enums.ChangeEffect, string][] = [
+    ['rebuild', 'rebuilds'],
+    ['restart', 'restarts'],
+    ['new', 'starts'],
+    ['remove', 'removes'],
+    ['route', 'updates the routing of'],
+];
+
 /**
- * "web: rebuild, api: restart" (docs/04 §7).
+ * Which services applying the staged changes redeploys, in a sentence
+ * (docs/04 §7, D75): "Applying rebuilds web and restarts api and worker."
+ * Empty when no service restarts.
  */
 export function effectSummary(changes: StagedChanges): string {
-    return changes.groups
-        .filter((group) => group.serviceId !== null && group.effect !== 'none')
-        .map(
-            (group) =>
-                `${group.slug ?? group.name}: ${effectLabel(group.effect)}`,
-        )
-        .join(', ');
+    const parts = effectVerbs.flatMap(([effect, verb]) => {
+        const services = changes.groups
+            .filter(
+                (group) => group.serviceId !== null && group.effect === effect,
+            )
+            .map((group) => group.name);
+
+        return services.length > 0 ? [`${verb} ${names(services)}`] : [];
+    });
+
+    if (parts.length === 0) {
+        return '';
+    }
+
+    const last = parts.pop();
+
+    return parts.length === 0
+        ? `Applying ${last}.`
+        : `Applying ${parts.join(', ')}, and ${last}.`;
 }

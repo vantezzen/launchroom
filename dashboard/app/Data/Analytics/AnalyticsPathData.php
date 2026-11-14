@@ -8,7 +8,8 @@ use Spatie\LaravelData\Data;
 
 /**
  * One normalised path of the top routes (docs/15 §5.1): ids appear as
- * `:id`, there is never a query string.
+ * `:id`, there is never a query string. `blocked` counts requests to it the
+ * web firewall refused (from its own top paths); `status4xx` excludes them.
  */
 final class AnalyticsPathData extends Data
 {
@@ -17,5 +18,6 @@ final class AnalyticsPathData extends Data
         public int $requests,
         public int $status4xx,
         public int $status5xx,
+        public int $blocked = 0,
     ) {}
 }

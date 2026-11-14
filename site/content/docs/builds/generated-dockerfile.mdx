@@ -91,7 +91,7 @@ A verified result shows:
 
 Then choose one of these:
 
-- **Use this Dockerfile** stages a rebuild with the builder set to Dockerfile and the generated file as its source. It deploys with your next **Review & deploy**. The stored Dockerfile never changes once verified, so later builds are reproducible. Settings → Build shows it as "Stored in launchroom".
+- **Use this Dockerfile** stages a rebuild with the builder set to Dockerfile and the generated file as its source. It goes out the next time you **Review & apply**. The stored Dockerfile never changes once verified, so later builds are reproducible. Settings → Build shows it as "Stored in launchroom".
 - **Open a pull request** adds `Dockerfile` in the service's root directory on a new branch `launchroom/dockerfile-<id>`, with the explanation and the verification result in the description. It works with GitHub, GitLab, Gitea and Forgejo, and is refused when a file already exists at that path. On GitHub the app needs **Contents: read and write**, which it doesn't have by default. launchroom explains how to grant it when GitHub refuses.
 - **Copy** or **Download** the file. For a plain git server, download the file and commit it yourself.
 

@@ -99,7 +99,7 @@ final class PromotionController extends Controller
         $images = count($promotion->images);
         Inertia::flash('toast', ['type' => 'success', 'message' => "Staged {$count} ".($count === 1 ? 'change' : 'changes')
             .($images > 0 ? " and {$images} ".($images === 1 ? 'image' : 'images') : '')
-            ." from {$from->name} in {$to->name}. Review and deploy them."]);
+            ." from {$from->name} in {$to->name}. Review and apply them."]);
 
         return to_route('staged-changes.show', [$project->public_id, $to->public_id]);
     }

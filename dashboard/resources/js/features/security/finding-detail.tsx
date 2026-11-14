@@ -247,6 +247,20 @@ export function FindingDetailBody({
                             {ECOSYSTEM_LABEL[finding.ecosystem] ??
                                 finding.ecosystem}
                         </Fact>
+                        {detail.deployment && (
+                            <Fact label="Found in">
+                                <Link
+                                    href={detail.deployment.href}
+                                    className="hover:underline"
+                                >
+                                    Deployment{' '}
+                                    <span className="font-mono">
+                                        {detail.deployment.sha ??
+                                            detail.deployment.id}
+                                    </span>
+                                </Link>
+                            </Fact>
+                        )}
                         {detail.otherServices.length > 0 && (
                             <Fact label="Also in" wide>
                                 {detail.otherServices

@@ -1,24 +1,19 @@
 import { Link } from '@inertiajs/react';
 import { useQuery } from '@tanstack/react-query';
-import { BarChart3 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { BarChart3, ScrollText, TriangleAlert } from 'lucide-react';
+import { useMemo } from 'react';
 import { formatCompact } from '@/components/charts/format';
 import { StackedBars } from '@/components/charts/stacked-bars';
 import { StatTile } from '@/components/charts/stat-tile';
-import { TimeRangeSelect } from '@/components/charts/time-range-select';
-import type { TimeRangeOption } from '@/components/charts/time-range-select';
+import type { ChartDrill } from '@/components/charts/chart-drill';
 import { Logo } from '@/components/logo';
 import { EmptyState } from '@/components/patterns/empty-state';
 import { MetaLine } from '@/components/patterns/meta-line';
-import { PageHeader } from '@/components/patterns/page';
 import { Section } from '@/components/patterns/section';
 import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
-} from '@/components/ui/select';
+    AnalyticsHeader,
+    useAnalyticsService,
+} from '@/features/analytics/analytics-header';
 import {
     agentRows,
     formatShare,
@@ -28,38 +23,41 @@ import {
     statusSeries,
 } from '@/features/analytics/shape';
 import type { ShareRow } from '@/features/analytics/shape';
-import { delta, formatErrorRate } from '@/features/metrics/format';
+import {
+    delta,
+    deployMarkers,
+    formatErrorRate,
+} from '@/features/metrics/format';
 import { requestJson } from '@/features/projects/http';
+import { useObserveScope } from '@/hooks/use-observe-scope';
+import {
+    formatWindow,
+    RANGE_SETS,
+    rangeOptions,
+    rangeWords,
+    withScope,
+} from '@/lib/observe-scope';
 import { cn } from '@/lib/utils';
-import { index as teamAnalytics } from '@/routes/analytics';
-import { analytics as analyticsRoute } from '@/routes/projects';
+import {
+    analytics as analyticsRoute,
+    logs as logsPage,
+} from '@/routes/projects';
+import { index as securityRoute } from '@/routes/security';
 
 type Analytics = App.Data.Analytics.AnalyticsData;
 type Split = App.Data.Analytics.AnalyticsSplitData;
 type Service = App.Data.Metrics.MetricsServiceData;
-type Range = '24h' | '7d' | '30d';
+type Range = (typeof RANGE_SETS.analytics)[number];
 
-const RANGES: TimeRangeOption<Range>[] = [
-    { value: '24h', label: 'Day' },
-    { value: '7d', label: 'Week' },
-    { value: '30d', label: 'Month' },
-];
-
-const RANGE_WORDS: Record<Range, string> = {
-    '24h': 'last 24 hours',
-    '7d': 'last 7 days',
-    '30d': 'last 30 days',
-};
-
-const ALL = 'all';
+const RANGES = rangeOptions(RANGE_SETS.analytics);
 
 const card =
     'rounded-[14px] border bg-card shadow-[0_1px_2px_rgb(0_0_0/0.04)] dark:shadow-none';
 
 /**
- * Project → Analytics (docs/15 §5.4): how many requests the environment's
- * services served and of what kind. Requests per hour (per day for a month)
- * stacked by status class, totals with the change against the period
+ * Project → Analytics → Traffic (docs/15 §5.4, D75): how many requests the
+ * environment's services served and of what kind. Requests per hour (per
+ * day for a month) stacked by status class, totals with the change against the period
  * before, the top paths with their error shares, referrer hosts, client
  * classes, and the split by server and service. Refetched every minute.
  */
@@ -78,22 +76,17 @@ export function ProjectAnalytics({
     services: Service[];
     initialService: string | null;
 }) {
-    const [range, setRange] = useState<Range>('7d');
-    const [service, setServiceState] = useState<string>(() => {
-        // The URL wins (history entries keep the props of the first visit).
-        const fromUrl =
-            typeof window === 'undefined'
-                ? null
-                : new URLSearchParams(window.location.search).get('service');
-        const wanted = fromUrl ?? initialService;
-
-        return services.some((s) => s.id === wanted) && wanted ? wanted : ALL;
-    });
-    const selected = service === ALL ? null : service;
-    const setService = (next: string) => {
-        setServiceState(next);
-        syncServiceToUrl(next === ALL ? null : next);
-    };
+    // The observe scope (lib/observe-scope.ts): range and service in the
+    // URL, shared with Resources and Logs. The URL wins over the props
+    // (history entries keep the props of the first visit).
+    const scope = useObserveScope(RANGE_SETS.analytics);
+    const { range, setRange, snapped } = scope;
+    const [focus, setService] = useAnalyticsService(
+        scope,
+        services,
+        initialService,
+    );
+    const selected = focus?.id ?? null;
 
     const { data, isError } = useQuery({
         queryKey: ['project-analytics', project, environment, selected, range],
@@ -120,50 +113,24 @@ export function ProjectAnalytics({
         () => (data?.timestamps ?? []).map((t) => Date.parse(t)),
         [data],
     );
-    const serviceName = services.find((s) => s.id === selected)?.name;
-    const scope = serviceName ?? 'All services';
+    const serviceName = focus?.name;
     const unit = range === '30d' ? 'day' : 'hour';
 
     return (
         <>
-            <AnalyticsBreadcrumbs
+            <AnalyticsHeader
+                project={project}
                 projectName={projectName}
-                serviceName={serviceName ?? null}
-                onProject={() => setService(ALL)}
-            />
-            <PageHeader
-                title="Analytics"
-                description={`${scope} in ${environmentName}, ${RANGE_WORDS[range]}`}
-                actions={
-                    <div className="flex flex-wrap items-center gap-2">
-                        {services.length > 1 && (
-                            <Select value={service} onValueChange={setService}>
-                                <SelectTrigger
-                                    size="sm"
-                                    className="h-9 w-auto min-w-40 gap-2"
-                                    aria-label="Service"
-                                >
-                                    <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value={ALL}>
-                                        All services
-                                    </SelectItem>
-                                    {services.map((s) => (
-                                        <SelectItem key={s.id} value={s.id}>
-                                            {s.name}
-                                        </SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                        )}
-                        <TimeRangeSelect<Range>
-                            value={range}
-                            onChange={setRange}
-                            options={RANGES}
-                        />
-                    </div>
-                }
+                environment={environment}
+                environmentName={environmentName}
+                view="traffic"
+                services={services}
+                service={focus}
+                onService={setService}
+                range={range}
+                ranges={RANGES}
+                onRange={setRange}
+                snapped={snapped}
             />
 
             {isError && !data ? (
@@ -176,8 +143,8 @@ export function ProjectAnalytics({
                     aria-hidden="true"
                     className="flex animate-skeleton-in flex-col gap-4"
                 >
-                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                        {[0, 1, 2].map((i) => (
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                        {[0, 1, 2, 3].map((i) => (
                             <div key={i} className={cn(card, 'h-[112px]')} />
                         ))}
                     </div>
@@ -198,88 +165,41 @@ export function ProjectAnalytics({
                     showServices={selected === null}
                     services={services}
                     onPickService={setService}
+                    securityHref={
+                        securityRoute({
+                            query: selected
+                                ? { service: selected }
+                                : { project },
+                        }).url + '#firewall'
+                    }
+                    drill={(span) => {
+                        const logs = logsPage([project, environment]).url;
+                        const name = serviceName
+                            ? `service:${/\s/.test(serviceName) ? `"${serviceName}"` : serviceName} `
+                            : '';
+
+                        return [
+                            {
+                                label: `Logs from ${formatWindow(span)}`,
+                                href: withScope(logs, {
+                                    service: selected,
+                                    window: span,
+                                }),
+                                icon: ScrollText,
+                            },
+                            {
+                                label: `Errors from ${formatWindow(span)}`,
+                                href: withScope(
+                                    `${logs}?q=${encodeURIComponent(`${name}level:error`)}`,
+                                    { window: span },
+                                ),
+                                icon: TriangleAlert,
+                            },
+                        ];
+                    }}
                 />
             )}
         </>
-    );
-}
-
-/** Keeps `?service=` in the address bar in step with the service select. */
-function syncServiceToUrl(service: string | null) {
-    if (typeof window === 'undefined') {
-        return;
-    }
-
-    const url = new URL(window.location.href);
-
-    if (service) {
-        url.searchParams.set('service', service);
-    } else {
-        url.searchParams.delete('service');
-    }
-
-    window.history.replaceState(window.history.state, '', url);
-}
-
-/**
- * Where this view sits in the drill-down: Analytics (every project) /
- * project / service. The project crumb clears the service filter.
- */
-function AnalyticsBreadcrumbs({
-    projectName,
-    serviceName,
-    onProject,
-}: {
-    projectName: string;
-    serviceName: string | null;
-    onProject: () => void;
-}) {
-    const crumb =
-        'rounded-sm text-muted-foreground transition-colors duration-fast hover:text-foreground focus-visible:outline-2 focus-visible:outline-(--signal)';
-
-    return (
-        <nav aria-label="Analytics" className="-mb-2">
-            <ol className="flex min-w-0 items-center gap-1.5 type-small">
-                <li>
-                    <Link href={teamAnalytics()} className={crumb}>
-                        All projects
-                    </Link>
-                </li>
-                <li aria-hidden="true" className="text-faint">
-                    /
-                </li>
-                <li className="min-w-0 truncate">
-                    {serviceName ? (
-                        <button
-                            type="button"
-                            onClick={onProject}
-                            className={crumb}
-                        >
-                            {projectName}
-                        </button>
-                    ) : (
-                        <span aria-current="page" className="text-foreground">
-                            {projectName}
-                        </span>
-                    )}
-                </li>
-                {serviceName && (
-                    <>
-                        <li aria-hidden="true" className="text-faint">
-                            /
-                        </li>
-                        <li className="min-w-0 truncate">
-                            <span
-                                aria-current="page"
-                                className="text-foreground"
-                            >
-                                {serviceName}
-                            </span>
-                        </li>
-                    </>
-                )}
-            </ol>
-        </nav>
     );
 }
 
@@ -291,6 +211,8 @@ function Report({
     showServices,
     services,
     onPickService,
+    securityHref,
+    drill,
 }: {
     data: Analytics;
     times: number[];
@@ -299,9 +221,13 @@ function Report({
     showServices: boolean;
     services: Service[];
     onPickService: (id: string) => void;
+    /** The Security page scoped like this view, at its firewall section. */
+    securityHref: string;
+    drill: ChartDrill;
 }) {
     const totals = data.totals;
     const clientErrors = share(totals.status4xx, totals.requests);
+    const blocked = share(totals.blocked, totals.requests);
     const peak = Math.max(
         ...times.map(
             (_, i) =>
@@ -309,13 +235,14 @@ function Report({
                 data.status3xx[i] +
                 data.status4xx[i] +
                 data.status5xx[i] +
+                data.blocked[i] +
                 data.statusOther[i],
         ),
     );
 
     return (
         <div className="flex flex-col gap-8">
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 <StatTile
                     label="Requests"
                     value={formatCompact(totals.requests)}
@@ -342,19 +269,39 @@ function Report({
                     value={formatShare(clientErrors)}
                     hint={`${formatCompact(totals.status4xx)} responses with 4xx`}
                 />
+                <StatTile
+                    label="Blocked"
+                    value={formatCompact(totals.blocked)}
+                    delta={delta(totals.blocked, totals.previousBlocked)}
+                    hint={
+                        totals.blocked > 0
+                            ? `${formatShare(blocked)} of requests, refused by the firewall`
+                            : 'Nothing refused by the firewall'
+                    }
+                    action={
+                        <Link
+                            href={securityHref}
+                            className="type-small text-muted-foreground hover:text-foreground"
+                        >
+                            Security
+                        </Link>
+                    }
+                />
             </div>
 
             <Section
                 title={`Requests per ${unit}`}
-                description={`By status, ${RANGE_WORDS[range]}`}
+                description={`By status, ${rangeWords(range)}`}
             >
                 <div className={cn(card, 'p-5')}>
                     <StackedBars
-                        title={`Requests per ${unit}, ${RANGE_WORDS[range]}`}
+                        title={`Requests per ${unit}, ${rangeWords(range)}`}
                         times={times}
                         bucketMs={data.bucketSeconds * 1000}
                         series={statusSeries(data)}
                         height={240}
+                        markers={deployMarkers(data.deploys)}
+                        drill={drill}
                     />
                 </div>
             </Section>
@@ -483,6 +430,12 @@ function TopPaths({ data }: { data: Analytics }) {
                                         >
                                             {row.path}
                                         </span>
+                                        {row.blocked > 0 && (
+                                            <span className="relative mt-0.5 block text-muted-foreground">
+                                                {formatCompact(row.blocked)}{' '}
+                                                blocked by the firewall
+                                            </span>
+                                        )}
                                     </th>
                                     <td className="px-4 py-2 text-right">
                                         {formatCompact(row.requests)}

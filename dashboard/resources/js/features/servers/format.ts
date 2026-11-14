@@ -145,3 +145,13 @@ export function fleetOrder(
 
     return rank(a) - rank(b) || a.name.localeCompare(b.name);
 }
+
+/**
+ * A server's open alerts as its card and hero show them (docs/15 §3.6):
+ * "offline" is left out because the status already says so.
+ */
+export function serverAlerts(
+    alerts: App.Data.Alerts.OpenAlertData[],
+): App.Data.Alerts.OpenAlertData[] {
+    return alerts.filter((alert) => alert.rule !== 'server_offline');
+}

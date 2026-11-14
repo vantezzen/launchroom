@@ -18,5 +18,7 @@ final class AnalyticsTeamPathData extends Data
         public int $requests,
         public int $status4xx,
         public int $status5xx,
+        /** Refused by the web firewall (not in `status4xx`). */
+        public int $blocked = 0,
     ) {}
 }

@@ -86,9 +86,12 @@ export function CopyButton({
 export function OverviewCard({
     detail,
     environmentName,
+    pending = false,
 }: {
     detail: Detail;
     environmentName: string;
+    /** Drawn from a deployment row while the page loads: the stage and "Built on" wait for it. */
+    pending?: boolean;
 }) {
     const deployment = detail.deployment;
     const branch = branchName(deployment.gitRef);
@@ -100,7 +103,14 @@ export function OverviewCard({
             className="overflow-hidden rounded-[14px] border bg-card shadow-card"
         >
             <div className="grid gap-6 p-5 lg:grid-cols-[minmax(0,340px)_minmax(0,1fr)] lg:gap-8">
-                <DeploymentStage detail={detail} />
+                {pending ? (
+                    <div
+                        aria-hidden="true"
+                        className="rounded-[10px] border bg-recessed lg:h-full lg:min-h-60"
+                    />
+                ) : (
+                    <DeploymentStage detail={detail} />
+                )}
                 <dl className="grid min-w-0 grid-cols-2 content-start gap-x-6 gap-y-6 sm:grid-cols-4">
                     <Fact label="Status">
                         <span aria-live="polite">
@@ -127,16 +137,18 @@ export function OverviewCard({
                     </Fact>
                     <Fact label="Environment">{environmentName}</Fact>
                     <Fact label="Built on">
-                        {detail.builtOn ?? (
-                            <span className="text-muted-foreground">
-                                {deployment.status === 'building'
-                                    ? 'Waiting for a build server'
-                                    : deployment.trigger === 'rollback' ||
-                                        deployment.trigger === 'manual'
-                                      ? 'Reused image'
-                                      : 'No build'}
-                            </span>
-                        )}
+                        {pending
+                            ? null
+                            : (detail.builtOn ?? (
+                                  <span className="text-muted-foreground">
+                                      {deployment.status === 'building'
+                                          ? 'Waiting for a build server'
+                                          : deployment.trigger === 'rollback' ||
+                                              deployment.trigger === 'manual'
+                                            ? 'Reused image'
+                                            : 'No build'}
+                                  </span>
+                              ))}
                     </Fact>
                     <Fact label="Source" className="col-span-2 sm:col-span-4">
                         {deployment.commitSha ? (

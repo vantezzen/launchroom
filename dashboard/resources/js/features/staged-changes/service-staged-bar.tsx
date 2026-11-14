@@ -7,16 +7,16 @@ import { effectLabel, useStagedChanges } from './use-staged-changes';
 const consequence: Partial<Record<App.Enums.ChangeEffect, string>> = {
     restart: 'will restart',
     rebuild: 'will rebuild',
-    new: 'starts with the deploy',
-    remove: 'is removed with the deploy',
+    new: 'starts when applied',
+    remove: 'is removed when applied',
     route: 'changes routing',
 };
 
 /**
  * The panel's floating bar for this service's staged changes (flows §8):
- * "2 changes", "api will restart", Discard, Deploy. Discard drops this
- * service's changes; Deploy deploys everything staged in the environment
- * and keeps you on the canvas.
+ * "2 changes", "api will restart", Discard, Apply. Discard drops this
+ * service's changes; Apply applies everything staged in the environment
+ * (the affected services redeploy) and keeps you on the canvas.
  */
 export function ServiceStagedBar({
     project,
@@ -61,12 +61,13 @@ export function ServiceStagedBar({
                 });
             }}
             deploying={deploying}
+            deployLabel={others > 0 ? 'Apply all' : 'Apply'}
             disabledReason={
                 data.canDeploy
                     ? data.blockers.length > 0
                         ? 'Fix the broken references first'
                         : undefined
-                    : 'Deploying needs the developer role'
+                    : 'Applying changes needs the developer role'
             }
         />
     );

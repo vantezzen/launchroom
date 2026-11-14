@@ -350,7 +350,7 @@ test('"Also promote images" pins the source commit; the target deploy builds exa
         ->and($result->deployments[0]->commit_sha)->toBe(str_repeat('a', 40))
         ->and($result->deployments[0]->trigger)->toBe(DeploymentTrigger::Promote)
         ->and($promotion->refresh()->images_applied_at)->not->toBeNull()
-        ->and(fn () => resolve(DeployEnvironment::class)->handle($production, null, AuditActor::system()))->toThrow(DomainRuleViolation::class, 'Nothing to deploy');
+        ->and(fn () => resolve(DeployEnvironment::class)->handle($production, null, AuditActor::system()))->toThrow(DomainRuleViolation::class, 'Nothing to apply');
 });
 
 test('the promote page, the switcher hint and the stage endpoint with authorization', function (): void {

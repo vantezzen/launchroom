@@ -7,6 +7,7 @@ namespace App\Data\Backups;
 use App\Enums\Backups\BackupSubject;
 use App\Models\Backups\BackupSchedule;
 use App\Support\Backups\CronDescription;
+use App\Support\Links;
 use Carbon\CarbonInterface;
 use Spatie\LaravelData\Data;
 
@@ -33,6 +34,8 @@ final class BackupScheduleData extends Data
         public bool $canManage,
         /** The schedule as a sentence ("Daily at 03:12 UTC"); null for custom cron. */
         public ?string $cronDescription = null,
+        /** The service's Settings → Backups (team list rows link there). */
+        public ?string $href = null,
     ) {}
 
     /**
@@ -59,6 +62,7 @@ final class BackupScheduleData extends Data
             $health,
             $canManage,
             CronDescription::describe($schedule->cron),
+            $instance === null ? null : Links::serviceSettings($instance, 'backups'),
         );
     }
 }

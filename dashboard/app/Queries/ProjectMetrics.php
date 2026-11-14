@@ -20,7 +20,7 @@ use Illuminate\Support\Facades\DB;
 
 /**
  * Usage metrics of one environment's services (docs/design/direction.md §8.3):
- * canvas node footers (every service) and the service panel's Metrics tab
+ * canvas node footers (every service) and Analytics → Resources
  * (one service with per-replica series), with deploy markers. Callers
  * authorize and resolve the environment/service inside the project.
  */
@@ -278,28 +278,6 @@ final readonly class ProjectMetrics
      */
     public static function deploys(array $instanceIds, MetricWindow $window): array
     {
-        if ($instanceIds === []) {
-            return [];
-        }
-
-        $rows = DB::table('deployments as d')
-            ->join('service_instances as si', 'si.id', '=', 'd.service_instance_id')
-            ->join('services as s', 's.id', '=', 'si.service_id')
-            ->whereIn('d.service_instance_id', $instanceIds)
-            ->whereNotNull('d.started_at')
-            ->whereRaw('coalesce(d.finished_at, d.started_at) >= ?', [$window->from()])
-            ->orderByRaw('coalesce(d.finished_at, d.started_at) DESC')
-            ->limit(self::MAX_DEPLOY_MARKERS)
-            ->get(['d.public_id', 's.public_id as service_public_id', 's.name as service_name', 'd.commit_sha', 'd.status', 'd.started_at', 'd.finished_at'])
-            ->all();
-
-        return array_values(array_reverse(array_map(static fn (object $d): DeployMarkerData => new DeployMarkerData(
-            Cast::string($d->public_id ?? null),
-            Cast::string($d->service_public_id ?? null),
-            CarbonImmutable::parse(Cast::string($d->finished_at ?? $d->started_at ?? null))->utc()->toIso8601String(),
-            Cast::string($d->status ?? null),
-            Cast::string($d->service_name ?? null),
-            is_string($d->commit_sha ?? null) ? substr($d->commit_sha, 0, 7) : null,
-        ), $rows)));
+        return DeployMarkers::forInstances($instanceIds, $window->from(), null, self::MAX_DEPLOY_MARKERS);
     }
 }

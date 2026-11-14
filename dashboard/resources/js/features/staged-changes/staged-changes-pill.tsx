@@ -17,9 +17,10 @@ export type StagedChangesPillProps = {
 };
 
 /**
- * What the staged button says (design-system §13.9): "4 changes · Review &
- * deploy", "3 new services · Deploy" before the first deploy, or nothing to
- * show when nothing is staged (also for an environment without services).
+ * What the staged button says (design-system §13.9, D75): "4 changes" and
+ * "Review & apply", "3 new services" and "Deploy" before the first deploy,
+ * or nothing to show when nothing is staged (also for an environment
+ * without services).
  */
 export function useStagedSummary(project: string, environment: string) {
     const { data } = useStagedChanges(project, environment);
@@ -34,7 +35,7 @@ export function useStagedSummary(project: string, environment: string) {
     const action = data?.canDeploy
         ? data.neverDeployed
             ? 'Deploy'
-            : 'Review & deploy'
+            : 'Review & apply'
         : 'Review';
 
     return { visible, number, count, action };
@@ -104,9 +105,9 @@ export function StagedChangesPill({
 }
 
 /**
- * The canvas' "Review & deploy" (design-system §13.9): the end of the
+ * The canvas' "Review & apply" (design-system §13.9): the end of the
  * floating toolbar, bottom centre, next to where changes are made.
- * "4 changes · Review & deploy" with the count in signal and the action as
+ * "4 changes" and "Review & apply", with the count in signal and the action as
  * the toolbar's one filled button. Renders nothing when nothing is staged,
  * so the toolbar stays as it is. Same sheet as the top-bar pill.
  */

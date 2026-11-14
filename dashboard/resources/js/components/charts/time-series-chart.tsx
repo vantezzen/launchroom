@@ -2,7 +2,11 @@ import { Table2 } from 'lucide-react';
 import { useId, useMemo, useState } from 'react';
 import type { KeyboardEvent, PointerEvent, ReactNode } from 'react';
 import { cn } from '@/lib/utils';
+import { ChartDrillPopover } from './chart-drill';
+import type { ChartDrill } from './chart-drill';
 import { formatTick, formatTooltipTime, niceMax } from './format';
+import { groupMarkers, LABEL_OFFSET } from './marker-groups';
+import { MarkerLayer } from './marker-layer';
 import { colorForSlot, MAX_SERIES, OTHER, SIGNAL } from './palette';
 import { useMeasuredWidth } from './use-measure';
 
@@ -23,6 +27,8 @@ export type ChartMarker = {
     tone?: 'signal' | 'error';
     /** Hover text, e.g. "web 3b7d5e1: failed". */
     detail?: string;
+    /** Where the event is shown (its deployment); the marker's popover links there. */
+    href?: string;
 };
 
 export type TimeSeriesChartProps = {
@@ -35,6 +41,12 @@ export type TimeSeriesChartProps = {
     formatValue?: (value: number) => string;
     /** Deploy markers (design-system §9): signal ticks with the short SHA. */
     markers?: ChartMarker[];
+    /**
+     * Click or Enter on a point opens these links for the time around it
+     * (logs at that moment, deployments around it). `bucketMs` is the
+     * width of one point; defaults to the spacing of the timestamps.
+     */
+    drill?: ChartDrill;
     /** Show the "Table" toggle (full-size charts must have one). */
     table?: boolean;
     /** Shown instead of the chart when there's nothing to plot. */
@@ -61,6 +73,7 @@ export function TimeSeriesChart({
     yMax,
     formatValue = (value) => value.toFixed(1),
     markers = [],
+    drill,
     table = true,
     empty = null,
     className,
@@ -69,6 +82,8 @@ export function TimeSeriesChart({
     const [ref, width] = useMeasuredWidth<HTMLDivElement>();
     const [active, setActive] = useState<number | null>(null);
     const [showTable, setShowTable] = useState(false);
+    const [drilled, setDrilled] = useState<number | null>(null);
+    const [openMarker, setOpenMarker] = useState<number | null>(null);
 
     const series = useMemo(() => foldSeries(input), [input]);
     const times = series[0]?.points.map((point) => point.t) ?? [];
@@ -88,6 +103,21 @@ export function TimeSeriesChart({
     const x = (t: number) => PAD.left + ((t - t0) / span) * plotW;
     const y = (v: number) => PAD.top + (1 - Math.min(v, top) / top) * plotH;
     const single = series.length === 1;
+    const step = times.length > 1 ? times[1] - times[0] : 60_000;
+    const windowOf = (index: number) => ({
+        from: times[index],
+        to: times[index] + step,
+    });
+    const drillActions =
+        drill && drilled !== null ? drill(windowOf(drilled)) : [];
+    const groups =
+        plotW > 0
+            ? groupMarkers(
+                  markers.filter((marker) => marker.t >= t0 && marker.t <= t1),
+                  (t) => ((t - t0) / span) * plotW,
+                  plotW,
+              )
+            : [];
 
     if (!hasData) {
         return <>{empty}</>;
@@ -114,6 +144,13 @@ export function TimeSeriesChart({
         if (event.key in next) {
             event.preventDefault();
             move(next[event.key]);
+        } else if (
+            (event.key === 'Enter' || event.key === ' ') &&
+            drill &&
+            drill(windowOf(current)).length > 0
+        ) {
+            event.preventDefault();
+            setDrilled(current);
         } else if (event.key === 'Escape') {
             move(null);
         }
@@ -193,8 +230,18 @@ export function TimeSeriesChart({
                             height={height}
                             className="block overflow-visible outline-none focus-visible:rounded-md focus-visible:ring-2 focus-visible:ring-(--signal)"
                             role="img"
-                            aria-label={`${title}. Use the arrow keys to read values.`}
+                            aria-label={`${title}. Use the arrow keys to read values${drill ? ', Enter to open logs and deployments of that time' : ''}.`}
                             tabIndex={0}
+                            style={{ cursor: drill ? 'pointer' : undefined }}
+                            onClick={() => {
+                                if (
+                                    drill &&
+                                    active !== null &&
+                                    drill(windowOf(active)).length > 0
+                                ) {
+                                    setDrilled(active);
+                                }
+                            }}
                             onPointerMove={onPointerMove}
                             onPointerLeave={() => move(null)}
                             onBlur={() => move(null)}
@@ -262,48 +309,62 @@ export function TimeSeriesChart({
                                 </text>
                             ))}
 
-                            {labelledMarkers(
-                                markers.filter(
-                                    (marker) =>
-                                        marker.t >= t0 && marker.t <= t1,
-                                ),
-                                x,
-                            ).map(({ marker, showLabel }) => (
-                                <g key={`${marker.t}-${marker.label}`}>
-                                    {marker.detail && (
-                                        <title>{marker.detail}</title>
-                                    )}
-                                    <line
-                                        x1={x(marker.t)}
-                                        x2={x(marker.t)}
-                                        y1={PAD.top - 4}
-                                        y2={PAD.top + plotH}
-                                        strokeWidth={1}
-                                        strokeDasharray="3 3"
-                                        style={{
-                                            stroke:
-                                                marker.tone === 'error'
-                                                    ? 'var(--status-error)'
-                                                    : SIGNAL,
-                                        }}
-                                    />
-                                    {showLabel && (
-                                        <text
-                                            x={x(marker.t) + 4}
-                                            y={PAD.top - 6}
-                                            className="font-mono text-[10px]"
-                                            style={{
-                                                fill:
-                                                    marker.tone === 'error'
-                                                        ? 'var(--status-error)'
-                                                        : SIGNAL,
-                                            }}
-                                        >
-                                            {marker.label}
-                                        </text>
-                                    )}
-                                </g>
-                            ))}
+                            {groups.map((group, index) => {
+                                const gx = PAD.left + group.x;
+                                const color =
+                                    group.tone === 'error'
+                                        ? 'var(--status-error)'
+                                        : SIGNAL;
+
+                                return (
+                                    <g
+                                        key={`${group.markers[0].t}-${group.label}`}
+                                        opacity={
+                                            openMarker !== null &&
+                                            openMarker !== index
+                                                ? 0.45
+                                                : 1
+                                        }
+                                    >
+                                        <line
+                                            x1={gx}
+                                            x2={gx}
+                                            y1={PAD.top - 4}
+                                            y2={PAD.top + plotH}
+                                            strokeWidth={1}
+                                            strokeDasharray="3 3"
+                                            style={{ stroke: color }}
+                                        />
+                                        {group.markers.length > 1 && (
+                                            <circle
+                                                cx={gx}
+                                                cy={PAD.top - 9}
+                                                r={2.5}
+                                                strokeWidth={1.25}
+                                                style={{
+                                                    fill: 'var(--card)',
+                                                    stroke: color,
+                                                }}
+                                            />
+                                        )}
+                                        {group.showLabel && (
+                                            <text
+                                                x={
+                                                    group.anchor === 'start'
+                                                        ? gx + LABEL_OFFSET
+                                                        : gx - LABEL_OFFSET
+                                                }
+                                                y={PAD.top - 6}
+                                                textAnchor={group.anchor}
+                                                className="font-mono text-[10px]"
+                                                style={{ fill: color }}
+                                            >
+                                                {group.label}
+                                            </text>
+                                        )}
+                                    </g>
+                                );
+                            })}
 
                             {single && (
                                 <path
@@ -362,7 +423,27 @@ export function TimeSeriesChart({
                         </svg>
                     )}
 
-                    {activeT !== null && (
+                    {width > 0 && groups.length > 0 && (
+                        <MarkerLayer
+                            groups={groups}
+                            offset={PAD.left}
+                            top={PAD.top - 16}
+                            span={span}
+                            onActiveChange={setOpenMarker}
+                        />
+                    )}
+                    {drill && width > 0 && (
+                        <ChartDrillPopover
+                            window={drilled === null ? null : windowOf(drilled)}
+                            actions={drillActions}
+                            x={drilled === null ? 0 : x(times[drilled])}
+                            top={PAD.top}
+                            height={plotH}
+                            onClose={() => setDrilled(null)}
+                        />
+                    )}
+
+                    {activeT !== null && drilled === null && (
                         <div
                             aria-live="polite"
                             className="pointer-events-none absolute top-2 z-10 w-40 rounded-lg border bg-popover px-3 py-2 shadow-[0_8px_30px_rgb(0_0_0/0.10),0_1px_3px_rgb(0_0_0/0.06)] dark:border-(--border-strong) dark:shadow-[0_8px_30px_rgb(0_0_0/0.6)]"
@@ -402,30 +483,6 @@ export function TimeSeriesChart({
 }
 
 type ColouredSeries = TimeSeries & { color: string };
-
-/**
- * Deploys close together (one deploy of several services) would print their
- * SHAs on top of each other: only a marker at least 64 px right of the last
- * labelled one gets a label; the others keep their tick and hover title.
- */
-function labelledMarkers(
-    markers: ChartMarker[],
-    x: (t: number) => number,
-): { marker: ChartMarker; showLabel: boolean }[] {
-    let last = -Infinity;
-
-    return [...markers]
-        .sort((a, b) => a.t - b.t)
-        .map((marker) => {
-            const showLabel = x(marker.t) - last >= 64;
-
-            if (showLabel) {
-                last = x(marker.t);
-            }
-
-            return { marker, showLabel };
-        });
-}
 
 /** Single series → signal; up to 4 in palette colours; the rest summed into grey "other". */
 function foldSeries(input: TimeSeries[]): ColouredSeries[] {

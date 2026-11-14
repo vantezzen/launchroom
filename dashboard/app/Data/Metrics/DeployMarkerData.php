@@ -7,8 +7,10 @@ namespace App\Data\Metrics;
 use Spatie\LaravelData\Data;
 
 /**
- * A deploy marker on usage charts: when a deployment of the service finished
- * (or started, while it runs).
+ * A deploy on a time chart (docs/15 §2, design-system §9): when a
+ * deployment of a service finished (or started, while it runs). One shape
+ * for every chart (Metrics, Logs, Analytics, Security), built by
+ * App\Queries\DeployMarkers; `href` opens the deployment.
  */
 final class DeployMarkerData extends Data
 {
@@ -20,5 +22,7 @@ final class DeployMarkerData extends Data
         public ?string $serviceName = null,
         /** Short commit SHA (7), when the deployment built a commit. */
         public ?string $sha = null,
+        /** The deployment page. */
+        public ?string $href = null,
     ) {}
 }

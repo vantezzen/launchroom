@@ -62,12 +62,12 @@ auto-deploy** in the banner under the project tabs.
 
 ## Staged changes per environment
 
-Staged changes belong to one environment. Editing staging stages a change in staging only, and **Review & deploy**
-deploys the environment you're looking at. Adding a service on the staging canvas creates it in staging only;
+Staged changes belong to one environment. Editing staging stages a change in staging only, and **Review & apply**
+applies the changes of the environment you're looking at. Adding a service on the staging canvas creates it in staging only;
 production gets it when you promote it.
 
-The staged changes page (`Review & deploy`, then the full page) also lists the environment's last ten **revisions**.
-Each Deploy writes one. To undo a configuration change, use **Revert to this**: it stages the configuration of an older
+The staged changes page (**Review & apply**, then the full page) also lists the environment's last ten **revisions**.
+Each apply writes one. To undo a configuration change, use **Revert to this**: it stages the configuration of an older
 revision again. A rollback of a deployment changes the running version and leaves the settings as they are.
 
 For production you can tick **Stage without routing traffic** when deploying. The new version is built and started next

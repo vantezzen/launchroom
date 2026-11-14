@@ -66,10 +66,10 @@ Plan preview states, each designed: Inspecting (skeleton card with the repo name
 
 **Magic.** "It just connects": one choice and the credentials are in place.
 
-## 5. Deploy and watch it go live
+## 5. Apply and watch it go live
 
-- While something is staged, the canvas toolbar ends in **Review & deploy** (dashed signal = staged). It opens a right sheet: changes grouped by service with their effect ("api: restart · web: rebuild"), an optional message, **Deploy**. No navigation.
-- After Deploy you stay on the canvas: each affected node shows a compact progress bar and its current step ("Building · 41s", "Health check · 1 of 2"). The panel (if open) shows the step pills Build ✓ · Migrate ✓ · Health ◌ · Route.
+- While something is staged, the canvas toolbar ends in "4 changes" and **Review & apply** (dashed signal = staged). It opens a right sheet: changes grouped by service with their effect, one sentence that says which services redeploy ("Applying rebuilds web, and restarts api and worker."), an optional message, **Apply 4 changes**. No navigation. Staged changes are applied, not deployed: only services deploy, and applying redeploys the ones it affects (D75).
+- After Apply you stay on the canvas: each affected node shows a compact progress bar and its current step ("Building · 41s", "Health check · 1 of 2"). The panel (if open) shows the step pills Build ✓ · Migrate ✓ · Health ◌ · Route.
 - When the deployment finishes, the node's status cross-fades (180 ms); a toast says "web is live · Open"; failure toasts link to the explained error.
 - The project card and ⌘K show "Deploying" while it runs.
 
@@ -77,6 +77,7 @@ Plan preview states, each designed: Inspecting (skeleton card with the repo name
 
 ## 6. Debug a failed deploy
 
+0. From anywhere in the team: **Projects** opens with "Needs you", and the failing project's card names the service ("web failed to deploy") with **See why**, one click to step 2.
 1. The node says "Last deploy failed · still serving 3b7d5e1" (reassurance first: nothing went down).
 2. Deployment page: the overview card, then the **explained failure card** (Laravel error page style): a human title ("Build failed: pnpm lockfile is out of date"), one or two sentences of cause and fix, actions ("Jump to line 7", "Copy command"), the failure class as a small chip.
 3. Steps list with the failed step open and scrolled to its first error, with error lines highlighted. The same toolbar searches every step, expands all steps, and copies or downloads the whole log.
@@ -96,7 +97,7 @@ Plan preview states, each designed: Inspecting (skeleton card with the repo name
 
 - Variables page rows changed since the last deploy get the staged treatment (signal rule + "Changed" chip); new rows "New".
 - Paste anywhere: pasting a `.env` into the tab opens the import preview directly.
-- The staged bar floats at the bottom of the panel: "2 changes · api will restart · Discard · Deploy". Deploying from there is the same Deploy as everywhere.
+- The staged bar floats at the bottom of the panel: "2 changes", "api will restart", Discard, **Apply**. Applying from there is the same Apply as everywhere (it applies everything staged in the environment; "Apply all" says so when other services have changes too).
 - Broken references are listed per row, and Deploy is disabled with the reason.
 
 **Magic.** "Restart, not rebuild": the bar tells you the deploy will be fast because only runtime variables changed.
@@ -165,7 +166,8 @@ Plan preview states, each designed: Inspecting (skeleton card with the repo name
 ## 17. ⌘K power-user paths
 
 - A **visible search field in the sidebar** ("Search ⌘K") makes the palette discoverable.
-- Context first: inside a project, its services and actions come first; on a deployment, "Roll back to this deployment".
-- Verbs: "Redeploy web", "Roll back to this deployment", "Open logs of web", "Add variable to api", "Switch to staging".
-- Rich rows: service logos, project icons, status dots, environment chips; deployments show commit + age.
-- Leader shortcuts: `g p` projects, `g s` servers, `g d` deployments, `g l` logs, `g v` variables; `/` focuses log search.
+- Context first: inside a project, its services come first with their status (failing ones on top), before any typing; with a service open, its commands lead; on a deployment, "Roll back to this deployment".
+- Verbs per service: "Logs of web", "Analytics of web" (Traffic with a domain, else Resources), "Open web.shop.dev", "Redeploy web", "Restart web" (both confirm inline), "Variables of web", "Data of postgres"; also "Add variable to api", "Switch to staging". "api logs" and "logs api" both find it.
+- Recent is where you've actually been (service panels, canvases, deployments, servers), not only palette picks.
+- Rich rows: service logos, project icons, status words with their icon; deployments show commit + age. Never variable values.
+- Leader shortcuts: `g p` projects, `g s` servers, `g c` canvas, `g d` deployments, `g l` / `g a` logs / analytics (of the open service when there is one), `g v` variables; `o` opens the open service's live URL; `/` focuses log search; `?` lists every shortcut. No single key changes anything.

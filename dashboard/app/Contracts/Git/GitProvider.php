@@ -102,6 +102,12 @@ interface GitProvider
     public function compareUrl(RepositoryRef $repository, string $from, string $to): ?string;
 
     /**
+     * The repository's web page, at `$branch` when given, if the provider
+     * has one (the service panel's source link).
+     */
+    public function repositoryUrl(RepositoryRef $repository, ?string $branch = null): ?string;
+
+    /**
      * Deployment feedback (statuses, check runs, PR comment). Never throws.
      */
     public function reportDeployment(DeploymentStatusReport $report): void;

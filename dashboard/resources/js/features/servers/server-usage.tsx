@@ -3,14 +3,16 @@ import { Hammer } from 'lucide-react';
 import { useState } from 'react';
 import { StatTile } from '@/components/charts/stat-tile';
 import { TimeRangeSelect } from '@/components/charts/time-range-select';
-import type { TimeRange } from '@/components/charts/time-range-select';
 import { UsageMeter } from '@/components/charts/usage-meter';
 import { Logo } from '@/components/logo';
 import { MetaLine } from '@/components/patterns/meta-line';
 import { Section } from '@/components/patterns/section';
 import { Sparkline } from '@/components/charts/sparkline';
 import { formatMb } from '@/features/servers/format';
+import { RANGE_SETS } from '@/lib/observe-scope';
 import services from '@/routes/projects/services';
+
+type MetricsRange = (typeof RANGE_SETS.resources)[number];
 
 type Metrics = App.Data.Metrics.ServerMetricsData | undefined;
 
@@ -35,8 +37,8 @@ export function ServerUsage({
 }: {
     metrics: Metrics;
     specs: App.Data.Servers.ServerSpecsData | null;
-    range: TimeRange;
-    onRangeChange: (range: TimeRange) => void;
+    range: MetricsRange;
+    onRangeChange: (range: MetricsRange) => void;
 }) {
     const current = metrics?.current ?? null;
     const host = metrics?.host;
@@ -61,6 +63,8 @@ export function ServerUsage({
 
     return (
         <Section
+            id="disk"
+            className="scroll-mt-20"
             title="Usage"
             actions={<TimeRangeSelect value={range} onChange={onRangeChange} />}
         >

@@ -167,6 +167,7 @@ Route::middleware(['auth', 'verified'])->group(function (): void {
     Route::patch('servers/{server}/appearance', ServerAppearanceController::class)->name('servers.appearance.update');
     // One page with tabs (docs/08 §14): Overview at the bare URL, the others as a segment.
     Route::get('servers/{server}', [ServerController::class, 'show'])->name('servers.show');
+    Route::get('servers/{server}/metrics', [ServerController::class, 'movedMetrics'])->name('servers.metrics.moved');
     Route::get('servers/{server}/{tab}', [ServerController::class, 'show'])
         ->whereIn('tab', ServerTab::segments())
         ->name('servers.tab');

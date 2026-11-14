@@ -1,5 +1,5 @@
-import { Head, Link, router } from '@inertiajs/react';
-import { ScrollText } from 'lucide-react';
+import { Head, Link } from '@inertiajs/react';
+import { RefreshCw, ScrollText } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
 import { CommitAvatar } from '@/components/commit-avatar';
 import { Logo } from '@/components/logo';
@@ -12,8 +12,12 @@ import {
     FailureCard,
     fixAction,
 } from '@/features/deployment-detail/failure-card';
+import { DeploymentImpact } from '@/features/deployment-detail/deployment-impact';
 import { OverviewCard } from '@/features/deployment-detail/overview-card';
-import { RelatedCards } from '@/features/deployment-detail/related-cards';
+import {
+    deploymentLogsHref,
+    RelatedCards,
+} from '@/features/deployment-detail/related-cards';
 import { stepRows } from '@/features/deployment-detail/steps';
 import type { PendingAction } from '@/features/deployments/deployment-actions';
 import { DeploymentActionDialog } from '@/features/deployments/deployment-actions';
@@ -34,13 +38,22 @@ import {
     withLoggedSteps,
 } from '@/features/logs/step-log';
 import { useDeploymentLogs } from '@/features/logs/use-deployment-logs';
+import { liveReload } from '@/features/projects/environment-live-updates';
 import type { ProjectShellProps } from '@/features/projects/types';
-import { logs as projectLogs } from '@/routes/projects';
+import services from '@/routes/projects/services';
 import { TimeAgo } from '@/components/time-ago';
 
 type Props = ProjectShellProps & {
     detail: App.Data.Deployments.DeploymentDetailData;
     logs: App.Data.Deployments.LogPageData;
+    /** "Since this deploy" (docs/08 §12); null without traffic to compare. */
+    impact?: App.Data.Deployments.DeploymentImpactData | null;
+    /**
+     * Opened from a deployment row before the server answered (instant
+     * visit, features/deployments/deployment-link.tsx): `detail` holds what
+     * the row knew, the lines are still coming.
+     */
+    pending?: boolean;
 };
 
 /**
@@ -55,15 +68,23 @@ export default function DeploymentShow(props: Props) {
     // Inertia keeps this component mounted when it visits another
     // deployment (Redeploy and Roll back redirect to the new one): a key
     // per deployment resets the log stream, follow mode and open panels.
-    return <DeploymentPage key={props.detail.deployment.id} {...props} />;
+    // The answer to an instant visit replaces the drawn page the same way.
+    return (
+        <DeploymentPage
+            key={`${props.detail.deployment.id}${props.pending ? ':pending' : ''}`}
+            {...props}
+        />
+    );
 }
 
 function DeploymentPage({
     detail,
     logs,
+    impact = null,
     project,
     environment,
     abilities,
+    pending = false,
 }: Props) {
     const deployment = detail.deployment;
     const [action, setAction] = useState<PendingAction | null>(null);
@@ -110,17 +131,15 @@ function DeploymentPage({
             : deployment.environmentName;
     const fix = fixAction(detail, abilities.deploy);
 
-    const refreshDetail = () => router.reload({ only: ['detail'] });
+    const refreshDetail = () => liveReload(['detail']);
 
     const jumpTo = useCallback((line: number) => {
         document.getElementById('steps')?.scrollIntoView({ block: 'start' });
         window.location.hash = `L${line}`;
     }, []);
 
-    const logsHref = projectLogs(
-        { project: project.id, environment: deployment.environmentId },
-        { query: { service: deployment.serviceId } },
-    ).url;
+    // This deployment's runtime lines, from when it started (docs/08 §12).
+    const logsHref = deploymentLogsHref(deployment);
 
     // One primary action: promote a staged deployment, fix a known failure,
     // otherwise redeploy (filled only when retrying a failure).
@@ -133,7 +152,7 @@ function DeploymentPage({
                 title={`Deployment ${shortSha(deployment.commitSha) ?? deployment.id} - ${deployment.serviceName}`}
             />
 
-            {live && (
+            {live && !pending && (
                 <>
                     <ChannelEvents
                         channel={`deployments.${deployment.id}`}
@@ -165,7 +184,19 @@ function DeploymentPage({
                     title={deploymentTitle(deployment)}
                     description={
                         <MetaLine>
-                            {deployment.serviceName}
+                            {/* Back to the service: its panel over the canvas. */}
+                            <Link
+                                href={
+                                    services.show({
+                                        project: deployment.projectId,
+                                        environment: deployment.environmentId,
+                                        service: deployment.serviceId,
+                                    }).url
+                                }
+                                className="rounded-sm text-foreground underline-offset-4 hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                            >
+                                {deployment.serviceName}
+                            </Link>
                             {environmentName}
                             <span className="inline-flex items-center gap-1.5">
                                 <CommitAvatar
@@ -186,10 +217,10 @@ function DeploymentPage({
                             <Button variant="outline" asChild>
                                 <Link href={logsHref}>
                                     <ScrollText aria-hidden="true" />
-                                    Logs
+                                    Runtime logs
                                 </Link>
                             </Button>
-                            {detail.canCancel && (
+                            {!pending && detail.canCancel && (
                                 <Button
                                     variant="outline"
                                     onClick={() =>
@@ -202,7 +233,7 @@ function DeploymentPage({
                                     Cancel
                                 </Button>
                             )}
-                            {deployment.canRollback && (
+                            {!pending && deployment.canRollback && (
                                 <Button
                                     variant="outline"
                                     onClick={() =>
@@ -229,6 +260,7 @@ function DeploymentPage({
                                         })
                                     }
                                 >
+                                    <RefreshCw aria-hidden="true" />
                                     Redeploy
                                 </Button>
                             )}
@@ -252,8 +284,9 @@ function DeploymentPage({
                     <OverviewCard
                         detail={detail}
                         environmentName={environmentName}
+                        pending={pending}
                     />
-                    {detail.configErrors ? (
+                    {pending ? null : detail.configErrors ? (
                         <ConfigFailureCard detail={detail} />
                     ) : (
                         <FailureCard
@@ -261,6 +294,17 @@ function DeploymentPage({
                             errorLine={errorLine}
                             onJump={jumpTo}
                             canFix={abilities.deploy}
+                        />
+                    )}
+                    {!pending && impact && (
+                        <DeploymentImpact
+                            impact={impact}
+                            onRollback={(target) =>
+                                setAction({
+                                    kind: 'rollback',
+                                    deployment: target,
+                                })
+                            }
                         />
                     )}
                 </div>
@@ -276,20 +320,30 @@ function DeploymentPage({
                               : undefined
                     }
                 >
-                    <LogViewer
-                        steps={timeline}
-                        lines={stream.lines}
-                        hasMore={stream.hasMore}
-                        loadingMore={stream.loading}
-                        onLoadMore={() => void stream.loadMore()}
-                        onLoadAll={stream.loadAll}
-                        live={live}
-                        following={inProgress}
-                        fileName={`${deployment.serviceName}-${deployment.id}.log`}
-                    />
+                    {pending ? (
+                        // The lines stream in with the answer: the one
+                        // thing on this page that is allowed to load.
+                        <div
+                            aria-busy="true"
+                            aria-label="Loading lines"
+                            className="min-h-60 rounded-xl border bg-card"
+                        />
+                    ) : (
+                        <LogViewer
+                            steps={timeline}
+                            lines={stream.lines}
+                            hasMore={stream.hasMore}
+                            loadingMore={stream.loading}
+                            onLoadMore={() => void stream.loadMore()}
+                            onLoadAll={stream.loadAll}
+                            live={live}
+                            following={inProgress}
+                            fileName={`${deployment.serviceName}-${deployment.id}.log`}
+                        />
+                    )}
                 </Section>
 
-                <RelatedCards detail={detail} />
+                {!pending && <RelatedCards detail={detail} />}
             </Page>
 
             <DeploymentActionDialog
