@@ -6,6 +6,7 @@ namespace App\Drivers\DatabaseEngines;
 
 use App\Data\Services\HealthcheckSettings;
 use App\Enums\ConnectionStyle;
+use App\Enums\RemoteAccess\RemoteAccessProtocol;
 use App\Enums\VariableType;
 use App\Support\Images\ImageReference;
 
@@ -31,6 +32,11 @@ abstract readonly class RedisCompatible implements DatabaseEngineDriver
         return $this->images->versions($this->engine());
     }
 
+    public function defaultVersion(): string
+    {
+        return $this->images->defaultVersion($this->engine());
+    }
+
     public function image(string $version): ImageReference
     {
         return $this->images->for($this->engine(), $version);
@@ -41,9 +47,19 @@ abstract readonly class RedisCompatible implements DatabaseEngineDriver
         return 6379;
     }
 
+    public function category(): DatabaseEngineCategory
+    {
+        return DatabaseEngineCategory::KeyValue;
+    }
+
     public function volumeMountPath(string $version): string
     {
         return '/data';
+    }
+
+    public function dataDirectory(string $version): string
+    {
+        return $this->volumeMountPath($version);
     }
 
     public function variables(): array
@@ -60,6 +76,34 @@ abstract readonly class RedisCompatible implements DatabaseEngineDriver
     public function exportedKeys(): array
     {
         return ['REDIS_URL', 'REDIS_HOST', 'REDIS_PORT', 'REDIS_PASSWORD'];
+    }
+
+    public function exportedKey(ConnectionPart $part): ?string
+    {
+        return match ($part) {
+            ConnectionPart::Url => 'REDIS_URL',
+            ConnectionPart::Host => 'REDIS_HOST',
+            ConnectionPart::Port => 'REDIS_PORT',
+            ConnectionPart::Password => 'REDIS_PASSWORD',
+            ConnectionPart::User => null,
+            ConnectionPart::Database => null,
+            ConnectionPart::NativePort => null,
+        };
+    }
+
+    public function imageEnvAliases(): array
+    {
+        return ['password' => ['REDIS_PASSWORD']];
+    }
+
+    public function nativeSchemes(): array
+    {
+        return [];
+    }
+
+    public function urlQuery(): array
+    {
+        return [];
     }
 
     public function connectionVariables(ConnectionStyle $style, string $slug): array
@@ -90,6 +134,11 @@ abstract readonly class RedisCompatible implements DatabaseEngineDriver
         return 'SIGTERM';
     }
 
+    public function stopTimeout(): string
+    {
+        return '60s';
+    }
+
     public function entrypoint(): ?array
     {
         return null;
@@ -102,20 +151,38 @@ abstract readonly class RedisCompatible implements DatabaseEngineDriver
         return ['sh', '-c', "exec docker-entrypoint.sh {$binary} - --appendonly yes <<EOF\nrequirepass \$REDIS_PASSWORD\nEOF\n"];
     }
 
-    public function dumpCommand(): array
+    public function client(): ?string
     {
-        // REDISCLI_AUTH comes from the env.
-        return [str_replace('-server', '-cli', $this->binary()), '--rdb', '-'];
+        return str_replace('-server', '-cli', $this->binary());
     }
 
-    public function restoreCommand(): array
+    public function phpExtension(): ?string
     {
-        // Restores replace the RDB file in the volume while stopped (backup wave).
-        return [];
+        return 'redis';
     }
 
-    public function dumpFileExtension(): string
+    public function exportFileExtension(): string
     {
         return 'rdb';
+    }
+
+    public function importFormat(): ?DumpImport
+    {
+        return null;
+    }
+
+    public function restorable(): bool
+    {
+        return false;
+    }
+
+    public function pointInTimeRecoveryFrom(): null
+    {
+        return null;
+    }
+
+    public function remoteAccess(): ?RemoteAccessProtocol
+    {
+        return RemoteAccessProtocol::Redis;
     }
 }

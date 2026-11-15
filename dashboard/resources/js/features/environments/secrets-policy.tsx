@@ -2,8 +2,8 @@ import { router } from '@inertiajs/react';
 import { useState } from 'react';
 import InputError from '@/components/input-error';
 import { Switch } from '@/components/ui/switch';
-import { SettingsCard, SettingsRow } from '@/features/settings/settings-card';
 import { secretsPolicy } from '@/routes/environments';
+import { SettingsCard, SettingsRow } from '@/components/settings/settings-card';
 
 /**
  * "Production secrets must differ from preview" (docs/06 §3.1): a project

@@ -11,6 +11,7 @@ use App\Enums\Security\FindingLevel;
 use App\Enums\Security\InventorySource;
 use App\Enums\Security\SecurityFindingStatus;
 use App\Enums\Security\Severity;
+use App\Events\Broadcasts\SecurityChanged;
 use App\Models\Security\SecurityFinding;
 use App\Models\ServiceInstance;
 use App\Models\Team;
@@ -70,6 +71,12 @@ final readonly class EvaluateSecurityFindings
         });
 
         $this->afterEvaluation($teamId, $escalated, $now);
+
+        $publicId = $team instanceof Team ? $team->public_id : Team::query()->whereKey($teamId)->value('public_id');
+
+        if (is_string($publicId)) {
+            broadcast(new SecurityChanged($publicId));
+        }
 
         return $counts;
     }
@@ -294,8 +301,7 @@ final readonly class EvaluateSecurityFindings
         // Findings whose investigation never finished in time still notify.
         $waiting = SecurityFinding::query()
             ->where('team_id', $teamId)
-            ->where('status', SecurityFindingStatus::Open->value)
-            ->where('level', FindingLevel::ActionNeeded->value)
+            ->actionNeeded()
             ->whereNull('notified_at')
             ->where('level_changed_at', '<=', $now->subMinutes(self::ALERT_WAIT_MINUTES))
             ->get();
@@ -304,11 +310,9 @@ final readonly class EvaluateSecurityFindings
             $this->alert->handle($finding);
         }
 
-        // Alerts of instances without an open "Action needed" finding resolve.
         $urgent = SecurityFinding::query()
             ->where('team_id', $teamId)
-            ->where('status', SecurityFindingStatus::Open->value)
-            ->where('level', FindingLevel::ActionNeeded->value)
+            ->actionNeeded()
             ->distinct()
             ->pluck('service_instance_id')
             ->all();

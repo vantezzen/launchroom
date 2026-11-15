@@ -2,8 +2,8 @@
 
 declare(strict_types=1);
 
-use App\Services\GitHub\InstallationToken;
-use App\Services\GitHub\TokenScope;
+use App\Services\Git\Providers\GitHub\InstallationToken;
+use App\Services\Git\Providers\GitHub\TokenScope;
 use App\Support\Git\GitRef;
 use App\Support\Git\SkipMarkers;
 use Carbon\CarbonImmutable;
@@ -52,3 +52,16 @@ test('token scopes narrow to one repository and minimal permissions', function (
         ->and(TokenScope::listRepositories()->requestBody())->toBe(['permissions' => ['metadata' => 'read']])
         ->and(TokenScope::clone(7)->cacheKey())->not->toBe(TokenScope::clone(8)->cacheKey());
 });
+
+test('commit ids are SHA-1 or SHA-256, and the zero id is recognised in both', function (string $sha, bool $valid, bool $zero): void {
+    expect(GitRef::isSha($sha))->toBe($valid)
+        ->and(GitRef::isZeroSha($sha))->toBe($zero);
+})->with([
+    'SHA-1' => [str_repeat('a', 40), true, false],
+    'SHA-256' => [str_repeat('a', 64), true, false],
+    'zero SHA-1' => [str_repeat('0', 40), true, true],
+    'zero SHA-256' => [str_repeat('0', 64), true, true],
+    'between' => [str_repeat('a', 50), false, false],
+    'uppercase' => [str_repeat('A', 40), false, false],
+    'trailing newline' => [str_repeat('a', 40)."\n", false, false],
+]);

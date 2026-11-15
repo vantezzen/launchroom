@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Actions\Moves;
 
+use App\Data\Moves\HandoverKeysData;
+use App\Data\Moves\HandoverManifestData;
 use App\Enums\Moves\ControlPlaneMoveStatus;
 use App\Models\Moves\ControlPlaneMove;
 use App\Services\Backups\ControlPlaneKeyBundle;
@@ -53,16 +55,16 @@ final readonly class PrepareHandover
             $bundle = sodium_crypto_box_seal(ControlPlaneKeyBundle::collect(), $recipient);
             $this->store->writeKeys($move->public_id, $bundle);
 
-            $manifest = [
-                'kind' => 'launchroom-move/1',
-                'move' => $move->public_id,
-                'createdAt' => now()->utc()->format('Y-m-d\TH:i:s\Z'),
-                'appUrl' => $this->origin->installUrl(),
-                'canonicalUrl' => $this->origin->canonical(),
-                'database' => [...$dump],
-                'sealedKey' => base64_encode(sodium_crypto_box_seal($key, $recipient)),
-                'keys' => ['bytes' => strlen($bundle), 'sha256' => hash('sha256', $bundle)],
-            ];
+            $manifest = new HandoverManifestData(
+                kind: 'launchroom-move/1',
+                move: $move->public_id,
+                createdAt: now()->utc()->format('Y-m-d\TH:i:s\Z'),
+                appUrl: $this->origin->installUrl(),
+                canonicalUrl: $this->origin->canonical(),
+                database: $dump,
+                sealedKey: base64_encode(sodium_crypto_box_seal($key, $recipient)),
+                keys: new HandoverKeysData(bytes: strlen($bundle), sha256: hash('sha256', $bundle)),
+            );
             sodium_memzero($key);
 
             DB::transaction(static function () use ($move, $manifest): void {

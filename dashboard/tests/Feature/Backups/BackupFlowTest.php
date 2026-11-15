@@ -11,7 +11,6 @@ use App\Actions\Services\RemoveService;
 use App\Data\Audit\AuditActor;
 use App\Data\Protocol\ProtocolJson;
 use App\Data\Protocol\V1\LeaseRequest;
-use App\Data\Protocol\V1\Task;
 use App\Data\Protocol\V1\TaskCompletion;
 use App\Data\Protocol\V1\TaskLease;
 use App\Enums\Backups\BackupHealth;
@@ -22,11 +21,12 @@ use App\Enums\DaemonTaskStatus;
 use App\Enums\DaemonTaskType;
 use App\Enums\TeamRole;
 use App\Exceptions\DomainRuleViolation;
+use App\Models\Backups\BackupDestination;
 use App\Models\Backups\BackupRun;
 use App\Models\Backups\BackupSchedule;
 use App\Models\DaemonTask;
 use App\Models\Server;
-use App\Services\Backups\BackupStatuses;
+use App\Queries\Backups\BackupStatuses;
 use Carbon\CarbonImmutable;
 use Tests\Support\Backups;
 use Tests\Support\Projects;
@@ -85,18 +85,26 @@ test('a backup task is pinned to the database server, schema-valid and carries c
         ->and($task->type)->toBe(DaemonTaskType::Backup)
         ->and($task->max_attempts)->toBe(1);
 
-    $leased = leaseBackupTask($server);
-    $json = ProtocolJson::encode(new TaskLease([Task::fromTask($leased)]));
+    // The stored spec is a template: the credentials are sealed when a server leases it (docs/03 §7).
+    expect((array) $task->spec->destination)->not->toHaveKey('credentials')
+        ->and(json_encode($task->spec))->not->toContain('super-secret-access-key-value')->not->toContain('AKIATESTKEY000001');
+
+    $lease = resolve(LeaseTasks::class)->handle($server, LeaseRequest::validateAndCreate([
+        'apiVersion' => 'launchroom.vantezzen.io/v1', 'kind' => 'LeaseRequest', 'max' => 4, 'types' => [DaemonTaskType::Backup->value],
+    ]));
+    expect($lease)->toHaveCount(1);
+    $leased = DaemonTask::query()->where('public_id', $lease[0]->id)->sole();
+    $json = ProtocolJson::encode(new TaskLease($lease));
     expect(ProtocolSchemas::errors('task-lease', $json))->toBe([]);
 
-    $spec = json_decode(json_encode($leased->spec, JSON_THROW_ON_ERROR), true, 32, JSON_THROW_ON_ERROR);
+    $spec = json_decode($json, true, 32, JSON_THROW_ON_ERROR)['tasks'][0]['spec'];
     expect($spec['target']['engine'])->toBe('postgres')
         ->and($spec['target']['workload'])->toStartWith('wl_')
         ->and($spec['destination']['endpoint'])->toBe('https://s3.example.com')
         ->and($spec['destination']['prefix'])->toBe('team-a')
         ->and($spec['tags'])->toContain('kind:database', 'reason:manual', 'service:'.$instance->service->public_id, 'server:'.$server->public_id);
 
-    // No secret appears anywhere in the stored spec.
+    // No secret appears anywhere in the lease document.
     expect($json)->not->toContain('super-secret-access-key-value')->not->toContain('AKIATESTKEY000001');
 
     $sealed = Backups::openTaskEnv($spec['destination']['credentials']['sealed'], $keypair);
@@ -166,7 +174,26 @@ test('a backup needs a destination and a running database', function (): void {
     expect(fn () => resolve(StartDatabaseBackup::class)->handle($instance, BackupReason::Manual, $owner, AuditActor::user($owner)))
         ->toThrow(DomainRuleViolation::class, 'Add a backup destination');
 
-    expect(resolve(TakeSafetySnapshot::class)->handle($instance, BackupReason::PreDelete, $owner, AuditActor::user($owner)))->toBeNull();
+    $snapshot = resolve(TakeSafetySnapshot::class)->handle($instance, BackupReason::PreDelete, $owner, AuditActor::user($owner));
+    expect($snapshot->runs)->toBe([])
+        ->and($snapshot->skipped[0]->field)->toBe('destination');
+});
+
+test('a safety snapshot goes to the schedule’s destination when the team has none of its own (bug 17)', function (): void {
+    [$team, , , $instance] = Backups::runningPostgres();
+    $owner = memberOf($team, TeamRole::Owner);
+    $own = Backups::destination($team, $owner);
+    $shared = Backups::destination(null, $owner, 'Shared');
+    BackupSchedule::query()->where('service_instance_id', $instance->id)->update(['destination_id' => $shared->id]);
+    BackupDestination::query()->whereKey($own->id)->delete();
+
+    expect(BackupDestination::defaultFor($team->id))->toBeNull();
+
+    $snapshot = resolve(TakeSafetySnapshot::class)->handle($instance, BackupReason::PreRestore, $owner, AuditActor::user($owner));
+
+    expect($snapshot->runs)->toHaveCount(1)
+        ->and($snapshot->first()?->destination_id)->toBe($shared->id)
+        ->and($snapshot->first()?->reason)->toBe(BackupReason::PreRestore);
 });
 
 test('due schedules start backups once per minute', function (): void {

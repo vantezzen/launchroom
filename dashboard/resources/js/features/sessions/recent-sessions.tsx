@@ -8,7 +8,7 @@ import { TimeAgo } from '@/components/time-ago';
 import { Button } from '@/components/ui/button';
 import { AnsiText } from '@/features/logs/ansi-text';
 import { endSession, fetchRecording } from './api';
-import { duration } from './format';
+import { formatDuration } from '@/lib/format';
 
 type Item = App.Data.Sessions.SessionHistoryItemData;
 
@@ -63,7 +63,7 @@ export function RecentSessions({
                             >
                                 {item.status === 'ended' ? (
                                     <MetaLine>
-                                        {duration(item.durationSeconds)}
+                                        {formatDuration(item.durationSeconds)}
                                         {item.failure ?? item.endReason}
                                     </MetaLine>
                                 ) : (

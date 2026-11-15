@@ -111,11 +111,11 @@ const PUBLIC_ROUTES = [
     // open only with the new machine's key; answers are signed with the
     // control plane's key (tests/Feature/Moves/ControlPlaneMoveTest.php).
     'POST move/v1/claim',
-    'GET move/v1/{move}',
-    'GET move/v1/{move}/chunks/{index}',
-    'GET move/v1/{move}/keys',
-    'POST move/v1/{move}/complete',
-    'POST move/v1/{move}/abort',
+    'GET move/v1/{controlPlaneMove}',
+    'GET move/v1/{controlPlaneMove}/chunks/{index}',
+    'GET move/v1/{controlPlaneMove}/keys',
+    'POST move/v1/{controlPlaneMove}/complete',
+    'POST move/v1/{controlPlaneMove}/abort',
 ];
 
 /**

@@ -11,20 +11,24 @@ use App\Actions\Variables\UpdateVariable;
 use App\Data\Audit\AuditActor;
 use App\Data\Variables\VariableInput;
 use App\Data\Variables\VariableTargetData;
+use App\Data\Variables\VariableTargetRow;
 use App\Data\Variables\VariableUpdate;
 use App\Enums\ConnectionMode;
 use App\Enums\ConnectionStyle;
+use App\Enums\DaemonTaskType;
 use App\Enums\VariableExposure;
 use App\Enums\VariableType;
 use App\Exceptions\DomainRuleViolation;
+use App\Models\DaemonTask;
 use App\Models\Environment;
 use App\Models\Service;
 use App\Models\Team;
 use App\Models\Variable;
 use App\Queries\CurrentEnvironmentSpec;
-use App\Services\Builds\BuildTasks;
 use App\Services\Variables\VariableStore;
 use App\Support\Variables\SecretTaint;
+use Tests\Support\GitFixtures;
+use Tests\Support\PreviewFlow;
 use Tests\Support\Projects;
 
 /**
@@ -78,7 +82,7 @@ test('a browser-inlined variable cannot reach a secret transitively, across serv
     expect(fn () => $create($web, 'REACT_APP_SIGNING', '${{shared.SIGNING}}'))->toThrow(DomainRuleViolation::class, 'shared.SIGNING_KEY');
 
     // Opting into a shared browser-inlined variable that embeds a secret.
-    $shared = resolve(VariableStore::class)->create($project, null, 'GATSBY_KEY', '${{shared.SIGNING_KEY}}', VariableType::Config, [['environment_id' => $production->id, 'all_previews' => false, 'branch_pattern' => null]]);
+    $shared = resolve(VariableStore::class)->copy($project, null, 'GATSBY_KEY', '${{shared.SIGNING_KEY}}', VariableType::Config, [VariableTargetRow::environment($production->id)]);
     expect(fn () => resolve(SetSharedVariableUsage::class)->handle($shared, $web, true))->toThrow(DomainRuleViolation::class, 'GATSBY_KEY');
     expect($shared->usedBy()->count())->toBe(0);
 });
@@ -108,20 +112,24 @@ test('a deploy is blocked when a browser-inlined variable embeds a secret (rows 
     $project = Projects::create(Team::factory()->create());
     $production = $project->production()->sole();
     $web = Projects::image($project);
-    $here = [['environment_id' => $production->id, 'all_previews' => false, 'branch_pattern' => null]];
+    $here = [VariableTargetRow::environment($production->id)];
     $store = resolve(VariableStore::class);
-    $store->create($project, $web, 'TOKEN', 'secret-token-value', VariableType::Secret, $here);
-    $store->create($project, $web, 'NEXT_PUBLIC_TOKEN', '${{TOKEN}}', VariableType::Config, $here);
+    $store->copy($project, $web, 'TOKEN', 'secret-token-value', VariableType::Secret, $here);
+    $store->copy($project, $web, 'NEXT_PUBLIC_TOKEN', '${{TOKEN}}', VariableType::Config, $here);
 
     expect(fn () => resolve(DeployEnvironment::class)->handle($production, null, AuditActor::system()))
         ->toThrow(DomainRuleViolation::class, 'Secrets in public variables: web.NEXT_PUBLIC_TOKEN is baked into the public browser bundle');
 });
 
 test('config variables that resolve a secret are never Docker build args', function (): void {
-    $project = Projects::create(Team::factory()->create());
+    config(['launchroom.git.plain_sources' => true, 'launchroom.git.insecure_hosts' => ['git-fixtures']]);
+    GitFixtures::fake(str_repeat('4', 40));
+    $team = Team::factory()->create();
+    Projects::server($team);
+    $project = Projects::create($team);
     $production = $project->production()->sole();
     $postgres = Projects::postgres($project);
-    $web = Projects::image($project);
+    $web = PreviewFlow::gitApp($project, 'web');
     resolve(CreateConnection::class)->handle($web, $postgres, ConnectionMode::Private, ConnectionStyle::Url, null, AuditActor::system());
     $create = static fn (string $key, string $value, ?VariableExposure $exposure = null) => resolve(CreateVariable::class)
         ->handle($project, $web, exposureInput($key, $value, $production, VariableType::Config, ['exposureOverride' => $exposure]), null, AuditActor::system());
@@ -133,10 +141,11 @@ test('config variables that resolve a secret are never Docker build args', funct
     $create('APP_DSN', 'dsn ${{DATABASE_URL}}', VariableExposure::Build);
 
     $spec = resolve(CurrentEnvironmentSpec::class)->get($production);
-    $service = $spec->services[$web->public_id];
-    $args = (fn (): array => $this->buildArgs($spec, $service))->call(resolve(BuildTasks::class));
+    resolve(DeployEnvironment::class)->handle($production, null, AuditActor::system());
+    $build = DaemonTask::query()->where('type', DaemonTaskType::Build->value)->sole();
 
-    expect($args)->toBe(['APP_NAME'])
+    expect($build->spec->buildArgs)->toBe(['APP_NAME'])
+        ->and(json_encode($build->spec))->not->toContain('APP_DSN')
         ->and(SecretTaint::fromSpec($spec)->taintedKeys('web'))->toContain('DATABASE_URL', 'APP_DSN')
         ->and(SecretTaint::fromSpec($spec)->isTainted('web', 'APP_NAME'))->toBeFalse();
 });

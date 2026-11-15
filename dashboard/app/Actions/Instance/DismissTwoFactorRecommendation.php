@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Instance;
 
+use App\Data\Instance\OnboardingStateData;
 use App\Models\InstanceSettings;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
@@ -19,14 +20,14 @@ final class DismissTwoFactorRecommendation
     {
         DB::transaction(static function () use ($user): void {
             $settings = InstanceSettings::lockedForUpdate();
-            $onboarding = $settings->onboarding ?? [];
-            $dismissed = array_values(array_filter($onboarding['twoFactorDismissed'] ?? [], is_int(...)));
+            $onboarding = clone ($settings->onboarding ?? new OnboardingStateData);
+            $dismissed = $onboarding->twoFactorDismissed;
 
             if (! in_array($user->id, $dismissed, true)) {
                 $dismissed[] = $user->id;
             }
 
-            $onboarding['twoFactorDismissed'] = $dismissed;
+            $onboarding->twoFactorDismissed = $dismissed;
             $settings->forceFill(['onboarding' => $onboarding])->save();
         });
     }

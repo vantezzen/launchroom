@@ -1,0 +1,52 @@
+{
+  "description": "launchroomd's cron grammar (daemon/internal/cronexpr): expressions it runs and refuses, next runs in a zone, and time zone names. Read by the Go cronexpr test, the dashboard's CronGrammarTest (PHP) and cron.test.ts (TS).",
+  "accept": [
+    "* * * * *", "*/5 * * * *", "0 3 * * *", "0 9 * * 1-5", "30 2 1 * *", "0 0 * * 7",
+    "0,15,30,45 * * * *", "5/10 * * * *", "0 8-18/2 * * *", "0 0 29 2 *"
+  ],
+  "refuse": [
+    "", "* * * *", "* * * * * *", "*  * * * *", " * * * * *", "60 * * * *", "* 24 * * *",
+    "* * 0 * *", "* * * 13 *", "* * * * 8", "*/0 * * * *", "5-1 * * * *", "@daily",
+    "MON * * * *", "* * * JAN *", "? * * * *", "1,,2 * * * *", "-1 * * * *", "001 * * * *",
+    "* * L * *", "*/60 * * * *", "1-2-3 * * * *"
+  ],
+  "next": [
+    {
+      "cron": "*/5 * * * *", "timeZone": "UTC", "from": "2026-10-19T10:03:30Z",
+      "runs": ["2026-10-19T10:05:00Z", "2026-10-19T10:10:00Z", "2026-10-19T10:15:00Z", "2026-10-19T10:20:00Z", "2026-10-19T10:25:00Z"]
+    },
+    {
+      "cron": "0 3 * * *", "timeZone": "Europe/Berlin", "from": "2026-10-19T10:00:00Z",
+      "runs": ["2026-10-20T03:00:00+02:00", "2026-10-21T03:00:00+02:00", "2026-10-22T03:00:00+02:00", "2026-10-23T03:00:00+02:00", "2026-10-24T03:00:00+02:00"]
+    },
+    {
+      "description": "Monday or the 1st (both restricted: either matches).",
+      "cron": "0 0 1 * 1", "timeZone": "UTC", "from": "2026-10-25T00:00:00Z",
+      "runs": ["2026-10-26T00:00:00Z", "2026-11-01T00:00:00Z", "2026-11-02T00:00:00Z", "2026-11-09T00:00:00Z", "2026-11-16T00:00:00Z"]
+    },
+    {
+      "description": "Leap days only.",
+      "cron": "0 12 29 2 *", "timeZone": "UTC", "from": "2026-01-01T00:00:00Z",
+      "runs": ["2028-02-29T12:00:00Z", "2032-02-29T12:00:00Z", "2036-02-29T12:00:00Z", "2040-02-29T12:00:00Z", "2044-02-29T12:00:00Z"]
+    },
+    {
+      "description": "Never.",
+      "cron": "0 0 30 2 *", "timeZone": "UTC", "from": "2026-01-01T00:00:00Z",
+      "runs": []
+    },
+    {
+      "description": "Clocks go forward (2026-03-29 Berlin): 02:30 doesn't exist and is skipped.",
+      "cron": "30 2 * * *", "timeZone": "Europe/Berlin", "from": "2026-03-27T12:00:00Z",
+      "runs": ["2026-03-28T02:30:00+01:00", "2026-03-30T02:30:00+02:00", "2026-03-31T02:30:00+02:00", "2026-04-01T02:30:00+02:00", "2026-04-02T02:30:00+02:00"]
+    },
+    {
+      "description": "Clocks go back (2026-10-25 Berlin): 02:30 happens twice and runs once.",
+      "cron": "30 2 * * *", "timeZone": "Europe/Berlin", "from": "2026-10-23T12:00:00Z",
+      "runs": ["2026-10-24T02:30:00+02:00", "2026-10-25T02:30:00+02:00", "2026-10-26T02:30:00+01:00", "2026-10-27T02:30:00+01:00", "2026-10-28T02:30:00+01:00"]
+    }
+  ],
+  "timeZones": {
+    "valid": ["UTC", "Europe/Berlin", "America/Argentina/Buenos_Aires"],
+    "invalid": ["", "Local", "Mars/Olympus", "../etc/passwd"]
+  }
+}

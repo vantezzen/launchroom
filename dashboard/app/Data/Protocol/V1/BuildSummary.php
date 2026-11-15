@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 namespace App\Data\Protocol\V1;
 
-use Spatie\LaravelData\Attributes\Validation\In;
+use App\Enums\Builds\BuilderReason;
+use App\Enums\Builds\ChosenBuilder;
 use Spatie\LaravelData\Attributes\Validation\Max;
 use Spatie\LaravelData\Attributes\Validation\Min;
 use Spatie\LaravelData\Data;
@@ -29,10 +30,8 @@ final class BuildSummary extends Data
      * @param  array<string, mixed>|null  $plan
      */
     public function __construct(
-        #[In(['dockerfile', 'railpack'])]
-        public string $builder,
-        #[In(['explicit', 'dockerfile_detected', 'preset', 'railpack'])]
-        public string $builderReason,
+        public ChosenBuilder $builder,
+        public BuilderReason $builderReason,
         #[Max(1024)]
         public ?string $dockerfilePath = null,
         #[Max(64)]

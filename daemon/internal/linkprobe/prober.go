@@ -311,11 +311,7 @@ func errorWord(err error) string {
 	case errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF):
 		return "connection closed by the peer"
 	}
-	s := err.Error()
-	if len(s) > 200 {
-		s = s[:200]
-	}
-	return s
+	return state.Clip(err.Error(), 200)
 }
 
 func safeWord(s string) string {

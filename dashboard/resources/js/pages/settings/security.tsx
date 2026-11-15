@@ -5,13 +5,15 @@ import InputError from '@/components/input-error';
 import PasswordInput from '@/components/password-input';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
-import { edit } from '@/routes/security';
-import { SettingsBody, SettingsCard } from '@/features/settings/settings-card';
-import type { Props as ManagePasskeysProps } from '@/components/manage-passkeys';
-import ManagePasskeys from '@/components/manage-passkeys';
-import type { Props as ManageTwoFactorProps } from '@/components/manage-two-factor';
-import ManageTwoFactor from '@/components/manage-two-factor';
-import { index as settingsHome } from '@/routes/settings';
+import type { Props as ManagePasskeysProps } from '@/features/account/manage-passkeys';
+import ManagePasskeys from '@/features/account/manage-passkeys';
+import type { Props as ManageTwoFactorProps } from '@/features/account/manage-two-factor';
+import ManageTwoFactor from '@/features/account/manage-two-factor';
+import {
+    SettingsBody,
+    SettingsCard,
+} from '@/components/settings/settings-card';
+import SettingsLayout from '@/features/settings/settings-layout';
 
 // oxfmt-ignore
 type Props = {
@@ -138,12 +140,4 @@ export default function Security(props: Props) {
     );
 }
 
-Security.layout = {
-    breadcrumbs: [
-        { title: 'Settings', href: settingsHome() },
-        {
-            title: 'Security',
-            href: edit(),
-        },
-    ],
-};
+Security.layout = SettingsLayout;

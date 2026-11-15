@@ -1,13 +1,19 @@
 import { router } from '@inertiajs/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
-import { requestJson } from '@/features/projects/http';
+import { requestJson } from '@/lib/http';
 import { summary } from '@/routes/staged-changes';
+import { listNames } from '@/lib/format';
 
 export type StagedChanges = App.Data.StagedChanges.StagedChangesData;
 
+/** Covers the summary and its blockers. */
 export function stagedChangesKey(environment: string) {
     return ['staged-changes', environment] as const;
+}
+
+export function stagedBlockersKey(environment: string) {
+    return [...stagedChangesKey(environment), 'blockers'] as const;
 }
 
 /**
@@ -47,26 +53,6 @@ export function useStagedChanges(project: string, environment: string) {
     return query;
 }
 
-const effectLabels: Record<App.Enums.ChangeEffect, string> = {
-    none: 'no restart',
-    route: 'routing',
-    restart: 'restart',
-    rebuild: 'rebuild',
-    new: 'new',
-    remove: 'remove',
-};
-
-export function effectLabel(effect: App.Enums.ChangeEffect): string {
-    return effectLabels[effect];
-}
-
-/** "web", "web and api", "web, api and worker". */
-function names(list: string[]): string {
-    return list.length < 2
-        ? (list[0] ?? '')
-        : `${list.slice(0, -1).join(', ')} and ${list[list.length - 1]}`;
-}
-
 /** What applying does to services, most disruptive first. */
 const effectVerbs: [App.Enums.ChangeEffect, string][] = [
     ['rebuild', 'rebuilds'],
@@ -89,7 +75,7 @@ export function effectSummary(changes: StagedChanges): string {
             )
             .map((group) => group.name);
 
-        return services.length > 0 ? [`${verb} ${names(services)}`] : [];
+        return services.length > 0 ? [`${verb} ${listNames(services)}`] : [];
     });
 
     if (parts.length === 0) {

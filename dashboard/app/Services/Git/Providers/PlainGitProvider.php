@@ -4,32 +4,35 @@ declare(strict_types=1);
 
 namespace App\Services\Git\Providers;
 
-use App\Contracts\Git\GitProvider;
+use App\Contracts\Git\ConnectionProvider;
 use App\Contracts\Git\SourceRepository;
 use App\Contracts\Git\SshRemotes;
 use App\Data\Git\CommitData;
 use App\Data\Git\DeploymentStatusReport;
 use App\Data\Git\GitBranchData;
+use App\Data\Git\GitCredentials;
+use App\Data\Git\PolledHead;
 use App\Data\Git\RepositoryRef;
 use App\Data\Git\RepositoryTree;
 use App\Enums\Git\GitAuthMethod;
 use App\Enums\Git\GitConnectionStatus;
 use App\Enums\Git\GitProviderKind;
 use App\Exceptions\DomainRuleViolation;
+use App\Exceptions\Git\GitConnectionUnusable;
+use App\Exceptions\Git\RepositoryFileUnavailable;
 use App\Exceptions\GitHeadUnavailable;
 use App\Models\Git\GitConnection;
 use App\Models\Git\GitRepository;
 use App\Models\Previews\Preview;
 use App\Models\Team;
-use App\Services\Git\Exceptions\GitConnectionUnusable;
-use App\Services\Git\Exceptions\RepositoryFileUnavailable;
-use App\Services\Git\GitConnectionSecrets;
-use App\Services\Git\GitCredentials;
+use App\Services\Crypto\SealedColumns;
+use App\Services\Git\Providers\GitHub\WebhookSignature;
 use App\Services\Git\PublicGitRemote;
 use App\Services\Git\Ssh\DeployKey;
 use App\Support\Git\HostKey;
 use App\Support\Git\SshUrl;
 use Illuminate\Contracts\Database\Query\Builder;
+use SensitiveParameter;
 
 /**
  * Any git server (docs/19 §4.2): one connection per repository, SSH with a
@@ -37,11 +40,11 @@ use Illuminate\Contracts\Database\Query\Builder;
  * come from the ref advertisement, files aren't readable, and there is no
  * deploy feedback.
  */
-final readonly class PlainGitProvider implements GitProvider
+final readonly class PlainGitProvider implements ConnectionProvider
 {
     public function __construct(
         private SshRemotes $ssh,
-        private GitConnectionSecrets $secrets,
+        private SealedColumns $sealed,
         private PublicGitRemote $remote,
     ) {}
 
@@ -64,6 +67,35 @@ final readonly class PlainGitProvider implements GitProvider
         return array_values($query->latest('updated_at')->limit(50)->get()->all());
     }
 
+    public function searchConnection(GitConnection $connection, string $search): array
+    {
+        $query = GitRepository::query()->with('gitConnection')->where('git_connection_id', $connection->id);
+
+        if ($search !== '') {
+            $query->whereLike('full_name', '%'.addcslashes($search, '%_\\').'%');
+        }
+
+        return array_values($query->latest('updated_at')->limit(50)->get()->all());
+    }
+
+    public function webhookUrl(GitConnection $connection): string
+    {
+        return route('git.webhooks.git', ['connection' => $connection->public_id]);
+    }
+
+    /**
+     * The generic git webhook signs like GitHub: `sha256=<hex>` HMAC of the
+     * raw body; a delivery only makes launchroom poll now.
+     */
+    public function verifyWebhook(string $rawBody, string $signature, #[SensitiveParameter] string $secret): bool
+    {
+        return WebhookSignature::isValid($rawBody, $signature, $secret);
+    }
+
+    public function ensureWebhook(GitRepository $repository, #[SensitiveParameter] string $secret): void {}
+
+    public function removeWebhook(GitRepository $repository): void {}
+
     public function branches(SourceRepository $repository): array
     {
         if (! $repository instanceof GitRepository) {
@@ -85,6 +117,11 @@ final readonly class PlainGitProvider implements GitProvider
     public function defaultBranch(RepositoryRef $repository): ?string
     {
         return $this->row($repository)?->default_branch;
+    }
+
+    public function pollHead(RepositoryRef $repository, string $branch, ?string $etag): PolledHead
+    {
+        return new PolledHead($this->head($repository, $branch));
     }
 
     public function head(RepositoryRef $repository, string $branch): CommitData
@@ -123,7 +160,7 @@ final readonly class PlainGitProvider implements GitProvider
     {
         if (str_starts_with($connection->base_url, 'ssh://')) {
             $url = SshUrl::parse($connection->base_url);
-            $key = $this->secrets->get($connection, 'ssh_private_key');
+            $key = $this->sealed->reveal($connection, 'ssh_private_key');
 
             if (! $url instanceof SshUrl || $key === null) {
                 throw new GitConnectionUnusable('This git server has no deploy key yet.');
@@ -145,6 +182,11 @@ final readonly class PlainGitProvider implements GitProvider
         }
 
         return array_values(array_filter(array_map(HostKey::fromArray(...), $connection->host_keys ?? [])));
+    }
+
+    public function canReadFiles(): bool
+    {
+        return false;
     }
 
     public function tree(RepositoryRef $repository, string $ref): RepositoryTree
@@ -181,7 +223,7 @@ final readonly class PlainGitProvider implements GitProvider
             return new GitCredentials($connection->base_url);
         }
 
-        $key = $this->secrets->get($connection, 'ssh_private_key');
+        $key = $this->sealed->reveal($connection, 'ssh_private_key');
         $hostKeys = self::hostKeys($connection);
 
         if ($key === null || $hostKeys === []) {
@@ -206,10 +248,12 @@ final readonly class PlainGitProvider implements GitProvider
         return null;
     }
 
-    /**
-     * A plain git server has no known web view.
-     */
     public function repositoryUrl(RepositoryRef $repository, ?string $branch = null): ?string
+    {
+        return null;
+    }
+
+    public function fileUrl(RepositoryRef $repository, string $path, string $ref, ?int $line = null): ?string
     {
         return null;
     }

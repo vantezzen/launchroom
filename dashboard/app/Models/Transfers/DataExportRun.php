@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace App\Models\Transfers;
 
+use App\Enums\Contracts\HasTransitionTable;
 use App\Enums\Transfers\DataSubject;
 use App\Enums\Transfers\ExportRunStatus;
 use App\Enums\Transfers\ExportSource;
 use App\Models\Concerns\BelongsToTeam;
 use App\Models\Concerns\HasPublicId;
+use App\Models\Concerns\HasStatusTransitions;
 use App\Models\DaemonTask;
 use App\Models\ServiceInstance;
 use App\Models\User;
@@ -50,6 +52,9 @@ final class DataExportRun extends Model
 {
     use BelongsToTeam, HasPublicId;
 
+    /** @use HasStatusTransitions<ExportRunStatus> */
+    use HasStatusTransitions;
+
     /** @var array<string, mixed> */
     protected $attributes = [
         'status' => 'preparing',
@@ -61,23 +66,19 @@ final class DataExportRun extends Model
     }
 
     /**
-     * The only way an export's status changes (docs/10 §2.2 rule 3).
+     * @param  ExportRunStatus  $from
+     * @param  ExportRunStatus  $to
      */
-    public function transitionTo(ExportRunStatus $to, ?string $error = null): void
+    protected function recordTransition(HasTransitionTable $from, HasTransitionTable $to, ?string $note): void
     {
-        $this->status->assertCanTransitionTo($to);
-        $this->status = $to;
-
         if ($to === ExportRunStatus::Ready) {
             $this->forceFill(['ready_at' => now()]);
         }
 
         if ($to->isTerminal()) {
             $this->forceFill(['finished_at' => now()]);
-            $this->error = $error === null ? null : mb_substr($error, 0, 2048);
+            $this->error = $note;
         }
-
-        $this->save();
     }
 
     /**

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Instance;
 
+use App\Data\Instance\LegacyOriginEntryData;
 use App\Events\NodeStateInvalidated;
 use App\Models\InstanceSettings;
 use App\Models\Server;
@@ -44,21 +45,17 @@ final readonly class DashboardOriginSwitch
         $legacy = [];
 
         foreach ($forgetOld ? [] : ($settings->dashboard_legacy_urls ?? []) as $entry) {
-            $url = is_string($entry['url'] ?? null) ? Origin::normalize($entry['url']) : null;
+            $url = Origin::normalize($entry->url);
 
             if (! in_array($url, [null, $target, $from], true)) {
-                $legacy[] = [
-                    'url' => $url,
-                    'since' => is_string($entry['since'] ?? null) ? $entry['since'] : $now->toIso8601ZuluString(),
-                    'until' => is_string($entry['until'] ?? null) ? $entry['until'] : $now->toIso8601ZuluString(),
-                ];
+                $legacy[] = new LegacyOriginEntryData($url, $entry->since, $entry->until);
             }
         }
 
         $fromHost = Origin::host($from);
 
         if (! $forgetOld && $from !== $target && $fromHost !== null && ! Origin::isLoopback($fromHost)) {
-            array_unshift($legacy, ['url' => $from, 'since' => $now->toIso8601ZuluString(), 'until' => $until->toIso8601ZuluString()]);
+            array_unshift($legacy, new LegacyOriginEntryData($from, $now->toIso8601ZuluString(), $until->toIso8601ZuluString()));
         }
 
         $rpIdTo = $this->rpIdFor($target, $rpIdFrom);
@@ -103,7 +100,7 @@ final readonly class DashboardOriginSwitch
      */
     public function invalidateServers(): void
     {
-        $ids = Server::query()->whereNull('revoked_at')->pluck('id')->map(static fn (mixed $id): int => is_numeric($id) ? (int) $id : 0)->all();
+        $ids = Server::query()->notRevoked()->pluck('id')->map(static fn (mixed $id): int => is_numeric($id) ? (int) $id : 0)->all();
 
         if ($ids !== []) {
             event(new NodeStateInvalidated(array_values($ids)));
@@ -112,7 +109,7 @@ final readonly class DashboardOriginSwitch
 
     public function invalidateControlPlane(): void
     {
-        $ids = Server::query()->where('is_control_plane', true)->whereNull('revoked_at')->pluck('id')->map(static fn (mixed $id): int => is_numeric($id) ? (int) $id : 0)->all();
+        $ids = Server::query()->controlPlane()->pluck('id')->map(static fn (mixed $id): int => is_numeric($id) ? (int) $id : 0)->all();
 
         if ($ids !== []) {
             event(new NodeStateInvalidated(array_values($ids)));

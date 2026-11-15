@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Data\Protocol\V1;
 
+use App\Support\Protocol\Grammar;
 use Spatie\LaravelData\Attributes\Validation\Max;
 use Spatie\LaravelData\Attributes\Validation\Min;
 use Spatie\LaravelData\Data;
@@ -52,11 +53,11 @@ final class AccessStatus extends Data
     {
         return [
             'hostKey.type' => ['sometimes', 'string', 'in:ssh-ed25519'],
-            'hostKey.sha256' => ['sometimes', 'string', 'regex:/^SHA256:[A-Za-z0-9+\/]{43}$/D'],
+            'hostKey.sha256' => ['sometimes', 'string', 'regex:'.Grammar::SSH_FINGERPRINT],
             'hostKey.publicKey' => ['sometimes', 'string', 'max:256', 'regex:/^ssh-ed25519 [A-Za-z0-9+\/]+={0,2}$/D'],
-            'certificate.sha256' => ['sometimes', 'string', 'regex:/^[0-9a-f]{64}$/D'],
+            'certificate.sha256' => ['sometimes', 'string', 'regex:'.Grammar::HEX64],
             'certificate.pem' => ['sometimes', 'string', 'max:4096', 'starts_with:-----BEGIN CERTIFICATE-----'],
-            'database' => ['sometimes', 'string', 'regex:/^[A-Za-z0-9_]{1,63}$/D'],
+            'database' => ['sometimes', 'string', 'regex:'.Grammar::DATABASE_IDENT],
             'privateAddresses.*' => ['string', 'ip'],
             'events.*.at' => ['required', 'string', 'max:64'],
             'events.*.type' => ['required', 'string', 'in:'.implode(',', self::EVENT_TYPES)],

@@ -13,10 +13,12 @@ use App\Enums\EnvironmentKind;
 use App\Models\Backups\BackupRun;
 use App\Models\Backups\WalArchive;
 use App\Models\Deployment;
+use App\Models\InstanceSettings;
 use App\Models\Server;
 use App\Models\ServiceInstance;
 use App\Services\Crypto\ProjectKeyring;
 use App\Support\Crypto\WorkloadEnvSealer;
+use App\Support\Protocol\Grammar;
 use Carbon\CarbonImmutable;
 
 /**
@@ -39,27 +41,30 @@ final readonly class PointInTimeRecovery
 
     public const string SHIP_INTERVAL = '30s';
 
-    /** basic_archive ships with Postgres 15+. */
-    public const int MIN_VERSION = 15;
-
     public function __construct(
         private DatabaseEngines $engines,
         private DestinationSecrets $secrets,
         private ProjectKeyring $keyring,
     ) {}
 
+    public function offered(DatabaseEngine $engine): bool
+    {
+        return $this->engines->for($engine)->pointInTimeRecoveryFrom() !== null;
+    }
+
     /**
-     * Whether the instance can have point-in-time recovery: Postgres 15+ in
-     * a persistent environment (previews are thrown away).
+     * Whether the instance can have point-in-time recovery: an engine
+     * version with it, in a persistent environment (previews are thrown away).
      */
     public function supports(ServiceInstance $instance): bool
     {
         $instance->loadMissing(['service', 'environment']);
         $source = DatabaseWorkloads::source($instance);
+        $from = $source instanceof DatabaseSource ? $this->engines->for($source->engine)->pointInTimeRecoveryFrom() : null;
 
         return $source instanceof DatabaseSource
-            && $source->engine === DatabaseEngine::Postgres
-            && (int) $source->version >= self::MIN_VERSION
+            && $from !== null
+            && (int) $source->version >= $from
             && $instance->environment->kind !== EnvironmentKind::Preview;
     }
 
@@ -68,12 +73,9 @@ final readonly class PointInTimeRecovery
         return $this->engines->for(DatabaseEngine::Postgres)->volumeMountPath($version);
     }
 
-    /**
-     * PGDATA of the official images: versioned below the volume from 18 on.
-     */
     public function dataDirectory(string $version): string
     {
-        return (int) $version >= 18 ? "/var/lib/postgresql/{$version}/docker" : '/var/lib/postgresql/data';
+        return $this->engines->for(DatabaseEngine::Postgres)->dataDirectory($version);
     }
 
     public function archiveDirectory(string $version): string
@@ -105,9 +107,6 @@ final readonly class PointInTimeRecovery
         ];
     }
 
-    /**
-     * The enabled archive of an instance, if any.
-     */
     public function enabledFor(ServiceInstance $instance): ?WalArchive
     {
         $archive = WalArchive::query()->where('service_instance_id', $instance->id)->where('enabled', true)->first();
@@ -172,7 +171,7 @@ final readonly class PointInTimeRecovery
         $tags = ['kind:wal', 'environment:'.$instance->environment->public_id, 'service:'.$instance->service->public_id];
 
         return $withIdentity ? [
-            'instance:'.SnapshotTags::instanceId(),
+            'instance:'.InstanceSettings::instanceId(),
             ...$tags,
             'team:'.$instance->service->project->team->public_id,
             'project:'.$instance->environment->project->public_id,
@@ -216,9 +215,6 @@ final readonly class PointInTimeRecovery
         return [$start, $end instanceof CarbonImmutable && $end->gt($start) ? $end : $start];
     }
 
-    /**
-     * The newest succeeded base backup run finished at or before $at.
-     */
     public function baseFor(ServiceInstance $instance, ?CarbonImmutable $at): ?BackupRun
     {
         return BackupRun::query()
@@ -251,7 +247,7 @@ final readonly class PointInTimeRecovery
         $db = is_string($env['POSTGRES_DB'] ?? null) && $env['POSTGRES_DB'] !== '' ? $env['POSTGRES_DB'] : $user;
         $password = is_string($env['POSTGRES_PASSWORD'] ?? null) ? $env['POSTGRES_PASSWORD'] : '';
 
-        if ($password === '' || preg_match('/^[A-Za-z0-9_]{1,63}$/D', $user.'') !== 1 || preg_match('/^[A-Za-z0-9_]{1,63}$/D', $db) !== 1) {
+        if ($password === '' || preg_match(Grammar::DATABASE_IDENT, $user) !== 1 || preg_match(Grammar::DATABASE_IDENT, $db) !== 1) {
             return null;
         }
 

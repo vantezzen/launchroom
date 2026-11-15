@@ -58,6 +58,16 @@ final class IpClassifier
         'ff00::/8',           // multicast
     ];
 
+    /**
+     * An IP literal with a port, as launchroomd parses an address upstream
+     * (`10.0.0.5:8000`, `[fd00::5]:6379`). Shape only: ranges are the
+     * caller's policy.
+     */
+    public static function isAddressPort(string $value): bool
+    {
+        return preg_match('/^(?:\d{1,3}(?:\.\d{1,3}){3}|\[[0-9a-f:]+\]):\d{1,5}$/Di', $value) === 1;
+    }
+
     public static function isIp(string $value): bool
     {
         return filter_var($value, FILTER_VALIDATE_IP) !== false;

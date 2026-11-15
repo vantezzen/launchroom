@@ -14,6 +14,7 @@ use App\Enums\TeamRole;
 use App\Models\Domain;
 use App\Models\Server;
 use App\Models\Team;
+use App\Support\Ingress\RouteId;
 use App\Support\Metrics\AnalyticsRow;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
@@ -46,7 +47,7 @@ beforeEach(function (): void {
     $this->domain = Domain::query()->create([
         'team_id' => $this->team->id, 'service_instance_id' => $this->instance->id, 'hostname' => 'shop.example.com', 'kind' => DomainKind::Custom,
     ]);
-    $this->route = Domain::routeIdFor($this->domain->public_id);
+    $this->route = RouteId::forDomain($this->domain->public_id);
 });
 
 afterEach(fn () => CarbonImmutable::setTestNow());
@@ -213,7 +214,6 @@ test('the analytics endpoint counts requests per hour by status class with the t
     requestRow($this, 10, '2026-10-20 08:10:00+00');
     // Ignored: a 1-minute row whose 10-minute rollup already counts it.
     requestRow($this, 1, '2026-10-20 08:10:00+00');
-    // The previous week.
     requestRow($this, 10, '2026-10-12 08:10:00+00');
     requestRow($this, 10, '2026-10-10 08:10:00+00', ['requests' => 125, 'status_2xx' => 125, 'status_3xx' => 0, 'status_4xx' => 0, 'status_5xx' => 0]);
 

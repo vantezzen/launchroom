@@ -10,8 +10,8 @@ import {
     DropdownMenuItem,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { SettingsRow } from '@/features/settings/settings-card';
 import { destroy, store } from '@/routes/projects/icon';
+import { SettingsRow } from '@/components/settings/settings-card';
 
 function describe(icon: App.Data.Projects.ProjectIconData): string {
     if (icon.mode === 'uploaded') {

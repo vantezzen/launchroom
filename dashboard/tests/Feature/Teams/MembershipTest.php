@@ -7,6 +7,8 @@ use App\Enums\TeamRole;
 use App\Models\AuditEvent;
 use App\Models\Membership;
 use App\Models\Team;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Gate;
 
 beforeEach(function (): void {
     $this->team = Team::factory()->create();
@@ -45,13 +47,6 @@ test('admins cannot promote to owner or touch owners', function (): void {
     $this->actingAs($this->admin)
         ->patch(route('team.members.update', membershipOf($this->owner, $this->team)->public_id), ['role' => 'viewer'])
         ->assertForbidden();
-});
-
-test('authorized role changes do not interrupt the form', function (): void {
-    $this->actingAs($this->admin)
-        ->patch(route('team.members.update', membershipOf($this->developer, $this->team)->public_id), ['role' => 'viewer'])
-        ->assertRedirect()->assertSessionHasNoErrors();
-    expect(membershipOf($this->developer, $this->team)->role)->toBe(TeamRole::Viewer);
 });
 
 test('developers cannot change roles', function (): void {
@@ -103,5 +98,53 @@ test('the shared team context lists the user’s teams and current permissions',
             ->where('teams.current.id', $this->team->public_id)
             ->where('teams.current.role', 'developer')
             ->has('teams.all', 1)
-            ->where('teams.permissions', ['projects.manage', 'deployments.create', 'variables.write', 'resources.view']));
+            ->where('teams.canSearchLogs', false));
+});
+
+test('the shared team context offers log search exactly when the policy allows it', function (): void {
+    $viewer = memberOf($this->team, TeamRole::Viewer);
+
+    foreach ([$this->owner, $this->admin, $this->developer, $viewer] as $user) {
+        $user->forceFill(['current_team_id' => $this->team->id])->save();
+        $allowed = Gate::forUser($user)->allows('searchLogs', $this->team);
+
+        $this->actingAs($user)->get(route('projects.index'))
+            ->assertInertia(fn ($page) => $page->where('teams.canSearchLogs', $allowed));
+    }
+
+    expect(Gate::forUser($this->admin)->allows('searchLogs', $this->team))->toBeTrue()
+        ->and(Gate::forUser($this->developer)->allows('searchLogs', $this->team))->toBeFalse();
+});
+
+test('memoized roles follow membership writes on the same user instance', function (): void {
+    $team = Team::factory()->create();
+    $user = memberOf($team, TeamRole::Developer);
+
+    expect($user->roleIn($team))->toBe(TeamRole::Developer);
+
+    $membership = Membership::query()->where('team_id', $team->id)->where('user_id', $user->id)->firstOrFail();
+    $membership->forceFill(['role' => TeamRole::Admin])->save();
+    expect($user->roleIn($team))->toBe(TeamRole::Admin);
+
+    $membership->delete();
+    expect($user->roleIn($team))->toBeNull();
+});
+
+test('every access change drops cached preview answers and live sessions', function (): void {
+    $key = fn (object $user): string => "launchroom:preview-access:member:{$this->team->id}:{$user->id}";
+
+    $this->actingAs($this->admin)->patch(route('team.members.update', membershipOf($this->developer, $this->team)->public_id), ['role' => 'viewer'])->assertSessionHasNoErrors();
+    $afterRole = Cache::get($key($this->developer));
+
+    $this->actingAs($this->admin)->delete(route('team.members.destroy', membershipOf($this->developer, $this->team)->public_id))->assertRedirect();
+
+    expect($afterRole)->toBeString()
+        ->and(Cache::get($key($this->developer)))->toBeString()->not->toBe($afterRole);
+
+    $other = Team::factory()->create();
+    $leaving = memberOf($other, TeamRole::Developer);
+    memberOf($other, TeamRole::Owner);
+    $this->actingAs($leaving)->delete(route('profile.destroy'), ['password' => 'password'])->assertRedirect();
+
+    expect(Cache::get("launchroom:preview-access:member:{$other->id}:{$leaving->id}"))->toBeString();
 });

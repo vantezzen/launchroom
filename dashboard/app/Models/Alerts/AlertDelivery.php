@@ -6,7 +6,9 @@ namespace App\Models\Alerts;
 
 use App\Enums\Alerts\AlertDeliveryEvent;
 use App\Enums\Alerts\AlertDeliveryStatus;
+use App\Enums\Contracts\HasTransitionTable;
 use App\Models\Concerns\HasPublicId;
+use App\Models\Concerns\HasStatusTransitions;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
@@ -36,6 +38,9 @@ final class AlertDelivery extends Model
 {
     use HasPublicId;
 
+    /** @use HasStatusTransitions<AlertDeliveryStatus> */
+    use HasStatusTransitions;
+
     /** @var array<string, mixed> */
     protected $attributes = [
         'status' => 'pending',
@@ -47,18 +52,17 @@ final class AlertDelivery extends Model
         return 'adl';
     }
 
-    public function transitionTo(AlertDeliveryStatus $to, ?string $error = null): void
+    /**
+     * @param  AlertDeliveryStatus  $from
+     * @param  AlertDeliveryStatus  $to
+     */
+    protected function recordTransition(HasTransitionTable $from, HasTransitionTable $to, ?string $note): void
     {
-        $this->status->assertCanTransitionTo($to);
-
-        $this->status = $to;
-        $this->error = $error === null ? null : mb_substr($error, 0, 500);
+        $this->error = $note;
 
         if ($to === AlertDeliveryStatus::Sent) {
             $this->sent_at = now();
         }
-
-        $this->save();
     }
 
     /**

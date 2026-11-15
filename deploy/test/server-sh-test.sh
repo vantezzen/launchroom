@@ -19,7 +19,6 @@ fail() {
 	FAILED=1
 }
 
-# --- stubs --------------------------------------------------------------
 cat >"$STUBS/uname" <<'EOF'
 #!/bin/sh
 printf '%s\n' "${STUB_UNAME:-Darwin}"

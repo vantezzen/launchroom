@@ -2,8 +2,9 @@
 
 declare(strict_types=1);
 
-use App\Actions\Git\RecordRefHead;
+use App\Actions\Git\ObserveRefHead;
 use App\Contracts\Git\TrackedRefs;
+use App\Data\Git\CommitData;
 use App\Data\Git\TrackedRef;
 use App\Data\Git\WebhookHealthData;
 use App\Enums\Git\GitEventSource;
@@ -12,7 +13,6 @@ use App\Events\Git\GitPushReceived;
 use App\Jobs\Git\PollTrackedRefsJob;
 use App\Models\Git\GitHubRefHead;
 use App\Models\Team;
-use App\Services\GitHub\NullTrackedRefs;
 use GuzzleHttp\Promise\PromiseInterface;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Event;
@@ -49,10 +49,6 @@ function ghCommitResponse(string $sha, string $etag, string $message = 'Ship it'
         'author' => ['login' => 'octocat'],
     ], 200, ['ETag' => $etag]);
 }
-
-test('the null implementation tracks nothing', function (): void {
-    expect(iterator_to_array((new NullTrackedRefs)->all()))->toBe([]);
-});
 
 test('the first poll records a baseline, later head changes emit a push', function (): void {
     Http::fake([
@@ -191,7 +187,7 @@ test('a webhook that arrives within the grace period is not a missed push', func
 
     $this->travel(30)->seconds();
     $this->githubApp->forceFill(['webhook_last_received_at' => now()])->save();
-    resolve(RecordRefHead::class)->handle($this->installation, 555, 'refs/heads/main', str_repeat('b', 40));
+    resolve(ObserveRefHead::class)->handle($this->installation, 555, 'refs/heads/main', new CommitData(str_repeat('b', 40), 'Ship it', null, null, null), GitEventSource::Webhook);
 
     $this->travel(3)->minutes();
     dispatch_sync(new PollTrackedRefsJob);
@@ -201,12 +197,26 @@ test('a webhook that arrives within the grace period is not a missed push', func
 });
 
 test('one failing ref does not stop polling', function (): void {
+    GitHubFake::repository($this->installation, 556, 'octo-org/api');
+    app()->instance(TrackedRefs::class, new readonly class([new TrackedRef($this->installation->id, 555, 'refs/heads/main'), new TrackedRef($this->installation->id, 556, 'refs/heads/main')]) implements TrackedRefs
+    {
+        /** @param list<TrackedRef> $refs */
+        public function __construct(private array $refs) {}
+
+        public function all(): iterable
+        {
+            return $this->refs;
+        }
+    });
+    GitHubRefHead::query()->create(['github_installation_id' => $this->installation->id, 'github_repo_id' => 556, 'ref' => 'refs/heads/main', 'head_sha' => str_repeat('a', 40)]);
     Http::fake([
         'https://api.github.com/app/installations/100/access_tokens' => GitHubFake::tokenResponse(),
         'https://api.github.com/repos/octo-org/web/commits/main' => Http::response(['message' => 'boom'], 500),
+        'https://api.github.com/repos/octo-org/api/commits/main' => ghCommitResponse(str_repeat('b', 40), '"etag-api"'),
     ]);
 
     dispatch_sync(new PollTrackedRefsJob);
 
-    Event::assertNotDispatched(GitPushReceived::class);
+    Event::assertDispatchedTimes(GitPushReceived::class, 1);
+    Event::assertDispatched(GitPushReceived::class, fn (GitPushReceived $event): bool => $event->repositoryId === 556 && $event->after === str_repeat('b', 40));
 });

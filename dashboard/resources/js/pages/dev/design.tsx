@@ -1,7 +1,7 @@
 import { Head } from '@inertiajs/react';
 import { FolderGit2, GitPullRequest, Rocket } from 'lucide-react';
 import { useState } from 'react';
-import type { ComponentType, ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { toast } from 'sonner';
 import { Logo } from '@/components/logo';
 import type { LogoSize } from '@/components/logo';
@@ -34,17 +34,7 @@ import { Progress } from '@/components/ui/progress';
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
-
-/**
- * Other workstreams register their primitives here without touching this
- * file: any `components/**\/*.design.tsx` whose default export is a
- * component is rendered as its own section (title from `export const
- * title`).
- */
-const extensions = import.meta.glob<{
-    default: ComponentType;
-    title?: string;
-}>('../../components/**/*.design.tsx', { eager: true });
+import VisualPrimitives from '@/features/design-gallery/visual-primitives';
 
 function Swatch({ name, token }: { name: string; token: string }) {
     return (
@@ -625,17 +615,9 @@ export default function DesignSheet() {
                     </Card>
                 </Section>
 
-                {Object.entries(extensions).map(([path, module]) => (
-                    <Section
-                        key={path}
-                        title={
-                            module.title ??
-                            path.replace('../../components/', '')
-                        }
-                    >
-                        <module.default />
-                    </Section>
-                ))}
+                <Section title="Visual primitives">
+                    <VisualPrimitives />
+                </Section>
             </Page>
 
             <UnsavedBar

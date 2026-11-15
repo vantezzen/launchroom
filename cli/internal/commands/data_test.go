@@ -114,7 +114,7 @@ func newFakeData(t *testing.T) *fakeData {
 		writeJSON(w, 200, map[string]any{"data": transfer()})
 	}))
 	importRun := func(status string) map[string]any {
-		run := map[string]any{"id": "imp_1", "subject": "database", "status": status, "sourceKind": "file", "sourceLabel": "old.dump", "replace": f.importBody["replace"], "stopDependents": f.importBody["stopDependents"], "createdAt": "2026-10-21T10:00:00Z"}
+		run := map[string]any{"id": "imp_1", "subject": "database", "status": status, "sourceKind": "file", "sourceLabel": "old.dump", "replace": f.importBody["replace"], "stopDependents": f.importBody["stopDependents"], "createdAt": "2026-10-21T10:00:00Z", "finished": status == "succeeded" || status == "failed" || status == "cancelled"}
 		switch status {
 		case "succeeded":
 			run["result"] = map[string]any{"tables": 14, "files": 0, "sizeBytes": 48234496, "warnings": []any{"Ownership was left out"}, "durationMs": 73000}
@@ -180,9 +180,6 @@ func newFakeData(t *testing.T) *fakeData {
 	}))
 	f.srv = httptest.NewServer(mux)
 	t.Cleanup(f.srv.Close)
-	old := dataSleep
-	dataSleep = func(context.Context, time.Duration) error { return nil }
-	t.Cleanup(func() { dataSleep = old })
 	return f
 }
 
@@ -200,6 +197,7 @@ func dataHarness(t *testing.T, f *fakeData) *harness {
 	h := newHarness(t, f.srv.URL)
 	h.env["LAUNCHROOM_URL"] = f.srv.URL
 	h.linkTo(t, f.srv.URL)
+	h.app.Sleep = func(context.Context, time.Duration) error { return nil }
 	return h
 }
 

@@ -12,10 +12,17 @@
 #   launchroom-deploy.tar.gz         the bundle (no top-level folder)
 #   launchroom-deploy.tar.gz.sha256  "<hex>  launchroom-deploy.tar.gz"
 #   images.env                       copy of the bundle's control-plane/images.env
+#   manifest.json                    copy of the bundle's manifest.json
 #
-# Bundle layout: VERSION, control-plane/{compose.yml,images.env,.env.example,
-# launchroom}, daemon/compose.yml, install/{install.sh,server.sh},
-# images/zot/config.json, images/headscale/config.yaml.
+# Bundle layout: VERSION, manifest.json, control-plane/{compose.yml,
+# images.env,.env.example,launchroom}, daemon/compose.yml,
+# install/{install.sh,server.sh}, images/zot/config.json,
+# images/headscale/config.yaml.
+#
+# manifest.json describes the bundle for its readers (launchroomd's updater,
+# the dashboard's release check): {"version", "requiredImages": the
+# images.env keys every release pins, "files": [{"path", "mode", "sha256"}]}
+# for every other file of the bundle, with the mode it must be extracted with.
 #
 # control-plane/images.env is deploy/control-plane/images.env with the
 # launchroom images replaced by the given digests; third-party pins are kept.
@@ -52,8 +59,10 @@ done
 
 [ -n "$VERSION" ] && [ -n "$DASHBOARD_IMAGE" ] && [ -n "$DAEMON_IMAGE" ] && [ -n "$CADDY_IMAGE" ] && [ -n "$OUT" ] ||
 	die "--version, --dashboard-image, --daemon-image, --caddy-image and --out are required"
-printf '%s' "$VERSION" | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$' ||
-	die "--version must be a semantic version without a v prefix (got $VERSION)"
+DEPLOY="$(cd "$(dirname "$0")/.." && pwd)"
+# shellcheck source=deploy/install/lib/release.sh
+. "$DEPLOY/install/lib/release.sh"
+is_release_version "$VERSION" || die "--version must be a semantic version without a v prefix (got $VERSION)"
 
 pinned() { printf '%s' "$1" | grep -Eq '^[a-z0-9.-]+(:[0-9]+)?/[a-z0-9._/-]+@sha256:[0-9a-f]{64}$'; }
 for image in "$DASHBOARD_IMAGE" "$DAEMON_IMAGE" "$CADDY_IMAGE"; do
@@ -63,7 +72,6 @@ done
 command -v sha256sum >/dev/null 2>&1 || die "sha256sum is required"
 tar --version 2>/dev/null | grep -q 'GNU tar' || die "GNU tar is required (--sort/--mtime/--owner)"
 
-DEPLOY="$(cd "$(dirname "$0")/.." && pwd)"
 if [ -z "${SOURCE_DATE_EPOCH:-}" ]; then
 	SOURCE_DATE_EPOCH="$(git -C "$DEPLOY" log -1 --format=%ct 2>/dev/null || echo 0)"
 fi
@@ -82,7 +90,6 @@ cp "$DEPLOY/install/install.sh" "$DEPLOY/install/server.sh" "$stage/install/"
 cp "$DEPLOY/images/zot/config.json" "$stage/images/zot/"
 cp "$DEPLOY/images/headscale/config.yaml" "$stage/images/headscale/"
 
-# images.env: replace the launchroom pins, keep everything else verbatim.
 awk -v dashboard="$DASHBOARD_IMAGE" -v daemon="$DAEMON_IMAGE" -v caddy="$CADDY_IMAGE" '
 	/^LR_DASHBOARD_IMAGE=/ { print "LR_DASHBOARD_IMAGE=" dashboard; next }
 	/^LR_DAEMON_IMAGE=/ { print "LR_DAEMON_IMAGE=" daemon; next }
@@ -93,18 +100,38 @@ awk -v dashboard="$DASHBOARD_IMAGE" -v daemon="$DAEMON_IMAGE" -v caddy="$CADDY_I
 grep -q "^LR_DASHBOARD_IMAGE=$DASHBOARD_IMAGE\$" "$stage/control-plane/images.env" || die "images.env has no LR_DASHBOARD_IMAGE line"
 grep -q "^LR_DAEMON_IMAGE=$DAEMON_IMAGE\$" "$stage/control-plane/images.env" || die "images.env has no LR_DAEMON_IMAGE line"
 grep -q "^LR_CADDY_IMAGE=$CADDY_IMAGE\$" "$stage/control-plane/images.env" || die "images.env has no LR_CADDY_IMAGE line"
+# The images the installers and launchroomd's updater rely on (manifest.json).
+REQUIRED_IMAGES="LR_CADDY_IMAGE LR_COMPOSE_IMAGE LR_DAEMON_IMAGE LR_DASHBOARD_IMAGE"
+for key in $REQUIRED_IMAGES; do
+	grep -q "^$key=" "$stage/control-plane/images.env" || die "images.env has no $key line"
+done
 unpinned="$(grep -E '^LR_[A-Z_]+_IMAGE=' "$stage/control-plane/images.env" | grep -Ev '@sha256:[0-9a-f]{64}$' || true)"
 [ -z "$unpinned" ] || die "images not pinned by digest: $unpinned"
 
-# Fixed modes: the helper and the scripts are executable, the rest is not.
 find "$stage" -type d -exec chmod 0755 {} +
 find "$stage" -type f -exec chmod 0644 {} +
 chmod 0755 "$stage/control-plane/launchroom" "$stage/install/install.sh" "$stage/install/server.sh"
 
+{
+	printf '{\n  "version": "%s",\n  "requiredImages": [' "$VERSION"
+	sep=""
+	for key in $REQUIRED_IMAGES; do printf '%s"%s"' "$sep" "$key"; sep=", "; done
+	printf '],\n  "files": [\n'
+	sep=""
+	(cd "$stage" && find . -type f ! -path ./manifest.json | sed 's|^\./||' | LC_ALL=C sort) | while IFS= read -r f; do
+		printf '%s    {"path": "%s", "mode": "0%s", "sha256": "%s"}' "$sep" "$f" "$(stat -c %a "$stage/$f")" "$(sha256sum "$stage/$f" | cut -d' ' -f1)"
+		sep=",
+"
+	done
+	printf '\n  ]\n}\n'
+} >"$stage/manifest.json"
+chmod 0644 "$stage/manifest.json"
+
 tar --sort=name --format=gnu --mtime="@$SOURCE_DATE_EPOCH" --owner=0 --group=0 --numeric-owner \
-	-C "$stage" -cf - VERSION control-plane daemon install images |
+	-C "$stage" -cf - VERSION manifest.json control-plane daemon install images |
 	gzip -9 -n >"$OUT/launchroom-deploy.tar.gz"
 (cd "$OUT" && sha256sum launchroom-deploy.tar.gz >launchroom-deploy.tar.gz.sha256)
 cp "$stage/control-plane/images.env" "$OUT/images.env"
+cp "$stage/manifest.json" "$OUT/manifest.json"
 
 printf 'build-bundle: %s/launchroom-deploy.tar.gz (%s)\n' "$OUT" "$(cut -d' ' -f1 "$OUT/launchroom-deploy.tar.gz.sha256")"

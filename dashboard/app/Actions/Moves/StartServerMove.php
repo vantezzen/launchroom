@@ -10,6 +10,8 @@ use App\Data\Audit\AuditActor;
 use App\Data\Audit\AuditEntryData;
 use App\Data\Moves\MoveDnsRecordData;
 use App\Data\Moves\MovePlanItemData;
+use App\Data\Moves\ServerMoveOptionsData;
+use App\Data\Moves\StartedMovePlanData;
 use App\Data\Servers\UpdateServerRolesData;
 use App\Enums\AuditAction;
 use App\Enums\Moves\MoveItemKind;
@@ -21,7 +23,6 @@ use App\Models\Moves\ServerMoveItem;
 use App\Models\Server;
 use App\Models\ServiceInstance;
 use App\Models\User;
-use App\Queries\MeshServers;
 use App\Services\Moves\MovePlanner;
 use Illuminate\Support\Facades\DB;
 
@@ -49,8 +50,17 @@ final readonly class StartServerMove
         private AdvanceServerMoves $advance,
     ) {}
 
-    public function handle(Server $source, Server $target, bool $backupFirst, ?User $user, AuditActor $actor, bool $controlPlane = false): ServerMove
+    /**
+     * A server move is confirmed by typing the source's name; the
+     * control-plane move (`$controlPlane`) is confirmed on its own page
+     * (docs/14 §13.4) and passes no confirmation.
+     */
+    public function handle(Server $source, Server $target, bool $backupFirst, ?User $user, AuditActor $actor, bool $controlPlane = false, ?string $confirmation = null): ServerMove
     {
+        if (! $controlPlane && ! hash_equals($source->name, $confirmation ?? '')) {
+            throw DomainRuleViolation::on('confirmation', "Type {$source->name} to confirm.");
+        }
+
         $move = DB::transaction(function () use ($source, $target, $backupFirst, $user, $actor, $controlPlane): ServerMove {
             // Both servers locked in id order (no deadlock with a concurrent move the other way).
             $locked = Server::query()->whereKey([$source->id, $target->id])->orderBy('id')->lockForUpdate()->get()->keyBy('id');
@@ -77,15 +87,15 @@ final readonly class StartServerMove
                 'source_server_id' => $source->id,
                 'target_server_id' => $target->id,
                 'control_plane' => $controlPlane,
-                'options' => ['backupFirst' => $backupFirst && $plan->canBackUpFirst],
-                'plan' => [
-                    'platformFrom' => $plan->platformFrom,
-                    'platformTo' => $plan->platformTo,
-                    'downtimeSeconds' => $plan->downtimeSeconds,
-                    'copyBytes' => $plan->copyBytes,
-                    'warnings' => $plan->warnings,
-                    'dns' => array_map(static fn (MoveDnsRecordData $record): array => ['kind' => $record->kind, 'host' => $record->host, 'addresses' => $record->addresses, 'remove' => $record->remove], $plan->dns),
-                ],
+                'options' => new ServerMoveOptionsData(backupFirst: $backupFirst && $plan->canBackUpFirst),
+                'plan' => new StartedMovePlanData(
+                    platformFrom: $plan->platformFrom,
+                    platformTo: $plan->platformTo,
+                    downtimeSeconds: $plan->downtimeSeconds,
+                    copyBytes: $plan->copyBytes,
+                    warnings: $plan->warnings,
+                    dns: array_map(static fn (MoveDnsRecordData $record): array => ['kind' => $record->kind, 'host' => $record->host, 'addresses' => $record->addresses, 'remove' => $record->remove], $plan->dns),
+                ),
                 'edge_added' => $plan->addsEdge,
                 'created_by' => $user?->id,
             ]);
@@ -131,7 +141,7 @@ final readonly class StartServerMove
             ));
 
             // The source drains; edges and allow-lists follow.
-            event(new NodeStateInvalidated(array_values(array_unique([$source->id, $target->id, ...MeshServers::ids()]))));
+            NodeStateInvalidated::mesh([$source->id, $target->id]);
 
             return $move;
         });

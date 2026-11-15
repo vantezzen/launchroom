@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Data\Protocol\V1;
 
 use App\Data\Protocol\WireErrors;
+use App\Support\Protocol\Grammar;
+use App\Support\ServerPlatform;
 use Illuminate\Validation\ValidationException;
 use Spatie\LaravelData\Data;
 
@@ -19,10 +21,6 @@ final class InventoryResult extends Data
     public const int MAX_COMPONENTS = 20000;
 
     public const array LOCKFILE_KINDS = ['npm', 'pnpm', 'yarn', 'bun', 'composer', 'poetry', 'uv', 'pipfile', 'requirements', 'pyproject', 'gemfile', 'gomod'];
-
-    public const string IMAGE = '#^(?:localhost|[a-z0-9-]+(?:\.[a-z0-9-]+)+|[a-z0-9-]+(?:\.[a-z0-9-]+)*:[0-9]{1,5})(?:/[a-z0-9]+(?:(?:\.|_|__|-+)[a-z0-9]+)*)+@sha256:[a-f0-9]{64}$#D';
-
-    public const string REL_PATH = '#^[A-Za-z0-9._@+=,-]+(?:/[A-Za-z0-9._@+=,-]+)*$#D';
 
     /**
      * @param  array{id: string, versionId?: string}|null  $distro
@@ -54,9 +52,9 @@ final class InventoryResult extends Data
         $e = new WireErrors;
         $p = 'inventory';
 
-        $image = $e->string($raw['image'] ?? null, "{$p}.image", self::IMAGE, 512) ?? '';
-        $platform = $e->enum($raw['platform'] ?? null, "{$p}.platform", ['linux/amd64', 'linux/arm64']) ?? '';
-        $generator = $e->string($raw['generator'] ?? null, "{$p}.generator", self::IMAGE, 512) ?? '';
+        $image = $e->string($raw['image'] ?? null, "{$p}.image", Grammar::IMAGE_REF, 512) ?? '';
+        $platform = $e->enum($raw['platform'] ?? null, "{$p}.platform", ServerPlatform::ALL) ?? '';
+        $generator = $e->string($raw['generator'] ?? null, "{$p}.generator", Grammar::IMAGE_REF, 512) ?? '';
         $distro = null;
 
         if (isset($raw['distro'])) {
@@ -73,7 +71,7 @@ final class InventoryResult extends Data
         foreach ($e->list($raw['lockfiles'] ?? null, "{$p}.lockfiles", 32, required: false) as $i => $lockfile) {
             $q = "{$p}.lockfiles.{$i}";
             $l = $e->object($lockfile, $q);
-            $path = $e->string($l['path'] ?? null, "{$q}.path", self::REL_PATH, 1024);
+            $path = $e->string($l['path'] ?? null, "{$q}.path", Grammar::REL_PATH, 1024);
 
             if ($path !== null && array_intersect(explode('/', $path), ['.', '..']) !== []) {
                 $e->add("{$q}.path", 'must not contain . or .. segments');

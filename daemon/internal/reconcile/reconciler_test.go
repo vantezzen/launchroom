@@ -15,7 +15,9 @@ import (
 	"github.com/vantezzen/launchroom/daemon/internal/docker"
 	"github.com/vantezzen/launchroom/daemon/internal/docker/dockerfake"
 	"github.com/vantezzen/launchroom/daemon/internal/health"
+	"github.com/vantezzen/launchroom/daemon/internal/ingress"
 	"github.com/vantezzen/launchroom/daemon/internal/ingress/caddy"
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/policy"
 	"github.com/vantezzen/launchroom/daemon/internal/sealed"
 	"github.com/vantezzen/launchroom/daemon/internal/secret"
@@ -29,7 +31,8 @@ type fakeIngress struct {
 	onSync func([]caddy.Route)
 }
 
-func (f *fakeIngress) Sync(_ context.Context, sys state.SystemContainer, routes []caddy.Route) *state.IngressStatus {
+func (f *fakeIngress) Sync(_ context.Context, sys state.SystemContainer, specs []state.RouteSpec, resolve ingress.Resolver) *state.IngressStatus {
+	routes := caddy.ResolveRoutes(specs, resolve)
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.routes = append(f.routes, routes)
@@ -82,7 +85,7 @@ func newHarness(t *testing.T) *harness {
 	t.Cleanup(mon.Close)
 	h.r = New(Options{
 		ServerID: srvID, Docker: h.d, Policy: policy.DefaultConfig(), Health: mon, Ports: noPorts{}, Ingress: h.ingress,
-		EnvHashKey: EnvHashKey(key.Bytes()),
+		EnvHashKey: docker.EnvHashKey(key.Bytes()),
 		OpenEnv: func(s *state.WorkloadSpec) (map[string]secret.Secret, error) {
 			return sealed.OpenWorkloadEnv(s.Env, key, srvID, s.ID)
 		},
@@ -110,7 +113,7 @@ func (h *harness) nodeState(t *testing.T, version int64, workloads ...state.Work
 	if len(workloads) > 0 {
 		ns.Routes = []state.RouteSpec{{ID: "rt_01J9Z8X7W6V5T4S3R2Q1P0N9N9", Hosts: []state.Hostname{"app.localhost"}, TLS: state.TLSInternal,
 			Upstreams: []state.RouteUpstream{{Workload: workloads[0].ID, Port: 3000}}}}
-		ns.System.Caddy = state.SystemContainer{Enabled: true, Image: state.ImageRef("docker.io/library/caddy@" + policy.DefaultSystemImageDigests[policy.SystemCaddy][0])}
+		ns.System.Caddy = state.SystemContainer{Enabled: true, Image: state.ImageRef("docker.io/library/caddy@" + policy.DefaultSystemImageDigests[names.SystemCaddy][0])}
 	}
 	if err := ns.Validate(); err != nil {
 		t.Fatal(err)
@@ -170,10 +173,10 @@ func TestReconcileLifecycle(t *testing.T) {
 	}
 	cc, _ := h.d.Create("lr-" + strings.ToLower(string(wlA)))
 	if !slices.Contains(cc.Config.Env, "GREETING=hi") || !slices.Contains(cc.HostConfig.CapDrop, "ALL") ||
-		!slices.Contains(cc.HostConfig.SecurityOpt, policy.NoNewPrivileges) || cc.Config.Labels[docker.LabelSpecHash] == "" {
+		!slices.Contains(cc.HostConfig.SecurityOpt, policy.NoNewPrivileges) || cc.Config.Labels[names.LabelSpecHash] == "" {
 		t.Fatalf("container spec %+v %+v", cc.Config, cc.HostConfig)
 	}
-	if strings.Contains(cc.Config.Labels[docker.LabelSpecHash], "hi") {
+	if strings.Contains(cc.Config.Labels[names.LabelSpecHash], "hi") {
 		t.Fatal("hash leaks env")
 	}
 
@@ -264,8 +267,8 @@ func TestReconcileUnroutesBeforeStopping(t *testing.T) {
 	past := t0.Add(-time.Minute)
 	draining.Role, draining.DrainUntil = state.RoleDraining, &past
 	aRunning := func() bool {
-		cs, _ := h.d.ListContainers(ctx, map[string]string{docker.LabelWorkload: string(wlA)})
-		return len(cs) == 1 && cs[0].Running
+		cs, _ := h.d.ListContainers(ctx, map[string]string{names.LabelWorkload: string(wlA)})
+		return len(cs) == 1 && cs[0].Running()
 	}
 	var routedWhileStopping bool
 	var syncsWhileRunning int
@@ -368,7 +371,7 @@ type phaseCase struct {
 func TestStatusOfPhases(t *testing.T) {
 	port := state.Port(3000)
 	s := &state.WorkloadSpec{ID: wlA, Port: &port, Role: state.RoleServing}
-	running := &observed{c: docker.Container{State: "running", Running: true, StartedAt: t0}}
+	running := &observed{c: docker.Container{State: docker.StateRunning, StartedAt: t0}}
 	cases := []phaseCase{
 		{"pending", s, nil, nil, nil, t0, state.PhasePending},
 		{"pulling", s, nil, &note{phase: state.PhasePulling}, nil, t0, state.PhasePulling},
@@ -408,7 +411,7 @@ func TestStatusOfPhases(t *testing.T) {
 func TestReconcileKeepsSystemNetworks(t *testing.T) {
 	h := newHarness(t)
 	labels := docker.ManagedLabels(string(srvID))
-	labels[docker.LabelSystem] = policy.SystemBuildkit
+	labels[names.LabelSystem] = names.SystemBuildkit
 	if _, err := h.d.CreateNetwork(t.Context(), docker.NetworkCreate{Name: "lr-system-build", Subnet: netip.MustParsePrefix("10.232.0.0/24"), Labels: labels}); err != nil {
 		t.Fatal(err)
 	}
@@ -429,7 +432,7 @@ func TestReconcileRefusesForbiddenAddressUpstreams(t *testing.T) {
 	h := newHarness(t)
 	h.r.o.Policy.LocalUpstreams = []netip.AddrPort{netip.MustParseAddrPort("127.0.0.1:8000")}
 	ns := h.nodeState(t, 1)
-	ns.System.Caddy = state.SystemContainer{Enabled: true, Image: state.ImageRef("docker.io/library/caddy@" + policy.DefaultSystemImageDigests[policy.SystemCaddy][0])}
+	ns.System.Caddy = state.SystemContainer{Enabled: true, Image: state.ImageRef("docker.io/library/caddy@" + policy.DefaultSystemImageDigests[names.SystemCaddy][0])}
 	ns.Routes = []state.RouteSpec{
 		{ID: "rt_0000000000000000000000DASH", Hosts: []state.Hostname{"dash.example.com"}, TLS: state.TLSInternal,
 			Upstreams: []state.RouteUpstream{{Address: "127.0.0.1:8000"}}},
@@ -456,10 +459,10 @@ func TestReconcileHoldsWorkloadsWithoutIsolation(t *testing.T) {
 	h := newHarness(t)
 	var calls []string
 	isoErr := errors.New("nftables unavailable")
-	h.r.o.Isolate = func(context.Context) error {
+	h.d.SetIsolation(func(context.Context) error {
 		calls = append(calls, "isolate after "+strings.Join(h.d.Calls(), ","))
 		return isoErr
-	}
+	})
 	ns := h.nodeState(t, 1, h.workload(t, wlA, nil))
 	if err := h.r.Reconcile(ctx, ns); !errors.Is(err, isoErr) {
 		t.Fatalf("err = %v", err)

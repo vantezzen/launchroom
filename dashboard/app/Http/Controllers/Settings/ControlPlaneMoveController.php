@@ -14,8 +14,14 @@ use App\Actions\Moves\MoveControlPlaneWorkloads;
 use App\Actions\Moves\RetryMoveItem;
 use App\Actions\Moves\StartControlPlaneMove;
 use App\Actions\Moves\StartHandover;
+use App\Data\Moves\ApproveMoveData;
+use App\Data\Moves\MoveWorkloadsData;
+use App\Data\Moves\StartHandoverData;
+use App\Enums\ToastType;
 use App\Exceptions\DomainRuleViolation;
 use App\Http\Controllers\Controller;
+use App\Http\Routing\RouteScope;
+use App\Http\Toast;
 use App\Models\Moves\ControlPlaneMove;
 use App\Models\Moves\ServerMove;
 use App\Models\Moves\ServerMoveItem;
@@ -54,47 +60,37 @@ final class ControlPlaneMoveController extends Controller
         return to_route('move.edit')->with('moveToken', $started['token']);
     }
 
-    public function approve(Request $request, #[CurrentUser] User $user, ApproveControlPlaneMove $approve): RedirectResponse
+    public function approve(Request $request, ApproveMoveData $data, #[CurrentUser] User $user, ApproveControlPlaneMove $approve): RedirectResponse
     {
         Gate::authorize('manageInstance');
-        $request->validate(['code' => ['required', 'string', 'max:16']]);
-        $approve->handle($this->open(), $request->string('code')->toString(), $user, $this->auditActor($request, $user));
-        Inertia::flash('toast', ['type' => 'success', 'message' => 'The new server is joining.']);
+        $approve->handle($this->open(), $data->code, $user, $this->auditActor($request, $user));
+        Toast::success('The new server is joining.');
 
         return to_route('move.edit');
     }
 
-    public function workloads(Request $request, #[CurrentUser] User $user, MoveControlPlaneWorkloads $move): RedirectResponse
+    public function workloads(Request $request, MoveWorkloadsData $data, #[CurrentUser] User $user, MoveControlPlaneWorkloads $move): RedirectResponse
     {
         Gate::authorize('manageInstance');
-        $request->validate(['backupFirst' => ['boolean']]);
-        $move->handle($this->open(), $request->boolean('backupFirst'), $user, $this->auditActor($request, $user));
+        $move->handle($this->open(), $data->backupFirst, $user, $this->auditActor($request, $user));
 
         return to_route('move.edit');
     }
 
-    public function retry(Request $request, string $item, #[CurrentUser] User $user, RetryMoveItem $retry): RedirectResponse
+    public function retry(Request $request, ServerMoveItem $item, #[CurrentUser] User $user, RetryMoveItem $retry): RedirectResponse
     {
         Gate::authorize('manageInstance');
-        $open = $this->open();
-        $serverMove = ServerMove::query()->where('public_id', (string) $open->serverMove?->public_id)->first();
-        $entry = $serverMove instanceof ServerMove ? ServerMoveItem::query()->where('server_move_id', $serverMove->id)->where('public_id', $item)->first() : null;
-        abort_unless($serverMove instanceof ServerMove && $entry instanceof ServerMoveItem, 404);
-        $retry->handle($serverMove, $entry, $this->auditActor($request, $user));
+        $serverMove = $this->open()->serverMove;
+        abort_unless($serverMove instanceof ServerMove, 404);
+        $retry->handle($serverMove, RouteScope::moveItem($serverMove, $item), $this->auditActor($request, $user));
 
         return to_route('move.edit');
     }
 
-    public function handover(Request $request, #[CurrentUser] User $user, StartHandover $handover): RedirectResponse
+    public function handover(Request $request, StartHandoverData $data, #[CurrentUser] User $user, StartHandover $handover): RedirectResponse
     {
         Gate::authorize('manageInstance');
-        $request->validate(['confirmation' => ['required', 'string', 'max:32']]);
-
-        if (strtolower(trim($request->string('confirmation')->toString())) !== 'hand over') {
-            return back()->withErrors(['confirmation' => 'Type “hand over” to confirm.']);
-        }
-
-        $handover->handle($this->open(), $this->auditActor($request, $user));
+        $handover->handle($this->open(), $data->confirmation, $this->auditActor($request, $user));
 
         return to_route('move.edit');
     }
@@ -103,7 +99,7 @@ final class ControlPlaneMoveController extends Controller
     {
         Gate::authorize('manageInstance');
         $abort->handle($this->open(), 'aborted from the dashboard', $this->auditActor($request, $user));
-        Inertia::flash('toast', ['type' => 'success', 'message' => 'The hand-over was cancelled. You can make changes in this dashboard again.']);
+        Toast::success('The hand-over was cancelled. You can make changes in this dashboard again.');
 
         return to_route('move.edit');
     }
@@ -112,7 +108,7 @@ final class ControlPlaneMoveController extends Controller
     {
         Gate::authorize('manageInstance');
         $cancel->handle($this->open(), $this->auditActor($request, $user));
-        Inertia::flash('toast', ['type' => 'success', 'message' => 'The move was cancelled.']);
+        Toast::success('The move was cancelled.');
 
         return to_route('move.edit');
     }
@@ -121,9 +117,9 @@ final class ControlPlaneMoveController extends Controller
     {
         Gate::authorize('manageInstance');
         $result = $rebuild->handle($user, $this->auditActor($request, $user));
-        Inertia::flash('toast', ['type' => $result['failed'] === [] ? 'success' : 'error', 'message' => $result['failed'] === []
+        Toast::flash($result['failed'] === [] ? ToastType::Success : ToastType::Error, $result['failed'] === []
             ? "Rebuilding {$result['started']} apps from their recorded commits."
-            : "Rebuilding {$result['started']} apps; ".count($result['failed']).' could not start: '.implode(' ', $result['failed'])]);
+            : "Rebuilding {$result['started']} apps; ".count($result['failed']).' could not start: '.implode(' ', $result['failed']));
 
         return to_route('move.edit');
     }
@@ -131,10 +127,8 @@ final class ControlPlaneMoveController extends Controller
     public function finish(Request $request, #[CurrentUser] User $user, FinishMoveChecklist $finish): RedirectResponse
     {
         Gate::authorize('manageInstance');
-        /** @var list<string> $open */
-        $open = array_values(array_filter((array) $request->input('open', []), is_string(...)));
-        $finish->handle(array_slice($open, 0, 10), $this->auditActor($request, $user));
-        Inertia::flash('toast', ['type' => 'success', 'message' => 'Move finished.']);
+        $finish->handle($this->auditActor($request, $user));
+        Toast::success('Move finished.');
 
         return to_route('servers.index');
     }

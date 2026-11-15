@@ -58,7 +58,7 @@ final readonly class SetSharedEdge
                 meta: ['shared' => $shared],
             ));
 
-            event(new NodeStateInvalidated(array_values(array_unique([$server->id, ...$this->edges->ids()]))));
+            NodeStateInvalidated::servers([$server->id, ...$this->edges->ids()]);
 
             return $server;
         });

@@ -141,8 +141,6 @@ final class Projects
     }
 
     /**
-     * The latest NodeState of $server, decoded.
-     *
      * @return array<string, mixed>
      */
     public static function nodeState(Server $server): array

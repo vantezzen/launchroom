@@ -5,8 +5,9 @@ declare(strict_types=1);
 namespace App\Data\Services;
 
 use App\Enums\Git\GitProviderKind;
+use App\Enums\ServiceSourceType;
 use App\Exceptions\DomainRuleViolation;
-use Spatie\LaravelData\Attributes\Validation\In;
+use App\Support\Protocol\Grammar;
 use Spatie\LaravelData\Attributes\Validation\Max;
 use Spatie\LaravelData\Attributes\Validation\Regex;
 use Spatie\LaravelData\Data;
@@ -33,14 +34,6 @@ use Spatie\LaravelData\Data;
  */
 final class GitSource extends Data implements ServiceSource
 {
-    public const string PROVIDER_GITHUB = 'github';
-
-    public const string PROVIDER_GITLAB = 'gitlab';
-
-    public const string PROVIDER_GITEA = 'gitea';
-
-    public const string PROVIDER_GIT = 'git';
-
     /** `group/subgroup/project` paths (GitLab nests groups), 2–8 segments. */
     public const string FULL_NAME_PATTERN = '/^[A-Za-z0-9_.-]{1,100}(?:\/[A-Za-z0-9_.-]{1,100}){1,7}$/D';
 
@@ -53,10 +46,9 @@ final class GitSource extends Data implements ServiceSource
         public string $fullName,
         public ?int $installationId = null,
         /** Repo-relative, containment-checked by the build daemon (docs/09 R4). */
-        #[Regex('/^(?:[A-Za-z0-9_.@+=,-]+(?:\/[A-Za-z0-9_.@+=,-]+)*)?$/D'), Max(1024)]
+        #[Regex('#^(?:'.Grammar::REL_PATH_BODY.')?$#D'), Max(1024)]
         public string $rootDirectory = '',
-        #[In([self::PROVIDER_GITHUB, self::PROVIDER_GITLAB, self::PROVIDER_GITEA, self::PROVIDER_GIT])]
-        public string $provider = self::PROVIDER_GITHUB,
+        public GitProviderKind $provider = GitProviderKind::GitHub,
         /** Plain git only: `https://…`, `ssh://user@host/path`, or `http://` for hosts in `launchroom.git.insecure_hosts`. */
         #[Regex(self::CLONE_URL_PATTERN), Max(2048)]
         public ?string $cloneUrl = null,
@@ -64,19 +56,14 @@ final class GitSource extends Data implements ServiceSource
         public ?string $branch = null,
     ) {}
 
-    public function type(): string
+    public function type(): ServiceSourceType
     {
-        return 'git';
+        return ServiceSourceType::Git;
     }
 
     public function isGitHub(): bool
     {
-        return $this->provider === self::PROVIDER_GITHUB;
-    }
-
-    public function kind(): GitProviderKind
-    {
-        return GitProviderKind::tryFrom($this->provider) ?? GitProviderKind::GitHub;
+        return $this->provider === GitProviderKind::GitHub;
     }
 
     /**
@@ -84,7 +71,7 @@ final class GitSource extends Data implements ServiceSource
      */
     public function isUnconnectedPlainGit(): bool
     {
-        return $this->provider === self::PROVIDER_GIT && $this->installationId === null;
+        return $this->provider === GitProviderKind::Git && $this->installationId === null;
     }
 
     public function isSsh(): bool
@@ -108,7 +95,7 @@ final class GitSource extends Data implements ServiceSource
             return;
         }
 
-        if ($this->provider === self::PROVIDER_GITLAB || $this->provider === self::PROVIDER_GITEA) {
+        if ($this->provider === GitProviderKind::GitLab || $this->provider === GitProviderKind::Gitea) {
             if ($this->installationId === null || $this->cloneUrl !== null) {
                 throw DomainRuleViolation::on('source', 'This repository is cloned through its connection in Settings → Git, not a URL.');
             }

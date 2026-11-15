@@ -19,6 +19,7 @@ final readonly class ApiOperation
      * @param  class-string<Data>|null  $response  the `data` of the response
      * @param  class-string<Data>|null  $request  JSON body
      * @param  class-string<Data>|null  $query  query parameters
+     * @param  array<string, class-string<Data>>|null  $events  a server-sent event stream: each event's payload ({@see EventStream})
      */
     public function __construct(
         public string $id,
@@ -30,7 +31,7 @@ final readonly class ApiOperation
         public ?string $query = null,
         public int $status = 200,
         public ?string $description = null,
-        public bool $stream = false,
+        public ?array $events = null,
         public bool $paginated = false,
     ) {}
 }

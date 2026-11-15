@@ -9,11 +9,11 @@ use App\Data\Services\DatabaseSource;
 use App\Data\Services\DeploySettings;
 use App\Data\Services\HealthcheckSettings;
 use App\Data\Services\ScalingSettings;
+use App\Data\Variables\VariableTargetRow;
 use App\Drivers\DatabaseEngines\DatabaseEngineDriver;
 use App\Drivers\DatabaseEngines\DatabaseEngines;
 use App\Enums\DomainKind;
 use App\Enums\PreviewStrategy;
-use App\Enums\Security\WafMode;
 use App\Enums\ServiceKind;
 use App\Models\Domain;
 use App\Models\Environment;
@@ -62,16 +62,11 @@ final readonly class ServiceProvisioner
             'team_id' => $service->team_id,
             'environment_id' => $environment->id,
             'service_id' => $service->id,
-            'enabled' => $template->enabled ?? true,
-            'branch_override' => $template?->branch_override,
-            'build' => $template->build ?? new BuildSettings,
+            'build' => new BuildSettings,
+            'scaling' => new ScalingSettings,
+            ...($template?->copyableSettings() ?? []),
             'deploy' => $deploy,
-            'scaling' => $template->scaling ?? new ScalingSettings,
             'preview_strategy' => $template->preview_strategy ?? ($service->kind->isStateful() ? PreviewStrategy::NewEmpty : null),
-            // Previews copy the base instance's firewall (docs/22 §6.2); new instances block.
-            'waf_mode' => $template->waf_mode ?? WafMode::Block,
-            'waf_paranoia' => $template->waf_paranoia ?? 1,
-            'waf_inspect_body_kib' => $template->waf_inspect_body_kib ?? 32,
         ]);
 
         if ($driver instanceof DatabaseEngineDriver) {
@@ -81,11 +76,13 @@ final readonly class ServiceProvisioner
                 'mount_path' => $driver->volumeMountPath($database->version),
             ]);
 
-            $target = [['environment_id' => $environment->id, 'all_previews' => false, 'branch_pattern' => null]];
+            $target = [VariableTargetRow::environment($environment->id)];
 
-            foreach ($driver->variables() as $variable) {
-                $this->variables->create($project, $service, $variable->key, $variable->value, $variable->type, $target, actor: $actor);
-            }
+            $this->variables->write($project, function () use ($driver, $project, $service, $target, $actor): void {
+                foreach ($driver->variables() as $variable) {
+                    $this->variables->create($project, $service, $variable->key, $variable->value, $variable->type, $target, actor: $actor);
+                }
+            });
         }
 
         // Built apps usually learn their port from the build (docs/04 §13), so

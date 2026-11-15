@@ -12,6 +12,7 @@ import (
 	"github.com/moby/moby/api/types/network"
 
 	"github.com/vantezzen/launchroom/daemon/internal/docker"
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/policy"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
@@ -253,23 +254,23 @@ func assertRule(t *testing.T, err error, rule string) {
 
 func TestCheckSystemImage(t *testing.T) {
 	cfg := policy.DefaultConfig()
-	pinned := policy.DefaultSystemImageDigests[policy.SystemCaddy][0]
+	pinned := policy.DefaultSystemImageDigests[names.SystemCaddy][0]
 	for _, ref := range []state.ImageRef{
 		state.ImageRef("docker.io/library/caddy@" + pinned),
 		state.ImageRef("127.0.0.1:5000/mirror/caddy@" + pinned),
 	} {
-		if err := policy.CheckSystemImage(policy.SystemCaddy, ref, cfg); err != nil {
+		if err := policy.CheckSystemImage(names.SystemCaddy, ref, cfg); err != nil {
 			t.Errorf("%s: %v", ref, err)
 		}
 	}
 	other := state.ImageRef("docker.io/library/caddy@sha256:" + strings.Repeat("a", 64))
-	if err := policy.CheckSystemImage(policy.SystemCaddy, other, cfg); err == nil {
+	if err := policy.CheckSystemImage(names.SystemCaddy, other, cfg); err == nil {
 		t.Error("unpinned digest accepted")
 	}
 	if err := policy.CheckSystemImage("buildkit", state.ImageRef("docker.io/library/caddy@"+pinned), cfg); err == nil {
 		t.Error("caddy digest accepted for another component")
 	}
-	if err := policy.CheckSystemImage(policy.SystemCaddy, "docker.io/library/caddy:2", cfg); err == nil {
+	if err := policy.CheckSystemImage(names.SystemCaddy, "docker.io/library/caddy:2", cfg); err == nil {
 		t.Error("tag accepted")
 	}
 }

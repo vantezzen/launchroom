@@ -19,12 +19,9 @@ const (
 	MaxAuthTries = 6
 	// ConnectionsPerMinute per remote address.
 	ConnectionsPerMinute = 20
-	// failureDelay slows down every failed authentication.
-	failureDelay = time.Second
-	// handshakeTimeout bounds the SSH handshake or the database startup.
-	handshakeTimeout = 20 * time.Second
-	// maxConnections open at once per access.
-	maxConnections = 32
+	failureDelay         = time.Second
+	handshakeTimeout     = 20 * time.Second
+	maxConnections       = 32
 )
 
 // endpoint is the shared state of one running access: allow-list,
@@ -60,7 +57,6 @@ func newEndpoint(allow []netip.Prefix, now func() time.Time, log *slog.Logger) *
 	}
 }
 
-// remoteAddr returns the connection's source address (unmapped).
 func remoteAddr(c net.Conn) netip.Addr {
 	ap, err := netip.ParseAddrPort(c.RemoteAddr().String())
 	if err != nil {
@@ -69,7 +65,6 @@ func remoteAddr(c net.Conn) netip.Addr {
 	return ap.Addr().Unmap()
 }
 
-// allowed reports whether a may connect.
 func (e *endpoint) allowed(a netip.Addr) bool {
 	if !a.IsValid() {
 		return false
@@ -82,8 +77,7 @@ func (e *endpoint) allowed(a netip.Addr) bool {
 	return false
 }
 
-// admit applies the allow-list, the per-address rate limit and the
-// connection cap. It is called before a byte is read.
+// admit runs before a byte is read.
 func (e *endpoint) admit(a netip.Addr) bool {
 	if !e.allowed(a) {
 		return false
@@ -106,7 +100,6 @@ func (e *endpoint) admit(a netip.Addr) bool {
 	return true
 }
 
-// release is called when an admitted connection closes.
 func (e *endpoint) release() {
 	e.mu.Lock()
 	e.active--
@@ -129,7 +122,6 @@ func (e *endpoint) event(ev state.AccessEvent) {
 	e.events = append(e.events, ev)
 }
 
-// connected records an authenticated connection.
 func (e *endpoint) connected(a netip.Addr, m state.AccessMethod, ch state.AccessChannel) {
 	e.mu.Lock()
 	e.connections++
@@ -165,7 +157,6 @@ func (e *endpoint) failed(a netip.Addr, password bool) {
 	e.notify()
 }
 
-// activity records application bytes (idle tracking and totals).
 func (e *endpoint) activity(in, out int) {
 	e.mu.Lock()
 	e.bytesIn += int64(in)
@@ -174,15 +165,12 @@ func (e *endpoint) activity(in, out int) {
 	e.mu.Unlock()
 }
 
-// idleSince is the last activity.
 func (e *endpoint) idleSince() time.Time {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	return e.lastActivity
 }
 
-// drainEvents returns the pending events (auth failures aggregated per
-// address) and whether more were dropped.
 func (e *endpoint) drainEvents() ([]state.AccessEvent, int, func(bool)) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -215,14 +203,12 @@ func (e *endpoint) drainEvents() ([]state.AccessEvent, int, func(bool)) {
 	}
 }
 
-// stats returns the counters for the result.
 func (e *endpoint) stats() (active, connections, failures int, in, out int64, started time.Time, last time.Time) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	return e.active, e.connections, e.authFailures, e.bytesIn, e.bytesOut, e.startedAt, e.lastActivity
 }
 
-// serve accepts connections until ctx is done; handle runs each admitted one.
 func (e *endpoint) serve(ctx context.Context, l net.Listener, handle func(ctx context.Context, c net.Conn, a netip.Addr)) {
 	var wg sync.WaitGroup
 	stop := context.AfterFunc(ctx, func() { _ = l.Close() })

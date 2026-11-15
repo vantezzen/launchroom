@@ -9,27 +9,19 @@ import (
 
 	"github.com/BurntSushi/toml"
 
+	"github.com/vantezzen/launchroom/daemon/internal/build/presets"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
 
-// jsonUnmarshal decodes data (manifests are untrusted input; errors are notes).
-func jsonUnmarshal(data []byte, v any) error { return json.Unmarshal(data, v) }
-
 var (
-	rePEP503   = regexp.MustCompile(`[-_.]+`)
 	rePEP508   = regexp.MustCompile(`^\s*([A-Za-z0-9][A-Za-z0-9._-]*)`)
 	reDevGroup = regexp.MustCompile(`(?i)^(dev|develop|development|test|tests|testing|lint|typing|docs)$`)
 )
 
-// pyName normalises a Python package name (PEP 503).
-func pyName(n string) string {
-	return strings.ToLower(rePEP503.ReplaceAllString(strings.TrimSpace(n), "-"))
-}
-
 // pep508Name is the distribution name of a requirement string ("django>=5; python_version>'3'").
 func pep508Name(req string) string {
 	if m := rePEP508.FindStringSubmatch(req); m != nil {
-		return pyName(m[1])
+		return presets.PythonName(m[1])
 	}
 	return ""
 }
@@ -64,18 +56,18 @@ func analyzePython(t tree, s *sourceFacts) {
 				}
 			}
 			for name := range p.Tool.Poetry.Dependencies {
-				if name = pyName(name); name != "python" {
+				if name = presets.PythonName(name); name != "python" {
 					f.main[name], f.direct[name] = true, true
 					n++
 				}
 			}
 			for name := range p.Tool.Poetry.DevDependencies {
-				f.dev[pyName(name)], f.direct[pyName(name)] = true, true
+				f.dev[presets.PythonName(name)], f.direct[presets.PythonName(name)] = true, true
 				n++
 			}
 			for g, grp := range p.Tool.Poetry.Group {
 				for name := range grp.Dependencies {
-					name = pyName(name)
+					name = presets.PythonName(name)
 					f.direct[name] = true
 					if reDevGroup.MatchString(g) {
 						f.dev[name] = true
@@ -119,7 +111,7 @@ func analyzePython(t tree, s *sourceFacts) {
 		if _, err := toml.Decode(string(b), &l); err == nil {
 			found = true
 			for _, p := range l.Package {
-				name := pyName(p.Name)
+				name := presets.PythonName(p.Name)
 				dev := p.Category == "dev"
 				if len(p.Groups) > 0 {
 					dev = true
@@ -155,13 +147,13 @@ func analyzePython(t tree, s *sourceFacts) {
 			Default map[string]any `json:"default"`
 			Develop map[string]any `json:"develop"`
 		}
-		if jsonUnmarshal(b, &l) == nil {
+		if json.Unmarshal(b, &l) == nil {
 			found = true
 			for n := range l.Default {
-				f.main[pyName(n)] = true
+				f.main[presets.PythonName(n)] = true
 			}
 			for n := range l.Develop {
-				f.dev[pyName(n)] = true
+				f.dev[presets.PythonName(n)] = true
 			}
 			s.addLockfile(rel, state.LockfilePipfile, len(l.Default)+len(l.Develop))
 		} else {
@@ -239,13 +231,13 @@ func analyzeUv(b []byte, f *nameFacts) (int, bool) {
 	deps := map[string][]string{}
 	var prodRoots, devRoots []string
 	for _, p := range l.Package {
-		name := pyName(p.Name)
+		name := presets.PythonName(p.Name)
 		for _, d := range p.Dependencies {
-			deps[name] = append(deps[name], pyName(d.Name))
+			deps[name] = append(deps[name], presets.PythonName(d.Name))
 		}
 		for _, ds := range p.Optional {
 			for _, d := range ds {
-				deps[name] = append(deps[name], pyName(d.Name))
+				deps[name] = append(deps[name], presets.PythonName(d.Name))
 			}
 		}
 		_, editable := p.Source["editable"]
@@ -254,13 +246,13 @@ func analyzeUv(b []byte, f *nameFacts) (int, bool) {
 			continue
 		}
 		for _, d := range p.Dependencies {
-			prodRoots = append(prodRoots, pyName(d.Name))
-			f.direct[pyName(d.Name)] = true
+			prodRoots = append(prodRoots, presets.PythonName(d.Name))
+			f.direct[presets.PythonName(d.Name)] = true
 		}
 		for _, ds := range p.DevDependencies {
 			for _, d := range ds {
-				devRoots = append(devRoots, pyName(d.Name))
-				f.direct[pyName(d.Name)] = true
+				devRoots = append(devRoots, presets.PythonName(d.Name))
+				f.direct[presets.PythonName(d.Name)] = true
 			}
 		}
 	}

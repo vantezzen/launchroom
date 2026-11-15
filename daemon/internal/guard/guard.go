@@ -39,6 +39,7 @@ import (
 
 	"github.com/vantezzen/launchroom/daemon/internal/guard/guardapi"
 	"github.com/vantezzen/launchroom/daemon/internal/policy"
+	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
 
 // Shared with launchroomd (internal/guard/guardapi).
@@ -127,9 +128,6 @@ func New(o Options) (*Server, error) {
 	s.upstream = &http.Client{Transport: s.transport()}
 	return s, nil
 }
-
-// Options returns the server's options (to derive a reconfigured server).
-func (s *Server) Options() Options { return s.o }
 
 // SetPolicy replaces the policy (tests; the binary sets it once at start).
 func (s *Server) SetPolicy(p policy.Config) error {
@@ -267,7 +265,7 @@ func notFound(kind, ref string) error {
 func (s *Server) refuse(w http.ResponseWriter, r *http.Request, status int, err error) {
 	msg := err.Error()
 	if status == http.StatusForbidden {
-		s.o.Log.Warn("request refused", "method", r.Method, "path", truncate(r.URL.Path, 200), "reason", msg)
+		s.o.Log.Warn("request refused", "method", r.Method, "path", state.Shorten(r.URL.Path, 200), "reason", msg)
 	}
 	writeJSON(w, status, map[string]string{"message": RefusalPrefix + msg})
 }
@@ -282,12 +280,5 @@ func short(id string) string {
 	if len(id) == 64 {
 		return id[:12]
 	}
-	return truncate(id, 128)
-}
-
-func truncate(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n] + "…"
+	return state.Shorten(id, 128)
 }

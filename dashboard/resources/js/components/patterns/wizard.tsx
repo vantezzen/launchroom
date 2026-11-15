@@ -2,7 +2,7 @@ import { Check } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 
-export type WizardStep = {
+type WizardStep = {
     id: string;
     /** Short step name for the header ("What is it"). */
     title: string;
@@ -16,7 +16,6 @@ type WizardProps = {
     current: number;
     /** Go back to an earlier step (its "Edit" link). */
     onStepSelect?: (index: number) => void;
-    /** Content of the open step. */
     children: ReactNode;
     /** Primary/secondary actions under the open step. */
     footer?: ReactNode;

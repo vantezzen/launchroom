@@ -4,23 +4,28 @@ declare(strict_types=1);
 
 namespace App\Models\Backups;
 
+use App\Contracts\Crypto\SealedRow;
 use App\Enums\Backups\DestinationStatus;
 use App\Models\Concerns\HasPublicId;
+use App\Models\Concerns\HasSealedSecret;
+use App\Models\ServiceInstance;
 use App\Models\Team;
-use App\Services\Backups\DestinationSecrets;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
+use Illuminate\Database\Eloquent\Attributes\Scope;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
+use InvalidArgumentException;
 
 /**
  * An S3-compatible restic repository (docs/14 §3, docs/07 `backup_destinations`).
  * team_id null is the instance (control-plane) destination.
  *
  * Secrets (S3 credentials, the restic repository password) are envelope
- * encrypted and only ever decrypted by {@see DestinationSecrets}.
+ * encrypted and only ever decrypted by App\Services\Crypto\SealedColumns.
  *
  * @property int $id
  * @property string $public_id
@@ -47,9 +52,10 @@ use Illuminate\Support\Carbon;
  */
 #[Fillable(['team_id', 'name', 'kind', 'endpoint', 'bucket', 'region', 'prefix', 'allow_private_network', 'is_default', 'created_by'])]
 #[Hidden(['wrapped_dek', 'kek_id', 'credentials', 'repository_password'])]
-final class BackupDestination extends Model
+final class BackupDestination extends Model implements SealedRow
 {
     use HasPublicId;
+    use HasSealedSecret;
 
     /** @var array<string, mixed> */
     protected $attributes = [
@@ -87,11 +93,31 @@ final class BackupDestination extends Model
     }
 
     /**
-     * The instance (control-plane) destination, if configured.
+     * The instance (control-plane) destination: no team, at most one
+     * (CreateBackupDestination refuses a second).
+     *
+     * @param  Builder<self>  $query
      */
+    #[Scope]
+    protected function instanceWide(Builder $query): void
+    {
+        $query->whereNull('team_id');
+    }
+
     public static function forInstance(): ?self
     {
-        return self::query()->whereNull('team_id')->first();
+        return self::query()->instanceWide()->first();
+    }
+
+    /**
+     * Where a backup of $instance goes: its schedule's destination (which
+     * may be one shared by the whole instance), else the team's default.
+     */
+    public static function forService(ServiceInstance $instance, ?BackupSchedule $schedule = null): ?self
+    {
+        $schedule ??= BackupSchedule::ofInstance($instance);
+
+        return $schedule?->destination()->first() ?? self::defaultFor($instance->team_id);
     }
 
     /**
@@ -140,5 +166,18 @@ final class BackupDestination extends Model
             'status' => DestinationStatus::class,
             'last_checked_at' => 'datetime',
         ];
+    }
+
+    public function sealWrapContext(): string
+    {
+        return 'backup_destination:'.$this->public_id;
+    }
+
+    public function sealAssociatedData(string $column): string
+    {
+        return match ($column) {
+            'credentials', 'repository_password' => 'backup_destination|'.($this->team_id ?? 'instance')."|{$this->public_id}|{$column}",
+            default => throw new InvalidArgumentException("{$column} is not a sealed column."),
+        };
     }
 }

@@ -2,17 +2,13 @@
 
 declare(strict_types=1);
 
-use App\Data\Protocol\ProtocolJson;
 use App\Data\Protocol\V1\ContainerInspectionResult;
 use App\Data\Protocol\V1\IngressStatus;
 use App\Data\Protocol\V1\InventoryResult;
 use App\Data\Protocol\V1\Report;
 use App\Data\Protocol\V1\RouteSpec;
-use App\Data\Protocol\V1\Task;
 use App\Data\Protocol\V1\TaskCompletion;
-use App\Data\Protocol\V1\TaskLease;
 use App\Data\Protocol\V1\WafStatus;
-use App\Enums\DaemonTaskType;
 use App\Support\Security\InvestigationInputs;
 use App\Support\Security\InvestigationReport;
 use App\Support\Security\WafSamples;
@@ -105,15 +101,6 @@ test('the firewall report decodes: state, samples and events', function (): void
         ->and(array_column($rows[0]['events'], 'client_network'))->toBe(['203.0.113.0/24', '2001:db8::/48'])
         ->and($rows[1]['events'][0]['rules'])->toBe([941100, 941160]);
 });
-
-test('the inventory and inspection lease fixtures round-trip through the PHP task document', function (string $name): void {
-    $lease = json_decode((string) file_get_contents(ProtocolSchemas::root()."/fixtures/v1/{$name}.json"), false);
-    $tasks = array_map(static fn (object $task): Task => new Task($task->id, DaemonTaskType::from($task->type), CarbonImmutable::parse($task->leaseExpiresAt), $task->attempt, CarbonImmutable::parse($task->deadline), $task->spec), $lease->tasks);
-    $encoded = ProtocolJson::encode(new TaskLease($tasks));
-
-    expect(ProtocolSchemas::errors('task-lease', $encoded))->toBe([])
-        ->and(json_decode($encoded, true))->toEqual(securityFixture($name));
-})->with(['task-lease.inventory', 'task-lease.inspect-container']);
 
 test('without parent PIDs the report says so and judges no process by its parent', function (): void {
     $fixture = securityFixture('task-completion.container-inspection')['containerInspection'];

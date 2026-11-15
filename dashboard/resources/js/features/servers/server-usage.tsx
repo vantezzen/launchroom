@@ -8,9 +8,9 @@ import { Logo } from '@/components/logo';
 import { MetaLine } from '@/components/patterns/meta-line';
 import { Section } from '@/components/patterns/section';
 import { Sparkline } from '@/components/charts/sparkline';
-import { formatMb } from '@/features/servers/format';
-import { RANGE_SETS } from '@/lib/observe-scope';
+import { RANGE_SETS, rangeOptions } from '@/lib/observe-scope';
 import services from '@/routes/projects/services';
+import { formatCores, formatMemory } from '@/lib/format';
 
 type MetricsRange = (typeof RANGE_SETS.resources)[number];
 
@@ -66,7 +66,13 @@ export function ServerUsage({
             id="disk"
             className="scroll-mt-20"
             title="Usage"
-            actions={<TimeRangeSelect value={range} onChange={onRangeChange} />}
+            actions={
+                <TimeRangeSelect
+                    value={range}
+                    onChange={onRangeChange}
+                    options={rangeOptions(RANGE_SETS.resources)}
+                />
+            }
         >
             <div className="grid gap-5 sm:grid-cols-3">
                 <StatTile
@@ -77,19 +83,19 @@ export function ServerUsage({
                             : null
                     }
                     unit="%"
-                    hint={specs?.cpus ? `${specs.cpus} cores` : undefined}
+                    hint={specs?.cpus ? formatCores(specs.cpus) : undefined}
                     series={series(host?.cpuPct, pct)}
                 />
                 <StatTile
                     label="Memory"
                     value={
                         current?.memUsedMb != null
-                            ? (formatMb(current.memUsedMb) ?? '').split(' ')[0]
+                            ? formatMemory(current.memUsedMb, '').split(' ')[0]
                             : null
                     }
                     unit={
                         current?.memUsedMb != null && current.memTotalMb
-                            ? `${(formatMb(current.memUsedMb) ?? '').split(' ')[1]} of ${formatMb(current.memTotalMb)}`
+                            ? `${formatMemory(current.memUsedMb, '').split(' ')[1]} of ${formatMemory(current.memTotalMb)}`
                             : undefined
                     }
                     series={series(host?.memPct, pct)}
@@ -103,7 +109,7 @@ export function ServerUsage({
                     }
                     unit={
                         current?.diskTotalMb
-                            ? `% of ${formatMb(current.diskTotalMb)}`
+                            ? `% of ${formatMemory(current.diskTotalMb)}`
                             : '%'
                     }
                     series={series(host?.diskPct, pct)}
@@ -168,7 +174,7 @@ function rows(workloads: Workload[], metrics: Metrics): Row[] {
 }
 
 /** CPU of a service as a share of the server ("3%"), or in cores when the core count is unknown. */
-export function formatServiceCpu(
+function formatServiceCpu(
     cores: number | null | undefined,
     serverCores: number | null | undefined,
 ): string | null {
@@ -214,7 +220,7 @@ export function WhatRunsHere({
     // the memory the server really has free.
     const free =
         placement.freeMemoryMb !== null
-            ? `${formatMb(Math.max(0, placement.freeMemoryMb))} free for new services`
+            ? `${formatMemory(Math.max(0, placement.freeMemoryMb))} free for new services`
             : null;
 
     return (
@@ -243,7 +249,7 @@ export function WhatRunsHere({
                             total={total}
                             max={3}
                             label="Memory by project"
-                            format={(mb) => formatMb(mb) ?? ''}
+                            format={(mb) => formatMemory(mb, '')}
                         />
                     </div>
                 )}
@@ -276,7 +282,7 @@ export function WhatRunsHere({
                                 );
                                 const memory =
                                     row.usage?.currentMemMb != null
-                                        ? formatMb(row.usage.currentMemMb)
+                                        ? formatMemory(row.usage.currentMemMb)
                                         : null;
 
                                 return (
@@ -340,7 +346,9 @@ export function WhatRunsHere({
                                             <span className="flex flex-col items-end text-right type-small tabular-nums">
                                                 {memory ?? (
                                                     <span className="text-muted-foreground">
-                                                        {formatMb(row.limitMb)}{' '}
+                                                        {formatMemory(
+                                                            row.limitMb,
+                                                        )}{' '}
                                                         limit
                                                     </span>
                                                 )}

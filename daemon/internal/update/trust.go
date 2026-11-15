@@ -125,7 +125,6 @@ func (t Trust) publicKey() (crypto.PublicKey, error) {
 	return k, nil
 }
 
-// assetURL is the download URL of a release asset.
 func (t Trust) assetURL(version, name string) string {
 	return strings.TrimRight(t.ReleaseBase, "/") + "/download/v" + version + "/" + name
 }

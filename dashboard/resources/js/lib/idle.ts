@@ -1,4 +1,5 @@
 import { router } from '@inertiajs/react';
+import type { PageName } from '@/lib/pages';
 
 /**
  * Runs `task` when the browser has nothing else to do (or after `timeout`
@@ -21,7 +22,7 @@ export function whenIdle(task: () => void, timeout = 2_000): () => void {
     return () => globalThis.clearTimeout(handle);
 }
 
-const warmed = new Set<string>();
+const warmed = new Set<PageName>();
 
 /**
  * Loads the code of pages the user is likely to open next (docs/10 §3):
@@ -29,7 +30,7 @@ const warmed = new Set<string>();
  * first visit of each page type would otherwise wait for one more
  * download after the response. Chunks are immutable and cached.
  */
-export function warmPages(components: string[]): () => void {
+export function warmPages(components: PageName[]): () => void {
     const todo = components.filter((name) => !warmed.has(name));
 
     if (todo.length === 0) {

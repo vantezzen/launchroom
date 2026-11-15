@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/vantezzen/launchroom/daemon/internal/ingress"
 	"github.com/vantezzen/launchroom/daemon/internal/policy"
 	"github.com/vantezzen/launchroom/daemon/internal/secret"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
@@ -31,7 +32,7 @@ func TestRenderDNSProviders(t *testing.T) {
 		},
 		state.DNSNetcup: {"customer_number": "dns-customernumber", "api_key": "dns-apikey", "api_password": "dns-apipassword"},
 	}
-	routes := ResolveRoutes(multiEdgeRoutes(), resolver(map[state.WorkloadID]Endpoint{
+	routes := ResolveRoutes(multiEdgeRoutes(), resolver(map[state.WorkloadID]ingress.Endpoint{
 		wlA: {Addr: netip.MustParseAddr("10.231.4.5"), Serving: true, Ready: true},
 	}))
 	for _, p := range allProviders(t) {

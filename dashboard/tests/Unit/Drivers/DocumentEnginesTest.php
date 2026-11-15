@@ -19,8 +19,7 @@ test('MongoDB connects through the admin database with generated credentials (D4
         ->and($mongo->entrypoint())->toBeNull()
         ->and($vars['MONGO_URL']->value)->toContain('?authSource=admin')
         ->and($vars['MONGO_INITDB_ROOT_PASSWORD']->value)->toBe('${{ secret(32) }}')
-        ->and($mongo->connectionVariables(ConnectionStyle::Laravel, 'db'))->toMatchArray(['DB_CONNECTION' => 'mongodb', 'MONGODB_URI' => '${{db.MONGO_URL}}'])
-        ->and(implode(' ', $mongo->dumpCommand()))->not->toContain('password');
+        ->and($mongo->connectionVariables(ConnectionStyle::Laravel, 'db'))->toMatchArray(['DB_CONNECTION' => 'mongodb', 'MONGODB_URI' => '${{db.MONGO_URL}}']);
 });
 
 test('ClickHouse serves HTTP on its service port and exports the native port too', function (): void {

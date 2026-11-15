@@ -30,10 +30,9 @@ use App\Queries\CurrentEnvironmentSpec;
 use App\Support\BuildKey;
 use App\Support\CanonicalJson;
 use App\Support\Changes\SpecDiff;
-use GuzzleHttp\Promise\PromiseInterface;
 use Illuminate\Contracts\Database\Query\Builder;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Validation\ValidationException;
+use Tests\Support\GitFixtures;
 use Tests\Support\Projects;
 use Tests\Support\ProtocolSchemas;
 
@@ -48,10 +47,7 @@ const PX_SHA = '4015b57a143aec5156fd1444a017a32137a3fd0f';
 beforeEach(function (): void {
     Projects::useTestKek();
     config(['launchroom.git.plain_sources' => true, 'launchroom.git.insecure_hosts' => ['git-fixtures']]);
-    $pkt = static fn (string $line): string => sprintf('%04x', strlen($line) + 4).$line;
-    Http::fake([
-        'http://git-fixtures:8080/*' => static fn (): PromiseInterface => Http::response($pkt("# service=git-upload-pack\n").'0000'.$pkt(PX_SHA." HEAD\0multi_ack side-band-64k\n").$pkt(PX_SHA." refs/heads/main\n").'0000'),
-    ]);
+    GitFixtures::fake(PX_SHA);
 });
 
 /**

@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace App\Services\Moves;
 
 use App\Contracts\ControlPlaneDumps;
+use App\Data\Moves\HandoverDatabaseData;
 use App\Services\Transfers\TransferStore;
+use App\Support\PublicId;
 use Illuminate\Support\Facades\File;
 use RuntimeException;
 use SensitiveParameter;
@@ -32,13 +34,9 @@ final readonly class HandoverStore
     ) {}
 
     /**
-     * Dumps the dashboard's database into encrypted chunks.
-     *
-     * @return array{chunks: int, chunkBytes: int, sizeBytes: int, digests: list<string>, digest: string}
-     *
      * @throws RuntimeException when pg_dump fails
      */
-    public function write(string $moveId, #[SensitiveParameter] string $key, int $timeoutSeconds): array
+    public function write(string $moveId, #[SensitiveParameter] string $key, int $timeoutSeconds): HandoverDatabaseData
     {
         $dir = $this->directory($moveId);
         File::deleteDirectory($dir);
@@ -74,7 +72,7 @@ final readonly class HandoverStore
             $raw .= (string) hex2bin($digest);
         }
 
-        return ['chunks' => $index, 'chunkBytes' => $chunkBytes, 'sizeBytes' => $size, 'digests' => $digests, 'digest' => hash('sha256', $raw)];
+        return new HandoverDatabaseData(chunks: $index, chunkBytes: $chunkBytes, sizeBytes: $size, digests: $digests, digest: hash('sha256', $raw));
     }
 
     /**
@@ -140,7 +138,7 @@ final readonly class HandoverStore
 
     private function directory(string $moveId): string
     {
-        if (preg_match('/^cpm_[0-9A-HJKMNP-TV-Z]{26}$/D', $moveId) !== 1) {
+        if (! PublicId::isValid($moveId, 'cpm')) {
             throw new RuntimeException('Invalid move id.');
         }
 

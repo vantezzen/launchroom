@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Services\NodeStates\NodeStateProblem;
 use App\Services\NodeStates\NodeStateValidator;
 use Tests\Support\ProtocolSchemas;
 
@@ -21,12 +22,45 @@ function nodeStateProblems(array $document): array
     return resolve(NodeStateValidator::class)->problems(json_encode($document, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR));
 }
 
-test('the Go fixtures are valid', function (): void {
-    foreach (['web-postgres', 'preview', 'delete-volumes'] as $name) {
-        $json = (string) file_get_contents(ProtocolSchemas::root()."/fixtures/v1/node-state.{$name}.json");
+test('every Go NodeState fixture is valid', function (): void {
+    $files = glob(ProtocolSchemas::root().'/fixtures/v1/node-state.*.json') ?: [];
 
-        expect(resolve(NodeStateValidator::class)->problems($json))->toBe([], $name);
+    expect($files)->not->toBeEmpty();
+
+    foreach ($files as $path) {
+        expect(array_map(strval(...), resolve(NodeStateValidator::class)->problems((string) file_get_contents($path))))->toBe([], basename($path));
     }
+});
+
+test('the shared invalid NodeStates are refused with the Go validator\'s paths', function (): void {
+    $files = glob(ProtocolSchemas::root().'/fixtures/v1/invalid/node-state.*.json') ?: [];
+
+    expect($files)->not->toBeEmpty();
+
+    foreach ($files as $path) {
+        $fixture = json_decode((string) file_get_contents($path), true, 512, JSON_THROW_ON_ERROR);
+        $paths = array_map(
+            static fn (NodeStateProblem $p): string => $p->path,
+            resolve(NodeStateValidator::class)->problems(json_encode($fixture['document'], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)),
+        );
+
+        foreach ($fixture['problems'] as $expected) {
+            expect($paths)->toContain($expected);
+        }
+    }
+});
+
+test('problems name the top-level entry they belong to', function (): void {
+    $doc = validNodeStateFixture();
+    $doc['routes'][] = [...$doc['routes'][0], 'id' => 'rt_01J9Z8X7W6V5T4S3R2Q1P0N9Z9'];
+    $doc['workloads'][1]['mounts'][0]['target'] = '/proc';
+
+    $problems = collect(nodeStateProblems($doc))->keyBy('path');
+
+    expect($problems['routes.hosts[2]']->section)->toBe('routes')
+        ->and($problems['routes.hosts[2]']->index)->toBe(1)
+        ->and($problems['workloads[1].mounts[0].target']->section)->toBe('workloads')
+        ->and($problems['workloads[1].mounts[0].target']->index)->toBe(1);
 });
 
 test('cross-reference rules the schema cannot express are enforced', function (callable $mutate, string $problem): void {
@@ -62,7 +96,7 @@ test('cross-reference rules the schema cannot express are enforced', function (c
     }, 'references unknown workload'],
     'duplicate host' => [function (array &$d): void {
         $d['routes'][] = [...$d['routes'][0], 'id' => 'rt_01J9Z8X7W6V5T4S3R2Q1P0N9Z9'];
-    }, 'routes.hosts[1]: duplicate value'],
+    }, 'routes.hosts[2]: duplicate value'],
     'redirect to a foreign host' => [function (array &$d): void {
         $d['routes'][0]['redirectWwwTo'] = 'elsewhere.example.com';
     }, "must be one of the route's hosts"],

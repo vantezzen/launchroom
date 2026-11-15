@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Data\Registry\RegistryScope;
+use App\Data\Servers\NodeStateFacts;
 use App\Enums\DaemonTaskStatus;
 use App\Enums\DaemonTaskType;
 use App\Enums\ServerRole;
@@ -10,7 +11,6 @@ use App\Enums\ServerStatus;
 use App\Models\DaemonTask;
 use App\Models\NodeStateVersion;
 use App\Models\Server;
-use App\Services\Crypto\ResponseSignature;
 use App\Services\Crypto\Signer;
 use App\Services\Registry\RegistryTokenIssuer;
 use App\Services\Registry\RegistryTokenKeyFile;
@@ -24,6 +24,7 @@ use Lcobucci\JWT\Validation\Constraint\SignedWith;
 use Lcobucci\JWT\Validation\Validator;
 use Tests\Support\FakeDaemon;
 use Tests\Support\ProtocolSchemas;
+use Tests\Support\ResponseSignature;
 
 const SVC = 'svc_01J9Z8X7W6V5T4S3R2Q1P0N9N2';
 const SVC_LOWER = 'svc_01j9z8x7w6v5t4s3r2q1p0n9n2';
@@ -56,12 +57,21 @@ function jwtClaims(string $jwt): array
     return $token->claims()->all();
 }
 
+function buildSpecFor(string $service): object
+{
+    return (object) [
+        'service' => $service, 'environment' => 'env_01j9z8x7w6v5t4s3r2q1p0n9n3', 'platform' => 'linux/amd64', 'cacheKey' => 'cache',
+        'repo' => ['provider' => 'github', 'cloneUrl' => 'https://github.com/acme/web.git', 'sha' => str_repeat('a', 40)],
+        'builder' => ['kind' => 'railpack'], 'image' => 'registry.launchroom.internal/apps/'.strtolower($service).':'.str_repeat('a', 40),
+    ];
+}
+
 function buildTask(Server $server, string $service = SVC, array $attributes = []): DaemonTask
 {
     $task = DaemonTask::query()->create([
         'team_id' => $server->team_id,
         'type' => DaemonTaskType::Build,
-        'spec' => (object) ['service' => $service],
+        'spec' => buildSpecFor($service),
         ...$attributes,
     ]);
     $task->forceFill(['server_id' => $server->id, 'attempt' => 1, 'leased_at' => now(), 'lease_expires_at' => now()->addMinute(), 'deadline_at' => now()->addMinutes(30)]);
@@ -149,13 +159,25 @@ test('malformed scopes are rejected before authorization', function (array $scop
 test('apps pulls are scoped to the images in the server\'s current NodeState', function (): void {
     NodeStateVersion::query()->create([
         'server_id' => $this->server->id, 'version' => 3, 'created_at' => now(),
-        'document' => json_encode(['workloads' => [['image' => '127.0.0.1:5000/apps/'.SVC_LOWER.'@sha256:'.str_repeat('a', 64)]]]),
+        'document' => '{}',
         'document_hash' => str_repeat('0', 64),
+        'facts' => new NodeStateFacts(images: ['127.0.0.1:5000/apps/'.SVC_LOWER.'@sha256:'.str_repeat('a', 64)]),
     ]);
 
     $this->daemon->send($this, 'POST', '/daemon/v1/registry-token', registryTokenBody([scope('apps/'.SVC_LOWER, 'pull')]))->assertOk();
     $this->daemon->send($this, 'POST', '/daemon/v1/registry-token', registryTokenBody([scope('apps/'.strtolower(OTHER_SVC), 'pull')]))->assertForbidden();
     $this->daemon->send($this, 'POST', '/daemon/v1/registry-token', registryTokenBody([scope('apps/'.SVC_LOWER, 'pull', 'push')]))->assertForbidden();
+});
+
+test('NodeState images count only on the registry servers pull from', function (): void {
+    NodeStateVersion::query()->create([
+        'server_id' => $this->server->id, 'version' => 3, 'created_at' => now(),
+        'document' => '{}',
+        'document_hash' => str_repeat('0', 64),
+        'facts' => new NodeStateFacts(images: ['registry.example.com:5000/apps/'.SVC_LOWER.'@sha256:'.str_repeat('a', 64)]),
+    ]);
+
+    $this->daemon->send($this, 'POST', '/daemon/v1/registry-token', registryTokenBody([scope('apps/'.SVC_LOWER, 'pull')]))->assertForbidden();
 });
 
 test('a leased build task may push its own service only', function (): void {
@@ -179,7 +201,7 @@ test('push requires a live lease of a build task held by this server', function 
     $this->daemon->send($this, 'POST', '/daemon/v1/registry-token', registryTokenBody([scope('apps/'.SVC_LOWER, 'push')], $task->public_id))->assertForbidden();
 })->with([
     'another server\'s task' => [fn (Server $server): DaemonTask => buildTask(Server::factory()->online()->create(['team_id' => $server->team_id]))],
-    'pending task' => [fn (Server $server): DaemonTask => DaemonTask::query()->create(['team_id' => $server->team_id, 'type' => DaemonTaskType::Build, 'spec' => (object) ['service' => SVC], 'server_id' => $server->id])],
+    'pending task' => [fn (Server $server): DaemonTask => DaemonTask::query()->create(['team_id' => $server->team_id, 'type' => DaemonTaskType::Build, 'spec' => buildSpecFor(SVC), 'server_id' => $server->id])],
     'finished task' => [function (Server $server): DaemonTask {
         $task = buildTask($server);
         $task->transitionTo(DaemonTaskStatus::Succeeded);
@@ -204,8 +226,6 @@ test('servers that are not approved get no tokens', function (): void {
 test('unsigned requests are rejected', function (): void {
     $this->postJson('/daemon/v1/registry-token', registryTokenBody([scope('mirror/docker.io/library/node', 'pull')]))->assertUnauthorized();
 });
-
-// ---- the public realm (GET /registry/token) ----
 
 function realmGet(object $test, string $query, ?string $password): TestResponse
 {
@@ -232,7 +252,6 @@ test('the realm requires a dashboard-issued token and never widens it', function
         ->and($response->json('expires_in'))->toBeLessThanOrEqual(120);
     expect(array_key_exists('laravel_session', $response->headers->getCookies()))->toBeFalse();
 
-    // Wrong service, forged and expired tokens are refused.
     realmGet($this, 'service=other&scope=repository:apps/'.SVC_LOWER.':pull', $presented->token)->assertUnauthorized();
     realmGet($this, 'scope=repository:apps/'.SVC_LOWER.':pull', substr($presented->token, 0, -4).'AAAA')->assertUnauthorized();
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Data\Servers;
 
+use App\Enums\Servers\Virtualization;
 use Spatie\LaravelData\Data;
 
 /**
@@ -18,8 +19,8 @@ final class HardwareFactsData extends Data
         public ?string $cpuVendor = null,
         public ?DmiFactsData $dmi = null,
         public ?string $deviceTreeModel = null,
-        /** kvm, qemu, vmware, virtualbox, xen, hyperv, parallels, apple, bhyve, container, other; null = none detected. */
-        public ?string $virtualization = null,
+        /** Null when none was detected. */
+        public ?Virtualization $virtualization = null,
         public ?string $osName = null,
         public ?string $kernel = null,
         public ?string $timezone = null,

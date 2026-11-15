@@ -94,7 +94,6 @@ func (f *sshFront) publicKey(meta ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Per
 	return nil, errors.New("access denied")
 }
 
-// handle serves one admitted TCP connection.
 func (f *sshFront) handle(ctx context.Context, c net.Conn, a netip.Addr) {
 	_ = c.SetDeadline(time.Now().Add(handshakeTimeout))
 	sc, chans, reqs, err := ssh.NewServerConn(c, f.cfg)
@@ -130,7 +129,6 @@ func (f *sshFront) handle(ctx context.Context, c net.Conn, a netip.Addr) {
 	wg.Wait()
 }
 
-// countingChannel counts application bytes for idle tracking.
 type countingChannel struct {
 	ssh.Channel
 	ep *endpoint
@@ -157,7 +155,6 @@ type ptyRequest struct {
 	cols, rows uint
 }
 
-// session runs one "session" channel: one shell, exec or sftp.
 func (f *sshFront) session(ctx context.Context, raw ssh.Channel, reqs <-chan *ssh.Request, report func(state.AccessChannel)) {
 	ch := countingChannel{Channel: raw, ep: f.ep}
 	defer func() { _ = ch.Close() }()
@@ -261,8 +258,6 @@ func (f *sshFront) session(ctx context.Context, raw ssh.Channel, reqs <-chan *ss
 	}
 }
 
-// run starts argv in the container (with a TTY when one was requested)
-// and copies the streams; it returns the exit code.
 func (f *sshFront) run(ctx context.Context, ch countingChannel, argv []string, pty *ptyRequest, setTTY func(TTY)) int {
 	if pty != nil {
 		term := "xterm-256color"

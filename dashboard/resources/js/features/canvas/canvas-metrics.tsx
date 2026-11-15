@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { createContext, useContext, useMemo } from 'react';
 import type { ReactNode } from 'react';
-import { requestJson } from '@/features/projects/http';
+import { requestJson } from '@/lib/http';
 import { metrics } from '@/routes/projects';
 
 type Series = App.Data.Metrics.ServiceUsageSeriesData;
@@ -56,8 +56,4 @@ export function CanvasMetricsProvider({
 
 export function useServiceMetrics(serviceId: string): Series | undefined {
     return useContext(CanvasMetricsContext).get(serviceId);
-}
-
-export function formatMemory(mb: number): string {
-    return mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${Math.round(mb)} MB`;
 }

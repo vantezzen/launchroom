@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Data\Protocol\V1;
 
+use App\Data\Attributes\PublicIdOf;
+use App\Support\Protocol\Grammar;
 use Spatie\LaravelData\Attributes\Validation\In;
 use Spatie\LaravelData\Attributes\Validation\Max;
 use Spatie\LaravelData\Attributes\Validation\Regex;
@@ -16,9 +18,9 @@ use Spatie\LaravelData\Optional;
 final class VolumeDeletionResult extends Data
 {
     public function __construct(
-        #[Regex('/^vol_[0-9A-HJKMNP-TV-Z]{26}$/D')]
+        #[PublicIdOf('vol')]
         public string $id,
-        #[Regex('/^lr-[a-z0-9][a-z0-9_-]{0,59}$/D')]
+        #[Regex(Grammar::HOST_NAME)]
         public string $name,
         #[In(['deleted', 'absent', 'refused', 'failed'])]
         public string $outcome,

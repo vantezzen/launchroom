@@ -9,11 +9,12 @@ use App\Data\Git\TrackedRef;
 use App\Data\Services\GitSource;
 use App\Enums\EnvironmentKind;
 use App\Models\ServiceInstance;
+use App\Support\Git\DeployBranch;
 
 /**
  * The refs the polling fallback watches (docs/06 §2): for every live service
- * instance with a connected Git source (any provider), `refs/heads/<branch>` of its branch override
- * or its environment's trigger branch. Glob triggers (`release/*`) can't be
+ * instance with a connected Git source, the branch pushes deploy it from
+ * ({@see DeployBranch::pushPattern()}). Glob triggers (`release/*`) can't be
  * polled as one ref and are left to webhooks; preview environments follow
  * pull requests, not branches, and are skipped.
  */
@@ -39,13 +40,13 @@ final class ServiceTrackedRefs implements TrackedRefs
                 continue;
             }
 
-            $branch = $instance->branch_override ?? $environment->triggers->branch;
+            $branch = DeployBranch::pushPattern($instance);
 
-            if ($branch === null || $branch === '' || strpbrk($branch, '*?[') !== false) {
+            if (! DeployBranch::isBranch($branch)) {
                 continue;
             }
 
-            $key = "{$source->provider}:{$source->installationId}:{$source->repositoryId}:{$branch}";
+            $key = "{$source->provider->value}:{$source->installationId}:{$source->repositoryId}:{$branch}";
 
             if (isset($seen[$key])) {
                 continue;
@@ -53,7 +54,7 @@ final class ServiceTrackedRefs implements TrackedRefs
 
             $seen[$key] = true;
 
-            yield new TrackedRef($source->installationId, $source->repositoryId, 'refs/heads/'.$branch, $source->kind());
+            yield new TrackedRef($source->installationId, $source->repositoryId, 'refs/heads/'.$branch, $source->provider);
         }
     }
 }

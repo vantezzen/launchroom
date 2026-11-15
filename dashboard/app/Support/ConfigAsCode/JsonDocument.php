@@ -114,9 +114,6 @@ final readonly class JsonDocument
         return preg_split('/\r\n|\n|\r/', $this->content) ?: [];
     }
 
-    /**
-     * The document with objects as associative arrays.
-     */
     public function toArray(): mixed
     {
         return self::arrays($this->value);

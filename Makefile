@@ -5,9 +5,11 @@
 # dev dashboard image, Go via the dev `go` image. Nothing is installed on the
 # host, and nothing outside the launchroom-dev project/label is touched.
 
-# ---- Settings -----------------------------------------------------------------
-GO_IMAGE       ?= golang:1.27
-GOLANGCI_IMAGE ?= golangci/golangci-lint:v2.15.0
+# Image and tool pins (docs/09 R31): the runtime images in
+# deploy/control-plane/images.env, build/test/dev tools in deploy/pins.env.
+include deploy/pins.env
+GO_IMAGE       ?= $(LR_GO_IMAGE)
+GOLANGCI_IMAGE ?= golangci/golangci-lint:$(LR_GOLANGCI_LINT_VERSION)
 # Node for packages/* (npm packages such as the Next.js adapter).
 NODE_IMAGE     ?= node:24
 # Release version: the root VERSION file is the single source of truth
@@ -15,8 +17,6 @@ NODE_IMAGE     ?= node:24
 LR_VERSION := $(shell cat VERSION 2>/dev/null || echo 0.0.0)
 # The dev dashboard reports $(LR_VERSION)-dev like the dev daemons (dev/compose.yml).
 export LR_VERSION
-# Main package of launchroomd, relative to daemon/ (for `make dev-daemon`).
-DAEMON_MAIN    ?= ./cmd/launchroomd
 
 SVC  ?= dashboard
 ARGS ?=
@@ -29,7 +29,7 @@ export LR_DEV_UID LR_DEV_GID
 export LR_GO_IMAGE := $(GO_IMAGE)
 export LR_GOLANGCI_IMAGE := $(GOLANGCI_IMAGE)
 
-COMPOSE       := docker compose --project-directory dev --env-file dev/.env -f dev/compose.yml
+COMPOSE       := sh dev/bin/compose.sh
 # Full suites and integration runs share one machine-wide lock (dev/bin/heavy-lock.sh),
 # so parallel workstreams queue instead of saturating every core. Targeted runs
 # (check-dashboard, test-daemon PKG=..., -test.run) skip it.
@@ -43,8 +43,8 @@ IN_DASHBOARD = if [ -n "$$($(COMPOSE) ps -q --status running dashboard 2>/dev/nu
 
 .DEFAULT_GOAL := help
 .PHONY: go-image test-db test-dashboard-pest check-dashboard lint-templates help up up-multi down nuke logs ps shell artisan composer npm migrate seed restart-workers \
-	up-backups test test-dashboard lint lint-dashboard test-daemon test-daemon-integration test-daemon-integration-rootless go lint-daemon lint-deploy test-server-sh test-install-sh lint-workflows test-install test-update test-move dev-daemon \
-	dev-enroll-2 dev-enroll-3 test-failover gen gen-protocol gen-types gen-openapi design-tools-image device-art world-map fixtures test-next-adapter next-adapter caddy-image caddy-image-load caddy-image-pin \
+	up-backups test test-dashboard lint lint-dashboard test-daemon test-daemon-integration test-daemon-integration-rootless go lint-daemon lint-deploy gen-installers test-server-sh test-install-sh test-cli-sh lint-workflows test-install test-update test-move dev-daemon \
+	dev-enroll-2 dev-enroll-3 test-failover gen gen-protocol gen-types gen-openapi gen-cli design-tools-image device-art world-map fixtures test-next-adapter next-adapter caddy-image caddy-image-load caddy-image-pin \
 	site-install site-dev site-build site-preview site-format lint-site test-cli lint-cli cli test-cli-e2e up-forgejo test-git-e2e
 
 help: ## Show this help
@@ -100,32 +100,17 @@ up-multi: dev/.env ## Start the dev stack plus Headscale, server-2 and server-3 
 		'for f in /headscale/noise_private.key /headscale/derp_server_private.key; do [ ! -f "$$f" ] || { chgrp $(LR_DEV_GID) "$$f" && chmod 0640 "$$f"; }; done'
 	@echo "Next: make dev-enroll-2 (enrolls server-2; the mesh turns on when it joins), make dev-enroll-3 (server-3)."
 
-# Enrolls a further fake server like a server added in the UI: a join token
-# from the dashboard (launchroom:servers:join-token), the pinned CP key and the
-# token into the server's data volume over stdin, a marker that wipes its
-# nested Docker state (objects of an earlier enrollment carry the old server
-# id and are never adopted), then the server is recreated. server-2's
-# enrollment switches the mesh on (docs/05 §2). Needs `make up-multi` and an
-# enrolled server-1 (`make dev-enroll`). ROLES overrides the roles.
+# Further fake servers (dev/bin/enroll.sh): needs `make up-multi` and an
+# enrolled server-1 (`make dev-enroll`); server-2's enrollment switches the
+# mesh on (docs/05 §2). ROLES overrides the roles.
 comma := ,
-define DEV_ENROLL
-	@out=$$($(COMPOSE_MULTI) exec -T dashboard php artisan launchroom:servers:join-token --roles=$(if $(ROLES),$(ROLES),$(2)) --name=$(1)) || { echo "$$out"; exit 1; }; \
-	key=$$(printf '%s' "$$out" | sed -n 's/.*"cpKey":"\([^"]*\)".*/\1/p'); \
-	token=$$(printf '%s' "$$out" | sed -n 's/.*"token":"\([^"]*\)".*/\1/p'); \
-	[ -n "$$token" ] && [ -n "$$key" ] || { echo "could not read the join token: $$out"; exit 1; }; \
-	printf '%s' "$$key" | $(COMPOSE_MULTI) exec -T $(1) sh -c 'cat > /data/cp-key'; \
-	printf '%s' "$$token" | $(COMPOSE_MULTI) exec -T $(1) sh -c 'umask 077 && cat > /data/join-token && rm -rf /data/enrollment.json /data/state.json /data/keys && touch /data/reset-docker'; \
-	echo "join token written to $(1):/data/join-token"; \
-	$(COMPOSE_MULTI) up -d --no-deps --force-recreate $(1)
-endef
-
 dev-enroll-2: dev/.env ## Enroll server-2's launchroomd (multi-server dev; after dev-enroll; ROLES=runtime,build)
-	$(call DEV_ENROLL,server-2,runtime$(comma)build)
+	sh dev/bin/enroll.sh server-2 $(if $(ROLES),$(ROLES),runtime$(comma)build)
 
 # server-3: the home build box behind NAT (role build). Its label
 # location=home is set afterwards (launchroom:servers:update).
 dev-enroll-3: dev/.env ## Enroll server-3 (home build box behind NAT, role build; ROLES=build)
-	$(call DEV_ENROLL,server-3,build)
+	sh dev/bin/enroll.sh server-3 $(if $(ROLES),$(ROLES),build)
 
 down: dev/.env ## Stop the dev stack (keeps volumes)
 	$(COMPOSE_MULTI) --profile tools down --remove-orphans
@@ -178,32 +163,12 @@ go-image: dev/.env
 dev-daemon: dev/.env go-image ## Rebuild launchroomd; the fake servers restart it automatically
 	@# restic (pinned, checksum-verified) next to launchroomd binary, before launchroomd restarts.
 	$(COMPOSE) run --rm --no-deps -T go sh -s -- /out/restic < dev/go/fetch-restic.sh
-	$(COMPOSE) run --rm --no-deps -e CGO_ENABLED=0 go \
-		sh -c 'go build -trimpath -ldflags "-X main.version=$(LR_VERSION)-dev" -o /out/.launchroom-ambassador.tmp ./cmd/ambassador && mv /out/.launchroom-ambassador.tmp /out/launchroom-ambassador && go build -trimpath -ldflags "-X main.version=$(LR_VERSION)-dev" -o /out/.launchroomd.tmp $(DAEMON_MAIN) && mv /out/.launchroomd.tmp /out/launchroomd'
+	$(COMPOSE) run --rm --no-deps -e CGO_ENABLED=0 go sh build.sh /out $(LR_VERSION)-dev
 
-# Enrolls server-1's daemon as the control-plane server (docs/03 §3): issues a
-# join token (idempotent; nothing happens while it is enrolled), pins the CP
-# signing key in dev/.env (compose passes it as LR_CP_KEY) and in
-# server-1:/data/cp-key (LR_CP_KEY_FILE), writes the token to
-# server-1's data volume and recreates server-1 so launchroomd picks both up.
-# The token travels via stdin, never argv. Needs `make up` and a finished /setup.
+# Enrolls server-1's launchroomd as the control-plane server (docs/03 §3,
+# dev/bin/enroll.sh). Needs `make up` and a finished /setup.
 dev-enroll: dev/.env ## Enroll server-1's launchroomd with the local dashboard (after /setup)
-	@$(COMPOSE) exec -T dashboard php artisan launchroom:keys:generate --no-interaction >/dev/null
-	@out=$$($(COMPOSE) exec -T dashboard php artisan launchroom:servers:bootstrap-local) || { echo "$$out"; exit 1; }; \
-	key=$$(printf '%s' "$$out" | sed -n 's/.*"cpKey":"\([^"]*\)".*/\1/p'); \
-	token=$$(printf '%s' "$$out" | sed -n 's/.*"token":"\([^"]*\)".*/\1/p'); \
-	server=$$(printf '%s' "$$out" | sed -n 's/.*"serverId":"\([^"]*\)".*/\1/p'); \
-	[ -n "$$key" ] || { echo "could not read the control-plane key: $$out"; exit 1; }; \
-	grep -v '^LR_DEV_CP_KEY=' dev/.env > dev/.env.tmp && echo "LR_DEV_CP_KEY=$$key" >> dev/.env.tmp && mv dev/.env.tmp dev/.env; \
-	printf '%s' "$$key" | $(COMPOSE) exec -T server-1 sh -c 'cat > /data/cp-key'; \
-	if [ -n "$$token" ]; then \
-		printf '%s' "$$token" | $(COMPOSE) exec -T server-1 sh -c 'umask 077 && cat > /data/join-token && rm -f /data/enrollment.json /data/state.json'; \
-		echo "join token written to server-1:/data/join-token"; \
-	else \
-		echo "server-1 is already enrolled as $$server (to re-enroll, run the artisan command launchroom:servers:bootstrap-local --force, then make dev-enroll again)"; \
-	fi; \
-	echo "LR_DEV_CP_KEY=$$key"; \
-	$(COMPOSE) up -d --no-deps --force-recreate server-1
+	@sh dev/bin/enroll.sh server-1
 
 # Multi-server failover test (dev/failover-test/failover.sh):
 # needs `make up-multi`, the three fake servers enrolled (dev-enroll,
@@ -287,7 +252,7 @@ test-daemon-integration: dev/.env go-image ## launchroomd: integration tests aga
 	$(ITEST_COMPOSE) --profile tools up -d --wait --wait-timeout 120 dind-test
 	@# launchroom's Caddy build (make caddy-image) for the multi-edge test; skipped when absent.
 	@if docker image inspect $(CADDY_DEV_IMAGE) >/dev/null 2>&1; then docker save $(CADDY_DEV_IMAGE) | $(ITEST_COMPOSE) --profile tools exec -T dind-test docker load -q; fi
-	$(ITEST_COMPOSE) run --rm --no-deps -e CGO_ENABLED=0 go sh -c 'go test -c -tags integration -o /itest/integration.test ./test/integration && go build -trimpath -o /itest/launchroom-ambassador ./cmd/ambassador && go build -trimpath -o /itest/launchroomd ./cmd/launchroomd && go build -trimpath -o /itest/dockerd-guard ./cmd/dockerd-guard && cp /src/dev/zot/config.json /itest/zot-config.json && rm -rf /itest/deploy && mkdir -p /itest/deploy && cp -r /src/deploy/install /src/deploy/daemon /src/deploy/control-plane /itest/deploy/'
+	$(ITEST_COMPOSE) run --rm --no-deps -e CGO_ENABLED=0 go sh -c 'go test -c -tags integration -o /itest/integration.test ./test/integration && sh build.sh /itest && cp /src/dev/zot/config.json /itest/zot-config.json && rm -rf /itest/deploy && mkdir -p /itest/deploy && cp -r /src/deploy/install /src/deploy/daemon /src/deploy/control-plane /itest/deploy/'
 	$(ITEST_COMPOSE) run --rm --no-deps -T go sh -s -- /itest/restic < dev/go/fetch-restic.sh
 	@status=0; $(if $(findstring -test.run,$(ARGS)),,$(HEAVY) test-daemon-integration )$(ITEST_COMPOSE) --profile tools exec -T dind-test /opt/launchroom/bin/integration.test -test.v -test.timeout 75m $(ARGS) || status=$$?; \
 		$(ITEST_COMPOSE) --profile tools rm --stop --force dind-test >/dev/null 2>&1; \
@@ -298,7 +263,7 @@ test-daemon-integration: dev/.env go-image ## launchroomd: integration tests aga
 # network namespace, like launchroomd on a rootless server) with
 # dockerd-guard in front of the rootless socket and RootlessKit's API for
 # the edge ports; only the TestRootless* tests (deploy, routing from outside
-# through the exposed ports, measurements). ITEST=<name> isolates it.
+# through the exposed ports, nftables and the mesh client). ITEST=<name> isolates it.
 ITEST_ROOTLESS_RUN = export DOCKER_HOST=unix:///run/user/1000/docker.sock && mkdir -p /tmp/lr-runner/tmp && cp /opt/launchroom/bin/integration.test /tmp/lr-runner/ && \
 	tar -C /tmp/lr-runner -cf - . | docker import - lr-itest-runner:1 >/dev/null && \
 	rm -rf /tmp/lr-runner && outer=$$(hostname -i | cut -d" " -f1) && api=$$(ls /tmp/rootlesskit*/api.sock /run/user/1000/dockerd-rootless/api.sock 2>/dev/null | head -n 1) && \
@@ -352,16 +317,26 @@ go: dev/.env go-image ## launchroomd: run a go command in the Go tools container
 lint-daemon: dev/.env ## launchroomd: golangci-lint run $(PKG) (PKG=./internal/foo/... for a targeted run)
 	$(if $(filter ./...,$(PKG)),$(HEAVY) lint-daemon )$(COMPOSE) run --rm --no-deps golangci-lint golangci-lint run $(PKG)
 
-SHELLCHECK_IMAGE ?= koalaman/shellcheck:v0.11.0@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d
+SHELLCHECK_IMAGE ?= $(LR_SHELLCHECK_IMAGE)
+BUSYBOX_IMAGE ?= $(LR_BUSYBOX_IMAGE)
 
-BUSYBOX_IMAGE ?= busybox@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e
+SHELL_SCRIPTS = deploy/install/install.sh deploy/install/server.sh deploy/install/cli.sh deploy/install/splice.sh \
+	deploy/install/lib/host.sh deploy/install/lib/release.sh deploy/control-plane/launchroom \
+	deploy/test/lib.sh deploy/test/e2e-install.sh deploy/test/e2e-update.sh deploy/test/e2e-move.sh \
+	deploy/test/server-sh-test.sh deploy/test/install-sh-test.sh deploy/test/cli-sh-test.sh \
+	deploy/release/build-bundle.sh deploy/release/check-pinned-images.sh deploy/release/check-pins.sh \
+	release.sh daemon/build.sh dev/bin/compose.sh dev/bin/enroll.sh dev/bin/checks.sh dev/bin/heavy-lock.sh \
+	dev/cli-e2e.sh dev/git-e2e.sh dev/go/fetch-restic.sh
 
-lint-deploy: ## Install bundle: shellcheck (POSIX sh) of the install scripts and helper CLI
-	docker run --rm --label launchroom.dev=true -v "$(CURDIR)/deploy:/mnt:ro" -w /mnt $(SHELLCHECK_IMAGE) \
-		-s sh -x install/install.sh install/server.sh install/cli.sh control-plane/launchroom test/e2e-install.sh test/e2e-update.sh test/e2e-move.sh test/server-sh-test.sh test/install-sh-test.sh release/build-bundle.sh release/check-pinned-images.sh
-	docker run --rm --label launchroom.dev=true -v "$(CURDIR)/release.sh:/mnt/release.sh:ro" -w /mnt $(SHELLCHECK_IMAGE) -s sh release.sh
-	@# Release Dockerfiles: base images and frontends by digest only (docs/09 R31).
-	docker run --rm --label launchroom.dev=true -v "$(CURDIR):/repo:ro" -w /repo $(BUSYBOX_IMAGE) sh deploy/release/check-pinned-images.sh
+lint-deploy: ## Install bundle and tooling: shellcheck, installer lib splice, pin copies, digest-pinned release Dockerfiles
+	docker run --rm --label launchroom.dev=true -v "$(CURDIR):/repo:ro" -w /repo $(SHELLCHECK_IMAGE) -s sh -x $(SHELL_SCRIPTS)
+	@# The installers' shared regions match deploy/install/lib (make gen-installers).
+	docker run --rm --label launchroom.dev=true -v "$(CURDIR)/deploy:/mnt:ro" $(BUSYBOX_IMAGE) sh /mnt/install/splice.sh --check
+	@# Pins: copies match images.env / pins.env; release Dockerfiles pull by digest only (docs/09 R31).
+	docker run --rm --label launchroom.dev=true -v "$(CURDIR):/repo:ro" -w /repo $(BUSYBOX_IMAGE) sh -c 'sh deploy/release/check-pins.sh && sh deploy/release/check-pinned-images.sh'
+
+gen-installers: ## Install bundle: copy deploy/install/lib into the installers' shared regions
+	docker run --rm --label launchroom.dev=true --user $(LR_DEV_UID):$(LR_DEV_GID) -v "$(CURDIR)/deploy:/mnt" $(BUSYBOX_IMAGE) sh /mnt/install/splice.sh
 
 # server.sh's platform branches (macOS engines, refused setups, Linux layout)
 # with stubbed uname/docker in a throwaway busybox container (D53).
@@ -373,7 +348,12 @@ test-server-sh: ## Install bundle: unit tests of server.sh's macOS/Linux branche
 test-install-sh: ## Install bundle: unit tests of install.sh's Docker/inotify prompts and update channel (stubs, busybox)
 	docker run --rm --label launchroom.dev=true -v "$(CURDIR)/deploy:/mnt:ro" $(BUSYBOX_IMAGE) sh /mnt/test/install-sh-test.sh
 
-ACTIONLINT_IMAGE ?= rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+# cli.sh's signature verification: refuses to install without a verified
+# signature unless --allow-unsigned (stubbed curl/cosign, busybox).
+test-cli-sh: ## Install bundle: unit tests of cli.sh's release verification (stubs, busybox)
+	docker run --rm --label launchroom.dev=true -v "$(CURDIR)/deploy:/mnt:ro" $(BUSYBOX_IMAGE) sh /mnt/test/cli-sh-test.sh
+
+ACTIONLINT_IMAGE ?= $(LR_ACTIONLINT_IMAGE)
 
 lint-workflows: ## GitHub Actions workflows: actionlint (with its shellcheck integration)
 	docker run --rm --label launchroom.dev=true -v "$(CURDIR):/repo:ro" -w /repo $(ACTIONLINT_IMAGE) -color
@@ -384,7 +364,7 @@ lint-workflows: ## GitHub Actions workflows: actionlint (with its shellcheck int
 # docker:dind "VPS" (labelled launchroom.dev=true, no host ports, removed
 # afterwards; KEEP=1 keeps it), loads the images into it and runs install.sh +
 # uninstall there. Needs internet in the VPS for postgres/valkey/zot pulls.
-test-install: lint-deploy test-server-sh test-install-sh ## Install bundle: e2e fresh install + uninstall inside an ephemeral dind VPS
+test-install: lint-deploy test-server-sh test-install-sh test-cli-sh ## Install bundle: e2e fresh install + uninstall inside an ephemeral dind VPS
 	$(HEAVY) test-install sh deploy/test/e2e-install.sh
 
 test-update: lint-deploy dev/.env ## Control-plane update e2e: install 1.0.0, update to 1.1.0 from the dashboard, roll back a broken 1.2.0 (dind VPS)
@@ -419,7 +399,7 @@ next-adapter: test-next-adapter ## Next.js adapter: build, test and vendor dist/
 		node -e "const p=require(\"./package.json\");process.stdout.write(JSON.stringify({name:p.name,version:p.version,type:\"module\",main:\"./dist/index.js\",license:p.license},null,2)+\"\\n\")" > /vendor/assets/package.json && \
 		cd /vendor/assets && find . -type f | sed "s|^\./||" | LC_ALL=C sort | xargs sha256sum > /vendor/SHA256SUMS && \
 		chown -R $(LR_DEV_UID):$(LR_DEV_GID) /vendor/assets /vendor/SHA256SUMS'
-	@echo "Vendored $$(sed -n 's/.*\"version\": \"\(.*\)\".*/\1/p' daemon/internal/build/nextadapter/assets/package.json) into daemon/internal/build/nextadapter (bump nextadapter.Version if it changed)."
+	@echo "Vendored $$(sed -n 's/.*\"version\": \"\(.*\)\".*/\1/p' daemon/internal/build/nextadapter/assets/package.json) into daemon/internal/build/nextadapter."
 
 ## Website
 
@@ -433,13 +413,16 @@ next-adapter: test-next-adapter ## Next.js adapter: build, test and vendor dist/
 # containers (LR_TOOL_CPUS).
 LR_TOOL_CPUS   ?= 4
 LR_DEV_SITE_PORT ?= 3200
-SITE_GENERATED = .source next-env.d.ts public/install public/schema package-lock.json
+SITE_GENERATED = .source next-env.d.ts public/install public/schema public/devices package-lock.json
 SITE_RUN = docker run --rm --label launchroom.dev=true --cpus $(LR_TOOL_CPUS) \
 	--mount type=volume,src=$(NPM_CACHE_VOLUME),dst=/root/.npm,volume-label=launchroom.dev=true \
 	--mount type=volume,src=launchroom-dev-site-node-modules,dst=/repo/site/node_modules,volume-label=launchroom.dev=true \
 	--mount type=volume,src=launchroom-dev-site-next,dst=/repo/site/.next,volume-label=launchroom.dev=true \
 	-v "$(CURDIR):/repo:ro" -v "$(CURDIR)/site:/repo/site" -w /repo/site -e NEXT_TELEMETRY_DISABLED=1
-SITE_CHOWN = s=$$?; for f in $(SITE_GENERATED); do [ ! -e "$$f" ] || chown -R $(LR_DEV_UID):$(LR_DEV_GID) "$$f"; done; exit $$s
+# Hands the generated files back to the host user; SITE_CHOWN exits with the
+# previous command's status, SITE_CHOWN_KEEP keeps it in $$s.
+SITE_CHOWN_KEEP = s=$$?; for f in $(SITE_GENERATED); do [ ! -e "$$f" ] || chown -R $(LR_DEV_UID):$(LR_DEV_GID) "$$f"; done
+SITE_CHOWN = $(SITE_CHOWN_KEEP); exit $$s
 SITE_DEPS = if [ -f package-lock.json ]; then npm ci --no-audit --no-fund; else npm install --no-audit --no-fund; fi
 
 site-install: ## Website: install site/ dependencies (npm ci; writes package-lock.json on the first run)
@@ -454,7 +437,7 @@ site-build: ## Website: production build (npm run build) into the launchroom-dev
 
 site-preview: ## Website: npm run build && npm run start on http://127.0.0.1:$(LR_DEV_SITE_PORT), in the background
 	$(SITE_RUN) -d --name launchroom-dev-site-preview -p 127.0.0.1:$(LR_DEV_SITE_PORT):3000 $(NODE_IMAGE) \
-		sh -c '[ -x node_modules/.bin/next ] || $(SITE_DEPS); npm run build; s=$$?; for f in $(SITE_GENERATED); do [ ! -e "$$f" ] || chown -R $(LR_DEV_UID):$(LR_DEV_GID) "$$f"; done; [ $$s -eq 0 ] && exec npm run start -- -H 0.0.0.0 -p 3000'
+		sh -c '[ -x node_modules/.bin/next ] || $(SITE_DEPS); npm run build; $(SITE_CHOWN_KEEP); [ $$s -eq 0 ] && exec npm run start -- -H 0.0.0.0 -p 3000'
 	@echo "site preview  http://127.0.0.1:$(LR_DEV_SITE_PORT)  (builds first; logs: docker logs -f launchroom-dev-site-preview; stop: docker rm -f launchroom-dev-site-preview)"
 
 site-format: ## Website: format site/ with Prettier
@@ -465,17 +448,23 @@ lint-site: ## Website: typecheck, ESLint and Prettier check of site/
 
 ## Code generation
 
-gen: gen-protocol gen-types gen-openapi ## Run all generators (protocol schemas, TS types, OpenAPI, wayfinder routes)
+gen: gen-protocol gen-types gen-openapi gen-cli ## Run all generators (protocol schemas, TS types, OpenAPI, CLI enums, wayfinder routes)
 	@$(call IN_DASHBOARD,php artisan wayfinder:generate --with-form)
 
-gen-protocol: dev/.env go-image ## Generate protocol JSON Schemas + signing/sealing test vectors from Go types
+gen-protocol: dev/.env go-image ## Generate protocol JSON Schemas + signing/sealing test vectors from Go types, and refresh the site's copies
 	$(COMPOSE) run --rm --no-deps go sh -c 'go generate ./internal/state && go test ./internal/identity -run TestSigningVectors -update && go test ./internal/sealed -run TestSealingVectors -update'
+	$(SITE_RUN) --name launchroom-dev-site-sync $(NODE_IMAGE) sh -c 'node scripts/sync-public.mjs; $(SITE_CHOWN)'
 
-gen-types: dev/.env ## Generate TypeScript types from PHP Data objects
+gen-types: dev/.env ## Generate TypeScript types from PHP Data objects, the enums' vocabulary and launchroomd's grammars (protocol vocabulary)
+	@$(call IN_DASHBOARD,php artisan launchroom:protocol-vocabulary)
 	@$(call IN_DASHBOARD,php artisan typescript:transform)
+	@$(call IN_DASHBOARD,php artisan launchroom:vocabulary)
 
 gen-openapi: dev/.env ## Regenerate the public API's OpenAPI document (dashboard/resources/api/openapi.json, docs/16)
 	@$(call IN_DASHBOARD,php artisan launchroom:api:openapi)
+
+gen-cli: dev/.env go-image ## Regenerate the CLI's API enums from the OpenAPI document (cli/internal/api/enums_gen.go)
+	$(COMPOSE) run --rm --no-deps -w /src/cli go go test ./internal/api -run TestEnumsMatchOpenAPI -update
 
 ## Design assets
 

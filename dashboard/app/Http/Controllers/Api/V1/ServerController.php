@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api\V1;
 
 use App\Data\Api\ServerResource;
-use App\Enums\ServerStatus;
 use App\Http\Api\ApiOperation;
 use App\Http\Api\ApiResponse;
 use App\Http\Controllers\Controller;
@@ -28,7 +27,7 @@ final class ServerController extends Controller
 
         $servers = Server::query()
             ->where('team_id', $team->id)
-            ->where('status', '!=', ServerStatus::Revoked->value)
+            ->notRevoked()
             ->orderByDesc('is_control_plane')
             ->orderBy('name')
             ->get();

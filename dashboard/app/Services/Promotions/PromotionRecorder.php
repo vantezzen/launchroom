@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Promotions;
 
+use App\Data\Promotions\PinnedImageData;
 use App\Data\Promotions\PromotionSnapshot;
 use App\Enums\PromotionKind;
 use App\Models\Environment;
@@ -32,7 +33,7 @@ final readonly class PromotionRecorder
 
     /**
      * @param  list<string>  $items  promoted paths
-     * @param  array<string, array{deployment: string, commitSha: string, gitRef: string|null}>  $images  pinned commits by service public id
+     * @param  array<string, PinnedImageData>  $images  pinned commits by service public id
      */
     public function record(Environment $from, Environment $to, PromotionKind $kind, ?PromotionSnapshot $sourceBase, array $items, array $images, ?User $actor): EnvironmentPromotion
     {

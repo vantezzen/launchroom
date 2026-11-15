@@ -8,6 +8,7 @@ use App\Data\Services\ConfigFile;
 use App\Data\Services\ScheduleSettings;
 use App\Data\Services\UpdateServiceSettingsData;
 use App\Enums\ServiceKind;
+use App\Events\CanvasChanged;
 use App\Exceptions\DomainRuleViolation;
 use App\Jobs\PlanServiceJob;
 use App\Models\ServiceInstance;
@@ -73,6 +74,8 @@ final readonly class UpdateServiceSettings
             if ($replan) {
                 dispatch(new PlanServiceJob($instance->id))->afterCommit();
             }
+
+            CanvasChanged::forInstance($instance);
 
             return $instance;
         });

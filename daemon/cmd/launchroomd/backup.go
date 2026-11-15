@@ -38,39 +38,41 @@ func (rt *daemonRuntime) setupBackups() {
 	if rt.client != nil {
 		o.Transfers = rt.client
 	}
-	if rt.firewall != nil {
-		o.Isolate = rt.firewall.Sync
-	}
 	transfer.Sweep(filepath.Join(rt.cfg.DataDir, "transfers"), rt.now())
 	vo, volumes := rt.docker.(docker.VolumeOps)
 	if volumes {
 		o.Volumes = volumeDocker{Client: rt.docker, VolumeOps: vo}
-		o.Runtime = runtimeDocker{Client: rt.docker, Execer: ex, VolumeOps: vo}
+		o.Runtime = execVolumeDocker{Client: rt.docker, Execer: ex, VolumeOps: vo}
 	}
 	rt.backupEngine = backup.New(o)
+	rt.addFeatures(func() []state.DaemonFeature {
+		if rt.dataTransfers() {
+			return []state.DaemonFeature{state.FeatureDataTransfer}
+		}
+		return nil
+	})
 	if volumes {
 		rt.walArchive = backup.NewWalArchiver(backup.WalArchiverOptions{
-			Engine: rt.backupEngine, Docker: walDocker{Client: rt.docker, Execer: ex, VolumeOps: vo},
+			Engine: rt.backupEngine, Docker: execVolumeDocker{Client: rt.docker, Execer: ex, VolumeOps: vo},
 			Credentials: rt.walCredentials, OnChange: rt.kickReport, Log: rt.log.With("component", "walarchive"), Now: rt.now,
 		})
 	}
 }
 
-// addBackupHandlers registers the backup task types (docs/14).
 func (rt *daemonRuntime) addBackupHandlers(h map[state.TaskType]tasks.Handler) {
 	if rt.backupEngine == nil {
 		return
 	}
 	// One heavy-work slot per server, shared by backups, restores, imports and exports.
 	slots := make(chan struct{}, 1)
-	bh := tasks.BackupHandler(tasks.BackupOptions{
+	bh := backup.Handler(backup.HandlerOptions{
 		ServerID: rt.serverID, SealingKey: rt.sealingKey, Engine: rt.backupEngine, Client: rt.client, Slots: slots,
 	})
 	for _, t := range []state.TaskType{state.TaskBackup, state.TaskRestore, state.TaskBackupSnapshots, state.TaskBackupMaintenance, state.TaskVerifyRestore} {
 		h[t] = bh
 	}
 	if rt.dataTransfers() {
-		th := tasks.TransferHandler(tasks.TransferOptions{
+		th := backup.TransferHandler(backup.TransferOptions{
 			ServerID: rt.serverID, SealingKey: rt.sealingKey, Engine: rt.backupEngine, Client: rt.client, Slots: slots,
 		})
 		for _, t := range []state.TaskType{state.TaskDbImport, state.TaskVolumeImport, state.TaskDbExport, state.TaskVolumeExport} {
@@ -97,21 +99,16 @@ func (rt *daemonRuntime) workloadRuntime(id state.WorkloadID) (backup.WorkloadRu
 	if cur == nil {
 		return backup.WorkloadRuntime{}, errors.New("no desired state yet")
 	}
-	for i := range cur.State.Workloads {
-		w := &cur.State.Workloads[i]
-		if w.ID != id {
-			continue
-		}
-		for _, a := range w.Networks {
-			for _, n := range cur.State.Networks {
-				if n.ID == a.Network {
-					return backup.WorkloadRuntime{Image: w.Image, Network: string(n.Name)}, nil
-				}
-			}
-		}
-		return backup.WorkloadRuntime{}, fmt.Errorf("workload %s has no environment network", id)
+	w := cur.State.Workload(id)
+	if w == nil {
+		return backup.WorkloadRuntime{}, fmt.Errorf("workload %s is not in this server's desired state", id)
 	}
-	return backup.WorkloadRuntime{}, fmt.Errorf("workload %s is not in this server's desired state", id)
+	for _, a := range w.Networks {
+		if n := cur.State.Network(a.Network); n != nil {
+			return backup.WorkloadRuntime{Image: w.Image, Network: string(n.Name)}, nil
+		}
+	}
+	return backup.WorkloadRuntime{}, fmt.Errorf("workload %s has no environment network", id)
 }
 
 // walArchiveStatus is Report.walArchives (nil without shippers).
@@ -145,28 +142,20 @@ type volumeDocker struct {
 	docker.VolumeOps
 }
 
-type runtimeDocker struct {
+type execVolumeDocker struct {
 	docker.Client
 	docker.Execer
 	docker.VolumeOps
 }
 
-type walDocker struct {
-	docker.Client
-	docker.Execer
-	docker.VolumeOps
-}
-
-// workloadEnv opens the sealed env of a workload in the verified desired state.
 func (rt *daemonRuntime) workloadEnv(id state.WorkloadID) (map[string]secret.Secret, error) {
 	cur := rt.store.Current()
 	if cur == nil {
 		return nil, errors.New("no desired state yet")
 	}
-	for i := range cur.State.Workloads {
-		if w := &cur.State.Workloads[i]; w.ID == id {
-			return sealed.OpenWorkloadEnv(w.Env, rt.sealingKey, rt.serverID, w.ID)
-		}
+	w := cur.State.Workload(id)
+	if w == nil {
+		return nil, fmt.Errorf("workload %s is not in this server's desired state", id)
 	}
-	return nil, fmt.Errorf("workload %s is not in this server's desired state", id)
+	return sealed.OpenWorkloadEnv(w.Env, rt.sealingKey, rt.serverID, w.ID)
 }

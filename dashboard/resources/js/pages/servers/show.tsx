@@ -29,9 +29,8 @@ import {
     ServerMetricsLiveUpdates,
     useServerMetrics,
 } from '@/features/servers/use-server-metrics';
-import { SettingsCard, SettingsRow } from '@/features/settings/settings-card';
 import { useObserveScope } from '@/hooks/use-observe-scope';
-import { RANGE_SETS } from '@/lib/observe-scope';
+import { RANGE_SETS, rangeOptions } from '@/lib/observe-scope';
 import { edit as moveLaunchroom } from '@/routes/move';
 import {
     approve,
@@ -42,6 +41,7 @@ import {
     show,
     tab as tabRoute,
 } from '@/routes/servers';
+import { SettingsCard, SettingsRow } from '@/components/settings/settings-card';
 
 /**
  * Every tab gets the hero's props; the rest only arrive on the tab that
@@ -64,6 +64,7 @@ type Props = {
     /** Network. */
     measureLinks?: boolean;
     runtime?: App.Data.Servers.ServerRuntimeData | null;
+    capabilities?: App.Data.Servers.CapabilityRowData[];
     /** Settings. */
     canUpdateRoles?: boolean;
     /** Roles this machine can't take, with the reason (D53). */
@@ -176,7 +177,7 @@ function MoveRow({ server }: { server: App.Data.Servers.ServerDetailData }) {
     }
 
     if (server.isControlPlane) {
-        return auth.user.is_instance_owner === true ? (
+        return auth.user?.isInstanceOwner === true ? (
             <SettingsRow
                 label="Move launchroom to a new server"
                 description="The dashboard and everything on this server move to another machine, without losing data."
@@ -232,6 +233,7 @@ export default function ShowServer({
     meshPeers,
     measureLinks,
     runtime,
+    capabilities,
     placement,
     canUpdateRoles,
     roleLimits,
@@ -356,6 +358,7 @@ export default function ShowServer({
                             <TimeRangeSelect
                                 value={range}
                                 onChange={setRange}
+                                options={rangeOptions(RANGE_SETS.resources)}
                             />
                         }
                     />
@@ -379,7 +382,10 @@ export default function ShowServer({
                         )}
 
                         {!(revoked && !runtime) && (
-                            <ServerRuntime runtime={runtime ?? null} />
+                            <ServerRuntime
+                                runtime={runtime ?? null}
+                                capabilities={capabilities ?? []}
+                            />
                         )}
 
                         <ServerConnection

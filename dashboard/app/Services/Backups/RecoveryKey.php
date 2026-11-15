@@ -132,8 +132,6 @@ final class RecoveryKey
     }
 
     /**
-     * Opens a bundle file with the passphrase.
-     *
      * @throws RuntimeException when the bundle is malformed, not authentic or the passphrase is wrong
      */
     public static function open(string $bundle, #[SensitiveParameter] string $passphrase): string

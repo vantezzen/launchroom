@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/vantezzen/launchroom/daemon/internal/docker"
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/secret"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
@@ -91,7 +92,7 @@ func (f *fakeDocker) ListContainers(_ context.Context, labels map[string]string)
 	if f.NoRunner {
 		return nil, nil
 	}
-	return []docker.Container{{ID: "c1", Running: true, Labels: map[string]string{docker.LabelWorkload: labels[docker.LabelWorkload]}}}, nil
+	return []docker.Container{{ID: "c1", State: docker.StateRunning, Labels: map[string]string{names.LabelManaged: "true", names.LabelWorkload: labels[names.LabelWorkload]}}}, nil
 }
 
 func (f *fakeDocker) ExecStream(_ context.Context, _ string, o docker.ExecOptions) (docker.ExecResult, error) {

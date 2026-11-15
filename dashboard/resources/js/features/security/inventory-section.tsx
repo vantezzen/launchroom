@@ -8,11 +8,17 @@ import { EmptyState } from '@/components/patterns/empty-state';
 import { StatusIcon } from '@/components/status';
 import { Section } from '@/components/patterns/section';
 import { Input } from '@/components/ui/input';
-import { requestJson } from '@/features/projects/http';
+import { requestJson } from '@/lib/http';
 import { cn } from '@/lib/utils';
+import {
+    index as securityIndex,
+    inventory as inventoryPage,
+} from '@/routes/security';
 import { search as searchRoute } from '@/routes/security/inventory';
 import { SeverityText } from './finding-card';
-import { card, ECOSYSTEM_LABEL, longDate, plural, SCOPE_LABEL } from './format';
+import { card, ECOSYSTEM_LABEL, longDate, SCOPE_LABEL } from './format';
+import { plural } from '@/lib/format';
+import { securityKeys } from './query-keys';
 
 type Runtime = App.Data.Security.RuntimeCardData;
 type SearchResult = App.Data.Security.InventorySearchData;
@@ -47,20 +53,20 @@ export function InventorySection({
     useEffect(() => {
         const url =
             debounced === ''
-                ? '/security'
-                : `/security/inventory?q=${encodeURIComponent(debounced)}`;
+                ? securityIndex.url()
+                : inventoryPage.url({ query: { q: debounced } });
 
         if (
             window.location.pathname + window.location.search !== url &&
             (debounced !== '' ||
-                window.location.pathname === '/security/inventory')
+                window.location.pathname === inventoryPage.url())
         ) {
             window.history.replaceState(window.history.state, '', url);
         }
     }, [debounced]);
 
     const { data, isFetching } = useQuery({
-        queryKey: ['security-inventory', debounced],
+        queryKey: securityKeys.inventory(debounced),
         queryFn: ({ signal }) =>
             requestJson<SearchResult>(
                 'get',

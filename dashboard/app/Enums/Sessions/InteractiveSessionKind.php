@@ -5,13 +5,14 @@ declare(strict_types=1);
 namespace App\Enums\Sessions;
 
 use App\Enums\AuditAction;
+use App\Enums\Contracts\TaskBackedAccessKind;
 use App\Enums\DaemonFeature;
 use App\Enums\Permission;
 
 /**
  * What an interactive session gives access to (docs/03 §11).
  */
-enum InteractiveSessionKind: string
+enum InteractiveSessionKind: string implements TaskBackedAccessKind
 {
     /** A shell inside one replica's container. */
     case Console = 'console';
@@ -27,7 +28,6 @@ enum InteractiveSessionKind: string
         };
     }
 
-    /** What the replica's launchroomd must announce (its local policy allows the kind). */
     public function feature(): DaemonFeature
     {
         return match ($this) {

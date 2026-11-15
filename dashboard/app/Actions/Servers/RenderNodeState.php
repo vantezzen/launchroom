@@ -5,18 +5,19 @@ declare(strict_types=1);
 namespace App\Actions\Servers;
 
 use App\Data\Protocol\ProtocolJson;
-use App\Data\Protocol\V1\NetworkSpec;
 use App\Data\Protocol\V1\NodeState;
 use App\Data\Protocol\V1\SystemContainer;
 use App\Data\Protocol\V1\SystemSpec;
 use App\Data\Protocol\V1\WorkloadSpec;
-use App\Enums\DaemonFeature;
+use App\Data\Servers\NodeStateFacts;
+use App\Data\Servers\RenderErrorData;
 use App\Enums\DaemonNudge;
 use App\Enums\DeploymentStatus;
 use App\Enums\ServerRole;
 use App\Events\NodeStateInvalidated;
 use App\Jobs\AdvanceDeploymentJob;
 use App\Models\Deployment;
+use App\Models\Environment;
 use App\Models\NodeStateVersion;
 use App\Models\Placement;
 use App\Models\Server;
@@ -26,9 +27,11 @@ use App\Services\Ingress\EdgeIngress;
 use App\Services\Instance\DashboardOrigin;
 use App\Services\Mesh\MeshTopology;
 use App\Services\NodeStates\DashboardRoute;
+use App\Services\NodeStates\FeatureGate;
 use App\Services\NodeStates\LinkProbePeers;
 use App\Services\NodeStates\MeshLinks;
 use App\Services\NodeStates\NodeStateContent;
+use App\Services\NodeStates\NodeStateProblem;
 use App\Services\NodeStates\NodeStateRender;
 use App\Services\NodeStates\NodeStateValidator;
 use App\Services\Volumes\VolumeRetirements;
@@ -93,7 +96,7 @@ final readonly class RenderNodeState
                 $declared[] = $volume->name;
             }
 
-            $state = new NodeState(
+            $state = FeatureGate::downgrade(new NodeState(
                 serverId: $server->public_id,
                 version: $server->desired_version + 1,
                 issuedAt: now()->toImmutable(),
@@ -106,7 +109,7 @@ final readonly class RenderNodeState
                 meshAllow: $content['meshAllow'],
                 deleteVolumes: $this->retirements->deletions($server, $declared),
                 ingress: $this->edgeIngress->for($server),
-            );
+            ), $server);
 
             $latest = NodeStateVersion::query()
                 ->where('server_id', $server->id)
@@ -145,6 +148,7 @@ final readonly class RenderNodeState
             'version' => $state->version,
             'document' => $document,
             'document_hash' => $contentHash,
+            'facts' => NodeStateFacts::of($state),
             'created_at' => now(),
         ]);
     }
@@ -153,26 +157,27 @@ final readonly class RenderNodeState
      * Invalid render: keep the previous version, record and log why, and
      * advance the in-flight deployments it belongs to (they fail).
      *
-     * @param  list<string>  $problems
+     * @param  list<NodeStateProblem>  $problems
      */
     private function refuse(Server $server, NodeState $state, array $problems, ?NodeStateVersion $latest): NodeStateRender
     {
-        $shown = array_slice($problems, 0, 3);
-        $more = count($problems) - count($shown);
+        $lines = array_map(strval(...), $problems);
+        $shown = array_slice($lines, 0, 3);
+        $more = count($lines) - count($shown);
         $message = 'Desired state could not be rendered: '.implode('; ', $shown).($more > 0 ? " (and {$more} more)" : '');
         $deployments = $this->attribute($server, $state, $problems);
 
-        $server->forceFill(['render_error' => [
-            'message' => mb_substr($message, 0, 2000),
-            'problems' => $problems,
-            'deployments' => array_values(Deployment::query()->whereKey($deployments)->orderBy('id')->pluck('public_id')->all()),
-            'at' => now()->toIso8601String(),
-        ]])->save();
+        $server->forceFill(['render_error' => new RenderErrorData(
+            message: mb_substr($message, 0, 2000),
+            problems: $lines,
+            deployments: array_values(array_filter(Deployment::query()->whereKey($deployments)->orderBy('id')->pluck('public_id')->all(), is_string(...))),
+            at: now()->toIso8601String(),
+        )])->save();
 
         Log::error('Refused to publish an invalid NodeState; the previous version stays.', [
             'server' => $server->public_id,
             'version' => $state->version,
-            'problems' => $problems,
+            'problems' => $lines,
             'deployments' => $deployments,
         ]);
 
@@ -197,7 +202,7 @@ final readonly class RenderNodeState
      * deployments on the server when none can be attributed (they could not
      * roll out here anyway).
      *
-     * @param  list<string>  $problems
+     * @param  list<NodeStateProblem>  $problems
      * @return list<int>
      */
     private function attribute(Server $server, NodeState $state, array $problems): array
@@ -205,13 +210,13 @@ final readonly class RenderNodeState
         $publicIds = [];
 
         foreach ($problems as $problem) {
-            // "workloads[2].…", or a uniqueness path such as "networks.subnet[1]".
-            if (preg_match('/^(workloads|routes|networks|volumes)(?:\.[A-Za-z.]+)?\[(\d+)\]/', $problem, $m) !== 1) {
+            $index = $problem->index;
+
+            if ($index === null || ! in_array($problem->section, ['workloads', 'routes', 'networks', 'volumes'], true)) {
                 continue;
             }
 
-            $index = (int) $m[2];
-            $workloads = match ($m[1]) {
+            $workloads = match ($problem->section) {
                 'workloads' => isset($state->workloads[$index]) ? [$state->workloads[$index]] : [],
                 'routes' => isset($state->routes[$index]) ? array_filter($state->workloads, static fn (WorkloadSpec $w): bool => in_array($w->id, array_column($state->routes[$index]->upstreams, 'workload'), true)) : [],
                 'networks' => isset($state->networks[$index]) ? array_filter($state->workloads, static fn (WorkloadSpec $w): bool => in_array($state->networks[$index]->id, array_column($w->networks, 'network'), true)) : [],
@@ -255,29 +260,19 @@ final readonly class RenderNodeState
     private function invalidatePeers(Server $server, NodeState $state, ?NodeStateVersion $previous): void
     {
         $environments = [];
-        $networks = array_map(static fn (NetworkSpec $network): string => $network->id, $state->networks);
-
-        if ($previous instanceof NodeStateVersion) {
-            $old = json_decode($previous->document, true);
-
-            foreach (is_array($old) && is_array($old['networks'] ?? null) ? $old['networks'] : [] as $network) {
-                if (is_array($network) && is_string($network['id'] ?? null)) {
-                    $networks[] = $network['id'];
-                }
-            }
-        }
+        $networks = [...NodeStateFacts::of($state)->networks, ...$previous->facts->networks ?? []];
 
         foreach ($networks as $id) {
-            if (str_starts_with($id, 'net_')) {
-                $environments['env_'.substr($id, strlen('net_'))] = true;
+            $environment = Environment::publicIdFromNetworkId($id);
+
+            if ($environment !== null) {
+                $environments[$environment] = true;
             }
         }
 
         $peers = $this->meshLinks->peers($server, array_keys($environments));
 
-        if ($peers !== []) {
-            event(new NodeStateInvalidated($peers));
-        }
+        NodeStateInvalidated::servers($peers);
     }
 
     private function system(Server $server): SystemSpec
@@ -296,7 +291,6 @@ final readonly class RenderNodeState
             registryServeOnMesh: $serveOnMesh,
             certStorageServeOnMesh: $certStorageFrom !== null,
             certStorageAllowFrom: $certStorageFrom ?? [],
-            // Private-network link quality between mesh peers (docs/05 §2.1).
             linkProbePeers: $this->linkProbePeers->for($server, $tailscale->enabled),
             // Where launchroomd should reach the dashboard (docs/05 §4.1); it
             // keeps its configured URL as the fallback.
@@ -305,14 +299,13 @@ final readonly class RenderNodeState
     }
 
     /**
-     * The canonical dashboard origin for servers whose launchroomd follows it
-     * (`controlPlaneUrl` feature), as long as it is an https origin with a DNS
-     * name (launchroomd's grammar). Never for the control-plane server: its
-     * launchroomd talks to the dashboard over loopback.
+     * The canonical dashboard origin, as long as it is an https origin with a
+     * DNS name (launchroomd's grammar). Never for the control-plane server:
+     * its launchroomd talks to the dashboard over loopback.
      */
     private function controlPlaneUrl(Server $server): ?string
     {
-        if ($server->is_control_plane || ! $server->supportsDaemonFeature(DaemonFeature::ControlPlaneUrl)) {
+        if ($server->is_control_plane) {
             return null;
         }
 

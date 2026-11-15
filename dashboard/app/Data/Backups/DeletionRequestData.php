@@ -60,9 +60,6 @@ final class DeletionRequestData extends Data
         );
     }
 
-    /**
-     * The open request of a subject, for a page prop.
-     */
     public static function openFor(string $type, int $id, User $user): ?self
     {
         $request = DeletionRequest::openFor($type, $id);

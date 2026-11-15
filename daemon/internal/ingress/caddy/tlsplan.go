@@ -75,7 +75,7 @@ func (m *Manager) plan(ctx context.Context, spec *state.IngressSpec) *tlsPlan {
 		p.storage = &state.CertStorageStatus{State: state.StorageLocal}
 	} else if err := policy.CheckCertStorageAddress(s.Address, m.o.Policy); err != nil {
 		p.notes = append(p.notes, "shared certificate storage refused by local policy: "+err.Error())
-		p.storage = &state.CertStorageStatus{State: state.StorageLocal, Message: truncateText(err.Error(), 1024)}
+		p.storage = &state.CertStorageStatus{State: state.StorageLocal, Message: state.Clip(err.Error(), 1024)}
 	} else if vals, err := m.openSecret(s.Credentials, state.IngressSecretCertStorage); err != nil {
 		p.notes = append(p.notes, "shared certificate storage credentials unusable: "+err.Error())
 		p.storage = &state.CertStorageStatus{State: state.StorageLocal, Message: "credentials unusable"}
@@ -101,7 +101,7 @@ func (m *Manager) plan(ctx context.Context, spec *state.IngressSpec) *tlsPlan {
 				p.files[f.Key] = secret.Secret(c.KeyPEM)
 			}
 			p.storage = &state.CertStorageStatus{State: state.StorageDegraded, Mirrored: len(mirrored),
-				Message: truncateText("shared certificate storage unreachable: "+err.Error(), 1024)}
+				Message: state.Clip("shared certificate storage unreachable: "+err.Error(), 1024)}
 			p.notes = append(p.notes, p.storage.Message)
 		}
 	}
@@ -299,11 +299,4 @@ func (m *Manager) readLogs(ctx context.Context, id string) {
 	if last.After(m.logsSince) {
 		m.logsSince = last
 	}
-}
-
-func truncateText(s string, n int) string {
-	if len(s) > n {
-		return s[:n]
-	}
-	return s
 }

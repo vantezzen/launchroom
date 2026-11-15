@@ -7,13 +7,13 @@ namespace App\Console\Commands;
 use App\Actions\Deployments\DeployEnvironment;
 use App\Actions\Projects\CreateProject;
 use App\Actions\Services\CreateService;
+use App\Console\InstanceOwner;
 use App\Data\Audit\AuditActor;
 use App\Data\Projects\CreateProjectData;
 use App\Data\Services\CreateServiceData;
 use App\Enums\ServiceKind;
 use App\Models\Deployment;
 use App\Models\Team;
-use App\Models\User;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -35,10 +35,10 @@ final class DevDeployDemoCommand extends Command
             return self::FAILURE;
         }
 
-        $owner = User::query()->where('is_instance_owner', true)->orderBy('id')->first();
-        $team = $owner->currentTeam ?? Team::query()->orderBy('id')->first();
+        $owner = InstanceOwner::first();
+        $team = InstanceOwner::teamOrFirst();
 
-        if ($team === null) {
+        if (! $team instanceof Team) {
             $this->components->error('No team found. Finish /setup first.');
 
             return self::FAILURE;

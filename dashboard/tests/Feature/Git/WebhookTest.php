@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Enums\Git\GitEventSource;
+use App\Enums\Git\PullRequestAction;
 use App\Enums\Git\WebhookDeliveryStatus;
 use App\Enums\TeamRole;
 use App\Events\Git\GitPushReceived;
@@ -227,7 +228,7 @@ test('pull requests from the same repository are not forks', function (): void {
     GitHubFake::webhook($this, $this->githubApp, 'pull_request', ghPullRequestPayload(555))->assertStatus(202);
 
     Event::assertDispatched(PullRequestEventReceived::class, fn (PullRequestEventReceived $event): bool => $event->number === 42
-        && $event->action === 'opened'
+        && $event->action === PullRequestAction::Opened
         && $event->headSha === str_repeat('c', 40)
         && $event->headRef === 'feature/pricing'
         && $event->baseRef === 'main'

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Backups\Process;
 
+use App\Support\Protocol\Grammar;
 use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Support\Facades\Cache;
 use JsonException;
@@ -65,8 +66,6 @@ final readonly class ResticCli
     }
 
     /**
-     * Runs one restic command and buffers its output.
-     *
      * @param  list<string>  $args
      */
     public function run(ResticTarget $target, array $args, ?int $timeoutSeconds = null): ProcessOutcome
@@ -190,8 +189,6 @@ final readonly class ResticCli
     }
 
     /**
-     * Backs up a small in-memory file (the sealed key bundle).
-     *
      * @param  list<string>  $tags
      *
      * @throws ProcessFailed
@@ -220,8 +217,6 @@ final readonly class ResticCli
     }
 
     /**
-     * Snapshots carrying all $tags, newest first.
-     *
      * @param  list<string>  $tags
      * @return list<array{id: string, time: string, tags: list<string>, paths: list<string>}>
      *
@@ -269,8 +264,6 @@ final readonly class ResticCli
     }
 
     /**
-     * `restic dump <snapshot> <path>` into memory (small files only).
-     *
      * @throws ProcessFailed
      */
     public function dumpToString(ResticTarget $target, string $snapshotId, string $path, int $maxBytes = 1024 * 1024): string
@@ -289,9 +282,6 @@ final readonly class ResticCli
     }
 
     /**
-     * Streams `restic dump <snapshot> <path>` into $consumer's stdin and
-     * checks both exit codes.
-     *
      * @throws ProcessFailed
      */
     public function dumpIntoProcess(ResticTarget $target, string $snapshotId, string $path, Process $consumer, int $timeout): int
@@ -363,7 +353,7 @@ final readonly class ResticCli
             }
 
             if (is_array($message) && ($message['message_type'] ?? null) === 'summary' && is_string($message['snapshot_id'] ?? null)
-                && preg_match('/^[a-f0-9]{64}$/D', $message['snapshot_id']) === 1) {
+                && preg_match(Grammar::HEX64, $message['snapshot_id']) === 1) {
                 return [
                     'snapshot_id' => $message['snapshot_id'],
                     'data_added' => is_int($message['data_added'] ?? null) ? $message['data_added'] : 0,

@@ -14,6 +14,7 @@ import (
 	"github.com/moby/moby/client"
 
 	"github.com/vantezzen/launchroom/daemon/internal/build"
+	"github.com/vantezzen/launchroom/daemon/internal/docker"
 	"github.com/vantezzen/launchroom/daemon/internal/health"
 	"github.com/vantezzen/launchroom/daemon/internal/policy"
 	"github.com/vantezzen/launchroom/daemon/internal/reconcile"
@@ -55,7 +56,7 @@ func TestBuildLaravelWithPostgresDriver(t *testing.T) {
 	defer mon.Close()
 	rec := reconcile.New(reconcile.Options{
 		ServerID: be.serverID, Docker: be.engine, Policy: policy.DefaultConfig(), Health: mon,
-		EnvHashKey: reconcile.EnvHashKey(be.key.Bytes()),
+		EnvHashKey: docker.EnvHashKey(be.key.Bytes()),
 		OpenEnv: func(s *state.WorkloadSpec) (map[string]secret.Secret, error) {
 			return sealed.OpenWorkloadEnv(s.Env, be.key, be.serverID, s.ID)
 		},

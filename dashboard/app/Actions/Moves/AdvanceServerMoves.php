@@ -5,18 +5,18 @@ declare(strict_types=1);
 namespace App\Actions\Moves;
 
 use App\Actions\Audit\RecordAuditEvent;
-use App\Actions\Backups\StartVolumeBackup;
 use App\Actions\Backups\TakeSafetySnapshot;
-use App\Actions\Deployments\RedeployService;
+use App\Actions\Deployments\AttemptRedeploy;
 use App\Actions\Servers\RenderNodeState;
 use App\Actions\Transfers\AdvanceImports;
 use App\Data\Audit\AuditActor;
 use App\Data\Audit\AuditEntryData;
-use App\Data\Services\DatabaseSource;
+use App\Data\Moves\MoveTransferData;
 use App\Enums\AuditAction;
 use App\Enums\Backups\BackupReason;
 use App\Enums\Backups\BackupRunStatus;
 use App\Enums\DeploymentStatus;
+use App\Enums\HoldKind;
 use App\Enums\Moves\MoveItemKind;
 use App\Enums\Moves\MoveItemStatus;
 use App\Enums\Moves\ServerMoveStatus;
@@ -24,11 +24,9 @@ use App\Enums\Transfers\DataSubject;
 use App\Enums\Transfers\ExportRunStatus;
 use App\Enums\Transfers\ExportSource;
 use App\Enums\Transfers\ImportRunStatus;
-use App\Enums\Transfers\ImportSourceKind;
 use App\Enums\Transfers\TransferPurpose;
 use App\Enums\WorkloadRole;
 use App\Events\NodeStateInvalidated;
-use App\Exceptions\DomainRuleViolation;
 use App\Models\Backups\BackupRun;
 use App\Models\Deployment;
 use App\Models\Moves\ServerMove;
@@ -42,13 +40,14 @@ use App\Models\Transfers\DataTransfer;
 use App\Models\User;
 use App\Models\Volume;
 use App\Services\Backups\DatabaseWorkloads;
-use App\Services\Backups\RestoreHolds;
-use App\Services\Moves\MoveHolds;
+use App\Services\Holds\Holds;
+use App\Services\Holds\MoveHolds;
 use App\Services\Moves\MovePlanner;
 use App\Services\Transfers\ImportTarget;
-use App\Services\Transfers\TransferStore;
+use App\Services\Transfers\TransferRuns;
 use App\Services\Transfers\TransferTasks;
-use App\Support\PublicId;
+use App\Support\Refusal;
+use App\Support\ServerPlatform;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
@@ -75,11 +74,10 @@ use Throwable;
 final readonly class AdvanceServerMoves
 {
     public function __construct(
-        private RedeployService $redeploy,
+        private AttemptRedeploy $redeploy,
         private PrebuildForPlatform $prebuild,
         private TakeSafetySnapshot $safety,
-        private StartVolumeBackup $volumeBackup,
-        private TransferStore $store,
+        private TransferRuns $runs,
         private TransferTasks $tasks,
         private RenderNodeState $render,
         private MovePlanner $planner,
@@ -91,7 +89,7 @@ final readonly class AdvanceServerMoves
     {
         /** @var list<int> $ids */
         $ids = ServerMove::query()
-            ->whereIn('status', ServerMoveStatus::values([ServerMoveStatus::Running, ServerMoveStatus::Cancelling]))
+            ->advancing()
             ->when($moveId !== null, static fn ($query) => $query->whereKey($moveId))
             ->orderBy('id')
             ->pluck('id')
@@ -118,7 +116,7 @@ final readonly class AdvanceServerMoves
         $changed = DB::transaction(function () use ($id): bool {
             $move = ServerMove::query()->whereKey($id)->with(['source', 'target'])->lockForUpdate()->first();
 
-            if (! $move instanceof ServerMove || ! in_array($move->status, [ServerMoveStatus::Running, ServerMoveStatus::Cancelling], true)) {
+            if (! $move instanceof ServerMove || ! in_array($move->status, ServerMoveStatus::advancing(), true)) {
                 return false;
             }
 
@@ -153,7 +151,6 @@ final readonly class AdvanceServerMoves
             }
         }
 
-        // Stateful services one at a time.
         $current = null;
 
         foreach ($items as $item) {
@@ -205,7 +202,7 @@ final readonly class AdvanceServerMoves
             if (in_array($status, [MoveItemStatus::Pending, MoveItemStatus::Building, MoveItemStatus::BackingUp, MoveItemStatus::Stopping, MoveItemStatus::Exporting, MoveItemStatus::Failed], true)) {
                 $held = MoveHolds::heldBy($item);
                 $item->transitionTo(MoveItemStatus::Cancelled, "Stays on {$move->source->name}.");
-                $this->release($held, []);
+                Holds::changed(HoldKind::Move, $held);
                 $changed = true;
             }
         }
@@ -214,8 +211,6 @@ final readonly class AdvanceServerMoves
     }
 
     /**
-     * The move's own status from its items.
-     *
      * @param  list<ServerMoveItem>  $items
      */
     private function settle(ServerMove $move, array $items): bool
@@ -248,8 +243,6 @@ final readonly class AdvanceServerMoves
         return false;
     }
 
-    // ---- Stateless --------------------------------------------------------------
-
     private function stateless(ServerMove $move, ServerMoveItem $item, ?User $user): bool
     {
         $instance = $this->instance($item);
@@ -269,10 +262,10 @@ final readonly class AdvanceServerMoves
                 return true;
             }
 
-            try {
-                $deployment = $this->redeploy->handle($instance, null, $user, AuditActor::system());
-            } catch (DomainRuleViolation $e) {
-                $item->transitionTo(MoveItemStatus::Failed, $e->getMessage());
+            $deployment = $this->redeploy->handle($instance, null, $user, AuditActor::system());
+
+            if ($deployment instanceof Refusal) {
+                $item->transitionTo(MoveItemStatus::Failed, $deployment->message);
 
                 return true;
             }
@@ -310,8 +303,6 @@ final readonly class AdvanceServerMoves
         return true;
     }
 
-    // ---- Stateful ---------------------------------------------------------------
-
     private function stateful(ServerMove $move, ServerMoveItem $item, ?User $user): bool
     {
         $instance = $this->instance($item);
@@ -319,7 +310,7 @@ final readonly class AdvanceServerMoves
         if (! $instance instanceof ServiceInstance) {
             $held = MoveHolds::heldBy($item);
             $item->transitionTo(MoveItemStatus::Skipped, 'The service no longer exists.');
-            $this->release($held, []);
+            Holds::changed(HoldKind::Move, $held);
 
             return true;
         }
@@ -348,7 +339,7 @@ final readonly class AdvanceServerMoves
             return true;
         }
 
-        $platform = is_string($move->plan['platformTo'] ?? null) ? $move->plan['platformTo'] : null;
+        $platform = $move->plan->platformTo;
 
         if ($platform !== null && $this->planner->needsRebuild($instance, $platform)) {
             return $this->startPrebuild($move, $item, $instance, $platform, $user);
@@ -359,10 +350,10 @@ final readonly class AdvanceServerMoves
 
     private function startPrebuild(ServerMove $move, ServerMoveItem $item, ServiceInstance $instance, string $platform, ?User $user): bool
     {
-        try {
-            $deployment = $this->prebuild->handle($instance, $platform, $user);
-        } catch (DomainRuleViolation $e) {
-            $item->transitionTo(MoveItemStatus::Failed, "It couldn’t be built for {$platform}: {$e->getMessage()}");
+        $deployment = $this->prebuild->handle($instance, $platform, $user);
+
+        if ($deployment instanceof Refusal) {
+            $item->transitionTo(MoveItemStatus::Failed, "It couldn’t be built for {$platform}: {$deployment->message}");
 
             return true;
         }
@@ -383,7 +374,7 @@ final readonly class AdvanceServerMoves
     private function building(ServerMove $move, ServerMoveItem $item, ServiceInstance $instance, ?User $user): bool
     {
         $deployment = $item->prebuild_deployment_id === null ? null : Deployment::query()->find($item->prebuild_deployment_id);
-        $platform = is_string($move->plan['platformTo'] ?? null) ? $move->plan['platformTo'] : 'linux/amd64';
+        $platform = $move->plan->platformTo ?? ServerPlatform::DEFAULT;
 
         if (! $deployment instanceof Deployment) {
             return $this->startPrebuild($move, $item, $instance, $platform, $user);
@@ -402,27 +393,10 @@ final readonly class AdvanceServerMoves
     private function backupOrStop(ServerMove $move, ServerMoveItem $item, ServiceInstance $instance, ?User $user): bool
     {
         if ($move->backupFirst()) {
-            $runs = [];
-
-            if (DatabaseWorkloads::source($instance) instanceof DatabaseSource) {
-                $run = $this->safety->handle($instance, BackupReason::PreMove, $user, AuditActor::system());
-
-                if ($run instanceof BackupRun) {
-                    $runs[] = ['volume' => null, 'backup' => $run->public_id, 'export' => null, 'import' => null];
-                }
-            } else {
-                foreach ($instance->volumes as $volume) {
-                    try {
-                        $run = $this->volumeBackup->handle($instance, $volume, BackupReason::PreMove, $user, AuditActor::system());
-                        $runs[] = ['volume' => $volume->public_id, 'backup' => $run->public_id, 'export' => null, 'import' => null];
-                    } catch (DomainRuleViolation) {
-                        // No destination any more: nothing to wait for.
-                    }
-                }
-            }
+            $runs = array_map(static fn (BackupRun $run): MoveTransferData => new MoveTransferData(volume: $run->volume?->public_id, backup: $run->public_id), $this->safety->handle($instance, BackupReason::PreMove, $user, AuditActor::system())->runs);
 
             if ($runs !== []) {
-                $item->transfers = $runs;
+                $item->forceFill(['transfers' => $runs]);
                 $item->transitionTo(MoveItemStatus::BackingUp, 'Backing up before it stops.');
 
                 return true;
@@ -434,7 +408,7 @@ final readonly class AdvanceServerMoves
 
     private function backingUp(ServerMoveItem $item): bool
     {
-        $ids = array_values(array_filter(array_map(static fn (array $entry): mixed => $entry['backup'] ?? null, $item->transfers), is_string(...)));
+        $ids = $this->ids($item, 'backup');
         $runs = BackupRun::query()->whereIn('public_id', $ids)->get();
 
         $failed = $runs->first(static fn (BackupRun $run): bool => $run->status === BackupRunStatus::Failed);
@@ -454,7 +428,7 @@ final readonly class AdvanceServerMoves
     {
         $names = $this->heldNames($item);
         $item->transitionTo(MoveItemStatus::Stopping, $names === '' ? 'Stopping it.' : "Stopping {$names}.");
-        $this->hold(MoveHolds::heldBy($item));
+        Holds::changed(HoldKind::Move, MoveHolds::heldBy($item));
 
         return true;
     }
@@ -464,42 +438,38 @@ final readonly class AdvanceServerMoves
         $held = MoveHolds::heldBy($item);
         $wait = config()->integer('launchroom.backups.restore_hold_wait_seconds');
 
-        if (! RestoreHolds::released($held) && $item->stopped_at?->gt(now()->subSeconds($wait)) === true) {
+        if (! Holds::released($held) && $item->stopped_at?->gt(now()->subSeconds($wait)) === true) {
             return false;
         }
 
         $source = $move->source;
         $entries = [];
 
-        try {
-            if ($item->kind === MoveItemKind::Dump) {
-                $placement = DatabaseWorkloads::servingPlacement($instance);
+        if ($item->kind === MoveItemKind::Dump) {
+            $placement = DatabaseWorkloads::servingPlacement($instance);
 
-                if (! $placement instanceof Placement || $placement->server_id !== $source->id) {
-                    return $this->failBefore($item, "{$instance->service->name} isn’t running on {$source->name}, so it can’t be copied. Start it and retry.");
-                }
-
-                $target = ImportTarget::for($instance);
-                $transfer = $this->transfer($instance, null, TransferPurpose::DatabaseExport, $target->exportFileName());
-                $task = $this->tasks->exportDatabase($source, $instance->team_id, $target->engine(), $placement->workload_id, null, null, $transfer);
-                $entries[] = ['volume' => null, 'export' => $this->exportRun($instance, DataSubject::Database, null, $transfer, $task->id, $user)->public_id, 'import' => null];
-            } else {
-                foreach ($instance->volumes as $volume) {
-                    if ($volume->server_id !== $source->id) {
-                        continue;
-                    }
-
-                    $transfer = $this->transfer($instance, $volume, TransferPurpose::VolumeExport, $instance->service->slug.'-'.substr($volume->public_id, 4, 8).'.tar.gz');
-                    // The service is held: nothing writes while it is read.
-                    $task = $this->tasks->exportVolume($source, $instance->team_id, $volume->public_id, 'live', null, null, $transfer);
-                    $entries[] = ['volume' => $volume->public_id, 'export' => $this->exportRun($instance, DataSubject::Volume, $volume, $transfer, $task->id, $user)->public_id, 'import' => null];
-                }
+            if (! $placement instanceof Placement || $placement->server_id !== $source->id) {
+                return $this->failBefore($item, "{$instance->service->name} isn’t running on {$source->name}, so it can’t be copied. Start it and retry.");
             }
-        } catch (DomainRuleViolation $e) {
-            return $this->failBefore($item, $e->getMessage());
+
+            $target = ImportTarget::for($instance);
+            $transfer = $this->outgoing($instance, null, TransferPurpose::DatabaseExport, $target->exportFileName());
+            $task = $this->tasks->exportDatabase($source, $instance->team_id, $target->engine(), $placement->workload_id, null, null, $transfer);
+            $entries[] = new MoveTransferData(export: $this->runs->export($instance, DataSubject::Database, null, ExportSource::Live, null, $transfer, $task->id, $user)->public_id);
+        } else {
+            foreach ($instance->volumes as $volume) {
+                if ($volume->server_id !== $source->id) {
+                    continue;
+                }
+
+                $transfer = $this->outgoing($instance, $volume, TransferPurpose::VolumeExport, $instance->service->slug.'-'.substr($volume->public_id, 4, 8).'.tar.gz');
+                // The service is held: nothing writes while it is read.
+                $task = $this->tasks->exportVolume($source, $instance->team_id, $volume->public_id, 'live', null, null, $transfer);
+                $entries[] = new MoveTransferData(volume: $volume->public_id, export: $this->runs->export($instance, DataSubject::Volume, $volume, ExportSource::Live, null, $transfer, $task->id, $user)->public_id);
+            }
         }
 
-        $item->transfers = $entries;
+        $item->forceFill(['transfers' => $entries]);
         $item->transitionTo(MoveItemStatus::Exporting, "Copying it off {$source->name}.");
 
         return true;
@@ -545,11 +515,11 @@ final readonly class AdvanceServerMoves
         $item->cutover_at = now();
 
         if ($item->kind === MoveItemKind::Dump) {
-            try {
-                $deployment = $this->redeploy->handle($instance->refresh(), null, $user, AuditActor::system());
-            } catch (DomainRuleViolation $e) {
+            $deployment = $this->redeploy->handle($instance->refresh(), null, $user, AuditActor::system());
+
+            if ($deployment instanceof Refusal) {
                 $item->transitionTo(MoveItemStatus::Preparing);
-                $this->rollback($move, $item, "It couldn’t start on {$move->target->name}: {$e->getMessage()}", $user);
+                $this->rollback($move, $item, "It couldn’t start on {$move->target->name}: {$deployment->message}", $user);
 
                 return true;
             }
@@ -601,35 +571,20 @@ final readonly class AdvanceServerMoves
     {
         $entries = [];
 
-        foreach ($item->transfers as $entry) {
-            $export = is_string($entry['export'] ?? null) ? DataExportRun::query()->where('public_id', $entry['export'])->first() : null;
+        foreach ($item->transfers->items() as $entry) {
+            $export = $entry->export === null ? null : DataExportRun::query()->where('public_id', $entry->export)->first();
 
-            if (! $export instanceof DataExportRun || $export->transfer_id === null) {
+            if (! $export instanceof DataExportRun || ! $export->transfer instanceof DataTransfer) {
                 return $this->rollback($move, $item, 'The copy of its data is gone. Retry to copy it again.', $user);
             }
 
             $volume = $export->volume_id === null ? null : Volume::query()->find($export->volume_id);
-            $run = new DataImportRun([
-                'team_id' => $instance->team_id,
-                'service_instance_id' => $instance->id,
-                'subject' => $export->subject,
-                'volume_id' => $volume?->id,
-                'transfer_id' => $export->transfer_id,
-                'source_kind' => ImportSourceKind::File,
-                'source_label' => mb_strcut("Moved from {$move->source->name}", 0, 255),
-                'server_id' => $move->target_server_id,
-                // Retries import again over a partial copy.
-                'replace' => true,
-                'stop_dependents' => true,
-                'strip_components' => 0,
-                'actor_id' => $user?->id,
-            ]);
-            $run->status = ImportRunStatus::WaitingForSafetyBackup;
-            $run->save();
-            $entries[] = [...$entry, 'import' => $run->public_id];
+            // Retries import again over a partial copy.
+            $run = $this->runs->import($instance, $export->subject, $volume, $export->transfer, "Moved from {$move->source->name}", $move->target_server_id, replace: true, stopDependents: true, user: $user);
+            $entries[] = new MoveTransferData(volume: $entry->volume, backup: $entry->backup, export: $entry->export, import: $run->public_id);
         }
 
-        $item->transfers = $entries;
+        $item->forceFill(['transfers' => $entries]);
         $item->transitionTo(MoveItemStatus::Importing, "Loading it on {$move->target->name}.");
 
         return true;
@@ -654,10 +609,10 @@ final readonly class AdvanceServerMoves
             return $this->finish($move, $item, "Runs on {$move->target->name} with its data.");
         }
 
-        try {
-            $deployment = $this->redeploy->handle($instance, null, $user, AuditActor::system());
-        } catch (DomainRuleViolation $e) {
-            return $this->rollback($move, $item, "It couldn’t start on {$move->target->name}: {$e->getMessage()}", $user);
+        $deployment = $this->redeploy->handle($instance, null, $user, AuditActor::system());
+
+        if ($deployment instanceof Refusal) {
+            return $this->rollback($move, $item, "It couldn’t start on {$move->target->name}: {$deployment->message}", $user);
         }
 
         $item->deployment_id = $deployment->id;
@@ -687,7 +642,7 @@ final readonly class AdvanceServerMoves
     {
         $instance = $this->instance($item);
 
-        foreach (DataImportRun::query()->whereIn('public_id', $this->ids($item, 'import'))->whereIn('status', [ImportRunStatus::WaitingForSafetyBackup->value, ImportRunStatus::Holding->value])->get() as $run) {
+        foreach (DataImportRun::query()->whereIn('public_id', $this->ids($item, 'import'))->whereIn('status', ImportRunStatus::waiting())->get() as $run) {
             $run->transitionTo(ImportRunStatus::Cancelled, 'The move put the service back.');
         }
 
@@ -707,15 +662,18 @@ final readonly class AdvanceServerMoves
         $item->transitionTo(MoveItemStatus::RollingBack, $failure ?? "Putting it back on {$move->source->name}.");
         event(new NodeStateInvalidated([$move->target_server_id]));
 
-        try {
-            $deployment = $this->redeploy->handle($instance->refresh(), null, $user, AuditActor::system());
-            $item->deployment_id = $deployment->id;
-            $item->save();
-        } catch (DomainRuleViolation $e) {
+        $deployment = $this->redeploy->handle($instance->refresh(), null, $user, AuditActor::system());
+
+        if ($deployment instanceof Refusal) {
             $held = MoveHolds::heldBy($item);
-            $item->transitionTo(MoveItemStatus::Failed, ($failure ?? 'Cancelled.')." It couldn’t be started on {$move->source->name} again ({$e->getMessage()}). Deploy it from its page.");
-            $this->release($held, []);
+            $item->transitionTo(MoveItemStatus::Failed, ($failure ?? 'Cancelled.')." It couldn’t be started on {$move->source->name} again ({$deployment->message}). Deploy it from its page.");
+            Holds::changed(HoldKind::Move, $held);
+
+            return true;
         }
+
+        $item->deployment_id = $deployment->id;
+        $item->save();
 
         return true;
     }
@@ -725,7 +683,7 @@ final readonly class AdvanceServerMoves
         $deployment = $item->deployment_id === null ? null : Deployment::query()->find($item->deployment_id);
         $status = $deployment?->status;
 
-        if ($status !== null && ! in_array($status, [DeploymentStatus::Active, DeploymentStatus::Failed, DeploymentStatus::Cancelled, DeploymentStatus::Superseded], true)) {
+        if ($status !== null && ! $status->isFinished()) {
             return false;
         }
 
@@ -739,7 +697,7 @@ final readonly class AdvanceServerMoves
             $item->transitionTo(MoveItemStatus::RolledBack, $back ? "Back on {$move->source->name}." : "Its data is back on {$move->source->name}, but it didn’t start there: deploy it from its page.");
         }
 
-        $this->release($held, []);
+        Holds::changed(HoldKind::Move, $held);
 
         return true;
     }
@@ -748,7 +706,7 @@ final readonly class AdvanceServerMoves
     {
         $held = MoveHolds::heldBy($item);
         $item->transitionTo(MoveItemStatus::Done, $message);
-        $this->release($held, [$move->target_server_id]);
+        Holds::changed(HoldKind::Move, $held, [$move->target_server_id]);
 
         // The copies through the dashboard are no longer needed.
         $transfers = DataExportRun::query()->whereIn('public_id', $this->ids($item, 'export'))->pluck('transfer_id')->filter()->all();
@@ -787,60 +745,27 @@ final readonly class AdvanceServerMoves
     {
         $held = MoveHolds::heldBy($item);
         $item->transitionTo(MoveItemStatus::Failed, $message);
-        $this->release($held, []);
+        Holds::changed(HoldKind::Move, $held);
 
         return true;
     }
 
-    // ---- Helpers ----------------------------------------------------------------
-
-    private function transfer(ServiceInstance $instance, ?Volume $volume, TransferPurpose $purpose, string $fileName): DataTransfer
+    private function outgoing(ServiceInstance $instance, ?Volume $volume, TransferPurpose $purpose, string $fileName): DataTransfer
     {
-        $transfer = new DataTransfer([
-            'team_id' => $instance->team_id,
-            'service_instance_id' => $instance->id,
-            'volume_id' => $volume?->id,
-            'direction' => $purpose->direction(),
-            'purpose' => $purpose,
-            'file_name' => $fileName,
-            'size_bytes' => 0,
-            'chunk_bytes' => config()->integer('launchroom.transfers.chunk_bytes'),
-            'chunk_count' => 0,
-            'created_by' => null,
-            'expires_at' => now()->addSeconds(config()->integer('launchroom.transfers.task_timeout_seconds'))->addHour(),
-        ]);
-        $transfer->public_id = PublicId::generate(DataTransfer::publicIdPrefix());
-        $this->store->initialise($transfer);
-        $transfer->save();
-
-        return $transfer;
-    }
-
-    private function exportRun(ServiceInstance $instance, DataSubject $subject, ?Volume $volume, DataTransfer $transfer, int $taskId, ?User $user): DataExportRun
-    {
-        $run = new DataExportRun([
-            'team_id' => $instance->team_id,
-            'service_instance_id' => $instance->id,
-            'subject' => $subject,
-            'volume_id' => $volume?->id,
-            'source' => ExportSource::Live,
-            'snapshot_id' => null,
-            'transfer_id' => $transfer->id,
-            'actor_id' => $user?->id,
-            'file_name' => $transfer->file_name,
-        ]);
-        $run->daemon_task_id = $taskId;
-        $run->save();
-
-        return $run;
+        return $this->runs->outgoing($instance, $volume, $purpose, $fileName, null, now()->addSeconds(config()->integer('launchroom.transfers.task_timeout_seconds'))->addHour());
     }
 
     /**
+     * @param  'backup'|'export'|'import'  $key
      * @return list<string>
      */
     private function ids(ServerMoveItem $item, string $key): array
     {
-        return array_values(array_filter(array_map(static fn (array $entry): mixed => $entry[$key] ?? null, $item->transfers), is_string(...)));
+        return array_values(array_filter(array_map(static fn (MoveTransferData $entry): ?string => match ($key) {
+            'backup' => $entry->backup,
+            'export' => $entry->export,
+            default => $entry->import,
+        }, $item->transfers->items()), is_string(...)));
     }
 
     private function instance(ServerMoveItem $item): ?ServiceInstance
@@ -893,30 +818,5 @@ final readonly class AdvanceServerMoves
         $names = ServiceInstance::query()->whereKey($ids)->with('service')->get()->map(static fn (ServiceInstance $i): string => $i->service->name)->unique()->values()->all();
 
         return implode(', ', $names);
-    }
-
-    /**
-     * @param  list<int>  $instanceIds
-     */
-    private function hold(array $instanceIds): void
-    {
-        $servers = RestoreHolds::serverIds($instanceIds);
-
-        if ($servers !== []) {
-            event(new NodeStateInvalidated($servers));
-        }
-    }
-
-    /**
-     * @param  list<int>  $instanceIds  held before the change
-     * @param  list<int>  $also  more servers to re-render
-     */
-    private function release(array $instanceIds, array $also): void
-    {
-        $servers = array_values(array_unique([...RestoreHolds::serverIds($instanceIds), ...$also]));
-
-        if ($servers !== []) {
-            event(new NodeStateInvalidated($servers));
-        }
     }
 }

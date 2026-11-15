@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Api\OpenApi;
 
+use App\Enums\StatusTone;
 use BackedEnum;
 use Illuminate\Support\Facades\File;
 use LogicException;
@@ -58,8 +59,6 @@ final class SchemaBuilder
     }
 
     /**
-     * Query parameters of a Data class (one per property).
-     *
      * @param  class-string<Data>  $class
      * @return list<array<string, mixed>>
      */
@@ -119,7 +118,36 @@ final class SchemaBuilder
             'type' => $backing === 'int' ? 'integer' : 'string',
             'enum' => array_map(static fn (BackedEnum $case): int|string => $case->value, $class::cases()),
             'description' => $this->summary((string) $reflection->getDocComment()),
+            'x-launchroom-tones' => $this->tones($class),
         ], static fn (mixed $value): bool => $value !== null);
+    }
+
+    /**
+     * Each case's StatusTone, for clients that show the status (the CLI
+     * generates its tones from it, docs/16 §3.1).
+     *
+     * @param  class-string<BackedEnum>  $class
+     * @return array<string, string>|null
+     */
+    private function tones(string $class): ?array
+    {
+        if (! method_exists($class, 'tone')) {
+            return null;
+        }
+
+        $tones = [];
+
+        foreach ($class::cases() as $case) {
+            $tone = $case->tone();
+
+            if (! $tone instanceof StatusTone) {
+                throw new LogicException("{$class}::tone() must return a StatusTone.");
+            }
+
+            $tones[(string) $case->value] = $tone->value;
+        }
+
+        return $tones;
     }
 
     /**
@@ -291,8 +319,8 @@ final class SchemaBuilder
             $instance = $attribute->newInstance();
             $argument = $attribute->getArguments()[0] ?? null;
 
-            if ($instance instanceof Regex && is_string($argument)) {
-                $result['pattern'] = $this->pattern($argument);
+            if ($instance instanceof Regex && is_string($pattern = $instance->parameters()[0] ?? null)) {
+                $result['pattern'] = $this->pattern($pattern);
             } elseif (($instance instanceof Max || $instance instanceof Min) && is_numeric($argument)) {
                 $bound = $instance instanceof Max ? 'max' : 'min';
                 $key = match ($type) {

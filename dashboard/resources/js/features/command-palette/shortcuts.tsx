@@ -7,22 +7,26 @@ import {
     DialogDescription,
     DialogTitle,
 } from '@/components/ui/dialog';
-import { analyticsHref, serviceAnalyticsHref } from '@/lib/links';
+import { analyticsHref, logsHref } from '@/lib/links';
 import { prefersReducedMotion } from '@/lib/motion';
 import { project as projectDeployments } from '@/routes/deployments';
-import {
-    canvas,
-    logs as projectLogs,
-    index as projectsIndex,
-} from '@/routes/projects';
+import { canvas, index as projectsIndex } from '@/routes/projects';
 import services from '@/routes/projects/services';
 import { index as serversIndex } from '@/routes/servers';
+import { grammar } from '@/types/grammar.generated';
 
-export const ROUTE =
-    /^\/p\/(prj_[0-9A-Z]{26})(?:\/(env_[0-9A-Z]{26}))?(?:\/s\/(svc_[0-9A-Z]{26}))?/;
+const ULID = grammar.ulid.source;
+
+export const ROUTE = new RegExp(
+    `^/p/(prj_${ULID})(?:/(env_${ULID}))?(?:/s/(svc_${ULID}))?`,
+);
 
 /** The open service panel's live address (canvas page props), if any. */
-export type OpenService = { name: string; domain: string | null } | null;
+export type OpenService = {
+    name: string;
+    domain: string | null;
+    analyticsView: App.Enums.AnalyticsView;
+} | null;
 
 function isTyping(target: EventTarget | null): boolean {
     const element = target as HTMLElement | null;
@@ -182,7 +186,7 @@ export function useShortcuts({
                     if (service) {
                         panelTab('logs');
                     } else {
-                        router.visit(projectLogs([project, environment]).url);
+                        router.visit(logsHref({ project, environment }));
                     }
 
                     break;
@@ -193,22 +197,18 @@ export function useShortcuts({
                     }
 
                     router.visit(
-                        service && event.key === 'a'
-                            ? serviceAnalyticsHref({
-                                  project,
-                                  environment,
-                                  service,
-                                  hasDomain: Boolean(on.openService()?.domain),
-                              })
-                            : analyticsHref({
-                                  project,
-                                  environment,
-                                  service,
-                                  view:
-                                      event.key === 'm'
-                                          ? 'resources'
-                                          : 'traffic',
-                              }),
+                        analyticsHref({
+                            project,
+                            environment,
+                            service,
+                            view:
+                                event.key === 'm'
+                                    ? 'resources'
+                                    : service
+                                      ? (on.openService()?.analyticsView ??
+                                        'resources')
+                                      : 'traffic',
+                        }),
                     );
 
                     break;

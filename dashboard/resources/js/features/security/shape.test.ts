@@ -83,9 +83,11 @@ describe('groupActionNeeded', () => {
 });
 
 describe('verdictOf', () => {
-    const done = (summary: string[]) => ({
+    const done = (
+        summary: string[],
+    ): App.Data.Security.FindingInvestigationData => ({
         id: 'inv_1',
-        status: 'done',
+        status: 'completed',
         startedAt: '2026-10-25T10:00:00Z',
         finishedAt: '2026-10-25T10:01:00Z',
         summary,

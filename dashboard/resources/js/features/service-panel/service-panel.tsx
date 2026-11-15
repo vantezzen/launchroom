@@ -5,30 +5,30 @@ import { AlertsChip } from '@/components/attention-chip';
 import { StatusPill } from '@/components/status';
 import { MetaDivider } from '@/components/patterns/meta-line';
 import { Button } from '@/components/ui/button';
-import { compactAge } from '@/features/canvas/format';
-import { ServiceGlyph } from '@/features/canvas/service-glyph';
 import {
     ServiceControls,
     ServiceControlsPlaceholder,
 } from '@/features/service-panel/service-controls';
-import { StagedChip } from '@/features/canvas/service-node';
 import {
     failedDeployment,
     secondarySignals,
 } from '@/features/service-panel/panel-signals';
 import { DeploymentsTab } from '@/features/deployments/deployments-tab';
-import { ServiceLogs } from '@/features/project-logs/service-logs';
-import { ServiceStagedBar } from '@/features/staged-changes/service-staged-bar';
+import { ServiceLogs } from '@/features/log-explorer/service-logs';
+import { ServiceStagedBar } from './service-staged-bar';
 import { warmPages, whenIdle } from '@/lib/idle';
-import { serviceAnalyticsHref } from '@/lib/links';
+import { analyticsHref } from '@/lib/links';
 import { useLocationSearch } from '@/hooks/use-observe-scope';
-import { prefersReducedMotion, sharedElement } from '@/lib/motion';
+import { sharedElement } from '@/lib/motion';
 import { readScope, scopeQuery } from '@/lib/observe-scope';
 import { cn } from '@/lib/utils';
 import { show as deploymentShow } from '@/routes/deployments';
 import services from '@/routes/projects/services';
 import { index as securityRoute } from '@/routes/security';
 import { show as findingRoute } from '@/routes/security/findings';
+import { compactAge } from '@/lib/format';
+import { ServiceGlyph } from '@/components/service-glyph';
+import { StagedChip } from '@/features/staged-changes/effects';
 
 const EXPANDED_KEY = 'launchroom.panel.expanded';
 
@@ -53,7 +53,7 @@ const DataTab = lazy(() =>
 );
 
 type Tab = {
-    id: string;
+    id: App.Enums.ServicePanelTab | 'analytics';
     label: string;
     /** Opens another page instead of a panel tab. */
     href?: string;
@@ -117,18 +117,19 @@ export function ServicePanel({
     const tabs: Tab[] = [
         { id: 'deployments', label: 'Deployments' },
         { id: 'logs', label: 'Logs' },
-        ...(panel.canConsole ? [{ id: 'console', label: 'Console' }] : []),
-        ...(panel.canData ? [{ id: 'data', label: 'Data' }] : []),
+        ...(panel.canConsole
+            ? [{ id: 'console', label: 'Console' } satisfies Tab]
+            : []),
+        ...(panel.canData ? [{ id: 'data', label: 'Data' } satisfies Tab] : []),
         { id: 'settings', label: 'Settings' },
         {
             id: 'analytics',
             label: 'Analytics',
-            // Traffic for a service with a domain, else its resources.
-            href: serviceAnalyticsHref({
+            href: analyticsHref({
                 project,
                 environment,
                 service: node.id,
-                hasDomain: node.domain !== null,
+                view: node.analyticsView,
                 range: scope.range,
             }),
         },
@@ -205,7 +206,7 @@ export function ServicePanel({
                         {node.staged && <StagedChip effect={node.staged} />}
                         <AlertsChip
                             alerts={secondarySignals(
-                                node.status.label,
+                                node.status.reason,
                                 node.openAlerts,
                                 panel.actionNeeded > 0
                                     ? {
@@ -415,7 +416,7 @@ export function ServicePanel({
                                     deployment={node.status.deploymentId}
                                     running={
                                         node.status.state !== 'idle' &&
-                                        node.status.label !== 'Failed'
+                                        node.status.reason !== 'deploy_failed'
                                     }
                                 />
                             )}
@@ -445,16 +446,6 @@ export function ServicePanel({
             </div>
         </aside>
     );
-}
-
-/** Visit options for opening/closing the panel: the logo morphs (design-system §8). */
-export function panelVisitOptions() {
-    return {
-        only: ['panel'],
-        preserveState: true,
-        preserveScroll: true,
-        viewTransition: !prefersReducedMotion(),
-    };
 }
 
 /** Where "Action needed" leads (docs/22 §9.1): the finding, or the Security page for this service when there are several. */

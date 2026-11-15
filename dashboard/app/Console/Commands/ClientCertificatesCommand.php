@@ -8,6 +8,7 @@ use App\Actions\Security\SetClientCertificateMode;
 use App\Data\Audit\AuditActor;
 use App\Enums\ClientCertificateMode;
 use App\Exceptions\DomainRuleViolation;
+use App\Models\InstanceSettings;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -26,7 +27,7 @@ final class ClientCertificatesCommand extends Command
         $value = $this->argument('mode');
 
         if (! is_string($value)) {
-            $this->line(ClientCertificateMode::current()->value);
+            $this->line(InstanceSettings::current()->clientCertificateMode()->value);
 
             return self::SUCCESS;
         }

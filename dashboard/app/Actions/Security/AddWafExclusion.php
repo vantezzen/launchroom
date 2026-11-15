@@ -14,7 +14,6 @@ use App\Exceptions\DomainRuleViolation;
 use App\Models\Security\WafExclusion;
 use App\Models\ServiceInstance;
 use App\Models\User;
-use App\Queries\TeamEdges;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -65,7 +64,7 @@ final readonly class AddWafExclusion
                 meta: array_filter(['environment' => $instance->environment->public_id, 'exclusion' => $exclusion->public_id, 'rule' => (string) $data->rule, 'path' => $path, 'target' => $target]),
             ));
 
-            event(new NodeStateInvalidated(TeamEdges::ids($instance->team_id)));
+            NodeStateInvalidated::edges($instance->team_id);
 
             return $exclusion;
         });

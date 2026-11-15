@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Models\Git;
 
+use App\Enums\Contracts\HasTransitionTable;
 use App\Enums\Git\WebhookDeliveryStatus;
+use App\Models\Concerns\HasStatusTransitions;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\WithoutTimestamps;
@@ -35,6 +37,9 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 #[WithoutTimestamps]
 final class WebhookDelivery extends Model
 {
+    /** @use HasStatusTransitions<WebhookDeliveryStatus> */
+    use HasStatusTransitions;
+
     /** @var array<string, mixed> */
     protected $attributes = [
         'status' => 'received',
@@ -57,16 +62,13 @@ final class WebhookDelivery extends Model
     }
 
     /**
-     * The only way a delivery's status changes (docs/10 §2.2 rule 3).
+     * @param  WebhookDeliveryStatus  $from
+     * @param  WebhookDeliveryStatus  $to
      */
-    public function transitionTo(WebhookDeliveryStatus $to, ?string $error = null): void
+    protected function recordTransition(HasTransitionTable $from, HasTransitionTable $to, ?string $note): void
     {
-        $this->status->assertCanTransitionTo($to);
-
-        $this->status = $to;
-        $this->error = $error === null ? null : mb_substr($error, 0, 255);
+        $this->error = $note;
         $this->processed_at = now();
-        $this->save();
     }
 
     /**

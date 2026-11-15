@@ -11,9 +11,9 @@ use App\Models\Git\GitHubInstallation;
 use App\Models\Git\GitHubRepository;
 use App\Models\Team;
 use App\Services\Crypto\Envelope;
+use App\Services\Crypto\SealedColumns;
 use App\Services\Crypto\SecretKey;
-use App\Services\GitHub\Dto\ManifestConversion;
-use App\Services\GitHub\GitHubAppSecrets;
+use App\Services\Git\Providers\GitHub\Dto\ManifestConversion;
 use App\Support\PublicId;
 use GuzzleHttp\Promise\PromiseInterface;
 use Illuminate\Foundation\Testing\TestCase;
@@ -93,7 +93,12 @@ final class GitHubFake
         ]);
         $app->public_id = PublicId::generate('gha');
 
-        resolve(GitHubAppSecrets::class)->seal($app, self::conversion($appId, $webhookSecret));
+        $sealed = resolve(SealedColumns::class);
+        $dek = $sealed->newKey($app);
+        $conversion = self::conversion($appId, $webhookSecret);
+        $sealed->seal($app, 'client_secret', $conversion->clientSecret, $dek);
+        $sealed->seal($app, 'private_key', $conversion->privateKey, $dek);
+        $sealed->seal($app, 'webhook_secret', $conversion->webhookSecret, $dek);
         $app->save();
 
         return $app;

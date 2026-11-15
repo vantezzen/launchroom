@@ -23,15 +23,6 @@ use Tests\TestCase;
 pest()->extend(TestCase::class)->use(RefreshDatabase::class)->in('Feature');
 pest()->extend(TestCase::class)->in('Unit');
 
-/*
-|--------------------------------------------------------------------------
-| Helpers
-|--------------------------------------------------------------------------
-*/
-
-/**
- * A verified user with 2FA who is a member of $team with $role.
- */
 function memberOf(Team $team, TeamRole $role): User
 {
     $user = User::factory()->withTwoFactor()->create();

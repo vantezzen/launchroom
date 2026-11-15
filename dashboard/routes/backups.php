@@ -17,7 +17,6 @@ use Illuminate\Support\Facades\Route;
 */
 
 Route::middleware(['web', 'auth', 'verified'])->group(function (): void {
-    // Settings → Backups.
     Route::get('settings/backups', [BackupSettingsController::class, 'edit'])->name('backups.settings');
 
     Route::post('settings/backups/destinations', [BackupDestinationController::class, 'store'])

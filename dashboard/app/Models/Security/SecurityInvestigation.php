@@ -4,9 +4,13 @@ declare(strict_types=1);
 
 namespace App\Models\Security;
 
+use App\Data\Security\InvestigatedReplicaData;
+use App\Data\Security\InvestigationReportData;
+use App\Enums\Contracts\HasTransitionTable;
 use App\Enums\Security\InvestigationStatus;
 use App\Models\Concerns\BelongsToTeam;
 use App\Models\Concerns\HasPublicId;
+use App\Models\Concerns\HasStatusTransitions;
 use App\Models\Project;
 use App\Models\ServiceInstance;
 use App\Models\User;
@@ -16,6 +20,7 @@ use Illuminate\Database\Eloquent\Attributes\Table;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
+use Spatie\LaravelData\DataCollection;
 
 /**
  * An investigation of one service instance (docs/22 §7), optionally for one
@@ -35,9 +40,9 @@ use Illuminate\Support\Carbon;
  * @property bool $automatic
  * @property Carbon $started_at
  * @property Carbon|null $finished_at
- * @property list<array{workload: string, server: string, serverName: string, slot: int, task: string|null, state: string, message?: string|null}> $replicas
+ * @property DataCollection<int, InvestigatedReplicaData> $replicas
  * @property string|null $inspections
- * @property array<string, mixed>|null $report
+ * @property InvestigationReportData|null $report
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property-read Project $project
@@ -52,6 +57,9 @@ final class SecurityInvestigation extends Model
 {
     use BelongsToTeam, HasPublicId;
 
+    /** @use HasStatusTransitions<InvestigationStatus> */
+    use HasStatusTransitions;
+
     /** @var array<string, mixed> */
     protected $attributes = [
         'status' => 'running',
@@ -65,18 +73,14 @@ final class SecurityInvestigation extends Model
     }
 
     /**
-     * The only way an investigation's status changes.
+     * @param  InvestigationStatus  $from
+     * @param  InvestigationStatus  $to
      */
-    public function transitionTo(InvestigationStatus $to): void
+    protected function recordTransition(HasTransitionTable $from, HasTransitionTable $to, ?string $note): void
     {
-        $this->status->assertCanTransitionTo($to);
-        $this->status = $to;
-
         if ($to->isTerminal()) {
             $this->forceFill(['finished_at' => now()]);
         }
-
-        $this->save();
     }
 
     /**
@@ -121,8 +125,8 @@ final class SecurityInvestigation extends Model
             'automatic' => 'boolean',
             'started_at' => 'datetime',
             'finished_at' => 'datetime',
-            'replicas' => 'array',
-            'report' => 'array',
+            'replicas' => DataCollection::class.':'.InvestigatedReplicaData::class.',default',
+            'report' => InvestigationReportData::class,
         ];
     }
 }

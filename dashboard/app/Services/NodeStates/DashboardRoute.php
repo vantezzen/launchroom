@@ -5,15 +5,16 @@ declare(strict_types=1);
 namespace App\Services\NodeStates;
 
 use App\Data\Protocol\V1\RouteSpec;
-use App\Enums\ClientCertificateMode;
-use App\Enums\DaemonFeature;
 use App\Enums\ServerRole;
+use App\Models\InstanceSettings;
 use App\Models\Server;
 use App\Services\Daemon\ClientCertificateAuthority;
 use App\Services\Daemon\DaemonEdgeSecret;
 use App\Services\Instance\DashboardOrigin;
 use App\Support\Crypto\IngressSecretSealer;
 use App\Support\Hostname;
+use App\Support\Network\IpClassifier;
+use Illuminate\Support\Facades\Log;
 
 /**
  * The dashboard's own "system routes" (docs/05 §4, §4.1, docs/11 §2): on the
@@ -46,8 +47,6 @@ final readonly class DashboardRoute
     /** The `*.localhost` hosts (internal CA). */
     public const string LOCAL_ID = 'rt_0000000000000000000001DASH';
 
-    private const string UPSTREAM_PATTERN = '/^(?:\d{1,3}(?:\.\d{1,3}){3}|\[[0-9a-f:]+\]):\d{1,5}$/Di';
-
     public function __construct(
         private DashboardOrigin $origin,
         private ClientCertificateAuthority $authority,
@@ -55,8 +54,6 @@ final readonly class DashboardRoute
     ) {}
 
     /**
-     * The hosts the control-plane Caddy routes to the dashboard.
-     *
      * @return list<string>
      */
     public function hosts(): array
@@ -87,7 +84,7 @@ final readonly class DashboardRoute
         $upstream = config('launchroom.control_plane.dashboard_upstream');
 
         if (! $server->is_control_plane || ! $server->hasRole(ServerRole::Edge)
-            || ! is_string($upstream) || preg_match(self::UPSTREAM_PATTERN, $upstream) !== 1) {
+            || ! is_string($upstream) || ! IpClassifier::isAddressPort($upstream)) {
             return $routes;
         }
 
@@ -106,16 +103,7 @@ final readonly class DashboardRoute
                 continue;
             }
 
-            $others[] = $kept === $route->hosts ? $route : new RouteSpec(
-                $route->id,
-                $kept,
-                $route->tls,
-                $route->upstreams,
-                in_array($route->redirectWwwTo, $hosts, true) ? null : $route->redirectWwwTo,
-                $route->headers,
-                $route->protection,
-                $route->loadBalancing,
-            );
+            $others[] = $kept === $route->hosts ? $route : $route->withHosts($kept);
         }
 
         $public = array_values(array_filter($hosts, static fn (string $host): bool => ! Hostname::isLocal($host)));
@@ -140,13 +128,22 @@ final readonly class DashboardRoute
      */
     private function clientAuth(Server $server): ?array
     {
-        $mode = ClientCertificateMode::current();
+        $mode = InstanceSettings::current()->clientCertificateMode();
 
-        if (! $mode->checks() || ! $server->supportsDaemonFeature(DaemonFeature::ClientCertificates)) {
+        if (! $mode->checks()) {
             return null;
         }
 
         $secret = $this->edgeSecret->current();
+
+        // Provisioned when the mode was switched on (SetClientCertificateMode).
+        // Without it the dashboard trusts no fingerprint header, so leaving
+        // client auth out refuses certificate-only requests (fail closed).
+        if ($secret === null) {
+            Log::error('Client certificates are on but the edge secret is missing; the edge does not ask for certificates.');
+
+            return null;
+        }
 
         return [
             'mode' => $mode->value,

@@ -4,20 +4,24 @@ declare(strict_types=1);
 
 namespace App\Actions\Backups;
 
+use App\Actions\Alerts\RaiseAlert;
+use App\Actions\Alerts\ResolveAlert;
+use App\Data\Alerts\AlertSignal;
+use App\Enums\Alerts\AlertRule;
+use App\Enums\Alerts\AlertSeverity;
 use App\Enums\Backups\BackupAlertKind;
 use App\Enums\Backups\BackupHealth;
 use App\Enums\Backups\BackupRunStatus;
 use App\Enums\Backups\BackupSubject;
 use App\Enums\Backups\VerificationStatus;
 use App\Enums\Backups\WalArchiveState;
-use App\Events\Backups\BackupAlertRaised;
-use App\Events\Backups\BackupAlertResolved;
 use App\Models\Backups\BackupRun;
 use App\Models\Backups\BackupSchedule;
 use App\Models\Backups\BackupVerification;
 use App\Models\Backups\WalArchive;
 use App\Models\ServiceInstance;
-use App\Services\Backups\BackupStatuses;
+use App\Queries\Backups\BackupStatuses;
+use App\Support\Links;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Cache;
 
@@ -33,9 +37,12 @@ use Illuminate\Support\Facades\Cache;
  *   the destination for `point_in_time.lag_alert_minutes` (shipping
  *   fails, segments wait, or the server stopped reporting).
  *
- * A problem raises {@see BackupAlertRaised} when it starts (and every 30
- * minutes while it lasts: the alerts API dedups) and {@see BackupAlertResolved}
- * when it ends. The last state per problem is kept in the cache; when the
+ * All four use the `backup_failed` alert rule (docs/15 §3.2, one switch per
+ * team), told apart by the subject key (`<kind>:<instance public id>`).
+ * A problem is raised when it starts (and every 30 minutes while it lasts:
+ * the alerts API dedups) and resolved when it ends. Text is secret-free and
+ * holds no log excerpts: it goes to chat services. The last state per
+ * problem is kept in the cache; when the
  * cache is lost an ongoing problem is raised again (idempotent) and a
  * resolve is sent for the problems that are not there (a no-op when
  * nothing fires).
@@ -46,6 +53,8 @@ final readonly class EvaluateBackupAlerts
 
     public function __construct(
         private BackupStatuses $statuses,
+        private RaiseAlert $raise,
+        private ResolveAlert $resolve,
     ) {}
 
     public function handle(?CarbonImmutable $now = null): int
@@ -56,7 +65,7 @@ final readonly class EvaluateBackupAlerts
             ->merge(WalArchive::query()->pluck('service_instance_id'))->unique()->values()->all();
         $changed = 0;
 
-        foreach (ServiceInstance::query()->whereIn('id', $ids)->whereNull('removed_at')->with('service')->orderBy('id')->get() as $instance) {
+        foreach (ServiceInstance::query()->whereIn('id', $ids)->whereNull('removed_at')->with(['service', 'team', 'environment.project'])->orderBy('id')->get() as $instance) {
             foreach ($this->problems($instance, $now) as $value => $problem) {
                 $kind = BackupAlertKind::from($value);
                 $changed += $this->apply($instance, $kind, $problem, $now) ? 1 : 0;
@@ -73,10 +82,10 @@ final readonly class EvaluateBackupAlerts
     {
         $name = $instance->service->name;
         $latest = BackupRun::query()->where('service_instance_id', $instance->id)
-            ->whereIn('status', [BackupRunStatus::Succeeded->value, BackupRunStatus::Failed->value])
+            ->whereIn('status', BackupRunStatus::terminal())
             ->latest('finished_at')->orderByDesc('id')->first();
         $verification = BackupVerification::query()->where('service_instance_id', $instance->id)
-            ->whereIn('status', [VerificationStatus::Passed->value, VerificationStatus::Failed->value])
+            ->whereIn('status', VerificationStatus::terminal())
             ->latest('finished_at')->orderByDesc('id')->first();
         $schedule = BackupSchedule::query()->where('service_instance_id', $instance->id)->where('enabled', true)->exists();
         $archive = WalArchive::query()->where('service_instance_id', $instance->id)->where('enabled', true)->first();
@@ -135,12 +144,12 @@ final readonly class EvaluateBackupAlerts
             }
 
             Cache::forget($key);
-            event(new BackupAlertResolved($instance->team_id, $kind, $instance->id, $subject, match ($kind) {
+            $this->resolve->handle($instance->team_id, AlertRule::BackupFailed, $subject, reason: match ($kind) {
                 BackupAlertKind::Failed => 'The next backup succeeded.',
                 BackupAlertKind::VerificationFailed => 'The next verification passed.',
                 BackupAlertKind::Overdue => 'A backup succeeded again.',
                 BackupAlertKind::WalLagging => 'WAL reaches the destination again.',
-            }));
+            });
 
             return true;
         }
@@ -153,7 +162,19 @@ final readonly class EvaluateBackupAlerts
         }
 
         Cache::put($key, ['occurrence' => $problem['occurrence'], 'at' => $now->getTimestamp()], now()->addDays(7));
-        event(new BackupAlertRaised($instance->team_id, $kind, $instance->id, $subject, $problem['title'], $problem['summary'], $problem['occurrence']));
+        $this->raise->handle(new AlertSignal(
+            team: $instance->team,
+            rule: AlertRule::BackupFailed,
+            subject: $subject,
+            title: $problem['title'],
+            summary: $problem['summary'],
+            severity: $kind->critical() ? AlertSeverity::Critical : AlertSeverity::Warning,
+            href: Links::serviceSettings($instance, 'backups'),
+            project: $instance->environment->project,
+            environment: $instance->environment,
+            serviceInstance: $instance,
+            occurrence: $problem['occurrence'],
+        ));
 
         return $state === null;
     }

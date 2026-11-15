@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Jobs;
 
+use App\Actions\Servers\PrepareNodeStateRender;
 use App\Actions\Servers\RenderNodeState;
 use App\Models\Server;
 use Illuminate\Bus\Queueable;
@@ -19,6 +20,7 @@ use Illuminate\Queue\InteractsWithQueue;
 /**
  * Re-renders one server's NodeState (debounced: unique per server until it
  * starts processing, so invalidations during a render queue exactly one more).
+ * What the render reads is prepared first (PrepareNodeStateRender).
  * Idempotent: unchanged content keeps the version.
  */
 #[Backoff([1, 5])]
@@ -38,7 +40,7 @@ final class RenderServerNodeState implements ShouldBeUniqueUntilProcessing, Shou
         return (string) $this->serverId;
     }
 
-    public function handle(RenderNodeState $renderNodeState): void
+    public function handle(PrepareNodeStateRender $prepare, RenderNodeState $renderNodeState): void
     {
         $server = Server::query()->whereKey($this->serverId)->first();
 
@@ -46,6 +48,7 @@ final class RenderServerNodeState implements ShouldBeUniqueUntilProcessing, Shou
             return;
         }
 
+        $prepare->handle($server);
         $renderNodeState->handle($server);
     }
 }

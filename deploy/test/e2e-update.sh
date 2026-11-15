@@ -39,31 +39,25 @@
 # from the repo root.
 set -eu
 
+# shellcheck source=deploy/test/lib.sh
+. deploy/test/lib.sh
+
 VPS=launchroom-dev-e2e-update-vps
-DIND_IMAGE="docker:29-dind@sha256:3e5756e2b6dad6a5f1f5deacf0a19f9eaa2581b76ae092b2d4a118162e1d4d4e"
-# registry:3.1.2 (same pin as the self-update integration test)
-REGISTRY_IMAGE="docker.io/library/registry@sha256:ddf754342cfc8acc51a56d5d0ab6af06826461864460636d8bd5c546dab2a7b8"
 REGISTRY=127.0.0.1:5050
 RELEASES=127.0.0.1:8088
 IMG=launchroom-dev-e2e-update
-# caddy:2.11.7, the base of every release's edge Caddy image here (as for launchroom-caddy).
-STOCK_CADDY="docker.io/library/caddy:2.11.7@sha256:685ae3d7c34d9b5f8caeddc5d14051db7bbd88ff1f5a2fa0c16bd8ca328fb7af"
 DOMAIN=update.localhost
 LR=/root/launchroom
 S3=launchroom-dev-e2e-update-s3
 S3_NET=launchroom-dev-e2e-update-net
-S3_IMAGE="docker.io/versity/versitygw@sha256:eb7f786fcd91e72194e48fcf1ac16302d686bf8e3a71434bdbc067a6efd3fdc7"
 S3_KEY=launchroom-e2e
 S3_SECRET=launchroom-e2e-secret
 S3_BUCKET=launchroom-e2e
-COMPOSE="docker compose --project-directory dev --env-file dev/.env -f dev/compose.yml"
+COMPOSE="sh dev/bin/compose.sh"
 # The dev stack may run with more services (make up-multi); the tool runs here are one-offs.
 export COMPOSE_IGNORE_ORPHANS=true
 WORK=dev/data/e2e-update
 
-step() { printf '\n==> %s\n' "$*"; }
-fail() { printf '\nFAIL: %s\n' "$*" >&2; exit 1; }
-ok() { printf '    ok: %s\n' "$*"; }
 in_vps() { docker exec "$VPS" "$@"; }
 in_lr() { docker exec -w "$LR" "$VPS" "$@"; }
 psql() { in_lr docker compose exec -T postgres psql -U launchroom -d launchroom -tAc "$1"; }
@@ -81,16 +75,6 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-retry() {
-	limit=$1
-	shift
-	start=$(date +%s)
-	until "$@" >/dev/null 2>&1; do
-		[ $(($(date +%s) - start)) -lt "$limit" ] || return 1
-		sleep 3
-	done
-}
-
 if [ "${SKIP_BUILD:-0}" = 1 ]; then
 	step "SKIP_BUILD=1: using the existing $IMG-dashboard and $IMG-caddy images"
 else
@@ -98,7 +82,7 @@ else
 	for v in 1.0.0 1.1.0; do
 		docker build -q -f deploy/images/dashboard/Dockerfile --target production --build-arg VERSION=$v \
 			--label launchroom.dev=true -t "$IMG-dashboard:$v" . >/dev/null
-		printf 'FROM %s\nLABEL org.opencontainers.image.version=%s\n' "$STOCK_CADDY" "$v" |
+		printf 'FROM %s\nLABEL org.opencontainers.image.version=%s\n' "$LR_STOCK_CADDY_IMAGE" "$v" |
 			docker build -q --label launchroom.dev=true -t "$IMG-caddy:$v" - >/dev/null
 	done
 	# 1.2.0: a dashboard that never becomes healthy (the web process exits).
@@ -110,11 +94,11 @@ fi
 step "starting a fresh VPS ($VPS) with a registry and a release base"
 docker rm -f -v "$VPS" >/dev/null 2>&1 || true
 docker run -d --name "$VPS" --hostname e2e-update-vps --privileged --label launchroom.dev=true \
-	--mount type=volume,dst=/var/lib/docker,volume-label=launchroom.dev=true "$DIND_IMAGE" >/dev/null
+	--mount type=volume,dst=/var/lib/docker,volume-label=launchroom.dev=true "$LR_DIND_IMAGE" >/dev/null
 retry 60 in_vps docker info || fail "the VPS's Docker daemon did not start"
 docker save "$IMG-dashboard:1.0.0" "$IMG-dashboard:1.1.0" "$IMG-dashboard:1.2.0" "$IMG-caddy:1.0.0" "$IMG-caddy:1.1.0" |
 	docker exec -i "$VPS" docker load -q >/dev/null
-in_vps docker run -d --name e2e-registry --network host -e REGISTRY_HTTP_ADDR=$REGISTRY "$REGISTRY_IMAGE" >/dev/null
+in_vps docker run -d --name e2e-registry --network host -e REGISTRY_HTTP_ADDR=$REGISTRY "$LR_REGISTRY_IMAGE" >/dev/null
 retry 60 in_vps wget -q -O /dev/null "http://$REGISTRY/v2/" || fail "the registry did not start"
 
 # push NAME VERSION: pushes the image and prints its digest-pinned reference.
@@ -131,7 +115,7 @@ c100="$(push caddy 1.0.0)" && c110="$(push caddy 1.1.0)"
 for spec in "1.0.0 ${c100#*@}" "1.1.0 ${c110#*@}"; do
 	# shellcheck disable=SC2086 # two words on purpose
 	set -- $spec
-	docker build -q --build-arg VERSION="$1" --build-arg CADDY_DIGEST="$2" --label launchroom.dev=true -t "$IMG-daemon:$1" daemon >/dev/null
+	build_daemon "$IMG-daemon:$1" "$2" "$1"
 done
 docker save "$IMG-daemon:1.0.0" "$IMG-daemon:1.1.0" | docker exec -i "$VPS" docker load -q >/dev/null
 a100="$(push daemon 1.0.0)" && a110="$(push daemon 1.1.0)"
@@ -184,7 +168,7 @@ docker network rm "$S3_NET" >/dev/null 2>&1 || true
 docker network create --label launchroom.dev=true "$S3_NET" >/dev/null
 docker run -d --name "$S3" --label launchroom.dev=true --network "$S3_NET" \
 	-e ROOT_ACCESS_KEY="$S3_KEY" -e ROOT_SECRET_KEY="$S3_SECRET" \
-	--mount type=volume,dst=/data,volume-label=launchroom.dev=true "$S3_IMAGE" posix /data >/dev/null
+	--mount type=volume,dst=/data,volume-label=launchroom.dev=true "$LR_VERSITYGW_IMAGE" posix /data >/dev/null
 docker network connect "$S3_NET" "$VPS"
 s3_ip="$(docker inspect -f "{{(index .NetworkSettings.Networks \"$S3_NET\").IPAddress}}" "$S3")"
 token="$(in_lr docker compose exec -T dashboard php artisan launchroom:setup-token --plain)"

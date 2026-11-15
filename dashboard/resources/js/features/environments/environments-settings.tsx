@@ -1,3 +1,4 @@
+import { labels, vocabulary } from '@/lib/vocabulary';
 import { Form, Link, router } from '@inertiajs/react';
 import { MoreHorizontal, Pause, Plus } from 'lucide-react';
 import { useState } from 'react';
@@ -40,16 +41,12 @@ import { show as promote } from '@/routes/promotions';
 
 type Settings = App.Data.Environments.EnvironmentSettingsData;
 
-const kindLabels: Record<App.Enums.EnvironmentKind, string> = {
-    production: 'Production',
-    persistent: 'Persistent',
-    preview: 'Preview',
-};
+const kindLabels = labels(vocabulary.EnvironmentKind);
 
 /**
  * "main", "tags v*", "release/* and tags v*" or "Manual only" (docs/06 §2).
  */
-export function triggerSummary(
+function triggerSummary(
     triggers: App.Data.Environments.EnvironmentTriggers,
 ): string | null {
     const parts = [

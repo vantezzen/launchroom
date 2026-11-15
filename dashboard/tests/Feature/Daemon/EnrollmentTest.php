@@ -12,10 +12,10 @@ use App\Models\AuditEvent;
 use App\Models\Server;
 use App\Models\ServerEnrollment;
 use App\Models\Team;
-use App\Services\Crypto\ResponseSignature;
 use App\Services\Crypto\Signer;
 use Tests\Support\FakeDaemon;
 use Tests\Support\ProtocolSchemas;
+use Tests\Support\ResponseSignature;
 
 function issueJoinToken(Team $team, array $roles = ['edge', 'runtime', 'build'], bool $controlPlane = false): string
 {

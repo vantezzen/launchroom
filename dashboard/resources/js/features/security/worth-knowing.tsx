@@ -4,7 +4,8 @@ import { Section } from '@/components/patterns/section';
 import { SheetSection, SidePanel } from '@/components/patterns/sheet';
 import { cn } from '@/lib/utils';
 import { SeverityText } from './finding-card';
-import { card, plural } from './format';
+import { card } from './format';
+import { plural } from '@/lib/format';
 
 type Group = App.Data.Security.WorthKnowingGroupData;
 type Item = App.Data.Security.WorthKnowingItemData;

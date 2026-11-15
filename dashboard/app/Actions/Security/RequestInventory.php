@@ -8,6 +8,7 @@ use App\Enums\EnvironmentKind;
 use App\Models\Deployment;
 use App\Models\Security\ImageInventory;
 use App\Services\Security\InventoryTasks;
+use App\Support\Images\ImageReference;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -21,8 +22,6 @@ use Illuminate\Support\Facades\DB;
  */
 final readonly class RequestInventory
 {
-    private const string DIGEST_REF = '#^[a-z0-9.:-]+(?:/[a-z0-9._-]+)+@sha256:[a-f0-9]{64}$#D';
-
     public function __construct(
         private InventoryTasks $tasks,
     ) {}
@@ -32,7 +31,7 @@ final readonly class RequestInventory
         $deployment->loadMissing(['environment', 'serviceInstance.service']);
         $image = $deployment->image;
 
-        if ($deployment->environment->kind === EnvironmentKind::Preview || ! is_string($image) || strlen($image) > 512 || preg_match(self::DIGEST_REF, $image) !== 1) {
+        if ($deployment->environment->kind === EnvironmentKind::Preview || ! is_string($image) || ! ImageReference::isDigestPinned($image)) {
             return null;
         }
 

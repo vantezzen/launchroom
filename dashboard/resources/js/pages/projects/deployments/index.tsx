@@ -1,3 +1,4 @@
+import { vocabulary } from '@/lib/vocabulary';
 import { Head, Link, router } from '@inertiajs/react';
 import { Rocket } from 'lucide-react';
 import { useMemo, useRef, useState } from 'react';
@@ -14,21 +15,22 @@ import {
 } from '@/components/ui/select';
 import type { PendingAction } from '@/features/deployments/deployment-actions';
 import { DeploymentActionDialog } from '@/features/deployments/deployment-actions';
-import { liveReload } from '@/features/projects/environment-live-updates';
-import { formatDuration } from '@/features/deployments/format';
-import { ChannelEvents } from '@/features/deployments/realtime';
+import { liveReload } from '@/lib/live-reload';
 import {
     CommitGroupCard,
     groupByCommit,
-} from '@/features/deployments-list/commit-group';
-import type { CommitGroup } from '@/features/deployments-list/commit-group';
-import type { ProjectShellProps } from '@/features/projects/types';
+} from '@/features/deployments/commit-group';
+import type { CommitGroup } from '@/features/deployments/commit-group';
 import { project as projectDeployments } from '@/routes/deployments';
 import { canvas } from '@/routes/projects';
+import { formatDuration, dayLabel } from '@/lib/format';
+import ProjectLayout from '@/features/app-shell/project-layout';
+import { ChannelEvents } from '@/components/channel-events';
+import { channelName } from '@/lib/realtime';
 
 type Summary = App.Data.Deployments.DeploymentSummaryData;
 
-type Props = ProjectShellProps & {
+type Props = App.Data.Canvas.ProjectShellPropsData & {
     deployments: Summary[];
     stats: App.Data.Deployments.DeploymentStatsData;
     environmentOptions: App.Data.Variables.EnvironmentOptionData[];
@@ -42,38 +44,9 @@ type Props = ProjectShellProps & {
 
 const ALL = 'all';
 
-const statuses = [
-    { value: 'in_progress', label: 'Deploying' },
-    { value: 'queued', label: 'Queued' },
-    { value: 'ready', label: 'Ready to promote' },
-    { value: 'active', label: 'Live' },
-    { value: 'failed', label: 'Failed' },
-    { value: 'superseded', label: 'Superseded' },
-    { value: 'cancelled', label: 'Cancelled' },
-];
-
-const dayFormat = new Intl.DateTimeFormat('en-GB', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-});
-
-function dayLabel(iso: string): string {
-    const date = new Date(iso);
-    const today = new Date();
-    const yesterday = new Date();
-    yesterday.setDate(today.getDate() - 1);
-
-    if (date.toDateString() === today.toDateString()) {
-        return 'Today';
-    }
-
-    if (date.toDateString() === yesterday.toDateString()) {
-        return 'Yesterday';
-    }
-
-    return dayFormat.format(date);
-}
+const statuses = Object.entries<{ label: string }>(
+    vocabulary.DeploymentFilter,
+).map(([value, { label }]) => ({ value, label }));
 
 function FilterSelect({
     label,
@@ -117,7 +90,7 @@ function FilterSelect({
  * compact filters right, then the deployments by day; each commit is a
  * calm card with one row per service (status, logo, duration against the
  * service median). Realtime: every watched environment's
- * `.deployment.updated` reloads the list (polling without Reverb).
+ * `deployment.updated` reloads the list (polling without Reverb).
  */
 export default function ProjectDeployments({
     project,
@@ -220,8 +193,8 @@ export default function ProjectDeployments({
             {watched.map((environment) => (
                 <ChannelEvents
                     key={environment}
-                    channel={`environments.${environment}`}
-                    event=".deployment.updated"
+                    channel={channelName('environments', environment)}
+                    event="deployment.updated"
                     pollMs={15_000}
                     onEvent={reload}
                 />
@@ -355,3 +328,5 @@ export default function ProjectDeployments({
         </>
     );
 }
+
+ProjectDeployments.layout = ProjectLayout;

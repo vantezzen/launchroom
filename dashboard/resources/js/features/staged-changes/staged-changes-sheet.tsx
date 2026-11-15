@@ -9,13 +9,14 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
 import { StagedConfigNote } from '@/features/config-as-code/staged-config-note';
-import { requestJson } from '@/features/projects/http';
+import { requestJson } from '@/lib/http';
 import { cn } from '@/lib/utils';
 import { deploy, discard, summary } from '@/routes/staged-changes';
-import { StageOption } from './deploy-dialog';
+import { StageOption } from './stage-option';
 import { displayValue } from './effect-badge';
 import type { StagedChanges } from './use-staged-changes';
-import { effectLabel, effectSummary } from './use-staged-changes';
+import { effectSummary, stagedBlockersKey } from './use-staged-changes';
+import { effectLabel } from '@/features/staged-changes/effects';
 
 /* Open state, shared by the top-bar pill, the panel StagedBar and `/changes`. */
 let sheetOpen = false;
@@ -30,7 +31,7 @@ export function openStagedChanges(): void {
     emit(true);
 }
 
-export function useStagedSheetOpen(): [boolean, (open: boolean) => void] {
+function useStagedSheetOpen(): [boolean, (open: boolean) => void] {
     const open = useSyncExternalStore(
         (listener) => {
             listeners.add(listener);
@@ -255,7 +256,7 @@ export function StagedChangesSheet({
     const [error, setError] = useState<string | null>(null);
 
     const { data } = useQuery({
-        queryKey: ['staged-changes', environment, 'blockers'],
+        queryKey: stagedBlockersKey(environment),
         enabled: open,
         staleTime: 0,
         queryFn: ({ signal }) =>

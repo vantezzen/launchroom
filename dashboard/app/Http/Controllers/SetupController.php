@@ -5,16 +5,12 @@ declare(strict_types=1);
 namespace App\Http\Controllers;
 
 use App\Actions\Instance\CreateInstanceOwner;
-use App\Concerns\PasswordValidationRules;
-use App\Concerns\ProfileValidationRules;
 use App\Data\Audit\AuditActor;
 use App\Data\Instance\CreateOwnerData;
 use App\Data\Servers\ServerData;
 use App\Enums\ActorType;
 use App\Models\InstanceSettings;
 use App\Models\Server;
-use App\Models\User;
-use App\Support\Crypto\OpaqueToken;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -29,19 +25,17 @@ use Inertia\Response;
  */
 final class SetupController extends Controller
 {
-    use PasswordValidationRules, ProfileValidationRules;
-
     public function show(Request $request): Response
     {
-        abort_if(User::query()->exists(), 404);
+        abort_if(InstanceSettings::current()->setupDone(), 404);
 
         $token = $request->query('token');
         $token = is_string($token) ? $token : '';
         // "Your launchroom is installed" with the server the installer already
         // connected (flows §1). Only for the holder of a valid setup token:
         // the page itself is public until the owner exists.
-        $server = $this->tokenIsValid($token)
-            ? Server::query()->where('is_control_plane', true)->orderBy('id')->first()
+        $server = InstanceSettings::current()->acceptsSetupToken($token)
+            ? Server::currentControlPlane()
             : null;
 
         return Inertia::render('setup', [
@@ -52,28 +46,12 @@ final class SetupController extends Controller
         ]);
     }
 
-    private function tokenIsValid(string $token): bool
-    {
-        $settings = InstanceSettings::current();
-
-        return $token !== ''
-            && $settings->setup_token_hash !== null
-            && $settings->setup_token_expires_at?->isFuture() === true
-            && OpaqueToken::matches($token, $settings->setup_token_hash);
-    }
-
     public function store(Request $request, CreateInstanceOwner $createOwner): RedirectResponse
     {
-        abort_if(User::query()->exists(), 404);
-
-        $validated = $request->validate([
-            'token' => ['required', 'string', 'max:128'],
-            ...$this->profileRules(),
-            'password' => $this->passwordRules(),
-        ]);
+        abort_if(InstanceSettings::current()->setupDone(), 404);
 
         $user = $createOwner->handle(
-            CreateOwnerData::from($validated),
+            CreateOwnerData::validateAndCreate($request->all()),
             new AuditActor(ActorType::System, null, $request->ip(), $request->userAgent()),
         );
 

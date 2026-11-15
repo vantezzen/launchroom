@@ -8,10 +8,12 @@ use App\Actions\Audit\RecordAuditEvent;
 use App\Data\Audit\AuditActor;
 use App\Data\Audit\AuditEntryData;
 use App\Enums\AuditAction;
+use App\Enums\HoldKind;
 use App\Enums\Transfers\ImportRunStatus;
 use App\Exceptions\DomainRuleViolation;
 use App\Models\Transfers\DataImportRun;
-use App\Services\Transfers\ImportHolds;
+use App\Services\Holds\Holds;
+use App\Services\Holds\ImportHolds;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -51,7 +53,7 @@ final readonly class CancelImport
                 meta: ['import' => $locked->public_id],
             ));
 
-            ImportHolds::release($locked, $held);
+            Holds::changed(HoldKind::Import, $held, ImportHolds::alsoServers($locked));
         });
 
         return $run->refresh();

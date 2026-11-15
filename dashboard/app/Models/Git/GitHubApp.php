@@ -4,9 +4,10 @@ declare(strict_types=1);
 
 namespace App\Models\Git;
 
+use App\Contracts\Crypto\SealedRow;
 use App\Models\Concerns\BelongsToTeam;
 use App\Models\Concerns\HasPublicId;
-use App\Services\GitHub\GitHubAppSecrets;
+use App\Models\Concerns\HasSealedSecret;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
@@ -14,11 +15,12 @@ use Illuminate\Database\Eloquent\Attributes\Table;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use InvalidArgumentException;
 
 /**
  * A GitHub App created for a team through the manifest flow (docs/07, docs/09
  * R19). Secrets are envelope-encrypted ciphertexts; decrypt them only through
- * {@see GitHubAppSecrets}.
+ * App\Services\Crypto\SealedColumns.
  *
  * @property int $id
  * @property string $public_id
@@ -47,9 +49,10 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 ])]
 #[Hidden(['wrapped_dek', 'kek_id', 'client_secret', 'webhook_secret', 'private_key'])]
 #[Table(name: 'github_apps')]
-final class GitHubApp extends Model
+final class GitHubApp extends Model implements SealedRow
 {
     use BelongsToTeam, HasPublicId;
+    use HasSealedSecret;
 
     public static function publicIdPrefix(): string
     {
@@ -139,5 +142,18 @@ final class GitHubApp extends Model
             'webhook_last_received_at' => 'datetime',
             'webhook_missed_at' => 'datetime',
         ];
+    }
+
+    public function sealWrapContext(): string
+    {
+        return 'github_app:'.$this->public_id;
+    }
+
+    public function sealAssociatedData(string $column): string
+    {
+        return match ($column) {
+            'client_secret', 'private_key', 'webhook_secret' => "github_app|{$this->team_id}|{$this->public_id}|{$column}",
+            default => throw new InvalidArgumentException("{$column} is not a sealed column."),
+        };
     }
 }

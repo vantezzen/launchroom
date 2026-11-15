@@ -7,6 +7,7 @@ use App\Data\Servers\DmiFactsData;
 use App\Data\Servers\HardwareFactsData;
 use App\Enums\DeviceKind;
 use App\Enums\HostingProvider;
+use App\Enums\Servers\Virtualization;
 use App\Support\Servers\DeviceClassifier;
 
 /*
@@ -21,7 +22,7 @@ function facts(?array $dmi = null, ?string $tree = null, ?string $virt = null, ?
         cpuModel: $cpu,
         dmi: $dmi === null ? null : new DmiFactsData(...$dmi),
         deviceTreeModel: $tree,
-        virtualization: $virt,
+        virtualization: $virt === null ? null : Virtualization::from($virt),
         osName: $os,
         kernel: $kernel,
         battery: $battery,

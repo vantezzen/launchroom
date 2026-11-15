@@ -49,7 +49,7 @@ final readonly class SpecVariableResolver
             array_filter($spec->services, static fn (ServiceSpec $service): bool => $service->enabled),
         ));
         $bySlug = new VariableResolver($this->scopes($project, $spec))->resolveAll($enabled);
-        self::assertNoPublicSecrets($spec, $enabled);
+        $this->assertNoPublicSecrets($project, $spec, $enabled);
         $resolved = [];
 
         foreach ($spec->services as $id => $service) {
@@ -67,7 +67,7 @@ final readonly class SpecVariableResolver
     public function resolve(Project $project, EnvironmentSpec $spec, ServiceSpec $service): ResolvedEnvironment
     {
         $resolved = new VariableResolver($this->scopes($project, $spec))->resolve($service->slug);
-        self::assertNoPublicSecrets($spec, [$service->slug]);
+        $this->assertNoPublicSecrets($project, $spec, [$service->slug]);
 
         return $resolved;
     }
@@ -81,13 +81,25 @@ final readonly class SpecVariableResolver
      *
      * @throws UnresolvedReferences
      */
-    public static function assertNoPublicSecrets(EnvironmentSpec $spec, array $slugs): void
+    public function assertNoPublicSecrets(Project $project, EnvironmentSpec $spec, array $slugs): void
     {
-        $problems = SecretTaint::fromSpec($spec)->publicExposures($slugs);
+        $problems = $this->taint($project, $spec)->publicExposures($slugs);
 
         if ($problems !== []) {
             throw new UnresolvedReferences($problems);
         }
+    }
+
+    /**
+     * Secret taint over the same scopes resolution uses, shared preview
+     * services included.
+     */
+    public function taint(Project $project, EnvironmentSpec $spec): SecretTaint
+    {
+        return SecretTaint::fromSpec($spec, array_filter(array_map(
+            fn (string $baseEnvironmentId): ?EnvironmentSpec => $this->baseSpec($project, $baseEnvironmentId),
+            $this->sharedServices($project, $spec),
+        )));
     }
 
     /**
@@ -100,13 +112,12 @@ final readonly class SpecVariableResolver
      */
     public function annotatedScopes(Project $project, EnvironmentSpec $spec): array
     {
-        $shared = [];
+        $annotate = fn (VariableSpec $variable): array => ['value' => $this->decrypt($project, $variable), 'secret' => $variable->type === VariableType::Secret];
+        $scopes = [VariableResolver::SHARED => []];
 
         foreach ($spec->sharedVariables as $variable) {
-            $shared[$variable->key] = ['value' => $this->decrypt($project, $variable), 'secret' => $variable->type === VariableType::Secret];
+            $scopes[VariableResolver::SHARED][$variable->key] = $annotate($variable);
         }
-
-        $scopes = [VariableResolver::SHARED => $shared];
 
         foreach ($spec->services as $service) {
             $values = array_map(
@@ -114,37 +125,17 @@ final readonly class SpecVariableResolver
                 SystemVariables::for($spec->environment, $service, $service->deploy->port),
             );
 
-            foreach ($service->sharedVariableIds as $variableId) {
-                $variable = $spec->sharedVariables[$variableId] ?? null;
-
-                if ($variable !== null) {
-                    $values[$variable->key] = $shared[$variable->key];
-                }
-            }
-
-            // A worker or cron also gets what its app's connections inject.
-            foreach ($spec->connectionVariablesOf($service) as $variable) {
-                $values[$variable->key] = ['value' => $this->decrypt($project, $variable), 'secret' => $variable->type === VariableType::Secret];
-            }
-
-            foreach ([VariableSpec::LAYER_ENVIRONMENT, VariableSpec::LAYER_BRANCH] as $layer) {
-                foreach ($service->variables as $variable) {
-                    if ($variable->layer === $layer) {
-                        $values[$variable->key] = ['value' => $this->decrypt($project, $variable), 'secret' => $variable->type === VariableType::Secret];
-                    }
-                }
+            foreach ($spec->variablesInPrecedence($service) as $variable) {
+                $values[$variable->key] = $annotate($variable);
             }
 
             $scopes[$service->slug] = $values;
         }
 
-        // Previews sharing a base environment's database: references to it
-        // resolve to the base instance (docs/06 §5 "share base instance").
-        // Never into an environment that withholds secrets (fork previews,
-        // docs/09 R20), also not from a revision recorded before that rule.
-        foreach (self::withholdsSecrets($project, $spec) ? [] : $spec->sharedServices as $serviceId => $baseEnvironmentId) {
+        foreach ($this->sharedServices($project, $spec) as $serviceId => $baseEnvironmentId) {
             $shared = $spec->service($serviceId);
-            $base = $shared instanceof ServiceSpec ? $this->baseScopes($project, $baseEnvironmentId) : null;
+            $baseSpec = $shared instanceof ServiceSpec ? $this->baseSpec($project, $baseEnvironmentId) : null;
+            $base = $baseSpec instanceof EnvironmentSpec ? $this->annotatedScopes($project, $baseSpec) : null;
 
             if ($shared instanceof ServiceSpec && $base !== null && isset($base[$shared->slug])) {
                 $scopes[$shared->slug] = $base[$shared->slug];
@@ -155,28 +146,30 @@ final readonly class SpecVariableResolver
     }
 
     /**
-     * Whether the spec's environment withholds secrets (fork previews): it
-     * may then not resolve anything against a base environment.
+     * Previews sharing a base environment's database: references to it
+     * resolve to the base instance (docs/06 §5 "share base instance"). Never
+     * into an environment that withholds secrets now (fork previews, docs/09
+     * R20), whatever the revision recorded; an unknown environment fails
+     * closed.
+     *
+     * @return array<string, string> service public id => base environment public id
      */
-    public static function withholdsSecrets(Project $project, EnvironmentSpec $spec): bool
+    private function sharedServices(Project $project, EnvironmentSpec $spec): array
     {
         if ($spec->sharedServices === []) {
-            return false;
+            return [];
         }
 
-        $withheld = Environment::query()->where('project_id', $project->id)->where('public_id', $spec->environment->id)->value('secrets_withheld');
+        $environment = Environment::query()->where('project_id', $project->id)->where('public_id', $spec->environment->id)->first(['id', 'secrets_withheld']);
 
-        // An unknown environment fails closed.
-        return ! in_array($withheld, [false, 0, '0', 'f'], true);
+        return ! $environment instanceof Environment || $environment->secrets_withheld ? [] : $spec->sharedServices;
     }
 
     /**
-     * The scopes of a base environment's last applied revision (for shared
-     * preview services); null when it was never deployed.
-     *
-     * @return array<string, array<string, array{value: string, secret: bool}>>|null
+     * A base environment's last applied spec (for shared preview services);
+     * null when it was never deployed or itself shares services.
      */
-    private function baseScopes(Project $project, string $environmentId): ?array
+    private function baseSpec(Project $project, string $environmentId): ?EnvironmentSpec
     {
         $environment = Environment::query()
             ->where('project_id', $project->id)
@@ -185,7 +178,7 @@ final readonly class SpecVariableResolver
             ->first();
         $spec = $environment?->lastAppliedRevision?->spec;
 
-        return $spec === null || $spec->sharedServices !== [] ? null : $this->annotatedScopes($project, $spec);
+        return $spec === null || $spec->sharedServices !== [] ? null : $spec;
     }
 
     /**

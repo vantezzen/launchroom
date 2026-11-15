@@ -8,12 +8,17 @@ use App\Data\Environments\EnvironmentTriggers;
 use App\Enums\EnvironmentKind;
 use App\Models\Concerns\BelongsToTeam;
 use App\Models\Concerns\HasPublicId;
+use App\Support\Protocol\Grammar;
+use App\Support\PublicId;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Attributes\Scope;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Str;
 
 /**
  * A full copy of the project's service graph (docs/06 §1).
@@ -124,12 +129,25 @@ final class Environment extends Model
         return $this->runtime_log_retention_days !== null && $this->runtime_log_retention_days > 0;
     }
 
+    public const string NETWORK_ID_PREFIX = 'net';
+
     /**
      * Docker network id in the NodeState: `net_` + the environment's ULID.
      */
     public function networkId(): string
     {
-        return 'net_'.substr($this->public_id, strlen('env_'));
+        return self::NETWORK_ID_PREFIX.PublicId::SEPARATOR.Str::after($this->public_id, PublicId::SEPARATOR);
+    }
+
+    /**
+     * The inverse of {@see networkId()}: the environment public id a NodeState
+     * network id names, or null when it is not an environment network.
+     */
+    public static function publicIdFromNetworkId(string $networkId): ?string
+    {
+        return PublicId::isValid($networkId, self::NETWORK_ID_PREFIX)
+            ? self::publicIdPrefix().PublicId::SEPARATOR.Str::after($networkId, PublicId::SEPARATOR)
+            : null;
     }
 
     /**
@@ -137,7 +155,22 @@ final class Environment extends Model
      */
     public function networkName(): string
     {
-        return 'lr-e_'.substr(hash('sha256', $this->public_id), 0, 16);
+        return Grammar::NETWORK_PREFIX.substr(hash('sha256', $this->public_id), 0, 16);
+    }
+
+    /**
+     * By kind ({@see EnvironmentKind::sortOrder()}), then by name.
+     *
+     * @param  Builder<self>  $query
+     */
+    #[Scope]
+    protected function inDisplayOrder(Builder $query): void
+    {
+        // One `when` per EnvironmentKind case: a new case fails loudly on the binding count.
+        $query->orderByRaw(
+            'case kind when ? then ? when ? then ? when ? then ? end',
+            array_merge(...array_map(static fn (EnvironmentKind $kind): array => [$kind->value, $kind->sortOrder()], EnvironmentKind::cases())),
+        )->orderBy('name');
     }
 
     /**

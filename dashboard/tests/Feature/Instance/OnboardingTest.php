@@ -61,7 +61,7 @@ test('steps are derived from real state', function (): void {
             ->where('onboarding.server.status', 'online')
             ->where('onboarding.serverAddress', '203.0.113.7')
             ->where('onboarding.edgeAddresses', ['203.0.113.7'])
-            ->where('onboarding.sslipExample', 'web-production-shop.203-0-113-7.sslip.io')
+            ->where('onboarding.freeWildcard', '*.203-0-113-7.sslip.io')
             ->where('onboarding.githubConnected', true)
             ->where('onboarding.githubAccount', fn (?string $account): bool => is_string($account) && $account !== '')
             ->where('onboarding.canConnectGitHub', true)
@@ -86,13 +86,13 @@ test('steps can be skipped and the checklist dismissed', function (): void {
     $this->actingAs($this->owner)->patch(route('onboarding.update'), ['skip' => 'domain'])->assertRedirect();
     $this->actingAs($this->owner)->patch(route('onboarding.update'), ['unskip' => 'domain'])->assertRedirect();
 
-    expect(InstanceSettings::current()->onboarding['skipped'])->toBe(['backups']);
+    expect(InstanceSettings::current()->onboarding?->skipped)->toBe(['backups']);
 
     $this->actingAs($this->owner)->get(route('onboarding.show'))
         ->assertInertia(fn ($page) => $page->where('onboarding.steps.4.status', 'skipped')->where('onboarding.progress.done', 1));
 
     $this->actingAs($this->owner)->patch(route('onboarding.update'), ['dismissed' => true])->assertRedirect(route('projects.index'));
-    expect(InstanceSettings::current()->onboarding['dismissedAt'] ?? null)->toBeString();
+    expect(InstanceSettings::current()->onboarding?->dismissedAt)->toBeString();
     $this->actingAs($this->owner)->get(route('dashboard'))->assertRedirect(route('projects.index'));
 });
 
@@ -131,7 +131,7 @@ test('saving the platform domain keeps the address step open until Continue afte
     FakeDns::set('*.apps.example.com', ['203.0.113.7']);
     $this->actingAs($this->owner)->post(route('onboarding.domain.confirm'))->assertSessionHasNoErrors()->assertRedirect();
     expect($domainStatus())->toBe('done')
-        ->and(InstanceSettings::current()->onboarding['domainConfirmed'])->toMatchArray(['domain' => 'apps.example.com', 'verified' => true]);
+        ->and(InstanceSettings::current()->onboarding?->domainConfirmed?->toArray())->toMatchArray(['domain' => 'apps.example.com', 'verified' => true]);
 
     // Another domain reopens the step.
     $this->actingAs($this->owner)->put(route('onboarding.domain'), ['appsDomain' => 'apps.example.org'])->assertRedirect();

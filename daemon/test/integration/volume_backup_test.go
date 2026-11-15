@@ -17,6 +17,7 @@ import (
 
 	"github.com/vantezzen/launchroom/daemon/internal/backup"
 	"github.com/vantezzen/launchroom/daemon/internal/docker"
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/secret"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
@@ -64,10 +65,10 @@ func volumeHelper(ctx context.Context, t *testing.T, e *env, volume string, read
 		t.Fatal(err)
 	}
 	labels := docker.ManagedLabels(string(e.serverID))
-	labels[docker.LabelHelper] = "volume"
+	labels[names.LabelHelper] = "volume"
 	id, err := fixtureEngine(t, e.serverID).CreateContainer(ctx, &docker.ContainerCreate{
 		Name:       "lr-vol-itest-" + strings.ToLower(randomID("x")[2:10]),
-		Config:     &container.Config{Image: docker.HelperImage, Labels: labels, Cmd: []string{"/x"}},
+		Config:     &container.Config{Image: names.VolumeHelperImage, Labels: labels, Cmd: []string{"/x"}},
 		HostConfig: &container.HostConfig{NetworkMode: "none", Mounts: []mount.Mount{{Type: mount.TypeVolume, Source: volume, Target: "/data", ReadOnly: readOnly}}},
 	})
 	if err != nil {
@@ -127,7 +128,7 @@ func TestVolumeBackupAndRestoreThroughRestic(t *testing.T) {
 	svc, envID := randomID("svc"), randomID("env")
 	name := "lr-v_" + strings.ToLower(randomID("x")[2:18])
 	labels := docker.ManagedLabels(string(e.serverID))
-	labels[docker.LabelVolume], labels[docker.LabelService], labels[docker.LabelEnvironment] = string(volID), svc, envID
+	labels[names.LabelVolume], labels[names.LabelService], labels[names.LabelEnvironment] = string(volID), svc, envID
 	if err := e.engine.CreateVolume(ctx, docker.VolumeCreate{Name: name, Labels: labels}); err != nil {
 		t.Fatal(err)
 	}
@@ -146,9 +147,9 @@ func TestVolumeBackupAndRestoreThroughRestic(t *testing.T) {
 		t.Fatal(err)
 	}
 	ulabels := docker.ManagedLabels(string(e.serverID))
-	ulabels[docker.LabelWorkload] = string(user)
+	ulabels[names.LabelWorkload] = string(user)
 	userID, err := fixtureEngine(t, e.serverID).CreateContainer(ctx, &docker.ContainerCreate{
-		Name:       docker.ContainerName(user),
+		Name:       names.WorkloadContainer(user),
 		Config:     &container.Config{Image: redisImage, Labels: ulabels, Cmd: []string{"redis-server", "--dir", "/tmp"}},
 		HostConfig: &container.HostConfig{Mounts: []mount.Mount{{Type: mount.TypeVolume, Source: name, Target: "/srv/uploads"}}},
 	})
@@ -180,7 +181,7 @@ func TestVolumeBackupAndRestoreThroughRestic(t *testing.T) {
 	if res.SizeBytes < 1024 || res.SnapshotID.Validate() != nil {
 		t.Fatalf("backup result %+v", res)
 	}
-	if uc, err := e.engine.InspectContainer(ctx, userID); err != nil || !uc.Running || uc.State != "running" {
+	if uc, err := e.engine.InspectContainer(ctx, userID); err != nil || !uc.Running() || uc.State != "running" {
 		t.Fatalf("the service must run again after a paused backup: %+v %v", uc, err)
 	}
 	// Live: a second snapshot dedupes against the first.
@@ -241,13 +242,13 @@ func TestVolumeBackupAndRestoreThroughRestic(t *testing.T) {
 	found := false
 	for _, v := range vols {
 		if v.Name == name {
-			found = v.Labels[docker.LabelVolume] == string(volID) && v.Labels[docker.LabelService] == svc && v.Labels[docker.LabelEnvironment] == envID
+			found = v.Labels[names.LabelVolume] == string(volID) && v.Labels[names.LabelService] == svc && v.Labels[names.LabelEnvironment] == envID
 		}
 	}
 	if !found {
 		t.Fatal("the restored volume lost its labels")
 	}
-	helpers, err := e.engine.ListContainers(ctx, map[string]string{docker.LabelHelper: "volume"})
+	helpers, err := e.engine.ListContainers(ctx, map[string]string{names.LabelHelper: "volume"})
 	if err != nil || len(helpers) != 0 {
 		t.Fatalf("helpers left: %d %v", len(helpers), err)
 	}

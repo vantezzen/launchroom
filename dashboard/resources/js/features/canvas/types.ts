@@ -6,7 +6,7 @@ export type ServiceNodeData = App.Data.Canvas.CanvasNodeData & {
 
 export type ServiceFlowNode = Node<ServiceNodeData, 'service'>;
 
-export type ConnectionEdgeData = App.Data.Canvas.CanvasEdgeData & {
+type ConnectionEdgeData = App.Data.Canvas.CanvasEdgeData & {
     onOpen?: (edgeId: string, anchor: { x: number; y: number }) => void;
     /** Previews: the target database is shared with the base or cloned (docs/06 §5). */
     badge?: App.Data.Previews.PreviewEdgeBadgeData;

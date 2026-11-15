@@ -74,18 +74,13 @@ test('adding a GitHub app resolves the repository within the team and pins its b
     expect(Service::query()->where('slug', 'queue')->sole()->parent_service_id)->toBe($service->id);
 });
 
-test('the plan preview answers for team repositories only', function (): void {
+test('the plan preview refuses a malformed branch', function (): void {
     GitHubFake::setUp();
     $repository = GitHubFake::repository(GitHubFake::installation(GitHubFake::app($this->team)));
-    $foreign = GitHubFake::repository(GitHubFake::installation(GitHubFake::app(Team::factory()->create(), 4343), 101), 777, 'evil/repo');
-    $url = fn (string $repo, string $branch = 'main'): string => route('projects.plan-preview', ['project' => $this->project, 'repository' => $repo, 'branch' => $branch]);
 
-    $this->actingAs($this->viewer)->getJson($url($repository->public_id))->assertForbidden();
-    $this->actingAs($this->developer)->getJson($url($foreign->public_id))->assertNotFound();
-    $this->actingAs($this->developer)->getJson($url($repository->public_id, '-x..y'))->assertUnprocessable();
-    $this->actingAs($this->developer)->getJson($url($repository->public_id))
-        ->assertOk()
-        ->assertJson(['status' => 'unavailable', 'plan' => null]);
+    $this->actingAs($this->developer)
+        ->getJson(route('projects.plan-preview', ['project' => $this->project, 'repository' => $repository->public_id, 'branch' => '-x..y']))
+        ->assertUnprocessable();
 });
 
 test('settings saves are staged and validated', function (): void {

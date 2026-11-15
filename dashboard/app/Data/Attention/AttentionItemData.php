@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Data\Attention;
 
-use App\Enums\AttentionState;
+use App\Enums\StatusTone;
 use Carbon\CarbonInterface;
 use Spatie\LaravelData\Data;
 
@@ -19,7 +19,7 @@ final class AttentionItemData extends Data
         public string $key,
         /** service | server | staged | security | paused | preview */
         public string $kind,
-        public AttentionState $state,
+        public StatusTone $state,
         /** "api failed to deploy". */
         public string $title,
         /** Where: "shop", "shop, staging". */

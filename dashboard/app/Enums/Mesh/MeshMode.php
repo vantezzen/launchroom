@@ -19,7 +19,7 @@ enum MeshMode: string
     public function label(): string
     {
         return match ($this) {
-            self::Embedded => 'Built-in mesh',
+            self::Embedded => 'Built-in',
             self::OwnTailscale => 'Your Tailscale network',
         };
     }

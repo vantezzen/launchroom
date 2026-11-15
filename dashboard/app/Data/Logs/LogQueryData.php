@@ -4,16 +4,16 @@ declare(strict_types=1);
 
 namespace App\Data\Logs;
 
+use App\Data\Attributes\PublicIdOf;
+use App\Enums\LogRange;
 use Carbon\CarbonImmutable;
 use Spatie\LaravelData\Attributes\Validation\In;
 use Spatie\LaravelData\Attributes\Validation\Max;
 use Spatie\LaravelData\Attributes\Validation\Min;
-use Spatie\LaravelData\Attributes\Validation\Regex;
 use Spatie\LaravelData\Data;
 
 /**
- * Query of the log explorer endpoints: `range` (15m, 1h, 24h, 7d, 30d),
- * `source` (all; runtime: everything but build output; build: the plan,
+ * Query of the log explorer endpoints: `range`, `source` (all; runtime: everything but build output; build: the plan,
  * build and release output of deployments), an optional `service`, the search `q`
  * (App\Support\Logs\LogSearchQuery) and the live cursor `after` (the last
  * chunk id seen).
@@ -26,14 +26,11 @@ use Spatie\LaravelData\Data;
  */
 final class LogQueryData extends Data
 {
-    public const array RANGES = ['15m' => 900, '1h' => 3600, '24h' => 86400, '7d' => 604800, '30d' => 2592000];
-
     public function __construct(
-        #[In(['15m', '1h', '24h', '7d', '30d'])]
-        public string $range = '1h',
+        public LogRange $range = LogRange::Hour,
         #[In(['all', 'runtime', 'build'])]
         public string $source = 'all',
-        #[Regex('/^svc_[0-7][0-9A-HJKMNP-TV-Z]{25}$/D')]
+        #[PublicIdOf('svc')]
         public ?string $service = null,
         #[Min(0)]
         public int $after = 0,
@@ -47,7 +44,7 @@ final class LogQueryData extends Data
 
     public function seconds(): int
     {
-        return self::RANGES[$this->range] ?? 3600;
+        return $this->range->seconds();
     }
 
     /**
@@ -64,14 +61,13 @@ final class LogQueryData extends Data
             return [$now->subSeconds($this->seconds()), $now];
         }
 
-        $oldest = $now->subSeconds(self::RANGES['30d'])->getTimestamp();
+        $oldest = $now->subSeconds(LogRange::Month->seconds())->getTimestamp();
         $to = min(max($this->to, $oldest + 60), $now->getTimestamp());
         $from = min(max($this->from, $oldest), $to - 60);
 
         return [CarbonImmutable::createFromTimestampUTC($from), CarbonImmutable::createFromTimestampUTC($to)];
     }
 
-    /** Whether this asks for an absolute window rather than the last `range`. */
     public function absolute(): bool
     {
         return $this->from !== null && $this->to !== null;

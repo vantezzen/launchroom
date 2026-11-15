@@ -4,21 +4,23 @@ declare(strict_types=1);
 
 namespace App\Models\Alerts;
 
+use App\Contracts\Crypto\SealedRow;
 use App\Enums\Alerts\AlertChannelKind;
 use App\Enums\Alerts\AlertSeverity;
 use App\Models\Concerns\BelongsToTeam;
 use App\Models\Concerns\HasPublicId;
-use App\Services\Alerts\AlertChannelSecrets;
+use App\Models\Concerns\HasSealedSecret;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use InvalidArgumentException;
 
 /**
  * Where a team hears about alerts (docs/15 §3.5, docs/07 `alert_channels`).
  * Slack/Discord/webhook URLs and the webhook signing secret are envelope
- * encrypted in `secret` and only ever opened by {@see AlertChannelSecrets};
+ * encrypted in `secret` and only ever opened by App\Services\Crypto\SealedColumns;
  * `target_hint` is the one clear-text trace of them (host + last 4).
  *
  * @property int $id
@@ -41,9 +43,10 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  */
 #[Fillable(['team_id', 'kind', 'name', 'recipients', 'target_hint', 'enabled', 'min_severity', 'created_by'])]
 #[Hidden(['secret', 'wrapped_dek', 'kek_id'])]
-final class AlertChannel extends Model
+final class AlertChannel extends Model implements SealedRow
 {
     use BelongsToTeam, HasPublicId;
+    use HasSealedSecret;
 
     /** @var array<string, mixed> */
     protected $attributes = [
@@ -56,9 +59,6 @@ final class AlertChannel extends Model
         return 'ach';
     }
 
-    /**
-     * Whether an alert of this severity reaches the channel.
-     */
     public function wants(AlertSeverity $severity): bool
     {
         return $this->enabled && $severity->atLeast($this->min_severity);
@@ -97,5 +97,18 @@ final class AlertChannel extends Model
             'last_delivery_at' => 'datetime',
             'last_delivery_ok' => 'boolean',
         ];
+    }
+
+    public function sealWrapContext(): string
+    {
+        return 'alert_channel:'.$this->public_id;
+    }
+
+    public function sealAssociatedData(string $column): string
+    {
+        return match ($column) {
+            'secret' => "alert_channel|{$this->team_id}|{$this->public_id}|secret",
+            default => throw new InvalidArgumentException("{$column} is not a sealed column."),
+        };
     }
 }

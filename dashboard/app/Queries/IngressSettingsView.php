@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Queries;
 
-use App\Data\Ingress\DnsProviderCheckData;
 use App\Data\Ingress\DnsProviderOptionData;
 use App\Data\Ingress\EdgeIngressStatusData;
 use App\Data\Ingress\IngressSettingsData;
@@ -44,7 +43,7 @@ final readonly class IngressSettingsView
             ), $this->ingress->dnsProviders()),
             hasToken: $this->credentials->fingerprint() !== null,
             storedFields: $this->storedFields($settings->dns_provider),
-            verification: DnsProviderCheckData::fromStored($settings->dns_verification),
+            verification: $settings->dns_verification,
             modulesAvailable: $this->ingress->modulesAvailable(),
             wildcardActive: $this->ingress->wildcardDomain() !== null,
             storageConfigured: $storage !== null,

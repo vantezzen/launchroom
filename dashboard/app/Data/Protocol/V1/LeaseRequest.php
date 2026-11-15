@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Data\Protocol\V1;
 
+use App\Data\Protocol\ProtocolDocument;
 use App\Enums\DaemonTaskType;
 use Illuminate\Validation\Rule;
 use Spatie\LaravelData\Attributes\Validation\In;
@@ -20,7 +21,7 @@ final class LeaseRequest extends Data
      * @param  list<string>  $types
      */
     public function __construct(
-        #[In(['launchroom.vantezzen.io/v1'])]
+        #[In([ProtocolDocument::API_VERSION])]
         public string $apiVersion,
         #[In(['LeaseRequest'])]
         public string $kind,

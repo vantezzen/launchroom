@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace App\Queries;
 
 use App\Data\Alerts\OpenAlertData;
+use App\Enums\Alerts\AlertKind;
 use App\Enums\Alerts\AlertRule;
 use App\Enums\Alerts\AlertSeverity;
 use App\Enums\Alerts\AlertStatus;
+use App\Enums\Backups\BackupAlertKind;
 use App\Models\Alerts\Alert;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
@@ -78,6 +80,9 @@ final class OpenAlerts
             title: $alert->title,
             href: $alert->href,
             openedAt: $alert->opened_at->toIso8601String(),
+            kind: $alert->kind,
+            backupKind: $alert->rule === AlertRule::BackupFailed ? BackupAlertKind::ofSubject($alert->subject_key) : null,
+            value: $alert->value,
         );
     }
 
@@ -87,24 +92,16 @@ final class OpenAlerts
      */
     public static function label(Alert $alert): string
     {
-        $facts = $alert->facts;
-        $kind = explode(':', $alert->subject_key, 2)[0];
-
         return match ($alert->rule) {
             AlertRule::DeployFailed => 'Deploy failed',
-            AlertRule::ServiceUnhealthy => str_contains($alert->title, 'restarting') ? 'Restarting' : 'Unhealthy',
-            AlertRule::ErrorRateHigh => self::errorLabel($facts['Errors'] ?? null),
+            AlertRule::ServiceUnhealthy => ($alert->kind ?? AlertKind::Unhealthy)->label(),
+            AlertRule::ErrorRateHigh => self::withNumber('Errors', $alert->value, trim: true),
             AlertRule::ServerOffline => 'Offline',
-            AlertRule::CpuHigh => self::withNumber('CPU', $facts['CPU'] ?? null),
-            AlertRule::MemoryHigh => self::withNumber('Memory', $facts['Memory'] ?? null),
-            AlertRule::DiskFull => self::withNumber('Disk', $facts['Disk'] ?? null),
+            AlertRule::CpuHigh => self::withNumber('CPU', $alert->value),
+            AlertRule::MemoryHigh => self::withNumber('Memory', $alert->value),
+            AlertRule::DiskFull => self::withNumber('Disk', $alert->value),
             AlertRule::CertificateExpiring => 'Certificate expiring',
-            AlertRule::BackupFailed => match ($kind) {
-                'backup_overdue' => 'Backup overdue',
-                'backup_verify' => 'Backup check failed',
-                'wal_archive' => 'Archiving behind',
-                default => 'Backup failed',
-            },
+            AlertRule::BackupFailed => (BackupAlertKind::ofSubject($alert->subject_key) ?? BackupAlertKind::Failed)->label(),
             AlertRule::Vulnerability => 'Vulnerability',
             AlertRule::WafUnavailable => 'Firewall off',
         };
@@ -142,26 +139,19 @@ final class OpenAlerts
         return $out;
     }
 
-    /** "Errors 8%" from the fact "12 of 140 requests". */
-    private static function errorLabel(?string $fact): string
+    /** "Disk 93%", "Errors 8.5%"; the word alone without a number. */
+    private static function withNumber(string $word, ?float $percent, bool $trim = false): string
     {
-        if ($fact !== null && preg_match('/^([\d,]+) of ([\d,]+)/', $fact, $m) === 1) {
-            $errors = (int) str_replace(',', '', $m[1]);
-            $requests = (int) str_replace(',', '', $m[2]);
-
-            if ($requests > 0) {
-                $rate = 100 * $errors / $requests;
-
-                return 'Errors '.($rate >= 10 ? (string) round($rate) : rtrim(rtrim(number_format($rate, 1), '0'), '.')).'%';
-            }
+        if ($percent === null) {
+            return $word;
         }
 
-        return 'Errors';
-    }
+        if ($percent >= 10) {
+            return "{$word} ".round($percent).'%';
+        }
 
-    /** "Disk 93%" from "93% full"; the word alone without a number. */
-    private static function withNumber(string $word, ?string $fact): string
-    {
-        return $fact !== null && preg_match('/^(\d+(?:\.\d)?%)/', $fact, $m) === 1 ? "{$word} {$m[1]}" : $word;
+        $number = number_format($percent, 1);
+
+        return "{$word} ".($trim ? rtrim(rtrim($number, '0'), '.') : $number).'%';
     }
 }

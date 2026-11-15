@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace App\Support\Dockerfiles;
 
+use App\Data\Dockerfiles\DockerfileAttemptRecordData;
+use App\Data\Dockerfiles\DockerfileDetectedData;
+use App\Data\Dockerfiles\RepositoryContextData;
+
 /**
  * The words sent to the model (docs/20 §2, §4). The system prompt is fixed
  * (cache friendly); the user message carries the scrubbed repository
@@ -29,21 +33,19 @@ final class DockerfilePromptBuilder
         TXT;
 
     /**
-     * @param  array{tree: list<string>, treeTruncated: bool, files: list<array{path: string, content: string, truncated: bool}>}  $context
-     * @param  array<string, mixed>  $detected  plan summary facts + `error`
      * @param  list<string>  $buildVariables
-     * @param  list<array<string, mixed>>  $attempts  earlier attempts (dockerfile, outcome, lint, log)
+     * @param  list<DockerfileAttemptRecordData>  $attempts  earlier attempts
      */
-    public static function user(string $rootDirectory, array $context, array $detected, array $buildVariables, array $attempts): string
+    public static function user(string $rootDirectory, RepositoryContextData $context, DockerfileDetectedData $detected, array $buildVariables, array $attempts): string
     {
         $root = $rootDirectory === '' ? 'the repository root' : "`{$rootDirectory}/`";
         $parts = [];
         $parts[] = "# The app\n\nThe build context is {$root}. Paths below are relative to it.";
 
-        $listing = implode("\n", $context['tree']);
-        $parts[] = "## Files\n\n```\n".$listing.($context['treeTruncated'] ? "\n… (listing cut)" : '')."\n```";
+        $listing = implode("\n", $context->tree);
+        $parts[] = "## Files\n\n```\n".$listing.($context->treeTruncated ? "\n… (listing cut)" : '')."\n```";
 
-        foreach ($context['files'] as $file) {
+        foreach ($context->files as $file) {
             $fence = str_contains($file['content'], '```') ? '~~~~' : '```';
             $parts[] = "## {$file['path']}".($file['truncated'] ? ' (cut)' : '')."\n\n{$fence}\n".rtrim($file['content'])."\n{$fence}";
         }
@@ -54,7 +56,7 @@ final class DockerfilePromptBuilder
 
         foreach ($attempts as $index => $attempt) {
             $n = $index + 1;
-            $dockerfile = is_string($attempt['dockerfile'] ?? null) ? $attempt['dockerfile'] : '';
+            $dockerfile = $attempt->dockerfile ?? '';
             $outcome = self::outcome($attempt);
             $parts[] = "## Attempt {$n} did not work\n\n```dockerfile\n".rtrim($dockerfile)."\n```\n\n{$outcome}";
         }
@@ -66,36 +68,31 @@ final class DockerfilePromptBuilder
         return implode("\n\n", $parts);
     }
 
-    /**
-     * @param  array<string, mixed>  $detected
-     */
-    private static function facts(array $detected): string
+    private static function facts(DockerfileDetectedData $detected): string
     {
         $lines = [];
+        $values = $detected->toArray();
 
         foreach (['provider' => 'Provider', 'framework' => 'Framework', 'runtime' => 'Runtime', 'packageManager' => 'Package manager', 'installCommand' => 'Install', 'buildCommand' => 'Build', 'startCommand' => 'Start', 'port' => 'Port', 'healthPath' => 'Health path'] as $key => $label) {
-            $value = $detected[$key] ?? null;
+            $value = $values[$key] ?? null;
 
             if (is_string($value) && $value !== '' || is_int($value)) {
                 $lines[] = "- {$label}: {$value}";
             }
         }
 
-        if (is_string($detected['error'] ?? null) && $detected['error'] !== '') {
-            $lines[] = '- Railpack: '.mb_substr($detected['error'], 0, 600);
+        if ($detected->error !== null && $detected->error !== '') {
+            $lines[] = '- Railpack: '.mb_substr($detected->error, 0, 600);
         }
 
         return implode("\n", $lines);
     }
 
-    /**
-     * @param  array<string, mixed>  $attempt
-     */
-    private static function outcome(array $attempt): string
+    private static function outcome(DockerfileAttemptRecordData $attempt): string
     {
-        $stage = is_string($attempt['outcome'] ?? null) ? $attempt['outcome'] : 'failed';
-        $message = is_string($attempt['message'] ?? null) ? $attempt['message'] : '';
-        $log = is_string($attempt['log'] ?? null) ? $attempt['log'] : '';
+        $stage = $attempt->outcome ?? 'failed';
+        $message = $attempt->message ?? '';
+        $log = $attempt->log ?? '';
 
         $text = match ($stage) {
             'lint' => "launchroom refused it:\n".$message,

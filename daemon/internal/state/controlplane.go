@@ -172,7 +172,6 @@ func (v ControlPlaneURLState) Validate() error {
 	return checkEnum("control-plane URL state", string(v), controlPlaneURLStates)
 }
 
-// maxControlPlaneMessage bounds ControlPlaneStatus.Message.
 const maxControlPlaneMessage = 512
 
 // ControlPlaneStatus is Report.host.controlPlane: which dashboard URL this

@@ -1,8 +1,9 @@
+import { labels, vocabulary } from '@/lib/vocabulary';
 import { AppWindow, Globe, Hammer, Package } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { Status, serverStatus } from '@/components/status';
-import { shortDuration } from '@/features/servers/format';
 import { useNow } from '@/hooks/use-now';
+import { shortDuration } from '@/lib/format';
 
 export function ServerStatus({
     status,
@@ -15,7 +16,7 @@ export function ServerStatus({
     className?: string;
 }) {
     const { state, label } = serverStatus[status];
-    const down = status === 'unreachable' || status === 'offline';
+    const down = vocabulary.ServerStatus[status].isDown;
     const now = useNow(down && lastSeenAt !== null, 10_000);
     const since = down ? shortDuration(lastSeenAt, now) : null;
 
@@ -30,12 +31,7 @@ export function ServerStatus({
 }
 
 /** Role chips on cards and in the hero. */
-export const roleLabels: Record<App.Enums.ServerRole, string> = {
-    edge: 'Edge',
-    runtime: 'Runtime',
-    build: 'Build',
-    registry: 'Registry',
-};
+export const roleLabels = labels(vocabulary.ServerRole);
 
 /** Role cards ("What should it do?", "What this server does"). */
 export const roleTitles: Record<App.Enums.ServerRole, string> = {
@@ -59,14 +55,6 @@ export const roleDescriptions: Record<App.Enums.ServerRole, string> = {
     build: 'Builds images from your pushes, best on a fast machine.',
     registry: 'Stores built images.',
 };
-
-export function RoleList({ roles }: { roles: App.Enums.ServerRole[] }) {
-    return (
-        <span className="type-body text-muted-foreground">
-            {roles.map((role) => roleLabels[role]).join(', ')}
-        </span>
-    );
-}
 
 /** A role chip's content: the role icon (12 px, muted) and its label. */
 export function RoleChipLabel({ role }: { role: App.Enums.ServerRole }) {

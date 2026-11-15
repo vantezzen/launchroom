@@ -64,8 +64,6 @@ func lineFilter(dst io.Writer, src io.Reader, decide func(line []byte) ([]byte, 
 	}
 }
 
-// ---- MySQL / MariaDB ----
-
 var (
 	reDefiner  = regexp.MustCompile("(?i)DEFINER\\s*=\\s*(?:`[^`]*`|'[^']*'|\"[^\"]*\"|[^\\s@]+)\\s*@\\s*(?:`[^`]*`|'[^']*'|\"[^\"]*\"|[^\\s*]+)\\s*")
 	reUseDB    = regexp.MustCompile("(?i)^USE\\s+`?([^`;\\s]+)`?\\s*;\\s*$")
@@ -150,7 +148,6 @@ func (f *mysqlFilter) database(name string) error {
 	return nil
 }
 
-// warnings describes what the filter changed.
 func (f *mysqlFilter) warnings(target string) []string {
 	var w []string
 	if f.definers > 0 {
@@ -164,8 +161,6 @@ func (f *mysqlFilter) warnings(target string) []string {
 	}
 	return w
 }
-
-// ---- PostgreSQL plain SQL ----
 
 var (
 	reOwnerTo = regexp.MustCompile(`(?i)^ALTER\s+.+\s+OWNER\s+TO\s+.+;\s*$`)
@@ -205,5 +200,4 @@ func (f *pgFilter) line(line []byte) ([]byte, error) {
 	return line, nil
 }
 
-// ownershipWarning is the result warning when ownership was left out.
 const ownershipWarning = "Ownership and privileges were left out: everything belongs to the database's own user"

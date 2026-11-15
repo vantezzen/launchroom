@@ -12,7 +12,8 @@ use App\Enums\DeploymentFailureClass;
 final readonly class FailureContext
 {
     /**
-     * @param  list<string>  $hintCodes  known-error codes launchroomd attached to the failed build (e.g. `pnpm-outdated-lockfile`)
+     * @param  list<string>  $hintCodes  known-error codes launchroomd attached: build hints (`pnpm-outdated-lockfile`) and the port hint of the failed replica (PortHint)
+     * @param  list<int>  $listening  ports the failed replica listened on (with a port hint)
      */
     public function __construct(
         public DeploymentFailureClass $class,
@@ -22,6 +23,9 @@ final readonly class FailureContext
         public ?string $logExcerpt = null,
         public ?int $currentPort = null,
         public ?int $healthStartPeriodSeconds = null,
+        public array $listening = [],
+        /** The port the port hint was checked against. */
+        public ?int $hintPort = null,
     ) {}
 
     public function text(): string

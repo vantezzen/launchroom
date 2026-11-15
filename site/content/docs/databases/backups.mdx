@@ -45,7 +45,7 @@ A destination is any S3-compatible bucket: Amazon S3, Cloudflare R2, Backblaze B
 | Endpoint | The S3 API URL without the bucket name, `https://…` |
 | Bucket | The bucket's name |
 | Region | The provider's region, or `auto` |
-| Folder (optional) | A prefix inside the bucket, so several teams or instances can share one bucket |
+| Folder (optional) | A prefix inside the bucket, so several teams or instances can share one bucket. Up to 200 characters, without `..` |
 | Access key ID, Secret access key | Credentials that can read, write, list and delete in the bucket |
 
 launchroom tests the destination right away by opening (and on first use, creating) the restic repository, then shows "Connected". Credentials and the generated repository password are encrypted at rest and handed to a server only for the backup task that needs them.

@@ -6,6 +6,8 @@ namespace App\Services\Dns;
 
 use App\Contracts\PublicDnsResolver;
 use App\Data\Domains\DnsCheckData;
+use App\Enums\Domains\DnsCheckStatus;
+use App\Enums\Domains\DnsLookupStatus;
 use App\Support\Hostname;
 
 /**
@@ -60,22 +62,22 @@ final readonly class DnsCheck
         $proxy = $ours === [] ? ProxyRanges::provider($addresses) : null;
         // Only when nothing points at us directly: a mix stays a mismatch
         // (some visitors would land on the other address).
-        $reach = $lookup->status !== 'error' && $addresses !== [] && $ours === []
+        $reach = $lookup->status !== DnsLookupStatus::Error && $addresses !== [] && $ours === []
             ? $this->reachability->check($hostname, $addresses)
             : null;
         $via = $proxy === null ? $resolved : "{$proxy}’s proxy";
 
         [$status, $message] = match (true) {
-            $reach?->reached === true => ['ok', "{$subject} points at {$via}, which forwards to your server {$reach->serverName} (checked over HTTP)."],
-            $proxy !== null => ['proxied', "{$subject} points at {$proxy}’s proxy ({$resolved}). launchroom couldn’t confirm that it forwards to your server: ".($reach->error ?? 'no answer').'.'],
-            $lookup->status === 'error' => ['error', 'DNS lookup failed: '.($lookup->error ?? 'no resolver answered').' Try again in a moment.'],
-            $addresses === [] => ['missing', $wildcard
+            $reach?->reached === true => [DnsCheckStatus::Ok, "{$subject} points at {$via}, which forwards to your server {$reach->serverName} (checked over HTTP)."],
+            $proxy !== null => [DnsCheckStatus::Proxied, "{$subject} points at {$proxy}’s proxy ({$resolved}). launchroom couldn’t confirm that it forwards to your server: ".($reach->error ?? 'no answer').'.'],
+            $lookup->status === DnsLookupStatus::Error => [DnsCheckStatus::Error, 'DNS lookup failed: '.($lookup->error ?? 'no resolver answered').' Try again in a moment.'],
+            $addresses === [] => [DnsCheckStatus::Missing, $wildcard
                 ? 'No wildcard record yet. DNS changes can take a few minutes (sometimes hours) to show up.'
                 : "No A or AAAA record for {$hostname} yet. DNS changes can take a few minutes (sometimes hours) to show up."],
-            $expected === [] => ['unknown', "{$subject} points at {$resolved}, but no edge server has a public address to compare it with."],
-            $foreign === [] => ['ok', "{$subject} points at your server ({$matching})."],
-            $ours === [] => ['mismatch', "{$subject} points at {$others}, not at your server ({$servers})."],
-            default => ['mismatch', "{$subject} also points at {$others}, which is not one of your servers. Remove that record."],
+            $expected === [] => [DnsCheckStatus::Unknown, "{$subject} points at {$resolved}, but no edge server has a public address to compare it with."],
+            $foreign === [] => [DnsCheckStatus::Ok, "{$subject} points at your server ({$matching})."],
+            $ours === [] => [DnsCheckStatus::Mismatch, "{$subject} points at {$others}, not at your server ({$servers})."],
+            default => [DnsCheckStatus::Mismatch, "{$subject} also points at {$others}, which is not one of your servers. Remove that record."],
         };
 
         return new DnsCheckData(

@@ -14,7 +14,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/vantezzen/launchroom/daemon/internal/build"
 	"github.com/vantezzen/launchroom/daemon/internal/docker"
 	"github.com/vantezzen/launchroom/daemon/internal/sealed"
 	"github.com/vantezzen/launchroom/daemon/internal/secret"
@@ -102,64 +101,72 @@ func (o *Options) defaults() {
 }
 
 // ErrRefused marks failures of the local policy.
-var ErrRefused = errors.New("refused by this server's policy")
+var ErrRefused = state.ErrPolicyRefused
 
 // Handler returns the tasks.Handler for "session" tasks.
 func Handler(o Options) tasks.Handler {
 	o.defaults()
-	return func(ctx context.Context, t state.Task) (tasks.Result, error) {
-		spec, ok := t.Spec.(*state.SessionSpec)
-		if !ok {
-			return tasks.Result{}, errors.New("session handler got a non-session spec")
+	return func(ctx context.Context, t state.Task) (state.TaskResults, error) {
+		out, err := o.handle(ctx, t)
+		if out.Session != nil {
+			out.Session.Failure = state.StartFailureOf(err)
 		}
-		res := &state.SessionResult{EndReason: state.EndError}
-		out := tasks.Result{Session: res}
-		if !o.Allowed(spec.Kind) {
-			res.EndReason = state.EndRefused
-			return out, fmt.Errorf("%s sessions are turned off on this server (LR_INTERACTIVE_SESSIONS)", spec.Kind)
-		}
-		tok, err := sealed.OpenTaskToken(spec.Key, o.SealingKey, o.ServerID, t.ID, state.PurposeSession)
-		if err != nil {
-			return out, fmt.Errorf("session key: %w", err)
-		}
-		key, err := base64.RawURLEncoding.DecodeString(tok.Reveal())
-		if err != nil || len(key) != 32 {
-			return out, errors.New("session key: not 32 bytes of base64url")
-		}
-		s := &run{o: o, t: t, spec: spec, res: res, codec: NewCodec(key, spec.Session, true), log: o.Log.With("session", spec.Session, "kind", spec.Kind)}
-		if err := s.prepare(ctx); err != nil {
-			if errors.Is(err, ErrRefused) {
-				res.EndReason = state.EndRefused
-			}
-			return out, err
-		}
-		defer s.cleanup()
-		var cfg *state.NudgeConfig
-		if o.Nudge != nil {
-			if cfg, err = o.Nudge(ctx); err != nil {
-				return out, fmt.Errorf("session: realtime settings: %w", err)
-			}
-		}
-		relay, err := Dial(ctx, RelayOptions{
-			Nudge: cfg, ControlPlaneURL: o.controlPlane(), Channel: spec.Channel, Auth: o.Auth,
-			DaemonVersion: o.DaemonVersion, HTTPClient: o.HTTPClient,
-		})
-		if err != nil {
-			return out, err
-		}
-		s.relay = relay
-		defer relay.Close()
-		var trusted Verifier
-		if o.Trusted != nil {
-			trusted = o.Trusted()
-		}
-		s.guard = newCommandGuard(trusted, spec.Session, o.Now)
-		s.loop(ctx)
-		s.log.Info("session ended", "reason", res.EndReason)
-		// A session that couldn't start fails its task with the reason, so
-		// the dashboard can show and log it (the browser got it in the end frame).
-		return out, s.failure
+		return out, err
 	}
+}
+
+func (o Options) handle(ctx context.Context, t state.Task) (state.TaskResults, error) {
+	spec, ok := t.Spec.(*state.SessionSpec)
+	if !ok {
+		return state.TaskResults{}, errors.New("session handler got a non-session spec")
+	}
+	res := &state.SessionResult{EndReason: state.EndError}
+	out := state.TaskResults{Session: res}
+	if !o.Allowed(spec.Kind) {
+		res.EndReason = state.EndRefused
+		return out, &state.StartError{Code: state.FailKindDisabled, Err: fmt.Errorf("%s sessions are turned off on this server (LR_INTERACTIVE_SESSIONS)", spec.Kind)}
+	}
+	tok, err := sealed.OpenTaskToken(spec.Key, o.SealingKey, o.ServerID, t.ID, state.PurposeSession)
+	if err != nil {
+		return out, &state.StartError{Code: state.FailSessionKey, Err: fmt.Errorf("session key: %w", err)}
+	}
+	key, err := base64.RawURLEncoding.DecodeString(tok.Reveal())
+	if err != nil || len(key) != 32 {
+		return out, &state.StartError{Code: state.FailSessionKey, Err: errors.New("session key: not 32 bytes of base64url")}
+	}
+	s := &run{o: o, t: t, spec: spec, res: res, codec: NewCodec(key, spec.Session, true), log: o.Log.With("session", spec.Session, "kind", spec.Kind)}
+	if err := s.prepare(ctx); err != nil {
+		if errors.Is(err, ErrRefused) {
+			res.EndReason = state.EndRefused
+		}
+		return out, err
+	}
+	defer s.cleanup()
+	var cfg *state.NudgeConfig
+	if o.Nudge != nil {
+		if cfg, err = o.Nudge(ctx); err != nil {
+			return out, &state.StartError{Code: state.FailRelayUnreachable, Err: fmt.Errorf("session: realtime settings: %w", err)}
+		}
+	}
+	relay, err := Dial(ctx, RelayOptions{
+		Nudge: cfg, ControlPlaneURL: o.controlPlane(), Channel: spec.Channel, Auth: o.Auth,
+		DaemonVersion: o.DaemonVersion, HTTPClient: o.HTTPClient,
+	})
+	if err != nil {
+		return out, &state.StartError{Code: state.FailRelayUnreachable, Err: err}
+	}
+	s.relay = relay
+	defer relay.Close()
+	var trusted Verifier
+	if o.Trusted != nil {
+		trusted = o.Trusted()
+	}
+	s.guard = newCommandGuard(trusted, spec.Session, o.Now)
+	s.loop(ctx)
+	s.log.Info("session ended", "reason", res.EndReason)
+	// A session that couldn't start fails its task with the reason, so
+	// the dashboard can show and log it (the browser got it in the end frame).
+	return out, s.failure
 }
 
 // run is one session.
@@ -234,34 +241,16 @@ func (s *run) target(ctx context.Context) (string, error) {
 	if s.o.InDesiredState == nil || !s.o.InDesiredState(wl) {
 		return "", fmt.Errorf("%w: workload %s is not in this server's desired state", ErrRefused, wl)
 	}
-	cs, err := s.o.Docker.ListContainers(ctx, map[string]string{docker.LabelWorkload: string(wl)})
-	if err != nil {
+	c, err := docker.WorkloadContainer(ctx, s.o.Docker, wl)
+	switch {
+	case err != nil:
 		return "", err
+	case c == nil:
+		return "", fmt.Errorf("%w: no workload container for %s on this server", ErrRefused, wl)
+	case !c.Running():
+		return "", &state.StartError{Code: state.FailNotRunning, Err: fmt.Errorf("the container of %s is not running", wl)}
 	}
-	stopped := false
-	for _, c := range cs {
-		if !eligible(c, wl) {
-			continue
-		}
-		// A stopped duplicate (a restart or a recreate in progress) never
-		// hides the running container.
-		if c.Running {
-			return c.ID, nil
-		}
-		stopped = true
-	}
-	if stopped {
-		return "", fmt.Errorf("the container of %s is not running", wl)
-	}
-	return "", fmt.Errorf("%w: no workload container for %s on this server", ErrRefused, wl)
-}
-
-// eligible: a managed workload container, never a system, task or helper container.
-func eligible(c docker.Container, wl state.WorkloadID) bool {
-	l := c.Labels
-	return l[docker.LabelManaged] == "true" && l[docker.LabelWorkload] == string(wl) &&
-		l[docker.LabelSystem] == "" && l[docker.LabelTask] == "" && l[docker.LabelHelper] == "" &&
-		!strings.HasPrefix(c.Name, "lr-system-")
+	return c.ID, nil
 }
 
 // autoShells is the automatic order (docs/03 §11.4): bash, then the
@@ -269,7 +258,7 @@ func eligible(c docker.Container, wl state.WorkloadID) bool {
 var autoShells = []state.ShellPath{state.ShellBash, state.ShellAsh, state.ShellSh}
 
 // errNoShell is the start failure of an image without any shell.
-var errNoShell = errors.New("this image has no shell (looked for /bin/bash, /bin/ash and /bin/sh)")
+var errNoShell error = &state.StartError{Code: state.FailNoShell, Err: errors.New("this image has no shell (looked for /bin/bash, /bin/ash and /bin/sh)")}
 
 func (s *run) pickShell(ctx context.Context) (string, error) {
 	if s.spec.Shell != "" {
@@ -281,7 +270,7 @@ func (s *run) pickShell(ctx context.Context) (string, error) {
 			return "", fmt.Errorf("checking for %s in the container: %w", s.spec.Shell, err)
 		}
 		if !ok {
-			return "", fmt.Errorf("this image has no %s", s.spec.Shell)
+			return "", &state.StartError{Code: state.FailShellMissing, Err: fmt.Errorf("this image has no %s", s.spec.Shell)}
 		}
 		return string(s.spec.Shell), nil
 	}
@@ -344,7 +333,7 @@ func (s *run) endWith(ctx context.Context, reason state.SessionEndReason, messag
 	sctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
 	defer cancel()
 	s.flushOutput(sctx)
-	_ = s.send(sctx, Payload{T: TEnd, Reason: string(reason), Message: clip(message)})
+	_ = s.send(sctx, Payload{T: TEnd, Reason: string(reason), Message: state.ClipLine(message, 200)})
 }
 
 func (s *run) logger() *slog.Logger {
@@ -499,7 +488,7 @@ func (s *run) loop(ctx context.Context) {
 				_ = s.send(ctx, Payload{T: TExit, Code: &code})
 			}
 			if err == nil && shellFailedToStart(code, now().Sub(s.res.StartedAt)) {
-				s.failure = fmt.Errorf("%s couldn't start in the container (exit code %d)", s.shell, code)
+				s.failure = &state.StartError{Code: state.FailShellStart, Err: fmt.Errorf("%s couldn't start in the container (exit code %d)", s.shell, code)}
 				s.endWith(ctx, state.EndExited, s.failure.Error())
 				return
 			}
@@ -621,13 +610,13 @@ func (s *run) flushOutput(ctx context.Context) {
 // recorder turns terminal output into masked transcript lines.
 type recorder struct {
 	ship    tasks.LineShipper
-	mask    *build.Masker
+	mask    *secret.Masker
 	partial []byte
 	total   int
 	cut     bool
 }
 
-func newRecorder(ship tasks.LineShipper, mask *build.Masker) *recorder {
+func newRecorder(ship tasks.LineShipper, mask *secret.Masker) *recorder {
 	return &recorder{ship: ship, mask: mask}
 }
 
@@ -667,12 +656,12 @@ func (r *recorder) close() {
 }
 
 // maskerFor masks the workload's env values (8 bytes or longer) in transcripts.
-func maskerFor(env map[string]secret.Secret) *build.Masker {
+func maskerFor(env map[string]secret.Secret) *secret.Masker {
 	vals := make([]string, 0, len(env))
 	for _, v := range env {
 		if len(v.Reveal()) >= 8 {
 			vals = append(vals, v.Reveal())
 		}
 	}
-	return build.NewMasker(vals...)
+	return secret.NewMasker(vals...)
 }

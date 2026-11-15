@@ -22,9 +22,9 @@ use Illuminate\Contracts\Database\Query\Builder;
  * (any branch pattern) and rows of preview environments. A row targeted at
  * both production and previews always violates it.
  *
- * Enforced when variables are saved (SecretExposureGuard), on every deploy
- * of production and previews (Deploy, push and tag deploys, preview
- * deploys), by Compare & promote, and when a preview's variables are copied
+ * Enforced when variables are saved (VariableStore::write via SecretExposureGuard), on every deploy
+ * of production and previews that resolves variables ({@see assertFor()}),
+ * by Compare & promote, and when a preview's variables are copied
  * from its base: a secret equal to production's is not copied, whatever
  * environment it comes from (e.g. staging copied from production).
  */
@@ -49,6 +49,35 @@ final readonly class ProductionSecretPolicy
     public function assert(Project $project, ?array $keys = null, string $field = 'value'): void
     {
         $violations = $this->violations($project, $keys);
+
+        if ($violations !== []) {
+            throw DomainRuleViolation::on($field, implode(' ', $violations));
+        }
+    }
+
+    /**
+     * The violations a deploy to $environment refuses on: none for kinds
+     * the policy doesn't cover (EnvironmentKind::checksProductionSecrets).
+     *
+     * @return list<string>
+     */
+    public function violationsFor(Environment $environment): array
+    {
+        if (! $environment->kind->checksProductionSecrets()) {
+            return [];
+        }
+
+        $environment->loadMissing('project');
+
+        return $this->violations($environment->project);
+    }
+
+    /**
+     * @throws DomainRuleViolation
+     */
+    public function assertFor(Environment $environment, string $field = 'environment'): void
+    {
+        $violations = $this->violationsFor($environment);
 
         if ($violations !== []) {
             throw DomainRuleViolation::on($field, implode(' ', $violations));
@@ -81,7 +110,7 @@ final readonly class ProductionSecretPolicy
             ->get();
 
         foreach ($rows as $row) {
-            $macs[($row->service_id ?? 0).'|'.$row->key][] = $this->macOf($project, $row);
+            $macs[$this->groupKey($row)][] = $this->macOf($project, $row);
         }
 
         return $macs;
@@ -95,9 +124,18 @@ final readonly class ProductionSecretPolicy
      */
     public function equalsProduction(Project $project, Variable $row, array $macs): bool
     {
-        $known = $macs[($row->service_id ?? 0).'|'.$row->key] ?? [];
+        $known = $macs[$this->groupKey($row)] ?? [];
 
         return $known !== [] && in_array($this->macOf($project, $row), $known, true);
+    }
+
+    /**
+     * Rows that must differ: the same key of the same service, or of the
+     * shared variables.
+     */
+    private function groupKey(Variable $row): string
+    {
+        return ($row->service_id ?? 0).'|'.$row->key;
     }
 
     private function macOf(Project $project, Variable $row): string
@@ -134,7 +172,7 @@ final readonly class ProductionSecretPolicy
         $groups = [];
 
         foreach ($rows as $row) {
-            $groups[($row->service_id ?? 0).'|'.$row->key][] = $row;
+            $groups[$this->groupKey($row)][] = $row;
         }
 
         $messages = [];
@@ -150,13 +188,11 @@ final readonly class ProductionSecretPolicy
             $previewValues = [];
 
             foreach ($inPreviews as $row) {
-                $previewValues[$row->id] = $this->keyring->mac($project, 'secret-policy', $this->keyring->decryptVariable($project, $row->public_id, $row->version, $row->value));
+                $previewValues[$row->id] = $this->macOf($project, $row);
             }
 
             foreach ($inProduction as $row) {
-                $value = $this->keyring->mac($project, 'secret-policy', $this->keyring->decryptVariable($project, $row->public_id, $row->version, $row->value));
-
-                if (in_array($value, $previewValues, true)) {
+                if (in_array($this->macOf($project, $row), $previewValues, true)) {
                     $scope = $row->service->slug ?? 'shared';
                     $messages[] = "{$row->key} ({$scope}) has the same value in production and in previews, but production secrets must differ from preview in this project. Give previews their own value.";
 

@@ -28,7 +28,6 @@ import (
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
 
-// cloneOptions configures fetching one commit.
 type cloneOptions struct {
 	Repo state.RepoSpec
 	// Token authenticates an http(s) fetch (GitHub: installation token as the
@@ -43,7 +42,6 @@ type cloneOptions struct {
 	Progress      func(string)
 }
 
-// sshConnectTimeout bounds the TCP connect plus SSH handshake of a clone.
 const sshConnectTimeout = 20 * time.Second
 
 // refFallbackDepth is how much history of repo.ref is fetched when the
@@ -76,7 +74,6 @@ func checkCloneURL(raw state.GitURL, insecure []string) (*url.URL, error) {
 	}
 }
 
-// basicAuthUser is the Basic-auth user name a provider expects with a token.
 func basicAuthUser(p state.GitProvider) string {
 	switch p {
 	case state.GitHub:
@@ -88,7 +85,6 @@ func basicAuthUser(p state.GitProvider) string {
 	}
 }
 
-// errHostKeyMismatch: the ssh server presented a key that is not pinned.
 var errHostKeyMismatch = errors.New("host key mismatch")
 
 // pinnedHostKeys builds a host key callback that accepts only the pinned
@@ -167,7 +163,6 @@ func remoteURL(u *url.URL) string {
 	return user + "@" + u.Hostname() + ":" + port + u.Path[1:]
 }
 
-// sshAuth builds the deploy-key auth for an ssh:// remote.
 func sshAuth(u *url.URL, opts cloneOptions) (transport.AuthMethod, error) {
 	cb, algos, err := pinnedHostKeys(opts.Repo.KnownHosts)
 	if err != nil {
@@ -289,7 +284,6 @@ func clone(ctx context.Context, dir string, opts cloneOptions) error {
 	return nil
 }
 
-// advertisedRef is a branch or tag of origin whose tip is sha, or "".
 func advertisedRef(ctx context.Context, repo *git.Repository, auth transport.AuthMethod, sha string) state.GitRef {
 	remote, err := repo.Remote("origin")
 	if err != nil {
@@ -315,8 +309,6 @@ func Clone(ctx context.Context, dir string, repo state.RepoSpec, token, sshKey s
 	return clone(ctx, dir, cloneOptions{Repo: repo, Token: token, SSHKey: sshKey, InsecureHosts: insecureHosts})
 }
 
-// canFallBack: a failed fetch by SHA is retried at repo.ref unless the task
-// was cancelled, the host key didn't match or credentials were refused.
 func canFallBack(ctx context.Context, err error, ref state.GitRef) bool {
 	return ref != "" && ctx.Err() == nil && !isHostKeyMismatch(err) &&
 		!errors.Is(err, transport.ErrAuthenticationRequired) && !errors.Is(err, transport.ErrAuthorizationFailed) &&
@@ -329,7 +321,6 @@ func isHostKeyMismatch(err error) bool {
 	return err != nil && (errors.Is(err, errHostKeyMismatch) || strings.Contains(err.Error(), errHostKeyMismatch.Error()))
 }
 
-// errUnsafeRepo marks repository content the daemon refuses to build.
 var errUnsafeRepo = errors.New("unsafe repository content")
 
 // maxLinkHops bounds symlink resolution (the kernel's own limit is 40).
@@ -350,7 +341,7 @@ const maxLinkHops = 40
 //
 // Railpack's planner reads the checkout with plain os calls (it has no fs.FS
 // seam), so this check is what keeps it inside; the daemon's own reads go
-// through os.Root as well (openApp), which refuses escapes independently.
+// through os.Root as well (Builder.resolve), which refuses escapes independently.
 func checkTree(root string) error {
 	root, err := filepath.EvalSymlinks(root)
 	if err != nil {
@@ -439,7 +430,6 @@ func pruneOutsideApp(root, dir string) ([]string, error) {
 	return removed, err
 }
 
-// prunedMessage names the entries pruneOutsideApp removed (at most five).
 func prunedMessage(removed []string) string {
 	shown := removed
 	if len(shown) > 5 {
@@ -530,7 +520,6 @@ func appDir(checkout string, rootDir state.RelPath) (string, error) {
 	return p, nil
 }
 
-// fileIn resolves a repo-relative file inside dir (no escaping), or "" if missing.
 func fileIn(dir string, rel state.RelPath) (string, error) {
 	if err := rel.Validate(); err != nil {
 		return "", err

@@ -10,8 +10,12 @@ use App\Actions\Domains\SetDomainHsts;
 use App\Actions\Domains\SetWwwRedirect;
 use App\Actions\Domains\VerifyDomain;
 use App\Data\Canvas\AddDomainData;
+use App\Data\Domains\UpdateDomainData;
+use App\Enums\Domains\DnsCheckStatus;
+use App\Enums\ToastType;
 use App\Http\Controllers\Controller;
-use App\Jobs\Domains\VerifyDomainJob;
+use App\Http\Routing\RouteScope;
+use App\Http\Toast;
 use App\Models\Domain;
 use App\Models\Environment;
 use App\Models\Project;
@@ -21,7 +25,6 @@ use Illuminate\Container\Attributes\CurrentUser;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
-use Inertia\Inertia;
 
 /**
  * Custom domains of a service instance (Settings → Networking, docs/05 §5):
@@ -31,47 +34,43 @@ final class DomainController extends Controller
 {
     public function store(Request $request, Project $project, Environment $environment, Service $service, AddDomainData $data, #[CurrentUser] User $user, AddDomain $addDomain): RedirectResponse
     {
-        $instance = ProjectScope::instance($project, $environment, $service);
+        $instance = RouteScope::editable(RouteScope::instance($project, $environment, $service));
         Gate::authorize('create', [Domain::class, $instance]);
 
         $domain = $addDomain->handle($instance, $data->hostname, $this->auditActor($request, $user), $data->redirectTo);
-        dispatch(new VerifyDomainJob($domain->id));
 
-        Inertia::flash('toast', ['type' => 'success', 'message' => "{$domain->hostname} added. It goes live with a certificate once its DNS points at your server."]);
+        Toast::success("{$domain->hostname} added. It goes live with a certificate once its DNS points at your server.");
 
         return back();
     }
 
     /**
-     * www redirect on/off (applies immediately like any domain change), or HSTS on/off
-     * (immediate: a response header once the certificate is issued).
+     * HSTS takes effect as a response header once the certificate is issued.
      */
-    public function update(Request $request, Project $project, Environment $environment, Service $service, Domain $domain, #[CurrentUser] User $user, SetWwwRedirect $setWwwRedirect, SetDomainHsts $setDomainHsts): RedirectResponse
+    public function update(Request $request, Project $project, Environment $environment, Service $service, Domain $domain, UpdateDomainData $data, #[CurrentUser] User $user, SetWwwRedirect $setWwwRedirect, SetDomainHsts $setDomainHsts): RedirectResponse
     {
-        $instance = ProjectScope::instance($project, $environment, $service);
-        ProjectScope::domain($instance, $domain);
+        $instance = RouteScope::editable(RouteScope::instance($project, $environment, $service));
+        RouteScope::domain($instance, $domain);
         Gate::authorize('update', $domain);
 
-        if ($request->has('hsts')) {
-            $request->validate(['hsts' => ['required', 'boolean']]);
-            $enabled = $request->boolean('hsts');
+        if ($data->hsts !== null) {
+            $enabled = $data->hsts;
             $setDomainHsts->handle($domain, $enabled, $this->auditActor($request, $user));
 
-            Inertia::flash('toast', ['type' => 'success', 'message' => $enabled
+            Toast::success($enabled
                 ? "Browsers will be told to use HTTPS for {$domain->hostname} once its certificate is issued."
-                : "{$domain->hostname} no longer sends HSTS. Browsers that saw it keep HTTPS until it expires."]);
+                : "{$domain->hostname} no longer sends HSTS. Browsers that saw it keep HTTPS until it expires.");
 
             return back();
         }
 
-        $request->validate(['wwwRedirect' => ['required', 'boolean']]);
-        $enabled = $request->boolean('wwwRedirect');
+        $enabled = (bool) $data->wwwRedirect;
 
         $setWwwRedirect->handle($domain, $enabled, $this->auditActor($request, $user));
 
-        Inertia::flash('toast', ['type' => 'success', 'message' => $enabled
+        Toast::success($enabled
             ? "www.{$domain->hostname} now redirects to {$domain->hostname}."
-            : "www.{$domain->hostname} no longer redirects."]);
+            : "www.{$domain->hostname} no longer redirects.");
 
         return back();
     }
@@ -81,8 +80,8 @@ final class DomainController extends Controller
      */
     public function verify(Request $request, Project $project, Environment $environment, Service $service, Domain $domain, VerifyDomain $verifyDomain): RedirectResponse
     {
-        $instance = ProjectScope::instance($project, $environment, $service);
-        ProjectScope::domain($instance, $domain);
+        $instance = RouteScope::instance($project, $environment, $service);
+        RouteScope::domain($instance, $domain);
         Gate::authorize('update', $domain);
 
         $result = $verifyDomain->handle($domain);
@@ -92,20 +91,20 @@ final class DomainController extends Controller
             return back();
         }
 
-        Inertia::flash('toast', ['type' => $result?->status === 'ok' ? 'success' : 'info', 'message' => $result->message ?? 'Only custom domains are checked.']);
+        Toast::flash($result?->status === DnsCheckStatus::Ok ? ToastType::Success : ToastType::Info, $result->message ?? 'Only custom domains are checked.');
 
         return back();
     }
 
     public function destroy(Request $request, Project $project, Environment $environment, Service $service, Domain $domain, #[CurrentUser] User $user, RemoveDomain $removeDomain): RedirectResponse
     {
-        $instance = ProjectScope::instance($project, $environment, $service);
-        ProjectScope::domain($instance, $domain);
+        $instance = RouteScope::editable(RouteScope::instance($project, $environment, $service));
+        RouteScope::domain($instance, $domain);
         Gate::authorize('delete', $domain);
 
         $removeDomain->handle($domain, $this->auditActor($request, $user));
 
-        Inertia::flash('toast', ['type' => 'success', 'message' => "{$domain->hostname} removed. It no longer routes traffic."]);
+        Toast::success("{$domain->hostname} removed. It no longer routes traffic.");
 
         return back();
     }

@@ -4,11 +4,14 @@ declare(strict_types=1);
 
 namespace App\Models\Backups;
 
+use App\Data\Backups\BackupVerificationCheckData;
 use App\Enums\Backups\BackupSubject;
 use App\Enums\Backups\VerificationReason;
 use App\Enums\Backups\VerificationStatus;
+use App\Enums\Contracts\HasTransitionTable;
 use App\Models\Concerns\BelongsToTeam;
 use App\Models\Concerns\HasPublicId;
+use App\Models\Concerns\HasStatusTransitions;
 use App\Models\DaemonTask;
 use App\Models\Server;
 use App\Models\ServiceInstance;
@@ -17,6 +20,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
+use Spatie\LaravelData\DataCollection;
 
 /**
  * One automatic test restore of a snapshot into a throwaway container
@@ -33,7 +37,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $snapshot_taken_at
  * @property VerificationReason $reason
  * @property VerificationStatus $status
- * @property list<array{name: string, passed: bool, detail?: string}> $checks
+ * @property DataCollection<int, BackupVerificationCheckData> $checks
  * @property int|null $tables
  * @property int|null $rows
  * @property int|null $files
@@ -60,6 +64,9 @@ final class BackupVerification extends Model
 {
     use BelongsToTeam, HasPublicId;
 
+    /** @use HasStatusTransitions<VerificationStatus> */
+    use HasStatusTransitions;
+
     /** @var array<string, mixed> */
     protected $attributes = [
         'status' => 'pending',
@@ -72,23 +79,19 @@ final class BackupVerification extends Model
     }
 
     /**
-     * The only way a verification's status changes (docs/10 §2.2 rule 3).
+     * @param  VerificationStatus  $from
+     * @param  VerificationStatus  $to
      */
-    public function transitionTo(VerificationStatus $to, ?string $error = null): void
+    protected function recordTransition(HasTransitionTable $from, HasTransitionTable $to, ?string $note): void
     {
-        $this->status->assertCanTransitionTo($to);
-        $this->status = $to;
-
         if ($to === VerificationStatus::Running) {
             $this->forceFill(['started_at' => $this->started_at ?? now()]);
         }
 
         if ($to->isTerminal()) {
             $this->forceFill(['started_at' => $this->started_at ?? now(), 'finished_at' => now()]);
-            $this->error = $error === null ? null : mb_substr($error, 0, 2048);
+            $this->error = $note;
         }
-
-        $this->save();
     }
 
     /**
@@ -148,7 +151,7 @@ final class BackupVerification extends Model
             'subject' => BackupSubject::class,
             'reason' => VerificationReason::class,
             'status' => VerificationStatus::class,
-            'checks' => 'array',
+            'checks' => DataCollection::class.':'.BackupVerificationCheckData::class.',default',
             'tables' => 'integer',
             'rows' => 'integer',
             'files' => 'integer',

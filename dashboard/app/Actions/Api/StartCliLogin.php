@@ -8,6 +8,7 @@ use App\Data\Api\CliSessionData;
 use App\Data\Api\StartCliSessionInput;
 use App\Models\CliLoginRequest;
 use App\Support\Api\CliUserCode;
+use App\Support\Crypto\OpaqueToken;
 use Illuminate\Database\UniqueConstraintViolationException;
 
 /**
@@ -20,7 +21,7 @@ final class StartCliLogin
 {
     public function handle(StartCliSessionInput $input, ?string $ip, ?string $userAgent): CliSessionData
     {
-        $deviceCode = rtrim(strtr(base64_encode(random_bytes(32)), '+/', '-_'), '=');
+        $deviceCode = OpaqueToken::generate();
         $expires = config()->integer('api.cli_login.expires_seconds');
 
         for ($attempt = 0; ; $attempt++) {

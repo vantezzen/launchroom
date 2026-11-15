@@ -12,6 +12,7 @@ use App\Exceptions\GitHeadUnavailable;
 use App\Models\Deployment;
 use App\Models\ServiceInstance;
 use App\Services\Git\GitHeads;
+use App\Support\Git\GitRef;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -50,8 +51,8 @@ final class DevGitPushCommand extends Command
         $sha = $this->option('sha');
 
         if (is_string($sha) && $sha !== '') {
-            if (preg_match('/^[0-9a-f]{40}$/D', $sha) !== 1) {
-                $this->components->error('--sha must be a full commit SHA (40 lowercase hex).');
+            if (! GitRef::isSha($sha)) {
+                $this->components->error('--sha must be a full commit SHA (40 or 64 lowercase hex).');
 
                 return self::INVALID;
             }

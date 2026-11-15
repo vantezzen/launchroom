@@ -94,11 +94,12 @@ func TestRootlessDeployAndRouting(t *testing.T) {
 	}
 }
 
-// TestRootlessMeasurements records what works in RootlessKit's namespace
-// (documented in docs/11 §3.2): nftables isolation with an environment
-// network, and the mesh client in kernel (TUN) mode with launchroomd's own
-// spec, created through the guard.
-func TestRootlessMeasurements(t *testing.T) {
+// TestRootlessNetworking checks what docs/11 §3.2 documents for
+// RootlessKit's namespace: launchroomd's nftables table applies there
+// (enforced, environment bridges covered), and the mesh client in kernel
+// (TUN) mode starts and keeps running with launchroomd's own spec, created
+// through the guard.
+func TestRootlessNetworking(t *testing.T) {
 	rootlessOnly(t)
 	e := setup(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Minute)
@@ -111,9 +112,13 @@ func TestRootlessMeasurements(t *testing.T) {
 		Mode: firewall.ModeEnforce, Backend: firewall.NewBackend(), Networks: e.engine.ListNetworks,
 		Log: slog.Default(), Now: time.Now,
 	})
-	err := fw.Sync(ctx)
-	t.Logf("measured: nftables in the rootless namespace: sync err=%v status=%+v", err, fw.Status())
-	_ = fw.Remove()
+	t.Cleanup(func() { _ = fw.Remove() })
+	if err := fw.Sync(ctx); err != nil {
+		t.Fatalf("nftables in the rootless namespace: %v", err)
+	}
+	if st := fw.Status(); st == nil || st.Mode != state.FirewallEnforced || st.Networks < 1 {
+		t.Fatalf("firewall status %+v, want enforced with the environment network covered", st)
+	}
 
 	if err := e.engine.PullImage(ctx, string(tailscaleImage)); err != nil {
 		t.Fatal(err)
@@ -125,20 +130,21 @@ func TestRootlessMeasurements(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = e.engine.RemoveContainer(context.WithoutCancel(ctx), id) })
 	if err := e.engine.StartContainer(ctx, id); err != nil {
-		t.Logf("measured: the mesh client does not start on rootless Docker: %v", err)
-		return
+		t.Fatalf("the mesh client does not start on rootless Docker: %v", err)
 	}
-	time.Sleep(10 * time.Second)
-	c, err := e.engine.InspectContainer(ctx, id)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var lines []string
-	_ = e.engine.StreamLogs(ctx, id, docker.LogsOptions{Tail: 200}, func(l docker.LogLine) error {
-		if strings.Contains(strings.ToLower(l.Text), "tun") {
-			lines = append(lines, l.Text)
+	// It must stay up (a TUN failure exits tailscaled, and Docker restarts it).
+	for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); time.Sleep(time.Second) {
+		c, err := e.engine.InspectContainer(ctx, id)
+		if err != nil {
+			t.Fatal(err)
 		}
-		return nil
-	})
-	t.Logf("measured: mesh client (kernel/TUN mode) on rootless Docker: running=%v restarts=%d tun log lines=%q", c.Running, c.RestartCount, lines)
+		if !c.Running() || c.RestartCount > 0 {
+			var lines []string
+			_ = e.engine.StreamLogs(ctx, id, docker.LogsOptions{Tail: 50}, func(l docker.LogLine) error {
+				lines = append(lines, l.Text)
+				return nil
+			})
+			t.Fatalf("mesh client (kernel/TUN mode) not running: running=%v restarts=%d\n%s", c.Running(), c.RestartCount, strings.Join(lines, "\n"))
+		}
+	}
 }

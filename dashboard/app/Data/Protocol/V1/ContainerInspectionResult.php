@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Data\Protocol\V1;
 
 use App\Data\Protocol\WireErrors;
+use App\Support\Protocol\Grammar;
+use App\Support\PublicId;
 use Illuminate\Validation\ValidationException;
 use Spatie\LaravelData\Data;
 
@@ -66,8 +68,8 @@ final class ContainerInspectionResult extends Data
         $e = new WireErrors;
         $p = 'containerInspection';
 
-        $workload = $e->string($raw['workload'] ?? null, "{$p}.workload", '/^wl_[0-9A-HJKMNP-TV-Z]{26}$/D', 29) ?? '';
-        $containerId = $e->string($raw['containerId'] ?? null, "{$p}.containerId", '/^[a-f0-9]{64}$/D', 64) ?? '';
+        $workload = $e->string($raw['workload'] ?? null, "{$p}.workload", PublicId::regex('wl'), 29) ?? '';
+        $containerId = $e->string($raw['containerId'] ?? null, "{$p}.containerId", Grammar::HEX64, 64) ?? '';
         $imageId = $e->string($raw['imageId'] ?? null, "{$p}.imageId", '/^sha256:[a-f0-9]{64}$/D', 71) ?? '';
         $imageMatches = $e->bool($raw['imageMatches'] ?? null, "{$p}.imageMatches", required: true);
         $startedAt = $e->time($raw['startedAt'] ?? null, "{$p}.startedAt") ?? '';

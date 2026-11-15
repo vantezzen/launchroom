@@ -8,6 +8,7 @@ use App\Actions\Audit\RecordAuditEvent;
 use App\Data\Audit\AuditActor;
 use App\Data\Audit\AuditEntryData;
 use App\Enums\AuditAction;
+use App\Events\CanvasChanged;
 use App\Models\Connection;
 use Illuminate\Support\Facades\DB;
 
@@ -33,6 +34,7 @@ final readonly class DeleteConnection
                 subjectType: 'connection',
                 subjectId: $connection->public_id,
             ));
+            CanvasChanged::forProject($connection->project_id);
         });
     }
 }

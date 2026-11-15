@@ -58,9 +58,6 @@ enum VariableExposure: string
         return self::Runtime;
     }
 
-    /**
-     * The effective exposure: the override if set, else the classification.
-     */
     public static function effective(string $key, ?self $override): self
     {
         return $override ?? self::classify($key);

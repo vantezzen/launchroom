@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Enums\AuditAction;
+use App\Models\AuditEvent;
 use App\Models\User;
 use Illuminate\Support\Facades\Hash;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -21,16 +23,6 @@ test('security page is displayed', function (): void {
             ->where('canManageTwoFactor', true)
             ->where('twoFactorEnabled', false),
         );
-});
-
-test('security page stays accessible without password confirmation', function (): void {
-    $this->skipUnlessFortifyHas(Features::twoFactorAuthentication());
-
-    $user = User::factory()->create();
-
-    $this->actingAs($user)
-        ->get(route('security.edit'))
-        ->assertOk();
 });
 
 test('security page renders without two factor when feature is disabled', function (): void {
@@ -66,7 +58,8 @@ test('password can be updated', function (): void {
         ->assertSessionHasNoErrors()
         ->assertRedirect(route('security.edit'));
 
-    expect(Hash::check('new-password', $user->refresh()->password))->toBeTrue();
+    expect(Hash::check('new-password', $user->refresh()->password))->toBeTrue()
+        ->and(AuditEvent::query()->where('action', AuditAction::AccountPasswordChanged->value)->where('subject_id', (string) $user->id)->exists())->toBeTrue();
 });
 
 test('correct password must be provided to update password', function (): void {

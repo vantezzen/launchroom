@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Instance;
 
+use App\Data\Instance\RecoveryStateData;
 use App\Models\InstanceSettings;
 use App\Models\Server;
 
@@ -22,10 +23,7 @@ final class RecoveryMode
         return InstanceSettings::current()->recovery_state !== null;
     }
 
-    /**
-     * @return array{startedAt: string, previousControlPlaneServerId?: int|null, replacementId?: int|null}|null
-     */
-    public static function state(): ?array
+    public static function state(): ?RecoveryStateData
     {
         return InstanceSettings::current()->recovery_state;
     }
@@ -33,17 +31,18 @@ final class RecoveryMode
     public static function enter(?Server $previousControlPlane): void
     {
         $settings = InstanceSettings::current();
-        $state = $settings->recovery_state ?? ['startedAt' => now()->toIso8601String()];
-        $settings->forceFill(['recovery_state' => [
-            ...$state,
-            'previousControlPlaneServerId' => $previousControlPlane instanceof Server ? $previousControlPlane->id : ($state['previousControlPlaneServerId'] ?? null),
-        ]])->save();
+        $state = $settings->recovery_state ?? new RecoveryStateData(now()->toIso8601String());
+        $settings->forceFill(['recovery_state' => new RecoveryStateData(
+            startedAt: $state->startedAt,
+            previousControlPlaneServerId: $previousControlPlane instanceof Server ? $previousControlPlane->id : $state->previousControlPlaneServerId,
+            replacementId: $state->replacementId,
+        )])->save();
     }
 
     public static function previousControlPlane(): ?Server
     {
-        $id = self::state()['previousControlPlaneServerId'] ?? null;
+        $id = self::state()?->previousControlPlaneServerId;
 
-        return is_int($id) ? Server::query()->whereKey($id)->first() : null;
+        return $id !== null ? Server::query()->whereKey($id)->first() : null;
     }
 }

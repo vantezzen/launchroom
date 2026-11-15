@@ -13,7 +13,9 @@ use App\Data\Analytics\AnalyticsTotalsData;
 use App\Enums\AnalyticsRange;
 use App\Enums\DaemonFeature;
 use App\Enums\ServerStatus;
+use App\Models\Environment;
 use App\Models\Server;
+use App\Models\ServiceInstance;
 use App\Support\Metrics\Cast;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Query\Builder;
@@ -28,8 +30,7 @@ use Illuminate\Support\Facades\DB;
  * hours (coarser rows are recomputed every ten minutes), hourly-capable rows
  * before that and, for daily buckets, daily rows before yesterday.
  *
- * Callers authorize and pass service instance ids they resolved inside the
- * team; `names` maps instance ids to service names for the split.
+ * Callers authorize the environment and resolve the instance inside it.
  */
 final readonly class RequestAnalytics
 {
@@ -38,10 +39,32 @@ final readonly class RequestAnalytics
     public const int TOP_REFERRERS = 10;
 
     /**
+     * The environment's current services, or only $instance.
+     */
+    public function for(Environment $environment, ?ServiceInstance $instance, AnalyticsRange $range, ?CarbonImmutable $now = null): AnalyticsData
+    {
+        $instances = $instance instanceof ServiceInstance
+            ? collect([$instance->loadMissing('service:id,public_id,name')])
+            : ServiceInstance::query()
+                ->where('environment_id', $environment->id)
+                ->whereNull('removed_at')
+                ->with('service:id,public_id,name')
+                ->get();
+
+        $names = [];
+
+        foreach ($instances as $selected) {
+            $names[$selected->id] = ['id' => $selected->service->public_id, 'name' => $selected->service->name];
+        }
+
+        return $this->read(array_keys($names), $names, $range, $now);
+    }
+
+    /**
      * @param  list<int>  $instances
      * @param  array<int, array{id: string, name: string}>  $names  service public id and name by instance id
      */
-    public function handle(array $instances, array $names, AnalyticsRange $range, ?CarbonImmutable $now = null): AnalyticsData
+    private function read(array $instances, array $names, AnalyticsRange $range, ?CarbonImmutable $now): AnalyticsData
     {
         $now ??= CarbonImmutable::now();
         $bucket = $range->bucketSeconds();
@@ -125,9 +148,9 @@ final readonly class RequestAnalytics
             statusOther: array_values($series['other']),
             totals: new AnalyticsTotalsData(
                 $totals['requests'], $totals['s2'], $totals['s3'], $totals['s4'], $totals['s5'],
-                $this->rate($totals['s5'], $totals['requests']),
+                RequestMetrics::rate($totals['s5'], $totals['requests']),
                 $previousRequests !== null && $previousRequests > 0 ? $previousRequests : null,
-                $previousRequests !== null && $previousRequests > 0 ? $this->rate($previousErrors, $previousRequests) : null,
+                $previousRequests !== null && $previousRequests > 0 ? RequestMetrics::rate($previousErrors, $previousRequests) : null,
                 array_sum($blockedSeries),
                 $instances === [] ? null : BlockedRequests::total($scope, $range, $now, $previousFrom, $from),
             ),
@@ -192,8 +215,6 @@ final readonly class RequestAnalytics
     }
 
     /**
-     * Analytics rows of the selection since `from`.
-     *
      * @param  list<int>  $instances
      */
     private function analytics(array $instances, AnalyticsRange $range, CarbonImmutable $now, CarbonImmutable $from): Builder
@@ -202,8 +223,6 @@ final readonly class RequestAnalytics
     }
 
     /**
-     * Top paths, referrers and client classes of the range.
-     *
      * @param  list<int>  $instances
      * @return array{paths: list<AnalyticsPathData>, pathRequests: int, referrers: list<AnalyticsReferrerData>, referrerRequests: int, agents: AnalyticsAgentsData|null}
      */
@@ -289,7 +308,7 @@ final readonly class RequestAnalytics
             $server = $names->get($id);
 
             if ($server instanceof Server) {
-                $out[] = new AnalyticsSplitData($server->public_id, $server->name, $agg['requests'], $this->rate($agg['s5'], $agg['requests']), array_values($agg['series']), $server->status === ServerStatus::Revoked);
+                $out[] = new AnalyticsSplitData($server->public_id, $server->name, $agg['requests'], RequestMetrics::rate($agg['s5'], $agg['requests']), array_values($agg['series']), $server->status === ServerStatus::Revoked);
             }
         }
 
@@ -326,7 +345,7 @@ final readonly class RequestAnalytics
             $service = $names[$id] ?? null;
 
             if ($service !== null) {
-                $out[] = new AnalyticsSplitData($service['id'], $service['name'], $agg['requests'], $this->rate($agg['s5'], $agg['requests']), array_values($agg['series']));
+                $out[] = new AnalyticsSplitData($service['id'], $service['name'], $agg['requests'], RequestMetrics::rate($agg['s5'], $agg['requests']), array_values($agg['series']));
             }
         }
 
@@ -354,10 +373,5 @@ final readonly class RequestAnalytics
             ->reject(static fn (Server $server): bool => $server->supportsDaemonFeature(DaemonFeature::RequestAnalytics))
             ->map(static fn (Server $server): string => $server->name)
             ->all());
-    }
-
-    private function rate(int $errors, int $requests): ?float
-    {
-        return $requests > 0 ? round($errors / $requests * 100, 2) : null;
     }
 }

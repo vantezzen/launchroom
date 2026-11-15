@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Data\Protocol\V1;
 
+use App\Data\Protocol\ProtocolDocument;
 use Spatie\LaravelData\Attributes\Validation\In;
 use Spatie\LaravelData\Attributes\Validation\Max;
 use Spatie\LaravelData\Attributes\Validation\Min;
@@ -19,7 +20,7 @@ final class TaskCompletion extends Data
      * @param  'succeeded'|'failed'|'cancelled'|'released'  $outcome  released: launchroomd stopped before the task finished and hands it back (docs/03 §7)
      */
     public function __construct(
-        #[In(['launchroom.vantezzen.io/v1'])]
+        #[In([ProtocolDocument::API_VERSION])]
         public string $apiVersion,
         #[In(['TaskCompletion'])]
         public string $kind,
@@ -29,25 +30,8 @@ final class TaskCompletion extends Data
         public string $outcome,
         #[Max(4096)]
         public string|Optional $error = new Optional,
-        public BuildResult|null|Optional $build = new Optional,
-        public RunOnceResult|null|Optional $runOnce = new Optional,
-        public PlanResult|null|Optional $plan = new Optional,
-        public TaskFailure|null|Optional $failure = new Optional,
-        public BackupResult|null|Optional $backup = new Optional,
-        public RestoreResult|null|Optional $restore = new Optional,
-        public BackupSnapshotsResult|null|Optional $snapshots = new Optional,
-        public MaintenanceResult|null|Optional $maintenance = new Optional,
-        public SelfUpdateResult|null|Optional $selfUpdate = new Optional,
-        public VerifyResult|null|Optional $verify = new Optional,
-        public SessionResult|null|Optional $session = new Optional,
-        /** Plan tasks with `inspect`, succeeded or failed (docs/20 §6). */
-        public RepoInspection|null|Optional $inspection = new Optional,
-        /** db_import / volume_import tasks that succeeded (D55). */
-        public DataImportResult|null|Optional $dataImport = new Optional,
-        /** db_export / volume_export tasks that succeeded (D55). */
-        public DataExportResult|null|Optional $dataExport = new Optional,
-        /** access tasks, also failed ones (docs/03 §12.1). */
-        public AccessResult|null|Optional $access = new Optional,
+        /** The result fields, flat on the wire (Go embeds them the same way). */
+        public TaskResult $results = new TaskResult,
         /**
          * inventory tasks that succeeded (docs/03 §13.1): read by hand with
          * InventoryResult::fromWire() (up to 20,000 components).
@@ -63,6 +47,32 @@ final class TaskCompletion extends Data
          */
         public array|null|Optional $containerInspection = new Optional,
     ) {}
+
+    /**
+     * @param  array<array-key, mixed>  $properties
+     * @return array<array-key, mixed>
+     */
+    public static function prepareForPipeline(array $properties): array
+    {
+        $fields = array_flip(TaskResult::fields());
+        $results = array_intersect_key($properties, $fields);
+
+        return [...array_diff_key($properties, $fields), ...($results === [] ? [] : ['results' => $results])];
+    }
+
+    /**
+     * The wire shape: the results flat beside the envelope.
+     *
+     * @return array<array-key, mixed>
+     */
+    public function toArray(): array
+    {
+        $document = parent::toArray();
+        $results = $document['results'] ?? [];
+        unset($document['results']);
+
+        return [...$document, ...(is_array($results) ? $results : [])];
+    }
 
     /**
      * @return array<string, list<string>>

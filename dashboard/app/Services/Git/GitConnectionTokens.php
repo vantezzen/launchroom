@@ -6,11 +6,11 @@ namespace App\Services\Git;
 
 use App\Enums\Git\GitAuthMethod;
 use App\Enums\Git\GitConnectionStatus;
-use App\Enums\Git\GitProviderKind;
+use App\Exceptions\Git\GitConnectionUnusable;
 use App\Models\Git\GitConnection;
-use App\Services\Git\Exceptions\GitConnectionUnusable;
-use App\Services\GitHub\JsonObject;
+use App\Services\Crypto\SealedColumns;
 use App\Services\Http\SafeHttpClient;
+use App\Support\Json\JsonObject;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
@@ -26,8 +26,9 @@ use Throwable;
 final readonly class GitConnectionTokens
 {
     public function __construct(
-        private GitConnectionSecrets $secrets,
+        private SealedColumns $sealed,
         private SafeHttpClient $http,
+        private GitProviders $providers,
     ) {}
 
     /**
@@ -49,7 +50,7 @@ final readonly class GitConnectionTokens
             return $this->refresh($connection);
         }
 
-        $token = $this->secrets->get($connection, 'access_token');
+        $token = $this->sealed->reveal($connection, 'access_token');
 
         if ($token === null) {
             throw new GitConnectionUnusable($this->reauthMessage($connection));
@@ -58,28 +59,17 @@ final readonly class GitConnectionTokens
         return $token;
     }
 
-    /**
-     * Stores a token pair from an authorization-code or refresh response.
-     */
     public function store(GitConnection $connection, JsonObject $response): void
     {
-        $this->secrets->put($connection, 'access_token', $response->string('access_token'));
+        $this->sealed->seal($connection, 'access_token', $response->string('access_token'));
         $refresh = $response->stringOrNull('refresh_token');
 
         if ($refresh !== null) {
-            $this->secrets->put($connection, 'refresh_token', $refresh);
+            $this->sealed->seal($connection, 'refresh_token', $refresh);
         }
 
         $expiresIn = $response->intOrNull('expires_in');
         $connection->token_expires_at = $expiresIn === null ? null : CarbonImmutable::now()->addSeconds(max(60, $expiresIn));
-    }
-
-    /**
-     * The provider's token endpoint.
-     */
-    public static function tokenUrl(GitConnection $connection): string
-    {
-        return $connection->origin().($connection->provider === GitProviderKind::GitLab ? '/oauth/token' : '/login/oauth/access_token');
     }
 
     public function client(GitConnection $connection): SafeHttpClient
@@ -102,12 +92,12 @@ final readonly class GitConnectionTokens
             // Another worker may have refreshed while we waited.
             $connection->refresh();
 
-            if (! $this->expiresSoon($connection) && ($current = $this->secrets->get($connection, 'access_token')) !== null) {
+            if (! $this->expiresSoon($connection) && ($current = $this->sealed->reveal($connection, 'access_token')) !== null) {
                 return $current;
             }
 
-            $refreshToken = $this->secrets->get($connection, 'refresh_token');
-            $clientSecret = $this->secrets->get($connection, 'oauth_client_secret');
+            $refreshToken = $this->sealed->reveal($connection, 'refresh_token');
+            $clientSecret = $this->sealed->reveal($connection, 'oauth_client_secret');
 
             if ($refreshToken === null || $clientSecret === null || $connection->oauth_client_id === null) {
                 $this->needsReauth($connection, 'No refresh token.');
@@ -116,7 +106,7 @@ final readonly class GitConnectionTokens
             }
 
             try {
-                $response = $this->client($connection)->postForm(self::tokenUrl($connection), $this->refreshForm($connection, $refreshToken, $clientSecret), ['Accept' => 'application/json']);
+                $response = $this->client($connection)->postForm($this->providers->api($connection->provider)->oauthTokenUrl($connection), $this->refreshForm($connection, $refreshToken, $clientSecret), ['Accept' => 'application/json']);
             } catch (Throwable $e) {
                 Log::warning('Refreshing a git connection token failed', ['connection' => $connection->public_id, 'error' => $e->getMessage()]);
 
@@ -136,7 +126,7 @@ final readonly class GitConnectionTokens
             $this->store($connection, JsonObject::decode($response->body()));
             $connection->save();
 
-            return (string) $this->secrets->get($connection, 'access_token');
+            return (string) $this->sealed->reveal($connection, 'access_token');
         });
 
         return is_string($token) ? $token : throw new GitConnectionUnusable($this->reauthMessage($connection));

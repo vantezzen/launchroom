@@ -91,3 +91,20 @@ test('an app domain cannot take over the dashboard host', function (): void {
         ->and($routes[1]->hosts)->toBe(['shop.example.com'])
         ->and($routes[1]->redirectWwwTo)->toBeNull();
 });
+
+test('a route that loses the dashboard host keeps every other field', function (): void {
+    $waf = ['mode' => 'block', 'paranoia' => 2];
+    $routes = resolve(DashboardRoute::class)->apply(controlPlaneServer(), [
+        new RouteSpec('rt_01JABCDEFGHJKMNPQRSTVWXYZ0', ['dash.example.com', 'shop.example.com'], 'acme', [], headers: ['X-Robots-Tag' => 'noindex'], stopped: true),
+        new RouteSpec('rt_01JABCDEFGHJKMNPQRSTVWXYZ1', ['dash.example.com', 'blog.example.com'], 'on_demand', [['workload' => 'wl_01JABCDEFGHJKMNPQRSTVWXYZ1', 'port' => 3000]], loadBalancing: 'prefer_local', waf: $waf),
+    ]);
+
+    expect($routes)->toHaveCount(3)
+        ->and($routes[1]->hosts)->toBe(['shop.example.com'])
+        ->and($routes[1]->stopped)->toBeTrue()
+        ->and($routes[1]->headers)->toBe(['X-Robots-Tag' => 'noindex'])
+        ->and($routes[2]->hosts)->toBe(['blog.example.com'])
+        ->and($routes[2]->waf)->toBe($waf)
+        ->and($routes[2]->tls)->toBe('on_demand')
+        ->and($routes[2]->loadBalancing)->toBe('prefer_local');
+});

@@ -24,6 +24,7 @@ final class ComposePreviewData extends Data
         public array $inputs = [],
         public array $missingFiles = [],
         public array $skipped = [],
+        /** The file's `name:`, else its first public service's name. */
         public ?string $suggestedName = null,
         /** The file read from the repository (`compose.yaml`). */
         public ?string $path = null,

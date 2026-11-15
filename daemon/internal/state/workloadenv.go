@@ -9,16 +9,18 @@ import (
 	"github.com/vantezzen/launchroom/daemon/internal/secret"
 )
 
-// Limits of a workload environment.
 const (
 	maxEnvVars     = 1024
 	maxEnvValueLen = 128 << 10
 )
 
-var reEnvName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]{0,255}$`)
-
 // EnvNamePattern is the grammar of environment variable names.
 const EnvNamePattern = `^[A-Za-z_][A-Za-z0-9_]{0,255}$`
+
+var reEnvName = regexp.MustCompile(EnvNamePattern)
+
+// IsEnvName reports whether s is a valid environment variable name.
+func IsEnvName(s string) bool { return reEnvName.MatchString(s) }
 
 // WorkloadEnv is the plaintext inside WorkloadSpec.env.sealed (docs/03 §6):
 // libsodium crypto_box_seal of the UTF-8 JSON encoding of this object,

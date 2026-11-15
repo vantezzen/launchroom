@@ -15,11 +15,12 @@ use App\Exceptions\DomainRuleViolation;
 use App\Models\Alerts\AlertChannel;
 use App\Models\Team;
 use App\Models\User;
-use App\Services\Alerts\AlertChannelSecrets;
 use App\Services\Alerts\ChannelSecret;
 use App\Services\Alerts\ChannelTargets;
+use App\Services\Crypto\SealedColumns;
 use App\Support\Alerts\ChannelUrls;
 use App\Support\PublicId;
+use App\Support\Webhooks\WebhookSignature;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -33,7 +34,7 @@ final readonly class CreateAlertChannel
 
     public function __construct(
         private ChannelTargets $targets,
-        private AlertChannelSecrets $secrets,
+        private SealedColumns $sealed,
         private RecordAuditEvent $audit,
     ) {}
 
@@ -41,7 +42,7 @@ final readonly class CreateAlertChannel
     {
         $recipients = $input->kind === AlertChannelKind::Email ? $this->targets->recipients($input->recipients) : null;
         $url = $input->kind->hasSecret() ? $this->targets->url($input->kind, $input->secretUrl) : null;
-        $signing = $input->kind === AlertChannelKind::Webhook ? AlertChannelSecrets::generateSigningSecret() : null;
+        $signing = $input->kind === AlertChannelKind::Webhook ? WebhookSignature::generateSecret() : null;
 
         $channel = DB::transaction(function () use ($team, $input, $user, $actor, $recipients, $url, $signing): AlertChannel {
             // Serialise per team so two requests can't both pass the cap.
@@ -63,7 +64,7 @@ final readonly class CreateAlertChannel
             $channel->public_id = PublicId::generate(AlertChannel::publicIdPrefix());
 
             if ($url !== null) {
-                $this->secrets->seal($channel, new ChannelSecret($url, $signing));
+                $this->sealed->sealJson($channel, 'secret', new ChannelSecret($url, $signing)->toArray(), $this->sealed->newKey($channel));
             }
 
             $channel->save();

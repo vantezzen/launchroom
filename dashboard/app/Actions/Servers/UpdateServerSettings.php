@@ -12,7 +12,6 @@ use App\Enums\AuditAction;
 use App\Events\NodeStateInvalidated;
 use App\Exceptions\DomainRuleViolation;
 use App\Models\Server;
-use App\Queries\MeshServers;
 use App\Support\Servers\ServerLabels;
 use Illuminate\Support\Facades\DB;
 
@@ -53,7 +52,7 @@ final readonly class UpdateServerSettings
 
             if ($before['measureLinks'] !== $measureLinks) {
                 // Its peers stop (or start) listing it too (docs/05 §2.1).
-                event(new NodeStateInvalidated(array_values(array_unique([$server->id, ...MeshServers::ids()]))));
+                NodeStateInvalidated::mesh([$server->id]);
             }
 
             if ($before !== $after) {

@@ -8,6 +8,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -36,6 +37,7 @@ const (
 // Files of the deploy bundle launchroomd relies on.
 const (
 	fileVersion        = "VERSION"
+	fileManifest       = "manifest.json"
 	fileImagesEnv      = "control-plane/images.env"
 	fileInstallCP      = "install/install.sh"
 	fileInstallServer  = "install/server.sh"
@@ -47,7 +49,23 @@ const (
 	downloadUserAgentP = "launchroomd/"
 )
 
-var reEnvLine = regexp.MustCompile(`^([A-Z][A-Z0-9_]{0,63})=(.*)$`)
+var (
+	reEnvLine    = regexp.MustCompile(`^([A-Z][A-Z0-9_]{0,63})=(.*)$`)
+	reImageKey   = regexp.MustCompile(`^LR_[A-Z0-9_]{1,58}_IMAGE$`)
+	reFileSHA256 = regexp.MustCompile(`^[a-f0-9]{64}$`)
+)
+
+// manifest is the bundle's manifest.json (deploy/release/build-bundle.sh):
+// the image keys images.env must pin and every file with its mode and digest.
+type manifest struct {
+	Version        string   `json:"version"`
+	RequiredImages []string `json:"requiredImages"`
+	Files          []struct {
+		Path   string `json:"path"`
+		Mode   string `json:"mode"`
+		SHA256 string `json:"sha256"`
+	} `json:"files"`
+}
 
 // Bundle is a verified, parsed deploy bundle.
 type Bundle struct {
@@ -56,6 +74,9 @@ type Bundle struct {
 	Images map[string]state.ImageRef
 	// Files are the regular files by slash path.
 	Files map[string][]byte
+	// Modes are the file modes from manifest.json (nil: an older bundle
+	// without one; Extract then uses the fixed rules).
+	Modes map[string]os.FileMode
 	// SHA256 is the hex digest of the tarball.
 	SHA256 string
 	// Signature is the sigstore bundle the tarball verified against (set
@@ -198,13 +219,79 @@ func ParseBundle(tarball []byte) (*Bundle, error) {
 	if err != nil {
 		return nil, err
 	}
-	for _, need := range []string{envDaemonImage, envComposeImage} {
+	// launchroomd itself runs these two; a manifest adds what the release needs.
+	required := []string{envDaemonImage, envComposeImage}
+	var modes map[string]os.FileMode
+	if raw, ok := files[fileManifest]; ok {
+		m, err := readManifest(raw, version, files)
+		if err != nil {
+			return nil, err
+		}
+		required = append(required, m.RequiredImages...)
+		modes = m.modes()
+	}
+	for _, need := range required {
 		if images[need] == "" {
 			return nil, fmt.Errorf("bundle: %s is missing from images.env", need)
 		}
 	}
 	sum := sha256.Sum256(tarball)
-	return &Bundle{Version: version, Images: images, Files: files, SHA256: hex.EncodeToString(sum[:])}, nil
+	return &Bundle{Version: version, Images: images, Files: files, Modes: modes, SHA256: hex.EncodeToString(sum[:])}, nil
+}
+
+// readManifest checks manifest.json against the bundle: same version, and
+// exactly the bundle's other files with their digests and a 0644 or 0755 mode.
+func readManifest(raw []byte, version string, files map[string][]byte) (*manifest, error) {
+	var m manifest
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&m); err != nil {
+		return nil, fmt.Errorf("bundle: manifest.json: %w", err)
+	}
+	if m.Version != version {
+		return nil, fmt.Errorf("bundle: manifest.json is for %q, VERSION says %q", m.Version, version)
+	}
+	for _, k := range m.RequiredImages {
+		if !reImageKey.MatchString(k) {
+			return nil, fmt.Errorf("bundle: manifest.json: %q is not an image key", k)
+		}
+	}
+	listed := map[string]bool{fileManifest: true}
+	for _, f := range m.Files {
+		content, ok := files[f.Path]
+		switch {
+		case !ok:
+			return nil, fmt.Errorf("bundle: manifest.json lists %q, which is missing", f.Path)
+		case listed[f.Path]:
+			return nil, fmt.Errorf("bundle: manifest.json lists %q twice", f.Path)
+		case f.Mode != "0644" && f.Mode != "0755":
+			return nil, fmt.Errorf("bundle: manifest.json: %s has mode %q", f.Path, f.Mode)
+		case !reFileSHA256.MatchString(f.SHA256):
+			return nil, fmt.Errorf("bundle: manifest.json: %s has no sha256", f.Path)
+		}
+		if sum := sha256.Sum256(content); hex.EncodeToString(sum[:]) != f.SHA256 {
+			return nil, fmt.Errorf("bundle: %s does not match manifest.json", f.Path)
+		}
+		listed[f.Path] = true
+	}
+	for name := range files {
+		if !listed[name] {
+			return nil, fmt.Errorf("bundle: %s is not listed in manifest.json", name)
+		}
+	}
+	return &m, nil
+}
+
+func (m *manifest) modes() map[string]os.FileMode {
+	out := make(map[string]os.FileMode, len(m.Files)+1)
+	for _, f := range m.Files {
+		out[f.Path] = 0o644
+		if f.Mode == "0755" {
+			out[f.Path] = 0o755
+		}
+	}
+	out[fileManifest] = 0o644
+	return out
 }
 
 // parseImagesEnv reads the LR_*_IMAGE pins; every one must be digest-pinned.
@@ -232,8 +319,9 @@ func parseImagesEnv(raw []byte) (map[string]state.ImageRef, error) {
 	return out, nil
 }
 
-// Extract writes the bundle's files below dir (0700 dirs; install scripts
-// 0755, everything else 0644). dir must not exist yet.
+// Extract writes the bundle's files below dir (0700 dirs; file modes from
+// manifest.json, or for an older bundle without one: install scripts and
+// the helper 0755, everything else 0644). dir must not exist yet.
 func (b *Bundle) Extract(dir string) error {
 	if err := os.Mkdir(dir, 0o700); err != nil {
 		return err
@@ -246,9 +334,12 @@ func (b *Bundle) Extract(dir string) error {
 		if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
 			return err
 		}
-		mode := os.FileMode(0o644)
-		if strings.HasSuffix(name, ".sh") || name == "control-plane/launchroom" {
-			mode = 0o755
+		mode, ok := b.Modes[name]
+		if !ok {
+			mode = 0o644
+			if strings.HasSuffix(name, ".sh") || name == "control-plane/launchroom" {
+				mode = 0o755
+			}
 		}
 		if err := os.WriteFile(p, content, mode); err != nil {
 			return err

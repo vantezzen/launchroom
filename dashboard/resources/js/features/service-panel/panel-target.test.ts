@@ -4,8 +4,15 @@ import { placeholderPanel, targetFor } from './panel-target';
 type Node = App.Data.Canvas.CanvasNodeData;
 type Panel = App.Data.Canvas.ServicePanelData;
 
-function status(state: App.Enums.CanvasNodeState): Node['status'] {
-    return { state, label: state, since: null, deploymentId: null };
+function status(state: App.Enums.StatusTone): Node['status'] {
+    return {
+        state,
+        reason: 'live',
+        label: state,
+        since: null,
+        deploymentId: null,
+        detail: null,
+    };
 }
 
 function node(overrides: Partial<Node> = {}): Node {

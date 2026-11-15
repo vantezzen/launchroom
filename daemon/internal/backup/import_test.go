@@ -16,8 +16,6 @@ import (
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
 
-// ---- pg_dump custom header ----
-
 // pgCustomHeader builds the start of a pg_dump -Fc file (archive format
 // vmaj.vmin.vrev, intSize 4) like pg_backup_archiver.c WriteHead.
 func pgCustomHeader(vmin int, remote, dump string) []byte {
@@ -209,8 +207,6 @@ func TestCheckCompatible(t *testing.T) {
 	}
 }
 
-// ---- filters ----
-
 func runFilter(t *testing.T, run func(io.Writer, io.Reader) error, in string) (string, error) {
 	t.Helper()
 	var out bytes.Buffer
@@ -324,8 +320,6 @@ func TestParseSourceURL(t *testing.T) {
 		t.Fatalf("%v %v", d.argv, d.env)
 	}
 }
-
-// ---- archives ----
 
 type aentry struct {
 	name, link string
@@ -468,7 +462,6 @@ func TestConvertArchiveRefusals(t *testing.T) {
 	if _, _, _, err := converted(t, p, archiveOptions{MaxBytes: 1024}); err == nil || !strings.Contains(err.Error(), "expands") {
 		t.Fatalf("bomb: %v", err)
 	}
-	// Not an archive.
 	bad := filepath.Join(t.TempDir(), "x")
 	_ = os.WriteFile(bad, []byte("hello"), 0o600)
 	if _, _, _, err := converted(t, bad, archiveOptions{}); err == nil {

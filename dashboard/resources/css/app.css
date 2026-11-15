@@ -42,9 +42,6 @@
     --color-status-error: var(--status-error);
     --color-status-error-soft: var(--status-error-soft);
     --color-status-idle: var(--status-idle);
-    /* v1 names, kept so existing pages keep working. */
-    --color-status-success: var(--status-ok);
-    --color-status-staged: var(--signal);
 
     /* Diffs (very low intensity, always with +/− gutters) and log ANSI colours toned to the palette. */
     --color-diff-add: var(--diff-add);

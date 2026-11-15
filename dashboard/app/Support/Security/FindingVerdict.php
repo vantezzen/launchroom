@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Support\Security;
 
+use App\Data\Security\FindingCheckData;
 use App\Enums\Security\FindingLevel;
 use App\Enums\Security\FindingReason;
 
@@ -15,7 +16,7 @@ final readonly class FindingVerdict
 {
     /**
      * @param  list<FindingReason>  $reasons
-     * @param  list<array{rule: string, passed: bool, label: string}>  $checks
+     * @param  list<FindingCheckData>  $checks
      */
     public function __construct(
         public FindingLevel $level,

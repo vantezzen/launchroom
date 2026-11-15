@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Data\Protocol\V1;
 
 use App\Data\Protocol\Wire;
+use App\Models\Environment;
 use Spatie\LaravelData\Data;
 
 /**
@@ -17,6 +18,11 @@ final class NetworkSpec extends Data
         public string $name,
         public string $subnet,
     ) {}
+
+    public static function of(Environment $environment): self
+    {
+        return new self($environment->networkId(), $environment->networkName(), $environment->network_subnet);
+    }
 
     public static function fromProtocol(object $wire): self
     {

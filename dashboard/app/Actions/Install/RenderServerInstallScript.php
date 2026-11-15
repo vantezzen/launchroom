@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Install;
 
 use App\Services\Crypto\Signer;
+use App\Support\Protocol\Grammar;
 use Illuminate\Contracts\Container\Container;
 use Illuminate\Filesystem\Filesystem;
 use Throwable;
@@ -23,8 +24,6 @@ use Throwable;
 final readonly class RenderServerInstallScript
 {
     private const string URL_PATTERN = '#^https?://(?:[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*|\[[0-9A-Fa-f:]+\])(?::[0-9]{1,5})?$#D';
-
-    private const string KEY_PATTERN = '#^ed25519:[A-Za-z0-9+/]{43}=$#D';
 
     private const string IMAGE_PATTERN = '#^[a-z0-9][a-z0-9._/:@-]{0,254}$#D';
 
@@ -64,7 +63,7 @@ final readonly class RenderServerInstallScript
         $script = $this->files->get($scriptPath);
         $compose = rtrim($this->files->get($composePath), "\n");
 
-        if (preg_match(self::KEY_PATTERN, $key) !== 1
+        if (preg_match(Grammar::ED25519_KEY, $key) !== 1
             || preg_match('/^'.self::HEREDOC_END.'$/m', $compose) === 1
             || substr_count($script, "\n".self::COMPOSE_MARKER."\n") !== 1) {
             return null;

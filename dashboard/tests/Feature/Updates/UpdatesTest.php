@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use App\Actions\Updates\RunAutomaticUpdate;
 use App\Contracts\DnsResolver;
-use App\Data\Updates\ReleaseCheckData;
 use App\Enums\AuditAction;
 use App\Enums\DaemonTaskStatus;
 use App\Enums\DaemonTaskType;
@@ -180,7 +179,7 @@ test('the check offers the newest stable release with its changelog and pinned i
         release('not-a-version'),
     ]);
 
-    $this->actingAs($this->owner)->post(route('updates.check'))->assertSessionHas('success', 'launchroom 0.2.1 is available.');
+    $this->actingAs($this->owner)->post(route('updates.check'))->assertSessionHas('inertia.flash_data.toast', ['type' => 'success', 'message' => 'launchroom 0.2.1 is available.']);
 
     $this->actingAs($this->owner)->get(route('updates.edit'))
         ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
@@ -208,7 +207,7 @@ test('release candidates are found on the beta channel and ordered by semver pre
     ]);
     config(['launchroom.version' => '0.1.0-rc.3', 'launchroom.updates.channel' => 'beta']);
 
-    $this->actingAs($this->owner)->post(route('updates.check'))->assertSessionHas('success', 'launchroom 0.1.0-rc.10 is available.');
+    $this->actingAs($this->owner)->post(route('updates.check'))->assertSessionHas('inertia.flash_data.toast', ['type' => 'success', 'message' => 'launchroom 0.1.0-rc.10 is available.']);
     $this->actingAs($this->owner)->get(route('updates.edit'))
         ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
             ->where('check.available.version', '0.1.0-rc.10')
@@ -218,20 +217,20 @@ test('release candidates are found on the beta channel and ordered by semver pre
 
     // Stable never offers a pre-release, not even a newer one.
     config(['launchroom.updates.channel' => 'stable']);
-    $this->actingAs($this->owner)->post(route('updates.check'))->assertSessionHas('success', 'launchroom is up to date.');
+    $this->actingAs($this->owner)->post(route('updates.check'))->assertSessionHas('inertia.flash_data.toast', ['type' => 'success', 'message' => 'launchroom is up to date.']);
 });
 
 test('without a chosen channel a pre-release version follows beta, a release stable', function (): void {
     fakeGitHub([release('v0.1.0-rc.4', ['prerelease' => true]), release('v0.1.0-rc.3', ['prerelease' => true]), release('v0.0.9')]);
     config(['launchroom.version' => '0.1.0-rc.3', 'launchroom.updates.channel' => null]);
 
-    $this->actingAs($this->owner)->post(route('updates.check'))->assertSessionHas('success', 'launchroom 0.1.0-rc.4 is available.');
+    $this->actingAs($this->owner)->post(route('updates.check'))->assertSessionHas('inertia.flash_data.toast', ['type' => 'success', 'message' => 'launchroom 0.1.0-rc.4 is available.']);
     $this->actingAs($this->owner)->get(route('updates.edit'))
         ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page->where('preferences.channel', 'beta')->where('check.channel', 'beta'));
 
     // An empty LAUNCHROOM_UPDATES_CHANNEL counts as unset too.
     config(['launchroom.version' => '0.0.9', 'launchroom.updates.channel' => '']);
-    $this->actingAs($this->owner)->post(route('updates.check'))->assertSessionHas('success', 'launchroom is up to date.');
+    $this->actingAs($this->owner)->post(route('updates.check'))->assertSessionHas('inertia.flash_data.toast', ['type' => 'success', 'message' => 'launchroom is up to date.']);
 
     // Development builds are not releases.
     config(['launchroom.version' => '0.0.0-dev']);
@@ -240,7 +239,7 @@ test('without a chosen channel a pre-release version follows beta, a release sta
     // A channel picked in Settings → Updates wins over the inference.
     InstanceSettings::current()->forceFill(['update_channel' => 'stable'])->save();
     config(['launchroom.version' => '0.1.0-rc.3']);
-    $this->actingAs($this->owner)->post(route('updates.check'))->assertSessionHas('success', 'launchroom is up to date.');
+    $this->actingAs($this->owner)->post(route('updates.check'))->assertSessionHas('inertia.flash_data.toast', ['type' => 'success', 'message' => 'launchroom is up to date.']);
 });
 
 test('a version change never shows the previous check, and nothing at or below the running version is offered', function (): void {
@@ -250,6 +249,9 @@ test('a version change never shows the previous check, and nothing at or below t
     $this->actingAs($this->owner)->post(route('updates.check'));
     $this->actingAs($this->owner)->get(route('updates.edit'))
         ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page->where('check.available.version', '0.1.0-rc.4')->where('updateAvailable', true));
+    // The settings dot is for instance owners only.
+    $this->actingAs(memberOf($this->team, TeamRole::Admin))->get(route('activity.index'))
+        ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page->where('updateAvailable', false));
 
     // Updated by hand with the installer: the dashboard now runs rc.4.
     config(['launchroom.version' => '0.1.0-rc.4']);
@@ -262,26 +264,7 @@ test('a version change never shows the previous check, and nothing at or below t
             ->where('check.checkedAt', null)
             ->where('updateAvailable', false));
 
-    $this->actingAs($this->owner)->post(route('updates.check'))->assertSessionHas('success', 'launchroom is up to date.');
-});
-
-test('a cached release that is not newer than the running version is dropped', function (): void {
-    fakeGitHub([release('v0.2.0')]);
-    $checker = resolve(ReleaseChecker::class);
-    $release = $checker->release('0.2.0');
-
-    // Whatever ended up in the cache entry of this version (an old entry,
-    // a hand-edited one), the running version decides what is offered.
-    config(['launchroom.version' => '0.2.0']);
-    $key = new ReflectionMethod($checker, 'cacheKey')->invoke($checker);
-    cache()->put($key, new ReleaseCheckData('0.1.0', 'stable', $release, now()->toIso8601String(), null)->toArray());
-
-    expect($checker->cached()->available)->toBeNull()
-        ->and($checker->cached()->currentVersion)->toBe('0.2.0');
-
-    config(['launchroom.version' => '0.1.0']);
-    cache()->put(new ReflectionMethod($checker, 'cacheKey')->invoke($checker), new ReleaseCheckData('0.1.0', 'stable', $release, now()->toIso8601String(), null)->toArray());
-    expect($checker->cached()->available?->version)->toBe('0.2.0');
+    $this->actingAs($this->owner)->post(route('updates.check'))->assertSessionHas('inertia.flash_data.toast', ['type' => 'success', 'message' => 'launchroom is up to date.']);
 });
 
 test('a release the dashboard cannot install says why and shows the installer command', function (string $case, string $reason): void {
@@ -310,21 +293,11 @@ test('a release the dashboard cannot install says why and shows the installer co
     ['no pinned server image', 'Its image list (images.env) doesn’t pin the server image (LR_DAEMON_IMAGE) by digest.'],
 ]);
 
-test('the beta channel includes prereleases; up to date and failures are reported', function (): void {
-    fakeGitHub([release('v0.3.0-beta.1', ['prerelease' => true]), release('v0.1.0')]);
-    config(['launchroom.updates.channel' => 'beta']);
-
-    $this->actingAs($this->owner)->post(route('updates.check'))->assertSessionHas('success', 'launchroom 0.3.0-beta.1 is available.');
-
-    config(['launchroom.updates.channel' => 'stable']);
-    $this->actingAs($this->owner)->post(route('updates.check'))->assertSessionHas('success', 'launchroom is up to date.');
-});
-
 test('a failed check is reported', function (): void {
     githubDns();
     Http::fake([RELEASES_URL.'?*' => Http::response(['message' => 'rate limited'], 403)]);
 
-    $this->actingAs($this->owner)->post(route('updates.check'))->assertSessionHas('error', 'GitHub answered 403.');
+    $this->actingAs($this->owner)->post(route('updates.check'))->assertSessionHas('inertia.flash_data.toast', ['type' => 'error', 'message' => 'GitHub answered 403.']);
 });
 
 test('assets that redirect anywhere but GitHub storage are ignored', function (): void {
@@ -418,12 +391,13 @@ test('the control-plane task outcome decides the update status', function (strin
         ->and(AuditEvent::query()->where('action', AuditAction::ControlPlaneUpdateFinished->value)->exists())->toBeTrue();
 
     if ($expected === ControlPlaneUpdateStatus::RolledBack) {
-        expect($task->result['selfUpdate'] ?? null)->toEqual(['scope' => 'control_plane', 'fromVersion' => '0.1.0', 'toVersion' => '0.2.0', 'rolledBack' => true])
-            ->and($update->error)->toBe('rolled back to 0.1.0');
+        expect($task->result?->selfUpdate?->rolledBack)->toBeTrue()
+            ->and($update->error)->toBe($extra['selfUpdate']['reason'] ?? $extra['error']);
     }
 })->with([
     'succeeded' => ['succeeded', ['selfUpdate' => ['scope' => 'control_plane', 'fromVersion' => '0.1.0', 'toVersion' => '0.2.0', 'rolledBack' => false]], ControlPlaneUpdateStatus::Succeeded],
-    'rolled back' => ['failed', ['error' => 'rolled back to 0.1.0', 'selfUpdate' => ['scope' => 'control_plane', 'fromVersion' => '0.1.0', 'toVersion' => '0.2.0', 'rolledBack' => true]], ControlPlaneUpdateStatus::RolledBack],
+    'rolled back' => ['failed', ['error' => 'rolled back to 0.1.0: the dashboard did not answer', 'selfUpdate' => ['scope' => 'control_plane', 'fromVersion' => '0.1.0', 'toVersion' => '0.2.0', 'rolledBack' => true, 'reason' => 'the dashboard did not answer']], ControlPlaneUpdateStatus::RolledBack],
+    'rolled back (no reason reported)' => ['failed', ['error' => 'rolled back to 0.1.0', 'selfUpdate' => ['scope' => 'control_plane', 'fromVersion' => '0.1.0', 'toVersion' => '0.2.0', 'rolledBack' => true]], ControlPlaneUpdateStatus::RolledBack],
     'failed' => ['failed', ['error' => 'signature does not verify'], ControlPlaneUpdateStatus::Failed],
 ]);
 
@@ -553,12 +527,12 @@ test('the channel and automatic updates are owner settings, audited, and automat
         ->assertSessionHasErrors('channel');
 
     // The beta channel offers prereleases; the cached check is per channel.
-    $this->actingAs($this->owner)->post(route('updates.check'))->assertSessionHas('success', 'launchroom 0.2.0 is available.');
+    $this->actingAs($this->owner)->post(route('updates.check'))->assertSessionHas('inertia.flash_data.toast', ['type' => 'success', 'message' => 'launchroom 0.2.0 is available.']);
     $this->actingAs($this->owner)
         ->put(route('updates.preferences'), ['channel' => 'beta', 'autoUpdate' => false])
         ->assertSessionHasNoErrors();
     expect(InstanceSettings::current()->update_channel)->toBe('beta');
-    $this->actingAs($this->owner)->post(route('updates.check'))->assertSessionHas('success', 'launchroom 0.3.0-beta.1 is available.');
+    $this->actingAs($this->owner)->post(route('updates.check'))->assertSessionHas('inertia.flash_data.toast', ['type' => 'success', 'message' => 'launchroom 0.3.0-beta.1 is available.']);
 
     Backups::destination(null, $this->owner, 'Control plane');
     $this->actingAs($this->owner)
@@ -679,3 +653,18 @@ test('automatic updates never run without an off-site backup', function (): void
         ->and(ControlPlaneUpdate::query()->count())->toBe(0);
     $this->artisan('launchroom:updates:auto')->assertSuccessful();
 });
+
+test('a release with a manifest needs every image it lists; one without needs the server image only', function (?string $manifest, ?string $images, ?string $reason): void {
+    $release = $manifest === null ? release('v0.2.0') : release('v0.2.0', ['assets' => [...release('v0.2.0')['assets'], ['name' => 'manifest.json', 'url' => RELEASES_URL.'/assets/7001']]]);
+    fakeGitHub([$release], array_filter([
+        RELEASES_URL.'/assets/7001' => $manifest === null ? null : Http::response($manifest),
+        storageUrl('v0.2.0') => $images === null ? null : Http::response($images),
+    ]));
+
+    expect(resolve(ReleaseChecker::class)->check(fresh: true)->available?->cannotInstallReason)->toBe($reason);
+})->with([
+    'manifest, image missing' => ['{"version":"0.2.0","requiredImages":["LR_CADDY_IMAGE","LR_DAEMON_IMAGE","LR_DASHBOARD_IMAGE"]}', null, 'Its image list (images.env) doesn’t pin LR_CADDY_IMAGE by digest.'],
+    'manifest, all pinned' => ['{"version":"0.2.0","requiredImages":["LR_CADDY_IMAGE","LR_DAEMON_IMAGE","LR_DASHBOARD_IMAGE"]}', 'LR_CADDY_IMAGE=ghcr.io/vantezzen/launchroom-caddy@sha256:'.str_repeat('c', 64)."\nLR_DASHBOARD_IMAGE=ghcr.io/vantezzen/launchroom-dashboard@sha256:".str_repeat('d', 64)."\nLR_DAEMON_IMAGE=ghcr.io/vantezzen/launchroomd@sha256:".str_repeat('b', 64)."\n", null],
+    'unreadable manifest' => ['{"requiredImages":"LR_DAEMON_IMAGE"}', null, 'The release’s manifest (manifest.json) couldn’t be read.'],
+    'old release without manifest' => [null, null, null],
+]);

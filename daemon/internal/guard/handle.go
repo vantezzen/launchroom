@@ -11,17 +11,8 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
-)
-
-// Labels the guard checks (the same keys as internal/docker; guard_test.go
-// keeps them in sync).
-const (
-	labelManaged = "launchroom.managed"
-	labelServer  = "launchroom.server"
-	labelSystem  = "launchroom.system"
-	labelHelper  = "launchroom.helper"
-	labelRole    = "launchroom.role"
 )
 
 // maxJSONBody bounds request bodies the guard decodes.
@@ -158,10 +149,8 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request, q *request) erro
 
 // isManaged reports whether labels mark a launchroom object of some server.
 func isManaged(labels map[string]string) bool {
-	return labels[labelManaged] == "true" && state.ServerID(labels[labelServer]).Validate() == nil
+	return labels[names.LabelManaged] == "true" && state.ServerID(labels[names.LabelServer]).Validate() == nil
 }
-
-// ---- upstream calls ----
 
 // forward sends the request upstream with an allow-listed header set and
 // streams the answer back.
@@ -178,7 +167,7 @@ func (s *Server) forward(w http.ResponseWriter, r *http.Request, q *request, pat
 		return err
 	}
 	if ua := r.Header.Get("User-Agent"); ua != "" {
-		out.Header.Set("User-Agent", truncate(ua, 128))
+		out.Header.Set("User-Agent", state.Shorten(ua, 128))
 	}
 	if contentType != "" {
 		out.Header.Set("Content-Type", contentType)
@@ -254,7 +243,7 @@ func (s *Server) get(ctx context.Context, q *request, path string, query url.Val
 	return res.StatusCode, b, err
 }
 
-// container is what the guard needs to know about an existing container.
+// ctr is what the guard needs to know about an existing container.
 type ctr struct {
 	ID     string
 	Name   string
@@ -329,13 +318,13 @@ func (s *Server) inspectContainer(ctx context.Context, q *request, ref string) (
 // (the route table refuses every key, top's ps_args included).
 func (s *Server) inspectWorkload(w http.ResponseWriter, r *http.Request, q *request) error {
 	if !reExecID.MatchString(q.id) {
-		return deny("container inspection needs the container's full id, not %q", truncate(q.id, 64))
+		return deny("container inspection needs the container's full id, not %q", state.Shorten(q.id, 64))
 	}
 	c, err := s.managedContainer(r.Context(), q)
 	if err != nil {
 		return err
 	}
-	if c.kind() != kindServer || c.class() != classWorkload || c.Labels[labelSystem] != "" || c.Labels[labelHelper] != "" || c.ID != q.id {
+	if c.kind() != kindServer || c.class() != classWorkload || c.Labels[names.LabelSystem] != "" || c.Labels[names.LabelHelper] != "" || c.ID != q.id {
 		return deny("container inspection is only allowed for workload containers, not %s", c.Name)
 	}
 	suffix := "/changes"
@@ -411,8 +400,6 @@ func (s *Server) inspectVolume(ctx context.Context, q *request, name string) (*v
 	return &v, raw, nil
 }
 
-// ---- lists ----
-
 // parseFilters decodes Docker's filters argument ({"label": {"k=v": true}}).
 func parseFilters(raw string) (map[string]map[string]bool, error) {
 	f := map[string]map[string]bool{}
@@ -430,7 +417,7 @@ func parseFilters(raw string) (map[string]map[string]bool, error) {
 		switch k {
 		case "label", "name", "id", "status", "driver", "dangling", "type":
 		default:
-			return nil, deny("filter %q is not allowed", truncate(k, 32))
+			return nil, deny("filter %q is not allowed", state.Shorten(k, 32))
 		}
 		if len(vs) > 32 {
 			return nil, deny("too many %s filters", k)
@@ -449,7 +436,7 @@ func (s *Server) listManaged(w http.ResponseWriter, r *http.Request, q *request,
 	if f["label"] == nil {
 		f["label"] = map[string]bool{}
 	}
-	f["label"][labelManaged+"=true"] = true
+	f["label"][names.LabelManaged+"=true"] = true
 	b, err := json.Marshal(f)
 	if err != nil {
 		return err
@@ -466,7 +453,7 @@ func (s *Server) listManaged(w http.ResponseWriter, r *http.Request, q *request,
 // trailing data refused, application/json required.
 func decodeStrict(r *http.Request, v any) error {
 	if ct := r.Header.Get("Content-Type"); ct != "" && !strings.HasPrefix(ct, "application/json") {
-		return deny("content type %q is not allowed", truncate(ct, 64))
+		return deny("content type %q is not allowed", state.Shorten(ct, 64))
 	}
 	raw, err := io.ReadAll(io.LimitReader(r.Body, maxJSONBody+1))
 	if err != nil {
@@ -486,7 +473,6 @@ func decodeStrict(r *http.Request, v any) error {
 	return nil
 }
 
-// encode re-encodes a checked body for the upstream request.
 func encode(v any) (io.Reader, error) {
 	b, err := json.Marshal(v)
 	if err != nil {

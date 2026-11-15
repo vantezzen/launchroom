@@ -270,7 +270,7 @@ test('alert links land on the filtered view of what is wrong', function (): void
     hostMinutes($this->server->id, 10, ['cpu_pct' => 95.0, 'disk_used_mb' => 92_000]);
     $domain = Domain::query()->create(['team_id' => $this->team->id, 'service_instance_id' => $this->instance->id, 'hostname' => 'shop.example.com', 'kind' => 'custom']);
     $domain->forceFill(['cert_expires_at' => now()->addDays(2)])->save();
-    $this->server->forceFill(['waf_status' => ['state' => 'error', 'since' => $now->subMinutes(10)->toIso8601String(), 'message' => 'refused']])->save();
+    $this->server->forceFill(['waf_status' => ['state' => 'error', 'since' => $now->subMinutes(10)->toIso8601String(), 'routes' => 1, 'reportedAt' => $now->toIso8601String(), 'message' => 'refused']])->save();
     ($this->evaluate)();
 
     expect(firing(AlertRule::CpuHigh)?->href)->toBe("/servers/{$this->server->public_id}/resources?range=1h")
@@ -289,7 +289,7 @@ test('alert links land on the filtered view of what is wrong', function (): void
 
 test('an error-rate alert right after a deploy names the deploy and links to it', function (): void {
     $deployment = Deployment::query()->whereKey($this->placement->deployment_id)->sole();
-    $deployment->forceFill(['status' => DeploymentStatus::Active, 'commit_sha' => '3b7d5e1aaaaaaa', 'finished_at' => CarbonImmutable::now()->subMinutes(4)])->save();
+    $deployment->forceFill(['status' => DeploymentStatus::Active, 'commit_sha' => '3b7d5e1aaaaaaa', 'finished_at' => CarbonImmutable::now()->subMinutes(4), 'went_live_at' => CarbonImmutable::now()->subMinutes(4)])->save();
 
     foreach (range(1, 4) as $m) {
         DB::table('request_metric_samples')->upsert([[

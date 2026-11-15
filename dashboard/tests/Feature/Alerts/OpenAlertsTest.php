@@ -6,8 +6,10 @@ use App\Actions\Alerts\RaiseAlert;
 use App\Actions\Alerts\ResolveAlert;
 use App\Data\Alerts\AlertSignal;
 use App\Data\Alerts\OpenAlertData;
+use App\Enums\Alerts\AlertKind;
 use App\Enums\Alerts\AlertRule;
 use App\Enums\Alerts\AlertSeverity;
+use App\Enums\Backups\BackupAlertKind;
 use App\Enums\TeamRole;
 use App\Events\CanvasChanged;
 use App\Models\Server;
@@ -32,7 +34,7 @@ beforeEach(function (): void {
     $this->instance = ServiceInstance::query()->whereHas('environment', fn (Builder $q) => $q->where('project_id', $this->project->id))->sole();
 });
 
-function raiseFor(Team $team, AlertRule $rule, string $subject, ?ServiceInstance $instance = null, ?Server $server = null, array $facts = [], AlertSeverity $severity = AlertSeverity::Warning): void
+function raiseFor(Team $team, AlertRule $rule, string $subject, ?ServiceInstance $instance = null, ?Server $server = null, array $facts = [], AlertSeverity $severity = AlertSeverity::Warning, ?float $value = null, ?AlertKind $kind = null): void
 {
     resolve(RaiseAlert::class)->handle(new AlertSignal(
         team: $team,
@@ -44,13 +46,15 @@ function raiseFor(Team $team, AlertRule $rule, string $subject, ?ServiceInstance
         serviceInstance: $instance,
         server: $server,
         facts: $facts,
+        kind: $kind,
+        value: $value,
     ));
 }
 
 test('open alerts are grouped by service, server and project, most severe first, with a short label', function (): void {
-    raiseFor($this->team, AlertRule::ErrorRateHigh, 'service:'.$this->instance->public_id, $this->instance, facts: ['Errors' => '12 of 150 requests']);
+    raiseFor($this->team, AlertRule::ErrorRateHigh, 'service:'.$this->instance->public_id, $this->instance, facts: ['Errors' => '12 of 150 requests'], value: 8.0);
     raiseFor($this->team, AlertRule::BackupFailed, 'backup:'.$this->instance->public_id, $this->instance, severity: AlertSeverity::Critical);
-    raiseFor($this->team, AlertRule::DiskFull, 'server:'.$this->server->public_id, server: $this->server, facts: ['Disk' => '93% full']);
+    raiseFor($this->team, AlertRule::DiskFull, 'server:'.$this->server->public_id, server: $this->server, facts: ['Disk' => '93% full'], value: 93.2);
 
     $alerts = new OpenAlerts;
     $byService = $alerts->forEnvironment($this->team->id, $this->environment->id);
@@ -60,6 +64,21 @@ test('open alerts are grouped by service, server and project, most severe first,
     expect(array_map(fn (OpenAlertData $a): string => $a->label, $byService[$this->instance->id]))->toBe(['Backup failed', 'Errors 8%'])
         ->and($byServer[$this->server->id][0]->label)->toBe('Disk 93%')
         ->and($byProject[$this->project->id])->toHaveCount(2);
+});
+
+test('chip words come from the stored cause and number, not from the title', function (): void {
+    raiseFor($this->team, AlertRule::ServiceUnhealthy, 'service:'.$this->instance->public_id, $this->instance, kind: AlertKind::Restarting);
+    raiseFor($this->team, AlertRule::ErrorRateHigh, 'service:'.$this->instance->public_id, $this->instance, value: 8.5);
+    raiseFor($this->team, AlertRule::BackupFailed, 'backup_overdue:'.$this->instance->public_id, $this->instance);
+    raiseFor($this->team, AlertRule::MemoryHigh, 'server:'.$this->server->public_id, server: $this->server, value: 5.0);
+
+    $alerts = new OpenAlerts;
+    $labels = array_map(fn (OpenAlertData $a): string => $a->label, $alerts->forEnvironment($this->team->id, $this->environment->id)[$this->instance->id]);
+    $overdue = collect($alerts->forEnvironment($this->team->id, $this->environment->id)[$this->instance->id])->firstWhere('rule', AlertRule::BackupFailed);
+
+    expect($labels)->toEqualCanonicalizing(['Restarting', 'Errors 8.5%', 'Backup overdue'])
+        ->and($overdue?->backupKind)->toBe(BackupAlertKind::Overdue)
+        ->and($alerts->forServers($this->team->id, [$this->server->id])[$this->server->id][0]->label)->toBe('Memory 5.0%');
 });
 
 test('another team\'s alerts never show', function (): void {
@@ -76,7 +95,7 @@ test('another team\'s alerts never show', function (): void {
 
 test('the canvas node and the server pages carry the open alerts; resolving clears them', function (): void {
     raiseFor($this->team, AlertRule::ServiceUnhealthy, 'service:'.$this->instance->public_id, $this->instance);
-    raiseFor($this->team, AlertRule::CpuHigh, 'server:'.$this->server->public_id, server: $this->server, facts: ['CPU' => '94%']);
+    raiseFor($this->team, AlertRule::CpuHigh, 'server:'.$this->server->public_id, server: $this->server, facts: ['CPU' => '94%'], value: 94.0);
 
     $this->actingAs($this->owner)
         ->get(route('projects.canvas', [$this->project->public_id, $this->environment->public_id]))

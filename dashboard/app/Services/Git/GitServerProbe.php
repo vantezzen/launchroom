@@ -14,13 +14,14 @@ use Throwable;
 /**
  * Checks a GitLab/Gitea base URL before anything is stored (docs/19 §4.1):
  * reachable through SafeHttpClient (private networks only with the owner
- * override, which also allows plain http), and actually that kind of
- * server. Gitea and Forgejo are told apart by their version string.
+ * override, which also allows plain http), and actually that kind of server
+ * (the provider decides).
  */
 final readonly class GitServerProbe
 {
     public function __construct(
         private SafeHttpClient $http,
+        private GitProviders $providers,
     ) {}
 
     /**
@@ -38,29 +39,16 @@ final readonly class GitServerProbe
         }
 
         try {
-            $response = $provider === GitProviderKind::GitLab
-                ? $client->get($origin.'/api/v4/projects', ['per_page' => '1'])
-                : $client->get($origin.'/api/v1/version');
+            $api = $this->providers->api($provider);
+            $kind = $api->recognize($client->get($api->probeUrl($origin)), $origin);
+        } catch (DomainRuleViolation $e) {
+            throw $e;
         } catch (UnsafeUrl $e) {
             throw DomainRuleViolation::on('baseUrl', "launchroom can’t connect there: {$e->getMessage()}.".($privateNetwork ? '' : ' An instance owner can allow servers on a private network.'));
         } catch (Throwable) {
             throw DomainRuleViolation::on('baseUrl', "launchroom couldn’t reach {$origin}. Check the address.");
         }
 
-        if ($provider === GitProviderKind::GitLab) {
-            if (! in_array($response->status(), [200, 401, 403], true) || ($response->header('X-Gitlab-Meta') === '' && ! is_array($response->json()))) {
-                throw DomainRuleViolation::on('baseUrl', "{$origin} doesn’t look like a GitLab server.");
-            }
-
-            return [$origin, GitServerKind::GitLab];
-        }
-
-        $version = $response->json('version');
-
-        if (! $response->successful() || ! is_string($version)) {
-            throw DomainRuleViolation::on('baseUrl', "{$origin} doesn’t look like a Gitea or Forgejo server.");
-        }
-
-        return [$origin, str_contains(strtolower($version), 'forgejo') || str_contains($version, '+gitea') ? GitServerKind::Forgejo : GitServerKind::Gitea];
+        return [$origin, $kind];
     }
 }

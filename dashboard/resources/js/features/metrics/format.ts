@@ -1,54 +1,5 @@
-import { formatBytes, formatCompact } from '@/components/charts/format';
 import type { StatDelta } from '@/components/charts/stat-tile';
 import type { ChartMarker } from '@/components/charts/time-series-chart';
-
-/** Requests per second: "12.4", "0.03", "1.2K". */
-export function formatRate(value: number): string {
-    if (value === 0) {
-        return '0';
-    }
-
-    if (value < 0.01) {
-        return '<0.01';
-    }
-
-    if (value < 0.1) {
-        return value.toFixed(2);
-    }
-
-    return value < 1000
-        ? value.toFixed(value < 10 ? 1 : 0)
-        : formatCompact(value);
-}
-
-/** Latency: "38 ms", "1.2 s", "> 30 s". */
-export function formatMs(value: number): string {
-    if (value >= 30_000) {
-        return '> 30 s';
-    }
-
-    if (value >= 1000) {
-        return `${(value / 1000).toFixed(value < 10_000 ? 1 : 0)} s`;
-    }
-
-    return `${Math.round(value)} ms`;
-}
-
-export function formatErrorRate(value: number): string {
-    if (value === 0) {
-        return '0%';
-    }
-
-    return value < 1 ? `${value.toFixed(2)}%` : `${value.toFixed(1)}%`;
-}
-
-export const formatBandwidth = (bytesPerSecond: number) =>
-    `${formatBytes(bytesPerSecond)}/s`;
-
-export const formatCores = (value: number) =>
-    value < 1 ? `${Math.round(value * 1000)}m` : value.toFixed(2);
-
-export const formatMemory = (mb: number) => formatBytes(mb * 1024 * 1024);
 
 /**
  * Change against the previous period (design-system §9): coloured only when

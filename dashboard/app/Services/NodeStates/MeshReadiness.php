@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\NodeStates;
 
+use App\Data\Servers\NodeStateFacts;
 use App\Enums\ServerStatus;
 use App\Enums\WorkloadRole;
 use App\Models\NodeStateVersion;
@@ -11,7 +12,6 @@ use App\Models\Placement;
 use App\Models\Server;
 use App\Models\ServiceInstance;
 use Illuminate\Database\Query\Builder as QueryBuilder;
-use JsonException;
 
 /**
  * Whether a new replica's cross-server dependencies are reachable yet
@@ -26,7 +26,8 @@ use JsonException;
  * Health gating (AdvanceDeployment) and rolling traffic shift
  * (NodeStateContent::rollingHealthy) treat such a replica as not healthy
  * yet. Providers on servers that aren't online are skipped: a dead server
- * can't apply anything, and waiting for it would block the rollout.
+ * can't apply anything, and waiting for it would block the rollout. The
+ * applied allow-list comes from the version's recorded facts.
  */
 final readonly class MeshReadiness
 {
@@ -53,52 +54,25 @@ final readonly class MeshReadiness
             ->whereIn('server_id', Server::query()->select('id')->where('status', ServerStatus::Online->value))
             ->get(['server_id', 'mesh_port']);
 
-        /** @var array<int, array<int, list<string>>|null> $applied */
-        $applied = [];
+        if ($providers->isEmpty()) {
+            return true;
+        }
+
+        $applied = NodeStateVersion::query()
+            ->join('servers', 'servers.id', '=', 'node_state_versions.server_id')
+            ->whereIn('node_state_versions.server_id', $providers->pluck('server_id')->unique()->values())
+            ->whereColumn('node_state_versions.version', 'servers.observed_version')
+            ->get(['node_state_versions.server_id', 'node_state_versions.facts'])
+            ->keyBy('server_id');
 
         foreach ($providers as $provider) {
-            $allow = array_key_exists($provider->server_id, $applied)
-                ? $applied[$provider->server_id]
-                : ($applied[$provider->server_id] = $this->appliedAllow($provider->server_id));
+            $facts = $applied->get($provider->server_id)?->facts;
 
-            if ($allow === null || ! in_array($ip, $allow[(int) $provider->mesh_port] ?? [], true)) {
+            if (! $facts instanceof NodeStateFacts || ! in_array($ip, $facts->allowedOn((int) $provider->mesh_port), true)) {
                 return false;
             }
         }
 
         return true;
-    }
-
-    /**
-     * meshAllow of the NodeState the server last reported as applied.
-     *
-     * @return array<int, list<string>>|null
-     */
-    private function appliedAllow(int $serverId): ?array
-    {
-        $observed = Server::query()->whereKey($serverId)->value('observed_version');
-        $document = is_numeric($observed)
-            ? NodeStateVersion::query()->where('server_id', $serverId)->where('version', (int) $observed)->value('document')
-            : null;
-        $allow = null;
-
-        if (is_string($document)) {
-            try {
-                $doc = json_decode($document, true, 64, JSON_THROW_ON_ERROR);
-            } catch (JsonException) {
-                $doc = null;
-            }
-
-            $rules = is_array($doc) && is_array($doc['firewall'] ?? null) && is_array($doc['firewall']['meshAllow'] ?? null) ? $doc['firewall']['meshAllow'] : [];
-            $allow = [];
-
-            foreach ($rules as $rule) {
-                if (is_array($rule) && is_int($rule['port'] ?? null) && is_array($rule['from'] ?? null)) {
-                    $allow[$rule['port']] = array_values(array_filter($rule['from'], is_string(...)));
-                }
-            }
-        }
-
-        return $allow;
     }
 }

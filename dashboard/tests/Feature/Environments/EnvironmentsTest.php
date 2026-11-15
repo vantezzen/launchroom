@@ -30,7 +30,9 @@ use App\Enums\AuditAction;
 use App\Enums\ConnectionMode;
 use App\Enums\ConnectionStyle;
 use App\Enums\EnvironmentKind;
+use App\Enums\PreviewStrategy;
 use App\Enums\PromotionKind;
+use App\Enums\Security\WafMode;
 use App\Enums\ServiceKind;
 use App\Enums\TeamRole;
 use App\Enums\VariableType;
@@ -45,6 +47,7 @@ use App\Models\Team;
 use App\Models\Variable;
 use App\Models\Volume;
 use App\Queries\CurrentEnvironmentSpec;
+use App\Services\Environments\EnvironmentIntentCopier;
 use App\Services\Promotions\PromotionPlanner;
 use App\Services\Variables\VariableStore;
 use App\Support\Changes\SpecDiff;
@@ -141,6 +144,24 @@ test('a new environment copies services, settings, volumes and variables, with f
 
     expect($selectable($planner->plan($staging, $production)->items))->toBe([])
         ->and($selectable($planner->plan($production, $staging)->items))->toBe([]);
+});
+
+test('bringing back a staged removal copies the same settings as a fresh copy, firewall included (bug 7)', function (): void {
+    [$project, $production, , $web] = envProject();
+    $staging = envCreate($project, 'Staging');
+    $source = ServiceInstance::query()->where('environment_id', $production->id)->where('service_id', $web->id)->sole();
+    $source->forceFill(['waf_mode' => WafMode::Log, 'waf_paranoia' => 2, 'waf_inspect_body_kib' => 128, 'preview_strategy' => PreviewStrategy::NewEmpty])->save();
+    $removed = ServiceInstance::query()->where('environment_id', $staging->id)->where('service_id', $web->id)->sole();
+    $removed->forceFill(['removed_at' => now()])->save();
+
+    $back = resolve(EnvironmentIntentCopier::class)->copyService($source->refresh(), $staging);
+
+    expect($back->id)->toBe($removed->id)
+        ->and($back->refresh()->removed_at)->toBeNull()
+        ->and($back->waf_mode)->toBe(WafMode::Log)
+        ->and($back->waf_paranoia)->toBe(2)
+        ->and($back->waf_inspect_body_kib)->toBe(128)
+        ->and($back->preview_strategy)->toBe(PreviewStrategy::NewEmpty);
 });
 
 test('copy options: no secrets, a subset of services, and never production secrets into previews under the policy', function (): void {

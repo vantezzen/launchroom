@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -267,11 +268,30 @@ func TestRenewsAtRenewAfter(t *testing.T) {
 
 func TestInactiveManagerDoesNotAsk(t *testing.T) {
 	ca := newTestCA(t)
-	m, err := New(Options{Dir: t.TempDir(), ServerID: srvID, Issuer: ca, Active: func() bool { return false }})
+	var active atomic.Bool
+	m, err := New(Options{Dir: t.TempDir(), ServerID: srvID, Issuer: ca, Active: active.Load})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if w := m.nextWait(); w != idleCheck {
-		t.Errorf("wait %v", w)
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	done := make(chan struct{})
+	go func() { m.Run(ctx); close(done) }()
+	defer func() { cancel(); <-done }()
+	m.Kick()
+	time.Sleep(100 * time.Millisecond)
+	ca.mu.Lock()
+	issued := ca.issued
+	ca.mu.Unlock()
+	if issued != 0 {
+		t.Fatalf("an inactive manager asked for %d certificates", issued)
+	}
+	// Once active, a kick asks at once.
+	active.Store(true)
+	m.Kick()
+	for _, _, ok := m.Current(); !ok; _, _, ok = m.Current() {
+		if ctx.Err() != nil {
+			t.Fatal("no certificate after activation")
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }

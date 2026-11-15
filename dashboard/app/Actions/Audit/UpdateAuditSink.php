@@ -12,7 +12,8 @@ use App\Enums\AuditAction;
 use App\Exceptions\DomainRuleViolation;
 use App\Jobs\Audit\DeliverAuditSinkJob;
 use App\Models\AuditSink;
-use App\Services\Audit\AuditSinkSecrets;
+use App\Services\Crypto\SealedColumns;
+use App\Support\Webhooks\WebhookSignature;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -23,7 +24,7 @@ use Illuminate\Support\Facades\DB;
 final readonly class UpdateAuditSink
 {
     public function __construct(
-        private AuditSinkSecrets $secrets,
+        private SealedColumns $sealed,
         private RecordAuditEvent $audit,
     ) {}
 
@@ -33,7 +34,7 @@ final readonly class UpdateAuditSink
             throw DomainRuleViolation::on('rotateSecret', 'Only webhooks have a signing secret.');
         }
 
-        $signing = $input->rotateSecret ? AuditSinkSecrets::generateSigningSecret() : null;
+        $signing = $input->rotateSecret ? WebhookSignature::generateSecret() : null;
 
         DB::transaction(function () use ($sink, $input, $actor, $signing): void {
             $changes = [];
@@ -52,9 +53,9 @@ final readonly class UpdateAuditSink
             }
 
             if ($signing !== null) {
-                $values = $this->secrets->reveal($sink);
+                $values = $this->sealed->revealJson($sink, 'secret');
                 $values['signingSecret'] = $signing;
-                $this->secrets->seal($sink, $values);
+                $this->sealed->sealJson($sink, 'secret', $values, $this->sealed->newKey($sink));
                 $changes[] = 'signing_secret';
             }
 

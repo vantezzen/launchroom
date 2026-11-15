@@ -10,6 +10,7 @@ use App\Actions\Services\StartService;
 use App\Actions\Services\StopService;
 use App\Data\Services\ServiceLifecycleData;
 use App\Http\Controllers\Controller;
+use App\Http\Routing\RouteScope;
 use App\Models\Environment;
 use App\Models\Project;
 use App\Models\Service;
@@ -26,11 +27,9 @@ use Illuminate\Support\Facades\Gate;
  */
 final class ServiceLifecycleController extends Controller
 {
-    use ScopesProjectRoutes;
-
     public function deploy(Request $request, Project $project, Environment $environment, Service $service, #[CurrentUser] User $user, DeployLatest $deploy): RedirectResponse
     {
-        $instance = $this->scopeInstance($project, $environment, $service);
+        $instance = RouteScope::editable(RouteScope::instance($project, $environment, $service));
         Gate::authorize('deploy', $environment);
 
         $created = $deploy->handle($instance, $user, $this->auditActor($request, $user));
@@ -40,7 +39,7 @@ final class ServiceLifecycleController extends Controller
 
     public function restart(Request $request, Project $project, Environment $environment, Service $service, ServiceLifecycleData $data, #[CurrentUser] User $user, RestartService $restart): RedirectResponse
     {
-        $instance = $this->scopeInstance($project, $environment, $service);
+        $instance = RouteScope::editable(RouteScope::instance($project, $environment, $service));
         Gate::authorize('deploy', $environment);
 
         $restart->handle($instance, $data->processes, $user, $this->auditActor($request, $user));
@@ -50,7 +49,7 @@ final class ServiceLifecycleController extends Controller
 
     public function stop(Request $request, Project $project, Environment $environment, Service $service, ServiceLifecycleData $data, #[CurrentUser] User $user, StopService $stop): RedirectResponse
     {
-        $instance = $this->scopeInstance($project, $environment, $service);
+        $instance = RouteScope::editable(RouteScope::instance($project, $environment, $service));
         Gate::authorize('deploy', $environment);
 
         $stop->handle($instance, $data->processes, $user, $this->auditActor($request, $user));
@@ -60,7 +59,7 @@ final class ServiceLifecycleController extends Controller
 
     public function start(Request $request, Project $project, Environment $environment, Service $service, ServiceLifecycleData $data, #[CurrentUser] User $user, StartService $start): RedirectResponse
     {
-        $instance = $this->scopeInstance($project, $environment, $service);
+        $instance = RouteScope::editable(RouteScope::instance($project, $environment, $service));
         Gate::authorize('deploy', $environment);
 
         $start->handle($instance, $data->processes, $user, $this->auditActor($request, $user));

@@ -106,6 +106,48 @@ final class RouteSpec extends Data
     }
 
     /**
+     * A copy serving only $hosts; the www redirect is kept while its target
+     * is still one of them. Withers clone, so no field is lost on the way.
+     *
+     * @param  list<string>  $hosts
+     */
+    public function withHosts(array $hosts): self
+    {
+        $copy = clone $this;
+        $copy->hosts = $hosts;
+        $copy->redirectWwwTo = in_array($this->redirectWwwTo, $hosts, true) ? $this->redirectWwwTo : null;
+
+        return $copy;
+    }
+
+    public function withTls(string $tls): self
+    {
+        $copy = clone $this;
+        $copy->tls = $tls;
+
+        return $copy;
+    }
+
+    public function withHeader(string $name, string $value): self
+    {
+        $copy = clone $this;
+        $copy->headers = [...($this->headers ?? []), $name => $value];
+
+        return $copy;
+    }
+
+    /**
+     * @param  array{mode: string, paranoia?: int, inspectBodyKiB?: int, exclusions?: list<array{rule: int, path?: string, target?: string}>}|null  $waf
+     */
+    public function withWaf(?array $waf): self
+    {
+        $copy = clone $this;
+        $copy->waf = $waf;
+
+        return $copy;
+    }
+
+    /**
      * @return array<string, mixed>
      */
     public function toProtocol(): array

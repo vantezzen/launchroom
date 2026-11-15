@@ -55,7 +55,7 @@ final class ClaimCliLoginToken
             }
 
             $plainText = Crypt::decryptString($request->token_ciphertext);
-            $request->transitionTo(CliLoginStatus::Consumed, ['token_ciphertext' => null, 'consumed_at' => now()]);
+            $request->transitionTo(CliLoginStatus::Consumed);
 
             return new CliTokenData(
                 token: $plainText,

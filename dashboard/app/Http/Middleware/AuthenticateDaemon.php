@@ -8,6 +8,7 @@ use App\Actions\Servers\MarkServerSeen;
 use App\Enums\ClientCertificateMode;
 use App\Enums\ServerStatus;
 use App\Http\Daemon\ClientCertificateIdentity;
+use App\Models\InstanceSettings;
 use App\Models\Server;
 use App\Services\Daemon\ClientCertificatePresence;
 use App\Services\Daemon\Exceptions\InvalidRequestSignature;
@@ -16,7 +17,7 @@ use App\Services\Daemon\SignedRequest;
 use App\Support\Crypto\PublicKeyFormat;
 use App\Support\PublicId;
 use Closure;
-use Illuminate\Contracts\Database\Query\Builder;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -133,7 +134,7 @@ final readonly class AuthenticateDaemon
         }
 
         if ($server instanceof Server) {
-            $mode = ClientCertificateMode::current();
+            $mode = InstanceSettings::current()->clientCertificateMode();
 
             try {
                 $presence = $this->identity->resolve($request, $server, $mode);
@@ -210,7 +211,7 @@ final readonly class AuthenticateDaemon
         $server = Server::query()
             ->where('public_id', $keyId)
             ->where(static fn (Builder $query) => $query
-                ->where('status', '!=', ServerStatus::Revoked->value)
+                ->notRevoked()
                 // A replaced server's key only still fetches its empty decommission state (docs/14 §5.3).
                 ->orWhere(static fn (Builder $replaced) => $replaced->whereNotNull('replaced_at')->where('status', ServerStatus::Revoked->value)))
             ->first();

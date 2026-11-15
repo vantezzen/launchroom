@@ -2,7 +2,6 @@ import { Head, Link, router } from '@inertiajs/react';
 import { ArrowUpRight, ChevronRight, Plus, Search } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { ObjectCard } from '@/components/cards/object-card';
-import { formatCompact } from '@/components/charts/format';
 import { MiniBars } from '@/components/charts/mini-bars';
 import { Sparkline } from '@/components/charts/sparkline';
 import { CommitAvatar } from '@/components/commit-avatar';
@@ -13,7 +12,6 @@ import { ProjectIcon } from '@/components/project-icon';
 import { Status, StatusIcon } from '@/components/status';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { compactAge, plural } from '@/features/canvas/format';
 import { MiniCanvas } from '@/features/canvas/mini-canvas';
 import { DeploymentLink } from '@/features/deployments/deployment-link';
 import {
@@ -22,12 +20,12 @@ import {
     deploymentWord,
     firstLine,
     isInProgress,
-    shortSha,
 } from '@/features/deployments/format';
 import { EnvironmentLiveUpdates } from '@/features/projects/environment-live-updates';
 import { StartEmptyDialog } from '@/features/projects/start-empty-dialog';
 import { index as activity } from '@/routes/activity';
 import { canvas, importMethod, index, show } from '@/routes/projects';
+import { compactAge, formatCompact, plural, shortSha } from '@/lib/format';
 
 type Summary = App.Data.Canvas.ProjectSummaryData;
 

@@ -1,7 +1,7 @@
 import { endSession, fetchSession } from './api';
 
 /** How long a session may stay "Connecting…" before it is given up. */
-export const CONNECT_TIMEOUT_MS = 25_000;
+const CONNECT_TIMEOUT_MS = 25_000;
 const POLL_MS = 2_000;
 
 type SessionItem = App.Data.Sessions.SessionHistoryItemData;
@@ -21,7 +21,7 @@ const browserDeps: ConnectWatchDeps = {
 };
 
 /** The sentence for a session that ended before it was usable. */
-export function failureOf(item: SessionItem): string {
+function failureOf(item: SessionItem): string {
     return item.failure ?? `${item.endReason ?? 'The session ended'}.`;
 }
 

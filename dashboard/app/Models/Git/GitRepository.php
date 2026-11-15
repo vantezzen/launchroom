@@ -7,6 +7,7 @@ namespace App\Models\Git;
 use App\Contracts\Git\SourceRepository;
 use App\Data\Git\GitRepositoryData;
 use App\Data\Git\RepositoryRef;
+use App\Data\Services\GitSource;
 use App\Enums\Git\GitProviderKind;
 use App\Models\Concerns\BelongsToTeam;
 use App\Models\Concerns\HasPublicId;
@@ -92,20 +93,19 @@ final class GitRepository extends Model implements SourceRepository
         return $this->default_branch;
     }
 
-    public function gitSource(string $rootDirectory = '', ?string $branch = null): array
+    public function gitSource(string $rootDirectory = '', ?string $branch = null): GitSource
     {
         $connection = $this->gitConnection;
 
-        return [
-            'type' => 'git',
-            'provider' => $connection->provider->value,
-            'repositoryId' => $this->external_id,
-            'fullName' => $this->full_name,
-            'installationId' => $connection->id,
-            ...($rootDirectory === '' ? [] : ['rootDirectory' => $rootDirectory]),
-            ...($connection->provider === GitProviderKind::Git ? ['cloneUrl' => $connection->base_url] : []),
-            ...($branch === null ? [] : ['branch' => $branch]),
-        ];
+        return new GitSource(
+            repositoryId: $this->external_id,
+            fullName: $this->full_name,
+            installationId: $connection->id,
+            rootDirectory: $rootDirectory,
+            provider: $connection->provider,
+            cloneUrl: $connection->provider === GitProviderKind::Git ? $connection->base_url : null,
+            branch: $branch,
+        );
     }
 
     public function pickerData(): GitRepositoryData

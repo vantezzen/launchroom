@@ -6,6 +6,7 @@ namespace App\Models;
 
 use App\Enums\VolumeRetirementStatus;
 use App\Models\Concerns\BelongsToTeam;
+use App\Models\Concerns\HasStatusTransitions;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -50,27 +51,19 @@ final class VolumeRetirement extends Model
 {
     use BelongsToTeam;
 
+    /** @use HasStatusTransitions<VolumeRetirementStatus> */
+    use HasStatusTransitions;
+
     /** @var array<string, mixed> */
     protected $attributes = [
         'status' => 'retained',
     ];
 
-    /**
-     * Deletable once retention passed and, with backups, a final backup
-     * exists or the deletion was overridden.
-     */
     public function isDue(): bool
     {
         return $this->status === VolumeRetirementStatus::Retained
             && $this->retain_until->isPast()
             && (! $this->backups_configured || $this->final_backup_snapshot !== null || $this->confirmed_at !== null);
-    }
-
-    public function transitionTo(VolumeRetirementStatus $to): void
-    {
-        $this->status->assertCanTransitionTo($to);
-        $this->status = $to;
-        $this->save();
     }
 
     /**

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Data\Transfers\Inputs;
 
+use App\Data\Attributes\PublicIdOf;
+use App\Support\Protocol\Grammar;
 use Spatie\LaravelData\Attributes\Validation\Regex;
 use Spatie\LaravelData\Data;
 
@@ -13,9 +15,9 @@ use Spatie\LaravelData\Data;
 final class StartExportInput extends Data
 {
     public function __construct(
-        #[Regex('/^vol_[0-9A-HJKMNP-TV-Z]{26}$/')]
+        #[PublicIdOf('vol')]
         public ?string $volume = null,
-        #[Regex('/^[a-f0-9]{8,64}$/')]
+        #[Regex(Grammar::SNAPSHOT_ID)]
         public ?string $snapshot = null,
     ) {}
 }

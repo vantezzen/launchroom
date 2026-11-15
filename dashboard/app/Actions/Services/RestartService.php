@@ -8,15 +8,14 @@ use App\Actions\Audit\RecordAuditEvent;
 use App\Data\Audit\AuditActor;
 use App\Data\Audit\AuditEntryData;
 use App\Enums\AuditAction;
-use App\Enums\DeploymentStatus;
 use App\Enums\DeploymentTrigger;
+use App\Events\CanvasChanged;
 use App\Exceptions\DomainRuleViolation;
-use App\Jobs\AdvanceDeploymentJob;
 use App\Models\Deployment;
 use App\Models\ServiceInstance;
 use App\Models\User;
 use App\Queries\ServiceProcesses;
-use App\Services\Deployments\ImageRerun;
+use App\Services\Deployments\DeploymentFactory;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -33,7 +32,7 @@ use Illuminate\Support\Facades\DB;
 final readonly class RestartService
 {
     public function __construct(
-        private ImageRerun $rerun,
+        private DeploymentFactory $factory,
         private RecordAuditEvent $audit,
     ) {}
 
@@ -70,18 +69,18 @@ final readonly class RestartService
 
                 $unfinished = Deployment::query()
                     ->where('service_instance_id', $target->id)
-                    ->whereIn('status', DeploymentStatus::values([DeploymentStatus::Queued, ...DeploymentStatus::inFlight()]))
+                    ->unfinished()
                     ->exists();
 
                 if ($unfinished) {
                     throw DomainRuleViolation::conflict("A deployment of {$target->service->name} is in progress. It starts fresh containers anyway; restart once it finished if you still need to.");
                 }
 
-                if (! ImageRerun::possible($active)) {
+                if (! $active->canRerunImage()) {
                     throw DomainRuleViolation::on('service', "The image {$target->service->name} runs is no longer stored. Redeploy it instead.");
                 }
 
-                $deployments[] = $this->rerun->create($active, DeploymentTrigger::Restart, $user);
+                $deployments[] = $this->factory->rerun($active, DeploymentTrigger::Restart, $user);
             }
 
             $this->audit->handle(new AuditEntryData(
@@ -100,9 +99,7 @@ final readonly class RestartService
             return $deployments;
         });
 
-        foreach ($created as $deployment) {
-            dispatch(new AdvanceDeploymentJob($deployment->id));
-        }
+        CanvasChanged::forInstance($instance);
 
         return $created;
     }

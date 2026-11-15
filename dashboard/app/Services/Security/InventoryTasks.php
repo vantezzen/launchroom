@@ -4,8 +4,12 @@ declare(strict_types=1);
 
 namespace App\Services\Security;
 
+use App\Data\Protocol\V1\Tasks\InventorySource as RepositorySource;
+use App\Data\Protocol\V1\Tasks\InventorySpec;
+use App\Data\Protocol\V1\Tasks\RepoSpec;
 use App\Data\Services\GitSource;
-use App\Enums\DaemonTaskType;
+use App\Data\Tasks\CloneSeal;
+use App\Data\Tasks\TaskSeal;
 use App\Enums\Security\InventorySource;
 use App\Enums\ServerRole;
 use App\Exceptions\DomainRuleViolation;
@@ -13,6 +17,10 @@ use App\Models\DaemonTask;
 use App\Models\Deployment;
 use App\Models\Placement;
 use App\Services\Builds\BuildTasks;
+use App\Services\Tasks\DaemonTasks;
+use App\Support\Git\GitRef;
+use App\Support\Images\AppImage;
+use App\Support\Protocol\Grammar;
 use App\Support\ServerPlatform;
 
 /**
@@ -27,11 +35,9 @@ final readonly class InventoryTasks
 {
     public function __construct(
         private BuildTasks $builds,
+        private DaemonTasks $tasks,
     ) {}
 
-    /**
-     * The platform of the servers running the deployment.
-     */
     public function platform(Deployment $deployment): ?string
     {
         $placement = Placement::query()
@@ -44,29 +50,26 @@ final readonly class InventoryTasks
     }
 
     /**
-     * @return array{spec: array<string, mixed>, seal: array<string, mixed>, source: InventorySource, built: bool}|null
+     * @return array{spec: InventorySpec, seal: TaskSeal|null, source: InventorySource, built: bool}|null
      */
     public function spec(Deployment $deployment, string $image, string $platform): ?array
     {
-        $apps = rtrim(config()->string('launchroom.images.apps_prefix'), '/').'/';
-        $built = str_starts_with($image, $apps);
-        $spec = ['image' => $image, 'platform' => $platform];
-        $seal = [];
+        $built = AppImage::isBuilt($image);
+        $spec = new InventorySpec($image, $platform);
+        $seal = null;
 
         if ($built) {
             // apps/<service>: the task's pull token covers exactly that repository (docs/03 §4.5).
             $service = $deployment->serviceInstance->service;
-            $repository = substr($image, strlen($apps), (int) strpos($image, '@') - strlen($apps));
-
-            if ($repository !== strtolower($service->public_id)) {
+            if (AppImage::parse($image)?->belongsTo($service->public_id) !== true) {
                 return null;
             }
 
-            $spec['service'] = $service->public_id;
+            $spec->service = $service->public_id;
             $source = $service->source;
             $sha = $deployment->commit_sha;
 
-            if ($source instanceof GitSource && is_string($sha) && preg_match('/^[a-f0-9]{40}$/D', $sha) === 1) {
+            if ($source instanceof GitSource && is_string($sha) && GitRef::isSha($sha)) {
                 try {
                     $cloneUrl = $this->builds->cloneUrl($deployment->team_id, $source);
                 } catch (DomainRuleViolation) {
@@ -76,12 +79,9 @@ final readonly class InventoryTasks
                 $root = trim($source->rootDirectory, '/');
 
                 if (is_string($cloneUrl) && preg_match(GitSource::CLONE_URL_PATTERN, $cloneUrl) === 1
-                    && ($root === '' || (preg_match('#^[A-Za-z0-9._@+=,-]+(?:/[A-Za-z0-9._@+=,-]+)*$#D', $root) === 1 && array_intersect(explode('/', $root), ['.', '..']) === []))) {
-                    $spec['source'] = [
-                        'repo' => ['provider' => $source->provider, 'cloneUrl' => $cloneUrl, 'sha' => $sha],
-                        ...($root === '' ? [] : ['rootDir' => $root]),
-                    ];
-                    $seal = $source->isUnconnectedPlainGit() ? [] : ['sourceCloneToken' => ['source' => $source->toArray()]];
+                    && ($root === '' || (preg_match(Grammar::REL_PATH, $root) === 1 && array_intersect(explode('/', $root), ['.', '..']) === []))) {
+                    $spec->source = new RepositorySource(new RepoSpec($source->provider->value, $cloneUrl, $sha), $root === '' ? null : $root);
+                    $seal = new TaskSeal(sourceCloneToken: new CloneSeal($source));
                 }
             }
         }
@@ -89,22 +89,14 @@ final readonly class InventoryTasks
         return ['spec' => $spec, 'seal' => $seal, 'source' => $built ? InventorySource::Built : InventorySource::Registry, 'built' => $built];
     }
 
-    /**
-     * @param  array<string, mixed>  $spec
-     * @param  array<string, mixed>  $seal
-     */
-    public function create(int $teamId, array $spec, array $seal): DaemonTask
+    public function create(int $teamId, InventorySpec $spec, ?TaskSeal $seal): DaemonTask
     {
-        return DaemonTask::query()->create([
-            'team_id' => $teamId,
-            'server_id' => null,
-            'pinned_to_server' => false,
-            'required_role' => ServerRole::Build,
-            'type' => DaemonTaskType::Inventory,
-            'spec' => json_decode(json_encode($spec, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR), false, 64, JSON_THROW_ON_ERROR),
-            'seal' => $seal === [] ? null : $seal,
-            'max_attempts' => 3,
-            'timeout_seconds' => config()->integer('launchroom.security.inventory_timeout_seconds', 900),
-        ]);
+        return $this->tasks->create(
+            $teamId,
+            $spec,
+            config()->integer('launchroom.security.inventory_timeout_seconds', 900),
+            role: ServerRole::Build,
+            seal: $seal,
+        );
     }
 }

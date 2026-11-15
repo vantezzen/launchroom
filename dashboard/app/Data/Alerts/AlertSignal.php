@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Data\Alerts;
 
-use App\Actions\Alerts\RaiseAlert;
+use App\Enums\Alerts\AlertKind;
 use App\Enums\Alerts\AlertRule;
 use App\Enums\Alerts\AlertSeverity;
 use App\Models\Environment;
@@ -15,13 +15,14 @@ use App\Models\Team;
 use InvalidArgumentException;
 
 /**
- * What a caller of {@see RaiseAlert} reports (docs/15
+ * What a caller of RaiseAlert reports (docs/15
  * §3.2). Text goes to third-party chat services: never secrets, variable
  * values or log excerpts with user data.
  *
  * - `subject`: a stable key of the broken thing, `<kind>:<id>` with a public
  *   id (`service:svc_…`, `server:srv_…`, `domain:dom_…`, `backup:bks_…`);
  * - `facts`: at most 8 short display pairs ("Commit" => "3b7d5e1");
+ * - `kind`/`value`: the cause and the measured percentage, for the chip;
  * - `occurrence`: identifies a new occurrence of a firing alert (a new failed
  *   deployment or backup run), for repeat notifications.
  */
@@ -46,6 +47,8 @@ final readonly class AlertSignal
         public ?Server $server = null,
         public array $facts = [],
         public ?string $occurrence = null,
+        public ?AlertKind $kind = null,
+        public ?float $value = null,
     ) {
         if (preg_match(self::SUBJECT_PATTERN, $subject) !== 1) {
             throw new InvalidArgumentException("Alert subject [{$subject}] must look like `kind:id`.");

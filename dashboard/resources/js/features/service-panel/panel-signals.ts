@@ -15,15 +15,17 @@ export type Signal = {
     href: string | null;
 };
 
-/** Status labels (NodeStatus) that already say what an alert of the rule says. */
-const SAID_BY_STATUS: Partial<Record<App.Enums.Alerts.AlertRule, string[]>> = {
-    deploy_failed: ['Failed', 'Last deploy failed'],
-    service_unhealthy: ['Unhealthy', 'Crashed', 'Not running', 'Restarting'],
-    server_offline: ['Server down'],
+type Reason = App.Enums.NodeStatusReason;
+
+/** Status reasons that already say what an alert of the rule says. */
+const SAID_BY_STATUS: Partial<Record<App.Enums.Alerts.AlertRule, Reason[]>> = {
+    deploy_failed: ['deploy_failed', 'last_deploy_failed'],
+    service_unhealthy: ['unhealthy', 'crashed', 'not_running'],
+    server_offline: ['server_down'],
 };
 
 export function secondarySignals(
-    status: string,
+    status: Reason,
     alerts: Alert[],
     actionNeeded: { count: number; href: string } | null,
 ): Signal[] {
@@ -57,8 +59,8 @@ export function secondarySignals(
 
 /** Failed deploys link the status to the deployment that says why. */
 export function failedDeployment(status: App.Data.Canvas.NodeStatusData) {
-    return (status.label === 'Failed' ||
-        status.label === 'Last deploy failed') &&
+    return (status.reason === 'deploy_failed' ||
+        status.reason === 'last_deploy_failed') &&
         status.deploymentId
         ? status.deploymentId
         : null;

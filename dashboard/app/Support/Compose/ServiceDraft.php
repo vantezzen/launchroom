@@ -138,15 +138,15 @@ final class ServiceDraft
             build: $this->kind === ServiceKind::App ? $this->build : null,
             database: $this->kind === ServiceKind::Database ? $this->database : null,
             parent: $this->kind === ServiceKind::Worker ? $this->parent : null,
-            port: in_array($this->kind, [ServiceKind::App, ServiceKind::Image], true) ? $this->port : null,
-            public: in_array($this->kind, [ServiceKind::App, ServiceKind::Image], true) && ($this->publicOverride ?? $this->public),
+            port: $this->kind->isWeb() ? $this->port : null,
+            public: $this->kind->isWeb() && ($this->publicOverride ?? $this->public),
             domain: $this->domain,
             entrypoint: $this->kind === ServiceKind::Database ? null : $this->entrypoint,
             startCommand: $this->kind === ServiceKind::Database ? null : $this->command,
-            healthcheck: in_array($this->kind, [ServiceKind::App, ServiceKind::Image], true) ? $this->healthcheck : null,
+            healthcheck: $this->kind->isWeb() ? $this->healthcheck : null,
             scaling: $this->scaling->isEmpty() || $this->kind === ServiceKind::Database ? null : $this->scaling,
             capabilities: $this->kind === ServiceKind::Database ? [] : $this->capabilities,
-            volumes: in_array($this->kind, [ServiceKind::App, ServiceKind::Image], true) ? $this->volumes : [],
+            volumes: $this->kind->ownsVolumes() ? $this->volumes : [],
             variables: $this->kind === ServiceKind::Database ? [] : array_map(
                 static fn (string $key, array $entry): BlueprintVariable => new BlueprintVariable($key, $entry['value'], $entry['secret']),
                 array_keys($this->env),
@@ -159,12 +159,12 @@ final class ServiceDraft
             ),
             notes: $notes,
             files: in_array($this->kind, [ServiceKind::App, ServiceKind::Image, ServiceKind::Worker], true) ? $this->files : [],
-            provides: in_array($this->kind, [ServiceKind::App, ServiceKind::Image], true) ? array_map(
+            provides: $this->kind->isWeb() ? array_map(
                 static fn (string $key, string $value): BlueprintVariable => new BlueprintVariable($key, $value),
                 array_keys($this->provides),
                 $this->provides,
             ) : [],
-            backupConsistency: in_array($this->kind, [ServiceKind::App, ServiceKind::Image], true) && $this->volumes !== [] ? $this->backupConsistency : null,
+            backupConsistency: $this->kind->ownsVolumes() && $this->volumes !== [] ? $this->backupConsistency : null,
         );
     }
 

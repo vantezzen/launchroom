@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/vantezzen/launchroom/daemon/internal/logship"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
-	"github.com/vantezzen/launchroom/daemon/internal/tasks"
 )
 
 // tailCP collects the batches a logs task ships, validated like the
@@ -61,7 +61,7 @@ func TestLogsTaskFollow(t *testing.T) {
 	converge(t, e, ns, func() bool { return status(e.rec, wl).Phase == state.PhaseHealthy })
 
 	cp := &tailCP{}
-	h := tasks.LogsHandler(e.engine, cp)
+	h := logship.TaskHandler(e.engine, cp)
 	id := state.TaskID(randomID("tsk"))
 	tk := state.Task{ID: id, Type: state.TaskLogs, Attempt: 1, LeaseExpiresAt: time.Now().Add(time.Minute), Deadline: time.Now().Add(5 * time.Minute),
 		Spec: &state.LogsSpec{Workload: wl, Tail: 200, Follow: true}}

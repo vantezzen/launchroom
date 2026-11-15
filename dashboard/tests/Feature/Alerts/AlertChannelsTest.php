@@ -16,10 +16,11 @@ use App\Models\Alerts\AlertRuleSetting;
 use App\Models\AuditEvent;
 use App\Models\Team;
 use App\Notifications\AlertEmailNotification;
-use App\Services\Alerts\AlertChannelSecrets;
+use App\Services\Alerts\ChannelSecret;
 use App\Services\Crypto\Envelope;
+use App\Services\Crypto\SealedColumns;
 use App\Services\Crypto\SecretKey;
-use App\Support\Alerts\WebhookSignature;
+use App\Support\Webhooks\WebhookSignature;
 use Illuminate\Http\Client\Request;
 use Illuminate\Notifications\AnonymousNotifiable;
 use Illuminate\Support\Facades\Http;
@@ -54,8 +55,8 @@ test('admins add a Slack channel; the URL is encrypted and never rendered, only 
         ->and($channel->target_hint)->toBe('hooks.slack.com/…uvwx')
         ->and($channel->secret)->toStartWith('lr1:')
         ->and(json_encode($channel->toArray(), JSON_THROW_ON_ERROR))->not->toContain('lr1:')->not->toContain('abcdefghijklmnop')
-        ->and(resolve(AlertChannelSecrets::class)->reveal($channel)->url)->toBe(Alerts::SLACK)
-        ->and(print_r(resolve(AlertChannelSecrets::class)->reveal($channel), true))->not->toContain('hooks.slack.com');
+        ->and(ChannelSecret::of(resolve(SealedColumns::class)->revealJson($channel, 'secret'))->url)->toBe(Alerts::SLACK)
+        ->and(print_r(ChannelSecret::of(resolve(SealedColumns::class)->revealJson($channel, 'secret')), true))->not->toContain('hooks.slack.com');
 
     $page = $this->actingAs($this->admin)->get(route('notifications.edit'))->assertOk();
     expect($page->getContent())->not->toContain('abcdefghijklmnopqrstuvwx');
@@ -102,7 +103,7 @@ test('a webhook gets a signing secret shown once, and its events are signed over
         ->post(route('notifications.channels.store'), ['kind' => 'webhook', 'secretUrl' => Alerts::WEBHOOK]);
     $flash = session('inertia.flash_data') ?? $response->getSession()?->get('inertia.flash_data');
     $channel = AlertChannel::query()->sole();
-    $secret = resolve(AlertChannelSecrets::class)->reveal($channel)->signingSecret;
+    $secret = ChannelSecret::of(resolve(SealedColumns::class)->revealJson($channel, 'secret'))->signingSecret;
 
     expect($secret)->toStartWith('lrwh_')
         ->and(json_encode($flash))->toContain((string) $secret);
@@ -134,8 +135,8 @@ test('a webhook gets a signing secret shown once, and its events are signed over
 
     // Rotating issues a new secret; the old one stops verifying.
     $this->actingAs($this->admin)->patch(route('notifications.channels.update', $channel), ['rotateSecret' => true])->assertSessionHasNoErrors();
-    expect(resolve(AlertChannelSecrets::class)->reveal($channel->refresh())->signingSecret)->not->toBe($secret)
-        ->and(resolve(AlertChannelSecrets::class)->reveal($channel)->url)->toBe(Alerts::WEBHOOK);
+    expect(ChannelSecret::of(resolve(SealedColumns::class)->revealJson($channel->refresh(), 'secret'))->signingSecret)->not->toBe($secret)
+        ->and(ChannelSecret::of(resolve(SealedColumns::class)->revealJson($channel, 'secret'))->url)->toBe(Alerts::WEBHOOK);
 });
 
 test('the webhook signature rejects stale timestamps and malformed headers', function (): void {
@@ -273,8 +274,8 @@ test('KEK rotation rewraps channel keys; email channels have none', function ():
     $next = new Envelope(SecretKey::generate());
     resolve(RotateKek::class)->handle($current, $next);
     app()->instance(Envelope::class, $next);
-    app()->forgetInstance(AlertChannelSecrets::class);
+    app()->forgetInstance(SealedColumns::class);
 
     expect($slack->refresh()->kek_id)->toBe($next->kekId())
-        ->and(resolve(AlertChannelSecrets::class)->reveal($slack)->url)->toBe(Alerts::SLACK);
+        ->and(ChannelSecret::of(resolve(SealedColumns::class)->revealJson($slack, 'secret'))->url)->toBe(Alerts::SLACK);
 });

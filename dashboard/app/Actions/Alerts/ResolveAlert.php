@@ -7,10 +7,9 @@ namespace App\Actions\Alerts;
 use App\Enums\Alerts\AlertDeliveryEvent;
 use App\Enums\Alerts\AlertRule;
 use App\Enums\Alerts\AlertStatus;
+use App\Events\CanvasChanged;
 use App\Models\Alerts\Alert;
 use App\Models\Team;
-use App\Services\Alerts\AlertChanged;
-use App\Services\Alerts\AlertNotifier;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -23,7 +22,7 @@ use Illuminate\Support\Facades\DB;
 final readonly class ResolveAlert
 {
     public function __construct(
-        private AlertNotifier $notifier,
+        private QueueAlertDeliveries $deliveries,
     ) {}
 
     public function handle(Team|int $team, AlertRule $rule, string $subject, ?string $reason = null, bool $notify = true): ?Alert
@@ -48,14 +47,14 @@ final readonly class ResolveAlert
             $alert->transitionTo(AlertStatus::Resolved, $reason);
 
             if ($notify && $alert->notified_at !== null) {
-                $this->notifier->queue($alert, AlertDeliveryEvent::Resolved);
+                $this->deliveries->handle($alert, AlertDeliveryEvent::Resolved);
             }
 
             return $alert;
         });
 
         if ($resolved instanceof Alert) {
-            AlertChanged::broadcastFor($resolved);
+            CanvasChanged::forEnvironment($resolved->environment_id);
         }
 
         return $resolved;

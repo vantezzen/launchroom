@@ -29,7 +29,6 @@ final readonly class PollStaleTrackedRefs
     public function __construct(
         private TrackedRefs $trackedRefs,
         private PollTrackedRef $pollRef,
-        private PollConnectionRef $pollConnectionRef,
     ) {}
 
     /**
@@ -59,76 +58,28 @@ final readonly class PollStaleTrackedRefs
             }
         }
 
-        $polled = $this->pollConnections($byConnection);
-
-        if ($byInstallation === []) {
-            return $polled;
-        }
-
-        $installations = GitHubInstallation::query()
-            ->with('app')
-            ->active()
-            ->whereIn('id', array_keys($byInstallation))
-            ->get();
-
-        foreach ($installations as $installation) {
-            $recent = $installation->app->hasHealthyWebhooks()
-                ? $this->recentlyPolled(GitHubRefHead::query()->where('github_installation_id', $installation->id)->get()->map(fn (GitHubRefHead $head): array => [$head->github_repo_id, $head->ref, $head->last_polled_at])->all())
-                : [];
-
-            foreach ($byInstallation[$installation->id] ?? [] as $ref) {
-                if (isset($recent["{$ref->repositoryId}|{$ref->ref}"])) {
-                    continue;
-                }
-
-                try {
-                    $this->pollRef->handle($installation, $ref->repositoryId, $ref->ref);
-                    $polled++;
-                } catch (Throwable $e) {
-                    Log::warning('Polling a tracked ref failed', [
-                        'installation' => $installation->public_id,
-                        'repository' => $ref->repositoryId,
-                        'ref' => $ref->ref,
-                        'error' => $e->getMessage(),
-                    ]);
-                }
-            }
-        }
-
-        return $polled;
-    }
-
-    /**
-     * @param  array<int, list<TrackedRef>>  $byConnection
-     */
-    private function pollConnections(array $byConnection): int
-    {
-        if ($byConnection === []) {
-            return 0;
-        }
+        $accounts = [
+            ...($byInstallation === [] ? [] : GitHubInstallation::query()->with('app')->active()->whereIn('id', array_keys($byInstallation))->get()->all()),
+            ...($byConnection === [] ? [] : GitConnection::query()->where('status', GitConnectionStatus::Active->value)->whereIn('id', array_keys($byConnection))->get()->all()),
+        ];
 
         $polled = 0;
-        $connections = GitConnection::query()
-            ->where('status', GitConnectionStatus::Active->value)
-            ->whereIn('id', array_keys($byConnection))
-            ->get();
 
-        foreach ($connections as $connection) {
-            $recent = $connection->hasHealthyWebhooks()
-                ? $this->recentlyPolled(GitRefHead::query()->where('git_connection_id', $connection->id)->get()->map(fn (GitRefHead $head): array => [$head->external_id, $head->ref, $head->last_polled_at])->all())
-                : [];
+        foreach ($accounts as $account) {
+            $refs = $account instanceof GitHubInstallation ? $byInstallation[$account->id] ?? [] : $byConnection[$account->id] ?? [];
+            $recent = $this->recentlyPolled($account);
 
-            foreach ($byConnection[$connection->id] ?? [] as $ref) {
-                if ($ref->provider !== $connection->provider || isset($recent["{$ref->repositoryId}|{$ref->ref}"])) {
+            foreach ($refs as $ref) {
+                if ($ref->provider !== $account->gitProvider() || isset($recent["{$ref->repositoryId}|{$ref->ref}"])) {
                     continue;
                 }
 
                 try {
-                    $this->pollConnectionRef->handle($connection, $ref->repositoryId, $ref->ref);
+                    $this->pollRef->handle($account, $ref->repositoryId, $ref->ref);
                     $polled++;
                 } catch (Throwable $e) {
                     Log::warning('Polling a tracked ref failed', [
-                        'connection' => $connection->public_id,
+                        'account' => $account->public_id,
                         'repository' => $ref->repositoryId,
                         'ref' => $ref->ref,
                         'error' => $e->getMessage(),
@@ -144,11 +95,19 @@ final readonly class PollStaleTrackedRefs
      * Refs polled within the safety interval, which healthy webhooks skip
      * this minute.
      *
-     * @param  array<array-key, array{int, string, CarbonImmutable|null}>  $heads  repository, ref, last polled
      * @return array<string, true> keyed "<repository>|<ref>"
      */
-    private function recentlyPolled(array $heads): array
+    private function recentlyPolled(GitHubInstallation|GitConnection $account): array
     {
+        $heads = match (true) {
+            $account instanceof GitHubInstallation => $account->app->hasHealthyWebhooks()
+                ? GitHubRefHead::query()->where('github_installation_id', $account->id)->get()->map(fn (GitHubRefHead $head): array => [$head->github_repo_id, $head->ref, $head->last_polled_at])->all()
+                : [],
+            default => $account->hasHealthyWebhooks()
+                ? GitRefHead::query()->where('git_connection_id', $account->id)->get()->map(fn (GitRefHead $head): array => [$head->external_id, $head->ref, $head->last_polled_at])->all()
+                : [],
+        };
+
         $since = now()->subSeconds(config()->integer('launchroom.github.safety_poll_seconds'));
         $out = [];
 

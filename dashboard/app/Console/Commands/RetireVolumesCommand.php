@@ -23,9 +23,7 @@ final class RetireVolumesCommand extends Command
             $this->info("Retired {$removed} removed volume(s).");
         }
 
-        if ($servers !== []) {
-            event(new NodeStateInvalidated($servers));
-        }
+        NodeStateInvalidated::servers($servers);
 
         $this->info(count($servers) === 0 ? 'No volumes due.' : 'Requested volume deletions on '.count($servers).' server(s).');
 

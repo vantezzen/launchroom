@@ -28,7 +28,6 @@ final class InstanceSecurityController extends Controller
         return Inertia::render('settings/instance-security', [
             'certificates' => $certificates->get(),
             'audit' => $audit->get(),
-            // Vulnerability data sources of the security center (docs/22 §9.8).
             'sources' => AdvisorySources::all(),
         ]);
     }

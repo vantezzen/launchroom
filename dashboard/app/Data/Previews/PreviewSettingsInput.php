@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Data\Previews;
 
+use App\Data\Attributes\PublicIdOf;
 use App\Enums\Previews\ForkPolicy;
 use Spatie\LaravelData\Attributes\Validation\Max;
 use Spatie\LaravelData\Attributes\Validation\Min;
@@ -18,7 +19,7 @@ final class PreviewSettingsInput extends Data
     public function __construct(
         public bool $enabled,
         /** Null: staging if it exists, else production. */
-        #[Regex('/^env_[0-7][0-9A-HJKMNP-TV-Z]{25}$/D')]
+        #[PublicIdOf('env')]
         public ?string $baseEnvironmentId,
         /** Comma-separated globs of target branches, e.g. "main, release/*"; empty = any. */
         #[Max(255), Regex('/^[A-Za-z0-9._\/*?,\- ]*$/D')]

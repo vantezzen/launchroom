@@ -26,7 +26,7 @@ final class GeneratedValues
     private const string FUNCTION = '/^\s*(secret|uuid)\(\s*(?:([0-9]{1,4})\s*(?:,\s*"([a-z0-9]+)"\s*)?)?\)\s*$/D';
 
     /** `jwt("<role>", <KEY>)`: a Postgres role name and a variable of the same service. */
-    private const string JWT = '/^\s*jwt\(\s*"([a-z_][a-z0-9_]{0,62})"\s*,\s*([A-Za-z_][A-Za-z0-9_]{0,255})\s*\)\s*$/D';
+    private const string JWT = '/^\s*jwt\(\s*"([a-z_][a-z0-9_]{0,62})"\s*,\s*('.VariableKey::BODY.')\s*\)\s*$/D';
 
     /** HS256 needs a key of at least 256 bits; Supabase's services refuse shorter secrets. */
     public const int JWT_MIN_SECRET_LENGTH = 32;

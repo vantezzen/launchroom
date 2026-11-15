@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Services\Git;
 
+use App\Exceptions\Git\GitConnectionUnusable;
+use App\Exceptions\Git\GitProviderRequestFailed;
 use App\Models\Git\GitConnection;
-use App\Services\Git\Exceptions\GitConnectionUnusable;
-use App\Services\Git\Exceptions\GitProviderRequestFailed;
 use Illuminate\Http\Client\Response;
 use SensitiveParameter;
 use Throwable;
@@ -22,6 +22,7 @@ final readonly class GitProviderApi
 {
     public function __construct(
         private GitConnectionTokens $tokens,
+        private GitProviders $providers,
     ) {}
 
     /**
@@ -50,7 +51,7 @@ final readonly class GitProviderApi
         $label = $connection->server_kind->label();
 
         try {
-            $response = $this->tokens->client($connection)->request($method, $connection->apiUrl().$path, $json, [
+            $response = $this->tokens->client($connection)->request($method, $this->providers->api($connection->provider)->apiRoot($connection->origin()).$path, $json, [
                 'Accept' => 'application/json',
                 ...$headers,
                 'Authorization' => 'Bearer '.$token,

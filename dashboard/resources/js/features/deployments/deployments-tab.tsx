@@ -17,10 +17,8 @@ import {
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Skeleton } from '@/components/ui/skeleton';
-import { compactAge } from '@/features/canvas/format';
-import { stepRows } from '@/features/deployment-detail/steps';
-import type { StepRow } from '@/features/deployment-detail/steps';
-import { DeployButton } from '@/features/service-panel/service-controls';
+import { stepRows } from '@/features/deployments/steps';
+import type { StepRow } from '@/features/deployments/steps';
 import { useNow } from '@/hooks/use-now';
 import { cn } from '@/lib/utils';
 import { rollback } from '@/routes/deployments';
@@ -38,23 +36,27 @@ import {
     deploymentStatusState,
     deploymentTitle,
     deploymentWord,
-    formatDuration,
+    isCancellable,
     isInProgress,
-    shortSha,
     stoppedLine,
 } from './format';
 import { listHead } from './list-head';
-import { optimisticQueued, rollbackToast } from './optimistic';
-import type { DeploymentUpdatedEvent } from './realtime';
-import { ChannelEvents } from './realtime';
 import {
     flushDeploymentPages,
     serviceDeploymentsQuery,
 } from './service-deployments';
+import { compactAge, formatDuration, shortSha } from '@/lib/format';
+import {
+    optimisticQueued,
+    rollbackToast,
+} from '@/features/service-lifecycle/optimistic';
+import { ChannelEvents } from '@/components/channel-events';
+import { DeployButton } from '@/features/service-lifecycle/deploy-button';
+import { channelName } from '@/lib/realtime';
 
 export { serviceDeploymentsKey } from './service-deployments';
 
-export type DeploymentsTabProps = {
+type DeploymentsTabProps = {
     project: string;
     environment: string;
     service: string;
@@ -116,7 +118,9 @@ export function DeploymentsTab({
     // on click, in parallel with the panel (docs/10 §3).
     const { data, isPending, isError, error } = useQuery(query);
 
-    const refresh = (event: DeploymentUpdatedEvent | null) => {
+    const refresh = (
+        event: App.Data.Broadcasts.DeploymentUpdatedData | null,
+    ) => {
         if (event === null || event.serviceId === service) {
             // Prefetched deployment pages of this service are stale now.
             flushDeploymentPages(environment, service);
@@ -131,9 +135,9 @@ export function DeploymentsTab({
 
     return (
         <div className="flex flex-col gap-6">
-            <ChannelEvents<DeploymentUpdatedEvent>
-                channel={`environments.${environment}`}
-                event=".deployment.updated"
+            <ChannelEvents
+                channel={channelName('environments', environment)}
+                event="deployment.updated"
                 onEvent={refresh}
             />
 
@@ -546,7 +550,7 @@ function RowMenu({
                             Redeploy this version
                         </DropdownMenuItem>
                     )}
-                    {cancellable(deployment) && (
+                    {isCancellable(deployment.status) && (
                         <DropdownMenuItem
                             variant="destructive"
                             onSelect={() =>
@@ -559,15 +563,6 @@ function RowMenu({
                 </DropdownMenuContent>
             </DropdownMenu>
         </div>
-    );
-}
-
-/** It can still be stopped before it goes live. */
-function cancellable(deployment: Summary): boolean {
-    return (
-        deployment.status === 'queued' ||
-        deployment.status === 'building' ||
-        deployment.status === 'ready'
     );
 }
 

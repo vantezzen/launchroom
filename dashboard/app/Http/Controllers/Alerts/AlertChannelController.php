@@ -10,10 +10,14 @@ use App\Actions\Alerts\SendTestNotification;
 use App\Actions\Alerts\UpdateAlertChannel;
 use App\Data\Alerts\AlertChannelInput;
 use App\Data\Alerts\AlertChannelUpdateInput;
+use App\Data\Inertia\ToastData;
 use App\Enums\Alerts\AlertDeliveryStatus;
+use App\Enums\ToastType;
 use App\Http\Controllers\Controller;
-use App\Http\Controllers\Teams\TeamSettingsController;
+use App\Http\Routing\CurrentTeam;
+use App\Http\Toast;
 use App\Models\Alerts\AlertChannel;
+use App\Models\Team;
 use App\Models\User;
 use Illuminate\Container\Attributes\CurrentUser;
 use Illuminate\Http\RedirectResponse;
@@ -27,9 +31,8 @@ use Inertia\Inertia;
  */
 final class AlertChannelController extends Controller
 {
-    public function store(Request $request, AlertChannelInput $input, #[CurrentUser] User $user, CreateAlertChannel $create): RedirectResponse
+    public function store(Request $request, AlertChannelInput $input, #[CurrentUser] User $user, CreateAlertChannel $create, #[CurrentTeam] Team $team): RedirectResponse
     {
-        $team = TeamSettingsController::currentTeam($user);
         Gate::authorize('create', [AlertChannel::class, $team]);
 
         $created = $create->handle($team, $input, $user, $this->auditActor($request, $user));
@@ -38,7 +41,7 @@ final class AlertChannelController extends Controller
             Inertia::flash('alertSigningSecret', ['channel' => $created->channel->public_id, 'secret' => $created->signingSecret]);
         }
 
-        Inertia::flash('toast', ['type' => 'success', 'message' => 'Added. Send a test to make sure it arrives.']);
+        Toast::success('Added. Send a test to make sure it arrives.');
         Inertia::flash('alertChannelCreated', $created->channel->public_id);
 
         return back();
@@ -54,12 +57,12 @@ final class AlertChannelController extends Controller
             Inertia::flash('alertSigningSecret', ['channel' => $alertChannel->public_id, 'secret' => $secret]);
         }
 
-        Inertia::flash('toast', ['type' => 'success', 'message' => match (true) {
+        Toast::success(match (true) {
             $input->enabled === false => "{$alertChannel->name} is paused.",
             $input->enabled === true => "{$alertChannel->name} gets alerts again.",
             $secret !== null => 'New signing secret created. Update your receiver, because the old secret no longer works.',
             default => 'Saved.',
-        }]);
+        });
 
         return back();
     }
@@ -70,7 +73,7 @@ final class AlertChannelController extends Controller
 
         $delete->handle($alertChannel, $this->auditActor($request, $user));
 
-        Inertia::flash('toast', ['type' => 'success', 'message' => "Removed {$alertChannel->name}."]);
+        Toast::success("Removed {$alertChannel->name}.");
 
         return back();
     }
@@ -81,9 +84,9 @@ final class AlertChannelController extends Controller
 
         $delivery = $send->handle($alertChannel);
 
-        Inertia::flash('toast', $delivery->status === AlertDeliveryStatus::Sent
-            ? ['type' => 'success', 'message' => "Test sent to {$alertChannel->name}."]
-            : ['type' => 'error', 'message' => $delivery->error ?? 'The test could not be sent.']);
+        Toast::show($delivery->status === AlertDeliveryStatus::Sent
+            ? new ToastData(ToastType::Success, "Test sent to {$alertChannel->name}.")
+            : new ToastData(ToastType::Error, $delivery->error ?? 'The test could not be sent.'));
 
         return back();
     }

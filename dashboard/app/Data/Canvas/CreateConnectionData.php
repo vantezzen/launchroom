@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Data\Canvas;
 
+use App\Data\Attributes\PublicIdOf;
 use App\Enums\ConnectionMode;
 use App\Enums\ConnectionStyle;
-use Spatie\LaravelData\Attributes\Validation\Regex;
 use Spatie\LaravelData\Data;
 
 /**
@@ -15,9 +15,9 @@ use Spatie\LaravelData\Data;
 final class CreateConnectionData extends Data
 {
     public function __construct(
-        #[Regex('/^svc_[0-7][0-9A-HJKMNP-TV-Z]{25}$/D')]
+        #[PublicIdOf('svc')]
         public string $from,
-        #[Regex('/^svc_[0-7][0-9A-HJKMNP-TV-Z]{25}$/D')]
+        #[PublicIdOf('svc')]
         public string $to,
         public ConnectionMode $mode = ConnectionMode::Private,
         public ConnectionStyle $style = ConnectionStyle::Url,

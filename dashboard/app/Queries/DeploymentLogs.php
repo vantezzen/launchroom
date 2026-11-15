@@ -110,8 +110,6 @@ final class DeploymentLogs
     }
 
     /**
-     * Log chunks that belong to $deployment.
-     *
      * @param  list<int>  $taskIds
      * @param  list<array{string, int}>  $workloads  [workload id, server id]
      * @param  list<int>  $servers  servers holding a task or placement of the deployment

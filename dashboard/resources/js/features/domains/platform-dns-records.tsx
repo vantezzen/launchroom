@@ -1,6 +1,6 @@
 import { Status } from '@/components/status';
-import { CopyButton } from '@/features/deployment-detail/overview-card';
 import { cn } from '@/lib/utils';
+import { CopyButton } from '@/components/copy-button';
 
 /**
  * The wildcard record(s) for the platform domain (docs/05 §5), one per
@@ -53,12 +53,12 @@ export function PlatformDnsRecords({
                             <RecordField
                                 label="Name"
                                 value={name}
-                                copyLabel={`Copy the ${type} record name`}
+                                copyLabel={`the ${type} record name`}
                             />
                             <RecordField
                                 label="Value"
                                 value={address}
-                                copyLabel={`Copy the ${type} record value`}
+                                copyLabel={`the ${type} record value`}
                                 className="col-start-2 sm:col-start-3"
                             />
                         </li>
@@ -97,6 +97,7 @@ function RecordField({
                 <CopyButton
                     value={value}
                     label={copyLabel}
+                    size="xs"
                     className="-my-0.5"
                 />
             </span>

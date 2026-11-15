@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Actions\Backups\RunBackupTick;
 use App\Actions\Backups\StartServiceBackup;
 use App\Actions\Deployments\DeployEnvironment;
+use App\Actions\Deployments\RedeployService;
 use App\Data\Audit\AuditActor;
 use App\Enums\AuditAction;
 use App\Enums\Backups\BackupReason;
@@ -12,14 +13,17 @@ use App\Enums\Backups\BackupSubject;
 use App\Enums\Backups\RestoreMode;
 use App\Enums\Backups\RestoreRunStatus;
 use App\Enums\DaemonTaskType;
+use App\Enums\DeploymentStatus;
 use App\Enums\Mesh\MeshCredentialPurpose;
 use App\Enums\Mesh\MeshMode;
+use App\Enums\ReplacedServiceStatus;
 use App\Enums\ServerReplacementStatus;
 use App\Enums\ServerRole;
 use App\Enums\ServerStatus;
 use App\Enums\TeamRole;
 use App\Models\AuditEvent;
 use App\Models\Backups\RestoreRun;
+use App\Models\Deployment;
 use App\Models\InstanceSettings;
 use App\Models\Placement;
 use App\Models\ServerReplacement;
@@ -131,7 +135,7 @@ test('replacing moves roles, labels and data, revokes the dead server and restor
     VolumeServices::finish($new, $task, 'succeeded', ['restore' => ['sizeBytes' => 10, 'durationMs' => 3]]);
     resolve(RunBackupTick::class)->handle();
 
-    expect(collect(ServerReplacement::query()->sole()->services)->firstWhere('instance', $this->postgres->public_id)['status'])->toBe('restored')
+    expect(collect(ServerReplacement::query()->sole()->services->toArray())->firstWhere('instance', $this->postgres->public_id)['status'])->toBe('restored')
         ->and(Placement::query()->where('service_instance_id', $this->web->id)->where('server_id', $new->id)->exists())->toBeTrue();
 
     Projects::report($new);
@@ -139,6 +143,28 @@ test('replacing moves roles, labels and data, revokes the dead server and restor
     resolve(RunBackupTick::class)->handle();
 
     expect(ServerReplacement::query()->sole()->status)->toBe(ServerReplacementStatus::Completed);
+});
+
+test('a redeploy superseded by a newer live deployment still completes the replacement', function (): void {
+    $this->actingAs($this->owner)
+        ->post(route('servers.replace.store', $this->old), ['replacement' => $this->new->public_id, 'restore' => []])
+        ->assertRedirect();
+    Projects::report($this->new);
+    Projects::report($this->new);
+    resolve(RunBackupTick::class)->handle();
+    resolve(RunBackupTick::class)->handle();
+
+    $web = collect(ServerReplacement::query()->sole()->services->items())->firstWhere('instance', $this->web->public_id);
+    $redeploy = Deployment::query()->where('public_id', $web?->deployment)->sole();
+    $newer = resolve(RedeployService::class)->handle($this->web, null, null, AuditActor::system());
+    $redeploy->forceFill(['status' => DeploymentStatus::Superseded, 'superseded_by_id' => $newer->id])->save();
+    $newer->forceFill(['status' => DeploymentStatus::Active])->save();
+
+    resolve(RunBackupTick::class)->handle();
+
+    $replacement = ServerReplacement::query()->sole();
+    expect(collect($replacement->services->items())->firstWhere('instance', $this->web->public_id)?->status)->toBe(ReplacedServiceStatus::Done)
+        ->and($replacement->status)->toBe(ServerReplacementStatus::Completed);
 });
 
 test('a replaced server may only fetch its empty decommission state', function (): void {
@@ -187,7 +213,7 @@ test('services without a backup start empty and are reported so', function (): v
         ->assertRedirect();
 
     expect(RestoreRun::query()->exists())->toBeFalse();
-    $services = collect(ServerReplacement::query()->sole()->services);
+    $services = collect(ServerReplacement::query()->sole()->services->toArray());
     expect($services->firstWhere('instance', $this->postgres->public_id)['message'])->toContain('starts empty');
 });
 

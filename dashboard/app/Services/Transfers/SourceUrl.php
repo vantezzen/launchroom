@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Transfers;
 
+use App\Drivers\DatabaseEngines\DumpImport;
 use App\Exceptions\DomainRuleViolation;
 use SensitiveParameter;
 
@@ -15,12 +16,6 @@ use SensitiveParameter;
  */
 final readonly class SourceUrl
 {
-    private const array SCHEMES = [
-        'postgres' => ['postgres', 'postgresql'],
-        'mysql' => ['mysql', 'mariadb'],
-        'mongodb' => ['mongodb', 'mongodb+srv'],
-    ];
-
     private function __construct(
         #[SensitiveParameter]
         public string $url,
@@ -31,15 +26,11 @@ final readonly class SourceUrl
     /**
      * @throws DomainRuleViolation
      */
-    public static function parse(#[SensitiveParameter] string $url, string $engine): self
+    public static function parse(#[SensitiveParameter] string $url, DumpImport $import): self
     {
         $url = trim($url);
-        $schemes = self::SCHEMES[$engine] ?? ['postgres'];
-        $example = match ($engine) {
-            'postgres' => 'postgres://user:password@db.example.com:5432/app',
-            'mysql' => 'mysql://user:password@db.example.com:3306/app',
-            default => 'mongodb://user:password@db.example.com:27017/app',
-        };
+        $schemes = $import->urlSchemes;
+        $example = $import->urlExample;
 
         if ($url === '' || strlen($url) > 2048 || preg_match('/[\x00-\x20\x7f]/', $url) === 1) {
             throw DomainRuleViolation::on('sourceUrl', "Paste a connection URL like {$example}.");

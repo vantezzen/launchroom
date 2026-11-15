@@ -1,18 +1,16 @@
 import { ShieldAlert, ShieldCheck } from 'lucide-react';
 import type { ReactNode } from 'react';
-import { formatCompact } from '@/components/charts/format';
 import { Sparkline } from '@/components/charts/sparkline';
 import { Meter } from '@/components/charts/usage-meter';
 import { MetaLine } from '@/components/patterns/meta-line';
 import { StatusIcon } from '@/components/status';
 import type { StatusState } from '@/components/status';
-import { relativeTime } from '@/components/time-ago';
-import { formatShare } from '@/features/analytics/shape';
 import { delta } from '@/features/metrics/format';
 import { rangeWords } from '@/lib/observe-scope';
 import { cn } from '@/lib/utils';
-import { card, plural } from './format';
+import { card } from './format';
 import type { ActionGroup } from './shape';
+import { formatCompact, formatShare, plural, relativeTime } from '@/lib/format';
 
 type PageData = App.Data.Security.SecurityPageData;
 
@@ -270,7 +268,6 @@ function BlockedMetric({ data, range }: { data: PageData; range: string }) {
     const s = data.summary;
     const change = delta(s.blocked, s.previousBlocked);
     const words = `in the ${rangeWords(range)}`;
-    // The share of all requests in the range, when there was traffic.
     const share =
         s.requests && s.blocked > 0
             ? `${formatShare((s.blocked / s.requests) * 100)} of requests ${words}`

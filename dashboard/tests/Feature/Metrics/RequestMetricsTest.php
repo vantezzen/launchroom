@@ -12,6 +12,7 @@ use App\Models\Deployment;
 use App\Models\Domain;
 use App\Models\Server;
 use App\Models\Team;
+use App\Support\Ingress\RouteId;
 use App\Support\Metrics\RequestStats;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
@@ -41,7 +42,7 @@ beforeEach(function (): void {
     $this->domain = Domain::query()->create([
         'team_id' => $this->team->id, 'service_instance_id' => $this->instance->id, 'hostname' => 'shop.example.com', 'kind' => DomainKind::Custom,
     ]);
-    $this->route = Domain::routeIdFor($this->domain->public_id);
+    $this->route = RouteId::forDomain($this->domain->public_id);
 });
 
 afterEach(fn () => CarbonImmutable::setTestNow());
@@ -110,7 +111,7 @@ test('another team\'s routes are never attributed', function (): void {
     $instance = $service->instances()->sole();
     $foreign = Domain::query()->create(['team_id' => $other->team_id, 'service_instance_id' => $instance->id, 'hostname' => 'other.example.com', 'kind' => DomainKind::Custom]);
 
-    $this->daemon->send($this, 'POST', '/daemon/v1/reports', requestsReport($this->server, [routeMinute(Domain::routeIdFor($foreign->public_id), '2026-10-20T11:59:00Z')]))->assertNoContent();
+    $this->daemon->send($this, 'POST', '/daemon/v1/reports', requestsReport($this->server, [routeMinute(RouteId::forDomain($foreign->public_id), '2026-10-20T11:59:00Z')]))->assertNoContent();
 
     expect(DB::table('request_metric_samples')->count())->toBe(0);
 });

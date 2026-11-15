@@ -34,24 +34,15 @@ final class ServerMeshData extends Data
             return new self(MeshMemberState::Off, $server->mesh_ip, null, null, null);
         }
 
-        $path = null;
-
-        if (! $server->is_control_plane && $controlPlaneIp !== null) {
-            foreach ($status['peers'] as $peer) {
-                if ($peer['ipv4'] === $controlPlaneIp) {
-                    $path = MeshPath::tryFrom($peer['connection']);
-                }
-            }
-        }
-
-        $state = MeshMemberState::fromReported($status['state']);
+        $path = $server->is_control_plane ? null : $status->peer($controlPlaneIp)?->connection;
+        $state = $status->state->member();
 
         return new self(
             $state,
-            $status['ipv4'] ?? $server->mesh_ip,
+            $status->ipv4 ?? $server->mesh_ip,
             $path,
-            $state === MeshMemberState::Connected ? null : $status['message'],
-            $status['checkedAt'] !== null ? CarbonImmutable::parse($status['checkedAt']) : null,
+            $state === MeshMemberState::Connected ? null : $status->message,
+            $status->checkedAt !== null ? CarbonImmutable::parse($status->checkedAt) : null,
         );
     }
 }

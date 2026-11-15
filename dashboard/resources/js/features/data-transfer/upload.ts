@@ -1,6 +1,6 @@
 import { chunks, complete, show } from '@/routes/transfers';
-import { sha256 as pureSha256 } from '@/features/sessions/hmac';
-import { messageFrom, TransferRequestFailed, transfersApi } from './api';
+import { sha256 as pureSha256 } from '@/lib/hmac';
+import { messageFrom, RequestFailed, requestJson, xsrfToken } from '@/lib/http';
 import type { Transfer } from './api';
 
 export type UploadProgress = {
@@ -20,12 +20,6 @@ type UploadOptions = {
     onProgress: (progress: UploadProgress) => void;
     signal: AbortSignal;
 };
-
-function xsrfToken(): string | null {
-    const match = document.cookie.match(/(?:^|;\s*)XSRF-TOKEN=([^;]+)/);
-
-    return match ? decodeURIComponent(match[1]) : null;
-}
 
 function resumeKey(o: UploadOptions): string {
     return [
@@ -94,7 +88,7 @@ async function putChunk(
     });
 
     if (!response.ok) {
-        throw new TransferRequestFailed(
+        throw new RequestFailed(
             messageFrom(await response.text(), response.status),
             response.status,
         );
@@ -114,7 +108,7 @@ export async function uploadFile(o: UploadOptions): Promise<Transfer> {
 
     if (resumeId !== null) {
         try {
-            const existing = await transfersApi<Transfer>(
+            const existing = await requestJson<Transfer>(
                 'get',
                 show(resumeId).url,
                 undefined,
@@ -133,7 +127,7 @@ export async function uploadFile(o: UploadOptions): Promise<Transfer> {
     }
 
     if (transfer === null) {
-        transfer = await transfersApi<Transfer>(
+        transfer = await requestJson<Transfer>(
             'post',
             o.createUrl,
             {
@@ -207,7 +201,7 @@ export async function uploadFile(o: UploadOptions): Promise<Transfer> {
                 break;
             } catch (error) {
                 const status =
-                    error instanceof TransferRequestFailed ? error.status : 0;
+                    error instanceof RequestFailed ? error.status : 0;
                 const retryable =
                     status === 0 || status === 429 || status >= 500;
 
@@ -232,7 +226,7 @@ export async function uploadFile(o: UploadOptions): Promise<Transfer> {
     }
 
     try {
-        const done = await transfersApi<Transfer>(
+        const done = await requestJson<Transfer>(
             'post',
             complete(transfer.id).url,
             undefined,
@@ -243,7 +237,7 @@ export async function uploadFile(o: UploadOptions): Promise<Transfer> {
         return done;
     } catch (error) {
         // A refused file is deleted: don't try to resume it.
-        if (error instanceof TransferRequestFailed && error.status === 422) {
+        if (error instanceof RequestFailed && error.status === 422) {
             remember(key, null);
         }
 

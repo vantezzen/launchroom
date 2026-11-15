@@ -11,8 +11,10 @@ use App\Enums\DeploymentTrigger;
 use App\Exceptions\DomainRuleViolation;
 use App\Exceptions\UnresolvedReferences;
 use App\Http\Controllers\Controller;
-use App\Http\Controllers\Teams\TeamSettingsController;
+use App\Http\Routing\CurrentTeam;
+use App\Http\Toast;
 use App\Models\Project;
+use App\Models\Team;
 use App\Models\User;
 use App\Services\Templates\TemplateCatalog;
 use App\Support\Templates\TemplateCompiler;
@@ -31,9 +33,8 @@ use Inertia\Response;
  */
 final class TemplateController extends Controller
 {
-    public function index(#[CurrentUser] User $user, TemplateCatalog $catalog): Response
+    public function index(TemplateCatalog $catalog, #[CurrentTeam] Team $team): Response
     {
-        $team = TeamSettingsController::currentTeam($user);
         Gate::authorize('create', [Project::class, $team]);
 
         return Inertia::render('projects/templates', [
@@ -42,9 +43,8 @@ final class TemplateController extends Controller
         ]);
     }
 
-    public function store(Request $request, string $template, UseTemplateData $data, #[CurrentUser] User $user, TemplateCatalog $catalog, CreateProjectFromTemplate $create, DeployEnvironment $deploy): RedirectResponse
+    public function store(Request $request, string $template, UseTemplateData $data, #[CurrentUser] User $user, TemplateCatalog $catalog, CreateProjectFromTemplate $create, DeployEnvironment $deploy, #[CurrentTeam] Team $team): RedirectResponse
     {
-        $team = TeamSettingsController::currentTeam($user);
         Gate::authorize('create', [Project::class, $team]);
         $definition = $catalog->template($template);
         abort_if(! $definition instanceof TemplateDefinition, 404);
@@ -54,13 +54,13 @@ final class TemplateController extends Controller
         $production = $project->production()->sole();
 
         if (! $data->deploy) {
-            Inertia::flash('toast', ['type' => 'success', 'message' => "{$project->name} is ready. Set its variables, then deploy."]);
+            Toast::success("{$project->name} is ready. Set its variables, then deploy.");
         } elseif (Gate::allows('deploy', $production)) {
             try {
                 $deploy->handle($production, $user, $actor, "Created from the {$definition->name} template", DeploymentTrigger::Config);
-                Inertia::flash('toast', ['type' => 'success', 'message' => "{$project->name} is deploying."]);
+                Toast::success("{$project->name} is deploying.");
             } catch (DomainRuleViolation|UnresolvedReferences $e) {
-                Inertia::flash('toast', ['type' => 'warning', 'message' => "{$project->name} is ready but didn’t deploy: {$e->getMessage()}"]);
+                Toast::warning("{$project->name} is ready but didn’t deploy: {$e->getMessage()}");
             }
         }
 

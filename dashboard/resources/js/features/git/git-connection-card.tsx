@@ -10,8 +10,9 @@ import { TimeAgo } from '@/components/time-ago';
 import { Button } from '@/components/ui/button';
 import { providerLogo } from '@/features/git/providers';
 import { edit } from '@/routes/git';
-import { requestJson, RequestFailed } from '@/features/projects/http';
+import { requestJson, RequestFailed } from '@/lib/http';
 import { recheck, webhook } from '@/routes/git/servers';
+import { vocabulary } from '@/lib/vocabulary';
 
 function health(connection: App.Data.Git.GitConnectionData): {
     state: StatusState;
@@ -19,7 +20,10 @@ function health(connection: App.Data.Git.GitConnectionData): {
 } {
     switch (connection.status) {
         case 'needs_reauth':
-            return { state: 'warning', label: 'Needs you to sign in again' };
+            return {
+                state: 'warning',
+                label: vocabulary.Git.GitConnectionStatus.needs_reauth.label,
+            };
         case 'pending':
             return {
                 state: 'idle',

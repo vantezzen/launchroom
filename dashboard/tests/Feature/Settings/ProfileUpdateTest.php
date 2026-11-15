@@ -2,7 +2,9 @@
 
 declare(strict_types=1);
 
+use App\Enums\AuditAction;
 use App\Enums\TeamRole;
+use App\Models\AuditEvent;
 use App\Models\Team;
 use App\Models\User;
 use App\Notifications\EmailChangedNotification;
@@ -105,6 +107,7 @@ test('changing the email needs the current password, re-verification and notifie
         ->and($user->email_verified_at)->toBeNull();
     Notification::assertSentOnDemand(EmailChangedNotification::class, fn ($notification, array $channels, AnonymousNotifiable $notifiable): bool => $notifiable->routes['mail'] === 'old@example.com');
     Notification::assertSentTo($user, VerifyEmail::class);
+    expect(AuditEvent::query()->where('action', AuditAction::AccountEmailChanged->value)->where('subject_id', (string) $user->id)->exists())->toBeTrue();
 });
 
 test('the last owner of a team cannot delete their account (L2)', function (): void {

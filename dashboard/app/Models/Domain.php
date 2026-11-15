@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Data\Domains\DnsCheckData;
 use App\Enums\CertStatus;
 use App\Enums\DomainKind;
 use App\Models\Concerns\BelongsToTeam;
@@ -22,7 +23,7 @@ use Illuminate\Support\Carbon;
  * @property string $hostname
  * @property DomainKind $kind
  * @property string|null $redirect_to
- * @property array<string, mixed> $verification
+ * @property DnsCheckData|null $verification the latest live DNS check (App\Actions\Domains\VerifyDomain)
  * @property CertStatus|null $cert_status reported by edges (docs/05 §5)
  * @property Carbon|null $cert_expires_at
  * @property Carbon|null $cert_not_before
@@ -42,22 +43,9 @@ final class Domain extends Model
 {
     use BelongsToTeam, HasPublicId;
 
-    /** @var array<string, mixed> */
-    protected $attributes = [
-        'verification' => '{}',
-    ];
-
     public static function publicIdPrefix(): string
     {
         return 'dom';
-    }
-
-    /**
-     * The NodeState route id: `rt_` + the domain's ULID.
-     */
-    public static function routeIdFor(string $domainPublicId): string
-    {
-        return 'rt_'.substr($domainPublicId, strlen('dom_'));
     }
 
     /**
@@ -75,7 +63,7 @@ final class Domain extends Model
     {
         return [
             'kind' => DomainKind::class,
-            'verification' => 'array',
+            'verification' => DnsCheckData::class,
             'cert_expires_at' => 'datetime',
             'cert_status' => CertStatus::class,
             'cert_not_before' => 'datetime',

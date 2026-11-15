@@ -15,7 +15,9 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/vantezzen/launchroom/daemon/internal/ingress"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
+	"github.com/vantezzen/launchroom/daemon/internal/traffic"
 )
 
 // Defaults of the rendered config.
@@ -69,35 +71,14 @@ type Options struct {
 // AccessLogger is the name of the access logger of the HTTPS server.
 const AccessLogger = "lr-access"
 
-// accessLogDeleted are the access log fields removed inside Caddy before a
-// line leaves it: launchroomd needs only host, path, status, duration and
-// sizes, never client addresses, headers or credentials (docs/15 §1.1).
-var accessLogDeleted = []string{
-	"request>headers", "request>remote_ip", "request>remote_port", "request>client_ip",
-	"request>tls", "resp_headers", "user_id",
-}
-
-// Access log fields reduced inside Caddy (docs/15 §5.1): the URI loses its
-// query string, the referrer (added by accessLogAppend) keeps only its host
-// and the user agent only a bot keyword or "Mozilla" (anything else becomes
-// empty). Go's leftmost-first alternation picks a bot keyword before
-// "Mozilla", so crawlers that claim to be Mozilla count as bots.
-const (
-	AccessFieldReferer = "lr_referer"
-	AccessFieldAgent   = "lr_agent"
-	accessURIQuery     = `(?s)[?#].*$`
-	accessRefererHost  = `(?s)^(?:[A-Za-z][A-Za-z0-9+.-]*://)?(?:[^/?#@]*@)?([^/?#:]*).*$`
-	accessAgentClass   = `(?is)^(?:.*?(bot|crawl|spider|slurp|archiver|externalhit|headless|lighthouse|monitor|preview|curl|wget|python|httpclient|http-client|okhttp|java/|libwww|scrapy|go-http)|(mozilla)|).*$`
-)
-
 // accessLogAppend is the first route of the HTTPS server: it adds the
-// referrer and user agent to the access line, where the filters above
+// referrer and user agent to the access line, where traffic.Reductions
 // reduce them before the line leaves Caddy. It matches every request and
 // never terminates.
 func accessLogAppend() obj {
 	return obj{"handle": []any{
-		obj{"handler": "log_append", "key": AccessFieldReferer, "value": "{http.request.header.Referer}"},
-		obj{"handler": "log_append", "key": AccessFieldAgent, "value": "{http.request.header.User-Agent}"},
+		obj{"handler": "log_append", "key": traffic.FieldReferer, "value": "{http.request.header.Referer}"},
+		obj{"handler": "log_append", "key": traffic.FieldAgent, "value": "{http.request.header.User-Agent}"},
 	}}
 }
 
@@ -128,12 +109,12 @@ func (o Options) logging() obj {
 		return obj{"logs": logs}
 	}
 	fields := obj{}
-	for _, f := range accessLogDeleted {
+	for _, f := range traffic.DeletedFields {
 		fields[f] = obj{"filter": "delete"}
 	}
-	fields["request>uri"] = obj{"filter": "regexp", "regexp": accessURIQuery, "value": ""}
-	fields[AccessFieldReferer] = obj{"filter": "regexp", "regexp": accessRefererHost, "value": "${1}"}
-	fields[AccessFieldAgent] = obj{"filter": "regexp", "regexp": accessAgentClass, "value": "${1}${2}"}
+	for _, r := range traffic.Reductions {
+		fields[r.Field] = obj{"filter": "regexp", "regexp": r.Regexp, "value": r.Value}
+	}
 	logs[AccessLogger] = obj{
 		// soft_start: Caddy starts and serves while launchroomd is
 		// down; lines are dropped until it listens again.
@@ -315,21 +296,11 @@ func clientAuthPolicies(routes []Route, o Options) []any {
 	return append(out, obj{})
 }
 
-// Endpoint is what the resolver knows about a same-server workload upstream.
-type Endpoint struct {
-	Addr    netip.Addr // container IP on its primary network
-	Serving bool       // role serving (not draining)
-	Ready   bool       // running and healthy (or running long enough without a probe)
-}
-
-// Resolver looks up a workload's endpoint (ok=false: no container).
-type Resolver func(id state.WorkloadID) (Endpoint, bool)
-
 // ResolveRoutes turns workload references into dial addresses. Only ready
 // workloads receive traffic; serving ones are preferred and draining ones are
 // used only when no serving workload of the route is ready (better than a
 // 503 during a botched rollout). Address (mesh) upstreams are always used.
-func ResolveRoutes(routes []state.RouteSpec, resolve Resolver) []Route {
+func ResolveRoutes(routes []state.RouteSpec, resolve ingress.Resolver) []Route {
 	out := make([]Route, 0, len(routes))
 	for _, r := range routes {
 		var serving, draining, remote []string

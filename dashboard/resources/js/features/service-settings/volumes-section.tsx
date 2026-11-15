@@ -1,4 +1,5 @@
 import { Link, useForm } from '@inertiajs/react';
+import { formatBytes, listNames } from '@/lib/format';
 import {
     ArrowRight,
     FolderInput,
@@ -10,7 +11,7 @@ import {
     ShieldQuestion,
     Trash2,
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useEffectEvent, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
 import InputError from '@/components/input-error';
 import { EmptyState } from '@/components/patterns/empty-state';
@@ -35,29 +36,13 @@ import { deviceStatus } from '@/features/servers/format';
 import { cn } from '@/lib/utils';
 import services from '@/routes/projects/services';
 import { destroy, store, update } from '@/routes/projects/services/volumes';
-import { CopyButton } from './general-section';
-import { DeviceStage } from './scaling-visuals';
 import { SettingsPage } from './section';
 import type { SettingsContext } from './settings-context';
+import { CopyButton } from '@/components/copy-button';
+import { DeviceStage } from '@/components/devices/device-stage';
+import { grammar } from '@/types/grammar.generated';
 
 type Volume = App.Data.Canvas.VolumeData;
-
-/** "reader", "reader and worker", "api, reader and worker". */
-function joinNames(names: string[]): string {
-    return names.length < 2
-        ? (names[0] ?? '')
-        : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
-}
-
-function formatBytes(bytes: number): string {
-    const gb = bytes / 1024 ** 3;
-
-    if (gb >= 1) {
-        return `${gb < 10 ? gb.toFixed(1) : Math.round(gb)} GB`;
-    }
-
-    return `${Math.max(1, Math.round(bytes / 1024 ** 2))} MB`;
-}
 
 /** Backup protection as one word + icon + one line (docs/14 §3). */
 function protection(backup: App.Data.Backups.ServiceBackupStatusData | null): {
@@ -225,7 +210,7 @@ function VolumeCard({
                     </div>
                     {volume.sharedWith.length > 0 && !volume.removing && (
                         <p className="-mt-1 px-5 pb-3 type-small text-muted-foreground">
-                            Also used by {joinNames(volume.sharedWith)}.
+                            Also used by {listNames(volume.sharedWith)}.
                         </p>
                     )}
                     {volume.deployedMountPath && !volume.removing && (
@@ -352,7 +337,7 @@ function ChangeVolumeDialog({
     // Keyed by the volume: the form starts from its current path.
     const form = useForm({ mountPath: volume?.mountPath ?? '' });
     const path = form.data.mountPath.trim();
-    const valid = PATH.test(path);
+    const valid = grammar.containerPath.test(path);
 
     const submit = (event: FormEvent) => {
         event.preventDefault();
@@ -511,7 +496,7 @@ function RemoveVolumeDialog({
                             </li>
                             {volume && volume.sharedWith.length > 0 && (
                                 <li>
-                                    {joinNames(volume.sharedWith)}{' '}
+                                    {listNames(volume.sharedWith)}{' '}
                                     {volume.sharedWith.length === 1
                                         ? 'stops'
                                         : 'stop'}{' '}
@@ -604,8 +589,6 @@ function suggestions(
     );
 }
 
-const PATH = /^\/[A-Za-z0-9._@+=,-]+(?:\/[A-Za-z0-9._@+=,-]+)*$/;
-
 /**
  * The guided create flow: pick where your app writes (suggestions from
  * the framework) or type a path, see what changes (one replica, pinned to
@@ -622,16 +605,19 @@ function AddVolumeDialog({
 }) {
     const form = useForm({ mountPath: '' });
     const path = form.data.mountPath.trim();
-    const valid = PATH.test(path);
+    const valid = grammar.containerPath.test(path);
     const replicas = context.settings.scaling.replicas;
     const picks = suggestions(context);
 
+    const resetForm = useEffectEvent(() => {
+        form.reset();
+        form.clearErrors();
+    });
+
     useEffect(() => {
         if (!open) {
-            form.reset();
-            form.clearErrors();
+            resetForm();
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [open]);
 
     const submit = (event: FormEvent) => {
@@ -800,8 +786,7 @@ export function VolumesSection({ context }: { context: SettingsContext }) {
     const [adding, setAdding] = useState(false);
     const [changing, setChanging] = useState<Volume | null>(null);
     const [removing, setRemoving] = useState<Volume | null>(null);
-    const canAdd =
-        context.canUpdate && (node.kind === 'app' || node.kind === 'image');
+    const canAdd = context.canUpdate && node.capabilities.ownsVolumes;
 
     return (
         <SettingsPage

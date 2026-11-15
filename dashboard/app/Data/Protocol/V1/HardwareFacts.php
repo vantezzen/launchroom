@@ -6,7 +6,8 @@ namespace App\Data\Protocol\V1;
 
 use App\Data\Servers\DmiFactsData;
 use App\Data\Servers\HardwareFactsData;
-use Spatie\LaravelData\Attributes\Validation\In;
+use App\Enums\Servers\Virtualization;
+use App\Support\Protocol\Grammar;
 use Spatie\LaravelData\Attributes\Validation\Regex;
 use Spatie\LaravelData\Data;
 use Spatie\LaravelData\Optional;
@@ -19,36 +20,28 @@ use Spatie\LaravelData\Optional;
  */
 final class HardwareFacts extends Data
 {
-    /** Printable text without control characters, 1–128 characters (FactText). */
-    public const string TEXT = '/^[^\x00-\x1f\x7f]{1,128}$/Du';
-
-    public const string TIMEZONE = '/^[A-Za-z][A-Za-z0-9_+-]{0,31}(\/[A-Za-z0-9_+-]{1,32}){0,2}$/D';
-
-    public const array VIRTUALIZATIONS = ['kvm', 'qemu', 'vmware', 'virtualbox', 'xen', 'hyperv', 'parallels', 'apple', 'bhyve', 'container', 'other'];
-
     /**
      * @param  array<string, mixed>|null|Optional  $dmi  validated by rules(), normalized by toStored()
      */
     public function __construct(
-        #[Regex(self::TEXT)]
+        #[Regex(Grammar::FACT_TEXT)]
         public string|Optional $cpuModel = new Optional,
-        #[Regex(self::TEXT)]
+        #[Regex(Grammar::FACT_TEXT)]
         public string|Optional $cpuVendor = new Optional,
         public array|null|Optional $dmi = new Optional,
-        #[Regex(self::TEXT)]
+        #[Regex(Grammar::FACT_TEXT)]
         public string|Optional $deviceTreeModel = new Optional,
-        #[In(self::VIRTUALIZATIONS)]
-        public string|Optional $virtualization = new Optional,
-        #[Regex(self::TEXT)]
+        public Virtualization|Optional $virtualization = new Optional,
+        #[Regex(Grammar::FACT_TEXT)]
         public string|Optional $osName = new Optional,
-        #[Regex(self::TEXT)]
+        #[Regex(Grammar::FACT_TEXT)]
         public string|Optional $kernel = new Optional,
-        #[Regex(self::TIMEZONE)]
+        #[Regex(Grammar::TIMEZONE)]
         public string|Optional $timezone = new Optional,
         /** A system battery (power supply of type Battery, scope not Device). */
         public bool|Optional $battery = new Optional,
         /** The model the installer read on the host, e.g. "Mac mini" (macOS hides it from the VM, D53). */
-        #[Regex(self::TEXT)]
+        #[Regex(Grammar::FACT_TEXT)]
         public string|Optional $hostModel = new Optional,
     ) {}
 
@@ -57,7 +50,7 @@ final class HardwareFacts extends Data
      */
     public static function rules(): array
     {
-        $text = ['sometimes', 'string', 'max:128', 'regex:'.self::TEXT];
+        $text = ['sometimes', 'string', 'max:128', 'regex:'.Grammar::FACT_TEXT];
 
         return [
             'dmi' => ['nullable', 'array'],
@@ -92,7 +85,7 @@ final class HardwareFacts extends Data
                 chassisType: is_int($dmi['chassisType'] ?? null) ? $dmi['chassisType'] : null,
             ),
             deviceTreeModel: $this->value($this->deviceTreeModel),
-            virtualization: $this->value($this->virtualization),
+            virtualization: $this->virtualization instanceof Virtualization ? $this->virtualization : null,
             osName: $this->value($this->osName),
             kernel: $this->value($this->kernel),
             timezone: $this->value($this->timezone),

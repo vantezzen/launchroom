@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace App\Data\RemoteAccess;
 
+use App\Data\Attributes\PublicIdOf;
 use App\Support\RemoteAccess\AccessPrefix;
 use App\Support\RemoteAccess\SshPublicKey;
 use Closure;
 use Spatie\LaravelData\Attributes\Validation\In;
-use Spatie\LaravelData\Attributes\Validation\Regex;
 use Spatie\LaravelData\Data;
 use Spatie\LaravelData\Support\Validation\ValidationContext;
 
@@ -31,9 +31,9 @@ final class OpenRemoteAccessData extends Data
         #[In(self::DURATIONS)]
         public int $durationMinutes = 120,
         public bool $allowWrites = false,
-        #[Regex('/^wl_[0-9A-HJKMNP-TV-Z]{26}$/')]
+        #[PublicIdOf('wl')]
         public ?string $workload = null,
-        #[Regex('/^vol_[0-9A-HJKMNP-TV-Z]{26}$/')]
+        #[PublicIdOf('vol')]
         public ?string $volume = null,
     ) {}
 

@@ -14,13 +14,7 @@ import {
     PopoverTrigger,
 } from '@/components/ui/popover';
 import { PlacementIssueBanner } from '@/features/scheduling/placement-issue-banner';
-import { formatMb } from '@/features/servers/format';
-import {
-    SettingsBody,
-    SettingsCard,
-    SettingsRow,
-} from '@/features/settings/settings-card';
-import { api } from '@/features/variables/api';
+import { requestJson } from '@/lib/http';
 import { cn } from '@/lib/utils';
 import services from '@/routes/projects/services';
 import {
@@ -32,6 +26,12 @@ import {
 import type { ServerRule, ServerTile } from './scaling-visuals';
 import { SaveRow, SettingsPage, useSettingsPage } from './section';
 import type { SettingsContext } from './settings-context';
+import {
+    SettingsBody,
+    SettingsCard,
+    SettingsRow,
+} from '@/components/settings/settings-card';
+import { formatCores, formatMemory } from '@/lib/format';
 
 const CPU_STEPS = [
     0.1, 0.25, 0.5, 0.75, 1, 1.5, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64,
@@ -56,12 +56,6 @@ function stepsFor(
     }
 
     return steps.sort((a, b) => a - b);
-}
-
-function formatCores(value: number): string {
-    const rounded = Number(value.toFixed(2));
-
-    return `${rounded} ${rounded === 1 ? 'core' : 'cores'}`;
 }
 
 type Draft = {
@@ -125,7 +119,7 @@ function useScalingPreview(
         const controller = new AbortController();
         setLoading(true);
         const timer = window.setTimeout(() => {
-            api<App.Data.Canvas.ScalingPreviewData>(
+            requestJson<App.Data.Canvas.ScalingPreviewData>(
                 'post',
                 url,
                 JSON.parse(body),
@@ -290,7 +284,7 @@ function LabelChips({
 export function ScalingSection({ context }: { context: SettingsContext }) {
     const { settings, node, canUpdate } = context;
     const placement = settings.placement;
-    const stateful = placement?.stateful ?? node.kind === 'database';
+    const stateful = placement?.stateful ?? node.capabilities.stateful;
     const initialRules = useMemo(() => {
         const rules: Record<string, ServerRule> = {};
 
@@ -583,8 +577,8 @@ export function ScalingSection({ context }: { context: SettingsContext }) {
                                 <Stepper
                                     label="Replicas"
                                     className="[&>label]:sr-only"
-                                    min={0}
-                                    max={64}
+                                    min={settings.replicasRange.min}
+                                    max={settings.replicasRange.max}
                                     value={draft.replicas}
                                     disabled={!canUpdate}
                                     onChange={(value) =>
@@ -637,10 +631,10 @@ export function ScalingSection({ context }: { context: SettingsContext }) {
                             onChange={(value) =>
                                 form.setData('memoryMb', value)
                             }
-                            format={(value) => formatMb(value) ?? `${value} MB`}
+                            format={(value) => formatMemory(value)}
                             total={
                                 !stateful && draft.replicas > 1
-                                    ? `${formatMb(draft.memoryMb * draft.replicas)} in total`
+                                    ? `${formatMemory(draft.memoryMb * draft.replicas)} in total`
                                     : undefined
                             }
                             disabled={!canUpdate}

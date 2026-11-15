@@ -11,19 +11,19 @@ use App\Data\Variables\EnvFileEntry;
 use App\Data\Variables\EnvFileResult;
 use App\Data\Variables\ImportResult;
 use App\Data\Variables\VariableTargetData;
+use App\Data\Variables\VariableTargetRow;
 use App\Enums\AuditAction;
 use App\Enums\VariableType;
+use App\Events\CanvasChanged;
 use App\Exceptions\DomainRuleViolation;
 use App\Models\Project;
 use App\Models\Service;
 use App\Models\User;
 use App\Models\Variable;
 use App\Models\VariableTarget;
-use App\Services\Variables\SecretExposureGuard;
 use App\Services\Variables\VariableStore;
 use App\Services\Variables\VariableTargets;
 use App\Support\Variables\EnvFileParser;
-use Illuminate\Support\Facades\DB;
 use SensitiveParameter;
 
 /**
@@ -36,7 +36,6 @@ final readonly class ImportVariables
 {
     public function __construct(
         private VariableStore $store,
-        private SecretExposureGuard $exposure,
         private VariableTargets $targets,
         private RecordAuditEvent $audit,
     ) {}
@@ -66,7 +65,7 @@ final readonly class ImportVariables
             );
         }
 
-        return DB::transaction(function () use ($project, $service, $parsed, $targets, $user, $actor, $types): ImportResult {
+        return $this->store->write($project, function () use ($project, $service, $parsed, $targets, $user, $actor, $types): ImportResult {
             Project::query()->whereKey($project->id)->lockForUpdate()->firstOrFail();
 
             $rows = $this->targets->resolve($project, $targets);
@@ -96,8 +95,6 @@ final readonly class ImportVariables
                 $created[] = $entry->key;
             }
 
-            $this->exposure->assertNoPublicSecrets($project, [...$created, ...$updated], 'content');
-
             $this->audit->handle(new AuditEntryData(
                 action: AuditAction::VariablesImported,
                 actor: $actor,
@@ -106,24 +103,20 @@ final readonly class ImportVariables
                 subjectId: $service->public_id ?? $project->public_id,
                 meta: ['created' => $created, 'updated' => $updated],
             ));
+            CanvasChanged::forProject($project);
 
             return new ImportResult($created, $updated, $parsed->warnings);
-        });
+        }, 'content');
     }
 
     /**
-     * @param  list<array{environment_id: int|null, all_previews: bool, branch_pattern: string|null}>  $rows
+     * @param  list<VariableTargetRow>  $rows
      */
     private function sameTargets(Variable $variable, array $rows): bool
     {
-        $current = $variable->targets->map(static fn (VariableTarget $target): array => [
-            'environment_id' => $target->environment_id,
-            'all_previews' => $target->all_previews,
-            'branch_pattern' => $target->branch_pattern,
-        ])->sortBy(static fn (array $row): string => json_encode($row, JSON_THROW_ON_ERROR))->values()->all();
-
-        $wanted = $rows;
-        usort($wanted, static fn (array $a, array $b): int => json_encode($a, JSON_THROW_ON_ERROR) <=> json_encode($b, JSON_THROW_ON_ERROR));
+        $encode = static fn (VariableTargetRow $row): string => json_encode($row->toArray(), JSON_THROW_ON_ERROR);
+        $current = $variable->targets->map(static fn (VariableTarget $target): string => $encode(VariableTargetRow::of($target)))->sort()->values()->all();
+        $wanted = collect($rows)->map($encode)->sort()->values()->all();
 
         return $current === $wanted;
     }

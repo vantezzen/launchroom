@@ -8,6 +8,8 @@ use App\Actions\Backups\RecordWalArchives;
 use App\Actions\Mesh\RecordMeshStatus;
 use App\Actions\Metrics\RecordMetrics;
 use App\Actions\Security\RecordWafReport;
+use App\Data\Deployments\ProbeProgressData;
+use App\Data\Deployments\PullProgressData;
 use App\Data\Protocol\V1\HardwareFacts;
 use App\Data\Protocol\V1\HostStatus;
 use App\Data\Protocol\V1\IngressStatus;
@@ -18,11 +20,14 @@ use App\Data\Protocol\V1\StateRejection;
 use App\Data\Protocol\V1\VolumeDeletionResult;
 use App\Data\Protocol\V1\WorkloadIssue;
 use App\Data\Protocol\V1\WorkloadStatus;
+use App\Data\Servers\ControlPlaneUrlReportData;
+use App\Data\Servers\Host\HostStatusData;
 use App\Data\Servers\HostFactsData;
 use App\Data\Servers\ServerRuntimeData;
+use App\Data\Servers\StateRejectionData;
 use App\Enums\DaemonFeature;
 use App\Enums\DeploymentStatus;
-use App\Enums\ProbeState;
+use App\Enums\PortHint;
 use App\Enums\WorkloadPhase;
 use App\Events\Broadcasts\DeploymentUpdated;
 use App\Events\NodeStateInvalidated;
@@ -32,10 +37,8 @@ use App\Jobs\RenderServerNodeState;
 use App\Models\Deployment;
 use App\Models\Placement;
 use App\Models\Server;
-use App\Queries\MeshServers;
 use App\Services\Volumes\VolumeRetirements;
 use App\Support\Network\ServerAddress;
-use App\Support\Servers\HostStatusFacts;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Spatie\LaravelData\Optional;
@@ -95,7 +98,7 @@ final readonly class RecordReport
 
                 // Latest host facts and health snapshot (docs/03 §1), whitelisted.
                 $server->forceFill([
-                    'host_status' => HostStatusFacts::fromProtocol($report->host),
+                    'host_status' => HostStatusData::fromProtocol($report->host),
                     'host_status_at' => now(),
                     'daemon_version' => $report->host->daemonVersion,
                 ]);
@@ -111,7 +114,6 @@ final readonly class RecordReport
                         $report->host->hardware->toStored(),
                     );
                 }
-                // Mesh client state and addresses (docs/05 §2).
                 $this->meshStatus->handle($server, is_array($report->host->mesh) ? $report->host->mesh : null);
                 $this->recordFeatures($server, $report->host);
                 $this->recordControlPlane($server, $report->host);
@@ -126,11 +128,7 @@ final readonly class RecordReport
             // The daemon refused a NodeState and runs its last good one
             // (docs/03 §5): shown on the server page until a newer one applies.
             $rejected = $report->stateRejected instanceof StateRejection ? $report->stateRejected : null;
-            $server->forceFill(['state_rejection' => $rejected instanceof StateRejection ? [
-                'version' => $rejected->version,
-                'error' => mb_substr($rejected->error, 0, 4096),
-                'rejectedAt' => $rejected->rejectedAt,
-            ] : null]);
+            $server->forceFill(['state_rejection' => $rejected instanceof StateRejection ? StateRejectionData::fromProtocol($rejected) : null]);
 
             $server->save();
 
@@ -147,7 +145,6 @@ final readonly class RecordReport
             [$deployments, $progressed] = $this->recordWorkloads($server, $report->workloads);
 
             if ($report->ingress instanceof IngressStatus) {
-                // Edge ingress and certificate state (docs/05 §5).
                 $this->certificates->handle($server, $report->ingress);
             }
 
@@ -228,7 +225,7 @@ final readonly class RecordReport
         }
 
         $server->forceFill(['daemon_features' => $features]);
-        event(new NodeStateInvalidated(array_values(array_unique([$server->id, ...MeshServers::ids()]))));
+        NodeStateInvalidated::mesh([$server->id]);
     }
 
     /**
@@ -271,18 +268,11 @@ final readonly class RecordReport
             return;
         }
 
-        $stored = array_filter([
-            'state' => is_string($reported['state'] ?? null) ? $reported['state'] : 'configured',
-            'configured' => is_string($reported['configured'] ?? null) ? $reported['configured'] : null,
-            'adopted' => is_string($reported['adopted'] ?? null) ? $reported['adopted'] : null,
-            'active' => is_string($reported['active'] ?? null) ? $reported['active'] : null,
-            'message' => is_string($reported['message'] ?? null) ? mb_substr($reported['message'], 0, 512) : null,
-        ], static fn (?string $value): bool => $value !== null);
+        $stored = ControlPlaneUrlReportData::fromProtocol($reported, now()->toIso8601ZuluString());
+        $before = $server->daemon_control_plane;
+        $server->forceFill(['daemon_control_plane' => $stored]);
 
-        $before = $server->daemon_control_plane ?? [];
-        $server->forceFill(['daemon_control_plane' => [...$stored, 'reportedAt' => now()->toIso8601ZuluString()]]);
-
-        if (($before['adopted'] ?? null) !== ($stored['adopted'] ?? null) || ($before['configured'] ?? null) !== ($stored['configured'] ?? null)) {
+        if ($before?->adopted !== $stored->adopted || $before?->configured !== $stored->configured) {
             event(new NodeStateInvalidated([$server->id]));
         }
     }
@@ -321,28 +311,30 @@ final readonly class RecordReport
                 continue;
             }
 
-            $phase = WorkloadPhase::from($status->phase);
-            $health = $status->health instanceof ProbeStatus ? ProbeState::tryFrom($status->health->state) : null;
+            $phase = $status->phase;
+            $health = $status->health instanceof ProbeStatus ? $status->health->state : null;
             $message = is_string($status->message) ? mb_substr($status->message, 0, 4000) : null;
-            $pull = $phase === WorkloadPhase::Pulling && $status->pull instanceof PullProgress ? [
-                'stage' => $status->pull->stage,
-                'downloaded' => $status->pull->downloadedBytes,
-                'total' => $status->pull->totalBytes,
-                ...(is_string($status->pull->updatedAt) ? ['updatedAt' => $status->pull->updatedAt] : []),
-            ] : null;
+            $pull = $phase === WorkloadPhase::Pulling && $status->pull instanceof PullProgress ? new PullProgressData(
+                stage: $status->pull->stage,
+                downloaded: $status->pull->downloadedBytes,
+                total: $status->pull->totalBytes,
+                updatedAt: is_string($status->pull->updatedAt) ? $status->pull->updatedAt : null,
+            ) : null;
 
             $issue = $status->issue instanceof WorkloadIssue ? $status->issue->toStored() : null;
-            $probe = $status->health instanceof ProbeStatus ? array_filter([
-                'attempts' => is_int($status->health->attempts) ? $status->health->attempts : null,
-                'failures' => $status->health->consecutiveFailures,
-                'lastError' => is_string($status->health->lastError) ? mb_substr($status->health->lastError, 0, 1024) : null,
-                'checkedAt' => is_string($status->health->lastCheckedAt) ? $status->health->lastCheckedAt : null,
-            ], static fn (mixed $value): bool => $value !== null) : null;
+            $probe = $status->health instanceof ProbeStatus ? new ProbeProgressData(
+                attempts: is_int($status->health->attempts) ? $status->health->attempts : null,
+                failures: $status->health->consecutiveFailures,
+                lastError: is_string($status->health->lastError) ? mb_substr($status->health->lastError, 0, 1024) : null,
+                checkedAt: is_string($status->health->lastCheckedAt) ? $status->health->lastCheckedAt : null,
+                portHint: $status->portHint instanceof PortHint ? $status->portHint : null,
+                listening: $status->portHint instanceof PortHint && is_array($status->detectedPorts) ? array_slice($status->detectedPorts, 0, 32) : [],
+            ) : null;
 
-            if ($placement->phase !== $phase || $placement->health !== $health || $placement->message !== $message || ($placement->issue['kind'] ?? null) !== ($issue['kind'] ?? null)) {
+            if ($placement->phase !== $phase || $placement->health !== $health || $placement->message !== $message || $placement->issue?->kind !== $issue?->kind) {
                 $changed[] = $placement->deployment_id;
                 $instances[] = $placement->service_instance_id;
-            } elseif ($placement->pull != $pull || $this->probeMoved($placement->probe, $probe)) { // jsonb doesn't keep key order
+            } elseif ($placement->pull?->toArray() !== $pull?->toArray() || ($probe instanceof ProbeProgressData ? $probe->movedFrom($placement->probe) : $placement->probe instanceof ProbeProgressData)) {
                 // Only the pull moved: open deployment pages refetch, nothing to advance.
                 $progressed[] = $placement->deployment_id;
             }
@@ -371,21 +363,6 @@ final readonly class RecordReport
         }
 
         return [array_values($changed), array_values(array_unique(array_diff($progressed, $changed)))];
-    }
-
-    /**
-     * Whether a health probe moved in a way worth a refetch: its attempts,
-     * failures or error. `checkedAt` changes on every report of a running
-     * workload, so on its own it is not progress.
-     *
-     * @param  array<string, mixed>|null  $before
-     * @param  array<string, mixed>|null  $after
-     */
-    private function probeMoved(?array $before, ?array $after): bool
-    {
-        unset($before['checkedAt'], $after['checkedAt']);
-
-        return $before != $after;
     }
 
     /**

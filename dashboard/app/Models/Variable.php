@@ -120,4 +120,13 @@ final class Variable extends Model
             'references' => 'array',
         ];
     }
+
+    /**
+     * Connection-owned rows are written by their connection and removed with
+     * it; users don't edit or delete them.
+     */
+    public function isManagedByConnection(): bool
+    {
+        return $this->connection_id !== null;
+    }
 }

@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Previews;
 
 use App\Data\Previews\PullRequestData;
-use App\Enums\Previews\PreviewProvider;
+use App\Enums\Git\GitProviderKind;
 use App\Enums\Previews\PreviewStatus;
 use App\Models\Previews\Preview;
 use App\Models\Previews\PreviewSettings;
@@ -61,8 +61,8 @@ final readonly class SyncPullRequest
             $headChanged = $preview->head_sha !== $pr->headSha;
 
             $preview->fill([
-                'github_installation_id' => $pr->provider === PreviewProvider::GitHub ? $pr->installationId : null,
-                'git_connection_id' => in_array($pr->provider, [PreviewProvider::GitLab, PreviewProvider::Gitea], true) ? $pr->installationId : null,
+                'github_installation_id' => $pr->provider === GitProviderKind::GitHub ? $pr->installationId : null,
+                'git_connection_id' => in_array($pr->provider, [GitProviderKind::GitLab, GitProviderKind::Gitea], true) ? $pr->installationId : null,
                 'repository_name' => $pr->repositoryName,
                 'title' => mb_substr($pr->title, 0, 512),
                 'author_login' => mb_substr($pr->authorLogin, 0, 100),
@@ -96,7 +96,6 @@ final readonly class SyncPullRequest
                 return [$preview, $preview->status->isOpen() ? 'close' : null];
             }
 
-            // A reopened PR starts over.
             if (! $preview->status->isOpen()) {
                 $preview->transitionTo(PreviewStatus::Queued, 'Reopened.');
             }

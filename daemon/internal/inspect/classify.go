@@ -8,8 +8,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/vantezzen/launchroom/daemon/internal/build"
 	"github.com/vantezzen/launchroom/daemon/internal/docker"
+	"github.com/vantezzen/launchroom/daemon/internal/secret"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
 
@@ -46,7 +46,6 @@ var (
 	minerNames    = []string{"xmrig", "minerd", "cpuminer", "kinsing", "kdevtmpfsi"}
 )
 
-// under reports whether p is dir or below it.
 func under(p, dir string) bool {
 	return p == dir || strings.HasPrefix(p, dir+"/")
 }
@@ -189,7 +188,6 @@ func hex2(c byte) string {
 	return string([]byte{digits[c>>4], digits[c&0xf]})
 }
 
-// changeKind maps Docker's kind.
 func changeKind(k docker.ChangeKind) state.ChangeKind {
 	switch k {
 	case docker.ChangeAdded:
@@ -206,8 +204,6 @@ func sortEntries(entries []state.ContainerChange) {
 		return cmp.Or(cmp.Compare(rank(a.Flags), rank(b.Flags)), strings.Compare(string(a.Path), string(b.Path)))
 	})
 }
-
-// ---- processes ----
 
 // process is one row of Docker's top.
 type process struct {
@@ -355,6 +351,6 @@ func processFlags(p process, entry bool, parent string, added map[string]bool) [
 
 // commandText is a process command as reported: masked against the
 // workload's secret values, escaped, cut to 512 bytes.
-func commandText(cmd string, m *build.Masker) string {
+func commandText(cmd string, m *secret.Masker) string {
 	return Escape(m.Mask(cmd), maxCommand)
 }

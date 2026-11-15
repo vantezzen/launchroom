@@ -14,7 +14,7 @@ use App\Models\DaemonTask;
 use App\Models\Server;
 use App\Models\ServiceInstance;
 use App\Models\Team;
-use App\Services\Canvas\TaskPlanPreviewer;
+use App\Services\Canvas\PlanPreviewer;
 use App\Support\PublicId;
 use Illuminate\Support\Facades\Http;
 use Tests\Support\GitHubFake;
@@ -168,7 +168,7 @@ test('a preview nobody picks up fails instead of waiting forever, and Retry star
     $this->actingAs($this->developer)->getJson(($this->url)())->assertJson(['status' => 'pending']);
     $task = DaemonTask::query()->sole();
 
-    $this->travel(TaskPlanPreviewer::LEASE_WAIT_SECONDS + 1)->seconds();
+    $this->travel(PlanPreviewer::LEASE_WAIT_SECONDS + 1)->seconds();
 
     $this->actingAs($this->developer)->getJson(($this->url)())
         ->assertJsonPath('status', 'failed')

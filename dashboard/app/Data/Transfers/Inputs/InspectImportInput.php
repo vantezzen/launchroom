@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Data\Transfers\Inputs;
 
+use App\Data\Attributes\PublicIdOf;
 use Spatie\LaravelData\Attributes\Validation\Max;
-use Spatie\LaravelData\Attributes\Validation\Regex;
 use Spatie\LaravelData\Data;
 
 /**
@@ -14,7 +14,7 @@ use Spatie\LaravelData\Data;
 final class InspectImportInput extends Data
 {
     public function __construct(
-        #[Regex('/^vol_[0-9A-HJKMNP-TV-Z]{26}$/')]
+        #[PublicIdOf('vol')]
         public ?string $volume = null,
         #[Max(2048)]
         public ?string $sourceUrl = null,

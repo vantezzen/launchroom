@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Api;
 
+use App\Data\Api\Events\StreamReconnectEvent;
 use Closure;
 use Illuminate\Support\Sleep;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -16,8 +17,11 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  */
 final class EventStream
 {
+    /** Sent by every stream at its maximum length. */
+    public const string RECONNECT = 'reconnect';
+
     /**
-     * @param  Closure(int): array{events: list<array{event: string, data: array<string, mixed>, id?: int}>, cursor: int, done: bool}  $tick
+     * @param  Closure(int): array{events: list<ServerSentEvent>, cursor: int, done: bool}  $tick
      */
     public static function response(int $cursor, Closure $tick): StreamedResponse
     {
@@ -35,7 +39,7 @@ final class EventStream
                 $cursor = $result['cursor'];
 
                 foreach ($result['events'] as $event) {
-                    self::write($event['event'], $event['data'], $event['id'] ?? null);
+                    self::write($event);
                     $lastWrite = microtime(true);
                 }
 
@@ -44,7 +48,7 @@ final class EventStream
                 }
 
                 if (microtime(true) >= $deadline || connection_aborted() === 1) {
-                    self::write('reconnect', ['cursor' => $cursor], $cursor);
+                    self::write(new ServerSentEvent(self::RECONNECT, new StreamReconnectEvent($cursor), $cursor));
 
                     return;
                 }
@@ -64,25 +68,19 @@ final class EventStream
         ]);
     }
 
-    /**
-     * The cursor to resume from: `Last-Event-ID`, else `?after=`.
-     */
     public static function resumeCursor(?string $lastEventId, int $after): int
     {
         return $lastEventId !== null && preg_match('/^[0-9]{1,18}$/D', $lastEventId) === 1 ? (int) $lastEventId : $after;
     }
 
-    /**
-     * @param  array<string, mixed>  $data
-     */
-    private static function write(string $event, array $data, ?int $id): void
+    private static function write(ServerSentEvent $event): void
     {
-        if ($id !== null) {
-            echo "id: {$id}\n";
+        if ($event->id !== null) {
+            echo "id: {$event->id}\n";
         }
 
-        echo "event: {$event}\n";
-        echo 'data: '.json_encode($data, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR)."\n\n";
+        echo "event: {$event->event}\n";
+        echo 'data: '.json_encode($event->data->toArray(), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR)."\n\n";
         self::flush();
     }
 

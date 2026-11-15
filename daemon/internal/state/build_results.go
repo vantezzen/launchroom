@@ -16,7 +16,6 @@ const (
 	maxProcesses    = 16
 	maxEnvRefs      = 256
 	maxRuntimeEnv   = 64
-	maxHints        = 16
 	maxSummaryText  = 1024
 	maxBuildEnvRefs = 1024
 )
@@ -42,7 +41,7 @@ type AppliedPreset struct {
 	Name Slug `json:"name"`
 	// Version of the preset code (bumped when its behaviour changes).
 	Version   int              `json:"version" jsonschema:"minimum=1"`
-	Decisions []PresetDecision `json:"decisions"`
+	Decisions []PresetDecision `json:"decisions" jsonschema:"maxItems=32"`
 }
 
 // ProcessSuggestion is an extra process from the same image (queue worker, scheduler, …).
@@ -298,6 +297,46 @@ func (r *PlanResult) validate(e *errs) {
 	r.Summary.validate(e, "plan.summary")
 }
 
+// Limits of a TaskFailure that producers clip to.
+const (
+	MaxFailureHints   = 16
+	MaxFailureStepLen = 128
+)
+
+// HintCode is the code of a known build failure (FailureHint.code); the
+// dashboard explains each one (FailureCatalogue, checked against
+// vocabulary.json hintCodes).
+type HintCode = Slug
+
+// Hint codes of TaskFailure.hints.
+const (
+	HintRailpackCannotPlan       HintCode = "railpack-cannot-plan"
+	HintBuildkitNotReady         HintCode = "buildkit-not-ready"
+	HintBuildkitCrashLoop        HintCode = "buildkit-crash-loop"
+	HintBuildkitOOM              HintCode = "buildkit-oom"
+	HintBuildkitUsernsRestricted HintCode = "buildkit-userns-restricted"
+	HintPnpmOutdatedLockfile     HintCode = "pnpm-outdated-lockfile"
+	HintNpmCiLockfile            HintCode = "npm-ci-lockfile"
+	HintYarnFrozenLockfile       HintCode = "yarn-frozen-lockfile"
+	HintNodeGypToolchain         HintCode = "node-gyp-toolchain"
+	HintMissingModule            HintCode = "missing-module"
+	HintPhpExtension             HintCode = "php-extension"
+	HintDjangoImproperlyConfig   HintCode = "django-improperly-configured"
+	HintPythonModuleNotFound     HintCode = "python-module-not-found"
+	HintOutOfMemory              HintCode = "out-of-memory"
+	HintNoStartCommand           HintCode = "no-start-command"
+	HintRegistryRateLimit        HintCode = "registry-rate-limit"
+	HintViteEnvUndefined         HintCode = "vite-env-undefined"
+)
+
+var hintCodes = []string{
+	string(HintRailpackCannotPlan), string(HintBuildkitNotReady), string(HintBuildkitCrashLoop), string(HintBuildkitOOM),
+	string(HintBuildkitUsernsRestricted), string(HintPnpmOutdatedLockfile), string(HintNpmCiLockfile),
+	string(HintYarnFrozenLockfile), string(HintNodeGypToolchain), string(HintMissingModule), string(HintPhpExtension),
+	string(HintDjangoImproperlyConfig), string(HintPythonModuleNotFound), string(HintOutOfMemory),
+	string(HintNoStartCommand), string(HintRegistryRateLimit), string(HintViteEnvUndefined),
+}
+
 // FailureHint is a known-error hint ("ERR_PNPM_OUTDATED_LOCKFILE → run pnpm install and commit the lockfile").
 type FailureHint struct {
 	Code    Slug   `json:"code"`
@@ -318,8 +357,8 @@ type TaskFailure struct {
 
 func (f *TaskFailure) validate(e *errs) {
 	e.check("failure.class", f.Class)
-	checkText(e, "failure.step", f.Step, 128)
-	checkCount(e, "failure.hints", len(f.Hints), 0, maxHints)
+	checkText(e, "failure.step", f.Step, MaxFailureStepLen)
+	checkCount(e, "failure.hints", len(f.Hints), 0, MaxFailureHints)
 	for i, h := range f.Hints {
 		hp := idx("failure.hints", i)
 		e.check(hp+".code", h.Code)

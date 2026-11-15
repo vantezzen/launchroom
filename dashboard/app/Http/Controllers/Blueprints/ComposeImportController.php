@@ -6,18 +6,23 @@ namespace App\Http\Controllers\Blueprints;
 
 use App\Actions\Blueprints\ImportCompose;
 use App\Actions\Deployments\DeployEnvironment;
+use App\Data\Blueprints\BlueprintServicePreviewData;
 use App\Data\Blueprints\ComposeImportData;
 use App\Data\Blueprints\ComposePreviewData;
 use App\Enums\DeploymentTrigger;
 use App\Exceptions\DomainRuleViolation;
 use App\Exceptions\UnresolvedReferences;
 use App\Http\Controllers\Controller;
-use App\Http\Controllers\Teams\TeamSettingsController;
+use App\Http\Routing\CurrentTeam;
+use App\Http\Toast;
 use App\Models\Project;
+use App\Models\Team;
 use App\Models\User;
 use App\Services\Compose\ComposeSources;
 use App\Support\Blueprints\BlueprintPreview;
 use App\Support\Compose\ComposeRejected;
+use App\Support\Compose\ComposeTranslator;
+use App\Support\Compose\ComposeYaml;
 use Illuminate\Container\Attributes\CurrentUser;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -33,21 +38,19 @@ use Inertia\Response;
  */
 final class ComposeImportController extends Controller
 {
-    public function create(#[CurrentUser] User $user): Response
+    public function create(#[CurrentTeam] Team $team): Response
     {
-        $team = TeamSettingsController::currentTeam($user);
         Gate::authorize('create', [Project::class, $team]);
 
-        return Inertia::render('projects/new-compose');
+        return Inertia::render('projects/new-compose', ['maxBytes' => ComposeYaml::MAX_BYTES]);
     }
 
     /**
      * The preview: pure, nothing is stored. Errors of the file as a whole
      * are part of the answer, not a failure.
      */
-    public function preview(ComposeImportData $data, #[CurrentUser] User $user, ComposeSources $sources): JsonResponse
+    public function preview(ComposeImportData $data, ComposeSources $sources, #[CurrentTeam] Team $team): JsonResponse
     {
-        $team = TeamSettingsController::currentTeam($user);
         Gate::authorize('create', [Project::class, $team]);
 
         try {
@@ -58,20 +61,22 @@ final class ComposeImportController extends Controller
             return new JsonResponse(new ComposePreviewData(preview: null, error: $e->getMessage()));
         }
 
+        $preview = BlueprintPreview::of($translation->blueprint, $translation->choices);
+        $first = collect($preview->services)->first(fn (BlueprintServicePreviewData $service): bool => $service->public) ?? $preview->services[0] ?? null;
+
         return new JsonResponse(new ComposePreviewData(
-            preview: BlueprintPreview::of($translation->blueprint, $translation->choices),
+            preview: $preview,
             notes: $translation->notes,
             inputs: $translation->inputs,
             missingFiles: $translation->missingFiles,
             skipped: $translation->skipped,
-            suggestedName: $translation->blueprint->name,
+            suggestedName: $translation->blueprint->name === ComposeTranslator::UNNAMED ? $first?->name : $translation->blueprint->name,
             path: $path,
         ));
     }
 
-    public function store(Request $request, ComposeImportData $data, #[CurrentUser] User $user, ImportCompose $import, DeployEnvironment $deploy): RedirectResponse
+    public function store(Request $request, ComposeImportData $data, #[CurrentUser] User $user, ImportCompose $import, DeployEnvironment $deploy, #[CurrentTeam] Team $team): RedirectResponse
     {
-        $team = TeamSettingsController::currentTeam($user);
         Gate::authorize('create', [Project::class, $team]);
 
         $actor = $this->auditActor($request, $user);
@@ -79,13 +84,13 @@ final class ComposeImportController extends Controller
         $production = $project->production()->sole();
 
         if (! $data->deploy) {
-            Inertia::flash('toast', ['type' => 'success', 'message' => "{$project->name} is ready. Set its variables, then deploy."]);
+            Toast::success("{$project->name} is ready. Set its variables, then deploy.");
         } elseif (Gate::allows('deploy', $production)) {
             try {
                 $deploy->handle($production, $user, $actor, 'Imported from a Compose file', DeploymentTrigger::Config);
-                Inertia::flash('toast', ['type' => 'success', 'message' => "{$project->name} is deploying."]);
+                Toast::success("{$project->name} is deploying.");
             } catch (DomainRuleViolation|UnresolvedReferences $e) {
-                Inertia::flash('toast', ['type' => 'warning', 'message' => "{$project->name} is ready but didn’t deploy: {$e->getMessage()}"]);
+                Toast::warning("{$project->name} is ready but didn’t deploy: {$e->getMessage()}");
             }
         }
 

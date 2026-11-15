@@ -13,6 +13,7 @@ import (
 	"github.com/moby/moby/api/types/container"
 
 	"github.com/vantezzen/launchroom/daemon/internal/controlplane"
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
 
@@ -22,7 +23,7 @@ func TestSelfFromInspect(t *testing.T) {
 	good := container.InspectResponse{
 		ID: "abc", Image: "sha256:" + strings.Repeat("a", 64),
 		Config: &container.Config{Labels: map[string]string{
-			composeWorkingDir: "/srv/launchroomd", composeProject: "launchroomd", composeService: "launchroomd", labelRole: "launchroomd",
+			composeWorkingDir: "/srv/launchroomd", composeProject: "launchroomd", composeService: "launchroomd", names.LabelRole: "launchroomd",
 		}},
 		Mounts: []container.MountPoint{
 			{Source: "/srv/launchroomd/data", Destination: "/data"},

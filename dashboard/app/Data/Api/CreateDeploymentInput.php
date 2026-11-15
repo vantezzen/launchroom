@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Data\Api;
 
+use App\Data\Attributes\PublicIdOf;
+use App\Support\Protocol\Grammar;
 use Spatie\LaravelData\Attributes\Validation\Max;
 use Spatie\LaravelData\Attributes\Validation\Regex;
 use Spatie\LaravelData\Data;
@@ -16,12 +18,12 @@ use Spatie\LaravelData\Data;
 final class CreateDeploymentInput extends Data
 {
     public function __construct(
-        #[Regex('/^svc_[0-7][0-9A-HJKMNP-TV-Z]{25}$/D')]
+        #[PublicIdOf('svc')]
         public string $service,
         /** Branch name (`main`) or `refs/heads/main`. */
         #[Max(255), Regex('#^(refs/heads/)?[A-Za-z0-9._/+-]+$#D')]
         public ?string $ref = null,
-        #[Regex('/^[0-9a-f]{40}$/D')]
+        #[Regex(Grammar::GIT_SHA)]
         public ?string $sha = null,
         public bool $redeploy = false,
     ) {}

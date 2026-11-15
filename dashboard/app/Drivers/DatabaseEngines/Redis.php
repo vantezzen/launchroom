@@ -13,11 +13,6 @@ final readonly class Redis extends RedisCompatible
         return DatabaseEngine::Redis;
     }
 
-    public function defaultVersion(): string
-    {
-        return '7';
-    }
-
     protected function binary(): string
     {
         return 'redis-server';

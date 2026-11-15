@@ -42,8 +42,6 @@ enum ApiAbility: string
     }
 
     /**
-     * Whether a token holding $abilities may exercise $permission.
-     *
      * @param  list<string>  $abilities
      */
     public static function allows(array $abilities, Permission $permission): bool
@@ -75,6 +73,11 @@ enum ApiAbility: string
             self::DomainsWrite => 'Add and remove custom domains.',
             self::DataTransfer => 'Import dumps and archives, download database and volume data. Every transfer is audited.',
         };
+    }
+
+    public function alwaysGranted(): bool
+    {
+        return $this === self::Read;
     }
 
     /**

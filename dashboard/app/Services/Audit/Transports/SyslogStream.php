@@ -6,9 +6,6 @@ namespace App\Services\Audit\Transports;
 
 use App\Services\Audit\AuditDeliveryFailed;
 
-/**
- * An open TLS connection to a syslog receiver.
- */
 interface SyslogStream
 {
     /**

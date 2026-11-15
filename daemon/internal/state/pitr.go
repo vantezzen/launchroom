@@ -242,7 +242,7 @@ type VerifyRestoreSpec struct {
 	// DataDirectory is PGDATA (base_backup only; inside DataPath).
 	DataDirectory ContainerPath `json:"dataDirectory,omitzero"`
 	// WalTags select the WAL snapshots replayed after the base backup (base_backup only).
-	WalTags []BackupTag `json:"walTags,omitzero" jsonschema:"nullable"`
+	WalTags []BackupTag `json:"walTags,omitzero" jsonschema:"nullable,maxItems=32"`
 	// DatabaseUser and DatabaseName are the source's POSTGRES_USER and
 	// POSTGRES_DB (base_backup only): the restored data's own role and
 	// database, checked over the local socket.

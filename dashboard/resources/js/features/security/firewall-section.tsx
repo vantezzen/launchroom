@@ -2,7 +2,6 @@ import { Link } from '@inertiajs/react';
 import { Eye, ShieldCheck, TriangleAlert } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
-import { formatCompact } from '@/components/charts/format';
 import { REQUEST_CLASS } from '@/components/charts/request-breakdown';
 import { StackedBars } from '@/components/charts/stacked-bars';
 import type { StackedSeries } from '@/components/charts/stacked-bars';
@@ -14,17 +13,19 @@ import { SheetSection, SidePanel } from '@/components/patterns/sheet';
 import { TimeAgo } from '@/components/time-ago';
 import { Button } from '@/components/ui/button';
 import { deployMarkers } from '@/features/metrics/format';
-import { requestJson } from '@/features/projects/http';
+import { requestJson } from '@/lib/http';
 import { rangeWords } from '@/lib/observe-scope';
 import { cn } from '@/lib/utils';
-import { card, CATEGORY_LABEL, plural, SERIES_COLOR } from './format';
+import { labelOf, vocabulary } from '@/lib/vocabulary';
+import { card, SERIES_COLOR } from './format';
+import { formatCompact, listNames, plural } from '@/lib/format';
 
 type Firewall = App.Data.Security.WafOverviewData;
 type WafEvent = App.Data.Security.WafEventData;
 type Summary = App.Data.Security.SecuritySummaryData;
 
 /** A category's colour: palette slots for the four named kinds, grey else. */
-export function categoryColor(category: string): string {
+function categoryColor(category: string): string {
     return SERIES_COLOR[category] ?? 'var(--chart-other)';
 }
 
@@ -544,7 +545,10 @@ function RecentBlocks({
                                         }}
                                     />
                                     <span className="truncate">
-                                        {CATEGORY_LABEL[category] ?? 'Other'}
+                                        {labelOf(
+                                            vocabulary.Security.WafCategory,
+                                            category,
+                                        ) ?? 'Other'}
                                         {event.action === 'detected' && (
                                             <span className="text-muted-foreground">
                                                 , logged
@@ -587,7 +591,7 @@ function RecentBlocks({
  * One blocked request: its rules with CRS's messages, the matched parts,
  * the score, and "Allow requests like this" (docs/22 §6.4).
  */
-export function EventSheet({
+function EventSheet({
     event,
     onOpenChange,
     canManage,
@@ -744,10 +748,4 @@ export function EventSheet({
             )}
         </SidePanel>
     );
-}
-
-export function listNames(names: string[]): string {
-    return names.length <= 1
-        ? (names[0] ?? '')
-        : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
 }

@@ -7,16 +7,25 @@ namespace App\Services\Git\Providers;
 use App\Data\Git\CommitData;
 use App\Data\Git\FilePullRequest;
 use App\Data\Git\GitBranchData;
+use App\Data\Git\PushPayload;
 use App\Data\Git\RepositoryRef;
 use App\Data\Git\RepositoryTree;
 use App\Enums\Git\DeploymentReportState;
 use App\Enums\Git\GitProviderKind;
+use App\Enums\Git\GitServerKind;
+use App\Enums\Git\PullRequestAction;
+use App\Events\Git\PullRequestEventReceived;
+use App\Exceptions\DomainRuleViolation;
+use App\Exceptions\Git\GitProviderRequestFailed;
 use App\Models\Git\GitConnection;
 use App\Models\Git\GitRepository;
-use App\Services\Git\Exceptions\GitProviderRequestFailed;
-use App\Services\GitHub\JsonObject;
+use App\Support\Git\GitRef;
 use App\Support\Git\GitWebPath;
+use App\Support\Git\ProviderAvatar;
+use App\Support\Git\PushedFiles;
+use App\Support\Json\JsonObject;
 use Illuminate\Http\Client\Response;
+use SensitiveParameter;
 use Throwable;
 
 /**
@@ -36,6 +45,175 @@ final class GiteaProvider extends ApiGitProvider
     public function webhookUrl(GitConnection $connection): string
     {
         return self::deliveryUrl(route('git.webhooks.gitea', ['connection' => $connection->public_id]));
+    }
+
+    protected function apiPath(): string
+    {
+        return '/api/v1';
+    }
+
+    protected function oauthTokenPath(): string
+    {
+        return '/login/oauth/access_token';
+    }
+
+    protected function oauthAuthorizePath(): string
+    {
+        return '/login/oauth/authorize';
+    }
+
+    protected function oauthScope(): ?string
+    {
+        return null;
+    }
+
+    protected function accountLogin(JsonObject $account): ?string
+    {
+        return $account->stringOrNull('login') ?? $account->stringOrNull('username');
+    }
+
+    /**
+     * Gitea and Forgejo are told apart by their version string.
+     */
+    public function probeUrl(string $origin): string
+    {
+        return $this->apiRoot($origin).'/version';
+    }
+
+    public function recognize(Response $response, string $origin): GitServerKind
+    {
+        $version = $response->json('version');
+
+        if (! $response->successful() || ! is_string($version)) {
+            throw DomainRuleViolation::on('baseUrl', "{$origin} doesn’t look like a Gitea or Forgejo server.");
+        }
+
+        return str_contains(strtolower($version), 'forgejo') || str_contains($version, '+gitea') ? GitServerKind::Forgejo : GitServerKind::Gitea;
+    }
+
+    /**
+     * Gitea/Forgejo send an HMAC-SHA256 hex of the raw body.
+     */
+    protected function signatureMatches(string $rawBody, string $signature, #[SensitiveParameter] string $secret): bool
+    {
+        return preg_match('/^[0-9a-fA-F]{64}$/D', $signature) === 1 && hash_equals(hash_hmac('sha256', $rawBody, $secret), strtolower($signature));
+    }
+
+    public function webhookEvent(?string $header): ?string
+    {
+        $event = $header ?? '';
+
+        if (preg_match('/^[a-z_]{1,64}$/D', $event) !== 1) {
+            return null;
+        }
+
+        // Gitea sends pull_request_sync / pull_request_label as their own events.
+        return str_starts_with($event, 'pull_request') ? 'pull_request' : $event;
+    }
+
+    public function webhookSummary(JsonObject $payload): array
+    {
+        return [$payload->objectOrNull('repository')?->intOrNull('id'), $payload->stringOrNull('action')];
+    }
+
+    public function parseWebhook(GitConnection $connection, string $event, JsonObject $payload): PushPayload|PullRequestEventReceived|null
+    {
+        return match ($event) {
+            'push', 'tag_push' => $this->push($connection, $payload),
+            'pull_request' => $this->pullRequest($connection, $payload),
+            default => null,
+        };
+    }
+
+    private function repository(GitConnection $connection, JsonObject $payload): GitRepository
+    {
+        $source = $payload->object('repository');
+
+        return $this->rememberDelivered($connection, $source->int('id'), $source->string('full_name'), $source->stringOrNull('default_branch'), $source->bool('private'));
+    }
+
+    private function push(GitConnection $connection, JsonObject $payload): PushPayload
+    {
+        $repository = $this->repository($connection, $payload);
+        $commits = $payload->objects('commits');
+        $after = $payload->string('after');
+        $head = $payload->objectOrNull('head_commit');
+
+        foreach ($commits as $commit) {
+            if ($head === null && $commit->stringOrNull('id') === $after) {
+                $head = $commit;
+            }
+        }
+
+        $author = $head?->objectOrNull('author');
+        $sender = $payload->objectOrNull('sender');
+
+        return new PushPayload($repository->external_id, $payload->string('ref'), $payload->stringOrNull('before') ?? GitRef::ZERO_SHA, $after, new CommitData(
+            sha: $after,
+            message: $head?->stringOrNull('message') ?? '',
+            authorName: $author?->stringOrNull('name'),
+            authorEmail: $author?->stringOrNull('email'),
+            authorLogin: $author?->stringOrNull('username') ?? $sender?->stringOrNull('login'),
+            authorAvatarUrl: ProviderAvatar::url($sender?->stringOrNull('avatar_url'), $connection->origin()),
+        ), PushedFiles::of($commits, $payload->intOrNull('total_commits')), false);
+    }
+
+    private function pullRequest(GitConnection $connection, JsonObject $payload): ?PullRequestEventReceived
+    {
+        $repository = $this->repository($connection, $payload);
+        $pullRequest = $payload->object('pull_request');
+        $head = $pullRequest->object('head');
+        $base = $pullRequest->object('base');
+        $baseRepoId = $base->objectOrNull('repo')?->intOrNull('id') ?? $repository->external_id;
+        $headRepoId = $head->objectOrNull('repo')?->intOrNull('id');
+        $headSha = $head->stringOrNull('sha') ?? '';
+
+        if ($baseRepoId !== $repository->external_id || ! GitRef::isSha($headSha)) {
+            return null;
+        }
+
+        $action = match ($payload->stringOrNull('action')) {
+            'opened' => PullRequestAction::Opened,
+            'reopened' => PullRequestAction::Reopened,
+            'synchronized' => PullRequestAction::Synchronize,
+            'closed' => PullRequestAction::Closed,
+            'edited' => PullRequestAction::Edited,
+            'label_updated' => PullRequestAction::Labeled,
+            'label_cleared' => PullRequestAction::Unlabeled,
+            default => null,
+        };
+
+        if ($action === null) {
+            return null;
+        }
+
+        $labels = array_map(static fn (JsonObject $label): string => $label->string('name'), $pullRequest->objects('labels'));
+        $isFork = $headRepoId !== $baseRepoId;
+        $author = $pullRequest->objectOrNull('user')?->stringOrNull('login') ?? 'unknown';
+        $label = $action === PullRequestAction::Labeled && in_array('preview', $labels, true) ? 'preview' : null;
+        $sender = $label !== null ? $payload->objectOrNull('sender')?->stringOrNull('login') : null;
+
+        return new PullRequestEventReceived(
+            $connection,
+            $repository->external_id,
+            $action,
+            $payload->intOrNull('number') ?? $pullRequest->int('number'),
+            $pullRequest->stringOrNull('title') ?? '',
+            $headSha,
+            $head->string('ref'),
+            $base->string('ref'),
+            $headRepoId,
+            $baseRepoId,
+            $isFork,
+            mb_substr($author, 0, 100),
+            $isFork && $action->isCodeEvent() ? $this->authorPermission($connection, $repository, $author) : null,
+            $pullRequest->bool('draft'),
+            $pullRequest->bool('merged'),
+            $labels,
+            $label,
+            $sender,
+            $isFork && $sender !== null ? $this->authorPermission($connection, $repository, $sender) : null,
+        );
     }
 
     protected function searchRequest(string $search): array
@@ -186,6 +364,15 @@ final class GiteaProvider extends ApiGitProvider
         $row = $this->row($repository);
 
         return $row instanceof GitRepository ? $row->gitConnection->origin().'/'.$row->full_name.($branch === null ? '' : '/src/branch/'.GitWebPath::branch($branch)) : null;
+    }
+
+    public function fileUrl(RepositoryRef $repository, string $path, string $ref, ?int $line = null): ?string
+    {
+        $row = $this->row($repository);
+
+        return $row instanceof GitRepository
+            ? $row->gitConnection->origin().'/'.$row->full_name.(GitRef::isSha($ref) ? '/src/commit/' : '/src/branch/').GitWebPath::branch($ref).'/'.GitWebPath::path($path).($line === null ? '' : "#L{$line}")
+            : null;
     }
 
     protected function statusRequest(GitRepository $repository, string $sha, string $context, string $state, string $description, ?string $url): array

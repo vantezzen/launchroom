@@ -266,7 +266,7 @@ The [CLI](/docs/reference/cli) works on `./launchroom.json` by default and takes
 |---|---|
 | `launchroom config pull [FILE] [--revision N] [--yes]` | Writes the environment's configuration as a file; asks before overwriting. `--revision` exports a deployed revision |
 | `launchroom config validate [FILE]` | Checks the syntax locally, then validates against the environment; prints each problem as `launchroom.json:14:9` with the excerpt. Exits with code 6 when invalid |
-| `launchroom config diff [FILE]` | A dry run: the staged changes the file would produce, without writing anything |
+| `launchroom config diff [FILE]` | A dry run: the staged changes the file would produce, without writing anything. Domains are checked as in a real apply |
 
 ```sh
 launchroom config validate && launchroom config diff

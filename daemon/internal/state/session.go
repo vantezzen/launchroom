@@ -1,6 +1,7 @@
 package state
 
 import (
+	"errors"
 	"regexp"
 	"strings"
 	"time"
@@ -119,6 +120,63 @@ func (SessionEndReason) ProtocolSchema() ScalarSchema { return enumSchema(endRea
 
 // Validate checks the value.
 func (v SessionEndReason) Validate() error { return checkEnum("end reason", string(v), endReasons) }
+
+// StartFailure says why a session or access could not start, so the
+// dashboard explains it without parsing the task's error text.
+type StartFailure string
+
+// Start failures.
+const (
+	// FailNoShell: the image has none of /bin/bash, /bin/ash, /bin/sh.
+	FailNoShell StartFailure = "no_shell"
+	// FailShellMissing: the image lacks the shell the spec asked for.
+	FailShellMissing StartFailure = "shell_missing"
+	// FailShellStart: the shell exited right away.
+	FailShellStart StartFailure = "shell_start_failed"
+	// FailKindDisabled: the local policy turns this kind off (LR_INTERACTIVE_SESSIONS, LR_REMOTE_ACCESS).
+	FailKindDisabled StartFailure = "kind_disabled"
+	// FailGuardRefused: dockerd-guard refused a Docker call.
+	FailGuardRefused StartFailure = "guard_refused"
+	// FailPolicyRefused: the local policy refused the target.
+	FailPolicyRefused StartFailure = "policy_refused"
+	// FailNotRunning: the workload's container is not running.
+	FailNotRunning StartFailure = "not_running"
+	// FailRelayUnreachable: the realtime relay (Reverb) could not be reached.
+	FailRelayUnreachable StartFailure = "relay_unreachable"
+	// FailSessionKey: the sealed session key could not be opened.
+	FailSessionKey StartFailure = "session_key"
+)
+
+var startFailures = []string{string(FailNoShell), string(FailShellMissing), string(FailShellStart), string(FailKindDisabled),
+	string(FailGuardRefused), string(FailPolicyRefused), string(FailNotRunning), string(FailRelayUnreachable), string(FailSessionKey)}
+
+// ProtocolSchema implements SchemaDescriber.
+func (StartFailure) ProtocolSchema() ScalarSchema { return enumSchema(startFailures) }
+
+// Validate checks the value.
+func (v StartFailure) Validate() error { return checkEnum("start failure", string(v), startFailures) }
+
+// StartError is an error that explains itself with a StartFailure.
+type StartError struct {
+	Code StartFailure
+	Err  error
+}
+
+func (e *StartError) Error() string { return e.Err.Error() }
+
+func (e *StartError) Unwrap() error { return e.Err }
+
+// StartFailureOf is the code of the first StartError in err's chain ("": none).
+func StartFailureOf(err error) StartFailure {
+	var se *StartError
+	if errors.As(err, &se) {
+		return se.Code
+	}
+	return ""
+}
+
+// ErrPolicyRefused marks failures of the local policy (sessions, access).
+var ErrPolicyRefused error = &StartError{Code: FailPolicyRefused, Err: errors.New("refused by this server's policy")}
 
 // SessionCommandType is the command of a SessionCommand.
 type SessionCommandType string
@@ -260,10 +318,15 @@ type SessionResult struct {
 	BytesIn   int64                  `json:"bytesIn" jsonschema:"minimum=0"`
 	BytesOut  int64                  `json:"bytesOut" jsonschema:"minimum=0"`
 	Commands  []SessionCommandResult `json:"commands,omitzero" jsonschema:"maxItems=1000"`
+	// Failure says why the session could not start (omitted otherwise).
+	Failure StartFailure `json:"failure,omitzero"`
 }
 
 func (r *SessionResult) validate(e *errs) {
 	e.check("session.endReason", r.EndReason)
+	if r.Failure != "" {
+		e.check("session.failure", r.Failure)
+	}
 	if r.BytesIn < 0 || r.BytesOut < 0 {
 		e.addf("session.bytes", "must be >= 0")
 	}

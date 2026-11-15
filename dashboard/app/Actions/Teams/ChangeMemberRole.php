@@ -5,11 +5,11 @@ declare(strict_types=1);
 namespace App\Actions\Teams;
 
 use App\Actions\Audit\RecordAuditEvent;
-use App\Actions\Sessions\EndUserSessions;
 use App\Data\Audit\AuditActor;
 use App\Data\Audit\AuditEntryData;
 use App\Enums\AuditAction;
 use App\Enums\TeamRole;
+use App\Events\Teams\MemberAccessChanged;
 use App\Exceptions\DomainRuleViolation;
 use App\Models\Membership;
 use App\Models\User;
@@ -23,7 +23,6 @@ final readonly class ChangeMemberRole
 {
     public function __construct(
         private RecordAuditEvent $audit,
-        private EndUserSessions $endSessions,
     ) {}
 
     public function handle(User $actor, Membership $membership, TeamRole $role, AuditActor $auditActor): void
@@ -61,9 +60,8 @@ final readonly class ChangeMemberRole
             return true;
         });
 
-        // Console and Data sessions are opened under the old role (docs/03 §11.3).
         if ($changed) {
-            $this->endSessions->handle($membership->team_id, $membership->user_id);
+            event(new MemberAccessChanged($membership->team_id, $membership->user_id));
         }
     }
 }

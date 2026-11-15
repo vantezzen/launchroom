@@ -11,11 +11,11 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
-import { ServiceGlyph } from '@/features/canvas/service-glyph';
-import { parseArgv } from '@/features/projects/argv';
+import { parseArgv } from '@/lib/argv';
 import { cn } from '@/lib/utils';
 import { Field, suggestName } from './fields';
 import type { SubmitService } from './types';
+import { ServiceGlyph } from '@/components/service-glyph';
 
 type FormProps = {
     submit: SubmitService;

@@ -4,14 +4,18 @@ declare(strict_types=1);
 
 namespace App\Models\Git;
 
+use App\Contracts\Crypto\SealedRow;
 use App\Contracts\Git\GitAccount;
+use App\Enums\Contracts\HasTransitionTable;
 use App\Enums\Git\GitAuthMethod;
 use App\Enums\Git\GitConnectionStatus;
 use App\Enums\Git\GitProviderKind;
 use App\Enums\Git\GitServerKind;
+use App\Events\Git\GitConnectionsChanged;
 use App\Models\Concerns\BelongsToTeam;
 use App\Models\Concerns\HasPublicId;
-use App\Services\Git\AvatarOrigins;
+use App\Models\Concerns\HasSealedSecret;
+use App\Models\Concerns\HasStatusTransitions;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
@@ -19,13 +23,14 @@ use Illuminate\Database\Eloquent\Attributes\Table;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use InvalidArgumentException;
 
 /**
  * A team's connection to a GitLab, Gitea/Forgejo or plain git server
  * (docs/19 §3). GitLab/Gitea: one per provider account (OAuth or access
  * token). Plain git: one per repository (deploy key + pinned host keys, or a
  * public https remote). Secrets are envelope-encrypted and only decrypted by
- * `App\Services\Git\GitConnectionSecrets`.
+ * App\Services\Crypto\SealedColumns.
  *
  * @property int $id
  * @property string $public_id
@@ -65,9 +70,13 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 ])]
 #[Hidden(['wrapped_dek', 'kek_id', 'oauth_client_secret', 'access_token', 'refresh_token', 'webhook_secret', 'ssh_private_key'])]
 #[Table(name: 'git_connections')]
-final class GitConnection extends Model implements GitAccount
+final class GitConnection extends Model implements GitAccount, SealedRow
 {
     use BelongsToTeam, HasPublicId;
+    use HasSealedSecret;
+
+    /** @use HasStatusTransitions<GitConnectionStatus> */
+    use HasStatusTransitions;
 
     /** @var array<string, mixed> */
     protected $attributes = [
@@ -82,12 +91,8 @@ final class GitConnection extends Model implements GitAccount
 
     protected static function booted(): void
     {
-        // The CSP's img-src lists active connections' origins (docs/19 §7).
-        self::saved(static function (): void {
-            AvatarOrigins::forget();
-        });
         self::deleted(static function (): void {
-            AvatarOrigins::forget();
+            event(new GitConnectionsChanged);
         });
     }
 
@@ -104,6 +109,13 @@ final class GitConnection extends Model implements GitAccount
     public function accountTeamId(): int
     {
         return $this->team_id;
+    }
+
+    public function repositoryName(int $repositoryId): ?string
+    {
+        $name = $this->repositories()->where('external_id', $repositoryId)->value('full_name');
+
+        return is_string($name) ? $name : null;
     }
 
     /**
@@ -136,15 +148,23 @@ final class GitConnection extends Model implements GitAccount
     }
 
     /**
-     * The only way a connection's status changes (docs/10 §2.2 rule 3).
+     * @param  GitConnectionStatus  $from
+     * @param  GitConnectionStatus  $to
      */
-    public function transitionTo(GitConnectionStatus $to, ?string $reason = null): void
+    protected function recordTransition(HasTransitionTable $from, HasTransitionTable $to, ?string $note): void
     {
-        $this->status->assertCanTransitionTo($to);
+        $this->status_reason = $note;
+    }
 
-        $this->status = $to;
-        $this->status_reason = $reason === null ? null : mb_substr($reason, 0, 255);
-        $this->save();
+    /**
+     * @param  GitConnectionStatus  $from
+     * @param  GitConnectionStatus  $to
+     */
+    protected function transitioned(HasTransitionTable $from, HasTransitionTable $to): void
+    {
+        if (($from === GitConnectionStatus::Active) !== ($to === GitConnectionStatus::Active)) {
+            event(new GitConnectionsChanged);
+        }
     }
 
     /**
@@ -165,14 +185,6 @@ final class GitConnection extends Model implements GitAccount
     public function origin(): string
     {
         return rtrim($this->base_url, '/');
-    }
-
-    /**
-     * API root: `<origin>/api/v4` (GitLab) or `<origin>/api/v1` (Gitea).
-     */
-    public function apiUrl(): string
-    {
-        return $this->origin().($this->provider === GitProviderKind::GitLab ? '/api/v4' : '/api/v1');
     }
 
     /**
@@ -204,5 +216,18 @@ final class GitConnection extends Model implements GitAccount
             'webhook_missed_at' => 'datetime',
             'repositories_synced_at' => 'datetime',
         ];
+    }
+
+    public function sealWrapContext(): string
+    {
+        return 'git_connection:'.$this->public_id;
+    }
+
+    public function sealAssociatedData(string $column): string
+    {
+        return match ($column) {
+            'oauth_client_secret', 'access_token', 'refresh_token', 'webhook_secret', 'ssh_private_key' => "git_connection|{$this->team_id}|{$this->public_id}|{$column}",
+            default => throw new InvalidArgumentException("{$column} is not a sealed column."),
+        };
     }
 }

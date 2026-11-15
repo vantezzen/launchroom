@@ -11,10 +11,11 @@ use App\Data\Sessions\OpenSessionData;
 use App\Data\Sessions\QueryHistoryItemData;
 use App\Data\Sessions\SessionHistoryItemData;
 use App\Data\Sessions\SessionReplicaData;
+use App\Enums\Crypto\ProjectCiphertext;
 use App\Enums\DaemonFeature;
-use App\Enums\Permission;
 use App\Enums\Sessions\InteractiveSessionKind;
 use App\Enums\Sessions\SessionEndReason;
+use App\Exceptions\DecryptionFailed;
 use App\Models\Placement;
 use App\Models\ServiceInstance;
 use App\Models\Sessions\DatabaseQuery;
@@ -26,7 +27,7 @@ use App\Services\Sessions\SessionFailures;
 use App\Services\Sessions\SessionRelay;
 use App\Services\Sessions\SessionTargets;
 use Illuminate\Support\Facades\Gate;
-use Throwable;
+use LogicException;
 
 /**
  * Read models of the Console and Data tabs (docs/08 §15).
@@ -91,13 +92,11 @@ final readonly class SessionTabs
      */
     public function recent(ServiceInstance $instance, User $user, InteractiveSessionKind $kind): array
     {
-        $everyone = $user->hasTeamPermission($instance->team_id, Permission::ManageMembers);
-
         return array_values(InteractiveSession::query()
             ->where('service_instance_id', $instance->id)
             ->where('kind', $kind->value)
-            ->unless($everyone, static fn ($query) => $query->where('user_id', $user->id))
-            ->with(['user:id,name', 'server:id,name', 'daemonTask:id,error'])
+            ->visibleTo($user, $instance->team_id)
+            ->with(['user:id,name', 'server:id,name', 'daemonTask:id,error,result'])
             ->latest('id')
             ->limit(self::RECENT)
             ->get()
@@ -126,7 +125,7 @@ final readonly class SessionTabs
             canEnd: $session->status->isLive() && Gate::forUser($user)->allows('end', $session),
             hasRecording: ! $session->status->isLive() && $session->record && Gate::forUser($user)->allows('viewRecording', $session),
             failure: in_array($session->end_reason, [SessionEndReason::Error, SessionEndReason::Refused, SessionEndReason::Exited], true)
-                ? SessionFailures::sentence($session->daemonTask?->error)
+                ? SessionFailures::sentence($session->daemonTask?->result?->session?->failure, $session->daemonTask?->error, $session->shell)
                 : null,
         );
     }
@@ -147,8 +146,9 @@ final readonly class SessionTabs
             ->get()
             ->map(function (DatabaseQuery $query) use ($project): QueryHistoryItemData {
                 try {
-                    $statement = $this->keyring->decryptQuery($project, $query->public_id, $query->statement);
-                } catch (Throwable) {
+                    $statement = $this->keyring->decrypt(ProjectCiphertext::Query, $project, $query->public_id, $query->statement);
+                } catch (DecryptionFailed|LogicException) {
+                    // History pruned with its key before rotation covered SQL history stays unreadable.
                     $statement = null;
                 }
 

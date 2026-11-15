@@ -29,6 +29,8 @@ use App\Http\Controllers\Teams\InvitationController;
 use App\Http\Controllers\Teams\MembershipController;
 use App\Http\Controllers\Teams\TeamController;
 use App\Http\Controllers\Teams\TeamSettingsController;
+use App\Http\Middleware\LocalOnly;
+use App\Models\Volume;
 use App\Support\PublicId;
 use Illuminate\Routing\RedirectController;
 use Illuminate\Support\Facades\Route;
@@ -49,8 +51,6 @@ Route::middleware('throttle:10,1')->group(function (): void {
     Route::post('setup', [SetupController::class, 'store'])->name('setup.store');
 });
 
-// Docker token-auth realm for the registry (docs/05 §6): public by necessity,
-// no session; the Basic password must be a registry token this dashboard issued.
 // The launchroom.json JSON Schema (docs/18 §2.2): public, no instance data.
 Route::get('schema/launchroom.v1.json', ConfigSchemaController::class)
     ->middleware('throttle:60,1')
@@ -63,6 +63,8 @@ Route::get('up/version', ClientVersionController::class)
     ->middleware('throttle:240,1')
     ->name('client-version');
 
+// Docker token-auth realm for the registry (docs/05 §6): public by necessity,
+// no session; the Basic password must be a registry token this dashboard issued.
 Route::get('registry/token', RegistryTokenController::class)
     ->withoutMiddleware('web')
     ->middleware('throttle:120,1')
@@ -106,7 +108,6 @@ Route::middleware(['auth', 'verified'])->group(function (): void {
         ->middleware('throttle:10,1')
         ->name('teams.store');
 
-    // The team activity page in the sidebar.
     Route::get('activity', TeamActivityController::class)->name('activity.index');
 
     // Request analytics of every project (docs/15 §5.4).
@@ -121,13 +122,15 @@ Route::middleware(['auth', 'verified'])->group(function (): void {
         ->middleware('throttle:60,1')
         ->name('logs.entries');
 
-    // Every design primitive in both themes, local development only.
-    if (app()->isLocal()) {
+    // Design sheets: every primitive in both themes, and the visual
+    // primitives with sample data (docs/design-system.md).
+    Route::middleware(LocalOnly::class)->group(function (): void {
         Route::get('dev/design', InertiaPage::class)
             ->defaults('component', 'dev/design')
             ->defaults('props', [])
             ->name('dev.design');
-    }
+        Route::get('dev/design/visuals', DesignVisualsController::class)->name('dev.design.visuals');
+    });
 
     Route::get('servers', [ServerController::class, 'index'])->name('servers.index');
     Route::get('servers/new', [ServerEnrollmentController::class, 'create'])->name('servers.create');
@@ -192,24 +195,19 @@ Route::middleware(['auth', 'verified'])->group(function (): void {
         ->middleware('throttle:6,1')
         ->name('servers.move.store');
     Route::post('servers/{server}/move/{move}/cancel', [ServerMoveController::class, 'cancel'])
-        ->where('move', PublicId::routePattern('smv'))
         ->middleware('throttle:10,1')
         ->name('servers.move.cancel');
     Route::post('servers/{server}/move/{move}/items/{item}/retry', [ServerMoveController::class, 'retry'])
-        ->where(['move' => PublicId::routePattern('smv'), 'item' => PublicId::routePattern('smi')])
         ->middleware('throttle:20,1')
         ->name('servers.move.retry');
     Route::post('servers/{server}/move/{move}/retire', [ServerMoveController::class, 'retire'])
-        ->where('move', PublicId::routePattern('smv'))
         ->middleware('throttle:6,1')
         ->name('servers.move.retire');
-    Route::post('servers/{server}/retired-volumes/{volume}/confirm', [RetiredVolumeController::class, 'confirm'])
-        ->where('volume', 'vol_[0-9A-HJKMNP-TV-Z]{26}')
+    // Not {volume}: the retired volume's row may already be gone.
+    Route::post('servers/{server}/retired-volumes/{retiredVolume}/confirm', [RetiredVolumeController::class, 'confirm'])
+        ->where('retiredVolume', PublicId::routePattern(Volume::publicIdPrefix()))
         ->middleware('throttle:20,1')
         ->name('servers.retired-volumes.confirm');
-
-    // Local-only showcase of the visual primitives; 404 elsewhere.
-    Route::get('dev/design/visuals', DesignVisualsController::class)->name('dev.design.visuals');
 
     Route::get('settings/team', [TeamSettingsController::class, 'edit'])->name('team.edit');
     Route::post('settings/team/invitations', [InvitationController::class, 'store'])

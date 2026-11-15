@@ -99,7 +99,7 @@ final readonly class ServerRoleHints
     private function fleet(Team $team, ?Server $except = null): Collection
     {
         return $team->servers()
-            ->whereNotIn('status', [ServerStatus::Revoked, ServerStatus::PendingApproval])
+            ->approved()
             ->whereNotNull('approved_at')
             ->when($except instanceof Server, static fn ($query) => $query->whereKeyNot($except?->getKey()))
             ->get();

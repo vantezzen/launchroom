@@ -7,6 +7,8 @@ namespace App\Actions\Backups;
 use App\Actions\Audit\RecordAuditEvent;
 use App\Data\Audit\AuditActor;
 use App\Data\Audit\AuditEntryData;
+use App\Data\Protocol\V1\Tasks\BackupDestination as DestinationSpec;
+use App\Data\Protocol\V1\Tasks\VerifyRestoreSpec;
 use App\Data\Services\DatabaseSource;
 use App\Enums\AuditAction;
 use App\Enums\Backups\BackupRunStatus;
@@ -51,7 +53,7 @@ final readonly class StartVerification
             $instance = ServiceInstance::query()->whereKey($instance->id)->with(['service', 'environment.project', 'volumes'])->lockForUpdate()->firstOrFail();
 
             $inFlight = BackupVerification::query()->where('service_instance_id', $instance->id)
-                ->whereIn('status', [VerificationStatus::Pending->value, VerificationStatus::Running->value])->first();
+                ->whereIn('status', VerificationStatus::nonTerminal())->first();
 
             if ($inFlight instanceof BackupVerification) {
                 return $inFlight;
@@ -80,8 +82,8 @@ final readonly class StartVerification
                 throw DomainRuleViolation::on('daemon', $unsupported);
             }
 
-            $spec = $this->spec($instance, $run);
-            $task = $this->tasks->verify($run->destination()->firstOrFail(), $server, $instance->team_id, $spec);
+            $destination = $run->destination()->firstOrFail();
+            $task = $this->tasks->verify($destination, $server, $instance->team_id, $this->spec($instance, $run, $this->tasks->destination($destination)));
 
             $verification = BackupVerification::query()->create([
                 'team_id' => $instance->team_id,
@@ -135,18 +137,14 @@ final readonly class StartVerification
     }
 
     /**
-     * @return array<string, mixed>
+     * @throws DomainRuleViolation
      */
-    private function spec(ServiceInstance $instance, BackupRun $run): array
+    private function spec(ServiceInstance $instance, BackupRun $run, DestinationSpec $destination): VerifyRestoreSpec
     {
-        $resources = [
-            'cpus' => config()->float('launchroom.backups.verification.cpus'),
-            'memoryMb' => config()->integer('launchroom.backups.verification.memory_mb'),
-            'pids' => config()->integer('launchroom.backups.verification.pids'),
-        ];
+        $resources = BackupTasks::verificationResources();
 
         if ($run->subject === BackupSubject::Volume) {
-            return ['kind' => 'volume', 'snapshot' => $run->snapshot_id, 'resources' => $resources];
+            return new VerifyRestoreSpec('volume', (string) $run->snapshot_id, $destination, $resources);
         }
 
         $source = DatabaseWorkloads::source($instance);
@@ -157,14 +155,15 @@ final readonly class StartVerification
             throw DomainRuleViolation::on('service', 'Deploy this database first: its image is used to verify the backup.');
         }
 
-        $spec = [
-            'kind' => $run->subject === BackupSubject::BaseBackup ? 'base_backup' : 'database',
-            'snapshot' => $run->snapshot_id,
-            'engine' => DatabaseWorkloads::daemonEngine($source),
-            'image' => $deployment->image,
-            'dataPath' => $volume->mount_path,
-            'resources' => $resources,
-        ];
+        $spec = new VerifyRestoreSpec(
+            kind: $run->subject === BackupSubject::BaseBackup ? 'base_backup' : 'database',
+            snapshot: (string) $run->snapshot_id,
+            destination: $destination,
+            resources: $resources,
+            engine: $source->engine->value,
+            image: $deployment->image,
+            dataPath: $volume->mount_path,
+        );
 
         if ($run->subject === BackupSubject::BaseBackup) {
             $env = $this->pointInTime->postgresEnv($instance);
@@ -173,12 +172,10 @@ final readonly class StartVerification
                 throw DomainRuleViolation::on('service', 'This database’s POSTGRES_USER or POSTGRES_DB can’t be used to verify it.');
             }
 
-            $spec += [
-                'dataDirectory' => $this->pointInTime->dataDirectory($source->version),
-                'walTags' => $this->pointInTime->walTags($instance),
-                'databaseUser' => $env['POSTGRES_USER'],
-                'databaseName' => $env['POSTGRES_DB'],
-            ];
+            $spec->dataDirectory = $this->pointInTime->dataDirectory($source->version);
+            $spec->walTags = $this->pointInTime->walTags($instance);
+            $spec->databaseUser = $env['POSTGRES_USER'];
+            $spec->databaseName = $env['POSTGRES_DB'];
         }
 
         return $spec;

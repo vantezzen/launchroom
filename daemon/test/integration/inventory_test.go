@@ -46,7 +46,7 @@ func TestInventory(t *testing.T) {
 		if err != nil {
 			t.Fatalf("inventory: %v", err)
 		}
-		done := state.TaskCompletion{TypeMeta: state.NewTypeMeta(state.KindTaskCompletion), Attempt: 1, Outcome: state.OutcomeSucceeded, Inventory: res}
+		done := state.TaskCompletion{TypeMeta: state.NewTypeMeta(state.KindTaskCompletion), Attempt: 1, Outcome: state.OutcomeSucceeded, TaskResults: state.TaskResults{Inventory: res}}
 		if err := done.Validate(); err != nil {
 			t.Fatalf("completion invalid: %v", err)
 		}
@@ -96,9 +96,6 @@ func TestInventory(t *testing.T) {
 			if c == nil || c.Scope != want.scope || c.Presence != want.presence || c.Direct != want.direct {
 				t.Errorf("%s: %+v", want.name, c)
 			}
-		}
-		if c := find(res, state.EcosystemBinary, "busybox"); c == nil || c.Kind != state.ComponentRuntime {
-			t.Logf("busybox binary: %+v", c)
 		}
 	})
 

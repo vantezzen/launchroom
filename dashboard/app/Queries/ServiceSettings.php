@@ -10,7 +10,6 @@ use App\Data\Canvas\DetectedPlanData;
 use App\Data\Canvas\DnsRecordData;
 use App\Data\Canvas\DomainData;
 use App\Data\Canvas\EdgeServerData;
-use App\Data\Canvas\PlacementIssueData;
 use App\Data\Canvas\PlacementPreviewServerData;
 use App\Data\Canvas\PlacementServerOptionData;
 use App\Data\Canvas\PlanStatusData;
@@ -22,10 +21,12 @@ use App\Data\Canvas\VolumeData;
 use App\Data\Canvas\WorkloadData;
 use App\Data\ConfigAsCode\ManagedByFileData;
 use App\Data\Domains\CertificateData;
-use App\Data\Domains\DnsCheckData;
+use App\Data\Forms\NumberRangeData;
+use App\Data\Protocol\V1\BuildSummary;
 use App\Data\Protocol\V1\NextBuildInfo;
 use App\Data\Servers\DeviceData;
 use App\Data\Services\DatabaseSource;
+use App\Data\Services\DeployLimitsData;
 use App\Data\Services\GitSource;
 use App\Data\Services\ImageSource;
 use App\Data\Services\ScalingSettings;
@@ -35,18 +36,22 @@ use App\Data\Specs\ServiceSpec;
 use App\Drivers\DatabaseEngines\DatabaseEngines;
 use App\Enums\DomainKind;
 use App\Enums\ServerRole;
-use App\Enums\ServerStatus;
 use App\Enums\ServiceKind;
+use App\Enums\ServiceSourceType;
 use App\Models\ConfigAsCode\EnvironmentConfigFile;
 use App\Models\Deployment;
 use App\Models\Domain;
+use App\Models\Environment;
 use App\Models\InstanceSettings;
 use App\Models\Placement;
 use App\Models\Server;
+use App\Models\Service;
 use App\Models\ServiceInstance;
 use App\Models\User;
 use App\Models\Volume;
 use App\Models\VolumeMount;
+use App\Queries\ConfigAsCode\ConfigFileLinks;
+use App\Queries\Metrics\LatestSample;
 use App\Scheduling\PlacementFailed;
 use App\Scheduling\PlacementRequest;
 use App\Scheduling\SchedulableServer;
@@ -54,8 +59,8 @@ use App\Scheduling\Scheduler;
 use App\Services\Deployments\Placer;
 use App\Services\Dns\EdgeAddresses;
 use App\Services\Volumes\StagedVolumes;
-use App\Support\Servers\HostCapacity;
 use App\Support\Servers\ServerLocations;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 
@@ -70,6 +75,7 @@ final readonly class ServiceSettings
         private EdgeAddresses $edges,
         private Placer $placer,
         private DockerfileGenerationView $dockerfiles,
+        private ConfigFileLinks $configLinks,
     ) {}
 
     /**
@@ -86,15 +92,15 @@ final readonly class ServiceSettings
             ->whereNotNull('plan')
             ->latest('id')
             ->first();
-        $plan = ServicePlanData::forInstance($instance);
+        $plan = $instance->plan;
         $definedKeys = $this->definedKeys($instance, $current);
-        $detected = DetectedPlanData::fromStored($instance->plan['summary'] ?? null, $definedKeys)
-            ?? DetectedPlanData::fromStored($latestPlanned?->plan['summary'] ?? null, $definedKeys);
+        $summary = $plan->summary ?? $latestPlanned?->plan?->summary;
+        $detected = $summary instanceof BuildSummary ? DetectedPlanData::fromSummary($summary, $definedKeys) : null;
 
         // Plan previews don't run the build, so the Next.js adapter's report
         // comes from the latest build that produced one.
         if ($detected instanceof DetectedPlanData && ! $detected->next instanceof NextBuildInfo) {
-            $detected->next = DetectedPlanData::nextFromStored($latestPlanned?->plan['summary'] ?? null);
+            $detected->next = $latestPlanned?->plan?->summary?->next;
             $detected->frameworkVersion ??= $detected->next?->nextVersion;
         }
 
@@ -124,7 +130,7 @@ final readonly class ServiceSettings
                     dnsRecords: $custom ? array_map(static fn (array $record): DnsRecordData => new DnsRecordData($record[0], $domain->hostname, $record[1]), $records) : [],
                     staged: ! in_array($domain->hostname, $appliedHosts, true),
                     canDelete: $gate->allows('delete', $domain),
-                    verification: $custom ? DnsCheckData::fromStored($domain->verification) : null,
+                    verification: $custom ? $domain->verification : null,
                     wwwRedirect: in_array('www.'.$domain->hostname, $hostnames, true),
                     // Pointing at the generated name follows the edges by itself
                     // (docs/05 §5); the UI recommends it, except at a zone apex,
@@ -153,7 +159,9 @@ final readonly class ServiceSettings
             defaultRailpackVersion: config()->string('launchroom.builds.railpack_version'),
             build: $instance->build,
             deploy: $instance->deploy,
+            deployLimits: DeployLimitsData::make(),
             scaling: $instance->scaling,
+            replicasRange: NumberRangeData::of(ScalingSettings::class, 'replicas'),
             enabled: $instance->enabled,
             domains: $domains,
             privateHost: $service->slug,
@@ -172,7 +180,7 @@ final readonly class ServiceSettings
             appsDomain: $appsDomain,
             placement: $this->placement($instance),
             edges: $this->edges($instance->team_id),
-            configFile: ManagedByFileData::for(EnvironmentConfigFile::query()->where('environment_id', $environment->id)->first(), $service->public_id),
+            configFile: $this->configFile($environment, $service),
             dockerfileGeneration: $service->kind === ServiceKind::App ? $this->dockerfiles->panel($instance, $user) : null,
         );
     }
@@ -219,8 +227,7 @@ final readonly class ServiceSettings
     {
         return array_values(Server::query()
             ->where('team_id', $teamId)
-            ->whereIn('status', [ServerStatus::Online->value, ServerStatus::Unreachable->value])
-            ->whereJsonContains('roles', ServerRole::Edge->value)
+            ->reachableEdges()
             ->orderByDesc('is_control_plane')
             ->orderBy('id')
             ->get()
@@ -251,7 +258,7 @@ final readonly class ServiceSettings
             }
 
             $reason = Scheduler::rejection($view, $request);
-            $available = HostCapacity::availableMemory($server);
+            $available = $server->availableMemory();
             $options[] = new PlacementServerOptionData(
                 id: $server->public_id,
                 name: $server->name,
@@ -281,7 +288,7 @@ final readonly class ServiceSettings
 
         return new ServicePlacementData(
             servers: $options,
-            issue: PlacementIssueData::fromStored($instance->placement_issue),
+            issue: $instance->placement_issue,
             environmentKind: $instance->environment->kind->value,
             planError: $planError,
             stateful: $request->stateful,
@@ -356,7 +363,7 @@ final readonly class ServiceSettings
         $rows = DB::table('server_metric_samples')
             ->whereIn('server_id', $serverIds)
             ->where('resolution', 1)
-            ->where('at', '>=', now()->subMinutes(ServerMetrics::CURRENT_WITHIN_MINUTES))
+            ->where('at', '>=', LatestSample::cutoff(CarbonImmutable::now()))
             ->orderBy('at')
             ->get(['server_id', 'cpu_pct', 'mem_used_mb']);
 
@@ -410,23 +417,32 @@ final readonly class ServiceSettings
 
         return match (true) {
             $source instanceof GitSource => new ServiceSourceData(
-                type: 'git',
+                type: ServiceSourceType::Git,
                 repository: $source->fullName,
                 rootDirectory: $source->rootDirectory,
                 branch: $instance->branch_override ?? $environmentBranch,
                 branchOverride: $instance->branch_override,
                 environmentBranch: $environmentBranch,
                 parentName: $service->parent?->name,
-                provider: $source->isUnconnectedPlainGit() ? 'git' : $source->provider,
+                provider: $source->provider,
             ),
-            $source instanceof ImageSource => new ServiceSourceData(type: 'image', image: $source->reference),
+            $source instanceof ImageSource => new ServiceSourceData(type: ServiceSourceType::Image, image: $source->reference),
             $source instanceof DatabaseSource => new ServiceSourceData(
-                type: 'database',
+                type: ServiceSourceType::Database,
                 engine: $source->engine,
                 version: $source->version,
                 versions: $this->engines->for($source->engine)->versions(),
             ),
             default => new ServiceSourceData(type: $source->type()),
         };
+    }
+
+    private function configFile(Environment $environment, Service $service): ?ManagedByFileData
+    {
+        $record = EnvironmentConfigFile::query()->where('environment_id', $environment->id)->first();
+
+        return ManagedByFileData::for($record, $service->public_id, fn (?int $line): ?string => $record instanceof EnvironmentConfigFile
+            ? $this->configLinks->url($service->project, $record->repository, $record->commit_sha, $record->path, $line)
+            : null);
     }
 }

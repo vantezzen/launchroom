@@ -6,15 +6,14 @@ namespace App\Services\Ingress;
 
 use App\Enums\DnsProvider;
 use App\Enums\IngressCredentialPurpose;
-use App\Services\Crypto\Exceptions\DecryptionFailed;
+use App\Exceptions\DecryptionFailed;
 use SensitiveParameter;
 
 /**
  * The DNS provider's credentials (docs/05 §5, D47): one envelope-encrypted
  * `ingress_credentials` row (purpose `dns_token`, IngressSecrets) holding a
  * JSON object of the provider's values (DnsProvider::keys), prefixed with a
- * format marker. A row written before D47 holds the bare API token and
- * reads as `{"token": …}`.
+ * format marker.
  */
 final readonly class DnsCredentials
 {
@@ -46,11 +45,7 @@ final readonly class DnsCredentials
             return null;
         }
 
-        if (! str_starts_with($stored, self::FORMAT)) {
-            return ['token' => $stored];
-        }
-
-        $decoded = json_decode(substr($stored, strlen(self::FORMAT)), true);
+        $decoded = str_starts_with($stored, self::FORMAT) ? json_decode(substr($stored, strlen(self::FORMAT)), true) : null;
 
         if (! is_array($decoded)) {
             throw DecryptionFailed::malformed();

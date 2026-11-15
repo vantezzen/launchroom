@@ -44,7 +44,7 @@ final readonly class RecordLinkQuality
         $peers = Server::query()
             ->whereIn('public_id', array_values(array_unique($publicIds)))
             ->whereKeyNot($server->id)
-            ->whereNull('revoked_at')
+            ->notRevoked()
             ->when(! $server->is_control_plane, fn ($query) => $query->where(
                 fn ($q) => $q->where('team_id', $server->team_id)->orWhere('is_control_plane', true),
             ))

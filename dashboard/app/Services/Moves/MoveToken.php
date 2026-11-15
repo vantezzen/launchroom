@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Moves;
 
 use App\Support\Crypto\PublicKeyFormat;
+use App\Support\PublicId;
 use SensitiveParameter;
 
 /**
@@ -49,7 +50,7 @@ final class MoveToken
     {
         $parts = explode('.', trim($token));
 
-        if (count($parts) !== 5 || $parts[0] !== self::PREFIX || preg_match('/^cpm_[0-9A-HJKMNP-TV-Z]{26}$/D', $parts[2]) !== 1) {
+        if (count($parts) !== 5 || $parts[0] !== self::PREFIX || ! PublicId::isValid($parts[2], 'cpm')) {
             return null;
         }
 

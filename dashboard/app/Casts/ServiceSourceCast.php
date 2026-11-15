@@ -4,17 +4,12 @@ declare(strict_types=1);
 
 namespace App\Casts;
 
-use App\Data\Services\DatabaseSource;
-use App\Data\Services\GitSource;
-use App\Data\Services\ImageSource;
 use App\Data\Services\ServiceSource;
+use App\Data\Services\ServiceSources;
 use Illuminate\Contracts\Database\Eloquent\CastsAttributes;
 use Illuminate\Database\Eloquent\Model;
-use InvalidArgumentException;
 
 /**
- * Casts `services.source` to the ServiceSource union (`type` discriminator).
- *
  * @implements CastsAttributes<ServiceSource, ServiceSource>
  */
 final class ServiceSourceCast implements CastsAttributes
@@ -30,7 +25,7 @@ final class ServiceSourceCast implements CastsAttributes
 
         $data = json_decode($value, true, 16, JSON_THROW_ON_ERROR);
 
-        return is_array($data) ? self::fromArray($data) : null;
+        return is_array($data) ? ServiceSources::fromArray($data) : null;
     }
 
     /**
@@ -42,30 +37,6 @@ final class ServiceSourceCast implements CastsAttributes
             return null;
         }
 
-        return json_encode(self::toArray($value), JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
-    }
-
-    /**
-     * @param  array<mixed>  $data
-     */
-    public static function fromArray(array $data): ServiceSource
-    {
-        $type = $data['type'] ?? null;
-        unset($data['type']);
-
-        return match ($type) {
-            'git' => GitSource::from($data),
-            'image' => ImageSource::from($data),
-            'database' => DatabaseSource::from($data),
-            default => throw new InvalidArgumentException('Unknown service source type.'),
-        };
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    public static function toArray(ServiceSource $source): array
-    {
-        return ['type' => $source->type(), ...$source->toArray()];
+        return json_encode(ServiceSources::toArray($value), JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
     }
 }

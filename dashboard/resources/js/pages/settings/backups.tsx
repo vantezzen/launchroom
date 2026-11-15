@@ -6,8 +6,7 @@ import {
 import type { InstanceBackups } from '@/features/backups/control-plane-section';
 import { DestinationsSection } from '@/features/backups/destinations-section';
 import { SchedulesSection } from '@/features/backups/schedules-section';
-import { settings } from '@/routes/backups';
-import { index as settingsHome } from '@/routes/settings';
+import SettingsLayout from '@/features/settings/settings-layout';
 
 type Props = {
     destinations: App.Data.Backups.BackupDestinationData[];
@@ -60,12 +59,4 @@ export default function BackupSettings({
     );
 }
 
-BackupSettings.layout = {
-    breadcrumbs: [
-        { title: 'Settings', href: settingsHome() },
-        {
-            title: 'Backups',
-            href: settings(),
-        },
-    ],
-};
+BackupSettings.layout = SettingsLayout;

@@ -7,6 +7,7 @@ use App\Enums\Moves\MoveItemStatus;
 use App\Enums\Moves\ServerMoveStatus;
 use App\Services\Moves\MovePlanner;
 use App\Services\Moves\MoveToken;
+use App\Support\ByteSize;
 
 /*
 | The state machines of server moves and the control-plane move (docs/14
@@ -89,5 +90,5 @@ test('the claim code depends on the new machine’s key', function (): void {
 test('the downtime estimate copies the data out and in at the assumed rate', function (): void {
     expect(MovePlanner::downtimeFor(0))->toBe(MovePlanner::OVERHEAD_SECONDS)
         ->and(MovePlanner::downtimeFor(1_000_000_000))->toBe(MovePlanner::OVERHEAD_SECONDS + 100)
-        ->and(MovePlanner::size(1_500_000_000))->toBe('1.5 GB');
+        ->and(ByteSize::format(1_500_000_000))->toBe('1.5 GB');
 });

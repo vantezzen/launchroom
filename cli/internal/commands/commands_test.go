@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -16,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/vantezzen/launchroom/cli/internal/api"
 	"github.com/vantezzen/launchroom/cli/internal/config"
 	"github.com/vantezzen/launchroom/cli/internal/exitcode"
 	"github.com/vantezzen/launchroom/cli/internal/link"
@@ -38,6 +40,7 @@ type fakeAPI struct {
 	deployments []map[string]any
 	finalStatus string
 	secretsOK   bool
+	logQueries  []url.Values
 }
 
 func newFakeAPI(t *testing.T) *fakeAPI {
@@ -142,6 +145,12 @@ func newFakeAPI(t *testing.T) *fakeAPI {
 		f.deployments = append(f.deployments, body)
 		f.mu.Unlock()
 		writeJSON(w, 202, map[string]any{"data": deployment("queued", false)})
+	}))
+	mux.HandleFunc("GET /api/v1/environments/env_1/logs", auth(func(w http.ResponseWriter, r *http.Request) {
+		f.mu.Lock()
+		f.logQueries = append(f.logQueries, r.URL.Query())
+		f.mu.Unlock()
+		writeJSON(w, 200, map[string]any{"data": []any{}, "meta": map[string]any{"nextCursor": nil, "cursor": 0}})
 	}))
 	mux.HandleFunc("GET /api/v1/deployments/dpl_1", auth(func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, 200, map[string]any{"data": deployment(f.finalStatus, true)})
@@ -311,6 +320,31 @@ func TestNotLinkedIsUsage(t *testing.T) {
 	}
 	if code := h.run("deploy", "--sha", "abc"); code != exitcode.Usage {
 		t.Fatalf("short sha: exit %d", code)
+	}
+}
+
+func TestCommandLineMistakesAreUsage(t *testing.T) {
+	f := newFakeAPI(t)
+	h := newHarness(t, f.srv.URL)
+	h.linkTo(t, f.srv.URL)
+	for _, args := range [][]string{{"bogus"}, {"deploy", "extra"}, {"logs", "--since", "1y"}} {
+		if code := h.run(args...); code != exitcode.Usage {
+			t.Errorf("%v: exit %d, want %d (%s)", args, code, exitcode.Usage, h.err)
+		}
+	}
+}
+
+func TestLogsAcceptsEveryAPIRange(t *testing.T) {
+	f := newFakeAPI(t)
+	h := newHarness(t, f.srv.URL)
+	h.linkTo(t, f.srv.URL)
+	for _, r := range api.LogRangeValues {
+		if code := h.run("logs", "--since", r); code != 0 {
+			t.Fatalf("--since %s: exit %d (%s)", r, code, h.err)
+		}
+	}
+	if got := f.logQueries[len(f.logQueries)-1].Get("range"); got != "30d" {
+		t.Fatalf("last range sent = %q, want 30d", got)
 	}
 }
 

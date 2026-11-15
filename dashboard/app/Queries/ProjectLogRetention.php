@@ -28,8 +28,7 @@ final class ProjectLogRetention
     {
         $environments = $project->environments()
             ->where('kind', '!=', EnvironmentKind::Preview->value)
-            ->orderByRaw("case kind when 'production' then 0 else 1 end")
-            ->orderBy('name')
+            ->inDisplayOrder()
             ->get();
         $stored = DB::table('log_chunks')
             ->where('team_id', $project->team_id)

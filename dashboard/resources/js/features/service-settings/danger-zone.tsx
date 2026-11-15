@@ -2,11 +2,11 @@ import { router } from '@inertiajs/react';
 import { useState } from 'react';
 import { ConfirmPopover } from '@/components/patterns/confirm-popover';
 import { Button } from '@/components/ui/button';
-import { SettingsCard, SettingsRow } from '@/features/settings/settings-card';
 import services from '@/routes/projects/services';
 import { RemoveServiceDialog } from './remove-service-dialog';
 import { SettingsPage } from './section';
 import type { SettingsContext } from './settings-context';
+import { SettingsCard, SettingsRow } from '@/components/settings/settings-card';
 
 /**
  * Danger zone: disable (keeps everything, stops it with the next deploy)

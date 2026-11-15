@@ -173,13 +173,13 @@ func TestEnginePullFailsWhenTheRegistryDoesNotAnswer(t *testing.T) {
 }
 
 func TestEnginePullKeepsGoingWhileProgressing(t *testing.T) {
-	// Each message comes within the idle timeout; the whole pull takes longer.
-	msgs := make([]string, 0, 8)
-	for i := range 8 {
+	// Each message comes well within the idle timeout; the whole pull takes longer.
+	msgs := make([]string, 0, 10)
+	for i := range 10 {
 		msgs = append(msgs, fmt.Sprintf(`{"status":"Downloading","id":"aaaaaaaaaaaa","progressDetail":{"current":%d,"total":400}}`, (i+1)*10))
 	}
 	slow := &slowDaemon{pullDaemon: pullDaemon{msgs: msgs}, every: 100 * time.Millisecond}
-	e := pullEngine(t, slow, EngineOptions{PullIdleTimeout: 300 * time.Millisecond})
+	e := pullEngine(t, slow, EngineOptions{PullIdleTimeout: 500 * time.Millisecond})
 	if err := e.PullImage(t.Context(), pullRef); err != nil {
 		t.Fatal(err)
 	}

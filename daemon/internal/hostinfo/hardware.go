@@ -14,7 +14,6 @@ import (
 	"sync"
 	"time"
 	"unicode"
-	"unicode/utf8"
 
 	"github.com/vantezzen/launchroom/daemon/internal/docker"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
@@ -398,11 +397,7 @@ func FactText(s string) state.FactText {
 		return r
 	}, s)
 	s = strings.Join(strings.Fields(s), " ")
-	for len(s) > 128 {
-		_, size := utf8.DecodeLastRuneInString(s)
-		s = s[:len(s)-size]
-	}
-	s = strings.TrimSpace(s)
+	s = strings.TrimSpace(state.Clip(s, 128))
 	switch strings.ToLower(s) {
 	case "to be filled by o.e.m.", "default string", "not specified", "none", "n/a", "system product name",
 		"system manufacturer", "o.e.m.", "oem", "unknown", "type1productconfigid", "type2 - board vendor name1":
@@ -412,15 +407,6 @@ func FactText(s string) state.FactText {
 		return ""
 	}
 	return state.FactText(s)
-}
-
-// MemoryTotalMB is MemTotal from <procRoot>/meminfo (0 if unknown).
-func MemoryTotalMB(procRoot string) int {
-	m := (&Collector{o: Options{ProcRoot: procRoot}}).memory()
-	if m == nil {
-		return 0
-	}
-	return int(m.TotalMB)
 }
 
 // HardwareTracker decides when reports carry the hardware facts: when they

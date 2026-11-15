@@ -8,6 +8,7 @@ use App\Data\Attributes\ChangeAffects;
 use App\Data\Attributes\Promotion;
 use App\Enums\ChangeEffect;
 use App\Enums\PromotionClass;
+use App\Support\Protocol\Grammar;
 use App\Support\PublicId;
 use Spatie\LaravelData\Attributes\Validation\In;
 use Spatie\LaravelData\Attributes\Validation\Max;
@@ -50,7 +51,7 @@ final class BuildSettings extends Data
     {
         return [
             'disabledDecisions' => ['array', 'max:64'],
-            'disabledDecisions.*' => ['string', 'distinct', 'regex:/^[a-z0-9][a-z0-9-]{0,62}$/D'],
+            'disabledDecisions.*' => ['string', 'distinct', 'regex:'.Grammar::SLUG],
             'generatedDockerfile' => ['nullable', 'string', 'regex:'.PublicId::regex('dfg')],
         ];
     }

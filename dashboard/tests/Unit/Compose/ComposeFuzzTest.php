@@ -3,7 +3,8 @@
 declare(strict_types=1);
 
 use App\Data\Blueprints\BlueprintService;
-use App\Services\Blueprints\EngineVersions;
+use App\Drivers\DatabaseEngines\DatabaseEngines;
+use App\Enums\WorkloadCapability;
 use App\Support\Blueprints\BlueprintValidator;
 use App\Support\Compose\ComposeRejected;
 use App\Support\Compose\ComposeTranslator;
@@ -19,17 +20,17 @@ use Symfony\Component\Yaml\Yaml;
 function bpFuzzOptions(int $seed): TranslationOptions
 {
     return new TranslationOptions(
+        engines: resolve(DatabaseEngines::class),
         values: $seed % 3 === 0 ? ['DB_PASSWORD' => 'x', 'PORT' => '8080'] : [],
         files: $seed % 2 === 0 ? ['.env' => "A=1\n"] : [],
         convertBindMounts: $seed % 2 === 1,
         repository: $seed % 4 !== 0,
-        engines: resolve(EngineVersions::class)->all(),
     );
 }
 
 function bpAssertSafe(BlueprintService $service): void
 {
-    expect(array_diff($service->capabilities, BlueprintValidator::CAPABILITIES))->toBe([]);
+    expect(array_diff($service->capabilities, WorkloadCapability::values()))->toBe([]);
 
     foreach ($service->volumes as $path) {
         expect($path)->toStartWith('/')

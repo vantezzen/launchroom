@@ -1,8 +1,9 @@
+import { vocabulary } from '@/lib/vocabulary';
 import { Link } from '@inertiajs/react';
 import { Plus } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { AlertsChip } from '@/components/attention-chip';
-import { CardChip, ObjectCard } from '@/components/cards';
+import { CardChip, ObjectCard } from '@/components/cards/object-card';
 import { colorForSlot } from '@/components/charts/palette';
 import { Sparkline } from '@/components/charts/sparkline';
 import { DeviceImage } from '@/components/devices/device-image';
@@ -17,12 +18,9 @@ import {
 import {
     deviceKind,
     deviceStatus,
-    formatMb,
     formatUsedOf,
     placeLabel,
     serverAlerts,
-    shortAge,
-    shortDuration,
     specParts,
 } from '@/features/servers/format';
 import { RoleChipLabel, ServerStatus } from '@/features/servers/server-status';
@@ -30,6 +28,7 @@ import { PendingCardMenu } from '@/features/servers/remove-pending';
 import { cn } from '@/lib/utils';
 import { create, replace as replaceRoute, show } from '@/routes/servers';
 import { show as enrollmentRoute } from '@/routes/servers/enrollments';
+import { formatMemory, shortAge, shortDuration } from '@/lib/format';
 
 type Server = App.Data.Servers.ServerData;
 type Usage = App.Data.Metrics.ServerUsageData;
@@ -54,7 +53,7 @@ function RunsLine({ usedBy }: { usedBy: App.Data.Metrics.ProjectUsageData[] }) {
                 <span
                     key={item.projectId}
                     className="inline-flex min-w-0 items-center gap-1.5 text-foreground"
-                    title={`${item.name}: ${formatMb(item.memMb) ?? ''} memory`}
+                    title={`${item.name}: ${formatMemory(item.memMb, '')} memory`}
                 >
                     <span
                         aria-hidden="true"
@@ -192,8 +191,7 @@ export function FleetCard({
     canRemove?: boolean;
 }) {
     const current = usage?.current ?? null;
-    const problem =
-        server.status === 'unreachable' || server.status === 'offline';
+    const problem = vocabulary.ServerStatus[server.status].isDown;
     const disk = current?.diskPct ?? null;
     const lastSeen = shortAge(server.lastSeenAt);
     const cpu =

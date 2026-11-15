@@ -27,7 +27,6 @@ import (
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
 
-// Bounds and defaults.
 const (
 	// DefaultAddr is the loopback address Caddy's access log is written to.
 	DefaultAddr = "127.0.0.1:2022"
@@ -105,23 +104,6 @@ func normalizeHost(host string) string {
 		host = h
 	}
 	return strings.TrimSuffix(strings.Trim(host, "[]"), ".")
-}
-
-// accessLine is the subset of a Caddy access log line we read (the rest is
-// deleted by the filter encoder before it leaves Caddy, docs/15 §1.1). The
-// URI arrives without its query string; lr_referer is only the referrer's
-// host and lr_agent one user agent token (docs/15 §5.1).
-type accessLine struct {
-	Request struct {
-		Host string `json:"host"`
-		URI  string `json:"uri"`
-	} `json:"request"`
-	Referer  string  `json:"lr_referer"`
-	Agent    string  `json:"lr_agent"`
-	Status   int     `json:"status"`
-	Duration float64 `json:"duration"` // seconds
-	Size     int64   `json:"size"`
-	Read     int64   `json:"bytes_read"`
 }
 
 // Observe folds one access log line into the current minute. Lines that

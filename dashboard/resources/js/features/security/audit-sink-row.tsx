@@ -18,8 +18,8 @@ import {
     PopoverContent,
 } from '@/components/ui/popover';
 import { SINK_KINDS } from '@/features/security/add-audit-sink';
-import { SettingsRow } from '@/features/settings/settings-card';
 import { destroy, retry, test, update } from '@/routes/audit-sinks';
+import { SettingsRow } from '@/components/settings/settings-card';
 
 type Sink = App.Data.Security.AuditSinkData;
 

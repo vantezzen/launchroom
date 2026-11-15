@@ -3,8 +3,6 @@ package backup
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -17,6 +15,7 @@ import (
 	"github.com/moby/moby/api/types/mount"
 
 	"github.com/vantezzen/launchroom/daemon/internal/docker"
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/policy"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
@@ -50,7 +49,7 @@ func (e *Engine) findVolume(ctx context.Context, id state.VolumeID) (docker.Volu
 	}
 	var found []docker.Volume
 	for _, v := range vols {
-		if v.Labels[docker.LabelVolume] == string(id) {
+		if v.Labels[names.LabelVolume] == string(id) {
 			found = append(found, v)
 		}
 	}
@@ -59,8 +58,9 @@ func (e *Engine) findVolume(ctx context.Context, id state.VolumeID) (docker.Volu
 		return docker.Volume{}, fmt.Errorf("backup: volume %s does not exist on this server", id)
 	case len(found) > 1:
 		return docker.Volume{}, fmt.Errorf("backup: more than one volume carries the id %s", id)
-	case found[0].Labels[docker.LabelSystem] != "" || policy.CheckVolumeName(state.HostName(found[0].Name)) != nil:
-		return docker.Volume{}, fmt.Errorf("backup: volume %s is not a service volume", id)
+	}
+	if err := docker.CheckServiceVolume(found[0], id, docker.VolumeOwner{}); err != nil {
+		return docker.Volume{}, fmt.Errorf("backup: %w", err)
 	}
 	return found[0], nil
 }
@@ -73,20 +73,17 @@ func (e *Engine) users(ctx context.Context, name string) ([]docker.Container, er
 	if err != nil {
 		return nil, err
 	}
-	var out []docker.Container
-	for _, c := range cs {
-		if c.Labels[docker.LabelHelper] != "volume" && slices.Contains(c.Volumes, name) {
-			out = append(out, c)
-		}
-	}
-	return out, nil
+	// Our own never-started volume helpers do not count.
+	return slices.DeleteFunc(docker.VolumeUsers(cs, name), func(c docker.Container) bool {
+		return c.Labels[names.LabelHelper] == names.HelperVolume
+	}), nil
 }
 
 // sweepHelpers removes helper containers left behind by an interrupted
 // volume backup or restore. Heavy backup work runs one at a time per server
-// (tasks.BackupOptions.Slots), so no other helper is in use.
+// (HandlerOptions.Slots), so no other helper is in use.
 func (e *Engine) sweepHelpers(ctx context.Context) {
-	cs, err := e.o.Volumes.ListContainers(ctx, map[string]string{docker.LabelHelper: "volume"})
+	cs, err := e.o.Volumes.ListContainers(ctx, map[string]string{names.LabelHelper: names.HelperVolume})
 	if err != nil {
 		return
 	}
@@ -100,21 +97,18 @@ func (e *Engine) helper(ctx context.Context, name string, readOnly bool) (id str
 	if err := e.o.Volumes.EnsureHelperImage(ctx); err != nil {
 		return "", nil, err
 	}
-	suffix := make([]byte, 6)
-	_, _ = rand.Read(suffix)
 	labels := docker.ManagedLabels(e.o.ServerID)
-	labels[docker.LabelHelper] = "volume"
+	labels[names.LabelHelper] = names.HelperVolume
+	hc := policy.BaseHostConfig()
+	hc.NetworkMode = "none"
+	hc.Mounts = []mount.Mount{{Type: mount.TypeVolume, Source: name, Target: names.HelperMount, ReadOnly: readOnly}}
 	id, err = e.o.Volumes.CreateContainer(ctx, &docker.ContainerCreate{
-		Name: "lr-vol-" + hex.EncodeToString(suffix),
+		Name: names.VolumeHelper(),
 		Config: &container.Config{
-			Image: docker.HelperImage, Labels: labels,
+			Image: names.VolumeHelperImage, Labels: labels,
 			Cmd: []string{"/launchroom-volume-helper"}, NetworkDisabled: true,
 		},
-		HostConfig: &container.HostConfig{
-			NetworkMode: "none",
-			CapDrop:     []string{"ALL"},
-			Mounts:      []mount.Mount{{Type: mount.TypeVolume, Source: name, Target: docker.HelperMount, ReadOnly: readOnly}},
-		},
+		HostConfig: hc,
 	})
 	if err != nil {
 		return "", nil, err
@@ -171,7 +165,7 @@ func (e *Engine) backupVolume(ctx context.Context, spec *state.BackupSpec, creds
 	logf("Streaming volume %s into the repository", spec.Target.Volume)
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	src, err := e.o.Volumes.StreamFromContainer(ctx, hid, docker.HelperMount)
+	src, err := e.o.Volumes.StreamFromContainer(ctx, hid, names.HelperMount)
 	if err != nil {
 		return nil, err
 	}
@@ -230,7 +224,6 @@ func (e *Engine) backupVolume(ctx context.Context, spec *state.BackupSpec, creds
 	}, nil
 }
 
-// pauseUsers freezes the running containers that use the volume.
 func (e *Engine) pauseUsers(ctx context.Context, name string) ([]string, error) {
 	users, err := e.users(ctx, name)
 	if err != nil {
@@ -238,7 +231,7 @@ func (e *Engine) pauseUsers(ctx context.Context, name string) ([]string, error) 
 	}
 	var paused []string
 	for _, c := range users {
-		if !c.Running || c.State == "paused" {
+		if !c.Running() || c.State == docker.StatePaused {
 			continue
 		}
 		if err := e.o.Volumes.PauseContainer(ctx, c.ID); err != nil {

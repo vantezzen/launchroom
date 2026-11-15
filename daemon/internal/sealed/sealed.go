@@ -81,18 +81,9 @@ func Seal(plaintext []byte, pub *ecdh.PublicKey, rand io.Reader) (state.SealedBo
 // for exactly this server and workload (docs/03 §6: no re-targeting). The
 // returned values are secrets; errors never contain them.
 func OpenWorkloadEnv(s state.Sealed, priv *ecdh.PrivateKey, server state.ServerID, workload state.WorkloadID) (map[string]secret.Secret, error) {
-	plain, err := Open(s.Sealed, priv)
+	env, err := openDoc[state.WorkloadEnv](s, priv, "WorkloadEnv")
 	if err != nil {
 		return nil, err
-	}
-	defer clear(plain)
-	var env state.WorkloadEnv
-	if err := state.DecodeStrict(plain, &env); err != nil {
-		// The decode error may quote parts of the plaintext; do not wrap it.
-		return nil, errors.New("sealed: env plaintext is not a valid WorkloadEnv document")
-	}
-	if err := env.Validate(); err != nil {
-		return nil, fmt.Errorf("sealed: %w", err)
 	}
 	if env.ServerID != server || env.WorkloadID != workload {
 		return nil, fmt.Errorf("sealed: env was sealed for %s/%s, not %s/%s", env.ServerID, env.WorkloadID, server, workload)
@@ -122,17 +113,9 @@ func SealWorkloadEnv(env state.WorkloadEnv, pub *ecdh.PublicKey, rand io.Reader)
 // for exactly this server, task and purpose. The token is a secret; errors
 // never contain it.
 func OpenTaskToken(s state.Sealed, priv *ecdh.PrivateKey, server state.ServerID, task state.TaskID, purpose state.TokenPurpose) (secret.Secret, error) {
-	plain, err := Open(s.Sealed, priv)
+	tok, err := openDoc[state.TaskToken](s, priv, "TaskToken")
 	if err != nil {
 		return "", err
-	}
-	defer clear(plain)
-	var tok state.TaskToken
-	if err := state.DecodeStrict(plain, &tok); err != nil {
-		return "", errors.New("sealed: token plaintext is not a valid TaskToken document")
-	}
-	if err := tok.Validate(); err != nil {
-		return "", fmt.Errorf("sealed: %w", err)
 	}
 	if tok.ServerID != server || tok.TaskID != task || tok.Purpose != purpose {
 		return "", fmt.Errorf("sealed: token was sealed for %s/%s/%s, not %s/%s/%s", tok.ServerID, tok.TaskID, tok.Purpose, server, task, purpose)
@@ -142,17 +125,9 @@ func OpenTaskToken(s state.Sealed, priv *ecdh.PrivateKey, server state.ServerID,
 
 // OpenTaskEnv opens a task's sealed build env, bound to this server and task.
 func OpenTaskEnv(s state.Sealed, priv *ecdh.PrivateKey, server state.ServerID, task state.TaskID) (map[string]secret.Secret, error) {
-	plain, err := Open(s.Sealed, priv)
+	env, err := openDoc[state.TaskEnv](s, priv, "TaskEnv")
 	if err != nil {
 		return nil, err
-	}
-	defer clear(plain)
-	var env state.TaskEnv
-	if err := state.DecodeStrict(plain, &env); err != nil {
-		return nil, errors.New("sealed: env plaintext is not a valid TaskEnv document")
-	}
-	if err := env.Validate(); err != nil {
-		return nil, fmt.Errorf("sealed: %w", err)
 	}
 	if env.ServerID != server || env.TaskID != task {
 		return nil, fmt.Errorf("sealed: env was sealed for %s/%s, not %s/%s", env.ServerID, env.TaskID, server, task)
@@ -164,22 +139,35 @@ func OpenTaskEnv(s state.Sealed, priv *ecdh.PrivateKey, server state.ServerID, t
 // checks that they were sealed for exactly this server and purpose. The
 // values are secrets; errors never contain them.
 func OpenIngressSecret(s state.Sealed, priv *ecdh.PrivateKey, server state.ServerID, purpose state.IngressSecretPurpose) (map[string]secret.Secret, error) {
-	plain, err := Open(s.Sealed, priv)
+	doc, err := openDoc[state.IngressSecret](s, priv, "IngressSecret")
 	if err != nil {
 		return nil, err
-	}
-	defer clear(plain)
-	var doc state.IngressSecret
-	if err := state.DecodeStrict(plain, &doc); err != nil {
-		return nil, errors.New("sealed: plaintext is not a valid IngressSecret document")
-	}
-	if err := doc.Validate(); err != nil {
-		return nil, fmt.Errorf("sealed: %w", err)
 	}
 	if doc.ServerID != server || doc.Purpose != purpose {
 		return nil, fmt.Errorf("sealed: ingress secret was sealed for %s/%s, not %s/%s", doc.ServerID, doc.Purpose, server, purpose)
 	}
 	return doc.Values, nil
+}
+
+// openDoc opens s and decodes the plaintext strictly into a validated T.
+func openDoc[T any, PT interface {
+	*T
+	Validate() error
+}](s state.Sealed, priv *ecdh.PrivateKey, kind string) (PT, error) {
+	plain, err := Open(s.Sealed, priv)
+	if err != nil {
+		return nil, err
+	}
+	defer clear(plain)
+	doc := PT(new(T))
+	if err := state.DecodeStrict(plain, doc); err != nil {
+		// The decode error may quote parts of the plaintext; do not wrap it.
+		return nil, fmt.Errorf("sealed: plaintext is not a valid %s document", kind)
+	}
+	if err := doc.Validate(); err != nil {
+		return nil, fmt.Errorf("sealed: %w", err)
+	}
+	return doc, nil
 }
 
 // SealJSON seals any marshalled plaintext document (tests, fixtures).

@@ -13,7 +13,9 @@ use App\Exceptions\DomainRuleViolation;
 use App\Models\Registry\RegistryStorage;
 use App\Models\User;
 use App\Services\Backups\EndpointGuard;
-use App\Services\Registry\RegistryStorageSecrets;
+use App\Services\Crypto\SealedColumns;
+use App\Support\S3\S3Credentials;
+use App\Support\S3\S3Location;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -29,7 +31,7 @@ final readonly class ConfigureRegistryStorage
 {
     public function __construct(
         private EndpointGuard $guard,
-        private RegistryStorageSecrets $secrets,
+        private SealedColumns $sealed,
         private RecordAuditEvent $audit,
     ) {}
 
@@ -40,10 +42,10 @@ final readonly class ConfigureRegistryStorage
         }
 
         $endpoint = $this->guard->check($input->endpoint, $input->allowPrivateNetwork);
-        $region = $input->region === null || $input->region === '' ? null : strtolower($input->region);
         $prefix = trim($input->prefix ?? '', '/');
-        $prefix = $prefix === '' ? 'registry' : $prefix;
-        $this->guard->checkLocation($input->bucket, $prefix, $region);
+        $location = S3Location::parse($endpoint, $input->bucket, $input->region, $prefix === '' ? 'registry' : $prefix);
+        $region = $location->region;
+        $prefix = $location->prefix;
 
         return DB::transaction(function () use ($input, $user, $actor, $endpoint, $region, $prefix): RegistryStorage {
             $storage = RegistryStorage::query()->whereKey(RegistryStorage::ID)->lockForUpdate()->first();
@@ -68,7 +70,7 @@ final readonly class ConfigureRegistryStorage
             ]);
 
             if ($newKeys) {
-                $this->secrets->seal($storage, (string) $input->accessKeyId, (string) $input->secretAccessKey);
+                $this->sealed->sealJson($storage, 'credentials', new S3Credentials((string) $input->accessKeyId, (string) $input->secretAccessKey)->toArray(), $this->sealed->newKey($storage));
             }
 
             $storage->save();

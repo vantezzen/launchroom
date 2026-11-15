@@ -8,7 +8,8 @@ use App\Jobs\Git\ReportDeploymentStatusJob;
 use App\Models\Git\GitHubDeploymentReport;
 use App\Models\Git\GitHubPullRequestComment;
 use App\Models\Team;
-use App\Services\GitHub\GitHubDeploymentReporter;
+use App\Services\Git\Feedback\PullRequestFeedback;
+use App\Services\Git\Providers\GitHub\GitHubDeploymentReporter;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -99,7 +100,7 @@ test('the first report creates a deployment, a check run and the PR comment', fu
     ])->and($checkRun->data())->not->toHaveKey('conclusion');
 
     $comment = ghRequestsTo('POST', '/issues/42/comments')[0];
-    expect($comment['body'])->toContain(GitHubDeploymentReporter::COMMENT_MARKER)
+    expect($comment['body'])->toContain(PullRequestFeedback::COMMENT_MARKER)
         ->toContain('| web | pr-42 | Deploying');
 
     $record = GitHubDeploymentReport::query()->sole();
@@ -193,7 +194,7 @@ test('reports for another team’s installation do nothing', function (): void {
 });
 
 test('comment cells escape table syntax', function (): void {
-    $body = GitHubDeploymentReporter::renderComment([
+    $body = PullRequestFeedback::render([
         'x' => ['service' => 'a|b', 'environment' => "e\nf", 'state' => 'success', 'url' => null, 'logUrl' => 'https://l', 'sha' => str_repeat('a', 40), 'updatedAt' => ''],
     ]);
 

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Actions\Api\ApproveCliLogin;
+use App\Console\InstanceOwner;
 use App\Data\Api\ApproveCliLoginInput;
 use App\Data\Audit\AuditActor;
 use App\Enums\ApiAbility;
@@ -45,7 +46,7 @@ final class DevApproveCliLoginCommand extends Command
         $email = $this->option('email');
         $user = is_string($email) && $email !== ''
             ? User::query()->where('email', $email)->first()
-            : User::query()->where('is_instance_owner', true)->orderBy('id')->first();
+            : InstanceOwner::first();
         $team = $user?->currentTeam;
 
         if (! $user instanceof User || $team === null) {

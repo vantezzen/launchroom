@@ -5,11 +5,12 @@ declare(strict_types=1);
 namespace App\Services\Daemon;
 
 use App\Data\Daemon\IssuedClientCertificate;
+use App\Enums\AdvisoryLock;
+use App\Exceptions\DecryptionFailed;
 use App\Models\DaemonClientCa;
 use App\Models\InstanceSettings;
 use App\Models\Server;
-use App\Services\Crypto\Envelope;
-use App\Services\Crypto\Exceptions\DecryptionFailed;
+use App\Services\Crypto\SealedColumns;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
@@ -19,13 +20,11 @@ use phpseclib3\Crypt\EC\PublicKey;
 use phpseclib3\Crypt\PublicKeyLoader;
 use phpseclib3\File\X509;
 use RuntimeException;
-use SensitiveParameter;
 
 /**
  * The launchroom-internal CA for server client certificates (mTLS, D50,
  * docs/03 §4.3, protocol/SIGNING.md §6). ECDSA P-256 throughout; the CA key
- * is envelope-encrypted (KEK-wrapped data key, AD `daemon_client_ca|<id>|key`)
- * and opened only here, to sign. Leaves are issued for public keys launchroomd
+ * is sealed (App\Services\Crypto\SealedColumns) and opened only here, to sign. Leaves are issued for public keys launchroomd
  * generated itself: their private keys never reach the control plane.
  */
 final readonly class ClientCertificateAuthority
@@ -38,11 +37,8 @@ final readonly class ClientCertificateAuthority
 
     private const int CA_YEARS = 10;
 
-    /** Advisory lock key for creating the CA ("launchroom ca"). */
-    private const int LOCK_KEY = 0x6C72_6361_0001;
-
     public function __construct(
-        private Envelope $envelope,
+        private SealedColumns $sealed,
     ) {}
 
     /**
@@ -58,7 +54,7 @@ final readonly class ClientCertificateAuthority
         }
 
         return DB::transaction(function (): DaemonClientCa {
-            DB::select('SELECT pg_advisory_xact_lock(?)', [self::LOCK_KEY]);
+            AdvisoryLock::ClientCertificateAuthority->holdForTransaction();
 
             return $this->newest() ?? $this->create();
         });
@@ -220,26 +216,15 @@ final readonly class ClientCertificateAuthority
             'fingerprint' => hash('sha256', $der),
             'private_key' => '',
             'wrapped_dek' => '',
-            'kek_id' => $this->envelope->kekId(),
+            'kek_id' => '',
             'not_before' => $notBefore,
             'not_after' => $notAfter,
         ]);
 
-        $this->sealKey($row, $key->toString('PKCS8'));
+        $this->sealed->seal($row, 'private_key', $key->toString('PKCS8'), $this->sealed->newKey($row));
         $row->save();
 
         return $row;
-    }
-
-    /**
-     * Encrypts the CA key onto the row (which must have its id). A new data key each time.
-     */
-    private function sealKey(DaemonClientCa $ca, #[SensitiveParameter] string $pem): void
-    {
-        $dek = $this->envelope->generateDataKey();
-        $ca->wrapped_dek = $this->envelope->wrap($dek, self::wrapContext($ca));
-        $ca->kek_id = $this->envelope->kekId();
-        $ca->private_key = $dek->encrypt($pem, $this->associatedData($ca));
     }
 
     /**
@@ -247,27 +232,13 @@ final readonly class ClientCertificateAuthority
      */
     private function caKey(DaemonClientCa $ca): PrivateKey
     {
-        $dek = $this->envelope->unwrap($ca->wrapped_dek, self::wrapContext($ca));
-        $key = PublicKeyLoader::loadPrivateKey($dek->decrypt($ca->private_key, $this->associatedData($ca)));
+        $key = PublicKeyLoader::loadPrivateKey((string) $this->sealed->reveal($ca, 'private_key'));
 
         if (! $key instanceof PrivateKey) {
             throw DecryptionFailed::malformed();
         }
 
         return $key;
-    }
-
-    /**
-     * The KEK wrap context of a CA's data key (rotate-kek re-wraps it).
-     */
-    public static function wrapContext(DaemonClientCa $ca): string
-    {
-        return 'daemon_client_ca:'.$ca->id;
-    }
-
-    private function associatedData(DaemonClientCa $ca): string
-    {
-        return 'daemon_client_ca|'.$ca->id.'|key';
     }
 
     /**

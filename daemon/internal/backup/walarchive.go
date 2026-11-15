@@ -192,7 +192,7 @@ func (a *WalArchiver) cycle(ctx context.Context, id state.WorkloadID, spec *stat
 		st.State = state.WalArchiveWaiting
 	case err != nil:
 		st.State = state.WalArchiveFailing
-		st.Message = truncateMessage(err.Error(), 1024)
+		st.Message = state.Clip(err.Error(), state.MaxStatusLen)
 	default:
 		st.State = state.WalArchiveActive
 	}
@@ -398,16 +398,15 @@ func prefixAll(dir string, names []string) []string {
 }
 
 func (a *WalArchiver) containerOf(ctx context.Context, id state.WorkloadID) (string, error) {
-	cs, err := a.o.Docker.ListContainers(ctx, map[string]string{docker.LabelWorkload: string(id)})
+	c, err := docker.WorkloadContainer(ctx, a.o.Docker, id)
 	if err != nil {
 		return "", err
 	}
-	for _, c := range cs {
-		if c.Running && c.State != "paused" && c.Labels[docker.LabelSystem] == "" {
-			return c.ID, nil
-		}
+	// A paused container (a volume backup freezes it) cannot run the archiver.
+	if c == nil || !c.Running() || c.State == docker.StatePaused {
+		return "", errNoContainer
 	}
-	return "", errNoContainer
+	return c.ID, nil
 }
 
 // exec runs argv as the Postgres user in the container; a non-zero exit is an error.
@@ -420,11 +419,4 @@ func (a *WalArchiver) exec(ctx context.Context, cid string, stdout io.Writer, ar
 		return fmt.Errorf("%s exited with code %d: %s", argv[0], res.ExitCode, firstLines(res.Stderr))
 	}
 	return nil
-}
-
-func truncateMessage(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n]
 }

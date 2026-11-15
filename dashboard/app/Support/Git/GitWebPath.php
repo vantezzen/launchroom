@@ -15,6 +15,14 @@ final class GitWebPath
      */
     public static function branch(string $branch): string
     {
-        return implode('/', array_map(rawurlencode(...), explode('/', $branch)));
+        return self::path($branch);
+    }
+
+    /**
+     * A repository path as a URL path, each segment encoded.
+     */
+    public static function path(string $path): string
+    {
+        return implode('/', array_map(rawurlencode(...), explode('/', $path)));
     }
 }

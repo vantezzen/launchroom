@@ -17,7 +17,6 @@ use App\Models\CanvasLayout;
 use App\Models\Environment;
 use App\Models\Project;
 use App\Models\User;
-use App\Services\Projects\EnvironmentSubnets;
 use App\Support\Slug;
 use Illuminate\Support\Facades\DB;
 
@@ -32,7 +31,7 @@ use Illuminate\Support\Facades\DB;
 final readonly class CreateEnvironment
 {
     public function __construct(
-        private EnvironmentSubnets $subnets,
+        private AllocateEnvironmentSubnet $subnets,
         private CopyEnvironmentIntent $copy,
         private RecordAuditEvent $audit,
     ) {}
@@ -64,7 +63,7 @@ final readonly class CreateEnvironment
                 'kind' => EnvironmentKind::Persistent,
                 'base_environment_id' => $base->id,
                 'triggers' => $data->triggers ?? new EnvironmentTriggers,
-                'network_subnet' => $this->subnets->allocate(),
+                'network_subnet' => $this->subnets->handle(),
             ]);
             $environment->setRelation('project', $project);
 

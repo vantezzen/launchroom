@@ -46,5 +46,7 @@ final class ServiceTransfersData extends Data
         public int $maxBytes,
         /** A database never deployed: imported into after starting it alone (docs/14 §12.9); null once deployed. */
         public ?DatabasePreparationData $preparation = null,
+        /** How a database takes an import; null for volumes and engines without imports. */
+        public ?ImportFormatData $importFormat = null,
     ) {}
 }

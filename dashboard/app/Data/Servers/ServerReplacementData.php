@@ -15,7 +15,7 @@ use Spatie\LaravelData\Data;
 final class ServerReplacementData extends Data
 {
     /**
-     * @param  list<array{instance: string, name: string, kind: string, restore: array{snapshot: string, takenAt: string|null}|null, status: string, message: string|null}>  $services
+     * @param  list<ReplacedServiceProgressData>  $services
      */
     public function __construct(
         public string $id,
@@ -38,14 +38,7 @@ final class ServerReplacementData extends Data
             $replacement->oldServer->name,
             $replacement->newServer->name,
             $replacement->newServer->public_id,
-            array_map(static fn (array $service): array => [
-                'instance' => $service['instance'],
-                'name' => $service['name'],
-                'kind' => $service['kind'],
-                'restore' => $service['restore'],
-                'status' => $service['status'],
-                'message' => $service['message'],
-            ], $replacement->services),
+            array_map(ReplacedServiceProgressData::fromService(...), array_values($replacement->services->items())),
             $replacement->recovery,
             $replacement->error,
             $replacement->created_at,

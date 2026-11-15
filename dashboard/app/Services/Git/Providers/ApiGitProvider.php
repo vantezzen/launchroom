@@ -4,58 +4,106 @@ declare(strict_types=1);
 
 namespace App\Services\Git\Providers;
 
-use App\Contracts\Git\GitProvider;
+use App\Contracts\Git\ApiConnectionProvider;
 use App\Contracts\Git\OpensPullRequests;
 use App\Contracts\Git\SourceRepository;
 use App\Data\Git\CommitData;
 use App\Data\Git\DeploymentStatusReport;
 use App\Data\Git\FilePullRequest;
 use App\Data\Git\GitBranchData;
+use App\Data\Git\GitCredentials;
+use App\Data\Git\PolledHead;
 use App\Data\Git\RepositoryRef;
 use App\Data\Git\RepositoryTree;
 use App\Enums\Git\DeploymentReportState;
 use App\Enums\Git\GitConnectionStatus;
 use App\Exceptions\DomainRuleViolation;
+use App\Exceptions\Git\GitConnectionUnusable;
+use App\Exceptions\Git\GitProviderRequestFailed;
+use App\Exceptions\Git\RepositoryFileUnavailable;
 use App\Exceptions\GitHeadUnavailable;
 use App\Models\Git\GitConnection;
 use App\Models\Git\GitPullRequestComment;
 use App\Models\Git\GitRepository;
 use App\Models\Previews\Preview;
 use App\Models\Team;
-use App\Services\Git\Exceptions\GitConnectionUnusable;
-use App\Services\Git\Exceptions\GitProviderRequestFailed;
-use App\Services\Git\Exceptions\RepositoryFileUnavailable;
+use App\Services\Git\Feedback\PullRequestFeedback;
+use App\Services\Git\Feedback\PullRequestThread;
 use App\Services\Git\GitConnectionTokens;
-use App\Services\Git\GitCredentials;
 use App\Services\Git\GitProviderApi;
-use App\Services\GitHub\GitHubDeploymentReporter;
-use App\Services\GitHub\JsonObject;
-use App\Services\Previews\PreviewGitHub;
 use App\Support\Git\GitRef;
 use App\Support\Git\WebhookReachability;
+use App\Support\Json\JsonObject;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
+use SensitiveParameter;
 use Throwable;
 
 /**
  * Shared behaviour of the providers behind a `git_connections` row with an
  * HTTP API (GitLab, Gitea/Forgejo; docs/19): repository cache upserts,
- * team-scoped lookups, commit statuses, the single PR/MR comment table,
- * preview statuses and webhook registration. Subclasses supply paths and
- * payload shapes.
+ * team-scoped lookups, commit statuses, the PR/MR comment, preview statuses
+ * and webhook registration. Subclasses supply paths and payload shapes.
  */
-abstract class ApiGitProvider implements GitProvider, OpensPullRequests
+abstract class ApiGitProvider implements ApiConnectionProvider, OpensPullRequests
 {
-    /** At most this many changed files are used (more: unknown → rebuild everything). */
-    protected const int MAX_CHANGED_FILES = 300;
-
     public function __construct(
         protected readonly GitProviderApi $api,
         protected readonly GitConnectionTokens $tokens,
-        protected readonly PreviewGitHub $previews,
+        protected readonly PullRequestFeedback $feedback,
     ) {}
+
+    /** Path of the API below the origin (`/api/v4`, `/api/v1`). */
+    abstract protected function apiPath(): string;
+
+    abstract protected function oauthTokenPath(): string;
+
+    abstract protected function oauthAuthorizePath(): string;
+
+    /** The OAuth scope to request, if the provider needs one named. */
+    abstract protected function oauthScope(): ?string;
+
+    /** The account's login in the provider's `GET /user` answer. */
+    abstract protected function accountLogin(JsonObject $account): ?string;
+
+    public function apiRoot(string $origin): string
+    {
+        return rtrim($origin, '/').$this->apiPath();
+    }
+
+    public function oauthTokenUrl(GitConnection $connection): string
+    {
+        return $connection->origin().$this->oauthTokenPath();
+    }
+
+    public function oauthAuthorizeUrl(GitConnection $connection, array $query): string
+    {
+        $scope = $this->oauthScope();
+
+        return $connection->origin().$this->oauthAuthorizePath().'?'.http_build_query([...$query, ...($scope === null ? [] : ['scope' => $scope])], '', '&', PHP_QUERY_RFC3986);
+    }
+
+    public function applyAccount(GitConnection $connection, JsonObject $account): void
+    {
+        $login = $this->accountLogin($account) ?? 'unknown';
+        $connection->account_login = mb_substr($login, 0, 255);
+        $connection->account_id = $account->intOrNull('id');
+        $connection->name = mb_substr($connection->host().' ('.$login.')', 0, 100);
+    }
+
+    public function canReadFiles(): bool
+    {
+        return true;
+    }
+
+    public function verifyWebhook(string $rawBody, string $signature, #[SensitiveParameter] string $secret): bool
+    {
+        return $secret !== '' && $signature !== '' && $this->signatureMatches($rawBody, $signature, $secret);
+    }
+
+    abstract protected function signatureMatches(string $rawBody, string $signature, #[SensitiveParameter] string $secret): bool;
 
     /**
      * Search request: path + query.
@@ -65,8 +113,6 @@ abstract class ApiGitProvider implements GitProvider, OpensPullRequests
     abstract protected function searchRequest(string $search): array;
 
     /**
-     * Repository rows (attributes for `git_repositories`) from a search response.
-     *
      * @return list<array{external_id: int, full_name: string, default_branch: string|null, private: bool, archived: bool, pushed_at: CarbonImmutable|null}>
      */
     abstract protected function parseRepositories(Response $response): array;
@@ -99,8 +145,6 @@ abstract class ApiGitProvider implements GitProvider, OpensPullRequests
     abstract protected function pullRequestState(GitConnection $connection, GitRepository $repository, int $number): bool;
 
     /**
-     * Commit status request for one context.
-     *
      * @return array{string, array<string, mixed>}
      */
     abstract protected function statusRequest(GitRepository $repository, string $sha, string $context, string $state, string $description, ?string $url): array;
@@ -115,13 +159,9 @@ abstract class ApiGitProvider implements GitProvider, OpensPullRequests
     abstract protected function commentUpdateMethod(): string;
 
     /**
-     * Hook creation request.
-     *
      * @return array{string, array<string, mixed>}
      */
     abstract protected function hookRequest(GitRepository $repository, string $url, string $secret): array;
-
-    abstract public function webhookUrl(GitConnection $connection): string;
 
     /**
      * Adds one file on a new branch from $base and opens a pull/merge request
@@ -184,7 +224,6 @@ abstract class ApiGitProvider implements GitProvider, OpensPullRequests
             } catch (Throwable $e) {
                 Log::warning('Listing repositories of a git connection failed', ['connection' => $connection->public_id, 'error' => $e->getMessage()]);
 
-                // Fall back to what we saw before.
                 $repositories = [...$repositories, ...$this->cached($connection, $search)];
             }
         }
@@ -241,8 +280,30 @@ abstract class ApiGitProvider implements GitProvider, OpensPullRequests
     }
 
     /**
-     * Upserts one repository row of a connection.
-     *
+     * The repository row a signed webhook names, created from the payload
+     * when new (matched within $connection only, docs/09 R18).
+     */
+    protected function rememberDelivered(GitConnection $connection, int $id, string $fullName, ?string $defaultBranch, bool $private): GitRepository
+    {
+        $existing = GitRepository::query()->where('git_connection_id', $connection->id)->where('external_id', $id)->first();
+
+        if ($existing instanceof GitRepository) {
+            $existing->setRelation('gitConnection', $connection);
+
+            return $existing;
+        }
+
+        return $this->remember($connection, [
+            'external_id' => $id,
+            'full_name' => $fullName,
+            'default_branch' => $defaultBranch,
+            'private' => $private,
+            'archived' => false,
+            'pushed_at' => now()->toImmutable(),
+        ]);
+    }
+
+    /**
      * @param  array{external_id: int, full_name: string, default_branch: string|null, private: bool, archived: bool, pushed_at: CarbonImmutable|null}  $attributes
      */
     public function remember(GitConnection $connection, array $attributes): GitRepository
@@ -292,6 +353,11 @@ abstract class ApiGitProvider implements GitProvider, OpensPullRequests
     public function defaultBranch(RepositoryRef $repository): ?string
     {
         return $this->row($repository)?->default_branch;
+    }
+
+    public function pollHead(RepositoryRef $repository, string $branch, ?string $etag): PolledHead
+    {
+        return new PolledHead($this->head($repository, $branch));
     }
 
     public function head(RepositoryRef $repository, string $branch): CommitData
@@ -396,7 +462,7 @@ abstract class ApiGitProvider implements GitProvider, OpensPullRequests
             return null;
         }
 
-        return $files === null || count($files) >= self::MAX_CHANGED_FILES ? null : array_values(array_unique($files));
+        return PullRequestFeedback::changedFiles($files);
     }
 
     public function pullRequestOpen(Preview $preview): ?bool
@@ -435,7 +501,7 @@ abstract class ApiGitProvider implements GitProvider, OpensPullRequests
             $this->api->send($row->gitConnection, 'POST', $path, $body);
 
             if ($report->pullRequestNumber !== null) {
-                $this->comment($row, $report);
+                $this->feedback->recordDeployment($this->pullRequestThread($row, $report->pullRequestNumber), $report);
             }
         } catch (Throwable $e) {
             Log::warning('Reporting a deployment to a git provider failed', [
@@ -456,28 +522,19 @@ abstract class ApiGitProvider implements GitProvider, OpensPullRequests
         }
 
         try {
-            $preview->refresh();
+            $this->feedback->forPreview($preview, function () use ($row, $preview): void {
+                $preview->refresh();
 
-            if (! $preview->status->isOpen() || $preview->environment_id === null) {
-                $this->retireComment($row, $preview);
+                if (! $preview->status->isOpen() || $preview->environment_id === null) {
+                    $this->feedback->retirePreview($this->pullRequestThread($row, $preview->pr_number), $preview);
 
-                return;
-            }
+                    return;
+                }
 
-            [$state, $url, $description] = $this->previews->aggregate($preview);
-
-            if ($state === null) {
-                return;
-            }
-
-            $reportState = match ($state) {
-                'success' => DeploymentReportState::Success,
-                'failure' => DeploymentReportState::Failure,
-                default => DeploymentReportState::InProgress,
-            };
-
-            [$path, $body] = $this->statusRequest($row, $preview->head_sha, 'launchroom: preview', $this->statusState($reportState), self::truncate($description, 140), $url);
-            $this->api->send($row->gitConnection, 'POST', $path, $body);
+                $state = $this->feedback->previewState($preview);
+                [$path, $body] = $this->statusRequest($row, $preview->head_sha, 'launchroom: preview', $this->statusState($state->state), self::truncate($state->description, 140), $state->url);
+                $this->api->send($row->gitConnection, 'POST', $path, $body);
+            });
         } catch (Throwable $e) {
             Log::warning('Reporting a preview to a git provider failed', ['preview' => $preview->public_id, 'error' => $e->getMessage()]);
         }
@@ -530,77 +587,24 @@ abstract class ApiGitProvider implements GitProvider, OpensPullRequests
         }
     }
 
-    private function comment(GitRepository $row, DeploymentStatusReport $report): void
+    private function pullRequestThread(GitRepository $row, int $number): PullRequestThread
     {
-        $number = (int) $report->pullRequestNumber;
-
-        Cache::lock("launchroom:git:pr-comment:{$row->id}:{$number}", 30)->block(20, function () use ($row, $report, $number): void {
-            $comment = GitPullRequestComment::query()->firstOrCreate(
-                ['git_connection_id' => $row->git_connection_id, 'external_id' => $row->external_id, 'pr_number' => $number],
-                ['team_id' => $row->team_id],
-            );
-
-            $rows = $comment->rows;
-            $rows["{$report->serviceName}|{$report->environmentName}"] = [
-                'service' => $report->serviceName,
-                'environment' => $report->environmentName,
-                'state' => $report->state->value,
-                'url' => $report->environmentUrl,
-                'logUrl' => $report->deploymentUrl,
-                'sha' => $report->commitSha,
-                'updatedAt' => CarbonImmutable::now()->toIso8601ZuluString(),
-            ];
-            ksort($rows);
-            $comment->rows = $rows;
-            $comment->save();
-
-            $this->publishComment($row, $comment, GitHubDeploymentReporter::renderComment($rows));
-        });
-    }
-
-    private function retireComment(GitRepository $row, Preview $preview): void
-    {
-        $comment = GitPullRequestComment::query()
-            ->where('git_connection_id', $row->git_connection_id)
-            ->where('external_id', $row->external_id)
-            ->where('pr_number', $preview->pr_number)
-            ->first();
-
-        if (! $comment instanceof GitPullRequestComment || $comment->comment_id === null) {
-            return;
-        }
-
-        $rows = $comment->rows;
-
-        foreach ($rows as $key => $entry) {
-            if ($entry['environment'] === $preview->githubEnvironment() || $entry['environment'] === $preview->slug()) {
-                $rows[$key] = [...$entry, 'state' => 'cancelled', 'url' => null];
-            }
-        }
-
-        $comment->rows = $rows;
-        $comment->save();
-
-        $this->publishComment($row, $comment, GitHubDeploymentReporter::renderComment($rows)."\n_The preview environment was removed ({$preview->status->label()})._\n");
-    }
-
-    private function publishComment(GitRepository $row, GitPullRequestComment $comment, string $body): void
-    {
+        $key = ['git_connection_id' => $row->git_connection_id, 'external_id' => $row->external_id, 'pr_number' => $number];
         $connection = $row->gitConnection;
 
-        if ($comment->comment_id !== null
-            && $this->api->send($connection, $this->commentUpdateMethod(), $this->commentUpdatePath($row, $comment->pr_number, $comment->comment_id), ['body' => $body], accept: [404])->status() !== 404) {
-            return;
-        }
-
-        $response = $this->api->send($connection, 'POST', $this->commentCreatePath($row, $comment->pr_number), ['body' => $body]);
-        $comment->comment_id = JsonObject::decode($response->body())->int('id');
-        $comment->save();
+        return new PullRequestThread(
+            "launchroom:git:pr-comment:{$row->id}:{$number}",
+            static fn (bool $create): ?GitPullRequestComment => $create
+                ? GitPullRequestComment::query()->firstOrCreate($key, ['team_id' => $row->team_id])
+                : GitPullRequestComment::query()->where($key)->first(),
+            fn (int $commentId, string $body): bool => $this->api->send($connection, $this->commentUpdateMethod(), $this->commentUpdatePath($row, $number, $commentId), ['body' => $body], accept: [404])->status() !== 404,
+            fn (string $body): int => JsonObject::decode($this->api->send($connection, 'POST', $this->commentCreatePath($row, $number), ['body' => $body])->body())->int('id'),
+        );
     }
 
     private function previewRepository(Preview $preview): ?GitRepository
     {
-        if ($preview->git_connection_id === null || $preview->provider->gitProvider() !== $this->kind()) {
+        if ($preview->git_connection_id === null || $preview->provider !== $this->kind()) {
             return null;
         }
 

@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/vantezzen/launchroom/daemon/internal/dbengine"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
 
@@ -137,20 +138,20 @@ func splitRedisArgs(line string) ([]string, error) {
 }
 
 type redis struct {
-	p   proc
-	cli string
+	p      proc
+	engine state.DatabaseEngine
 }
 
-func newRedis(env envMap, ex execer, container, cli string) (*redis, error) {
-	pw, err := password(env, "REDIS_PASSWORD")
+func newRedis(env envMap, ex execer, container string, engine state.DatabaseEngine) (*redis, error) {
+	l, err := dbengine.LoginOf(engine, env)
 	if err != nil {
 		return nil, err
 	}
-	return &redis{p: newProc(ex, container, "REDISCLI_AUTH="+pw), cli: cli}, nil
+	return &redis{p: newProc(ex, container, "REDISCLI_AUTH="+l.Password), engine: engine}, nil
 }
 
 func (r *redis) call(ctx context.Context, args ...string) (jsontext.Value, *Result) {
-	argv := append([]string{r.cli, "--no-auth-warning", "--json"}, args...)
+	argv := append([]string{dbengine.Client(r.engine), "--no-auth-warning", "--json"}, args...)
 	pr, err := r.p.run(ctx, argv, 0)
 	if err != nil {
 		return nil, failed(err.Error())
@@ -167,7 +168,7 @@ func (r *redis) call(ctx context.Context, args ...string) (jsontext.Value, *Resu
 	}
 	v := jsontext.Value(out)
 	if !v.IsValid() {
-		return nil, failed(r.p.mask.Mask(clip(out)))
+		return nil, failed(r.p.mask.Mask(state.ClipLine(out, 200)))
 	}
 	return v, nil
 }
@@ -205,11 +206,7 @@ func (r *redis) schema(ctx context.Context) *Result {
 	if err := json.Unmarshal(v, &n); err != nil {
 		return failed("Unexpected DBSIZE reply.")
 	}
-	engine := state.EngineRedis
-	if r.cli == "valkey-cli" {
-		engine = state.EngineValkey
-	}
-	return &Result{Status: state.CommandOK, Schema: &SchemaInfo{Engine: engine, Groups: []SchemaGroup{{Name: "db0", Items: []SchemaItem{}, Rows: &n}}}}
+	return &Result{Status: state.CommandOK, Schema: &SchemaInfo{Engine: r.engine, Groups: []SchemaGroup{{Name: "db0", Items: []SchemaItem{}, Rows: &n}}}}
 }
 
 const scanScript = `local r = redis.call('SCAN', ARGV[1], 'MATCH', ARGV[2], 'COUNT', ARGV[3])

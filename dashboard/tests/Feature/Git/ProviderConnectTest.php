@@ -13,7 +13,7 @@ use App\Models\Git\GitConnection;
 use App\Models\Git\GitOAuthState;
 use App\Models\Git\GitRepository;
 use App\Models\Team;
-use App\Services\Git\GitConnectionSecrets;
+use App\Services\Crypto\SealedColumns;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Testing\TestResponse;
@@ -56,7 +56,7 @@ test('GitLab OAuth: a pending connection, a single-use state and an S256 code ch
         ->and($query)->toMatchArray(['client_id' => 'app-id', 'response_type' => 'code', 'code_challenge_method' => 'S256', 'scope' => 'api', 'redirect_uri' => route('git.oauth.callback')])
         ->and($state->state_hash)->toBe(hash('sha256', $query['state']))
         ->and($query['code_challenge'])->toBe(rtrim(strtr(base64_encode(hash('sha256', $state->code_verifier, true)), '+/', '-_'), '='))
-        ->and(resolve(GitConnectionSecrets::class)->get($connection, 'oauth_client_secret'))->toBe('app-secret')
+        ->and(resolve(SealedColumns::class)->reveal($connection, 'oauth_client_secret'))->toBe('app-secret')
         ->and(json_encode(GitConnection::query()->toBase()->first()))->not->toContain('app-secret');
 });
 
@@ -78,7 +78,7 @@ test('the OAuth callback exchanges the code with the verifier and activates the 
     expect($connection->status)->toBe(GitConnectionStatus::Active)
         ->and($connection->account_login)->toBe('ada')
         ->and($connection->account_id)->toBe(77)
-        ->and(resolve(GitConnectionSecrets::class)->get($connection, 'access_token'))->toBe('at-1')
+        ->and(resolve(SealedColumns::class)->reveal($connection, 'access_token'))->toBe('at-1')
         ->and(GitOAuthState::query()->count())->toBe(0)
         ->and(AuditEvent::query()->where('action', AuditAction::GitConnectionAuthorized->value)->exists())->toBeTrue();
 

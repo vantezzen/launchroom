@@ -27,6 +27,7 @@ import (
 	"github.com/vantezzen/launchroom/daemon/internal/firewall"
 	"github.com/vantezzen/launchroom/daemon/internal/health"
 	"github.com/vantezzen/launchroom/daemon/internal/mesh"
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/policy"
 	"github.com/vantezzen/launchroom/daemon/internal/reconcile"
 	"github.com/vantezzen/launchroom/daemon/internal/sealed"
@@ -152,7 +153,7 @@ func TestCrossServerMesh(t *testing.T) {
 	current := func() *state.NodeState { mu.Lock(); defer mu.Unlock(); return cur }
 	fw := firewall.New(firewall.Options{
 		Backend: firewall.NewBackend(), Networks: m.engine.ListNetworks, MeshInterface: mesh.Interface,
-		AmbassadorNetwork: ambassadord.NetworkName, Log: log,
+		AmbassadorNetwork: names.AmbassadorNetwork, Log: log,
 		Mesh: func() firewall.MeshRules {
 			r := firewall.MeshRules{MeshIP: mgr.IPv4()}
 			ns := current()
@@ -180,15 +181,16 @@ func TestCrossServerMesh(t *testing.T) {
 	pol.AllowedRegistries = []string{"docker.io/traefik/"}
 	mon := health.NewMonitor(ctx, health.MonitorOptions{})
 	t.Cleanup(mon.Close)
+	m.engine.SetIsolation(fw.Sync)
 	amb := ambassadord.New(ambassadord.Options{
-		ServerID: string(m.serverID), Docker: m.engine, Ops: m.engine, Binary: ambBin, Isolate: fw.Sync, DrainSeconds: 2, Log: log,
+		ServerID: string(m.serverID), Docker: m.engine, Ops: m.engine, Binary: ambBin, DrainSeconds: 2, Log: log,
 	})
 	rec := reconcile.New(reconcile.Options{
-		ServerID: m.serverID, Docker: m.engine, Policy: pol, Health: mon, EnvHashKey: reconcile.EnvHashKey(key.Bytes()),
+		ServerID: m.serverID, Docker: m.engine, Policy: pol, Health: mon, EnvHashKey: docker.EnvHashKey(key.Bytes()),
 		OpenEnv: func(s *state.WorkloadSpec) (map[string]secret.Secret, error) {
 			return sealed.OpenWorkloadEnv(s.Env, key, m.serverID, s.ID)
 		},
-		MeshIP: mgr.IPv4, Isolate: fw.Sync, StopGrace: 2 * time.Second, Log: log, BeforeNetworkRemove: amb.Detach,
+		MeshIP: mgr.IPv4, StopGrace: 2 * time.Second, Log: log, BeforeNetworkRemove: amb.Detach,
 	})
 
 	netID := state.NetworkID("net_01J9Z8X7W6V5T4S3R2Q1P0N9X1")
@@ -245,7 +247,7 @@ func TestCrossServerMesh(t *testing.T) {
 
 	// 1. Before the mesh is up the published workload waits.
 	pass(build(1, []state.IPAddr{"100.64.0.250"}, nil))
-	if cs, _ := m.engine.ListContainers(ctx, map[string]string{docker.LabelWorkload: string(wl)}); len(cs) != 0 {
+	if cs, _ := m.engine.ListContainers(ctx, map[string]string{names.LabelWorkload: string(wl)}); len(cs) != 0 {
 		t.Fatal("workload created before the mesh address was known")
 	}
 	if st := status(rec, wl); st.Phase != state.PhasePending {
@@ -331,7 +333,7 @@ func TestCrossServerMesh(t *testing.T) {
 	if f.reach(ctx, envFw, "http://"+string(remote)+"/passwd") {
 		t.Fatal("a workload reached the mesh directly")
 	}
-	cs, err := m.engine.ListContainers(ctx, map[string]string{docker.LabelSystem: policy.SystemAmbassador})
+	cs, err := m.engine.ListContainers(ctx, map[string]string{names.LabelSystem: names.SystemAmbassador})
 	if err != nil || len(cs) != 1 {
 		t.Fatalf("ambassador container: %v %v", cs, err)
 	}
@@ -343,25 +345,25 @@ func TestCrossServerMesh(t *testing.T) {
 		pass(ns)
 		return f.reach(ctx, envFw, "http://remote2:8081/passwd")
 	})
-	if cs, _ := m.engine.ListContainers(ctx, map[string]string{docker.LabelSystem: policy.SystemAmbassador}); len(cs) != 1 || cs[0].ID != ambID {
+	if cs, _ := m.engine.ListContainers(ctx, map[string]string{names.LabelSystem: names.SystemAmbassador}); len(cs) != 1 || cs[0].ID != ambID {
 		t.Fatal("ambassador container was replaced by a config change")
 	}
 	// No ambassadors left: container and network go.
 	ns = build(7, []state.IPAddr{state.IPAddr(peerA.ip.String())}, nil)
 	pass(ns)
-	if cs, _ := m.engine.ListContainers(ctx, map[string]string{docker.LabelSystem: policy.SystemAmbassador}); len(cs) != 0 {
+	if cs, _ := m.engine.ListContainers(ctx, map[string]string{names.LabelSystem: names.SystemAmbassador}); len(cs) != 0 {
 		t.Fatal("ambassador still running without ambassadors")
 	}
 
 	// 5. Reboot order: the workload restarts while the mesh is down.
-	mcs, err := m.engine.ListContainers(ctx, map[string]string{docker.LabelSystem: policy.SystemTailscale})
+	mcs, err := m.engine.ListContainers(ctx, map[string]string{names.LabelSystem: names.SystemTailscale})
 	if err != nil || len(mcs) != 1 {
 		t.Fatalf("mesh client: %v %v", mcs, err)
 	}
 	if err := m.engine.StopContainer(ctx, mcs[0].ID, 10*time.Second); err != nil {
 		t.Fatal(err)
 	}
-	wcs, _ := m.engine.ListContainers(ctx, map[string]string{docker.LabelWorkload: string(wl)})
+	wcs, _ := m.engine.ListContainers(ctx, map[string]string{names.LabelWorkload: string(wl)})
 	if len(wcs) != 1 {
 		t.Fatalf("workload containers %v", wcs)
 	}
@@ -380,8 +382,8 @@ func TestCrossServerMesh(t *testing.T) {
 	want := netip.AddrPortFrom(mgr.IPv4(), 31001)
 	eventuallyWithin(t, 2*time.Minute, "workload published on the mesh again", func() bool {
 		pass(ns)
-		cs, _ := m.engine.ListContainers(ctx, map[string]string{docker.LabelWorkload: string(wl)})
-		if len(cs) != 1 || !cs[0].Running || !slices.Contains(cs[0].HostPorts, want) {
+		cs, _ := m.engine.ListContainers(ctx, map[string]string{names.LabelWorkload: string(wl)})
+		if len(cs) != 1 || !cs[0].Running() || !slices.Contains(cs[0].HostPorts, want) {
 			return false
 		}
 		res, err := http.Get("http://" + want.String() + "/") //nolint:noctx // test

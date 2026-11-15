@@ -27,7 +27,6 @@ import (
 //go:embed trusted_root.json
 var embeddedTrustedRoot []byte
 
-// maxSigBundleBytes bounds a .sigstore.json bundle.
 const maxSigBundleBytes = 1 << 20
 
 // VerifierOptions configures a Verifier.

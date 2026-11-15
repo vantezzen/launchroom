@@ -11,7 +11,7 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import { Spinner } from '@/components/ui/spinner';
-import { requestJson } from '@/features/projects/http';
+import { requestJson } from '@/lib/http';
 import {
     branches as branchesRoute,
     index as repositoriesRoute,

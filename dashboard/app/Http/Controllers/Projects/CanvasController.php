@@ -6,20 +6,18 @@ namespace App\Http\Controllers\Projects;
 
 use App\Actions\Canvas\SaveCanvasLayout;
 use App\Data\Canvas\CanvasLayoutData;
-use App\Data\Canvas\DatabaseEngineOptionData;
-use App\Data\Canvas\ServiceControlsData;
 use App\Data\Canvas\ServicePanelData;
 use App\Data\Deployments\ServiceDeploymentsData;
 use App\Data\Previews\PreviewCanvasData;
 use App\Data\Specs\EnvironmentSpec;
 use App\Drivers\DatabaseEngines\DatabaseEngines;
-use App\Enums\DatabaseEngine;
 use App\Enums\EnvironmentKind;
-use App\Enums\Security\FindingLevel;
-use App\Enums\Security\SecurityFindingStatus;
 use App\Enums\ServiceKind;
+use App\Enums\ServicePanelTab;
+use App\Enums\ServiceSettingsSection;
 use App\Enums\Sessions\InteractiveSessionKind;
 use App\Http\Controllers\Controller;
+use App\Http\Routing\RouteScope;
 use App\Models\Environment;
 use App\Models\Project;
 use App\Models\Security\SecurityFinding;
@@ -29,10 +27,11 @@ use App\Models\User;
 use App\Queries\CanvasGraph;
 use App\Queries\CurrentEnvironmentSpec;
 use App\Queries\Previews\PreviewCanvas;
+use App\Queries\ProjectShell;
+use App\Queries\ServiceControls;
 use App\Queries\ServiceDeployments;
 use App\Queries\ServiceOrigin;
 use App\Queries\ServiceSettings;
-use App\Support\Services\StagedForService;
 use Closure;
 use Illuminate\Container\Attributes\CurrentUser;
 use Illuminate\Contracts\Database\Query\Builder;
@@ -51,43 +50,34 @@ final class CanvasController extends Controller
 {
     public function __construct(
         private readonly DatabaseEngines $engines,
-        private readonly StagedForService $staged,
+        private readonly ServiceControls $controls,
         private readonly CurrentEnvironmentSpec $currentSpec,
     ) {}
-
-    /** Service panel tabs, in display order (`console`/`data`: docs/08 §15, only with their permission). */
-    public const array TABS = ['deployments', 'logs', 'console', 'data', 'settings'];
-
-    /** Pages of the Settings tab (`/s/{service}/settings/{section}`, docs/08 §16; `backups`: databases and services with volumes). */
-    public const array SETTINGS_SECTIONS = ['general', 'source', 'variables', 'build', 'deploy', 'schedule', 'domains', 'networking', 'firewall', 'scaling', 'volumes', 'backups', 'advanced', 'danger'];
-
-    /** Former panel tabs that are settings pages now (docs/08 §16): old links redirect. */
-    public const array MOVED_TABS = ['variables', 'backups'];
 
     public function show(Project $project, Environment $environment, CanvasGraph $graph): Response
     {
         Gate::authorize('view', $environment);
-        ProjectScope::environment($project, $environment);
+        RouteScope::environment($project, $environment);
 
         return $this->render($project, $environment, $graph, null);
     }
 
-    public function service(Request $request, Project $project, Environment $environment, Service $service, CanvasGraph $graph, ServiceSettings $settings, #[CurrentUser] User $user, string $tab = 'deployments', ?string $section = null): Response|RedirectResponse
+    public function service(Request $request, Project $project, Environment $environment, Service $service, CanvasGraph $graph, ServiceSettings $settings, #[CurrentUser] User $user, ServicePanelTab $tab = ServicePanelTab::Deployments, ?ServiceSettingsSection $section = null): Response|RedirectResponse
     {
-        $instance = ProjectScope::instance($project, $environment, $service);
+        $instance = RouteScope::instance($project, $environment, $service);
         Gate::authorize('view', $instance);
 
         // `?tab=variables` / `?tab=backups` from older links (docs/08 §16).
-        $legacy = $request->query('tab');
+        $legacy = is_string($request->query('tab')) ? ServiceSettingsSection::tryFrom($request->query('tab')) : null;
 
-        if ($section === null && is_string($legacy) && in_array($legacy, self::MOVED_TABS, true)) {
+        if (! $section instanceof ServiceSettingsSection && $legacy !== null && in_array($legacy, ServiceSettingsSection::formerTabs(), true)) {
             return $this->toSection($request, $project, $environment, $service, $legacy, ['tab']);
         }
 
-        abort_if($section === 'backups' && $service->kind !== ServiceKind::Database && ! $instance->volumes()->exists(), 404);
+        abort_if($section === ServiceSettingsSection::Backups && $service->kind !== ServiceKind::Database && ! $instance->volumes()->exists(), 404);
         $canConsole = Gate::allows('viewAny', [InteractiveSession::class, $instance, InteractiveSessionKind::Console]);
         $canData = $service->kind === ServiceKind::Database && Gate::allows('viewAny', [InteractiveSession::class, $instance, InteractiveSessionKind::Data]);
-        abort_if(($tab === 'console' && ! $canConsole) || ($tab === 'data' && ! $canData), 404);
+        abort_if(($tab === ServicePanelTab::Console && ! $canConsole) || ($tab === ServicePanelTab::Data && ! $canData), 404);
 
         // One snapshot of the environment's intent for the whole request: the
         // controls, the settings and the canvas graph each diff against it.
@@ -103,23 +93,22 @@ final class CanvasController extends Controller
             $findings = array_values(array_filter(SecurityFinding::query()
                 ->where('team_id', $project->team_id)
                 ->where('service_instance_id', $instance->id)
-                ->where('level', FindingLevel::ActionNeeded->value)
-                ->where('status', SecurityFindingStatus::Open->value)
+                ->actionNeeded()
                 ->pluck('public_id')
                 ->all(), is_string(...)));
 
             return new ServicePanelData(
                 serviceId: $service->public_id,
                 tab: $tab,
-                settings: $tab === 'settings' ? $settings->for($instance, $user, $spec()) : null,
+                settings: $tab === ServicePanelTab::Settings ? $settings->for($instance, $user, $spec()) : null,
                 canUpdate: $instance->removed_at === null && Gate::allows('update', $instance),
                 canDelete: $instance->removed_at === null && Gate::allows('delete', $instance),
                 canConsole: $canConsole,
                 canData: $canData,
-                section: $tab === 'settings' ? $section : null,
+                section: $tab === ServicePanelTab::Settings ? $section : null,
                 actionNeeded: count($findings),
                 actionNeededFinding: count($findings) === 1 ? $findings[0] : null,
-                controls: ServiceControlsData::for($instance, $user, $this->staged, $spec()),
+                controls: $this->controls->for($instance, $user, $spec()),
                 origin: resolve(ServiceOrigin::class)->for($instance),
             );
         };
@@ -128,21 +117,18 @@ final class CanvasController extends Controller
         // its list, so the panel draws complete from one request. Opening
         // the panel from the canvas reloads only `panel` and leaves this out:
         // the client fetches the list in parallel (docs/10 §3).
-        $deployments = $tab === 'deployments'
+        $deployments = $tab === ServicePanelTab::Deployments
             ? static fn (): ServiceDeploymentsData => resolve(ServiceDeployments::class)->for($instance)
             : null;
 
         return $this->render($project, $environment, $graph, $panel, $spec, $deployments);
     }
 
-    /**
-     * A page of the Settings tab: the same panel, opened on that page.
-     */
-    public function settingsSection(Request $request, Project $project, Environment $environment, Service $service, CanvasGraph $graph, ServiceSettings $settings, #[CurrentUser] User $user, string $section): Response|RedirectResponse
+    public function settingsSection(Request $request, Project $project, Environment $environment, Service $service, CanvasGraph $graph, ServiceSettings $settings, #[CurrentUser] User $user, ServiceSettingsSection $section): Response|RedirectResponse
     {
-        Gate::authorize('view', ProjectScope::instance($project, $environment, $service));
+        Gate::authorize('view', RouteScope::instance($project, $environment, $service));
 
-        return $this->service($request, $project, $environment, $service, $graph, $settings, $user, 'settings', $section);
+        return $this->service($request, $project, $environment, $service, $graph, $settings, $user, ServicePanelTab::Settings, $section);
     }
 
     /**
@@ -151,9 +137,9 @@ final class CanvasController extends Controller
      * alerts, notifications and bookmarks, so they redirect with the query
      * (`?add=NAME&value=`, `?before=`).
      */
-    public function movedTab(Request $request, Project $project, Environment $environment, Service $service, string $tab): RedirectResponse
+    public function movedTab(Request $request, Project $project, Environment $environment, Service $service, ServiceSettingsSection $tab): RedirectResponse
     {
-        Gate::authorize('view', ProjectScope::instance($project, $environment, $service));
+        Gate::authorize('view', RouteScope::instance($project, $environment, $service));
 
         return $this->toSection($request, $project, $environment, $service, $tab);
     }
@@ -161,7 +147,7 @@ final class CanvasController extends Controller
     /**
      * @param  list<string>  $drop  query keys not to carry over
      */
-    private function toSection(Request $request, Project $project, Environment $environment, Service $service, string $section, array $drop = []): RedirectResponse
+    private function toSection(Request $request, Project $project, Environment $environment, Service $service, ServiceSettingsSection $section, array $drop = []): RedirectResponse
     {
         $query = array_diff_key($request->query(), array_flip($drop));
         $url = route('projects.services.section', [$project, $environment, $service, $section]);
@@ -175,7 +161,7 @@ final class CanvasController extends Controller
     public function layout(Project $project, Environment $environment, CanvasLayoutData $data, SaveCanvasLayout $saveLayout): HttpResponse
     {
         Gate::authorize('update', $project);
-        ProjectScope::environment($project, $environment);
+        RouteScope::environment($project, $environment);
 
         $saveLayout->handle($environment, $data);
 
@@ -199,7 +185,7 @@ final class CanvasController extends Controller
         };
 
         return Inertia::render('projects/canvas', [
-            ...ProjectScope::shellProps($project, $environment),
+            ...ProjectShell::props($project, $environment),
             'nodes' => static fn (): array => $canvas()['nodes'],
             'edges' => static fn (): array => $canvas()['edges'],
             // App volumes as their own nodes, shared between services (D73).
@@ -216,11 +202,7 @@ final class CanvasController extends Controller
             'isPreview' => $environment->kind === EnvironmentKind::Preview,
             // Pull request context + shared/cloned database badges (docs/06 §5).
             'preview' => static fn (): ?PreviewCanvasData => resolve(PreviewCanvas::class)->for($environment),
-            'engines' => fn (): array => array_map(static function (DatabaseEngine $engine) use ($engines): DatabaseEngineOptionData {
-                $driver = $engines->for($engine);
-
-                return new DatabaseEngineOptionData($engine, $engine->label(), $driver->versions(), $driver->defaultVersion(), $engine->tagline());
-            }, DatabaseEngine::cases()),
+            'engines' => $engines->options(...),
         ]);
     }
 }

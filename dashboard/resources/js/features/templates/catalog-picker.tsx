@@ -3,7 +3,7 @@ import { Logo } from '@/components/logo';
 import { SheetSection } from '@/components/patterns/sheet';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
-import { requestJson } from '@/features/projects/http';
+import { requestJson } from '@/lib/http';
 import { catalog } from '@/routes/projects';
 import { store } from '@/routes/projects/catalog';
 import { TemplateGallery } from './template-gallery';

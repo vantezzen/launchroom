@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Data\Teams;
 
+use App\Concerns\PasswordValidationRules;
+use App\Concerns\ProfileValidationRules;
 use SensitiveParameter;
 use Spatie\LaravelData\Data;
 
@@ -12,9 +14,19 @@ use Spatie\LaravelData\Data;
  */
 final class AcceptInvitationData extends Data
 {
+    use PasswordValidationRules, ProfileValidationRules;
+
     public function __construct(
         public string $name,
         #[SensitiveParameter]
         public string $password,
     ) {}
+
+    /**
+     * @return array<string, mixed>
+     */
+    public static function rules(): array
+    {
+        return ['name' => self::nameRules(), 'password' => self::passwordRules()];
+    }
 }

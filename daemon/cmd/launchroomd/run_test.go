@@ -15,6 +15,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -401,7 +402,7 @@ func TestHostFactsSanitized(t *testing.T) {
 	if err := hf.Hostname.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	if hf.OS != "linux" {
+	if string(hf.OS) != runtime.GOOS {
 		t.Fatalf("os = %q", hf.OS)
 	}
 	hf = hostFacts(func() (string, error) { return "", errors.New("x") }, "")
@@ -411,15 +412,6 @@ func TestHostFactsSanitized(t *testing.T) {
 	// On a Mac the installer's LR_HOST_OS names the machine's OS (D53).
 	if hf = hostFacts(func() (string, error) { return "mac", nil }, state.HostDarwin); hf.OS != "darwin" {
 		t.Fatalf("os = %q", hf.OS)
-	}
-}
-
-func TestJitterBounds(t *testing.T) {
-	for range 1000 {
-		d := jitter(10 * time.Second)
-		if d < 9*time.Second || d > 11*time.Second {
-			t.Fatalf("jitter %v out of bounds", d)
-		}
 	}
 }
 

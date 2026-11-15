@@ -1,41 +1,10 @@
-const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-
-/**
- * Compact byte sizes for tables ("1.4 MB"). Decimal units, like S3 consoles.
- */
-export function formatBytes(bytes: number | null): string {
-    if (bytes === null) {
-        return '—';
-    }
-
-    let value = bytes;
-    let unit = 0;
-
-    while (value >= 1000 && unit < units.length - 1) {
-        value /= 1000;
-        unit++;
-    }
-
-    return `${unit === 0 ? value : value.toFixed(value < 10 ? 1 : 0)} ${units[unit]}`;
-}
-
-export const reasonLabels: Record<App.Enums.Backups.BackupReason, string> = {
-    scheduled: 'Scheduled',
-    manual: 'Manual',
-    pre_upgrade: 'Before upgrade',
-    pre_restore: 'Before restore',
-    pre_delete: 'Before delete',
-    pre_deploy: 'Before deploy',
-    pre_move: 'Before move',
-};
+import { labelOf, vocabulary } from '@/lib/vocabulary';
 
 export function reasonLabel(reason: string | null): string {
-    return reason !== null && reason in reasonLabels
-        ? reasonLabels[reason as App.Enums.Backups.BackupReason]
-        : 'Backup';
+    return labelOf(vocabulary.Backups.BackupReason, reason) ?? 'Backup';
 }
 
-export type StorageProvider = {
+type StorageProvider = {
     /** Logo kind (components/logo). */
     logo: string;
     label: string;

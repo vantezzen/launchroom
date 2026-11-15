@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use App\Http\Controllers\Dockerfiles\DockerfileGenerationSettingsController;
 use App\Http\Controllers\Dockerfiles\ServiceDockerfileGenerationController;
-use App\Support\PublicId;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -26,19 +25,15 @@ Route::middleware(['web', 'auth', 'verified'])->group(function (): void {
         ->middleware('throttle:6,1')
         ->name('projects.services.dockerfile-generations.store');
     Route::get('p/{project}/{environment}/s/{service}/dockerfile-generations/{generation}', [ServiceDockerfileGenerationController::class, 'show'])
-        ->where('generation', PublicId::routePattern('dfg'))
         ->middleware('throttle:120,1')
         ->name('projects.services.dockerfile-generations.show');
     Route::post('p/{project}/{environment}/s/{service}/dockerfile-generations/{generation}/use', [ServiceDockerfileGenerationController::class, 'use'])
-        ->where('generation', PublicId::routePattern('dfg'))
         ->middleware('throttle:20,1')
         ->name('projects.services.dockerfile-generations.use');
     Route::post('p/{project}/{environment}/s/{service}/dockerfile-generations/{generation}/pull-request', [ServiceDockerfileGenerationController::class, 'pullRequest'])
-        ->where('generation', PublicId::routePattern('dfg'))
         ->middleware('throttle:6,1')
         ->name('projects.services.dockerfile-generations.pull-request');
     Route::delete('p/{project}/{environment}/s/{service}/dockerfile-generations/{generation}', [ServiceDockerfileGenerationController::class, 'destroy'])
-        ->where('generation', PublicId::routePattern('dfg'))
         ->middleware('throttle:20,1')
         ->name('projects.services.dockerfile-generations.destroy');
 });

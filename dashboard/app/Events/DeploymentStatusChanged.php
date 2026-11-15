@@ -10,7 +10,7 @@ use Illuminate\Foundation\Events\Dispatchable;
 
 /**
  * A deployment changed status (docs/04 §6). Dispatched after the surrounding
- * transaction commits; listeners (GitHub statuses, notifications, broadcasts)
+ * transaction commits; listeners (git provider statuses, alerts, broadcasts)
  * only run side effects and never change the deployment's outcome.
  */
 final readonly class DeploymentStatusChanged implements ShouldDispatchAfterCommit

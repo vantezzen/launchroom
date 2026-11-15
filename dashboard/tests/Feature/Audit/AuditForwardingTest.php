@@ -22,15 +22,15 @@ use App\Models\Team;
 use App\Models\User;
 use App\Services\Audit\AuditDeliveryFailed;
 use App\Services\Audit\AuditForwarder;
-use App\Services\Audit\AuditSinkSecrets;
 use App\Services\Audit\Transports\SyslogConnector;
 use App\Services\Audit\Transports\SyslogStream;
 use App\Services\Crypto\Envelope;
+use App\Services\Crypto\SealedColumns;
 use App\Services\Crypto\SecretKey;
 use App\Services\Http\ResolvedTarget;
-use App\Support\Alerts\WebhookSignature;
 use App\Support\AuditChain;
 use App\Support\S3\SigV4;
+use App\Support\Webhooks\WebhookSignature;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
@@ -315,9 +315,10 @@ test('only instance owners see and manage destinations', function (): void {
         ->assertRedirect()->assertSessionHasNoErrors();
     $sink = AuditSink::query()->sole();
 
-    $this->actingAs($admin)->patch(route('audit-sinks.update', $sink->public_id), ['enabled' => false])->assertForbidden();
-    $this->actingAs($admin)->post(route('audit-sinks.test', $sink->public_id))->assertForbidden();
-    $this->actingAs($admin)->delete(route('audit-sinks.destroy', $sink->public_id))->assertForbidden();
+    // Out of reach like another team's resource (docs/09 R7).
+    $this->actingAs($admin)->patch(route('audit-sinks.update', $sink->public_id), ['enabled' => false])->assertNotFound();
+    $this->actingAs($admin)->post(route('audit-sinks.test', $sink->public_id))->assertNotFound();
+    $this->actingAs($admin)->delete(route('audit-sinks.destroy', $sink->public_id))->assertNotFound();
 
     $this->actingAs($owner)->patch(route('audit-sinks.update', $sink->public_id), ['enabled' => false])->assertRedirect();
     expect($sink->refresh()->status())->toBe(AuditSinkStatus::Paused);
@@ -338,7 +339,7 @@ test('credentials are envelope-encrypted, never serialized or rendered, and rewr
     $sink = AuditSink::query()->sole();
     expect($sink->secret)->not->toContain('super-secret')
         ->and(json_encode($sink->toArray(), JSON_THROW_ON_ERROR))->not->toContain('lr1:')
-        ->and(resolve(AuditSinkSecrets::class)->reveal($sink)['secretAccessKey'])->toBe('super-secret-key-material');
+        ->and(resolve(SealedColumns::class)->revealJson($sink, 'secret')['secretAccessKey'])->toBe('super-secret-key-material');
 
     $page = $this->actingAs($owner)->get(route('instance-security.edit'))
         ->assertOk()
@@ -352,9 +353,9 @@ test('credentials are envelope-encrypted, never serialized or rendered, and rewr
     $next = new Envelope(SecretKey::generate());
     resolve(RotateKek::class)->handle($current, $next);
     app()->instance(Envelope::class, $next);
-    app()->forgetInstance(AuditSinkSecrets::class);
+    app()->forgetInstance(SealedColumns::class);
     expect($sink->refresh()->kek_id)->toBe($next->kekId());
-    expect(resolve(AuditSinkSecrets::class)->reveal($sink->refresh())['accessKeyId'])->toBe('AKIAVISIBLE');
+    expect(resolve(SealedColumns::class)->revealJson($sink->refresh(), 'secret')['accessKeyId'])->toBe('AKIAVISIBLE');
 });
 
 test('the activity page shows whether the audit log verified, without details for members', function (): void {

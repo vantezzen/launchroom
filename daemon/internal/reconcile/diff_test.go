@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/vantezzen/launchroom/daemon/internal/docker"
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
 
@@ -59,9 +60,9 @@ func vol(name string, labels map[string]string) docker.Volume {
 
 func ctr(id state.WorkloadID, hash, st string) docker.Container {
 	l := docker.ManagedLabels(srvID)
-	l[docker.LabelWorkload] = string(id)
-	l[docker.LabelSpecHash] = hash
-	return docker.Container{ID: string(id) + "-" + hash + "-" + st, Name: "lr-" + strings.ToLower(string(id)), Labels: l, State: st, Running: st == "running"}
+	l[names.LabelWorkload] = string(id)
+	l[names.LabelSpecHash] = hash
+	return docker.Container{ID: string(id) + "-" + hash + "-" + st, Name: "lr-" + strings.ToLower(string(id)), Labels: l, State: docker.ContainerState(st)}
 }
 
 func managedNet(name, subnet string) docker.Network {
@@ -241,7 +242,7 @@ func TestDiffNeverTouchesVolumes(t *testing.T) {
 func TestDiffVolumeOwnership(t *testing.T) {
 	net := managedNet("lr-e_a", "10.231.4.0/24")
 	imgs := map[state.ImageRef]bool{imgA: true}
-	owned := map[string]string{docker.LabelVolume: string(volA), docker.LabelService: string(svcA), docker.LabelEnvironment: string(envA)}
+	owned := map[string]string{names.LabelVolume: string(volA), names.LabelService: string(svcA), names.LabelEnvironment: string(envA)}
 	cases := []struct {
 		name    string
 		vols    []state.VolumeSpec
@@ -253,15 +254,15 @@ func TestDiffVolumeOwnership(t *testing.T) {
 		{name: "own volume", vols: []state.VolumeSpec{{ID: volA, Name: "lr-v_a"}}, spec: []state.WorkloadSpec{mounting(wspec(wlA), volA)},
 			actual: []docker.Volume{vol("lr-v_a", owned)}, want: []string{"create:" + string(wlA)}},
 		{name: "legacy volume without owner labels, matching id", vols: []state.VolumeSpec{{ID: volA, Name: "lr-v_a"}}, spec: []state.WorkloadSpec{mounting(wspec(wlA), volA)},
-			actual: []docker.Volume{vol("lr-v_a", map[string]string{docker.LabelVolume: string(volA)})}, want: []string{"create:" + string(wlA)}},
+			actual: []docker.Volume{vol("lr-v_a", map[string]string{names.LabelVolume: string(volA)})}, want: []string{"create:" + string(wlA)}},
 		{name: "caddy data volume", vols: []state.VolumeSpec{{ID: volA, Name: "lr-system-caddy-data"}}, spec: []state.WorkloadSpec{mounting(wspec(wlA), volA)},
-			actual: []docker.Volume{vol("lr-system-caddy-data", map[string]string{docker.LabelVolume: "system-caddy-data"})}, want: []string{}, blocked: true},
+			actual: []docker.Volume{vol("lr-system-caddy-data", map[string]string{names.LabelVolume: "system-caddy-data"})}, want: []string{}, blocked: true},
 		{name: "buildkit state volume not yet existing", vols: []state.VolumeSpec{{ID: volA, Name: "lr-system-buildkit-state"}}, spec: []state.WorkloadSpec{mounting(wspec(wlA), volA)},
 			want: []string{}, blocked: true},
 		{name: "non workload volume name", vols: []state.VolumeSpec{{ID: volA, Name: "lr-daemon-data"}}, spec: []state.WorkloadSpec{mounting(wspec(wlA), volA)},
 			want: []string{}, blocked: true},
 		{name: "system labelled volume with a workload name", vols: []state.VolumeSpec{{ID: volA, Name: "lr-v_a"}}, spec: []state.WorkloadSpec{mounting(wspec(wlA), volA)},
-			actual: []docker.Volume{vol("lr-v_a", map[string]string{docker.LabelVolume: string(volA), docker.LabelSystem: "caddy"})}, want: []string{}, blocked: true},
+			actual: []docker.Volume{vol("lr-v_a", map[string]string{names.LabelVolume: string(volA), names.LabelSystem: "caddy"})}, want: []string{}, blocked: true},
 		{name: "existing volume of another id", vols: []state.VolumeSpec{{ID: volB, Name: "lr-v_a"}}, spec: []state.WorkloadSpec{mounting(wspec(wlA), volB)},
 			actual: []docker.Volume{vol("lr-v_a", owned)}, want: []string{}, blocked: true},
 		{name: "existing volume of another service", vols: []state.VolumeSpec{{ID: volA, Name: "lr-v_a"}},
@@ -313,12 +314,12 @@ func TestDiffVolumeOwnership(t *testing.T) {
 		{name: "unmounted volume is created without an owner", vols: []state.VolumeSpec{{ID: volA, Name: "lr-v_a"}}, spec: []state.WorkloadSpec{wspec(wlA)},
 			want: []string{"create-volume:lr-v_a", "create:" + string(wlA)}},
 		{name: "unmounted volume that exists is left alone", vols: []state.VolumeSpec{{ID: volA, Name: "lr-v_a"}}, spec: []state.WorkloadSpec{wspec(wlA)},
-			actual: []docker.Volume{vol("lr-v_a", map[string]string{docker.LabelVolume: string(volA)})}, want: []string{"create:" + string(wlA)}},
+			actual: []docker.Volume{vol("lr-v_a", map[string]string{names.LabelVolume: string(volA)})}, want: []string{"create:" + string(wlA)}},
 		{name: "unmounted system volume name is never created", vols: []state.VolumeSpec{{ID: volA, Name: "lr-system-caddy-data"}}, spec: []state.WorkloadSpec{wspec(wlA)},
 			want: []string{"create:" + string(wlA)}},
 		// The workload that later mounts a prepared volume (no service label) may.
 		{name: "prepared volume mounted by its service", vols: []state.VolumeSpec{{ID: volA, Name: "lr-v_a"}}, spec: []state.WorkloadSpec{mounting(wspec(wlA), volA)},
-			actual: []docker.Volume{vol("lr-v_a", map[string]string{docker.LabelVolume: string(volA)})}, want: []string{"create:" + string(wlA)}},
+			actual: []docker.Volume{vol("lr-v_a", map[string]string{names.LabelVolume: string(volA)})}, want: []string{"create:" + string(wlA)}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

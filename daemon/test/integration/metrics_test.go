@@ -15,6 +15,7 @@ import (
 	"github.com/vantezzen/launchroom/daemon/internal/docker"
 	"github.com/vantezzen/launchroom/daemon/internal/hostinfo"
 	"github.com/vantezzen/launchroom/daemon/internal/metrics"
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
 
@@ -44,9 +45,9 @@ func TestWorkloadMetricsFromDocker(t *testing.T) {
 	}
 	wl := state.WorkloadID(randomID("wl"))
 	labels := docker.ManagedLabels(string(e.serverID))
-	labels[docker.LabelWorkload] = string(wl)
+	labels[names.LabelWorkload] = string(wl)
 	run("lr-metrics-managed", labels)
-	foreign := run("metrics-foreign", map[string]string{docker.LabelWorkload: string(wl)})
+	foreign := run("metrics-foreign", map[string]string{names.LabelWorkload: string(wl)})
 
 	if _, err := e.engine.ContainerStats(ctx, foreign); !errors.Is(err, docker.ErrNotManaged) {
 		t.Fatalf("stats of an unmanaged container: %v", err)

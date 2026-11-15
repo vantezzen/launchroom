@@ -9,7 +9,7 @@ function hostPart(host: string): string {
 export const CERT_FILE = 'launchroom-access.crt';
 
 /** One ready-made command or config block for a client. */
-export type Snippet = {
+type Snippet = {
     /** Tab label ("ssh", "~/.ssh/config"). */
     id: string;
     label: string;
@@ -99,7 +99,7 @@ export function snippets(
         return list;
     }
 
-    if (access.engine === 'postgres') {
+    if (access.protocol === 'postgres') {
         const db = access.database ?? 'postgres';
 
         return [
@@ -119,7 +119,7 @@ export function snippets(
         ];
     }
 
-    const cli = access.engine === 'valkey' ? 'valkey-cli' : 'redis-cli';
+    const cli = access.client ?? 'redis-cli';
 
     return [
         {

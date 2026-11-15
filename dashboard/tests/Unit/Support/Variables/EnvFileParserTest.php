@@ -5,6 +5,9 @@ declare(strict_types=1);
 use App\Data\Variables\EnvFileEntry;
 use App\Enums\VariableType;
 use App\Support\Variables\EnvFileParser;
+use App\Support\Variables\EnvFileWriter;
+use App\Support\Variables\VariableKey;
+use Tests\Support\ProtocolSchemas;
 
 /**
  * @return array<string, string>
@@ -150,4 +153,22 @@ test('entries never print their values', function (): void {
     $entry = EnvFileParser::parse('SECRET=hunter2')->entries[0];
 
     expect(print_r($entry, true))->not->toContain('hunter2');
+});
+
+test('the CLI and the dashboard write and read the same .env lines', function (): void {
+    // protocol/fixtures/cli/dotenv.json is read by the CLI's dotenv test too.
+    $vectors = json_decode((string) file_get_contents(ProtocolSchemas::root().'/fixtures/cli/dotenv.json'), true, flags: JSON_THROW_ON_ERROR);
+
+    foreach ($vectors['lines'] as $vector) {
+        expect(EnvFileWriter::line($vector['key'], $vector['value']))->toBe($vector['line'])
+            ->and(parsedValues($vector['line']."\n"))->toBe([$vector['key'] => $vector['value']]);
+    }
+
+    foreach ($vectors['validKeys'] as $key) {
+        expect(VariableKey::isValid($key))->toBeTrue($key);
+    }
+
+    foreach ($vectors['invalidKeys'] as $key) {
+        expect(VariableKey::isValid($key))->toBeFalse($key);
+    }
 });

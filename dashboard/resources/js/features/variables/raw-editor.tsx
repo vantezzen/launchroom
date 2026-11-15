@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { raw } from '@/routes/variables';
 import { update as rawUpdate } from '@/routes/variables/raw';
-import { api } from './api';
+import { requestJson } from '@/lib/http';
 
 /**
  * Raw `.env` mode (docs/06 §3.4): the variables of this service in this
@@ -25,7 +25,12 @@ export function RawEditor({
     const { data, isPending } = useQuery({
         queryKey: ['variables-raw', urls.environment, urls.service],
         queryFn: ({ signal }) =>
-            api<{ content: string }>('get', raw(urls).url, undefined, signal),
+            requestJson<{ content: string }>(
+                'get',
+                raw(urls).url,
+                undefined,
+                signal,
+            ),
         gcTime: 0,
         staleTime: 0,
         refetchOnWindowFocus: false,
@@ -40,7 +45,7 @@ export function RawEditor({
         setError(null);
 
         try {
-            const result = await api<App.Data.Variables.RawEditResult>(
+            const result = await requestJson<App.Data.Variables.RawEditResult>(
                 'put',
                 rawUpdate(urls).url,
                 { content },

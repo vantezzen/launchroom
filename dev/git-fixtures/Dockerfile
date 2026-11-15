@@ -1,8 +1,8 @@
 # Dev-only git server for fixture apps (`git-fixtures` service in dev/compose.yml).
 # Publishes every directory under /fixtures as a deterministic commit and serves
-# it over git smart HTTP (git http-backend). Built from launchroomd module's
+# it over git smart HTTP (git http-backend). Built from the daemon/ module's
 # test tooling (daemon/test/gitserve); never shipped.
-ARG GO_IMAGE=golang:1.27
+ARG GO_IMAGE
 FROM ${GO_IMAGE} AS build
 WORKDIR /src
 COPY daemon/go.mod daemon/go.sum ./

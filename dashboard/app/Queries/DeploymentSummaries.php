@@ -6,12 +6,12 @@ namespace App\Queries;
 
 use App\Data\Deployments\DeploymentSummaryData;
 use App\Data\Deployments\ServiceStoppedData;
-use App\Enums\DeploymentStatus;
+use App\Enums\DeploymentFilter;
 use App\Models\Deployment;
 use App\Models\Domain;
 use App\Models\ServiceInstance;
 use App\Models\User;
-use App\Support\Git\GitHubAvatar;
+use App\Services\Git\AvatarOrigins;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Gate;
@@ -99,21 +99,19 @@ final class DeploymentSummaries
     }
 
     /**
-     * Deployments of a project's environments, newest first. `status` is a
-     * DeploymentStatus value or `in_progress`.
+     * Deployments of a project's environments, newest first.
      *
      * @param  list<int>  $environmentIds  the project's environments
      * @return list<DeploymentSummaryData>
      */
-    public function forProject(int $teamId, array $environmentIds, ?int $environmentId, ?int $serviceId, ?string $status, int $limit): array
+    public function forProject(int $teamId, array $environmentIds, ?int $environmentId, ?int $serviceId, ?DeploymentFilter $filter, int $limit): array
     {
         $query = Deployment::query()
             ->where('team_id', $teamId)
             ->whereIn('environment_id', $environmentIds)
             ->when($environmentId !== null, static fn (Builder $q) => $q->where('environment_id', $environmentId))
             ->when($serviceId !== null, static fn (Builder $q) => $q->whereHas('serviceInstance', static fn (Builder $i) => $i->where('service_id', $serviceId)))
-            ->when($status === 'in_progress', static fn (Builder $q) => $q->whereIn('status', DeploymentStatus::values(DeploymentStatus::inFlight())))
-            ->when($status !== null && $status !== 'in_progress', static fn (Builder $q) => $q->where('status', $status));
+            ->when($filter instanceof DeploymentFilter, static fn (Builder $q) => $q->whereIn('status', $filter?->statuses() ?? []));
 
         return $this->rows(self::withRelations($query)->latest('id')->limit($limit)->get());
     }
@@ -143,7 +141,7 @@ final class DeploymentSummaries
         return new DeploymentSummaryData(
             id: $deployment->public_id,
             status: $deployment->status,
-            statusLabel: $deployment->status->label(),
+            statusLabel: $deployment->status->stage(),
             trigger: $deployment->trigger,
             projectId: $service->project->public_id,
             serviceId: $service->public_id,
@@ -166,7 +164,7 @@ final class DeploymentSummaries
             durationSeconds: $duration,
             rollbackOfId: $deployment->rollbackOf?->public_id,
             canRollback: $instance->stopped_at === null && Gate::allows('rollback', $deployment),
-            commitAuthorAvatarUrl: GitHubAvatar::fromAvatarUrl($deployment->commit_author_avatar_url),
+            commitAuthorAvatarUrl: AvatarOrigins::allowed($deployment->commit_author_avatar_url),
             stopped: $stopped,
         );
     }

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { requestJson } from '@/features/projects/http';
+import { requestJson } from '@/lib/http';
 import { logs as logsRoute } from '@/routes/deployments';
 
 type LogPage = App.Data.Deployments.LogPageData;
@@ -9,8 +9,7 @@ type LogLine = App.Data.Deployments.LogLineData;
 const BATCH_MS = 200;
 
 /** The lines of one deployment and the cursor after them. */
-export type DeploymentLogState = {
-    /** The deployment these lines belong to. */
+type DeploymentLogState = {
     deployment: string;
     lines: LogLine[];
     hasMore: boolean;

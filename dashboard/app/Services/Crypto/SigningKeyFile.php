@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Services\Crypto;
 
 use App\Services\Crypto\Exceptions\InvalidKeyFile;
+use App\Support\Files\SecureFile;
+use App\Support\Files\SecureFileFailed;
 
 /**
  * The control-plane Ed25519 signing key file (docs/03 §4.1, protocol/SIGNING.md §3).
@@ -52,32 +54,13 @@ final class SigningKeyFile
             throw new \InvalidArgumentException("Invalid signing key id [{$kid}].");
         }
 
-        $directory = dirname($path);
-
-        if (! is_dir($directory) && ! @mkdir($directory, 0700, true) && ! is_dir($directory)) {
-            throw InvalidKeyFile::notWritable($path);
-        }
-
-        // 'x' fails if the file exists, atomically.
-        $handle = @fopen($path, 'x');
-
-        if ($handle === false) {
-            throw file_exists($path) ? InvalidKeyFile::alreadyExists($path) : InvalidKeyFile::notWritable($path);
-        }
-
-        chmod($path, 0600);
-
         $seed = random_bytes(SODIUM_CRYPTO_SIGN_SEEDBYTES);
-        $written = fwrite($handle, self::PREFIX.':'.$kid.':'.base64_encode($seed).PHP_EOL);
-        fclose($handle);
 
-        if ($written === false) {
-            @unlink($path);
-
-            throw InvalidKeyFile::notWritable($path);
+        try {
+            SecureFile::createExclusive($path, self::PREFIX.':'.$kid.':'.base64_encode($seed).PHP_EOL);
+        } catch (SecureFileFailed $e) {
+            throw $e->exists ? InvalidKeyFile::alreadyExists($path) : InvalidKeyFile::notWritable($path);
         }
-
-        chmod($path, 0400);
 
         return Signer::fromSeed($kid, $seed);
     }

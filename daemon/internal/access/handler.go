@@ -19,7 +19,9 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
+	"github.com/vantezzen/launchroom/daemon/internal/dbengine"
 	"github.com/vantezzen/launchroom/daemon/internal/docker"
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/policy"
 	"github.com/vantezzen/launchroom/daemon/internal/sealed"
 	"github.com/vantezzen/launchroom/daemon/internal/secret"
@@ -65,7 +67,7 @@ func (o *Options) defaults() {
 	}
 	if o.CheckImage == nil {
 		o.CheckImage = func(ref state.ImageRef) error {
-			return policy.CheckSystemImage(policy.SystemFiles, ref, policy.DefaultConfig())
+			return policy.CheckSystemImage(names.SystemFiles, ref, policy.DefaultConfig())
 		}
 	}
 	if o.Dial == nil {
@@ -77,30 +79,31 @@ func (o *Options) defaults() {
 }
 
 // ErrRefused marks failures of the local policy.
-var ErrRefused = errors.New("refused by this server's policy")
+var ErrRefused = state.ErrPolicyRefused
 
 // Handler returns the tasks.Handler for "access" tasks.
 func Handler(o Options) tasks.Handler {
 	o.defaults()
-	return func(ctx context.Context, t state.Task) (tasks.Result, error) {
+	return func(ctx context.Context, t state.Task) (state.TaskResults, error) {
 		spec, ok := t.Spec.(*state.AccessSpec)
 		if !ok {
-			return tasks.Result{}, errors.New("access handler got a non-access spec")
+			return state.TaskResults{}, errors.New("access handler got a non-access spec")
 		}
 		res := &state.AccessResult{EndReason: state.AccessEndError}
-		out := tasks.Result{Access: res}
+		out := state.TaskResults{Access: res}
 		if err := spec.Validate(); err != nil {
 			return out, err
 		}
 		if !o.Allowed(spec.Kind) {
 			res.EndReason = state.AccessEndRefused
-			return out, fmt.Errorf("%w: %s access is turned off on this server (LR_REMOTE_ACCESS)", ErrRefused, spec.Kind)
+			return out, &state.StartError{Code: state.FailKindDisabled, Err: fmt.Errorf("%w: %s access is turned off on this server (LR_REMOTE_ACCESS)", ErrRefused, spec.Kind)}
 		}
 		a := &run{o: o, t: t, spec: spec, res: res, log: o.Log.With("access", spec.Access, "kind", spec.Kind)}
 		err := a.run(ctx)
 		if errors.Is(err, ErrRefused) {
 			res.EndReason = state.AccessEndRefused
 		}
+		res.Failure = state.StartFailureOf(err)
 		return out, err
 	}
 }
@@ -131,28 +134,21 @@ func (a *run) password() (string, error) {
 	return pw, nil
 }
 
-// target finds the running container of the spec's workload.
 func (a *run) target(ctx context.Context) (docker.Container, *state.WorkloadSpec, error) {
 	wl, ok := a.o.Workload(a.spec.Workload)
 	if !ok {
 		return docker.Container{}, nil, fmt.Errorf("%w: workload %s is not in this server's desired state", ErrRefused, a.spec.Workload)
 	}
-	cs, err := a.o.Docker.ListContainers(ctx, map[string]string{docker.LabelWorkload: string(a.spec.Workload)})
-	if err != nil {
+	c, err := docker.WorkloadContainer(ctx, a.o.Docker, a.spec.Workload)
+	switch {
+	case err != nil:
 		return docker.Container{}, nil, err
+	case c == nil:
+		return docker.Container{}, nil, fmt.Errorf("%w: no workload container for %s on this server", ErrRefused, a.spec.Workload)
+	case !c.Running():
+		return docker.Container{}, nil, &state.StartError{Code: state.FailNotRunning, Err: fmt.Errorf("the container of %s is not running", a.spec.Workload)}
 	}
-	for _, c := range cs {
-		l := c.Labels
-		if l[docker.LabelManaged] != "true" || l[docker.LabelWorkload] != string(a.spec.Workload) ||
-			l[docker.LabelSystem] != "" || l[docker.LabelTask] != "" || l[docker.LabelHelper] != "" || strings.HasPrefix(c.Name, "lr-system-") {
-			continue
-		}
-		if !c.Running {
-			return docker.Container{}, nil, fmt.Errorf("the container of %s is not running", a.spec.Workload)
-		}
-		return c, wl, nil
-	}
-	return docker.Container{}, nil, fmt.Errorf("%w: no workload container for %s on this server", ErrRefused, a.spec.Workload)
+	return *c, wl, nil
 }
 
 // autoShells is the console's automatic order (docs/03 §11.4).
@@ -221,7 +217,7 @@ func (a *run) run(ctx context.Context) error {
 		shell, root := "", ""
 		if a.spec.Kind == state.AccessVolume {
 			// SFTP only, the volume as "/": no shell, no exec.
-			root = HelperMount
+			root = names.HelperMount
 		} else {
 			for _, sh := range autoShells {
 				if ok, err := a.o.Docker.PathExists(ctx, c.ID, sh); err == nil && ok {
@@ -289,7 +285,6 @@ func (a *run) run(ctx context.Context) error {
 	return nil
 }
 
-// loop waits for the end: idle, lockout, deadline, cancel or lost lease.
 func (a *run) loop(ctx context.Context) state.AccessEndReason {
 	idle := a.spec.IdleTimeout.Std()
 	tick := time.NewTicker(a.o.StatusEvery)
@@ -353,21 +348,22 @@ func (a *run) upstream(ctx context.Context) (netip.AddrPort, error) {
 	if err != nil {
 		return netip.AddrPort{}, err
 	}
-	port := uint16(5432)
-	if a.spec.Engine != state.EnginePostgres {
-		port = 6379
+	p := dbengine.Of(a.spec.Engine).Port
+	if p <= 0 || p > 65535 {
+		return netip.AddrPort{}, fmt.Errorf("database engine %q has no known port", a.spec.Engine)
 	}
-	names := make([]string, 0, len(c.Networks))
+	port := uint16(p)
+	nets := make([]string, 0, len(c.Networks))
 	for n := range c.Networks {
-		names = append(names, n)
+		nets = append(nets, n)
 	}
-	sort.Strings(names)
-	for _, n := range names {
-		if ip := c.Networks[n]; ip.IsValid() && strings.HasPrefix(n, "lr-e_") {
+	sort.Strings(nets)
+	for _, n := range nets {
+		if ip := c.Networks[n]; ip.IsValid() && strings.HasPrefix(n, names.NetworkPrefix) {
 			return netip.AddrPortFrom(ip, port), nil
 		}
 	}
-	for _, n := range names {
+	for _, n := range nets {
 		if ip := c.Networks[n]; ip.IsValid() {
 			return netip.AddrPortFrom(ip, port), nil
 		}

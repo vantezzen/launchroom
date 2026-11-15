@@ -26,7 +26,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/vantezzen/launchroom/daemon/internal/build"
 	"github.com/vantezzen/launchroom/daemon/internal/secret"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
@@ -112,7 +111,7 @@ type repo struct {
 	binary   string
 	location string
 	env      []string
-	mask     *build.Masker
+	mask     *secret.Masker
 	extraEnv []string // tests only
 }
 
@@ -166,7 +165,7 @@ func (e *Engine) openRepo(d state.BackupDestination, c Credentials) (*repo, erro
 	}
 	return &repo{
 		binary: e.o.ResticBinary, location: location, env: env, extraEnv: e.testEnv,
-		mask: build.NewMasker(c.AccessKeyID.Reveal(), c.SecretAccessKey.Reveal(), c.ResticPassword.Reveal()),
+		mask: secret.NewMasker(c.AccessKeyID.Reveal(), c.SecretAccessKey.Reveal(), c.ResticPassword.Reveal()),
 	}, nil
 }
 
@@ -287,7 +286,6 @@ func envValue(env []string, name string) string {
 	return ""
 }
 
-// jsonLines calls fn for every line of a restic --json stream.
 func jsonLines(data []byte, fn func([]byte)) {
 	sc := bufio.NewScanner(bytes.NewReader(data))
 	sc.Buffer(make([]byte, 64<<10), 4<<20)

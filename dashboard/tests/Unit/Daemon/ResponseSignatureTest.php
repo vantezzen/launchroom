@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-use App\Services\Crypto\ResponseSignature;
 use App\Services\Crypto\Signer;
 use Tests\Support\ProtocolSchemas;
+use Tests\Support\ResponseSignature;
 
 /**
  * @return array<string, mixed>

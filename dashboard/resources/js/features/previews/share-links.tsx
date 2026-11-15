@@ -24,9 +24,11 @@ export function ShareLinksDialog({
     open,
     onOpenChange,
     canShare,
+    daysRange,
 }: {
     project: string;
     preview: App.Data.Previews.PreviewData;
+    daysRange: App.Data.Forms.NumberRangeData;
     open: boolean;
     onOpenChange: (open: boolean) => void;
     canShare: boolean;
@@ -133,8 +135,8 @@ export function ShareLinksDialog({
                                 <Input
                                     id="share-days"
                                     type="number"
-                                    min={1}
-                                    max={30}
+                                    min={daysRange.min}
+                                    max={daysRange.max}
                                     className="tabular-nums"
                                     value={days}
                                     onChange={(event) =>

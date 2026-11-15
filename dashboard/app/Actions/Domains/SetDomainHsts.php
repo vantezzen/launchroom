@@ -12,7 +12,6 @@ use App\Enums\DomainKind;
 use App\Events\NodeStateInvalidated;
 use App\Exceptions\DomainRuleViolation;
 use App\Models\Domain;
-use App\Services\Ingress\EdgeServers;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -24,7 +23,6 @@ use Illuminate\Support\Facades\DB;
 final readonly class SetDomainHsts
 {
     public function __construct(
-        private EdgeServers $edges,
         private RecordAuditEvent $audit,
     ) {}
 
@@ -52,7 +50,7 @@ final readonly class SetDomainHsts
                 meta: ['hostname' => $domain->hostname, 'enabled' => $enabled],
             ));
 
-            event(new NodeStateInvalidated($this->edges->ids($domain->team_id)));
+            NodeStateInvalidated::edges($domain->team_id);
         });
     }
 }

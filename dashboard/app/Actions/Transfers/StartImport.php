@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Actions\Transfers;
 
 use App\Actions\Audit\RecordAuditEvent;
-use App\Actions\Backups\StartVolumeBackup;
 use App\Actions\Backups\TakeSafetySnapshot;
 use App\Data\Audit\AuditActor;
 use App\Data\Audit\AuditEntryData;
@@ -16,11 +15,9 @@ use App\Enums\Backups\BackupReason;
 use App\Enums\Backups\RestoreRunStatus;
 use App\Enums\Transfers\DataSubject;
 use App\Enums\Transfers\ImportRunStatus;
-use App\Enums\Transfers\ImportSourceKind;
 use App\Enums\Transfers\TransferPurpose;
 use App\Enums\Transfers\TransferStatus;
 use App\Exceptions\DomainRuleViolation;
-use App\Models\Backups\BackupRun;
 use App\Models\Backups\RestoreRun;
 use App\Models\Server;
 use App\Models\ServiceInstance;
@@ -32,7 +29,9 @@ use App\Services\Transfers\FileSniffer;
 use App\Services\Transfers\ImportTarget;
 use App\Services\Transfers\SniffResult;
 use App\Services\Transfers\SourceUrl;
+use App\Services\Transfers\TransferRuns;
 use App\Services\Transfers\TransferTasks;
+use App\Support\Crypto\TaskSealer;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -47,9 +46,8 @@ use Illuminate\Support\Facades\DB;
 final readonly class StartImport
 {
     public function __construct(
-        private TransferTasks $tasks,
         private TakeSafetySnapshot $safety,
-        private StartVolumeBackup $volumeBackup,
+        private TransferRuns $runs,
         private RecordAuditEvent $audit,
         private AdvanceImports $advance,
     ) {}
@@ -99,9 +97,9 @@ final readonly class StartImport
             $server = $placement->server;
 
             if ($hasUrl) {
-                $url = SourceUrl::parse((string) $input->sourceUrl, $target->engine());
+                $url = SourceUrl::parse((string) $input->sourceUrl, $target->import());
                 $taskId = TransferTasks::reserveTaskId();
-                $sealed = $this->tasks->sealSourceUrl($server, $taskId, $url->url);
+                $sealed = TaskSealer::env($server->sealing_public_key, $server->public_id, $taskId, ['SOURCE_URL' => $url->url]);
                 $label = $url->label;
             }
         }
@@ -114,28 +112,24 @@ final readonly class StartImport
             ServiceInstance::query()->whereKey($instance->id)->lockForUpdate()->first();
             $this->assertIdle($instance);
 
-            $safety = $this->safetySnapshot($instance, $volume, $input->replace, $user, $actor);
-            $run = new DataImportRun([
-                'team_id' => $instance->team_id,
-                'service_instance_id' => $instance->id,
-                'subject' => $target->subject,
-                'volume_id' => $volume?->id,
-                'transfer_id' => $transfer?->id,
-                'source_kind' => $transfer instanceof DataTransfer ? ImportSourceKind::File : ImportSourceKind::Url,
-                'source_label' => mb_strcut($label, 0, 255),
-                'server_id' => $server->id,
-                'replace' => $input->replace,
-                'stop_dependents' => $target->subject === DataSubject::Volume || $input->stopDependents,
-                'strip_components' => $target->subject === DataSubject::Volume ? $input->stripComponents : 0,
-                'owner_uid' => $target->subject === DataSubject::Volume ? $input->owner?->uid : null,
-                'owner_gid' => $target->subject === DataSubject::Volume ? $input->owner?->gid : null,
-                'actor_id' => $user->id,
-            ]);
-            $run->status = ImportRunStatus::WaitingForSafetyBackup;
-            $run->safety_backup_run_id = $safety?->id;
-            $run->sealed_source = $sealed;
-            $run->reserved_task_id = $taskId;
-            $run->save();
+            $safety = $volume instanceof Volume || $input->replace ? $this->safety->handle($instance, BackupReason::PreRestore, $user, $actor, $volume)->first() : null;
+            $run = $this->runs->import(
+                $instance,
+                $target->subject,
+                $volume,
+                $transfer,
+                $label,
+                $server->id,
+                $input->replace,
+                $target->subject === DataSubject::Volume || $input->stopDependents,
+                $user,
+                stripComponents: $input->stripComponents,
+                ownerUid: $input->owner?->uid,
+                ownerGid: $input->owner?->gid,
+                safety: $safety,
+                sealedSource: $sealed,
+                reservedTaskId: $taskId,
+            );
 
             if ($transfer instanceof DataTransfer) {
                 $transfer->forceFill(['last_used_at' => now()])->save();
@@ -189,15 +183,15 @@ final readonly class StartImport
 
         // The same checks as when the upload finished (the database may have changed since).
         if ($purpose === TransferPurpose::DatabaseImport && $target->database instanceof DatabaseSource) {
-            $sniff = $transfer->sniff ?? [];
+            $sniff = $transfer->sniff;
             $result = new SniffResult(
                 $transfer->format,
                 $transfer->compressed,
-                is_string($sniff['family'] ?? null) && in_array($sniff['family'], ['postgres', 'mysql', 'mariadb', 'mongodb'], true) ? $sniff['family'] : null,
-                is_string($sniff['serverVersion'] ?? null) ? $sniff['serverVersion'] : null,
-                is_string($sniff['toolVersion'] ?? null) ? $sniff['toolVersion'] : null,
+                in_array($sniff?->family, SniffResult::FAMILIES, true) ? $sniff->family : null,
+                $sniff?->serverVersion,
+                $sniff?->toolVersion,
             );
-            $refusal = FileSniffer::refusal($result, $target->engine(), $target->database->version, $instance->service->name);
+            $refusal = FileSniffer::refusal($result, $target->import(), $target->database->version, $instance->service->name);
 
             if ($refusal !== null) {
                 throw DomainRuleViolation::on('transfer', $refusal);
@@ -211,28 +205,15 @@ final readonly class StartImport
     {
         $importing = DataImportRun::query()
             ->where('service_instance_id', $instance->id)
-            ->whereIn('status', [ImportRunStatus::WaitingForSafetyBackup->value, ImportRunStatus::Holding->value, ImportRunStatus::Importing->value])
+            ->whereIn('status', ImportRunStatus::nonTerminal())
             ->exists();
         $restoring = RestoreRun::query()
             ->where('target_service_instance_id', $instance->id)
-            ->whereNotIn('status', [RestoreRunStatus::Succeeded->value, RestoreRunStatus::Failed->value])
+            ->whereIn('status', RestoreRunStatus::nonTerminal())
             ->exists();
 
         if ($importing || $restoring) {
             throw DomainRuleViolation::conflict('An import or restore of this service is already running.');
         }
-    }
-
-    private function safetySnapshot(ServiceInstance $instance, ?Volume $volume, bool $replace, User $user, AuditActor $actor): ?BackupRun
-    {
-        if ($volume instanceof Volume) {
-            try {
-                return $this->volumeBackup->handle($instance, $volume, BackupReason::PreRestore, $user, $actor);
-            } catch (DomainRuleViolation) {
-                return null; // No destination: the confirmation said so.
-            }
-        }
-
-        return $replace ? $this->safety->handle($instance, BackupReason::PreRestore, $user, $actor) : null;
     }
 }

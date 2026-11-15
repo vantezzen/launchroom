@@ -1,4 +1,4 @@
-export type DiffLine = {
+type DiffLine = {
     kind: 'same' | 'added' | 'removed';
     text: string;
     number: number | null;

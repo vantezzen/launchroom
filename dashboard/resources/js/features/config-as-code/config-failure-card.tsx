@@ -1,6 +1,6 @@
 import { FileWarning } from 'lucide-react';
-import { shortSha } from '@/features/deployments/format';
-import { ConfigProblem, fileLineUrl } from './config-problem';
+import { ConfigProblem } from './config-problem';
+import { shortSha } from '@/lib/format';
 
 type Detail = App.Data.Deployments.DeploymentDetailData;
 
@@ -59,12 +59,7 @@ export function ConfigFailureCard({ detail }: { detail: Detail }) {
                             <ConfigProblem
                                 problem={problem}
                                 path={config.path}
-                                href={fileLineUrl(
-                                    config.repository,
-                                    config.commitSha,
-                                    config.path,
-                                    problem.line,
-                                )}
+                                href={problem.href}
                             />
                         </li>
                     ))}

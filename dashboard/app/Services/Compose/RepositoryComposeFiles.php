@@ -6,9 +6,9 @@ namespace App\Services\Compose;
 
 use App\Contracts\Git\SourceRepository;
 use App\Exceptions\DomainRuleViolation;
+use App\Exceptions\Git\RepositoryFileUnavailable;
 use App\Services\Git\GitProviders;
 use App\Support\Compose\ComposeYaml;
-use RuntimeException;
 
 /**
  * Reads a repository's Compose file for "Import a Compose file" from a
@@ -34,16 +34,16 @@ final readonly class RepositoryComposeFiles
     {
         $ref = $repository->repositoryRef();
 
-        if (! $ref->provider->hasApi()) {
+        $provider = $this->providers->for($ref->provider);
+
+        if (! $provider->canReadFiles()) {
             throw DomainRuleViolation::on('repository', 'launchroom can’t read files from this git server. Paste the Compose file instead.');
         }
-
-        $provider = $this->providers->for($ref->provider);
 
         foreach (self::NAMES as $name) {
             try {
                 $content = $provider->fileAtRef($ref, $name, $branch);
-            } catch (RuntimeException) {
+            } catch (RepositoryFileUnavailable) {
                 throw DomainRuleViolation::on('repository', 'The repository didn’t answer. Try again in a moment.');
             }
 
@@ -60,8 +60,6 @@ final readonly class RepositoryComposeFiles
     }
 
     /**
-     * Env files that exist on the branch (missing ones are left out).
-     *
      * @param  list<string>  $paths  relative paths
      * @return array<string, string>
      */
@@ -74,7 +72,7 @@ final readonly class RepositoryComposeFiles
         foreach (array_slice(array_values(array_unique($paths)), 0, 10) as $path) {
             try {
                 $content = $provider->fileAtRef($ref, $path, $branch);
-            } catch (RuntimeException) {
+            } catch (RepositoryFileUnavailable) {
                 continue;
             }
 

@@ -13,6 +13,7 @@ import (
 
 	"github.com/vantezzen/launchroom/daemon/internal/docker"
 	"github.com/vantezzen/launchroom/daemon/internal/identity"
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 	"github.com/vantezzen/launchroom/daemon/internal/tasks"
 )
@@ -189,7 +190,7 @@ type fakeDocker struct {
 func (f *fakeDocker) ListContainers(_ context.Context, labels map[string]string) ([]docker.Container, error) {
 	var out []docker.Container
 	for _, c := range f.containers {
-		if c.Labels[docker.LabelWorkload] == labels[docker.LabelWorkload] {
+		if c.Labels[names.LabelWorkload] == labels[names.LabelWorkload] {
 			out = append(out, c)
 		}
 	}
@@ -211,11 +212,11 @@ func (f *fakeDocker) ExecStream(context.Context, string, docker.ExecOptions) (do
 }
 
 func managed(labels map[string]string) docker.Container {
-	l := map[string]string{docker.LabelManaged: "true", docker.LabelServer: "srv_x", docker.LabelWorkload: string(wl)}
+	l := map[string]string{names.LabelManaged: "true", names.LabelServer: "srv_x", names.LabelWorkload: string(wl)}
 	for k, v := range labels {
 		l[k] = v
 	}
-	return docker.Container{ID: "c1", Name: "lr-wl", Labels: l, Running: true}
+	return docker.Container{ID: "c1", Name: "lr-wl", Labels: l, State: docker.StateRunning}
 }
 
 func TestTargetPolicy(t *testing.T) {
@@ -227,13 +228,13 @@ func TestTargetPolicy(t *testing.T) {
 		refused bool
 	}{
 		"not in desired state": {&fakeDocker{containers: []docker.Container{managed(nil)}}, func(state.WorkloadID) bool { return false }, true},
-		"system container":     {&fakeDocker{containers: []docker.Container{managed(map[string]string{docker.LabelSystem: "caddy"})}}, in, true},
-		"task container":       {&fakeDocker{containers: []docker.Container{managed(map[string]string{docker.LabelTask: "tsk_x"})}}, in, true},
+		"system container":     {&fakeDocker{containers: []docker.Container{managed(map[string]string{names.LabelSystem: "caddy"})}}, in, true},
+		"task container":       {&fakeDocker{containers: []docker.Container{managed(map[string]string{names.LabelTask: "tsk_x"})}}, in, true},
 		"no container":         {&fakeDocker{}, in, true},
 		"workload container":   {&fakeDocker{containers: []docker.Container{managed(nil)}}, in, false},
 		"stopped duplicate first": {&fakeDocker{containers: func() []docker.Container {
 			old := managed(nil)
-			old.ID, old.Running = "c0", false
+			old.ID, old.State = "c0", docker.StateExited
 			return []docker.Container{old, managed(nil)}
 		}()}, in, false},
 	}
@@ -381,6 +382,22 @@ func TestParsePsqlCSV(t *testing.T) {
 	r = parsePsqlCSV([]byte("v\n"+strings.Repeat("y", MaxCell+10)+"\n"+marker+" 1\n"), null, marker, false)
 	if !r.CellsTruncated || len(*r.Rows[0][0]) != MaxCell {
 		t.Fatal("cell cap")
+	}
+}
+
+// A cell from a SQL_ASCII database can hold bytes that aren't UTF-8; json/v2
+// refuses the whole Result unless every cell is made valid.
+func TestCellInvalidUTF8(t *testing.T) {
+	var cut bool
+	if v := cell("caf\xe9", &cut); *v != "caf\uFFFD" || cut {
+		t.Fatalf("short: %q %v", *v, cut)
+	}
+	v := cell("\xff"+strings.Repeat("y", MaxCell), &cut)
+	if !cut || len(*v) > MaxCell || !strings.HasPrefix(*v, "\uFFFDyy") {
+		t.Fatalf("long: %d %v", len(*v), cut)
+	}
+	if _, err := json.Marshal(Result{Rows: [][]*string{{cell("\xc3", &cut)}}}); err != nil {
+		t.Fatal(err)
 	}
 }
 

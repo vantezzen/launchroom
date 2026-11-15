@@ -6,15 +6,15 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
-import { StepList } from '@/components/steps';
-import type { StepStatus } from '@/components/steps';
 import { StatusIcon } from '@/components/status';
 import type { StatusState } from '@/components/status';
 import { TimeAgo } from '@/components/time-ago';
 import { Button } from '@/components/ui/button';
 import { useClipboard } from '@/hooks/use-clipboard';
-import { requestJson } from '@/features/projects/http';
+import { requestJson } from '@/lib/http';
 import { cn } from '@/lib/utils';
+import { StepList } from '@/components/steps/step-list';
+import type { StepStatus } from '@/components/steps/step-icon';
 
 type Investigation = App.Data.Security.InvestigationDetailData;
 type Line = App.Data.Security.InvestigationLineData;
@@ -29,7 +29,7 @@ const replicaStep: Record<string, StepStatus> = {
 };
 
 /** A running investigation: one live step per replica (docs/22 §9.4). */
-export function InvestigationProgress({
+function InvestigationProgress({
     investigation,
 }: {
     investigation: Investigation;

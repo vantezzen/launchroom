@@ -8,6 +8,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
 
 // op is one allow-listed Engine API operation.
@@ -93,7 +95,7 @@ func qInt(lo, hi int64) qrule {
 	return qrule{check: func(v string) error {
 		n, err := strconv.ParseInt(v, 10, 64)
 		if err != nil || n < lo || n > hi {
-			return fmt.Errorf("%q is not an integer in [%d, %d]", truncate(v, 32), lo, hi)
+			return fmt.Errorf("%q is not an integer in [%d, %d]", state.Shorten(v, 32), lo, hi)
 		}
 		return nil
 	}}
@@ -106,14 +108,14 @@ func qEnum(values ...string) qrule {
 				return nil
 			}
 		}
-		return fmt.Errorf("%q is not one of %s", truncate(v, 32), strings.Join(values, ", "))
+		return fmt.Errorf("%q is not one of %s", state.Shorten(v, 32), strings.Join(values, ", "))
 	}}
 }
 
 func qRe(re *regexp.Regexp) qrule {
 	return qrule{check: func(v string) error {
 		if !re.MatchString(v) {
-			return fmt.Errorf("%q does not match %s", truncate(v, 64), re)
+			return fmt.Errorf("%q does not match %s", state.Shorten(v, 64), re)
 		}
 		return nil
 	}}
@@ -221,7 +223,6 @@ func (q *request) apiPath(p string) string {
 	return "/" + q.version + p
 }
 
-// parseRequest matches the request against the route table.
 func parseRequest(r *http.Request) (*request, error) {
 	raw := r.URL.EscapedPath()
 	if raw != r.URL.Path || strings.Contains(raw, "%") {
@@ -236,7 +237,7 @@ func parseRequest(r *http.Request) (*request, error) {
 		q.version = "v1." + m[1]
 		p = m[2]
 	} else if strings.HasPrefix(raw, "/v") {
-		return nil, fmt.Errorf("API version prefix of %s is not supported", truncate(raw, 64))
+		return nil, fmt.Errorf("API version prefix of %s is not supported", state.Shorten(raw, 64))
 	}
 	values, err := url.ParseQuery(r.URL.RawQuery)
 	if err != nil {
@@ -245,13 +246,13 @@ func parseRequest(r *http.Request) (*request, error) {
 
 	rt, id, ok := match(r.Method, p)
 	if !ok {
-		return nil, fmt.Errorf("%s %s is not an allowed Engine API call", r.Method, truncate(p, 128))
+		return nil, fmt.Errorf("%s %s is not an allowed Engine API call", r.Method, state.Shorten(p, 128))
 	}
 	q.op, q.id = rt.op, id
 	for k, vs := range values {
 		rule, ok := rt.query[k]
 		if !ok {
-			return nil, fmt.Errorf("query parameter %q is not allowed for %s %s", truncate(k, 32), r.Method, rt.pattern)
+			return nil, fmt.Errorf("query parameter %q is not allowed for %s %s", state.Shorten(k, 32), r.Method, rt.pattern)
 		}
 		if len(vs) > 1 && !rule.multi {
 			return nil, fmt.Errorf("query parameter %q repeated", k)

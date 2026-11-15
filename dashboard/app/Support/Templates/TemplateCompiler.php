@@ -8,6 +8,8 @@ use App\Data\Blueprints\BlueprintService;
 use App\Data\Blueprints\BlueprintVariable;
 use App\Data\Blueprints\ProjectBlueprint;
 use App\Data\Templates\TemplateInputData;
+use App\Drivers\DatabaseEngines\ConnectionPart;
+use App\Drivers\DatabaseEngines\DatabaseEngines;
 use App\Enums\DatabaseEngine;
 use App\Support\Blueprints\BlueprintValidator;
 use App\Support\Canvas\ServiceGlyph;
@@ -19,8 +21,10 @@ use App\Support\Compose\TranslationOptions;
 use App\Support\Compose\YamlLineIndex;
 use App\Support\Git\PublicRepositoryUrl;
 use App\Support\Hostname;
+use App\Support\Images\ImageReference;
 use App\Support\Slug;
 use App\Support\Variables\GeneratedValues;
+use App\Support\Variables\VariableKey;
 
 /**
  * Templates (`launchroom.template/v1`, docs/17 §3): parses a template file,
@@ -225,16 +229,15 @@ final class TemplateCompiler
      * The template's blueprint for these inputs.
      *
      * @param  array<string, string>  $inputs  input id => value (the repository input is handled by the caller)
-     * @param  array<string, array{versions: list<string>, default: string}>  $engines
      *
      * @throws TemplateInvalid
      */
-    public static function compile(TemplateDefinition $template, array $inputs, array $engines, bool $repository = false, ?string $name = null): ComposeTranslation
+    public static function compile(TemplateDefinition $template, array $inputs, DatabaseEngines $engines, bool $repository = false, ?string $name = null): ComposeTranslation
     {
         $values = self::inputs($template, $inputs);
         $placeholders = [];
         $problems = [];
-        $services = self::resolve($template->services, $template, $values, $placeholders, $problems);
+        $services = self::resolve($template->services, $template, $engines, $values, $placeholders, $problems);
 
         if ($problems !== []) {
             throw new TemplateInvalid(array_values(array_unique($problems)));
@@ -242,9 +245,9 @@ final class TemplateCompiler
 
         try {
             $translation = ComposeTranslator::translateData(['services' => $services, ...($template->configs === [] ? [] : ['configs' => $template->configs])], $template->lines, new TranslationOptions(
+                engines: $engines,
                 repository: $repository,
                 template: true,
-                engines: $engines,
                 name: $name ?? $template->name,
             ));
         } catch (ComposeRejected $e) {
@@ -306,10 +309,9 @@ final class TemplateCompiler
     /**
      * Everything that keeps a template out of the catalog (docs/17 §3.3).
      *
-     * @param  array<string, array{versions: list<string>, default: string}>  $engines
      * @return list<string>
      */
-    public static function lint(TemplateDefinition $template, array $engines): array
+    public static function lint(TemplateDefinition $template, DatabaseEngines $engines): array
     {
         $problems = [];
 
@@ -345,7 +347,7 @@ final class TemplateCompiler
             if (isset($service['image'])) {
                 $image = is_string($service['image']) ? $service['image'] : '';
 
-                if (preg_match('#^(docker\.io|ghcr\.io)/[a-z0-9._/-]+:[A-Za-z0-9_.-]+@sha256:[a-f0-9]{64}$#D', $image) !== 1) {
+                if (preg_match('#^(docker\.io|ghcr\.io)/[a-z0-9._/-]+:[A-Za-z0-9_.-]+@'.ImageReference::DIGEST_BODY.'$#D', $image) !== 1) {
                     $problems[] = "{$name}: the image must be docker.io/… or ghcr.io/… with a tag and pinned by digest (@sha256:…).";
                 }
             }
@@ -431,13 +433,13 @@ final class TemplateCompiler
      * @param  list<string>  $problems
      * @return array<array-key, mixed>
      */
-    private static function resolve(array $node, TemplateDefinition $template, array $values, array &$placeholders, array &$problems): array
+    private static function resolve(array $node, TemplateDefinition $template, DatabaseEngines $engines, array $values, array &$placeholders, array &$problems): array
     {
         foreach ($node as $key => $value) {
             if (is_array($value)) {
-                $node[$key] = self::resolve($value, $template, $values, $placeholders, $problems);
+                $node[$key] = self::resolve($value, $template, $engines, $values, $placeholders, $problems);
             } elseif (is_string($value)) {
-                $node[$key] = (string) preg_replace_callback(self::EXPRESSION, static function (array $m) use ($template, $values, &$placeholders, &$problems): string {
+                $node[$key] = (string) preg_replace_callback(self::EXPRESSION, static function (array $m) use ($template, $engines, $values, &$placeholders, &$problems): string {
                     if ($m[1] === 'input') {
                         if ($m[2] !== '.' || ! array_key_exists($m[3], $values)) {
                             $problems[] = "Unknown input in {$m[0]}.";
@@ -448,7 +450,7 @@ final class TemplateCompiler
                         return str_replace('$', '$$', $values[$m[3]]);
                     }
 
-                    $expression = self::expression($m[1], $m[2], $m[3], $template);
+                    $expression = self::expression($m[1], $m[2], $m[3], $template, $engines);
 
                     if ($expression === null) {
                         $problems[] = "{$m[0]} isn’t a template expression launchroom knows.";
@@ -466,7 +468,7 @@ final class TemplateCompiler
         return $node;
     }
 
-    private static function expression(string $kind, string $separator, string $rest, TemplateDefinition $template): ?string
+    private static function expression(string $kind, string $separator, string $rest, TemplateDefinition $template, DatabaseEngines $engines): ?string
     {
         if ($kind === 'generate') {
             if ($separator !== ':') {
@@ -478,7 +480,7 @@ final class TemplateCompiler
             }
 
             // `${generate:jwt:anon:JWT_SECRET}`: signed with that variable of the same service.
-            if (preg_match('/^jwt:([a-z_][a-z0-9_]{0,62}):([A-Za-z_][A-Za-z0-9_]{0,255})$/D', $rest, $m) === 1) {
+            if (preg_match('/^jwt:([a-z_][a-z0-9_]{0,62}):('.VariableKey::BODY.')$/D', $rest, $m) === 1) {
                 return "\${{ jwt(\"{$m[1]}\", {$m[2]}) }}";
             }
 
@@ -494,7 +496,7 @@ final class TemplateCompiler
         }
 
         if ($kind === 'self') {
-            if (preg_match('/^env\.([A-Za-z_][A-Za-z0-9_]{0,255})$/D', $rest, $m) === 1) {
+            if (preg_match('/^env\.('.VariableKey::BODY.')$/D', $rest, $m) === 1) {
                 return '${{'.$m[1].'}}';
             }
 
@@ -517,65 +519,21 @@ final class TemplateCompiler
             ? $service['x-launchroom']['database']['engine']
             : null;
         $engine = $engineName === null ? null : DatabaseEngine::tryFrom($engineName);
-        $redis = in_array($engine, [DatabaseEngine::Redis, DatabaseEngine::Valkey], true);
         $key = $m[1];
 
         if (str_starts_with($m[2], 'env.')) {
             return "\${{{$key}.".substr($m[2], 4).'}}';
         }
 
-        $export = match (true) {
-            $engine === null => match ($m[2]) {
+        $export = $engine === null
+            ? match ($m[2]) {
                 'url' => 'PRIVATE_URL',
                 'public_url' => 'PUBLIC_URL',
                 'host' => 'PRIVATE_HOST',
                 'port' => 'PORT',
                 default => null,
-            },
-            $redis => match ($m[2]) {
-                'url' => 'REDIS_URL',
-                'host' => 'REDIS_HOST',
-                'port' => 'REDIS_PORT',
-                'password' => 'REDIS_PASSWORD',
-                default => null,
-            },
-            $engine === DatabaseEngine::MongoDb => match ($m[2]) {
-                'url' => 'MONGO_URL',
-                'host' => 'MONGOHOST',
-                'port' => 'MONGOPORT',
-                'user' => 'MONGOUSER',
-                'password' => 'MONGOPASSWORD',
-                'database' => 'MONGODATABASE',
-                default => null,
-            },
-            $engine === DatabaseEngine::ClickHouse => match ($m[2]) {
-                'url' => 'CLICKHOUSE_URL',
-                'host' => 'CLICKHOUSE_HOST',
-                'port' => 'CLICKHOUSE_PORT',
-                'user' => 'CLICKHOUSE_USER',
-                'password' => 'CLICKHOUSE_PASSWORD',
-                'database' => 'CLICKHOUSE_DATABASE',
-                default => null,
-            },
-            $engine === DatabaseEngine::Postgres => match ($m[2]) {
-                'url' => 'DATABASE_URL',
-                'host' => 'PGHOST',
-                'port' => 'PGPORT',
-                'user' => 'PGUSER',
-                'password' => 'PGPASSWORD',
-                'database' => 'PGDATABASE',
-                default => null,
-            },
-            default => match ($m[2]) {
-                'url' => 'DATABASE_URL',
-                'host' => 'MYSQLHOST',
-                'port' => 'MYSQLPORT',
-                'user' => 'MYSQL_USER',
-                'password' => 'MYSQL_PASSWORD',
-                'database' => 'MYSQL_DATABASE',
-                default => null,
-            },
-        };
+            }
+        : (($part = ConnectionPart::tryFrom($m[2])) === null ? null : $engines->for($engine)->exportedKey($part));
 
         return $export === null ? null : "\${{{$key}.{$export}}}";
     }

@@ -7,21 +7,22 @@ namespace App\Actions\Security;
 use App\Actions\Audit\RecordAuditEvent;
 use App\Data\Audit\AuditActor;
 use App\Data\Audit\AuditEntryData;
+use App\Data\Protocol\V1\Tasks\InspectContainerSpec;
+use App\Data\Security\InvestigatedReplicaData;
 use App\Enums\AuditAction;
 use App\Enums\DaemonFeature;
-use App\Enums\DaemonTaskType;
 use App\Enums\ServerStatus;
 use App\Enums\WorkloadPhase;
 use App\Enums\WorkloadRole;
 use App\Exceptions\DomainRuleViolation;
 use App\Jobs\Security\BuildInvestigationReportJob;
-use App\Models\DaemonTask;
 use App\Models\Placement;
 use App\Models\Security\SecurityFinding;
 use App\Models\Security\SecurityInvestigation;
 use App\Models\ServiceInstance;
 use App\Models\User;
-use App\Support\Variables\SecretTaint;
+use App\Services\Tasks\DaemonTasks;
+use App\Services\Variables\SpecVariableResolver;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -40,6 +41,8 @@ final readonly class StartInvestigation
 {
     public function __construct(
         private RecordAuditEvent $audit,
+        private DaemonTasks $tasks,
+        private SpecVariableResolver $variables,
     ) {}
 
     /**
@@ -98,8 +101,7 @@ final readonly class StartInvestigation
                 ));
             }
 
-            // Nothing to wait for: write the (partial) report now.
-            if (array_filter($replicas, static fn (array $r): bool => $r['state'] === 'pending') === []) {
+            if (array_filter($replicas, static fn (InvestigatedReplicaData $r): bool => $r->state === 'pending') === []) {
                 dispatch(new BuildInvestigationReportJob($investigation->id))->afterCommit();
             }
 
@@ -108,7 +110,7 @@ final readonly class StartInvestigation
     }
 
     /**
-     * @return list<array{workload: string, server: string, serverName: string, slot: int, task: string|null, state: string, message?: string|null}>
+     * @return list<InvestigatedReplicaData>
      */
     private function inspect(ServiceInstance $instance): array
     {
@@ -128,40 +130,33 @@ final readonly class StartInvestigation
 
         $revision = $deployment->revision;
         $spec = $revision === null ? null : rescue(static fn () => $revision->spec);
-        $mask = $spec === null ? [] : SecretTaint::fromSpec($spec)->taintedKeys($spec->service($instance->service->public_id)->slug ?? '');
+        $mask = $spec === null ? [] : $this->variables->taint($instance->environment->project, $spec)->taintedKeys($spec->service($instance->service->public_id)->slug ?? '');
         $replicas = [];
 
         foreach ($placements as $placement) {
             $server = $placement->server;
-            $replica = ['workload' => $placement->workload_id, 'server' => $server->public_id, 'serverName' => $server->name, 'slot' => $placement->slot, 'task' => null];
+            $replica = static fn (string $state, ?string $task = null): InvestigatedReplicaData => new InvestigatedReplicaData($placement->workload_id, $server->public_id, $server->name, $placement->slot, $task, $state);
 
             if ($server->status !== ServerStatus::Online) {
-                $replicas[] = [...$replica, 'state' => 'offline'];
+                $replicas[] = $replica('offline');
 
                 continue;
             }
 
             if (! $server->supportsDaemonFeature(DaemonFeature::ContainerInspection)) {
-                $replicas[] = [...$replica, 'state' => 'unsupported'];
+                $replicas[] = $replica('unsupported');
 
                 continue;
             }
 
-            $task = DaemonTask::query()->create([
-                'team_id' => $instance->team_id,
-                'server_id' => $server->id,
-                'pinned_to_server' => true,
-                'required_role' => null,
-                'type' => DaemonTaskType::InspectContainer,
-                'spec' => json_decode(json_encode([
-                    'workload' => $placement->workload_id,
-                    ...($mask === [] ? [] : ['maskEnv' => array_slice($mask, 0, 1024)]),
-                ], JSON_THROW_ON_ERROR), false, 8, JSON_THROW_ON_ERROR),
-                'max_attempts' => 1,
-                'timeout_seconds' => config()->integer('launchroom.security.inspection_timeout_seconds', 180),
-            ]);
+            $task = $this->tasks->create(
+                $instance->team_id,
+                new InspectContainerSpec($placement->workload_id, $mask === [] ? null : array_slice($mask, 0, 1024)),
+                config()->integer('launchroom.security.inspection_timeout_seconds', 180),
+                pin: $server,
+            );
 
-            $replicas[] = [...$replica, 'task' => $task->public_id, 'state' => 'pending'];
+            $replicas[] = $replica('pending', $task->public_id);
         }
 
         return $replicas;

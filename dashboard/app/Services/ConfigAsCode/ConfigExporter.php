@@ -10,7 +10,6 @@ use App\Data\Services\DeploySettings;
 use App\Data\Services\GitSource;
 use App\Data\Services\HealthcheckSettings;
 use App\Data\Services\ImageSource;
-use App\Data\Services\ScalingSettings;
 use App\Data\Specs\EnvironmentSpec;
 use App\Data\Specs\ServiceSpec;
 use App\Data\Specs\VariableSpec;
@@ -20,14 +19,15 @@ use App\Drivers\DatabaseEngines\DriverVariable;
 use App\Enums\ConnectionMode;
 use App\Enums\ConnectionStyle;
 use App\Enums\DomainKind;
-use App\Enums\PlacementStrategy;
 use App\Enums\ServiceKind;
+use App\Enums\VariableLayer;
 use App\Enums\VariableType;
 use App\Models\Project;
 use App\Models\Variable;
 use App\Services\Crypto\ProjectKeyring;
 use App\Support\ConfigAsCode\Arrays;
 use App\Support\ConfigAsCode\ConfigSchema;
+use App\Support\ConfigAsCode\SettingsMap;
 
 /**
  * An environment (its current intent or any revision) as launchroom.json
@@ -118,7 +118,7 @@ final readonly class ConfigExporter
             $out['of'] = $slugs[$service->parentId];
         }
 
-        if ($service->branchOverride !== null && $service->kind !== ServiceKind::Image && $service->kind !== ServiceKind::Database) {
+        if ($service->branchOverride !== null && $service->kind->hasConfigField('branch')) {
             $out['branch'] = $service->branchOverride;
         }
 
@@ -126,15 +126,15 @@ final readonly class ConfigExporter
             $out['enabled'] = false;
         }
 
-        if ($service->kind === ServiceKind::App) {
-            $build = $this->changed(Arrays::assoc($service->build->toArray()), Arrays::assoc((new BuildSettings)->toArray()), ['disabledDecisions', 'generatedDockerfile']);
+        if ($service->kind->hasConfigField('build')) {
+            $build = SettingsMap::changed(Arrays::assoc($service->build->toArray()), Arrays::assoc((new BuildSettings)->toArray()), ['disabledDecisions', 'generatedDockerfile']);
 
             if ($build !== []) {
                 $out['build'] = $build;
             }
         }
 
-        if ($service->kind !== ServiceKind::Database) {
+        if ($service->kind->hasConfigField('deploy')) {
             $deploy = $this->deploy($service);
 
             if ($deploy !== []) {
@@ -142,7 +142,7 @@ final readonly class ConfigExporter
             }
         }
 
-        $scaling = $this->scaling($service->scaling);
+        $scaling = SettingsMap::scalingToFile($service->scaling);
 
         if ($scaling !== []) {
             $out['scaling'] = $scaling;
@@ -209,36 +209,11 @@ final readonly class ConfigExporter
         // Config files (D65) come from templates and Compose imports; the file keeps them as they are.
         unset($current['healthcheck'], $default['healthcheck'], $current['files'], $default['files']);
 
-        $out = $this->changed($current, $default);
-        $healthcheck = $this->changed(Arrays::assoc($health), Arrays::assoc($defaults->healthcheck->toArray()));
+        $out = SettingsMap::changed($current, $default);
+        $healthcheck = SettingsMap::changed(Arrays::assoc($health), Arrays::assoc($defaults->healthcheck->toArray()));
 
         if ($healthcheck !== []) {
             $out['healthcheck'] = $healthcheck;
-        }
-
-        return $out;
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    private function scaling(ScalingSettings $scaling): array
-    {
-        $out = $this->changed(['replicas' => $scaling->replicas, 'cpus' => $scaling->cpus, 'memoryMb' => $scaling->memoryMb], ['replicas' => 1, 'cpus' => 1.0, 'memoryMb' => 512]);
-        $placement = [];
-
-        if ($scaling->placementLabels !== []) {
-            $labels = $scaling->placementLabels;
-            ksort($labels);
-            $placement['labels'] = $labels;
-        }
-
-        if ($scaling->strategy !== PlacementStrategy::Spread) {
-            $placement['strategy'] = $scaling->strategy->value;
-        }
-
-        if ($placement !== []) {
-            $out['placement'] = $placement;
         }
 
         return $out;
@@ -258,7 +233,7 @@ final readonly class ConfigExporter
 
         foreach ($service->variables as $variable) {
             /** @var VariableSpec $variable */
-            if ($variable->layer !== VariableSpec::LAYER_ENVIRONMENT || in_array($variable->key, $driverKeys, true)) {
+            if ($variable->layer !== VariableLayer::Environment || in_array($variable->key, $driverKeys, true)) {
                 continue;
             }
 
@@ -272,34 +247,6 @@ final readonly class ConfigExporter
         }
 
         ksort($out);
-
-        return $out;
-    }
-
-    /**
-     * The entries of $current that differ from $defaults (floats compared loosely).
-     *
-     * @param  array<string, mixed>  $current
-     * @param  array<string, mixed>  $defaults
-     * @param  list<string>  $skip
-     * @return array<string, mixed>
-     */
-    private function changed(array $current, array $defaults, array $skip = []): array
-    {
-        $out = [];
-
-        foreach ($current as $key => $value) {
-            if (in_array($key, $skip, true)) {
-                continue;
-            }
-
-            $default = $defaults[$key] ?? null;
-            $same = (is_float($value) || is_float($default)) && is_numeric($value) && is_numeric($default) ? abs((float) $value - (float) $default) < 1e-9 : $value === $default;
-
-            if (! $same && ($value !== null || $default !== null)) {
-                $out[$key] = $value;
-            }
-        }
 
         return $out;
     }

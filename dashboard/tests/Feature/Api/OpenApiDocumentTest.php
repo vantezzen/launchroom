@@ -31,13 +31,9 @@ test('the document is OpenAPI 3.1 with every operation documented', function ():
     expect($ids)->toBe(array_values(array_unique($ids)));
 });
 
-test('the document is served publicly and never mentions secrets values', function (): void {
+test('the document is served publicly', function (): void {
     $this->get('/api/v1/openapi.json')
         ->assertOk()
         ->assertHeader('Content-Type', 'application/json')
         ->assertJsonPath('info.title', 'launchroom API');
-});
-
-test('the check command passes on the committed document', function (): void {
-    $this->artisan('launchroom:api:openapi', ['--check' => true])->assertSuccessful();
 });

@@ -156,7 +156,6 @@ test('a change re-renders the mesh servers, frees unleased build pins and syncs 
         ->and($pinned->status)->toBe(DaemonTaskStatus::Pending)
         ->and($release->refresh()->pinned_to_server)->toBeTrue();
 
-    // No change: nothing happens, nothing audited twice.
     updateRoles($cp, ['runtime', 'edge']);
     expect(AuditEvent::query()->where('action', AuditAction::ServerRolesUpdated->value)->count())->toBe(1);
 });

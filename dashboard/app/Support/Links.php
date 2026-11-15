@@ -7,6 +7,7 @@ namespace App\Support;
 use App\Enums\AnalyticsView;
 use App\Models\Deployment;
 use App\Models\Environment;
+use App\Models\Project;
 use App\Models\Security\SecurityFinding;
 use App\Models\Server;
 use App\Models\ServiceInstance;
@@ -34,10 +35,20 @@ final class Links
     {
         $instance->loadMissing(['service', 'environment.project']);
 
+        return self::serviceAt($instance->environment->project->public_id, $instance->environment->public_id, $instance->service->public_id, $tab, $query);
+    }
+
+    /**
+     * service() for read models that carry the public ids instead of models.
+     *
+     * @param  array<string, string|int|null>  $query
+     */
+    public static function serviceAt(string $project, string $environment, string $service, ?string $tab = null, array $query = []): string
+    {
         return self::path('projects.services.show', [
-            'project' => $instance->environment->project->public_id,
-            'environment' => $instance->environment->public_id,
-            'service' => $instance->service->public_id,
+            'project' => $project,
+            'environment' => $environment,
+            'service' => $service,
             'tab' => $tab,
         ], $query);
     }
@@ -49,12 +60,47 @@ final class Links
     {
         $instance->loadMissing(['service', 'environment.project']);
 
+        return self::serviceSettingsAt($instance->environment->project->public_id, $instance->environment->public_id, $instance->service->public_id, $section)
+            .($fragment === null ? '' : '#'.rawurlencode($fragment));
+    }
+
+    /**
+     * serviceSettings() by public ids.
+     *
+     * @param  array<string, string|int|null>  $query
+     */
+    public static function serviceSettingsAt(string $project, string $environment, string $service, string $section, array $query = []): string
+    {
         return self::path('projects.services.section', [
-            'project' => $instance->environment->project->public_id,
-            'environment' => $instance->environment->public_id,
-            'service' => $instance->service->public_id,
+            'project' => $project,
+            'environment' => $environment,
+            'service' => $service,
             'section' => $section,
-        ]).($fragment === null ? '' : '#'.rawurlencode($fragment));
+        ], $query);
+    }
+
+    public static function project(Project $project): string
+    {
+        return self::path('projects.show', ['project' => $project->public_id]);
+    }
+
+    /** The environment's canvas. */
+    public static function environment(Environment $environment): string
+    {
+        $environment->loadMissing('project');
+
+        return self::path('projects.canvas', [
+            'project' => $environment->project->public_id,
+            'environment' => $environment->public_id,
+        ]);
+    }
+
+    /** The project's deployments list, filtered to one environment. */
+    public static function deployments(Environment $environment): string
+    {
+        $environment->loadMissing('project');
+
+        return self::path('deployments.project', ['project' => $environment->project->public_id], ['environment' => $environment->public_id]);
     }
 
     /**
@@ -70,19 +116,14 @@ final class Links
     }
 
     /**
-     * The service's view of the project's Analytics tab (D75): Traffic when
-     * it has a domain, else Resources, filtered to the service.
+     * The service's view of the project's Analytics tab (D75), filtered to
+     * the service: Traffic when it has a domain, else Resources.
      */
-    public static function serviceAnalytics(ServiceInstance $instance, ?string $range = null): string
+    public static function serviceAnalytics(ServiceInstance $instance, bool $hasDomain, ?string $range = null): string
     {
         $instance->loadMissing('environment.project');
 
-        return self::analytics(
-            $instance->environment,
-            $instance,
-            $range,
-            $instance->domains()->exists() ? AnalyticsView::Traffic : AnalyticsView::Resources,
-        );
+        return self::analytics($instance->environment, $instance, $range, AnalyticsView::forService($hasDomain));
     }
 
     /**
@@ -138,11 +179,19 @@ final class Links
      */
     public static function server(Server $server, ?string $tab = null, array $query = [], ?string $fragment = null): string
     {
-        $path = $tab === null
-            ? self::path('servers.show', ['server' => $server->public_id], $query)
-            : self::path('servers.tab', ['server' => $server->public_id, 'tab' => $tab], $query);
+        return self::serverAt($server->public_id, $tab, $query).($fragment === null ? '' : '#'.rawurlencode($fragment));
+    }
 
-        return $path.($fragment === null ? '' : '#'.rawurlencode($fragment));
+    /**
+     * server() by public id.
+     *
+     * @param  array<string, string|int|null>  $query
+     */
+    public static function serverAt(string $server, ?string $tab = null, array $query = []): string
+    {
+        return $tab === null
+            ? self::path('servers.show', ['server' => $server], $query)
+            : self::path('servers.tab', ['server' => $server, 'tab' => $tab], $query);
     }
 
     /**

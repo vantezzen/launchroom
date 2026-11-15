@@ -11,9 +11,8 @@ import { Button } from '@/components/ui/button';
 import { AddChannel } from '@/features/alerts/add-channel';
 import { ChannelRow } from '@/features/alerts/channel-row';
 import { RulesCard } from '@/features/alerts/rules-card';
-import { SettingsCard, SettingsRow } from '@/features/settings/settings-card';
-import { edit } from '@/routes/notifications';
-import { index as settingsHome } from '@/routes/settings';
+import { SettingsCard, SettingsRow } from '@/components/settings/settings-card';
+import SettingsLayout from '@/features/settings/settings-layout';
 
 type Props = {
     channels: App.Data.Alerts.AlertChannelData[];
@@ -228,9 +227,4 @@ export default function NotificationSettings({
     );
 }
 
-NotificationSettings.layout = {
-    breadcrumbs: [
-        { title: 'Settings', href: settingsHome() },
-        { title: 'Notifications', href: edit() },
-    ],
-};
+NotificationSettings.layout = SettingsLayout;

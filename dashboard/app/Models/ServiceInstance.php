@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Data\Canvas\PlacementIssueData;
 use App\Data\Services\BuildSettings;
 use App\Data\Services\DeploySettings;
 use App\Data\Services\ScalingSettings;
+use App\Data\Services\ServicePlanData;
 use App\Enums\PreviewStrategy;
 use App\Enums\Security\WafMode;
 use App\Models\Concerns\BelongsToTeam;
@@ -14,6 +16,7 @@ use App\Models\Concerns\HasPublicId;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Scope;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -35,9 +38,9 @@ use Illuminate\Support\Carbon;
  * @property int|null $preview_clone_source_id "clone from another database" source (docs/06 §5)
  * @property list<string>|null $preview_sanitize_command argv run in the database image after a clone
  * @property int|null $active_deployment_id
- * @property array<string, mixed>|null $plan latest plan preview (App\Data\Services\ServicePlanData)
+ * @property ServicePlanData|null $plan latest plan preview
  * @property Carbon|null $removed_at
- * @property array{kind: string, message: string, serverId?: string|null, since: string}|null $placement_issue why it isn't fully placed now (degraded banner; App\Services\Deployments\Rescheduler)
+ * @property PlacementIssueData|null $placement_issue
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property-read Environment $environment
@@ -69,6 +72,29 @@ final class ServiceInstance extends Model
     public static function publicIdPrefix(): string
     {
         return 'sin';
+    }
+
+    /**
+     * The settings a copy of this instance in another environment takes
+     * over (base environments, previews, promotions, bringing back a staged
+     * removal; docs/06 §6.2, the firewall per docs/22 §6.2). Volumes,
+     * domains and generated values are not settings: copies get fresh ones.
+     *
+     * @return array<string, mixed>
+     */
+    public function copyableSettings(): array
+    {
+        return [
+            'enabled' => $this->enabled,
+            'branch_override' => $this->branch_override,
+            'build' => $this->build,
+            'deploy' => $this->deploy,
+            'scaling' => $this->scaling,
+            'preview_strategy' => $this->preview_strategy,
+            'waf_mode' => $this->waf_mode,
+            'waf_paranoia' => $this->waf_paranoia,
+            'waf_inspect_body_kib' => $this->waf_inspect_body_kib,
+        ];
     }
 
     /**
@@ -162,6 +188,34 @@ final class ServiceInstance extends Model
     }
 
     /**
+     * The volumes it mounts: its own (staged removals left out) and shared
+     * ones whose volume isn't removed (D73).
+     *
+     * @return Collection<int, Volume>
+     */
+    public function mountedVolumes(): Collection
+    {
+        $this->loadMissing(['volumes', 'volumeMounts.volume']);
+        $shared = $this->volumeMounts
+            ->map(static fn (VolumeMount $mount): Volume => $mount->volume)
+            ->filter(fn (Volume $volume): bool => $volume->removed_at === null && $volume->service_instance_id !== $this->id);
+
+        return new Collection([...$this->volumes->all(), ...$shared->values()->all()]);
+    }
+
+    /**
+     * Keeps data on one server: a database, or any service that mounts a
+     * volume (own or shared). One replica, never moved automatically
+     * (docs/02 §6, docs/14 §2).
+     */
+    public function isStateful(): bool
+    {
+        $this->loadMissing('service');
+
+        return $this->service->kind->isStateful() || $this->mountedVolumes()->isNotEmpty();
+    }
+
+    /**
      * @return HasMany<Placement, $this>
      */
     public function placements(): HasMany
@@ -182,8 +236,8 @@ final class ServiceInstance extends Model
             'preview_strategy' => PreviewStrategy::class,
             'preview_sanitize_command' => 'array',
             'removed_at' => 'datetime',
-            'plan' => 'array',
-            'placement_issue' => 'array',
+            'plan' => ServicePlanData::class,
+            'placement_issue' => PlacementIssueData::class,
             'waf_mode' => WafMode::class,
             'waf_paranoia' => 'integer',
             'waf_inspect_body_kib' => 'integer',

@@ -13,17 +13,11 @@ namespace App\Support\Security;
 final class ExposedPackages
 {
     private const array PATTERNS = [
-        // JavaScript runtimes.
         '/^(?:nodejs|node|bun|deno)$/D',
-        // Python.
         '/^(?:python3\.\d+|libpython3\.\d+|python3|python)$/D',
-        // PHP.
         '/^(?:php|php8\.\d+|php8\.\d+-(?:cli|fpm|common)|php-fpm|php-cli|frankenphp)$/D',
-        // Ruby.
         '/^(?:ruby|ruby3\.\d+|libruby3\.\d+)$/D',
-        // Java and .NET.
         '/^(?:openjdk-[0-9a-z.]+-jre.*|openjdk-[0-9a-z.]+-jdk.*|java|aspnetcore-runtime-.+|dotnet-runtime-.+|dotnet)$/D',
-        // Web servers inside the app image.
         '/^(?:nginx|apache2|httpd|caddy)$/D',
     ];
 

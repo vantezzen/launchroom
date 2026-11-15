@@ -24,15 +24,10 @@ final class ServerSpecsData extends Data
 
     public static function fromServer(Server $server): self
     {
-        $status = $server->host_status ?? [];
-        $int = static fn (mixed $value): ?int => is_int($value) && $value > 0 ? $value : null;
-        $health = is_array($status['health'] ?? null) ? $status['health'] : [];
-        $docker = is_array($health['dockerDisk'] ?? null) ? ($health['dockerDisk']['totalMb'] ?? null) : null;
-
         return new self(
-            $int($status['cpus'] ?? null) ?? $server->facts->cpus,
-            $int($status['memoryMb'] ?? null) ?? $server->facts->memoryMb,
-            $int($docker) ?? $int($status['diskTotalMb'] ?? null),
+            $server->cpus(),
+            $server->memoryMb(),
+            $server->host_status?->volumeDiskTotalMb(),
             $server->facts->arch,
             $server->facts->hardware?->cpuModel,
             $server->facts->hardware?->osName,

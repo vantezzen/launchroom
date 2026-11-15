@@ -12,6 +12,7 @@ use App\Data\Teams\TeamData;
 use App\Enums\Permission;
 use App\Enums\TeamRole;
 use App\Http\Controllers\Controller;
+use App\Http\Routing\CurrentTeam;
 use App\Models\Membership;
 use App\Models\Team;
 use App\Models\TeamInvitation;
@@ -28,9 +29,8 @@ use Inertia\Response;
  */
 final class TeamSettingsController extends Controller
 {
-    public function edit(#[CurrentUser] User $user): Response
+    public function edit(#[CurrentUser] User $user, #[CurrentTeam] Team $team): Response
     {
-        $team = $user->currentTeam()->firstOrFail();
         Gate::authorize('view', $team);
 
         $role = $user->roleIn($team);
@@ -58,7 +58,6 @@ final class TeamSettingsController extends Controller
             'members' => $members,
             'invitations' => $invitations,
             'canManageMembers' => $canManage,
-            // Opt-in console transcripts (docs/03 §11.5); owners switch it.
             'consoleRecording' => [
                 'enabled' => $team->settings->recordConsoleSessions,
                 'canChange' => Gate::allows('update', $team),
@@ -73,21 +72,12 @@ final class TeamSettingsController extends Controller
     /**
      * Opt-in console transcripts for the team (docs/03 §11.5).
      */
-    public function recording(Request $request, ConsoleRecordingData $data, #[CurrentUser] User $user, UpdateConsoleRecording $update): RedirectResponse
+    public function recording(Request $request, ConsoleRecordingData $data, #[CurrentUser] User $user, UpdateConsoleRecording $update, #[CurrentTeam] Team $team): RedirectResponse
     {
-        $team = self::currentTeam($user);
         Gate::authorize('update', $team);
 
         $update->handle($team, $data->enabled, $this->auditActor($request, $user));
 
         return back();
-    }
-
-    /**
-     * The team the settings page manages.
-     */
-    public static function currentTeam(User $user): Team
-    {
-        return $user->currentTeam()->firstOrFail();
     }
 }

@@ -5,11 +5,11 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Environments;
 
 use App\Data\Activity\ActivityFiltersData;
+use App\Data\Activity\ProjectActivityFilterData;
 use App\Http\Controllers\Controller;
-use App\Http\Controllers\Projects\ProjectScope;
 use App\Models\Project;
+use App\Queries\ProjectShell;
 use App\Queries\TeamActivity;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -21,15 +21,13 @@ use Inertia\Response;
  */
 final class ProjectActivityController extends Controller
 {
-    public function __invoke(Request $request, Project $project, TeamActivity $activity): Response
+    public function __invoke(Project $project, ProjectActivityFilterData $data, TeamActivity $activity): Response
     {
         Gate::authorize('view', $project);
-        $request->validate(['kind' => ['nullable', 'string', 'in:deploys,promotions,changes']]);
-        $kind = $request->string('kind')->value();
-        $filters = new ActivityFiltersData($project->public_id, $kind === '' ? null : $kind);
+        $filters = new ActivityFiltersData($project->public_id, $data->kind);
 
         return Inertia::render('projects/activity', [
-            ...ProjectScope::shellProps($project, null),
+            ...ProjectShell::props($project, null),
             'entries' => $activity->get($project->team_id, $filters),
             'filters' => ['project' => $project->public_id, 'kind' => $filters->kind],
         ]);

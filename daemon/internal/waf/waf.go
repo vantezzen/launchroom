@@ -31,11 +31,10 @@ import (
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
 
-// Defaults and bounds.
 const (
 	// DefaultAddr is LR_INGRESS_WAF_LOG_ADDR's default.
 	DefaultAddr = "127.0.0.1:2023"
-	// Path is where Coraza posts records (caddy.WafLogPath).
+	// Path is where Coraza posts records (the edge Caddy is configured with it).
 	Path = "/waf"
 	// MaxBody bounds one record.
 	MaxBody = 256 << 10

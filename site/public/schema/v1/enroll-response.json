@@ -76,7 +76,7 @@
         "address": {
           "type": "string",
           "pattern": "^(?:[0-9]{1,3}(?:\\.[0-9]{1,3}){3}|\\[[0-9a-f:.]{2,45}\\]):[0-9]{1,5}$",
-          "description": "Address the Docker daemon pulls from; always the local forwarder or Zot (\"127.0.0.1:5000\")."
+          "description": "Address the Docker daemon pulls from: always RegistryAddress, the\nlocal forwarder or Zot (launchroomd uses the constant)."
         },
         "forwardTo": {
           "type": "string",
@@ -119,7 +119,7 @@
     },
     "serverId": {
       "type": "string",
-      "pattern": "^srv_[0-9A-HJKMNP-TV-Z]{26}$"
+      "pattern": "^srv_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
     },
     "status": {
       "type": "string",

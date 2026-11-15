@@ -25,7 +25,6 @@ import {
 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { toast } from 'sonner';
 import { Logo } from '@/components/logo';
 import { ProjectIcon } from '@/components/project-icon';
 import { Status, deploymentStatus, serverStatus } from '@/components/status';
@@ -39,40 +38,34 @@ import {
     CommandSeparator,
     CommandShortcut,
 } from '@/components/ui/command';
-import {
-    optimisticQueued,
-    optimisticService,
-    rollbackToast,
-} from '@/features/deployments/optimistic';
-import { requestJson } from '@/features/projects/http';
-import { serviceAnalyticsHref } from '@/lib/links';
+import { requestJson } from '@/lib/http';
+import { analyticsHref, logsHref } from '@/lib/links';
 import { prefersReducedMotion } from '@/lib/motion';
 import {
     project as projectDeployments,
     rollback,
     show as deploymentShow,
 } from '@/routes/deployments';
-import { redeploy as redeployService } from '@/routes/deployments/service';
 import { index as paletteIndex } from '@/routes/palette';
 import { index as activityIndex } from '@/routes/activity';
 import {
-    analyticsPage as projectAnalytics,
     canvas,
     importMethod as newProject,
-    logs as projectLogs,
-    resourcesPage as projectResources,
     previews as projectPreviews,
     index as projectsIndex,
     settings as projectSettings,
 } from '@/routes/projects';
 import services from '@/routes/projects/services';
 import { index as serversIndex, show as serverShow } from '@/routes/servers';
-import lifecycle from '@/routes/services/lifecycle';
 import { edit as teamSettings } from '@/routes/team';
 import { readRecent, recordVisit } from './recent';
 import type { RecentVisit } from './recent';
 import { openLiveUrl, ROUTE, ShortcutsDialog, useShortcuts } from './shortcuts';
 import type { OpenService } from './shortcuts';
+import {
+    redeployService,
+    restartService,
+} from '@/features/service-lifecycle/actions';
 
 type Palette = App.Data.CommandPalette.PaletteData;
 type Item = App.Data.CommandPalette.PaletteItemData;
@@ -87,9 +80,8 @@ export function openCommandPalette(search = '') {
 /**
  * The palette index (`/-/palette`): with `environment`, that environment's
  * project reports its services' statuses there instead of production's.
- * The project switcher reads the same query for its status words.
  */
-export function usePaletteIndex(environment: string | null, enabled: boolean) {
+function usePaletteIndex(environment: string | null, enabled: boolean) {
     return useQuery({
         queryKey: ['command-palette', environment],
         queryFn: ({ signal }) =>
@@ -191,7 +183,7 @@ export function CommandPalette() {
     const page = usePage<CanvasProps>();
     const { data } = usePaletteIndex(context.environment, open);
 
-    // The open service on the canvas, for `o` (open its live URL).
+    // The open service on the canvas, for `o` and `a`.
     const props = useRef(page.props);
     useEffect(() => {
         props.current = page.props;
@@ -202,7 +194,13 @@ export function CommandPalette() {
             ? nodes?.find((item) => item.id === panel.serviceId)
             : undefined;
 
-        return node ? { name: node.name, domain: node.domain } : null;
+        return node
+            ? {
+                  name: node.name,
+                  domain: node.domain,
+                  analyticsView: node.analyticsView,
+              }
+            : null;
     }, []);
 
     useShortcuts({
@@ -219,16 +217,11 @@ export function CommandPalette() {
         };
 
         window.addEventListener(OPEN_EVENT, onOpen);
-        recordVisit(window.location.pathname);
-        const stop = router.on('navigate', (event) =>
-            recordVisit(event.detail.page.url),
-        );
 
-        return () => {
-            window.removeEventListener(OPEN_EVENT, onOpen);
-            stop();
-        };
+        return () => window.removeEventListener(OPEN_EVENT, onOpen);
     }, []);
+
+    useEffect(() => recordVisit(page), [page]);
 
     useEffect(() => {
         if (open) {
@@ -424,11 +417,11 @@ export function CommandPalette() {
                 )}
                 onSelect={() =>
                     go(
-                        serviceAnalyticsHref({
+                        analyticsHref({
                             project,
                             environment,
                             service: item.id,
-                            hasDomain: item.domain !== null,
+                            view: item.analyticsView ?? undefined,
                         }),
                     )
                 }
@@ -467,17 +460,7 @@ export function CommandPalette() {
                     onSelect={() =>
                         ask(
                             `Redeploy ${item.label}`,
-                            () =>
-                                router.post(
-                                    redeployService(args).url,
-                                    {},
-                                    {
-                                        optimistic: optimisticQueued(item.id),
-                                        ...rollbackToast(
-                                            `Couldn’t redeploy ${item.label}.`,
-                                        ),
-                                    },
-                                ),
+                            () => redeployService(args, item.label),
                             RefreshCw,
                         )
                     }
@@ -487,7 +470,7 @@ export function CommandPalette() {
                 </CommandItem>,
             );
 
-            if (item.nodeStatus?.label !== 'Failed') {
+            if (item.nodeStatus?.reason !== 'deploy_failed') {
                 rows.push(
                     <CommandItem
                         key={`restart-${item.id}`}
@@ -496,30 +479,7 @@ export function CommandPalette() {
                         onSelect={() =>
                             ask(
                                 `Restart ${item.label}`,
-                                () =>
-                                    router.post(
-                                        lifecycle.restart(args).url,
-                                        { processes: true },
-                                        {
-                                            preserveScroll: true,
-                                            preserveState: true,
-                                            optimistic: optimisticService(
-                                                item.id,
-                                                {
-                                                    state: 'progress',
-                                                    label: 'Restarting',
-                                                },
-                                                { deploying: true },
-                                            ),
-                                            onSuccess: () =>
-                                                toast.success(
-                                                    `Restarting ${item.label}`,
-                                                ),
-                                            ...rollbackToast(
-                                                `Couldn’t restart ${item.label}.`,
-                                            ),
-                                        },
-                                    ),
+                                () => restartService(args, item.label),
                                 RotateCw,
                             )
                         }
@@ -875,30 +835,34 @@ export function CommandPalette() {
                                             'go logs of this environment all services',
                                             <ScrollText aria-hidden="true" />,
                                             'Logs of all services',
-                                            projectLogs([
-                                                context.project,
-                                                context.environment,
-                                            ]).url,
+                                            logsHref({
+                                                project: context.project,
+                                                environment:
+                                                    context.environment,
+                                            }),
                                             context.service ? undefined : 'g l',
                                         ),
                                         navigateRow(
                                             'go analytics traffic requests of this environment all services',
                                             <BarChart3 aria-hidden="true" />,
                                             'Analytics of all services',
-                                            projectAnalytics([
-                                                context.project,
-                                                context.environment,
-                                            ]).url,
+                                            analyticsHref({
+                                                project: context.project,
+                                                environment:
+                                                    context.environment,
+                                            }),
                                             context.service ? undefined : 'g a',
                                         ),
                                         navigateRow(
                                             'go resources metrics cpu memory usage of this environment',
                                             <Gauge aria-hidden="true" />,
                                             'Resources of all services',
-                                            projectResources([
-                                                context.project,
-                                                context.environment,
-                                            ]).url,
+                                            analyticsHref({
+                                                project: context.project,
+                                                environment:
+                                                    context.environment,
+                                                view: 'resources',
+                                            }),
                                         ),
                                     ]}
                                     {navigateRow(

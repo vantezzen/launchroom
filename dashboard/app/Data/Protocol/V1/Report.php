@@ -4,6 +4,11 @@ declare(strict_types=1);
 
 namespace App\Data\Protocol\V1;
 
+use App\Data\Attributes\PublicIdOf;
+use App\Data\Protocol\ProtocolDocument;
+use App\Support\Protocol\Grammar;
+use App\Support\Protocol\Limits;
+use App\Support\PublicId;
 use Spatie\LaravelData\Attributes\Validation\In;
 use Spatie\LaravelData\Attributes\Validation\Min;
 use Spatie\LaravelData\Attributes\Validation\Regex;
@@ -25,11 +30,11 @@ final class Report extends Data
      * @param  list<WorkloadEvent>|null|Optional  $events
      */
     public function __construct(
-        #[In(['launchroom.vantezzen.io/v1'])]
+        #[In([ProtocolDocument::API_VERSION])]
         public string $apiVersion,
         #[In(['Report'])]
         public string $kind,
-        #[Regex('/^srv_[0-9A-HJKMNP-TV-Z]{26}$/D')]
+        #[PublicIdOf('srv')]
         public string $serverId,
         #[Regex(self::TIME_PATTERN)]
         public string $observedAt,
@@ -62,7 +67,7 @@ final class Report extends Data
     {
         // Present even when empty (protocol/README.md: required arrays are always present).
         return [
-            'workloads' => ['present', 'array'],
+            'workloads' => ['present', 'array', 'max:'.Limits::LIST_ITEMS],
             // Items are checked one by one by MetricSamples (cheap for thousands of rows).
             'metrics' => ['nullable', 'array'],
             'metrics.host' => ['sometimes', 'array', 'max:120'],
@@ -75,11 +80,11 @@ final class Report extends Data
             'metrics.waf' => ['sometimes', 'array', 'max:1024'],
             'walArchives' => ['sometimes', 'nullable', 'array', 'max:256'],
             'events' => ['sometimes', 'nullable', 'array', 'max:256'],
-            'walArchives.*.workload' => ['required', 'string', 'regex:/^wl_[0-9A-HJKMNP-TV-Z]{26}$/D'],
+            'walArchives.*.workload' => ['required', 'string', 'regex:'.PublicId::regex('wl')],
             'walArchives.*.state' => ['required', 'string', 'in:active,waiting,failing'],
             'walArchives.*.checkedAt' => ['required', 'string', 'regex:'.self::TIME_PATTERN],
             'walArchives.*.lastArchivedAt' => ['sometimes', 'nullable', 'string', 'regex:'.self::TIME_PATTERN],
-            'walArchives.*.lastSegment' => ['sometimes', 'string', 'regex:/^[0-9A-F]{24}$/D'],
+            'walArchives.*.lastSegment' => ['sometimes', 'string', 'regex:'.Grammar::WAL_SEGMENT],
             'walArchives.*.pendingSegments' => ['required', 'integer', 'min:0'],
             'walArchives.*.message' => ['sometimes', 'string', 'max:1024'],
         ];

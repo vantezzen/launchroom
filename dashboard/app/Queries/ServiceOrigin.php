@@ -12,6 +12,7 @@ use App\Data\Services\ImageSource;
 use App\Models\ServiceInstance;
 use App\Services\Git\GitProviders;
 use App\Support\Canvas\ServiceGlyph;
+use App\Support\Git\DeployBranch;
 use App\Support\Images\ImageReference;
 use Throwable;
 
@@ -44,34 +45,16 @@ final readonly class ServiceOrigin
 
     private function repository(ServiceInstance $instance, GitSource $source): ServiceOriginData
     {
-        $branch = $this->branch($instance, $source);
+        $branch = DeployBranch::for($instance, $source);
         $href = null;
 
-        if (! $source->isUnconnectedPlainGit()) {
-            try {
-                $href = $this->providers->forSource($source)->repositoryUrl(RepositoryRef::fromSource($instance->team_id, $source), $branch);
-            } catch (Throwable) {
-                // A missing connection: the name stays, without a link.
-            }
+        try {
+            $href = $this->providers->forSource($source)->repositoryUrl(RepositoryRef::fromSource($instance->team_id, $source), $branch);
+        } catch (Throwable) {
+            // A missing connection: the name stays, without a link.
         }
 
-        return new ServiceOriginData('repository', $source->fullName, $href, $branch, $source->kind()->label());
-    }
-
-    /**
-     * The branch it deploys, as far as it is known without asking the
-     * provider: the override, the environment's branch (not a pattern),
-     * then the source's own.
-     */
-    private function branch(ServiceInstance $instance, GitSource $source): ?string
-    {
-        foreach ([$instance->branch_override, $instance->environment->triggers->branch, $source->branch] as $branch) {
-            if (is_string($branch) && $branch !== '' && strpbrk($branch, '*?[') === false) {
-                return $branch;
-            }
-        }
-
-        return null;
+        return new ServiceOriginData('repository', $source->fullName, $href, $branch, $source->provider->label());
     }
 
     private function image(ImageSource $source): ServiceOriginData

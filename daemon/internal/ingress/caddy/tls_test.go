@@ -21,7 +21,9 @@ import (
 	"time"
 
 	"github.com/vantezzen/launchroom/daemon/internal/docker/dockerfake"
+	"github.com/vantezzen/launchroom/daemon/internal/ingress"
 	"github.com/vantezzen/launchroom/daemon/internal/ingress/certstore"
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/policy"
 	"github.com/vantezzen/launchroom/daemon/internal/secret"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
@@ -53,7 +55,7 @@ func multiEdgeRoutes() []state.RouteSpec {
 var dnsSpec = &state.DNSChallengeSpec{Provider: state.DNSCloudflare, Domains: []state.Hostname{"apps.example.com"}}
 
 func TestRenderTLSGolden(t *testing.T) {
-	routes := ResolveRoutes(multiEdgeRoutes(), resolver(map[state.WorkloadID]Endpoint{
+	routes := ResolveRoutes(multiEdgeRoutes(), resolver(map[state.WorkloadID]ingress.Endpoint{
 		wlA: {Addr: netip.MustParseAddr("10.231.4.5"), Serving: true, Ready: true},
 	}))
 	shared, err := RenderTLS(routes, TLS{DNS: dnsSpec, Storage: &Storage{Address: "100.64.0.1:6379", KeyPrefix: "lr-caddy", HasUsername: true}}, renderOpts)
@@ -103,16 +105,16 @@ func TestRenderTLSGolden(t *testing.T) {
 func TestResolvePreferLocal(t *testing.T) {
 	ip := netip.MustParseAddr
 	specs := multiEdgeRoutes()[:1]
-	routes := ResolveRoutes(specs, resolver(map[state.WorkloadID]Endpoint{wlA: {Addr: ip("10.231.4.5"), Serving: true, Ready: true}}))
+	routes := ResolveRoutes(specs, resolver(map[state.WorkloadID]ingress.Endpoint{wlA: {Addr: ip("10.231.4.5"), Serving: true, Ready: true}}))
 	if !slices.Equal(routes[0].Dial, []string{"10.231.4.5:3000"}) {
 		t.Fatalf("prefer local with a ready local replica: %v", routes[0].Dial)
 	}
-	routes = ResolveRoutes(specs, resolver(map[state.WorkloadID]Endpoint{wlA: {Addr: ip("10.231.4.5"), Serving: true, Ready: false}}))
+	routes = ResolveRoutes(specs, resolver(map[state.WorkloadID]ingress.Endpoint{wlA: {Addr: ip("10.231.4.5"), Serving: true, Ready: false}}))
 	if !slices.Equal(routes[0].Dial, []string{"100.64.0.7:31001"}) {
 		t.Fatalf("prefer local without a ready local replica: %v", routes[0].Dial)
 	}
 	specs[0].LoadBalancing = ""
-	routes = ResolveRoutes(specs, resolver(map[state.WorkloadID]Endpoint{wlA: {Addr: ip("10.231.4.5"), Serving: true, Ready: true}}))
+	routes = ResolveRoutes(specs, resolver(map[state.WorkloadID]ingress.Endpoint{wlA: {Addr: ip("10.231.4.5"), Serving: true, Ready: true}}))
 	if !slices.Equal(routes[0].Dial, []string{"10.231.4.5:3000", "100.64.0.7:31001"}) {
 		t.Fatalf("round robin: %v", routes[0].Dial)
 	}
@@ -139,13 +141,13 @@ func TestParseCertLog(t *testing.T) {
 	}
 }
 
-func testLeafCert(t *testing.T, nb, na time.Time, names ...string) ([]byte, []byte) {
+func testLeafCert(t *testing.T, nb, na time.Time, hosts ...string) ([]byte, []byte) {
 	t.Helper()
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		t.Fatal(err)
 	}
-	tmpl := &x509.Certificate{SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: names[0]}, DNSNames: names, NotBefore: nb, NotAfter: na}
+	tmpl := &x509.Certificate{SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: hosts[0]}, DNSNames: hosts, NotBefore: nb, NotAfter: na}
 	parent := &x509.Certificate{SerialNumber: big.NewInt(2), Subject: pkix.Name{Organization: []string{"Let's Encrypt"}, CommonName: "R12"}}
 	der, err := x509.CreateCertificate(rand.Reader, tmpl, parent, &key.PublicKey, key)
 	if err != nil {
@@ -248,7 +250,7 @@ func TestManagerDegradedStorageServesMirror(t *testing.T) {
 		t.Fatal(err)
 	}
 	routes := ResolveRoutes(multiEdgeRoutes()[:2], resolver(nil)) // *.shop is mirrored, *.blog is not
-	st := m.Sync(context.Background(), state.SystemContainer{Enabled: true, Image: caddyImage(t)}, routes)
+	st := m.sync(context.Background(), state.SystemContainer{Enabled: true, Image: caddyImage(t)}, routes)
 	if st == nil || st.State != state.IngressApplied || st.Storage == nil || st.Storage.State != state.StorageDegraded || st.Storage.Mirrored != 1 {
 		t.Fatalf("status = %+v / %+v", st, st.Storage)
 	}
@@ -275,7 +277,7 @@ func TestManagerDegradedStorageServesMirror(t *testing.T) {
 func TestManagerRefusesStorageOutsidePolicy(t *testing.T) {
 	spec := &state.IngressSpec{Storage: &state.CertStorageSpec{Address: "10.0.0.5:6379", KeyPrefix: "lr-caddy"}}
 	m, admin, _ := managerWithSpec(t, spec, policy.DefaultConfig())
-	st := m.Sync(context.Background(), state.SystemContainer{Enabled: true, Image: caddyImage(t)}, nil)
+	st := m.sync(context.Background(), state.SystemContainer{Enabled: true, Image: caddyImage(t)}, nil)
 	if st.Storage == nil || st.Storage.State != state.StorageLocal || !strings.Contains(st.Storage.Message, "cert-storage") {
 		t.Fatalf("storage = %+v", st.Storage)
 	}
@@ -286,7 +288,7 @@ func TestManagerRefusesStorageOutsidePolicy(t *testing.T) {
 
 func caddyImage(t *testing.T) state.ImageRef {
 	t.Helper()
-	return state.ImageRef("docker.io/library/caddy@" + policy.DefaultSystemImageDigests[policy.SystemCaddy][0])
+	return state.ImageRef("docker.io/library/caddy@" + policy.DefaultSystemImageDigests[names.SystemCaddy][0])
 }
 
 func (f *fakeAdmin) last() []byte {

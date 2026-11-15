@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import type { KeyboardEvent } from 'react';
 import { cn } from '@/lib/utils';
-import { formatCompact, formatTick, formatTooltipTime } from './format';
+import { formatTick, formatTooltipTime } from './format';
 import { groupMarkers, LABEL_OFFSET } from './marker-groups';
 import { MarkerLayer } from './marker-layer';
 import type { ChartMarker } from './time-series-chart';
 import { useMeasuredWidth } from './use-measure';
+import { formatCompact } from '@/lib/format';
 
 export type HistogramBucket = {
     /** Epoch ms, inclusive. */
@@ -17,7 +18,7 @@ export type HistogramBucket = {
     errors?: number;
 };
 
-export type HistogramProps = {
+type HistogramProps = {
     buckets: HistogramBucket[];
     /** Accessible name ("Log lines per minute"). */
     label: string;

@@ -13,10 +13,9 @@ use App\Data\Specs\ServiceSpec;
 use App\Data\Specs\VariableSpec;
 use App\Enums\DeploymentStatus;
 use App\Enums\DeploymentTrigger;
+use App\Enums\Git\GitProviderKind;
 use App\Enums\Previews\PreviewStatus;
 use App\Exceptions\UnresolvedReferences;
-use App\Jobs\AdvanceDeploymentJob;
-use App\Listeners\Git\DeployOnGitPush;
 use App\Models\Deployment;
 use App\Models\Environment;
 use App\Models\EnvironmentRevision;
@@ -24,11 +23,13 @@ use App\Models\Previews\Preview;
 use App\Models\ServiceInstance;
 use App\Queries\CurrentEnvironmentSpec;
 use App\Services\Deployments\DeploymentFactory;
+use App\Services\Environments\EnvironmentRevisions;
 use App\Services\Previews\PreviewDatabases;
 use App\Services\Variables\ProductionSecretPolicy;
 use App\Services\Variables\SpecVariableResolver;
 use App\Support\Changes\SpecDiff;
 use App\Support\Git\GitHubAvatar;
+use App\Support\Git\WatchPaths;
 use App\Support\Variables\ResolvedEnvironment;
 use Illuminate\Support\Facades\DB;
 
@@ -74,11 +75,11 @@ final readonly class DeployPreview
             return;
         }
 
-        [$deployApps, $started] = DB::transaction(function () use ($preview): array {
+        $deployApps = DB::transaction(function () use ($preview): bool {
             $preview = Preview::query()->whereKey($preview->id)->with('project')->lockForUpdate()->first();
 
             if (! $preview instanceof Preview || ! $preview->status->isOpen() || $preview->environment_id === null || $preview->status === PreviewStatus::AwaitingApproval) {
-                return [false, []];
+                return false;
             }
 
             $environment = Environment::query()->whereKey($preview->environment_id)->with(['project', 'lastAppliedRevision'])->lockForUpdate()->firstOrFail();
@@ -89,31 +90,31 @@ final readonly class DeployPreview
             } catch (UnresolvedReferences $e) {
                 $preview->transitionTo(PreviewStatus::Failed, 'Broken variable references: '.$e->getMessage());
 
-                return [false, []];
+                return false;
             }
 
             // "Production secrets must differ" (docs/06 §3.1): PR code never
             // runs with production's secrets.
-            $violations = $this->secretPolicy->violations($environment->project);
+            $violations = $this->secretPolicy->violationsFor($environment);
 
             if ($violations !== []) {
                 $preview->transitionTo(PreviewStatus::Failed, implode(' ', $violations));
 
-                return [false, []];
+                return false;
             }
 
-            [$waiting, $started, $failure] = $this->startDatabases($environment, $revision, $envs);
+            [$waiting, $failure] = $this->startDatabases($environment, $revision, $envs);
 
             if ($failure !== null) {
                 $preview->transitionTo(PreviewStatus::Failed, $failure);
 
-                return [false, []];
+                return false;
             }
 
             if ($waiting) {
                 $preview->transitionTo(PreviewStatus::Preparing, 'Starting the databases.');
 
-                return [false, $started];
+                return false;
             }
 
             $ready = $this->databases->advance($preview, $environment);
@@ -121,34 +122,30 @@ final readonly class DeployPreview
             if ($ready === null) {
                 $preview->transitionTo(PreviewStatus::Failed, $this->failure($preview));
 
-                return [false, []];
+                return false;
             }
 
             if (! $ready) {
                 $preview->transitionTo(PreviewStatus::Preparing, 'Cloning data into the preview’s database.');
 
-                return [false, []];
+                return false;
             }
 
-            if (($preview->data['deployedSha'] ?? null) === $preview->head_sha) {
+            if ($preview->data->deployedSha === $preview->head_sha) {
                 if ($preview->status !== PreviewStatus::Running) {
                     $preview->transitionTo(PreviewStatus::Running);
                 }
 
-                return [false, []];
+                return false;
             }
 
             // Claimed under the lock: a concurrent call won't deploy twice.
-            $preview->data = [...$preview->data, 'deployedSha' => $preview->head_sha];
+            $preview->data = $preview->data->changed(['deployedSha' => $preview->head_sha]);
             $preview->transitionTo(PreviewStatus::Running);
             $environment->forceFill(['pr_head_sha' => $preview->head_sha, 'pr_head_ref' => $preview->head_ref])->save();
 
-            return [true, []];
+            return true;
         });
-
-        foreach ($started as $deployment) {
-            dispatch(new AdvanceDeploymentJob($deployment->id));
-        }
 
         if ($deployApps) {
             $this->deployApps($preview->refresh());
@@ -164,30 +161,17 @@ final readonly class DeployPreview
             return $revision;
         }
 
-        $max = EnvironmentRevision::query()->where('environment_id', $environment->id)->max('number');
-        $revision = EnvironmentRevision::query()->create([
-            'team_id' => $environment->team_id,
-            'environment_id' => $environment->id,
-            'number' => (is_numeric($max) ? (int) $max : 0) + 1,
-            'spec' => $spec,
-            'message' => 'Preview',
-            'created_at' => now(),
-        ]);
-        $environment->forceFill(['last_applied_revision_id' => $revision->id])->save();
-        $environment->setRelation('lastAppliedRevision', $revision);
-
-        return $revision;
+        return EnvironmentRevisions::apply($environment, $spec, 'Preview', null);
     }
 
     /**
      * @param  array<string, ResolvedEnvironment>  $envs
-     * @return array{bool, list<Deployment>, string|null} whether a database isn't running yet, new deployments, and why it gave up
+     * @return array{bool, string|null} whether a database isn't running yet, and why it gave up
      */
     private function startDatabases(Environment $environment, EnvironmentRevision $revision, array $envs): array
     {
         $instances = ServiceInstance::query()->where('environment_id', $environment->id)->get()->keyBy('public_id');
         $waiting = false;
-        $started = [];
 
         foreach ($revision->spec->services as $id => $service) {
             $instance = $instances->get($service->instanceId);
@@ -202,21 +186,21 @@ final readonly class DeployPreview
             // A failed start is retried by the tick (e.g. a transient daemon
             // error), but not forever.
             if ($failed->count() >= self::MAX_DATABASE_ATTEMPTS) {
-                return [true, $started, "{$service->name} did not start: ".($failed->first()->failure_message ?? 'see its deployments')];
+                return [true, "{$service->name} did not start: ".($failed->first()->failure_message ?? 'see its deployments')];
             }
 
             $pending = Deployment::query()
                 ->where('service_instance_id', $instance->id)
-                ->whereIn('status', DeploymentStatus::values([DeploymentStatus::Queued, ...DeploymentStatus::inFlight()]))
+                ->unfinished()
                 ->exists();
             $env = $envs[$id] ?? null;
 
             if (! $pending && $env !== null) {
-                $started[] = $this->factory->create($environment->project, $instance, $revision, $revision->spec, $service, $env, DeploymentTrigger::PullRequest, null);
+                $this->factory->create($environment->project, $instance, $revision, $revision->spec, $service, $env, DeploymentTrigger::PullRequest, null);
             }
         }
 
-        return [$waiting, $started, null];
+        return [$waiting, null];
     }
 
     private function deployApps(Preview $preview): void
@@ -232,6 +216,9 @@ final readonly class DeployPreview
         $baseCommits = $this->baseCommits($environment);
         $instances = ServiceInstance::query()->where('environment_id', $environment->id)->with(['service', 'activeDeployment'])->get()->keyBy('public_id');
         $shas = [];
+        // The PR author's login is a GitHub login only on GitHub; other
+        // providers' webhooks carry no avatar for it.
+        $avatar = $preview->provider === GitProviderKind::GitHub ? GitHubAvatar::fromLogin($preview->author_login) : null;
 
         foreach ($this->appServices($spec) as $id => $service) {
             $parentSha = $service->parentId === null ? null : ($shas[$service->parentId] ?? null);
@@ -244,7 +231,7 @@ final readonly class DeployPreview
             }
 
             $ref = $sha === $preview->head_sha ? 'refs/heads/'.$preview->head_ref : 'refs/heads/'.$preview->base_ref;
-            $this->deployCommit->handle($instance, new CommitData($sha, mb_substr($preview->title, 0, 500), $preview->author_login, null, $preview->author_login, GitHubAvatar::fromLogin($preview->author_login)), $ref, DeploymentTrigger::PullRequest);
+            $this->deployCommit->handle($instance, new CommitData($sha, mb_substr($preview->title, 0, 500), $preview->author_login, null, $preview->author_login, $avatar), $ref, DeploymentTrigger::PullRequest);
         }
     }
 
@@ -276,7 +263,7 @@ final readonly class DeployPreview
         foreach ($spec->services as $id => $service) {
             $source = $service->source();
 
-            if ($service->kind->isBuilt() && (! $source instanceof GitSource || DeployOnGitPush::watched($service->build->watchPaths, $source->rootDirectory, $files))) {
+            if ($service->kind->isBuilt() && (! $source instanceof GitSource || WatchPaths::matches($service->build->watchPaths, $files))) {
                 $changed[$id] = true;
             }
         }
@@ -335,11 +322,9 @@ final readonly class DeployPreview
 
     private function failure(Preview $preview): string
     {
-        $databases = $preview->data['databases'] ?? [];
-
-        foreach (is_array($databases) ? $databases : [] as $state) {
-            if (is_array($state) && ($state['state'] ?? null) === 'failed' && is_string($state['message'] ?? null)) {
-                return $state['message'];
+        foreach ($preview->data->databases as $state) {
+            if ($state->state === 'failed' && $state->message !== null) {
+                return $state->message;
             }
         }
 

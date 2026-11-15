@@ -10,15 +10,15 @@ use App\Data\Audit\AuditActor;
 use App\Data\Audit\AuditEntryData;
 use App\Enums\AuditAction;
 use App\Enums\DeploymentTrigger;
+use App\Events\CanvasChanged;
 use App\Events\NodeStateInvalidated;
 use App\Exceptions\DomainRuleViolation;
-use App\Jobs\AdvanceDeploymentJob;
 use App\Models\Deployment;
 use App\Models\Environment;
 use App\Models\ServiceInstance;
 use App\Models\User;
 use App\Queries\ServiceProcesses;
-use App\Services\Deployments\ImageRerun;
+use App\Services\Deployments\DeploymentFactory;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -35,7 +35,7 @@ use Illuminate\Support\Facades\DB;
 final readonly class StartService
 {
     public function __construct(
-        private ImageRerun $rerun,
+        private DeploymentFactory $factory,
         private RedeployService $redeploy,
         private RecordAuditEvent $audit,
     ) {}
@@ -83,8 +83,8 @@ final readonly class StartService
                 $revision = $environment->lastAppliedRevision;
                 $changedWhileStopped = $revision !== null && $revision->id !== $active->revision_id && $stoppedAt !== null && $revision->created_at->greaterThan($stoppedAt);
 
-                if (ImageRerun::possible($active) && ! $changedWhileStopped) {
-                    $deployments[] = $this->rerun->create($active, DeploymentTrigger::Start, $user);
+                if ($active->canRerunImage() && ! $changedWhileStopped) {
+                    $deployments[] = $this->factory->rerun($active, DeploymentTrigger::Start, $user);
                 } else {
                     $redeploy[] = $target;
                 }
@@ -102,17 +102,14 @@ final readonly class StartService
             return $deployments;
         });
 
-        foreach ($created as $deployment) {
-            dispatch(new AdvanceDeploymentJob($deployment->id));
-        }
-
-        // Redeploys advance themselves.
         foreach ($redeploy as $target) {
             $created[] = $this->redeploy->handle($target, $target->activeDeployment, $user, $actor, DeploymentTrigger::Start);
         }
 
+        CanvasChanged::forInstance($instance);
+
         // The edges keep answering "stopped" until the new version is routed.
-        event(new NodeStateInvalidated(ServiceProcesses::edges($instance->team_id)));
+        NodeStateInvalidated::edges($instance->team_id);
 
         return $created;
     }

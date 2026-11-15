@@ -15,7 +15,6 @@ use App\Models\DeploymentStep;
 use App\Models\ServiceInstance;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Query\Builder;
-use Illuminate\Support\Facades\DB;
 
 /**
  * Derived deployment statistics (direction.md §8.3): the deployments header
@@ -56,19 +55,11 @@ final class DeploymentStats
 
         $duration = 'extract(epoch from (deployments.finished_at - coalesce(deployments.started_at, deployments.queued_at)))';
 
-        $successful = DB::table('deployments')
+        $successful = Deployment::query()->wentLive()->toBase()
             ->join('service_instances', 'service_instances.id', '=', 'deployments.service_instance_id')
             ->tap($scope)
             ->where('deployments.queued_at', '>=', CarbonImmutable::now()->subDays(self::MEDIAN_DAYS))
-            ->whereNotNull('deployments.finished_at')
-            ->where(static fn (Builder $query) => $query
-                ->where('deployments.status', DeploymentStatus::Active->value)
-                ->orWhere(static fn (Builder $q) => $q
-                    ->where('deployments.status', DeploymentStatus::Superseded->value)
-                    ->whereExists(static fn (Builder $step) => $step->from('deployment_steps')
-                        ->whereColumn('deployment_steps.deployment_id', 'deployments.id')
-                        ->where('deployment_steps.name', DeploymentStepName::Health->value)
-                        ->where('deployment_steps.status', DeploymentStepStatus::Succeeded->value))));
+            ->whereNotNull('deployments.finished_at');
 
         $overall = (clone $successful)->selectRaw("percentile_cont(0.5) within group (order by {$duration}) as median")->value('median');
 
@@ -78,12 +69,10 @@ final class DeploymentStats
             ->pluck('median', 'instance')
             ->all();
 
-        $week = DB::table('deployments')
+        $week = Deployment::query()->counted()->toBase()
             ->join('service_instances', 'service_instances.id', '=', 'deployments.service_instance_id')
             ->tap($scope)
             ->where('deployments.queued_at', '>=', CarbonImmutable::now()->subDays(self::WEEK_DAYS))
-            ->where('deployments.status', '!=', DeploymentStatus::Cancelled->value)
-            ->where(static fn (Builder $query) => $query->where('deployments.status', '!=', DeploymentStatus::Superseded->value)->orWhereNotNull('deployments.started_at'))
             ->groupBy('deployments.service_instance_id')
             ->selectRaw('deployments.service_instance_id as instance, count(*) as total, count(*) filter (where deployments.status = ?) as failed', [DeploymentStatus::Failed->value])
             ->get();
@@ -133,8 +122,7 @@ final class DeploymentStats
         $deployments = Deployment::query()
             ->where('service_instance_id', $instance->id)
             ->whereNotNull('finished_at')
-            ->where('status', '!=', DeploymentStatus::Cancelled->value)
-            ->where(static fn (\Illuminate\Contracts\Database\Query\Builder $query) => $query->where('status', '!=', DeploymentStatus::Superseded->value)->orWhereNotNull('started_at'))
+            ->counted()
             ->latest('id')
             ->limit($limit)
             ->get(['id', 'public_id', 'status', 'plan', 'queued_at', 'started_at', 'finished_at']);
@@ -155,7 +143,7 @@ final class DeploymentStats
                 continue;
             }
 
-            $durationMs = $deployment->plan['durationMs'] ?? null;
+            $durationMs = $deployment->plan?->durationMs;
             /** @var DeploymentStep|null $step */
             $step = $builds->get($deployment->id);
 

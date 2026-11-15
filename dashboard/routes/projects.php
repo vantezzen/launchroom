@@ -2,6 +2,9 @@
 
 declare(strict_types=1);
 
+use App\Enums\ProjectSettingsSection;
+use App\Enums\ServicePanelTab;
+use App\Enums\ServiceSettingsSection;
 use App\Http\Controllers\Projects\CanvasController;
 use App\Http\Controllers\Projects\ConfigFileController;
 use App\Http\Controllers\Projects\ConnectionController;
@@ -19,25 +22,17 @@ use App\Http\Controllers\Projects\ProjectSettingsController;
 use App\Http\Controllers\Projects\ServiceController;
 use App\Http\Controllers\Projects\ServiceSettingsController;
 use App\Http\Controllers\Projects\VolumeMountController;
-use App\Support\PublicId;
 use Illuminate\Support\Facades\Route;
 
 /*
 | Projects, the canvas and the service panel (docs/08 §2). Registered from
-| bootstrap/app.php. Nested ids are constrained to their grammar so that
-| `/p/{project}/settings` or `/p/{project}/deployments` never match
-| `{environment}`; controllers additionally check that nested resources
-| belong together (ProjectScope).
+| bootstrap/app.php. Ids are constrained to their grammar by
+| TeamScopedBindings, so `/p/{project}/settings` or `/p/{project}/deployments`
+| never match `{environment}`; controllers additionally check that nested
+| resources belong together (RouteScope).
 */
 
 Route::middleware(['web', 'auth', 'verified'])
-    ->where([
-        'project' => PublicId::routePattern('prj'),
-        'environment' => PublicId::routePattern('env'),
-        'service' => PublicId::routePattern('svc'),
-        'domain' => PublicId::routePattern('dom'),
-        'connection' => PublicId::routePattern('con'),
-    ])
     ->group(function (): void {
         Route::get('projects', [ProjectController::class, 'index'])->name('projects.index');
         Route::post('projects', [ProjectController::class, 'store'])->name('projects.store');
@@ -67,7 +62,7 @@ Route::middleware(['web', 'auth', 'verified'])
             ->name('projects.analytics');
 
         Route::get('p/{project}/settings/{section?}', [ProjectSettingsController::class, 'show'])
-            ->whereIn('section', ProjectSettingsController::SECTIONS)
+            ->whereIn('section', ProjectSettingsSection::cases())
             ->name('projects.settings');
         Route::patch('p/{project}/settings', [ProjectSettingsController::class, 'update'])->name('projects.settings.update');
         Route::delete('p/{project}', [ProjectSettingsController::class, 'destroy'])
@@ -103,7 +98,6 @@ Route::middleware(['web', 'auth', 'verified'])
             ->name('projects.logs.search');
 
         Route::get('p/{project}/{environment}', [CanvasController::class, 'show'])->name('projects.canvas');
-        // The project Logs tab and the log explorer behind it.
         Route::get('p/{project}/{environment}/logs', [ProjectLogsController::class, 'show'])->name('projects.logs');
         // The project Analytics tab (D75): Traffic (docs/15 §5.4, numbers from
         // projects.analytics) and Resources (docs/15 §2.3, from projects.metrics).
@@ -130,16 +124,16 @@ Route::middleware(['web', 'auth', 'verified'])
 
         Route::post('p/{project}/{environment}/services', [ServiceController::class, 'store'])->name('projects.services.store');
         Route::get('p/{project}/{environment}/s/{service}/{tab}', [CanvasController::class, 'movedTab'])
-            ->whereIn('tab', CanvasController::MOVED_TABS)
+            ->whereIn('tab', ServiceSettingsSection::formerTabs())
             ->name('projects.services.moved');
         // The former Metrics tab of the panel: the service's Analytics view (D75).
         Route::get('p/{project}/{environment}/s/{service}/metrics', [MetricsRedirectController::class, 'service'])
             ->name('projects.services.metrics');
         Route::get('p/{project}/{environment}/s/{service}/{tab?}', [CanvasController::class, 'service'])
-            ->whereIn('tab', CanvasController::TABS)
+            ->whereIn('tab', ServicePanelTab::cases())
             ->name('projects.services.show');
         Route::get('p/{project}/{environment}/s/{service}/settings/{section}', [CanvasController::class, 'settingsSection'])
-            ->whereIn('section', CanvasController::SETTINGS_SECTIONS)
+            ->whereIn('section', ServiceSettingsSection::cases())
             ->name('projects.services.section');
         Route::patch('p/{project}/{environment}/s/{service}/settings', [ServiceSettingsController::class, 'update'])->name('projects.services.settings');
         Route::post('p/{project}/{environment}/s/{service}/scaling/preview', [ServiceSettingsController::class, 'previewScaling'])
@@ -148,20 +142,15 @@ Route::middleware(['web', 'auth', 'verified'])
         Route::patch('p/{project}/{environment}/s/{service}/name', [ServiceSettingsController::class, 'rename'])->name('projects.services.rename');
         Route::post('p/{project}/{environment}/s/{service}/volumes', [ServiceSettingsController::class, 'addVolume'])->name('projects.services.volumes.store');
         Route::patch('p/{project}/{environment}/s/{service}/volumes/{volume}', [ServiceSettingsController::class, 'updateVolume'])
-            ->where('volume', 'vol_[0-9A-HJKMNP-TV-Z]{26}')
             ->name('projects.services.volumes.update');
         Route::delete('p/{project}/{environment}/s/{service}/volumes/{volume}', [ServiceSettingsController::class, 'removeVolume'])
-            ->where('volume', 'vol_[0-9A-HJKMNP-TV-Z]{26}')
             ->name('projects.services.volumes.destroy');
         // Shared volumes (D73): {service} mounts a volume of another service of the environment.
         Route::get('p/{project}/{environment}/s/{service}/volumes/{volume}/mount', [VolumeMountController::class, 'preview'])
-            ->where('volume', 'vol_[0-9A-HJKMNP-TV-Z]{26}')
             ->name('projects.services.volume-mounts.preview');
         Route::post('p/{project}/{environment}/s/{service}/volumes/{volume}/mount', [VolumeMountController::class, 'store'])
-            ->where('volume', 'vol_[0-9A-HJKMNP-TV-Z]{26}')
             ->name('projects.services.volume-mounts.store');
         Route::delete('p/{project}/{environment}/s/{service}/volumes/{volume}/mount', [VolumeMountController::class, 'destroy'])
-            ->where('volume', 'vol_[0-9A-HJKMNP-TV-Z]{26}')
             ->name('projects.services.volume-mounts.destroy');
         Route::patch('p/{project}/{environment}/s/{service}/image', [ServiceSettingsController::class, 'changeImage'])->name('projects.services.image');
         Route::post('p/{project}/{environment}/s/{service}/plan', [ServiceSettingsController::class, 'replan'])

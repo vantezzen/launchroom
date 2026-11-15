@@ -17,6 +17,7 @@ import (
 	"github.com/vantezzen/launchroom/daemon/internal/build"
 	"github.com/vantezzen/launchroom/daemon/internal/build/buildkitd"
 	"github.com/vantezzen/launchroom/daemon/internal/docker"
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
 
@@ -31,7 +32,7 @@ func TestBuildkitRestartingBeforeABuild(t *testing.T) {
 	be := setupBuild(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Minute)
 	defer cancel()
-	insp, err := be.api.ContainerInspect(ctx, buildkitd.ContainerName, client.ContainerInspectOptions{})
+	insp, err := be.api.ContainerInspect(ctx, names.BuildkitContainer, client.ContainerInspectOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,7 +54,7 @@ func TestBuildkitRestartingBeforeABuild(t *testing.T) {
 	if !errors.As(err, &be2) || be2.Class != state.FailureInternal || !strings.Contains(err.Error(), "keeps restarting") {
 		t.Fatalf("want a classified crash loop, got %v", err)
 	}
-	if hints := be2.Failure().Hints; len(hints) == 0 || hints[len(hints)-1].Code != buildkitd.HintCrashLoop {
+	if hints := be2.Failure().Hints; len(hints) == 0 || hints[len(hints)-1].Code != state.HintBuildkitCrashLoop {
 		t.Errorf("hints %+v", hints)
 	}
 	all := sink.all()
@@ -91,7 +92,6 @@ func installConfig(ctx context.Context, t *testing.T, be *buildEnv, id string, c
 	}
 }
 
-// execIn runs argv in a container and waits for it to finish.
 func execIn(ctx context.Context, t *testing.T, api *client.Client, id string, argv ...string) {
 	t.Helper()
 	res, err := api.ExecCreate(ctx, id, client.ExecCreateOptions{Cmd: argv, AttachStdout: true, AttachStderr: true})

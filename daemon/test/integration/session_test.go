@@ -29,6 +29,7 @@ import (
 
 	"github.com/vantezzen/launchroom/daemon/internal/docker"
 	"github.com/vantezzen/launchroom/daemon/internal/identity"
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/sealed"
 	"github.com/vantezzen/launchroom/daemon/internal/secret"
 	"github.com/vantezzen/launchroom/daemon/internal/session"
@@ -182,8 +183,6 @@ func (a authorizer) BroadcastAuth(_ context.Context, socketID state.SocketID, ch
 	return state.PusherAuth(pusherAuth(string(socketID), string(ch))), nil
 }
 
-// ---- the browser side ----
-
 type browser struct {
 	t     *testing.T
 	ws    *websocket.Conn
@@ -308,8 +307,6 @@ func (b *browser) result(op state.OpID) map[string]any {
 	return out
 }
 
-// ---- the test ----
-
 type sessionEnv struct {
 	engine   *docker.Engine
 	serverID state.ServerID
@@ -330,9 +327,9 @@ func (s *sessionEnv) startAs(ctx context.Context, t *testing.T, image string, en
 	}
 	wl := state.WorkloadID(randomID("wl"))
 	labels := docker.ManagedLabels(string(s.serverID))
-	labels[docker.LabelWorkload] = string(wl)
+	labels[names.LabelWorkload] = string(wl)
 	id, err := fixtureEngine(t, s.serverID).CreateContainer(ctx, &docker.ContainerCreate{
-		Name:       docker.ContainerName(wl),
+		Name:       names.WorkloadContainer(wl),
 		Config:     &container.Config{Image: image, Env: env, Labels: labels, Cmd: cmd, User: user},
 		HostConfig: &container.HostConfig{},
 	})
@@ -349,7 +346,7 @@ type logSink struct{ tasks.Client }
 
 func (logSink) ShipLogs(context.Context, *state.LogBatch) error { return nil }
 
-func (s *sessionEnv) runSession(ctx context.Context, t *testing.T, spec *state.SessionSpec, wlEnv map[string]secret.Secret, trusted identity.KeySet) (key []byte, done chan tasks.Result, errc chan error) {
+func (s *sessionEnv) runSession(ctx context.Context, t *testing.T, spec *state.SessionSpec, wlEnv map[string]secret.Secret, trusted identity.KeySet) (key []byte, done chan state.TaskResults, errc chan error) {
 	t.Helper()
 	key = make([]byte, 32)
 	_, _ = rand.Read(key)
@@ -378,7 +375,7 @@ func (s *sessionEnv) runSession(ctx context.Context, t *testing.T, spec *state.S
 		Logs:           logSink{},
 		HelloWait:      30 * time.Second,
 	})
-	done, errc = make(chan tasks.Result, 1), make(chan error, 1)
+	done, errc = make(chan state.TaskResults, 1), make(chan error, 1)
 	go func() {
 		res, err := h(ctx, state.Task{ID: task, Type: state.TaskSession, Attempt: 1, Deadline: time.Now().Add(10 * time.Minute), Spec: spec})
 		done <- res
@@ -433,8 +430,8 @@ func TestInteractiveSessions(t *testing.T) {
 			}
 			collect(b.await(session.TOut, nil))
 		}
+		// Frames are handled in order: the resize is applied before the next input.
 		b.send(ctx, session.Payload{T: session.TResize, Cols: 120, Rows: 40})
-		time.Sleep(200 * time.Millisecond)
 		b.send(ctx, session.Payload{T: session.TIn, D: session.EncodeData([]byte("stty size; id -u; exit 3\n"))})
 		exit := b.await(session.TExit, collect)
 		if exit.Code == nil || *exit.Code != 3 {
@@ -586,7 +583,7 @@ func TestInteractiveSessions(t *testing.T) {
 
 func waitPG(ctx context.Context, t *testing.T, e *docker.Engine, wl state.WorkloadID) {
 	t.Helper()
-	cs, err := e.ListContainers(ctx, map[string]string{docker.LabelWorkload: string(wl)})
+	cs, err := e.ListContainers(ctx, map[string]string{names.LabelWorkload: string(wl)})
 	if err != nil || len(cs) != 1 {
 		t.Fatalf("container: %v", err)
 	}

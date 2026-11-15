@@ -10,14 +10,15 @@ use App\Data\Canvas\CanvasPositionData;
 use App\Data\Canvas\CanvasVolumeData;
 use App\Data\Canvas\CanvasVolumeMountData;
 use App\Data\Canvas\DetectedPlanData;
-use App\Data\Canvas\PlacementIssueData;
+use App\Data\Canvas\ServiceCapabilitiesData;
 use App\Data\Specs\ChangeItem;
 use App\Data\Specs\EnvironmentSpec;
 use App\Data\Specs\ServiceSpec;
 use App\Data\Specs\StagedChanges;
+use App\Enums\AnalyticsView;
+use App\Enums\CanvasEdgeType;
 use App\Enums\ChangeEffect;
 use App\Enums\DomainKind;
-use App\Enums\ServiceKind;
 use App\Models\CanvasLayout;
 use App\Models\Connection;
 use App\Models\Deployment;
@@ -27,8 +28,8 @@ use App\Models\Placement;
 use App\Models\ServiceInstance;
 use App\Models\Volume;
 use App\Models\VolumeMount;
-use App\Services\Backups\BackupStatuses;
-use App\Services\Backups\DataHolds;
+use App\Queries\Backups\BackupStatuses;
+use App\Services\Holds\Holds;
 use App\Support\Canvas\NodeStatus;
 use App\Support\Canvas\ServiceGlyph;
 use App\Support\Changes\SpecDiff;
@@ -72,7 +73,7 @@ final readonly class CanvasGraph
         $present = [];
         /** @var array<int, list<int>> $processes app service id => its workers and crons */
         $processes = [];
-        $holds = DataHolds::reasons();
+        $holds = Holds::blockingDeployments();
 
         foreach ($instances as $instance) {
             $service = $instance->service;
@@ -80,6 +81,7 @@ final readonly class CanvasGraph
             $framework = $this->framework($instance, $instance->activeDeployment ?? $deployment);
             $workloads = $placements[$instance->id] ?? [];
             $position = $positions[$service->public_id] ?? null;
+            $domain = self::primaryDomain($instance);
 
             if ($instance->removed_at === null) {
                 $present[$service->id] = $service->public_id;
@@ -95,10 +97,11 @@ final readonly class CanvasGraph
                 name: $service->name,
                 slug: $service->slug,
                 kind: $service->kind,
+                capabilities: ServiceCapabilitiesData::of($service->kind),
                 logo: ServiceGlyph::logo($service, $framework),
                 subtitle: ServiceGlyph::subtitle($service, $framework),
                 status: NodeStatus::for($instance, $deployment, $workloads, $holds[$instance->id] ?? null),
-                domain: self::primaryDomain($instance),
+                domain: $domain,
                 privateAddress: $instance->deploy->port === null ? null : ($service->kind->isWeb() ? 'http://' : '').$service->slug.':'.$instance->deploy->port,
                 replicas: $instance->scaling->replicas,
                 volume: $instance->volumes->first()?->mount_path,
@@ -109,8 +112,9 @@ final readonly class CanvasGraph
                 parentId: $service->parent?->public_id,
                 position: is_array($position) ? new CanvasPositionData((float) $position['x'], (float) $position['y']) : null,
                 backup: $instance->removed_at === null ? ($backups[$service->public_id] ?? null) : null,
-                placementIssue: PlacementIssueData::fromStored($instance->placement_issue),
+                placementIssue: $instance->placement_issue,
                 openAlerts: $instance->removed_at === null ? ($alerts[$instance->id] ?? []) : [],
+                analyticsView: AnalyticsView::forService($domain !== null),
             );
         }
 
@@ -122,8 +126,6 @@ final readonly class CanvasGraph
     }
 
     /**
-     * The newest deployment of each instance.
-     *
      * @param  Collection<int, ServiceInstance>  $instances
      * @return array<int, Deployment>
      */
@@ -147,8 +149,6 @@ final readonly class CanvasGraph
     }
 
     /**
-     * Workloads of each instance's active deployment, with their server.
-     *
      * @param  Collection<int, ServiceInstance>  $instances
      * @return array<int, list<Placement>>
      */
@@ -175,11 +175,9 @@ final readonly class CanvasGraph
      */
     private function framework(ServiceInstance $instance, ?Deployment $deployment): ?string
     {
-        $fromBuild = $deployment?->plan['summary'] ?? null;
-        $fromPlan = $instance->plan['summary'] ?? null;
-        $framework = (is_array($fromBuild) ? ($fromBuild['framework'] ?? null) : null) ?? (is_array($fromPlan) ? ($fromPlan['framework'] ?? null) : null);
+        $framework = $deployment?->plan?->framework() ?? $instance->plan?->summary?->framework;
 
-        return is_string($framework) && $framework !== '' ? DetectedPlanData::frameworkLabel($framework) : null;
+        return $framework !== null && $framework !== '' ? DetectedPlanData::frameworkLabel($framework) : null;
     }
 
     public static function primaryDomain(ServiceInstance $instance): ?string
@@ -226,7 +224,7 @@ final readonly class CanvasGraph
 
         foreach ($nodes as $node) {
             if ($node->parentId !== null && isset($ids[$node->parentId])) {
-                $edges[] = new CanvasEdgeData('process-'.$node->id, 'process', $node->parentId, $node->id);
+                $edges[] = new CanvasEdgeData('process-'.$node->id, CanvasEdgeType::Process, $node->parentId, $node->id);
             }
         }
 
@@ -268,7 +266,7 @@ final readonly class CanvasGraph
             $staged = $changes->itemsUnder(['connections.'.$connection->public_id]) !== [];
             $edges[] = new CanvasEdgeData(
                 id: $connection->public_id,
-                type: 'connection',
+                type: CanvasEdgeType::Connection,
                 source: $present[$connection->from_service_id],
                 target: $present[$connection->to_service_id],
                 variables: $connection->injected,
@@ -287,7 +285,7 @@ final readonly class CanvasGraph
 
                 $edges[] = new CanvasEdgeData(
                     id: 'inherited-'.$connection->public_id.'-'.$present[$process],
-                    type: 'inherited',
+                    type: CanvasEdgeType::Inherited,
                     source: $present[$process],
                     target: $present[$connection->to_service_id],
                     variables: $variables,
@@ -313,7 +311,7 @@ final readonly class CanvasGraph
      */
     private function volumes(Environment $environment, Collection $instances, StagedChanges $changes, array $positions): array
     {
-        $apps = $instances->filter(static fn (ServiceInstance $instance): bool => in_array($instance->service->kind, [ServiceKind::App, ServiceKind::Image], true));
+        $apps = $instances->filter(static fn (ServiceInstance $instance): bool => $instance->service->kind->ownsVolumes());
 
         if ($apps->isEmpty()) {
             return [];

@@ -6,13 +6,12 @@ namespace App\Http\Controllers\Instance;
 
 use App\Actions\Instance\FinishRecovery;
 use App\Actions\Instance\RebuildMissingImages;
-use App\Actions\Servers\ReplaceServer;
-use App\Enums\ServerStatus;
+use App\Actions\Instance\ReplacePreviousControlPlane;
+use App\Enums\ToastType;
 use App\Http\Controllers\Controller;
-use App\Models\Server;
+use App\Http\Toast;
 use App\Models\User;
 use App\Queries\RecoveryChecklist;
-use App\Queries\ServerReplacementPlan;
 use App\Services\Instance\RecoveryMode;
 use Illuminate\Container\Attributes\CurrentUser;
 use Illuminate\Http\RedirectResponse;
@@ -35,49 +34,25 @@ final class RecoveryController extends Controller
         return Inertia::render('recovery', $checklist->get($request->boolean('images')));
     }
 
-    /**
-     * a. Replace the previous control-plane server with this one, restoring
-     *    every stateful service that has a backup.
-     */
-    public function replace(Request $request, #[CurrentUser] User $user, RecoveryChecklist $checklist, ServerReplacementPlan $plan, ReplaceServer $replace): RedirectResponse
+    public function replace(Request $request, #[CurrentUser] User $user, ReplacePreviousControlPlane $replace): RedirectResponse
     {
         Gate::authorize('manageInstance');
         abort_unless(RecoveryMode::active(), 409, 'Recovery mode is not active.');
 
-        $previous = RecoveryMode::previousControlPlane();
-        $current = $previous instanceof Server ? Server::query()->where('is_control_plane', true)->where('status', ServerStatus::Online->value)
-            ->whereKeyNot($previous->id)
-            ->orderByDesc('id')->first() : null;
-
-        if (! $previous instanceof Server || ! $current instanceof Server) {
-            return back()->withErrors(['replace' => 'This server hasn’t enrolled yet, or there is no previous control-plane server to replace.']);
-        }
-
-        $restore = [];
-
-        foreach ($plan->for($previous) as $entry) {
-            if ($entry['stateful'] && $entry['restore'] !== null) {
-                $restore[] = $entry['instance']->public_id;
-            }
-        }
-
-        $replace->handle($previous, $current, $restore, $user, $this->auditActor($request, $user), recovery: true);
-        Inertia::flash('toast', ['type' => 'success', 'message' => "{$current->name} took over from {$previous->name}."]);
+        $replacement = $replace->handle($user, $this->auditActor($request, $user));
+        Toast::success("{$replacement->newServer->name} took over from {$replacement->oldServer->name}.");
 
         return to_route('recovery.show');
     }
 
-    /**
-     * e. Rebuild images that are gone from the registry.
-     */
     public function rebuild(Request $request, #[CurrentUser] User $user, RebuildMissingImages $rebuild): RedirectResponse
     {
         Gate::authorize('manageInstance');
 
         $result = $rebuild->handle($user, $this->auditActor($request, $user));
-        Inertia::flash('toast', ['type' => $result['failed'] === [] ? 'success' : 'error', 'message' => $result['failed'] === []
+        Toast::flash($result['failed'] === [] ? ToastType::Success : ToastType::Error, $result['failed'] === []
             ? "Rebuilding {$result['started']} services from their recorded commits."
-            : "Rebuilding {$result['started']} services; ".count($result['failed']).' could not start: '.implode(' ', $result['failed'])]);
+            : "Rebuilding {$result['started']} services; ".count($result['failed']).' could not start: '.implode(' ', $result['failed']));
 
         return to_route('recovery.show');
     }
@@ -86,10 +61,8 @@ final class RecoveryController extends Controller
     {
         Gate::authorize('manageInstance');
 
-        /** @var list<string> $open */
-        $open = array_values(array_filter((array) $request->input('open', []), is_string(...)));
-        $finish->handle(array_slice($open, 0, 10), $this->auditActor($request, $user));
-        Inertia::flash('toast', ['type' => 'success', 'message' => 'Recovery finished.']);
+        $finish->handle($this->auditActor($request, $user));
+        Toast::success('Recovery finished.');
 
         return to_route('servers.index');
     }

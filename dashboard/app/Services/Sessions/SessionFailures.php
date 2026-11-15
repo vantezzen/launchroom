@@ -4,36 +4,38 @@ declare(strict_types=1);
 
 namespace App\Services\Sessions;
 
+use App\Enums\Sessions\StartFailure;
+
 /**
- * Turns why launchroomd couldn't start a session (the session task's error,
- * docs/03 §11.4) into one sentence for the Console and Data tabs. The raw
- * error stays in the task and the log.
+ * Turns why launchroomd couldn't start a session (the failure code of its
+ * SessionResult, docs/03 §11.4) into one sentence for the Console and Data
+ * tabs. The raw error stays in the task and the log; it is quoted where it
+ * says more than the code. A daemon that sends no code (older than the
+ * codes) gets the generic sentence with its error.
  */
 final class SessionFailures
 {
     private const int MAX = 300;
 
-    public static function sentence(?string $error): ?string
+    public static function sentence(?StartFailure $failure, ?string $error, ?string $shell = null): ?string
     {
         $error = trim((string) $error);
 
-        if ($error === '') {
+        if (! $failure instanceof StartFailure && $error === '') {
             return null;
         }
 
-        $lower = mb_strtolower($error);
-
-        return match (true) {
-            str_contains($lower, 'this image has no shell') => 'This image has no shell (looked for bash, ash and sh), so there is no console for it.',
-            (bool) preg_match('~this image has no (/bin/\w+)~', $error, $shell) => "This image has no {$shell[1]}. Pick Automatic or another shell.",
-            str_contains($lower, "couldn't start in the container") => 'The shell couldn’t start in this container: '.self::clip($error),
-            str_contains($lower, 'sessions are turned off on this server') => 'The server refused: sessions of this kind are turned off there (LR_INTERACTIVE_SESSIONS).',
-            str_contains($lower, 'dockerd-guard') => 'The server refused to open it (dockerd-guard): '.self::clip(self::afterLast($error, 'dockerd-guard')),
-            str_contains($lower, "refused by this server's policy") => 'The server refused: '.self::clip($error),
-            str_contains($lower, 'is not running') => 'The container isn’t running right now. Try again once it is back.',
-            str_contains($lower, 'relay') || str_contains($lower, 'realtime') => 'The server couldn’t reach the live connection (Reverb): '.self::clip($error),
-            str_contains($lower, 'session key') => 'The server couldn’t open the session key. Update it in Settings → Updates.',
-            default => 'The server couldn’t start the session: '.self::clip($error),
+        return match ($failure) {
+            StartFailure::NoShell => 'This image has no shell (looked for bash, ash and sh), so there is no console for it.',
+            StartFailure::ShellMissing => 'This image has no '.($shell === null || $shell === '' ? 'such shell' : $shell).'. Pick Automatic or another shell.',
+            StartFailure::ShellStartFailed => 'The shell couldn’t start in this container: '.self::clip($error),
+            StartFailure::KindDisabled => 'The server refused: sessions of this kind are turned off there (LR_INTERACTIVE_SESSIONS).',
+            StartFailure::GuardRefused => 'The server refused to open it (dockerd-guard): '.self::clip(self::afterLast($error, 'dockerd-guard')),
+            StartFailure::PolicyRefused => 'The server refused: '.self::clip($error),
+            StartFailure::NotRunning => 'The container isn’t running right now. Try again once it is back.',
+            StartFailure::RelayUnreachable => 'The server couldn’t reach the live connection (Reverb): '.self::clip($error),
+            StartFailure::SessionKey => 'The server couldn’t open the session key. Update it in Settings → Updates.',
+            null => 'The server couldn’t start the session: '.self::clip($error),
         };
     }
 

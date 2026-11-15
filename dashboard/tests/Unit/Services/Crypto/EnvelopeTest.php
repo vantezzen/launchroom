@@ -2,8 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Exceptions\DecryptionFailed;
 use App\Services\Crypto\Envelope;
-use App\Services\Crypto\Exceptions\DecryptionFailed;
 use App\Services\Crypto\SecretKey;
 
 beforeEach(function (): void {

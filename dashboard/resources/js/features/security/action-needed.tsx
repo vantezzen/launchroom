@@ -11,9 +11,10 @@ import {
 } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { SeverityLine } from './finding-card';
-import { card, plural } from './format';
+import { card } from './format';
 import { verdictOf } from './shape';
 import type { ActionGroup } from './shape';
+import { plural } from '@/lib/format';
 
 type Finding = App.Data.Security.FindingCardData;
 

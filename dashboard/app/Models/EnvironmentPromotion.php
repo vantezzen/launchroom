@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Data\Promotions\PinnedImageData;
 use App\Data\Promotions\PromotionSnapshot;
 use App\Enums\PromotionKind;
 use App\Models\Concerns\BelongsToTeam;
@@ -14,6 +15,7 @@ use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
+use Spatie\LaravelData\DataCollection;
 
 /**
  * A promotion between two environments, or the creation of one environment
@@ -32,7 +34,7 @@ use Illuminate\Support\Carbon;
  * @property PromotionSnapshot $snapshot
  * @property PromotionSnapshot $target_snapshot
  * @property list<string> $items
- * @property array<string, array{deployment: string, commitSha: string, gitRef: string|null}> $images
+ * @property DataCollection<string, PinnedImageData> $images by service public id
  * @property Carbon|null $images_applied_at
  * @property int|null $actor_id
  * @property Carbon $created_at
@@ -113,7 +115,7 @@ final class EnvironmentPromotion extends Model
             'snapshot' => PromotionSnapshot::class,
             'target_snapshot' => PromotionSnapshot::class,
             'items' => 'array',
-            'images' => 'array',
+            'images' => DataCollection::class.':'.PinnedImageData::class.',default',
             'images_applied_at' => 'datetime',
             'created_at' => 'datetime',
         ];

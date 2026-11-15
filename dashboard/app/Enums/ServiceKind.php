@@ -41,9 +41,6 @@ enum ServiceKind: string
         return $this === self::Database;
     }
 
-    /**
-     * Workers/crons hang off an app service (docs/04 §1).
-     */
     public function requiresParent(): bool
     {
         return in_array($this, [self::Worker, self::Cron], true);
@@ -55,6 +52,74 @@ enum ServiceKind: string
     public function isWeb(): bool
     {
         return in_array($this, [self::App, self::Image], true);
+    }
+
+    /**
+     * Has volumes of its own (Settings → Volumes), which it can share with
+     * other services (D73). A database's volume belongs to its engine.
+     */
+    public function ownsVolumes(): bool
+    {
+        return in_array($this, [self::App, self::Image], true);
+    }
+
+    /**
+     * May mount another service's volume: it runs code that reads files (D73).
+     */
+    public function canMountSharedVolume(): bool
+    {
+        return $this !== self::Database;
+    }
+
+    /**
+     * Deploys new versions of its own source; workers and crons follow their
+     * app, databases are restarted.
+     */
+    public function deploysNewVersions(): bool
+    {
+        return in_array($this, [self::App, self::Image], true);
+    }
+
+    /** The source a service of this kind has; null: it runs its parent's image. */
+    public function sourceType(): ?ServiceSourceType
+    {
+        return match ($this) {
+            self::App => ServiceSourceType::Git,
+            self::Image => ServiceSourceType::Image,
+            self::Database => ServiceSourceType::Database,
+            self::Worker, self::Cron => null,
+        };
+    }
+
+    public function sourceLabel(): string
+    {
+        return match ($this) {
+            self::App => 'git repository',
+            self::Image => 'image reference',
+            self::Database => 'database engine',
+            self::Worker, self::Cron => 'parent app',
+        };
+    }
+
+    /**
+     * What a config file may set for this kind besides kind, name, enabled,
+     * scaling and variables (docs/18 §3.2).
+     *
+     * @return list<string>
+     */
+    public function configFields(): array
+    {
+        return match ($this) {
+            self::App => ['rootDirectory', 'branch', 'build', 'deploy', 'domains', 'volumes', 'connections'],
+            self::Image => ['image', 'deploy', 'domains', 'volumes', 'connections'],
+            self::Database => ['engine', 'version'],
+            self::Worker, self::Cron => ['of', 'branch', 'deploy', 'connections'],
+        };
+    }
+
+    public function hasConfigField(string $field): bool
+    {
+        return in_array($field, $this->configFields(), true);
     }
 
     public function label(): string

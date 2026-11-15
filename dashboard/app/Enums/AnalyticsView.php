@@ -13,4 +13,10 @@ enum AnalyticsView: string
 {
     case Traffic = 'traffic';
     case Resources = 'resources';
+
+    /** Where a service's Analytics opens: Traffic when it has a domain, else Resources. */
+    public static function forService(bool $hasDomain): self
+    {
+        return $hasDomain ? self::Traffic : self::Resources;
+    }
 }

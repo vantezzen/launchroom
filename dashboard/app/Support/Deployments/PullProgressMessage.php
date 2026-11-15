@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Support\Deployments;
 
+use App\Data\Deployments\PullProgressData;
 use App\Enums\WorkloadPhase;
 use App\Models\Placement;
 
@@ -26,31 +27,27 @@ final class PullProgressMessage
         foreach ($placements as $placement) {
             $pull = $placement->pull;
 
-            if ($placement->phase !== WorkloadPhase::Pulling || ! is_array($pull)) {
+            if ($placement->phase !== WorkloadPhase::Pulling || ! $pull instanceof PullProgressData) {
                 continue;
             }
 
             $count++;
-            $share = match ($pull['stage']) {
-                'mirroring' => -1.0,
-                'extracting' => 1.0,
-                default => $pull['total'] > 0 ? min(1.0, $pull['downloaded'] / $pull['total']) : 0.0,
-            };
+            $share = $pull->share();
 
             if ($share < $slowestShare) {
                 [$slowest, $slowestShare] = [$pull, $share];
             }
         }
 
-        if ($slowest === null) {
+        if (! $slowest instanceof PullProgressData) {
             return null;
         }
 
-        $line = match ($slowest['stage']) {
+        $line = match ($slowest->stage) {
             'mirroring' => 'Fetching image into the local registry (first deploy of this image)',
-            'extracting' => 'Unpacking image'.($slowest['total'] > 0 ? ' ('.self::bytes($slowest['total']).')' : ''),
-            default => $slowest['total'] > 0
-                ? 'Downloading image ('.self::bytes(min($slowest['downloaded'], $slowest['total'])).' of '.self::bytes($slowest['total']).')'
+            'extracting' => 'Unpacking image'.($slowest->total > 0 ? ' ('.self::bytes($slowest->total).')' : ''),
+            default => $slowest->total > 0
+                ? 'Downloading image ('.self::bytes(min($slowest->downloaded, $slowest->total)).' of '.self::bytes($slowest->total).')'
                 : 'Downloading image',
         };
 

@@ -10,11 +10,12 @@ import {
     show,
 } from '@/routes/projects';
 import { show as stagedChanges } from '@/routes/staged-changes';
+import type { PageName } from '@/lib/pages';
 
 /** Pages that exist once per environment: switching environments keeps them. */
 const ENVIRONMENT_PAGES: Partial<
     Record<
-        string,
+        PageName,
         (project: string, environment: string, url?: string) => string
     >
 > = {
@@ -30,7 +31,7 @@ const ENVIRONMENT_PAGES: Partial<
 
 /** Pages of every project: switching projects keeps them. */
 const PROJECT_PAGES: Partial<
-    Record<string, (project: string, url: string) => string>
+    Record<PageName, (project: string, url: string) => string>
 > = {
     'projects/deployments/index': (project) => projectDeployments(project).url,
     'projects/previews': (project) => previews(project).url,
@@ -55,7 +56,7 @@ export function environmentSwitchHref(
     environment: string,
     url?: string,
 ): string {
-    const page = ENVIRONMENT_PAGES[component];
+    const page = ENVIRONMENT_PAGES[component as PageName];
 
     return page
         ? page(project, environment, url)
@@ -73,7 +74,7 @@ export function projectSwitchHref(
     url: string,
     target: App.Data.Canvas.ProjectLinkData,
 ): string {
-    const projectPage = PROJECT_PAGES[component];
+    const projectPage = PROJECT_PAGES[component as PageName];
 
     if (projectPage) {
         return projectPage(target.id, url);
@@ -83,7 +84,7 @@ export function projectSwitchHref(
         return show(target.id).url;
     }
 
-    const environmentPage = ENVIRONMENT_PAGES[component];
+    const environmentPage = ENVIRONMENT_PAGES[component as PageName];
 
     return environmentPage && component !== 'projects/changes'
         ? environmentPage(target.id, target.environmentId, url)

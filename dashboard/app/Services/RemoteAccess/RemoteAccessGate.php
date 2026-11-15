@@ -7,6 +7,8 @@ namespace App\Services\RemoteAccess;
 use App\Enums\RemoteAccess\RemoteAccessKind;
 use App\Models\DaemonTask;
 use App\Models\RemoteAccess\RemoteAccess;
+use App\Services\Sessions\SessionTargets;
+use Illuminate\Support\Facades\Gate;
 
 /**
  * Re-authorizes open accesses on every heartbeat (docs/09 R39): the
@@ -18,6 +20,7 @@ final readonly class RemoteAccessGate
 {
     public function __construct(
         private RemoteAccessTargets $targets,
+        private SessionTargets $sessions,
     ) {}
 
     public function stillAllowed(DaemonTask $task): bool
@@ -40,12 +43,12 @@ final readonly class RemoteAccessGate
         $user = $access->user;
         $user->forgetTeamRoles();
 
-        if (! $user->hasTeamPermission($access->team_id, $access->kind->permission())) {
+        if (Gate::forUser($user)->denies('useCredentials', $access)) {
             return false;
         }
 
         return $access->kind === RemoteAccessKind::Volume
             ? $this->targets->volumeStillPlaced($access->serviceInstance, $access->volume, $access->workload_id, $access->server_id)
-            : $this->targets->stillPlaced($access->serviceInstance, $access->workload_id, $access->server_id);
+            : $this->sessions->stillPlaced($access->serviceInstance, $access->workload_id, $access->server_id);
     }
 }

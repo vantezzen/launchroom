@@ -9,6 +9,7 @@ use App\Data\Audit\AuditActor;
 use App\Data\Audit\AuditEntryData;
 use App\Data\Services\RenameServiceData;
 use App\Enums\AuditAction;
+use App\Events\CanvasChanged;
 use App\Models\Service;
 use Illuminate\Support\Facades\DB;
 
@@ -44,6 +45,7 @@ final readonly class RenameService
                 subjectId: $service->public_id,
                 meta: ['from' => $before, 'to' => $name],
             ));
+            CanvasChanged::forService($service);
 
             return $service;
         });

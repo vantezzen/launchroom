@@ -1,6 +1,6 @@
 import { Head } from '@inertiajs/react';
 import { Page } from '@/components/patterns/page';
-import { LogExplorer } from '@/features/project-logs/log-explorer';
+import { LogExplorer } from '@/features/log-explorer/log-explorer';
 import { index } from '@/routes/logs';
 
 /**

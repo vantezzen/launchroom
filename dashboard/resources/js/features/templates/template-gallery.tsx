@@ -3,8 +3,8 @@ import { useMemo, useState } from 'react';
 import { Logo } from '@/components/logo';
 import { Input } from '@/components/ui/input';
 import { resourcesLine } from '@/features/blueprints/blueprint-canvas';
-import { plural } from '@/features/canvas/format';
 import { cn } from '@/lib/utils';
+import { plural } from '@/lib/format';
 
 type Template = App.Data.Templates.TemplateSummaryData;
 

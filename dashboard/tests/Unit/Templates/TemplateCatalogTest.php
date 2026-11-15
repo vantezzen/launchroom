@@ -3,8 +3,8 @@
 declare(strict_types=1);
 
 use App\Data\Templates\TemplateSummaryData;
+use App\Drivers\DatabaseEngines\DatabaseEngines;
 use App\Enums\ServiceKind;
-use App\Services\Blueprints\EngineVersions;
 use App\Services\Templates\TemplateCatalog;
 use App\Support\Compose\ComposeTranslation;
 use App\Support\Git\PublicRepositoryUrl;
@@ -12,9 +12,9 @@ use App\Support\Templates\TemplateCompiler;
 use App\Support\Templates\TemplateDefinition;
 use App\Support\Templates\TemplateInvalid;
 
-function tplEngines(): array
+function tplEngines(): DatabaseEngines
 {
-    return resolve(EngineVersions::class)->all();
+    return resolve(DatabaseEngines::class);
 }
 
 function tplParse(string $yaml, string $id = 'demo'): TemplateDefinition

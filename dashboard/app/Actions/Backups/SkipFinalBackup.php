@@ -8,7 +8,6 @@ use App\Data\Audit\AuditActor;
 use App\Enums\Backups\DeletionOutcome;
 use App\Models\Backups\DeletionRequest;
 use App\Models\User;
-use App\Services\Backups\FinalBackups;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -21,7 +20,7 @@ use Illuminate\Support\Facades\DB;
 final readonly class SkipFinalBackup
 {
     public function __construct(
-        private FinalBackups $finalBackups,
+        private OverrideFinalBackup $override,
         private ContinueDeletion $continue,
     ) {}
 
@@ -29,7 +28,7 @@ final readonly class SkipFinalBackup
     {
         $request = DB::transaction(function () use ($request, $user, $actor): DeletionRequest {
             $request = DeletionRequest::query()->whereKey($request->id)->lockForUpdate()->firstOrFail();
-            $this->finalBackups->skip($request, $user, $actor);
+            $this->override->handle($request, $user, $actor);
 
             return $request;
         });

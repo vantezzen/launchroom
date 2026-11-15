@@ -39,8 +39,6 @@ final readonly class CreateTeam
                 $owner->forceFill(['current_team_id' => $team->id])->save();
             }
 
-            $owner->forgetTeamRoles();
-
             $this->audit->handle(new AuditEntryData(
                 action: AuditAction::TeamCreated,
                 actor: $actor,

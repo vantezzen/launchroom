@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/vantezzen/launchroom/daemon/internal/docker"
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/policy"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
@@ -181,17 +182,16 @@ func Diff(d Desired, a Actual, now time.Time, grace time.Duration) Plan {
 		}
 	}
 
-	// Containers by workload id.
 	byWorkload := map[state.WorkloadID][]docker.Container{}
 	for _, c := range a.Containers {
-		id := state.WorkloadID(c.Labels[docker.LabelWorkload])
+		id := state.WorkloadID(c.Labels[names.LabelWorkload])
 		byWorkload[id] = append(byWorkload[id], c)
 	}
 	for id := range byWorkload {
 		slices.SortFunc(byWorkload[id], func(x, y docker.Container) int {
 			// Running first, then by name/id for determinism.
-			if x.Running != y.Running {
-				if x.Running {
+			if x.Running() != y.Running() {
+				if x.Running() {
 					return -1
 				}
 				return 1
@@ -207,6 +207,7 @@ func Diff(d Desired, a Actual, now time.Time, grace time.Duration) Plan {
 
 	for _, w := range workloads {
 		s := w.Spec
+		mode := modeOf(&s)
 		desiredIDs[s.ID] = true
 		reason := blockedBy(s, badNets)
 		if reason == "" && s.Role != state.RoleDraining {
@@ -227,7 +228,7 @@ func Diff(d Desired, a Actual, now time.Time, grace time.Duration) Plan {
 			for _, extra := range cs[1:] {
 				workloadSteps = append(workloadSteps, removal(extra, s.ID, grace, "duplicate container", state.ReasonDuplicate))
 			}
-			if keep.Running && s.DrainUntil != nil && !now.Before(*s.DrainUntil) {
+			if keep.Running() && s.DrainUntil != nil && !now.Before(*s.DrainUntil) {
 				drains = append(drains, Action{Kind: StopContainer, Workload: s.ID, ContainerID: keep.ID, Grace: stopGrace(keep, grace), Reason: "drain period over", Why: state.ReasonDrained})
 			}
 			continue
@@ -236,7 +237,7 @@ func Diff(d Desired, a Actual, now time.Time, grace time.Duration) Plan {
 		var keep *docker.Container
 		var stale []docker.Container
 		for i := range cs {
-			if keep == nil && cs[i].Labels[docker.LabelSpecHash] == w.Hash && cs[i].State != "dead" && cs[i].State != "removing" {
+			if keep == nil && cs[i].Labels[names.LabelSpecHash] == w.Hash && cs[i].State != docker.StateDead && cs[i].State != docker.StateRemoving {
 				keep = &cs[i]
 				continue
 			}
@@ -250,16 +251,16 @@ func Diff(d Desired, a Actual, now time.Time, grace time.Duration) Plan {
 			for _, c := range stale {
 				workloadSteps = append(workloadSteps, removal(c, s.ID, grace, "spec changed", state.ReasonSpecChanged))
 			}
-			workloadSteps = append(workloadSteps, Action{Kind: CreateWorkload, Workload: s.ID, Image: s.Image, Reason: createReason(len(stale)), CreateOnly: s.Schedule != nil})
+			workloadSteps = append(workloadSteps, Action{Kind: CreateWorkload, Workload: s.ID, Image: s.Image, Reason: createReason(len(stale)), CreateOnly: mode.createOnly()})
 			continue
 		}
 		for _, c := range stale {
 			workloadSteps = append(workloadSteps, removal(c, s.ID, grace, "duplicate container", state.ReasonDuplicate))
 		}
-		if s.Schedule == nil && needsStart(*keep, s.Restart) {
-			workloadSteps = append(workloadSteps, Action{Kind: StartContainer, Workload: s.ID, ContainerID: keep.ID, Reason: "not running (" + keep.State + ")"})
+		if mode.wantsStart(*keep, s.Restart) {
+			workloadSteps = append(workloadSteps, Action{Kind: StartContainer, Workload: s.ID, ContainerID: keep.ID, Reason: "not running (" + string(keep.State) + ")"})
 		}
-		if keep.Running && w.MeshBinding.IsValid() && !slices.Contains(keep.HostPorts, w.MeshBinding) {
+		if keep.Running() && w.MeshBinding.IsValid() && !slices.Contains(keep.HostPorts, w.MeshBinding) {
 			// Docker started it while the mesh address was missing (e.g. its
 			// restart policy at boot) and runs it without the published
 			// port; a restart does not bind it either (Docker 29), so the
@@ -298,7 +299,7 @@ func Diff(d Desired, a Actual, now time.Time, grace time.Duration) Plan {
 
 func removal(c docker.Container, id state.WorkloadID, grace time.Duration, reason string, why state.WorkloadEventReason) Action {
 	g := stopGrace(c, grace)
-	if !c.Running {
+	if !c.Running() {
 		g = 0
 	}
 	return Action{Kind: RemoveContainer, Workload: id, ContainerID: c.ID, Grace: g, Reason: reason, Why: why}
@@ -374,16 +375,12 @@ func volumeMountError(s state.WorkloadSpec, vols volumes, have map[string]docker
 		if !exists {
 			continue // created this pass with this workload's owner labels
 		}
-		l := got.Labels
 		service := s.Service
 		if spec.Service != "" {
 			service = spec.Service
 		}
-		switch {
-		case l[docker.LabelSystem] != "" || l[docker.LabelVolume] != string(m.Volume):
-			return fmt.Sprintf("policy: mounts: volume %s exists but does not belong to %s", spec.Name, m.Volume)
-		case l[docker.LabelService] != "" && (l[docker.LabelService] != string(service) || l[docker.LabelEnvironment] != string(s.Environment)):
-			return fmt.Sprintf("policy: mounts: volume %s belongs to another service", spec.Name)
+		if err := docker.CheckServiceVolume(got, m.Volume, docker.VolumeOwner{Service: service, Environment: s.Environment}); err != nil {
+			return "policy: mounts: " + err.Error()
 		}
 	}
 	return ""
@@ -398,16 +395,16 @@ func blockedBy(s state.WorkloadSpec, badNets map[state.NetworkID]string) string 
 	return ""
 }
 
-// needsStart (unscheduled workloads; scheduled ones are started by RunDue
-// only): a created container is always started; a stopped one only when
+// needsStart (long-running workloads): a created container is always
+// started; a stopped one only when
 // its restart policy says Docker should keep it running (always,
 // unless-stopped). "no"/"on-failure" containers that exited stay exited and
 // are reported as such.
 func needsStart(c docker.Container, restart state.RestartPolicy) bool {
 	switch c.State {
-	case "created":
+	case docker.StateCreated:
 		return true
-	case "exited":
+	case docker.StateExited:
 		return restart == state.RestartAlways || restart == state.RestartUnlessStopped
 	}
 	return false

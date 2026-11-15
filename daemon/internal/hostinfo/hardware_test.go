@@ -55,9 +55,17 @@ func TestHardwareRaspberryPi(t *testing.T) {
 func TestHardwareRaspberryPiModelFromCPUInfo(t *testing.T) {
 	// Docker masks /sys/firmware and the device tree may be missing: the
 	// cpuinfo "Model" line stands in.
-	cpu := readCPUInfo(filepath.Join("testdata", "hw", "pi5", "proc"))
-	if cpu.boardModel != "Raspberry Pi 5 Model B Rev 1.0" {
-		t.Fatalf("board model %q", cpu.boardModel)
+	cpuinfo, err := os.ReadFile(filepath.Join("testdata", "hw", "pi5", "proc", "cpuinfo"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	proc := t.TempDir()
+	if err := os.WriteFile(filepath.Join(proc, "cpuinfo"), cpuinfo, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	h := hardwareFor(t, "pi5", func(o *HardwareOptions) { o.ProcRoot = proc })
+	if h.DeviceTreeModel != "Raspberry Pi 5 Model B Rev 1.0" {
+		t.Fatalf("board model %q", h.DeviceTreeModel)
 	}
 }
 
@@ -255,12 +263,14 @@ func TestHardwareTracker(t *testing.T) {
 	}
 }
 
-func TestMemoryTotalMB(t *testing.T) {
-	if got := MemoryTotalMB("testdata/proc"); got != 7939 {
-		t.Fatalf("got %d", got)
-	}
-	if MemoryTotalMB(t.TempDir()) != 0 {
-		t.Fatal("unknown must be 0")
+func TestVirtualInterface(t *testing.T) {
+	for name, skip := range map[string]bool{
+		"lo": true, "docker0": true, "br-45687e908daf": true, "veth1": true, "tailscale0": true, "tunl0": true,
+		"eth0": false, "enp1s0": false, "wlan0": false, "ens3": false, "bond0": false,
+	} {
+		if VirtualInterface(name) != skip {
+			t.Errorf("%s: want skip=%v", name, skip)
+		}
 	}
 }
 

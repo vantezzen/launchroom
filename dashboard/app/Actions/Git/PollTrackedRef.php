@@ -5,92 +5,71 @@ declare(strict_types=1);
 namespace App\Actions\Git;
 
 use App\Data\Git\CommitData;
+use App\Data\Git\RepositoryRef;
 use App\Enums\Git\GitEventSource;
 use App\Events\Git\GitPushReceived;
+use App\Exceptions\GitHeadUnavailable;
+use App\Models\Git\GitConnection;
 use App\Models\Git\GitHubInstallation;
 use App\Models\Git\GitHubRefHead;
-use App\Services\GitHub\GitHubClientFactory;
-use App\Services\GitHub\JsonObject;
-use App\Services\GitHub\TokenScope;
-use App\Support\Git\GitHubAvatar;
+use App\Models\Git\GitRefHead;
+use App\Services\Git\GitProviders;
 use App\Support\Git\GitRef;
-use App\Support\Git\SkipMarkers;
 
 /**
- * Polling fallback for one ref (docs/06 §2): a conditional
- * `GET /repos/{repo}/commits/{ref}` with the stored ETag (a 304 costs no rate
- * limit). A changed head emits the same {@see GitPushReceived} a webhook would.
- * The first observation of a ref only records a baseline.
+ * Polling for one tracked branch, for every provider (docs/06 §2, docs/19
+ * §1): asks the provider for the branch head, conditionally where it can
+ * (GitHub's ETag); a changed head emits the same {@see GitPushReceived} a
+ * webhook would. The first observation of a ref only records a baseline.
  */
 final readonly class PollTrackedRef
 {
     public function __construct(
-        private GitHubClientFactory $clients,
-        private RecordRefHead $recordRefHead,
+        private GitProviders $providers,
+        private ObserveRefHead $observe,
     ) {}
 
     /**
+     * @param  bool  $webhook  a webhook asked for this poll (docs/19 §4.2)
      * @return bool whether an event was emitted
      */
-    public function handle(GitHubInstallation $installation, int $repositoryId, string $ref): bool
+    public function handle(GitHubInstallation|GitConnection $account, int $repositoryId, string $ref, bool $webhook = false): bool
     {
-        $repository = $installation->repositories()->where('github_repo_id', $repositoryId)->first();
-
-        if ($repository === null || ! GitRef::isValid($ref) || ! $installation->isActive()) {
+        if (! $account->isActive() || ! GitRef::isValid($ref) || ! str_starts_with($ref, 'refs/heads/')) {
             return false;
         }
 
-        $head = GitHubRefHead::query()
-            ->where(['github_installation_id' => $installation->id, 'github_repo_id' => $repositoryId, 'ref' => $ref])
-            ->first();
+        $name = $account->repositoryName($repositoryId);
 
-        $response = $this->clients->for($installation->app)->asInstallation(
-            $installation->installation_id,
-            TokenScope::read($repositoryId),
-            'GET',
-            "/repos/{$repository->full_name}/commits/".rawurlencode(GitRef::shortName($ref)),
-            headers: $head?->etag !== null ? ['If-None-Match' => $head->etag] : [],
-            accept: [304, 404, 422],
-        );
+        if ($name === null) {
+            return false;
+        }
 
-        if ($response->status() !== 200) {
-            // 304: unchanged. 404/422: the ref doesn't exist (yet).
+        $head = $this->head($account, $repositoryId, $ref);
+
+        try {
+            $polled = $this->providers->for($account->gitProvider())->pollHead(
+                new RepositoryRef($account->gitProvider(), $account->accountTeamId(), $account->accountId(), $repositoryId, $name, $account instanceof GitConnection ? $account->base_url : null),
+                GitRef::shortName($ref),
+                $head instanceof GitHubRefHead ? $head->etag : null,
+            );
+        } catch (GitHeadUnavailable) {
+            return false;
+        }
+
+        if (! $polled->commit instanceof CommitData) {
             $head?->forceFill(['last_polled_at' => now()])->save();
 
             return false;
         }
 
-        $json = JsonObject::decode($response->body());
-        $sha = $json->string('sha');
+        return $this->observe->handle($account, $repositoryId, $ref, $polled->commit, GitEventSource::Polling, etag: $polled->etag, webhookAsked: $webhook);
+    }
 
-        if (! GitRef::isSha($sha)) {
-            return false;
-        }
-
-        $etag = $response->header('ETag');
-        $update = $this->recordRefHead->handle($installation, $repositoryId, $ref, $sha, $etag === '' ? null : mb_substr($etag, 0, 255), polled: true);
-
-        if (! $update->changed || $update->previous === null) {
-            return false;
-        }
-
-        $commit = $json->object('commit');
-        $author = $commit->objectOrNull('author');
-        $headCommit = new CommitData(
-            sha: $sha,
-            message: $commit->stringOrNull('message') ?? '',
-            authorName: $author?->stringOrNull('name'),
-            authorEmail: $author?->stringOrNull('email'),
-            authorLogin: $json->objectOrNull('author')?->stringOrNull('login'),
-            authorAvatarUrl: GitHubAvatar::url($json->objectOrNull('author')?->stringOrNull('avatar_url'), $json->objectOrNull('author')?->stringOrNull('login')),
-        );
-
-        if (SkipMarkers::matches($headCommit->message)) {
-            return false;
-        }
-
-        event(new GitPushReceived($installation, $repositoryId, $ref, $update->previous, $sha, $headCommit, null, false, GitEventSource::Polling));
-
-        return true;
+    private function head(GitHubInstallation|GitConnection $account, int $repositoryId, string $ref): GitHubRefHead|GitRefHead|null
+    {
+        return $account instanceof GitHubInstallation
+            ? GitHubRefHead::query()->where(['github_installation_id' => $account->id, 'github_repo_id' => $repositoryId, 'ref' => $ref])->first()
+            : GitRefHead::query()->where(['git_connection_id' => $account->id, 'external_id' => $repositoryId, 'ref' => $ref])->first();
     }
 }

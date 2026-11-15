@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Moves;
 
 use App\Models\InstanceSettings;
+use Illuminate\Database\QueryException;
 
 /**
  * The write freeze while the control plane is handed over to a new server
@@ -20,20 +21,30 @@ final class InstanceFreeze
 {
     public static function active(): bool
     {
-        try {
-            return InstanceSettings::current()->frozen_at !== null;
-        } catch (\Throwable) {
-            // No database (yet): nothing to freeze.
-            return false;
-        }
+        return self::settings()?->frozen_at !== null;
     }
 
     public static function movedTo(): ?string
     {
+        return self::settings()?->moved_to;
+    }
+
+    /**
+     * Null only before the migrations created the table (a fresh install).
+     * Any other database error propagates, so a write is never let through
+     * on an unknown freeze state.
+     */
+    private static function settings(): ?InstanceSettings
+    {
         try {
-            return InstanceSettings::current()->moved_to;
-        } catch (\Throwable) {
-            return null;
+            return InstanceSettings::current();
+        } catch (QueryException $e) {
+            // PostgreSQL undefined_table.
+            if ($e->getCode() === '42P01') {
+                return null;
+            }
+
+            throw $e;
         }
     }
 

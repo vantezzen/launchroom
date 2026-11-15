@@ -114,7 +114,7 @@ final class ReceiveMoveCommand extends Command
             }
 
             if (in_array($now, ['joined', 'moving', 'ready_to_hand_over', 'handing_over', 'handover_ready'], true)) {
-                // Already enrolled (a re-run): nothing to write.
+                // Already enrolled (a re-run): no new join token, only the pinned key.
                 $this->writeState('cp-key', $this->pinnedKey($state, $status)."\n", 0644);
                 $this->result(['move' => $state['move'], 'code' => $code, 'url' => $state['url'], 'joined' => true]);
 

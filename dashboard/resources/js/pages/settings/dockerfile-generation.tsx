@@ -8,17 +8,13 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { SharingNotice } from '@/features/dockerfile-generation/generation-sheet';
+import { team as teamRoute, update } from '@/routes/dockerfile-generation';
 import {
     SettingsBody,
     SettingsCard,
     SettingsRow,
-} from '@/features/settings/settings-card';
-import {
-    edit,
-    team as teamRoute,
-    update,
-} from '@/routes/dockerfile-generation';
-import { index as settingsHome } from '@/routes/settings';
+} from '@/components/settings/settings-card';
+import SettingsLayout from '@/features/settings/settings-layout';
 
 type Props = {
     provider: App.Data.Dockerfiles.AiProviderSettingsData;
@@ -298,9 +294,4 @@ export default function DockerfileGenerationSettings({
     );
 }
 
-DockerfileGenerationSettings.layout = {
-    breadcrumbs: [
-        { title: 'Settings', href: settingsHome() },
-        { title: 'Dockerfile generation', href: edit() },
-    ],
-};
+DockerfileGenerationSettings.layout = SettingsLayout;

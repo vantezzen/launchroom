@@ -8,6 +8,7 @@ use App\Actions\Audit\RecordAuditEvent;
 use App\Data\Audit\AuditActor;
 use App\Data\Audit\AuditEntryData;
 use App\Enums\AuditAction;
+use App\Events\CanvasChanged;
 use App\Exceptions\DomainRuleViolation;
 use App\Models\ServiceInstance;
 use App\Models\Volume;
@@ -46,6 +47,7 @@ final readonly class DetachServiceVolume
                 subjectId: $instance->service->public_id,
                 meta: ['volume' => $volume->public_id, 'mountPath' => $mount->mount_path, 'instance' => $instance->public_id],
             ));
+            CanvasChanged::forInstance($instance);
         });
     }
 }

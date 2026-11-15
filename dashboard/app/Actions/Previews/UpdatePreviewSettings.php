@@ -10,19 +10,19 @@ use App\Data\Audit\AuditEntryData;
 use App\Data\Previews\PreviewSettingsInput;
 use App\Enums\AuditAction;
 use App\Enums\EnvironmentKind;
-use App\Enums\Permission;
 use App\Exceptions\DomainRuleViolation;
 use App\Jobs\Previews\AdvancePreviewsJob;
 use App\Models\Previews\PreviewSettings;
 use App\Models\Project;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
 
 /**
  * Saves a project's preview settings (docs/06 §5). Allowing production
- * databases as clone sources needs `backups.manage` (owner/admin) because
- * it copies production data, possibly personal data, into previews. Changes
- * apply to the next pull request event; a raised limit starts queued previews.
+ * databases as clone sources has its own ability (PreviewSettingsPolicy).
+ * Changes apply to the next pull request event; a raised limit starts
+ * queued previews.
  */
 final readonly class UpdatePreviewSettings
 {
@@ -46,7 +46,7 @@ final readonly class UpdatePreviewSettings
                 }
             }
 
-            if ($input->allowProductionClone !== $settings->allow_production_clone && ! $user->hasTeamPermission($project->team_id, Permission::ManageBackups)) {
+            if ($input->allowProductionClone !== $settings->allow_production_clone && Gate::forUser($user)->denies('allowProductionClone', $settings)) {
                 throw DomainRuleViolation::on('allowProductionClone', 'Only owners and admins can allow cloning production data into previews.');
             }
 

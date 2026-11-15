@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace App\Actions\Registry;
 
+use App\Data\Protocol\V1\Tasks\BuildSpec;
+use App\Data\Protocol\V1\Tasks\InventorySpec;
+use App\Data\Protocol\V1\Tasks\RunOnceSpec;
 use App\Data\Registry\RegistryScope;
 use App\Data\Registry\RegistryToken;
 use App\Data\Registry\RegistryTokenRequest;
@@ -13,7 +16,10 @@ use App\Exceptions\DomainRuleViolation;
 use App\Models\DaemonTask;
 use App\Models\Server;
 use App\Services\Registry\RegistryTokenIssuer;
-use JsonException;
+use App\Support\Images\ImageReference;
+use App\Support\Images\RegistryLayout;
+use App\Support\PublicId;
+use InvalidArgumentException;
 use Spatie\LaravelData\Optional;
 
 /**
@@ -70,11 +76,11 @@ final readonly class IssueDaemonRegistryToken
         $segments = explode('/', $repository);
 
         // Upstream mirror: mirror/<registry host>/<path…>, read-only.
-        if ($segments[0] === 'mirror') {
+        if ($segments[0] === RegistryLayout::MIRROR) {
             return $action === RegistryScope::PULL && count($segments) >= 3;
         }
 
-        if (count($segments) !== 2 || ! in_array($segments[0], ['apps', 'cache'], true)) {
+        if (count($segments) !== 2 || ! in_array($segments[0], [RegistryLayout::APPS, RegistryLayout::CACHE], true)) {
             return false;
         }
 
@@ -83,13 +89,13 @@ final readonly class IssueDaemonRegistryToken
             return true;
         }
 
-        // A leased run_once task (release command) may pull its service's image
-        // before that image is in any NodeState.
-        if ($runOnceService !== null && $segments[0] === 'apps' && $segments[1] === $runOnceService && $action === RegistryScope::PULL) {
+        // A leased run_once (release or seed command) or inventory task may pull
+        // its service's image before that image is in any NodeState.
+        if ($runOnceService !== null && $segments[0] === RegistryLayout::APPS && $segments[1] === $runOnceService && $action === RegistryScope::PULL) {
             return true;
         }
 
-        return $segments[0] === 'apps' && $action === RegistryScope::PULL && isset($nodeRepositories[$repository]);
+        return $segments[0] === RegistryLayout::APPS && $action === RegistryScope::PULL && isset($nodeRepositories[$repository]);
     }
 
     /**
@@ -110,9 +116,19 @@ final readonly class IssueDaemonRegistryToken
             return null;
         }
 
-        $service = $task->spec->service ?? null;
+        try {
+            $spec = $task->taskSpec();
+        } catch (InvalidArgumentException) {
+            return null;
+        }
 
-        return is_string($service) && preg_match('/^svc_[0-9A-HJKMNP-TV-Z]{26}$/D', $service) === 1 ? strtolower($service) : null;
+        $service = match (true) {
+            $spec instanceof BuildSpec => $spec->inputs->service,
+            $spec instanceof RunOnceSpec, $spec instanceof InventorySpec => $spec->service,
+            default => null,
+        };
+
+        return $service !== null && PublicId::isValid($service, 'svc') ? strtolower($service) : null;
     }
 
     /**
@@ -123,26 +139,14 @@ final readonly class IssueDaemonRegistryToken
      */
     private function nodeStateRepositories(Server $server): array
     {
-        $document = $server->latestNodeState()->value('document');
-
-        if (! is_string($document)) {
-            return [];
-        }
-
-        try {
-            $state = json_decode($document, true, 64, JSON_THROW_ON_ERROR);
-        } catch (JsonException) {
-            return [];
-        }
-
-        $prefix = config()->string('launchroom.daemon.registry_address').'/';
+        $images = $server->latestNodeState()->first()?->facts->images ?? [];
         $repositories = [];
 
-        foreach (is_array($state) && is_array($state['workloads'] ?? null) ? $state['workloads'] : [] as $workload) {
-            $image = is_array($workload) ? ($workload['image'] ?? null) : null;
+        foreach ($images as $image) {
+            $reference = ImageReference::tryParse($image);
 
-            if (is_string($image) && str_starts_with($image, $prefix) && str_contains($image, '@')) {
-                $repositories[substr($image, strlen($prefix), (int) strpos($image, '@') - strlen($prefix))] = true;
+            if ($reference?->digest !== null && $reference->registry.'/' === RegistryLayout::registry()) {
+                $repositories[$reference->repository] = true;
             }
         }
 

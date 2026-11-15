@@ -59,31 +59,6 @@ final readonly class CompleteTask
                 return;
             }
 
-            $result = array_filter([
-                'build' => $completion->build instanceof Optional ? null : $completion->build?->toArray(),
-                'runOnce' => $completion->runOnce instanceof Optional ? null : $completion->runOnce?->toArray(),
-                'plan' => $completion->plan instanceof Optional ? null : $completion->plan?->toArray(),
-                'failure' => $completion->failure instanceof Optional ? null : $completion->failure?->toArray(),
-                // Backup task results (docs/14 §7).
-                'backup' => $completion->backup instanceof Optional ? null : $completion->backup?->toArray(),
-                'restore' => $completion->restore instanceof Optional ? null : $completion->restore?->toArray(),
-                'snapshots' => $completion->snapshots instanceof Optional ? null : $completion->snapshots?->toArray(),
-                'maintenance' => $completion->maintenance instanceof Optional ? null : $completion->maintenance?->toArray(),
-                // verify_restore (docs/14 §10.4).
-                'verify' => $completion->verify instanceof Optional ? null : $completion->verify?->toArray(),
-                // self_update (docs/11 §4), on success and failure.
-                'selfUpdate' => $completion->selfUpdate instanceof Optional ? null : $completion->selfUpdate?->toArray(),
-                // Interactive sessions (docs/03 §11.1).
-                'session' => $completion->session instanceof Optional ? null : $completion->session?->toArray(),
-                // Repository inspection for "Generate a Dockerfile" (docs/20 §6).
-                'inspection' => $completion->inspection instanceof Optional ? null : $completion->inspection?->toArray(),
-                // Data import and export (D55, docs/14 §12).
-                'dataImport' => $completion->dataImport instanceof Optional ? null : $completion->dataImport?->toArray(),
-                'dataExport' => $completion->dataExport instanceof Optional ? null : $completion->dataExport?->toArray(),
-                // Temporary remote access (docs/03 §12.1).
-                'access' => $completion->access instanceof Optional ? null : $completion->access?->toArray(),
-            ], static fn (?array $value): bool => $value !== null);
-
             $outcome = $completion->outcome;
             $error = $completion->error instanceof Optional ? null : $completion->error;
 
@@ -91,19 +66,17 @@ final readonly class CompleteTask
             // inventory's components and an inspection, encrypted. A result
             // that fails its grammar fails the task instead.
             if ($outcome === 'succeeded') {
-                [$summary, $refusal] = $this->securityResult($task, $completion);
+                $refusal = $this->securityResult($task, $completion);
 
                 if ($refusal !== null) {
                     $outcome = 'failed';
                     $error = $refusal;
-                } elseif ($summary !== null) {
-                    $result = [...$result, ...$summary];
                 }
             }
 
             $task->forceFill([
                 'completed_attempt' => $completion->attempt,
-                'result' => $result === [] ? null : $result,
+                'result' => $completion->results->isEmpty() ? null : $completion->results,
                 'error' => $error,
                 'lease_expires_at' => null,
             ]);
@@ -117,33 +90,26 @@ final readonly class CompleteTask
     }
 
     /**
-     * Stores an inventory or a container inspection. Returns what goes into
-     * `daemon_tasks.result` (a count, never the data) or why the result was
-     * refused.
-     *
-     * @return array{array<string, mixed>|null, string|null}
+     * Stores an inventory or a container inspection. Returns why the result
+     * was refused, or null.
      */
-    private function securityResult(DaemonTask $task, TaskCompletion $completion): array
+    private function securityResult(DaemonTask $task, TaskCompletion $completion): ?string
     {
         try {
             if ($task->type === DaemonTaskType::Inventory) {
                 if (! is_array($completion->inventory)) {
-                    return [null, 'The server reported no inventory.'];
+                    return 'The server reported no inventory.';
                 }
 
-                $inventory = $this->inventories->handle($task, InventoryResult::fromWire($completion->inventory));
-
-                return [['inventory' => ['components' => $inventory->component_count]], null];
+                $this->inventories->handle($task, InventoryResult::fromWire($completion->inventory));
             }
 
             if ($task->type === DaemonTaskType::InspectContainer) {
                 if (! is_array($completion->containerInspection)) {
-                    return [null, 'The server reported no inspection.'];
+                    return 'The server reported no inspection.';
                 }
 
                 $this->inspections->handle($task, ContainerInspectionResult::fromWire($completion->containerInspection));
-
-                return [['containerInspection' => ['stored' => true]], null];
             }
         } catch (ValidationException $e) {
             $problems = [];
@@ -152,12 +118,12 @@ final readonly class CompleteTask
                 $problems[] = $field.' '.(is_array($messages) && is_string($messages[0] ?? null) ? $messages[0] : 'is invalid');
             }
 
-            return [null, mb_substr('The result didn’t match the protocol: '.implode('; ', $problems), 0, 4000)];
+            return mb_substr('The result didn’t match the protocol: '.implode('; ', $problems), 0, 4000);
         } catch (DomainRuleViolation $e) {
-            return [null, mb_substr($e->getMessage(), 0, 4000)];
+            return mb_substr($e->getMessage(), 0, 4000);
         }
 
-        return [null, null];
+        return null;
     }
 
     private function release(DaemonTask $task, TaskCompletion $completion): void

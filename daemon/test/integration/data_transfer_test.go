@@ -19,6 +19,7 @@ import (
 
 	"github.com/vantezzen/launchroom/daemon/internal/backup"
 	"github.com/vantezzen/launchroom/daemon/internal/docker"
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/policy"
 	"github.com/vantezzen/launchroom/daemon/internal/secret"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
@@ -77,7 +78,6 @@ func (f *fakeTransfers) id() state.TransferID {
 	return state.TransferID(fmt.Sprintf("dtr_01J9Z8X7W6V5T4S3R2Q1P0%04d", f.n))
 }
 
-// upload stores data as an upload and returns its reference.
 func (f *fakeTransfers) upload(data []byte) state.TransferRef {
 	id := f.id()
 	f.mu.Lock()
@@ -161,7 +161,6 @@ func (te *transferEnv) ip(ctx context.Context, t *testing.T, id string) string {
 	return c.Networks[te.network].String()
 }
 
-// output runs argv in a container and returns its stdout bytes.
 func (te *transferEnv) output(ctx context.Context, t *testing.T, id string, argv []string, env ...string) []byte {
 	t.Helper()
 	var out bytes.Buffer
@@ -360,7 +359,7 @@ func ptrRef(r state.TransferRef) *state.TransferRef { return &r }
 func assertNoImportLeftovers(ctx context.Context, t *testing.T, te *transferEnv) {
 	t.Helper()
 	for _, h := range []string{"import", "import-check"} {
-		cs, err := te.engine.ListContainers(ctx, map[string]string{docker.LabelHelper: h})
+		cs, err := te.engine.ListContainers(ctx, map[string]string{names.LabelHelper: h})
 		if err != nil || len(cs) != 0 {
 			t.Fatalf("%d %s throwaways left (%v)", len(cs), h, err)
 		}

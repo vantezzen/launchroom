@@ -16,6 +16,7 @@ use App\Http\Api\ApiOperation;
 use App\Http\Api\ApiResponse;
 use App\Http\Api\Cursor;
 use App\Http\Controllers\Controller;
+use App\Http\Routing\RouteScope;
 use App\Models\Environment;
 use App\Models\Security\SecurityFinding;
 use App\Models\Service;
@@ -88,7 +89,7 @@ final class SecurityController extends Controller
     #[ApiOperation(id: 'getServiceInventory', summary: 'The components of a service\'s live image', tag: 'Security', response: ServiceInventoryResource::class)]
     public function serviceInventory(Environment $environment, Service $service, ServiceInventory $inventory): JsonResponse
     {
-        $instance = $this->instance($environment, $service);
+        $instance = RouteScope::instanceIn($environment, $service);
         Gate::authorize('view', $instance);
         $data = $inventory->handle($instance);
         abort_if(! $data instanceof ServiceInventoryResource, 404, 'This service has no inventory yet.');

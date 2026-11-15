@@ -45,14 +45,14 @@ final readonly class OpenDockerfilePullRequest
             return $generation->pull_request_url;
         }
 
-        if (! $source instanceof GitSource || $source->isUnconnectedPlainGit()) {
+        if (! $source instanceof GitSource) {
             throw DomainRuleViolation::on('pullRequest', 'This repository has no connection that can open pull requests. Download the Dockerfile instead.');
         }
 
         $provider = $this->providers->forSource($source);
 
         if (! $provider instanceof OpensPullRequests) {
-            throw DomainRuleViolation::on('pullRequest', "{$source->kind()->label()} repositories can't get pull requests from launchroom. Download the Dockerfile instead.");
+            throw DomainRuleViolation::on('pullRequest', "{$source->provider->label()} repositories can't get pull requests from launchroom. Download the Dockerfile instead.");
         }
 
         $path = DockerfileGenerationView::repositoryPath($source);

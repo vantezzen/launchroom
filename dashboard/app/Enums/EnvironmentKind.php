@@ -14,6 +14,24 @@ enum EnvironmentKind: string
     case Persistent = 'persistent';
     case Preview = 'preview';
 
+    public function sortOrder(): int
+    {
+        return match ($this) {
+            self::Production => 0,
+            self::Persistent => 1,
+            self::Preview => 2,
+        };
+    }
+
+    /**
+     * Deploys of this kind refuse while "production secrets must differ"
+     * is violated (docs/06 §3.7).
+     */
+    public function checksProductionSecrets(): bool
+    {
+        return $this === self::Production || $this === self::Preview;
+    }
+
     public function label(): string
     {
         return ucfirst($this->value);

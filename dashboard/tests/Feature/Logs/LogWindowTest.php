@@ -7,13 +7,13 @@ use App\Enums\AnalyticsView;
 use App\Enums\LogSourceKind;
 use App\Enums\TeamRole;
 use App\Models\Deployment;
-use App\Models\LogChunk;
 use App\Models\Placement;
 use App\Models\User;
 use App\Queries\DeployMarkers;
 use App\Support\Links;
 use Carbon\CarbonImmutable;
 use Tests\Support\DeploymentUi;
+use Tests\Support\LogChunks;
 use Tests\Support\Projects;
 
 /*
@@ -31,7 +31,7 @@ function windowLines(DeploymentUi $world, Deployment $deployment, string $text, 
 {
     $placement = Placement::query()->where('deployment_id', $deployment->id)->firstOrFail();
 
-    LogChunk::query()->create([
+    LogChunks::create([
         'team_id' => $deployment->team_id, 'server_id' => $world->server->id, 'deployment_id' => $deployment->id,
         'source_kind' => LogSourceKind::Workload, 'source_id' => $placement->workload_id,
         'seq' => random_int(1, 1_000_000),
@@ -59,7 +59,6 @@ test('an absolute window returns only the lines of that time', function (): void
         ->and($page['buckets'])->toHaveCount(60)
         ->and(array_sum(array_column($page['buckets'], 'total')))->toBe(1);
 
-    // Without a window the range still applies.
     expect(collect($this->actingAs($viewer)->getJson($url.'?range=24h')->json('entries'))->pluck('message')->all())
         ->toBe(['three hours ago', 'ninety minutes ago', 'just now']);
 
@@ -137,7 +136,7 @@ test('deep links name the filtered view', function (): void {
         ->and(Links::server($world->server, 'resources', ['range' => '1h']))
         ->toBe("/servers/{$world->server->public_id}/resources?range=1h")
         // With a domain, a service's analytics open on Traffic (D75).
-        ->and(Links::serviceAnalytics($instance, '7d'))
+        ->and(Links::serviceAnalytics($instance, true, '7d'))
         ->toBe("/p/{$project}/{$environment}/analytics?service={$service}&range=7d")
         ->and(Links::analytics($instance->environment, $instance))
         ->toBe("/p/{$project}/{$environment}/analytics?service={$service}")

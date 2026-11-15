@@ -58,8 +58,6 @@ final class Sessions
     }
 
     /**
-     * Opens a session as $user and returns the JSON answer.
-     *
      * @return array<string, mixed>
      */
     public static function open(TestCase $test, User $user, ServiceInstance $instance, string $kind = 'console', array $body = []): array

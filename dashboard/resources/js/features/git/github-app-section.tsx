@@ -7,8 +7,8 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { GitHubSetupSteps } from '@/features/git/github-setup-steps';
 import { WebhookHealth } from '@/features/git/webhook-health';
-import { SettingsRow } from '@/features/settings/settings-card';
 import { refresh } from '@/routes/git/installations';
+import { SettingsRow } from '@/components/settings/settings-card';
 
 function InstallationRow({
     installation,

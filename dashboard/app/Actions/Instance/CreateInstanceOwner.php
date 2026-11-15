@@ -17,7 +17,6 @@ use App\Models\InstanceSettings;
 use App\Models\Membership;
 use App\Models\Team;
 use App\Models\User;
-use App\Support\Crypto\OpaqueToken;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -39,14 +38,11 @@ final readonly class CreateInstanceOwner
         return DB::transaction(function () use ($data, $actor): User {
             $settings = InstanceSettings::lockedForUpdate();
 
-            if ($settings->setup_completed_at !== null || User::query()->exists()) {
+            if ($settings->setupDone()) {
                 throw DomainRuleViolation::forbidden('Setup is already complete.');
             }
 
-            if ($settings->setup_token_hash === null
-                || $settings->setup_token_expires_at === null
-                || ! $settings->setup_token_expires_at->isFuture()
-                || ! OpaqueToken::matches($data->token, $settings->setup_token_hash)) {
+            if (! $settings->acceptsSetupToken($data->token)) {
                 throw DomainRuleViolation::on('token', 'This setup token is invalid or has expired. Create a new one with `php artisan launchroom:setup-token`.');
             }
 
@@ -97,7 +93,6 @@ final readonly class CreateInstanceOwner
         ]);
 
         $owner->forceFill(['current_team_id' => $team->id])->save();
-        $owner->forgetTeamRoles();
 
         $this->audit->handle(new AuditEntryData(
             action: AuditAction::InstanceTeamClaimed,

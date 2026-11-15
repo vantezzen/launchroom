@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Data\Services;
 
+use App\Support\Services\VolumeMountRules;
 use Spatie\LaravelData\Attributes\Validation\Max;
 use Spatie\LaravelData\Attributes\Validation\Regex;
 use Spatie\LaravelData\Data;
@@ -16,7 +17,7 @@ use Spatie\LaravelData\Data;
 final class AddVolumeData extends Data
 {
     public function __construct(
-        #[Max(255), Regex('/^\/[A-Za-z0-9._@+=,-]+(?:\/[A-Za-z0-9._@+=,-]+)*$/D')]
+        #[Max(VolumeMountRules::MAX_LENGTH), Regex(VolumeMountRules::PATH)]
         public string $mountPath,
     ) {}
 }

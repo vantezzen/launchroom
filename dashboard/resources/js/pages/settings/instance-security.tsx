@@ -2,8 +2,7 @@ import { Head } from '@inertiajs/react';
 import { AuditLogSection } from '@/features/security/audit-log-section';
 import { ClientCertificatesSection } from '@/features/security/client-certificates-section';
 import { VulnerabilityDataSection } from '@/features/security/vulnerability-data-section';
-import { edit } from '@/routes/instance-security';
-import { index as settingsHome } from '@/routes/settings';
+import SettingsLayout from '@/features/settings/settings-layout';
 
 type Props = {
     certificates: App.Data.Security.ClientCertificatesOverviewData;
@@ -30,9 +29,4 @@ export default function InstanceSecurity({
     );
 }
 
-InstanceSecurity.layout = {
-    breadcrumbs: [
-        { title: 'Settings', href: settingsHome() },
-        { title: 'Security', href: edit() },
-    ],
-};
+InstanceSecurity.layout = SettingsLayout;

@@ -138,7 +138,6 @@ func TestUploader(t *testing.T) {
 	data := payload(2*mib + 5)
 	f := &fakeDashboard{failAt: map[int]int{0: 1}}
 	u := NewUploader(context.Background(), f, state.TransferTarget{ID: tid, ChunkBytes: mib}, nil)
-	u.backoff = time.Millisecond
 	if _, err := io.Copy(u, bytes.NewReader(data)); err != nil {
 		t.Fatal(err)
 	}

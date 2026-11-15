@@ -4,15 +4,15 @@ declare(strict_types=1);
 
 namespace App\Data\Services;
 
+use App\Enums\ServiceSourceType;
+
 /**
  * `services.source` (docs/07): a union of GitSource | ImageSource |
- * DatabaseSource, stored as JSON with a `type` discriminator by
- * App\Casts\ServiceSourceCast.
+ * DatabaseSource, stored as JSON with a `type` discriminator.
  */
 interface ServiceSource
 {
-    /** Discriminator stored in the JSON column. */
-    public function type(): string;
+    public function type(): ServiceSourceType;
 
     /**
      * The JSON shape without the discriminator.

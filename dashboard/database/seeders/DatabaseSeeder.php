@@ -13,7 +13,7 @@ class DatabaseSeeder extends Seeder
 {
     /**
      * Dev data: an instance owner (test@example.com / password) with a
-     * personal team. Owners must set up 2FA on first login (docs/09 R10).
+     * personal team.
      */
     public function run(CreateTeam $createTeam): void
     {

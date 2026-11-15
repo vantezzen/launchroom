@@ -8,21 +8,16 @@ import {
     TriangleAlert,
     X,
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useEffectEvent, useState } from 'react';
 import type { FormEvent } from 'react';
 import InputError from '@/components/input-error';
-import { ServiceGlyph } from '@/features/canvas/service-glyph';
 import { MetaLine } from '@/components/patterns/meta-line';
 import { OptionCards } from '@/components/patterns/option-cards';
 import { Status } from '@/components/status';
 import { TimeAgo } from '@/components/time-ago';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import {
-    SettingsBody,
-    SettingsCard,
-    SettingsRow,
-} from '@/features/settings/settings-card';
+import { isGenerationRunning } from '@/features/dockerfile-generation/api';
 import { DockerfileGenerationSheet } from '@/features/dockerfile-generation/generation-sheet';
 import { cn } from '@/lib/utils';
 import services from '@/routes/projects/services';
@@ -30,6 +25,15 @@ import { nextHeadline, PlanJsonDialog } from './detected-plan';
 import { OverrideRow } from './override-row';
 import { SaveRow, SettingsPage } from './section';
 import type { SettingsContext } from './settings-context';
+import { shortSha } from '@/lib/format';
+import { ServiceGlyph } from '@/components/service-glyph';
+import {
+    SettingsBody,
+    SettingsCard,
+    SettingsRow,
+} from '@/components/settings/settings-card';
+import { vocabulary } from '@/lib/vocabulary';
+import { useLiveProps } from '@/hooks/use-live-props';
 
 type Builder = 'auto' | 'dockerfile' | 'railpack' | 'static';
 
@@ -66,7 +70,7 @@ const PLANNING_POLL_MS = 4000;
  * A railpack.json with the effective build settings (overrides, else the
  * detected values), for committing to the repository (docs/04 §4 "Eject").
  */
-export function railpackJson(
+function railpackJson(
     build: App.Data.Services.BuildSettings,
     detected: App.Data.Canvas.DetectedPlanData | null,
     startCommand: string | null,
@@ -107,30 +111,6 @@ function download(name: string, contents: string) {
     URL.revokeObjectURL(url);
 }
 
-const builderLabels: Record<string, string> = {
-    explicit: 'as configured',
-    dockerfile_detected: 'from your Dockerfile',
-    preset: 'with a launchroom preset',
-    railpack: 'with Railpack',
-};
-
-/** Live while the plan task runs; the canvas channel nudges, this is the fallback. */
-function usePlanPolling(planning: boolean) {
-    useEffect(() => {
-        if (!planning) {
-            return;
-        }
-
-        const interval = window.setInterval(() => {
-            if (document.visibilityState === 'visible') {
-                router.reload({ only: ['panel'] });
-            }
-        }, PLANNING_POLL_MS);
-
-        return () => window.clearInterval(interval);
-    }, [planning]);
-}
-
 /**
  * "Detected: Next.js 16, npm, Node 22": the plan as an object, with its
  * state (inspecting, detected at a commit, failed) and "Detect again".
@@ -145,7 +125,7 @@ function DetectedHero({
     const { plan, detected } = context.settings;
     const [rerunning, setRerunning] = useState(false);
     const planning = plan?.status === 'planning';
-    usePlanPolling(planning);
+    useLiveProps(['panel'], { while: planning, everyMs: PLANNING_POLL_MS });
 
     const framework = detected
         ? [detected.framework, detected.frameworkVersion]
@@ -246,7 +226,7 @@ function DetectedHero({
                         )}{' '}
                         at{' '}
                         <code className="type-mono-small">
-                            {plan.commitSha.slice(0, 7)}
+                            {shortSha(plan.commitSha)}
                         </code>
                         {plan.finishedAt && (
                             <>
@@ -260,8 +240,11 @@ function DetectedHero({
                         Built{' '}
                         {detected.builder === 'dockerfile'
                             ? 'from a Dockerfile'
-                            : (builderLabels[detected.builderReason ?? ''] ??
-                              'with Railpack')}
+                            : detected.builderReason
+                              ? vocabulary.Builds.BuilderReason[
+                                    detected.builderReason
+                                ].label
+                              : 'with Railpack'}
                     </span>
                 )}
                 {plan?.status === 'failed' && plan.error && (
@@ -319,9 +302,7 @@ function GenerateCard({
         context.settings.build.builder === 'dockerfile' &&
         context.settings.build.generatedDockerfile !== null;
     const latest = panel.latest;
-    const running =
-        latest !== null &&
-        ['reading', 'drafting', 'building', 'starting'].includes(latest.status);
+    const running = latest !== null && isGenerationRunning(latest.status);
 
     return (
         <SettingsCard
@@ -445,13 +426,14 @@ export function BuildSection({ context }: { context: SettingsContext }) {
     const savedBuild = JSON.stringify(settings.build);
 
     // "Use this Dockerfile" staged new build settings: take them over.
-    useEffect(() => {
+    const takeOver = useEffectEvent(() => {
         if (!form.isDirty) {
             form.setDefaults('build', settings.build);
             form.setData('build', settings.build);
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [savedBuild]);
+    });
+
+    useEffect(() => takeOver(), [savedBuild]);
     const build = form.data.build;
     const set = (patch: Partial<App.Data.Services.BuildSettings>) =>
         form.setData('build', { ...build, ...patch });

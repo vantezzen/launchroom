@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Deployments;
 
 use App\Actions\Deployments\RedeployService;
 use App\Http\Controllers\Controller;
+use App\Http\Routing\RouteScope;
 use App\Models\Environment;
 use App\Models\Project;
 use App\Models\Service;
@@ -24,11 +25,9 @@ use Illuminate\Support\Facades\Gate;
  */
 final class ServiceDeploymentsController extends Controller
 {
-    use ScopesProjectRoutes;
-
     public function index(Project $project, Environment $environment, Service $service, ServiceDeployments $deployments): JsonResponse
     {
-        $instance = $this->scopeInstance($project, $environment, $service);
+        $instance = RouteScope::instance($project, $environment, $service);
         Gate::authorize('view', $instance);
 
         return response()->json($deployments->for($instance));
@@ -36,7 +35,7 @@ final class ServiceDeploymentsController extends Controller
 
     public function redeploy(Request $request, Project $project, Environment $environment, Service $service, #[CurrentUser] User $user, RedeployService $redeploy): RedirectResponse
     {
-        $instance = $this->scopeInstance($project, $environment, $service);
+        $instance = RouteScope::editable(RouteScope::instance($project, $environment, $service));
         Gate::authorize('deploy', $environment);
 
         $created = $redeploy->handle($instance, null, $user, $this->auditActor($request, $user));

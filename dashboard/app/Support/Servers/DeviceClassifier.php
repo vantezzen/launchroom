@@ -8,6 +8,7 @@ use App\Data\Servers\DmiFactsData;
 use App\Data\Servers\HardwareFactsData;
 use App\Enums\DeviceKind;
 use App\Enums\HostingProvider;
+use App\Enums\Servers\Virtualization;
 
 /**
  * Maps a server's hardware facts to a device illustration and a hosting
@@ -123,13 +124,13 @@ final class DeviceClassifier
 
         // 2. NAS appliances (the maker's hardware), then NAS systems on any hardware.
         if (preg_match(self::NAS, $vendor.' '.($dmi->boardVendor ?? '')) === 1) {
-            return new DeviceDetection(DeviceKind::Nas, self::model($vendor, $product), null, $virtualized, $hardware->virtualization);
+            return new DeviceDetection(DeviceKind::Nas, self::model($vendor, $product), null, $virtualized, $hardware->virtualization?->value);
         }
 
         $nasSystem = self::nasSystem($hardware);
 
         if ($nasSystem !== null) {
-            return new DeviceDetection(DeviceKind::Nas, $nasSystem, null, $virtualized, $hardware->virtualization);
+            return new DeviceDetection(DeviceKind::Nas, $nasSystem, null, $virtualized, $hardware->virtualization?->value);
         }
 
         // 3. Mac mini / Mac Studio (Intel Macs via DMI, Apple Silicon via Asahi's device tree).
@@ -149,10 +150,10 @@ final class DeviceClassifier
                     ? $provider->cloudLabel().' '.$product
                     : $provider->cloudLabel();
 
-                return new DeviceDetection(DeviceKind::Cloud, $model, $provider, true, $hardware->virtualization);
+                return new DeviceDetection(DeviceKind::Cloud, $model, $provider, true, $hardware->virtualization?->value);
             }
 
-            return new DeviceDetection(DeviceKind::Vm, self::vmModel($hardware, $dmi), null, true, $hardware->virtualization);
+            return new DeviceDetection(DeviceKind::Vm, self::vmModel($hardware, $dmi), null, true, $hardware->virtualization?->value);
         }
 
         $model = $apple ? self::appleModel($product, $tree) : self::model($vendor, $product);
@@ -244,7 +245,7 @@ final class DeviceClassifier
 
     private static function virtualized(HardwareFactsData $hardware, DmiFactsData $dmi): bool
     {
-        if ($hardware->virtualization !== null) {
+        if ($hardware->virtualization instanceof Virtualization) {
             return true;
         }
 
@@ -261,12 +262,12 @@ final class DeviceClassifier
         return match (true) {
             preg_match('/docker desktop/i', $os) === 1 => 'Docker Desktop VM',
             preg_match('/orbstack/i', $os) === 1 => 'OrbStack VM',
-            $hardware->virtualization === 'container' => 'Container',
-            $hardware->virtualization === 'virtualbox' || preg_match('/virtualbox|innotek/i', ($dmi->sysVendor ?? '').($dmi->productName ?? '')) === 1 => 'VirtualBox VM',
-            $hardware->virtualization === 'vmware' => 'VMware VM',
-            $hardware->virtualization === 'parallels' => 'Parallels VM',
-            $hardware->virtualization === 'apple' => 'Apple Virtualization VM',
-            $hardware->virtualization === 'hyperv' => 'Hyper-V VM',
+            $hardware->virtualization === Virtualization::Container => 'Container',
+            $hardware->virtualization === Virtualization::Virtualbox || preg_match('/virtualbox|innotek/i', ($dmi->sysVendor ?? '').($dmi->productName ?? '')) === 1 => 'VirtualBox VM',
+            $hardware->virtualization === Virtualization::Vmware => 'VMware VM',
+            $hardware->virtualization === Virtualization::Parallels => 'Parallels VM',
+            $hardware->virtualization === Virtualization::Apple => 'Apple Virtualization VM',
+            $hardware->virtualization === Virtualization::Hyperv => 'Hyper-V VM',
             preg_match('/proxmox/i', ($dmi->sysVendor ?? '').' '.($dmi->productName ?? '')) === 1 => 'Proxmox VM',
             default => 'Virtual machine',
         };

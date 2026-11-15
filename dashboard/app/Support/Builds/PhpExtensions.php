@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Support\Builds;
 
 use App\Data\Protocol\V1\PhpExtension;
+use App\Drivers\DatabaseEngines\DatabaseEngines;
 use App\Enums\DatabaseEngine;
 
 /**
@@ -24,28 +25,13 @@ final class PhpExtensions
     public const array ENGINES = ['postgres', 'mysql', 'mariadb', 'redis', 'valkey', 'mongodb', 'clickhouse'];
 
     /**
-     * The driver extension of an engine (Laravel uses PDO for SQL and phpredis
-     * by default, which also serves Valkey). ClickHouse has none.
-     */
-    public static function forEngine(DatabaseEngine $engine): ?string
-    {
-        return match ($engine) {
-            DatabaseEngine::Postgres => 'pdo_pgsql',
-            DatabaseEngine::MySql => 'pdo_mysql',
-            DatabaseEngine::Redis, DatabaseEngine::Valkey => 'redis',
-            DatabaseEngine::MongoDb => 'mongodb',
-            DatabaseEngine::ClickHouse => null,
-        };
-    }
-
-    /**
      * The extensions for a set of connected engines: unique, sorted by name,
      * each attributed to the first engine (by value) that needs it.
      *
      * @param  iterable<DatabaseEngine>  $engines
      * @return list<PhpExtension>
      */
-    public static function forEngines(iterable $engines): array
+    public static function forEngines(DatabaseEngines $drivers, iterable $engines): array
     {
         $values = [];
 
@@ -57,7 +43,7 @@ final class PhpExtensions
         $extensions = [];
 
         foreach ($values as $engine) {
-            $name = self::forEngine($engine);
+            $name = $drivers->for($engine)->phpExtension();
 
             if ($name !== null && ! isset($extensions[$name])) {
                 $extensions[$name] = new PhpExtension($name, $engine->value);

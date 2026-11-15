@@ -20,5 +20,6 @@ final class ServiceChoiceData extends Data
         public ?DatabaseEngine $engine = null,
         public ?bool $managed = null,
         public int $bindMounts = 0,
+        public ?string $engineLabel = null,
     ) {}
 }

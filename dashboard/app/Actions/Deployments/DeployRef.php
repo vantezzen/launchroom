@@ -7,10 +7,12 @@ namespace App\Actions\Deployments;
 use App\Actions\Audit\RecordAuditEvent;
 use App\Data\Audit\AuditActor;
 use App\Data\Audit\AuditEntryData;
+use App\Data\Deployments\CommitNotDeployed;
 use App\Data\Git\CommitData;
 use App\Data\Services\GitSource;
 use App\Enums\AuditAction;
 use App\Enums\DeploymentTrigger;
+use App\Events\CanvasChanged;
 use App\Exceptions\DomainRuleViolation;
 use App\Models\Deployment;
 use App\Models\ServiceInstance;
@@ -51,14 +53,12 @@ final readonly class DeployRef
 
         $sha ??= $this->heads->head($instance->team_id, $source, $branch);
 
-        $deployment = $this->deployCommit->handle($instance, new CommitData($sha, '', null, null, null), 'refs/heads/'.$branch, $trigger);
+        return DB::transaction(function () use ($instance, $user, $actor, $branch, $sha, $trigger): Deployment {
+            $deployment = $this->deployCommit->handle($instance, new CommitData($sha, '', null, null, null), 'refs/heads/'.$branch, $trigger, $user);
 
-        if (! $deployment instanceof Deployment) {
-            throw DomainRuleViolation::conflict("Nothing was deployed: this commit is already deploying, the service isn't deployed in this environment yet (deploy its staged changes first), or a deploy rule refused it.");
-        }
-
-        DB::transaction(function () use ($deployment, $instance, $user, $actor, $branch, $sha): void {
-            $deployment->forceFill(['actor_id' => $user->id])->save();
+            if ($deployment instanceof CommitNotDeployed) {
+                throw DomainRuleViolation::conflict('Nothing was deployed. '.$deployment->message);
+            }
 
             $this->audit->handle(new AuditEntryData(
                 action: AuditAction::DeploymentRequested,
@@ -68,8 +68,9 @@ final readonly class DeployRef
                 subjectId: $deployment->public_id,
                 meta: ['service' => $instance->service->public_id, 'branch' => $branch, 'sha' => $sha],
             ));
-        });
+            CanvasChanged::forInstance($instance);
 
-        return $deployment;
+            return $deployment;
+        });
     }
 }

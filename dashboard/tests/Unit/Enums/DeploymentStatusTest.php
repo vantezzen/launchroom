@@ -29,12 +29,13 @@ test('terminal statuses go nowhere; active only to superseded', function (): voi
     expect(DeploymentStatus::Active->allowedTransitions())->toBe([DeploymentStatus::Superseded]);
 });
 
-test('every in-flight status can fail; routing can not be cancelled', function (): void {
+test('every in-flight status can fail; users can not cancel routing, only a teardown can', function (): void {
     foreach (DeploymentStatus::inFlight() as $status) {
         expect($status->canTransitionTo(DeploymentStatus::Failed))->toBeTrue($status->value);
     }
 
-    expect(DeploymentStatus::Routing->canTransitionTo(DeploymentStatus::Cancelled))->toBeFalse()
+    expect(DeploymentStatus::Routing->isCancellable())->toBeFalse()
+        ->and(DeploymentStatus::Routing->canTransitionTo(DeploymentStatus::Cancelled))->toBeTrue()
         ->and(DeploymentStatus::HealthChecking->canTransitionTo(DeploymentStatus::Active))->toBeFalse()
         ->and(DeploymentStatus::Active->canTransitionTo(DeploymentStatus::Failed))->toBeFalse();
 });

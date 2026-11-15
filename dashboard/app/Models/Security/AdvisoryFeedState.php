@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models\Security;
 
+use App\Data\Security\AdvisoryCursorData;
 use App\Enums\Security\AdvisoryFeed;
 use Illuminate\Database\Eloquent\Attributes\Table;
 use Illuminate\Database\Eloquent\Model;
@@ -23,7 +24,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $etag
  * @property string|null $last_modified
  * @property int $items
- * @property array{after?: list<string>, full?: bool}|null $cursor
+ * @property AdvisoryCursorData|null $cursor
  * @property int $backoff_seconds
  * @property Carbon|null $retry_at
  * @property Carbon|null $manual_check_at
@@ -72,7 +73,7 @@ final class AdvisoryFeedState extends Model
             'last_attempt_at' => 'datetime',
             'failing_since' => 'datetime',
             'items' => 'integer',
-            'cursor' => 'array',
+            'cursor' => AdvisoryCursorData::class,
             'backoff_seconds' => 'integer',
             'retry_at' => 'datetime',
             'manual_check_at' => 'datetime',

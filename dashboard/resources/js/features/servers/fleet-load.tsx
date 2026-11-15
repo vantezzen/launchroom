@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { TimeRangeSelect } from '@/components/charts/time-range-select';
 import { TimeSeriesChart } from '@/components/charts/time-series-chart';
-import { formatMb } from '@/features/servers/format';
 import { useFleetMetrics } from '@/features/servers/use-server-metrics';
 import { useObserveScope } from '@/hooks/use-observe-scope';
 import { RANGE_SETS, rangeOptions, rangeWords } from '@/lib/observe-scope';
 import { cn } from '@/lib/utils';
+import { formatMemory } from '@/lib/format';
 
 type Metric = 'cpu' | 'memory' | 'disk';
 
@@ -63,8 +63,8 @@ export function FleetLoad({
             value: now?.memPct != null ? `${Math.round(now.memPct)}%` : '–',
             detail:
                 now && now.memTotalMb > 0
-                    ? `${formatMb(now.memUsedMb)} of ${formatMb(now.memTotalMb)}`
-                    : (formatMb(capacity.memoryMb) ?? ''),
+                    ? `${formatMemory(now.memUsedMb)} of ${formatMemory(now.memTotalMb)}`
+                    : formatMemory(capacity.memoryMb, ''),
             series: totals?.memPct ?? [],
         },
         {
@@ -73,8 +73,8 @@ export function FleetLoad({
             value: now?.diskPct != null ? `${Math.round(now.diskPct)}%` : '–',
             detail:
                 now && now.diskTotalMb > 0
-                    ? `${formatMb(now.diskUsedMb)} of ${formatMb(now.diskTotalMb)}`
-                    : (formatMb(capacity.diskMb) ?? ''),
+                    ? `${formatMemory(now.diskUsedMb)} of ${formatMemory(now.diskTotalMb)}`
+                    : formatMemory(capacity.diskMb, ''),
             series: totals?.diskPct ?? [],
         },
     ];

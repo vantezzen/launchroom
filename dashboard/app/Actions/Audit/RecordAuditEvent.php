@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Audit;
 
 use App\Data\Audit\AuditEntryData;
+use App\Enums\AdvisoryLock;
 use App\Jobs\Audit\DeliverAuditSinkJob;
 use App\Models\AuditEvent;
 use App\Models\AuditSink;
@@ -20,13 +21,10 @@ use Illuminate\Support\Facades\DB;
  */
 final class RecordAuditEvent
 {
-    /** Advisory lock key ("launchroom audit chain"). */
-    public const int LOCK_KEY = 0x6C72_6175_6469_74;
-
     public function handle(AuditEntryData $entry): AuditEvent
     {
         return DB::transaction(function () use ($entry): AuditEvent {
-            DB::select('SELECT pg_advisory_xact_lock(?)', [self::LOCK_KEY]);
+            AdvisoryLock::AuditChain->holdForTransaction();
 
             $prevHash = AuditEvent::query()->orderByDesc('id')->value('hash');
             $prevHash = is_string($prevHash) ? $prevHash : AuditChain::GENESIS;

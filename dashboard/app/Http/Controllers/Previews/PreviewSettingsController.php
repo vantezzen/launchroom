@@ -11,6 +11,8 @@ use App\Data\Previews\PreviewSettingsInput;
 use App\Data\Previews\PreviewStrategyInput;
 use App\Enums\EnvironmentKind;
 use App\Http\Controllers\Controller;
+use App\Http\Routing\RouteScope;
+use App\Http\Toast;
 use App\Models\Previews\PreviewSettings;
 use App\Models\Project;
 use App\Models\Service;
@@ -35,7 +37,7 @@ final class PreviewSettingsController extends Controller
         Gate::authorize('update', $project);
 
         $update->handle($project, $input, $user, $this->auditActor($request, $user));
-        Inertia::flash('toast', ['type' => 'success', 'message' => 'Preview settings saved. They apply to the next pull request event.']);
+        Toast::success('Preview settings saved. They apply to the next pull request event.');
 
         return back();
     }
@@ -43,7 +45,7 @@ final class PreviewSettingsController extends Controller
     public function strategy(Request $request, Project $project, Service $service, PreviewStrategyInput $input, #[CurrentUser] User $user, PreviewGate $gate, UpdatePreviewStrategy $update): RedirectResponse
     {
         Gate::authorize('update', $project);
-        abort_unless($service->project_id === $project->id, 404);
+        RouteScope::service($project, $service);
 
         $base = $gate->baseEnvironment($project, PreviewSettings::forProject($project))
             ?? $project->environments()->where('kind', EnvironmentKind::Production->value)->first();
@@ -52,7 +54,7 @@ final class PreviewSettingsController extends Controller
         abort_unless($instance instanceof ServiceInstance, 404);
 
         $update->handle($instance, $input, $this->auditActor($request, $user));
-        Inertia::flash('toast', ['type' => 'success', 'message' => "{$service->name}: saved for new previews."]);
+        Toast::success("{$service->name}: saved for new previews.");
 
         return back();
     }

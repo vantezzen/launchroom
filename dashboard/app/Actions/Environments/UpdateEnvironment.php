@@ -10,6 +10,7 @@ use App\Data\Audit\AuditEntryData;
 use App\Data\Environments\UpdateEnvironmentData;
 use App\Enums\AuditAction;
 use App\Enums\EnvironmentKind;
+use App\Events\CanvasChanged;
 use App\Exceptions\DomainRuleViolation;
 use App\Models\Environment;
 use Illuminate\Support\Facades\DB;
@@ -77,6 +78,7 @@ final readonly class UpdateEnvironment
                 subjectId: $environment->public_id,
                 meta: $meta,
             ));
+            event(new CanvasChanged($environment->public_id));
 
             return $environment;
         });

@@ -1,9 +1,9 @@
 import type { StepStatus } from '@/components/steps/step-icon';
 import { STEP_STATUS_LABEL } from '@/components/steps/step-icon';
-import { elapsedSeconds, formatDuration } from '@/lib/duration';
 import { stripAnsi } from './ansi';
 import type { LogSection } from './sections';
 import { isSection, SECTION_LABELS, SECTION_ORDER } from './sections';
+import { elapsedSeconds, formatDuration } from '@/lib/format';
 
 /**
  * The deployment's Steps log (docs/08 §3.5) as pure functions: lines grouped
@@ -146,13 +146,13 @@ export function withLoggedSteps(
 const ERROR_PATTERN =
     /(\berror\b|\bfailed\b|\bfatal\b|\bexception\b|ERR!|ERR_[A-Z_]+|\bpanic:|Traceback \(most recent call last\))/i;
 
-export function looksLikeError(line: LogLine): boolean {
+function looksLikeError(line: LogLine): boolean {
     const text = plain(line);
 
     return !CACHE_NOTE.test(text) && ERROR_PATTERN.test(text);
 }
 
-export type FailedStepErrors = {
+type FailedStepErrors = {
     section: LogSection | null;
     /** The first error line: where the failed step opens. */
     first: number | null;

@@ -31,10 +31,9 @@ use App\Models\ServiceInstance;
 use App\Models\Team;
 use App\Models\Transfers\DataImportRun;
 use App\Models\User;
-use App\Services\Backups\RestoreHolds;
-use GuzzleHttp\Promise\PromiseInterface;
-use Illuminate\Support\Facades\Http;
+use App\Services\Holds\Holds;
 use Tests\Support\Backups;
+use Tests\Support\GitFixtures;
 use Tests\Support\Projects;
 use Tests\Support\Transfers;
 use Tests\Support\VolumeServices;
@@ -53,10 +52,7 @@ beforeEach(function (): void {
     Backups::fakeEnvironment();
     $this->store = Transfers::useTempStore();
     config(['launchroom.git.plain_sources' => true, 'launchroom.git.insecure_hosts' => ['git-fixtures']]);
-    $pkt = static fn (string $line): string => sprintf('%04x', strlen($line) + 4).$line;
-    Http::fake([
-        'http://git-fixtures:8080/*' => static fn (): PromiseInterface => Http::response($pkt("# service=git-upload-pack\n").'0000'.$pkt(IH_SHA." HEAD\0multi_ack side-band-64k\n").$pkt(IH_SHA." refs/heads/main\n").'0000'),
-    ]);
+    GitFixtures::fake(IH_SHA);
 });
 
 /**
@@ -104,7 +100,7 @@ function ihFailedAppWithWorker(): array
     expect($latest($apiInstance)?->status)->toBe(DeploymentStatus::Failed)
         ->and($latest($workerInstance)?->status)->toBe(DeploymentStatus::Active)
         ->and($latest($postgresInstance)?->status)->toBe(DeploymentStatus::Active)
-        ->and(RestoreHolds::running([$apiInstance->id]))->toBe([]);
+        ->and(Holds::running([$apiInstance->id]))->toBe([]);
 
     return [$team, $server->refresh(), memberOf($team, TeamRole::Owner), $apiInstance, $workerInstance, $postgresInstance];
 }
@@ -384,14 +380,14 @@ test('a held worker its server no longer reports counts as stopped, whatever it 
     ihReportWithout($server, $workerWorkloads);
     resolve(AdvanceImports::class)->handle();
     expect($run->refresh()->status)->toBe(ImportRunStatus::Holding)
-        ->and(RestoreHolds::running([$worker->id]))->toBe([$worker->id]);
+        ->and(Holds::running([$worker->id]))->toBe([$worker->id]);
 
     // Reports keep leaving it out: it doesn't run there.
-    $this->travel(RestoreHolds::SILENT_SECONDS + 1)->seconds();
+    $this->travel(Holds::SILENT_SECONDS + 1)->seconds();
     ihReportWithout($server, $workerWorkloads);
     resolve(AdvanceImports::class)->handle();
 
-    expect(RestoreHolds::running([$worker->id]))->toBe([])
+    expect(Holds::running([$worker->id]))->toBe([])
         ->and($run->refresh()->status)->toBe(ImportRunStatus::Importing);
 });
 

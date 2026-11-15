@@ -15,12 +15,12 @@ use App\Enums\Git\GitConnectionStatus;
 use App\Enums\Git\GitProviderKind;
 use App\Enums\Git\GitServerKind;
 use App\Exceptions\DomainRuleViolation;
+use App\Exceptions\Git\GitConnectionUnusable;
 use App\Models\Git\GitConnection;
 use App\Models\Git\GitRepository;
 use App\Models\Team;
 use App\Models\User;
-use App\Services\Git\Exceptions\GitConnectionUnusable;
-use App\Services\Git\GitConnectionSecrets;
+use App\Services\Crypto\SealedColumns;
 use App\Services\Git\Providers\PlainGitProvider;
 use App\Services\Git\Ssh\DeployKey;
 use App\Support\Git\GitServerBranches;
@@ -42,7 +42,7 @@ final readonly class AddGitServer
     public function __construct(
         private SshRemotes $ssh,
         private PlainGitProvider $plain,
-        private GitConnectionSecrets $secrets,
+        private SealedColumns $sealed,
         private RecordAuditEvent $audit,
     ) {}
 
@@ -66,7 +66,7 @@ final readonly class AddGitServer
             'created_by' => $user->id,
         ]);
         $connection->public_id = PublicId::generate(GitConnection::publicIdPrefix());
-        $this->secrets->initialize($connection);
+        $this->sealed->seal($connection, 'webhook_secret', bin2hex(random_bytes(32)), $this->sealed->newKey($connection));
 
         if ($ssh instanceof SshUrl) {
             $connection->base_url = $ssh->toUrl();
@@ -86,7 +86,7 @@ final readonly class AddGitServer
             $deployKey = DeployKey::generate('launchroom-'.strtolower(substr($connection->public_id, 4, 10)));
             $connection->ssh_public_key = $deployKey['publicKey'];
             $connection->host_keys = array_map(static fn (HostKey $key): array => $key->toArray(), $keys);
-            $this->secrets->put($connection, 'ssh_private_key', $deployKey['secretKey']);
+            $this->sealed->seal($connection, 'ssh_private_key', $deployKey['secretKey']);
             sodium_memzero($deployKey['secretKey']);
 
             return $this->store($connection, $ssh->displayName(), null, $actor);
@@ -130,7 +130,7 @@ final readonly class AddGitServer
             ]);
 
             $this->audit->handle(new AuditEntryData(AuditAction::GitConnectionCreated, $actor, $connection->team_id, 'git_connection', $connection->public_id, [
-                'provider' => 'git',
+                'provider' => GitProviderKind::Git->value,
                 'server' => $connection->host(),
                 'method' => $connection->auth_method->value,
             ]));

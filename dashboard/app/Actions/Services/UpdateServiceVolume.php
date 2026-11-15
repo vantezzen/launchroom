@@ -9,7 +9,7 @@ use App\Data\Audit\AuditActor;
 use App\Data\Audit\AuditEntryData;
 use App\Data\Services\UpdateVolumeData;
 use App\Enums\AuditAction;
-use App\Enums\ServiceKind;
+use App\Events\CanvasChanged;
 use App\Exceptions\DomainRuleViolation;
 use App\Models\ServiceInstance;
 use App\Models\Volume;
@@ -48,7 +48,7 @@ final readonly class UpdateServiceVolume
                 throw DomainRuleViolation::on('mountPath', 'This volume is removed with the next deploy. Discard that change to keep it.');
             }
 
-            if (! in_array($instance->service->kind, [ServiceKind::App, ServiceKind::Image], true)) {
+            if (! $instance->service->kind->ownsVolumes()) {
                 throw DomainRuleViolation::on('mountPath', 'launchroom manages where a database keeps its data.');
             }
 
@@ -92,6 +92,7 @@ final readonly class UpdateServiceVolume
                 subjectId: $instance->service->public_id,
                 meta: ['volume' => $volume->public_id, 'from' => $before, 'to' => $path, 'instance' => $instance->public_id],
             ));
+            CanvasChanged::forInstance($instance);
 
             return $volume;
         });

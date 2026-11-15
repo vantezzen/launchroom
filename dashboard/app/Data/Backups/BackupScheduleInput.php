@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Data\Backups;
 
+use App\Data\Attributes\PublicIdOf;
 use Spatie\LaravelData\Attributes\Validation\Max;
-use Spatie\LaravelData\Attributes\Validation\Regex;
 use Spatie\LaravelData\Data;
 
 /**
@@ -18,7 +18,7 @@ final class BackupScheduleInput extends Data
         public string $cron,
         public RetentionData $retention,
         public bool $enabled = true,
-        #[Regex('/^bkd_[0-7][0-9A-HJKMNP-TV-Z]{25}$/D')]
+        #[PublicIdOf('bkd')]
         public ?string $destination = null,
     ) {}
 }

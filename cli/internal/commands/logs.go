@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"slices"
 	"strconv"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -24,15 +26,11 @@ func (a *App) logsCmd() *cobra.Command {
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
-			switch since {
-			case "15m", "1h", "24h", "7d":
-			default:
-				return exitcode.Usagef("--since must be 15m, 1h, 24h or 7d")
+			if !slices.Contains(api.LogRangeValues, since) {
+				return exitcode.Usagef("--since must be %s", oneOf(api.LogRangeValues))
 			}
-			switch source {
-			case "all", "build", "runtime":
-			default:
-				return exitcode.Usagef("--source must be all, build or runtime")
+			if !slices.Contains(api.LogSourceValues, source) {
+				return exitcode.Usagef("--source must be %s", oneOf(api.LogSourceValues))
 			}
 			s, err := a.session()
 			if err != nil {
@@ -70,7 +68,7 @@ func (a *App) logsCmd() *cobra.Command {
 				if ev.Event != "lines" {
 					return nil
 				}
-				var le linesEvent
+				var le api.EnvironmentLinesEvent
 				if json.Unmarshal([]byte(ev.Data), &le) == nil {
 					for _, e := range le.Entries {
 						a.printEntry(e)
@@ -83,9 +81,17 @@ func (a *App) logsCmd() *cobra.Command {
 	f := cmd.Flags()
 	f.StringVar(&deployment, "deployment", "", "one deployment's log (dpl_…)")
 	f.BoolVarP(&follow, "follow", "f", false, "keep following new lines")
-	f.StringVar(&since, "since", "1h", "how far back: 15m, 1h, 24h or 7d")
-	f.StringVar(&source, "source", "all", "all, build or runtime")
+	f.StringVar(&since, "since", api.LogRange1h, "how far back: "+oneOf(api.LogRangeValues))
+	f.StringVar(&source, "source", api.LogSourceAll, oneOf(api.LogSourceValues))
 	return cmd
+}
+
+// oneOf lists values for a message: "a, b or c".
+func oneOf(values []string) string {
+	if len(values) < 2 {
+		return strings.Join(values, "")
+	}
+	return strings.Join(values[:len(values)-1], ", ") + " or " + values[len(values)-1]
 }
 
 func (a *App) deploymentLogs(ctx context.Context, s *session, id string, follow bool) error {
@@ -110,7 +116,7 @@ func (a *App) deploymentLogs(ctx context.Context, s *session, id string, follow 
 		if ev.Event != "lines" {
 			return nil
 		}
-		var le linesEvent
+		var le api.DeploymentLinesEvent
 		if json.Unmarshal([]byte(ev.Data), &le) == nil {
 			for _, l := range le.Lines {
 				a.printDeploymentLine(l)

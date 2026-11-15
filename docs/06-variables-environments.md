@@ -34,17 +34,17 @@ Per environment:
 ### 2.2 Git events
 
 - Webhooks and polling both emit `App\Events\Git\GitPushReceived` (GitHub installation or GitLab/Gitea/plain git connection, [19](19-git-providers.md) §5; numeric repository id, full ref, before/after, head commit, changed files when the payload is complete).
-- Both record the ref's head in `github_ref_heads` first, so a push seen by both channels is emitted once. Deleted refs and skip-marked commits are recorded but not emitted.
+- Both go through `App\Actions\Git\ObserveRefHead`, which records the ref's head (`github_ref_heads`, or `git_ref_heads` for connections) under a row lock first, so a push seen by both channels is emitted once. Deleted refs and skip-marked commits are recorded but not emitted. A push payload lists at most 20 commits: with 20 or more the changed files are unknown (`App\Support\Git\PushedFiles`).
 - Skip markers in the head commit message, case-insensitive: `[skip ci]`, `[skip deploy]`, `[ci skip]`, `[no ci]`, `[deploy skip]`.
-- `pull_request` webhooks emit `PullRequestEventReceived` (fork = head repository id ≠ base repository id; the author's permission is looked up for fork PRs). `App\Listeners\Previews\SyncPreviewsOnPullRequest` syncs every project with a service of that installation + repository (§5).
+- `pull_request` webhooks emit `PullRequestEventReceived` (fork = head repository id ≠ base repository id; the author's permission is looked up for fork PRs). `App\Actions\Git\SyncPullRequestPreviews` (from the listener `SyncPreviewsOnPullRequest`) syncs every project with a service of that installation + repository (`Service::sourcedFrom()`, §5).
 - **Polling** runs every minute for the refs returned by the `App\Contracts\Git\TrackedRefs` contract when the app (or git connection) has unhealthy webhooks, and every `launchroom.github.safety_poll_seconds` (5 minutes) per ref while they are healthy. It uses `GET /repos/{repo}/commits/{ref}` with `If-None-Match` (a 304 costs no rate limit). The first observation of a ref only records a baseline; it doesn't deploy.
 - **Webhook health** is judged on missed pushes, not on silence: a developer can go hours without pushing. When polling records a new head that no webhook delivered, the ref head gets `awaiting_webhook_since`; any webhook for that ref clears it (for plain git connections, the "poll now" webhook counts). Still set after `launchroom.github.webhook_grace_seconds` (2 minutes), the poll job records `webhook_missed_at` on the GitHub app or git connection. Webhooks are **healthy** when a verified delivery arrived and none was missed since (`webhook_last_received_at > webhook_missed_at`), **stale** after a miss until the next verified delivery, **never** before the first delivery. Stale and never poll every minute. Settings → Git says "Pushes arrive right away", "A push didn't arrive by webhook: checking every minute" (with when) or "Pushes are checked every minute until GitHub reaches this dashboard", plus the last delivery. launchroom doesn't read GitHub's delivery log (`/app/hook/deliveries`), so a miss shows up only for tracked refs.
-- `TrackedRefs` (`App\Services\Git\ServiceTrackedRefs`): `refs/heads/<branch>` per (installation, repository, branch) of live GitHub-sourced instances in non-preview environments. Glob branches are left to webhooks.
+- `TrackedRefs` (`App\Services\Git\ServiceTrackedRefs`): `refs/heads/<branch>` per (provider, account, repository, branch) of live instances with a connected git source in non-preview environments, for the branch pushes deploy them from (`App\Support\Git\DeployBranch::pushPattern()`, the same rule as §2.3). The source's own branch is not watched: it is only the default for a manual deploy, and pushes to it don't deploy. Glob branches are left to webhooks.
 
 ### 2.3 Push deploys
 
-`App\Listeners\Git\DeployOnGitPush` → `App\Actions\Deployments\DeployCommit` deploys every live, enabled service instance that:
-- has a GitHub source with this installation (`github_installations.id`) and numeric repository id,
+`App\Actions\Git\DeployPush` (from the listener `DeployOnGitPush`) → `App\Actions\Deployments\DeployCommit` deploys every live, enabled service instance that:
+- has a git source of this provider, account (`github_installations.id` or `git_connections.id`) and numeric repository id (`Service::sourcedFrom()`),
 - is in a non-preview environment,
 - matches the ref: its branch override, or else the environment's branch glob, matches `refs/heads/<branch>`, or the environment's tag glob matches `refs/tags/<tag>` (trigger `tag`).
 
@@ -56,11 +56,11 @@ The deployment uses the environment's **last applied revision**: pushes never ap
 
 ### 2.4 Commit status on GitHub
 
-`App\Listeners\Git\ReportDeploymentToGitHub` → `ReportDeploymentStatusJob`, only for deployments with a commit of GitHub-sourced services:
+`App\Services\Git\Feedback\DeploymentFeedback` decides what is reported (`App\Listeners\StartQueuedDeployment` sends "queued", `App\Listeners\Git\ReportDeploymentToGitProvider` every later change, both through `ReportDeploymentStatusJob`), only for deployments that can go live (`purpose = release`, so a prebuild during a server move is never reported) with a commit of services sourced from a provider with an API:
 
 | Deployment | GitHub state |
 |---|---|
-| queued (sent when a push creates the deployment) | Queued |
+| queued (sent when the deployment is created, `DeploymentQueued`) | Queued |
 | building … routing | InProgress |
 | active | Success |
 | failed | Failure (with the failure message) |
@@ -176,8 +176,8 @@ Envelope encryption ([09](09-security.md)):
 
 - A secret row that applies to production may not have the same value (compared as keyed MACs in memory) as a row of the same key and service (or the same shared key) that applies to previews (targeted at "All previews" with any branch pattern, or at a preview environment). A row targeting both always violates it.
 - Enforced:
-  - on every save path through `SecretExposureGuard` (single edit, raw edit, import, shared usage),
-  - on every deploy of production and previews: Deploy in `DeployEnvironment`; push and tag deploys in `DeployCommit`, which skips and logs; preview deploys in `DeployPreview`, which fails the preview with the message,
+  - on every save: new variable content is written inside `VariableStore::write()`, which runs `SecretExposureGuard` (this rule and the browser-secret check of §3.3) for the touched keys before the transaction commits, so no writer can skip it (edits, raw edit, import, shared usage, connections, blueprints, launchroom.json, promote). Rows that only reproduce existing ones (environment copies, restore into a copy, Discard) aren't new content and keep the deploy-time check,
+  - on every deploy of production and previews that brings new configuration or code (`ProductionSecretPolicy::assertFor`/`violationsFor`, kinds from `EnvironmentKind::checksProductionSecrets`): Deploy in `DeployEnvironment`; push, tag and API commit deploys in `DeployCommit`, which skips and returns why (the API answers 409 with it); preview deploys in `DeployPreview`, which fails the preview with the message. Redeploy, Restart, Start, Rollback and server moves run an applied revision or a deployed snapshot again and are not refused: refusing them could leave a service down,
   - when copying an environment: a preview never gets a secret equal to production's, whatever environment it is copied from, so staging copied from production can't pass production's values on,
   - in Compare & promote: "copy value" between production and a preview is blocked.
 - Turning the policy on is refused while secrets violate it. Every message names the key and service.
@@ -298,7 +298,7 @@ See also [09](09-security.md) R20.
 
 ### 5.4 Protection and URLs
 
-- **Protection** ([05](05-networking-ingress.md) §4, [09](09-security.md) R20a): on by default per project. Previews require a launchroom login or a share link (`preview_share_links`, ≤ 30 days, revocable, revoked on teardown). CI bypass header `X-Launchroom-Bypass` with a per-project secret (stripped before the app). `noindex` on all non-production hosts.
+- **Protection** ([05](05-networking-ingress.md) §4, [09](09-security.md) R20a): on by default per project. Previews require a launchroom login or a share link (`preview_share_links`, ≤ 30 days, revocable, revoked on teardown). CI bypass header (`X-Launchroom-Bypass` by default, `launchroom.previews.bypass_header`) with a per-project secret (Caddy strips the same configured header before the app). `noindex` on all non-production hosts.
 - **URLs**: `{svc}-pr-{n}.{project}.{apps}` (localhost/sslip fallbacks as [05](05-networking-ingress.md) §5), the branch alias, and the immutable per-deployment URLs.
 
 ### 5.5 Cleanup
@@ -311,7 +311,7 @@ See also [09](09-security.md) R20.
 
 ### 5.6 GitHub feedback
 
-`PreviewGitHub`:
+`GitHubPreviews` (the shared parts, comment rows and aggregate state, are `PullRequestFeedback`, also used by GitLab and Gitea):
 - One GitHub Deployment per preview environment and head commit (environment `preview/pr-<n>`, transient) whose status aggregates the preview's deployments: in progress → success with the primary URL, or failure.
 - Per-service check runs and a single PR comment table (all services, status, URLs), updated in place. Per-deployment Deployments API reporting (§2.4) is off for previews (`DeploymentStatusReport.deploymentApi = false`).
 - Teardown posts `inactive` and marks the comment rows.

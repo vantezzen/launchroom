@@ -46,25 +46,6 @@ final class Problems
     }
 
     /**
-     * Problems as stored in jsonb columns.
-     *
-     * @param  list<ConfigFileProblemData>  $problems
-     * @return list<array<string, mixed>>
-     */
-    public static function rows(array $problems): array
-    {
-        $rows = [];
-
-        foreach ($problems as $problem) {
-            /** @var array<string, mixed> $row */
-            $row = $problem->toArray();
-            $rows[] = $row;
-        }
-
-        return $rows;
-    }
-
-    /**
      * `/services/web/deploy/port` → `services.web.deploy.port`; null for the root.
      */
     public static function path(string $pointer): ?string

@@ -1,9 +1,9 @@
 import { Form, Link } from '@inertiajs/react';
 import { Gauge } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { LearnMore, useDocsUrl } from '@/features/settings/settings-card';
 import { create as addServer } from '@/routes/servers';
 import { dismiss } from '@/routes/servers/small-server-hint';
+import { LearnMore, useDocsUrl } from '@/components/settings/settings-card';
 
 function size(hint: App.Data.Servers.SmallServerHintData): string {
     const cpus = `${hint.cpus} ${hint.cpus === 1 ? 'CPU core' : 'CPU cores'}`;

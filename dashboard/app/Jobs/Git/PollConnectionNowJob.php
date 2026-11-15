@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Jobs\Git;
 
-use App\Actions\Git\PollConnectionRef;
+use App\Actions\Git\PollTrackedRef;
 use App\Contracts\Git\TrackedRefs;
 use App\Models\Git\GitConnection;
 use Illuminate\Bus\Queueable;
@@ -37,7 +37,7 @@ final class PollConnectionNowJob implements ShouldBeUnique, ShouldQueue
         return (string) $this->connectionId;
     }
 
-    public function handle(TrackedRefs $trackedRefs, PollConnectionRef $poll): void
+    public function handle(TrackedRefs $trackedRefs, PollTrackedRef $poll): void
     {
         $connection = GitConnection::query()->where('id', $this->connectionId)->first();
 

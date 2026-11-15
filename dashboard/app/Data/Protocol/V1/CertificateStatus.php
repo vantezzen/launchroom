@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Data\Protocol\V1;
 
-use Spatie\LaravelData\Attributes\Validation\In;
+use App\Enums\CertStatus;
 use Spatie\LaravelData\Attributes\Validation\Max;
 use Spatie\LaravelData\Attributes\Validation\Regex;
 use Spatie\LaravelData\Data;
@@ -18,8 +18,7 @@ final class CertificateStatus extends Data
     public function __construct(
         #[Max(253), Regex('/^[a-z0-9.-]+$/D')]
         public string $host,
-        #[In(['issued', 'pending', 'failed'])]
-        public string $state,
+        public CertStatus $state,
         public bool|Optional $wildcard = new Optional,
         #[Max(256)]
         public string|Optional $issuer = new Optional,

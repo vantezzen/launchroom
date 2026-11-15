@@ -12,8 +12,9 @@ import {
 } from '@/components/ui/input-otp';
 import { Spinner } from '@/components/ui/spinner';
 import { AuthFrame } from '@/features/auth/auth-frame';
-import { OTP_MAX_LENGTH } from '@/hooks/use-two-factor-auth';
+import { OTP_MAX_LENGTH } from '@/features/account/use-two-factor-auth';
 import { store } from '@/routes/two-factor/login';
+import { noLayout } from '@/lib/pages';
 
 /**
  * Second factor (direction §9.15): one large code input; a recovery code is
@@ -123,3 +124,5 @@ export default function TwoFactorChallenge() {
         </AuthFrame>
     );
 }
+
+TwoFactorChallenge.layout = noLayout;

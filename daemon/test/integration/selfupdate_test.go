@@ -36,7 +36,7 @@ import (
 
 // The self-update swap end to end, inside the dind test daemon:
 //
-//   - a "server" installed like install/server.sh does it (the real script,
+//   - a "server" installed like deploy/install/server.sh does it (the real script,
 //     run in the digest-pinned docker CLI image), whose launchroomd is a fake
 //     built from this test binary (it only records itself running, like the
 //     real one after its first signed exchange);

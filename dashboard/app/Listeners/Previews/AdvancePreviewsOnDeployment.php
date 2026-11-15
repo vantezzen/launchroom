@@ -8,13 +8,13 @@ use App\Enums\DeploymentStatus;
 use App\Enums\EnvironmentKind;
 use App\Events\DeploymentStatusChanged;
 use App\Jobs\Previews\AdvancePreviewsJob;
-use App\Jobs\Previews\ReportPreviewToGitHubJob;
+use App\Jobs\Previews\ReportPreviewJob;
 use App\Models\Deployment;
 use App\Models\Previews\Preview;
 
 /**
  * A preview's deployment changed status: its databases may now run (the
- * apps can follow), and GitHub's preview deployment status may change.
+ * apps can follow), and the preview's status at its git provider may change.
  */
 final class AdvancePreviewsOnDeployment
 {
@@ -40,6 +40,6 @@ final class AdvancePreviewsOnDeployment
             dispatch(new AdvancePreviewsJob($preview->team_id));
         }
 
-        dispatch(new ReportPreviewToGitHubJob($preview->id));
+        dispatch(new ReportPreviewJob($preview->id));
     }
 }

@@ -21,4 +21,24 @@ enum HealthCheckState: string
 
         return $rank[$other->value] > $rank[$this->value] ? $other : $this;
     }
+
+    public function label(): string
+    {
+        return match ($this) {
+            self::Ok => 'OK',
+            self::Warning => 'Warning',
+            self::Critical => 'Failing',
+            self::Unknown => 'Unknown',
+        };
+    }
+
+    public function tone(): StatusTone
+    {
+        return match ($this) {
+            self::Ok => StatusTone::Active,
+            self::Warning => StatusTone::Warning,
+            self::Critical => StatusTone::Failed,
+            self::Unknown => StatusTone::Idle,
+        };
+    }
 }

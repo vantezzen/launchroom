@@ -7,6 +7,7 @@ namespace App\Policies;
 use App\Enums\Permission;
 use App\Enums\VariableType;
 use App\Models\Project;
+use App\Models\Team;
 use App\Models\User;
 use App\Models\Variable;
 
@@ -19,18 +20,44 @@ final class VariablePolicy
 
     public function create(User $user, Project $project): bool
     {
-        return $user->hasTeamPermission($project->team_id, Permission::WriteVariables);
+        return $this->writeAny($user, $project->team_id);
     }
 
-    public function update(User $user, Variable $variable): bool
+    /**
+     * Whether the user may add or change variables in any of the team's
+     * projects (the command palette's variable commands).
+     */
+    public function writeAny(User $user, Team|int $team): bool
     {
-        return $variable->connection_id === null
-            && $user->hasTeamPermission($variable->team_id, Permission::WriteVariables);
+        return $user->hasTeamPermission($team, Permission::WriteVariables);
+    }
+
+    /**
+     * With $type, the type it changes to ({@see retype()}).
+     */
+    public function update(User $user, Variable $variable, ?VariableType $type = null): bool
+    {
+        return ! $variable->isManagedByConnection()
+            && $user->hasTeamPermission($variable->team_id, Permission::WriteVariables)
+            && (! $type instanceof VariableType || $this->retype($user, $variable, $type));
+    }
+
+    /**
+     * Turning a secret into config makes its value readable: only for members
+     * who may reveal it anyway (docs/06 §3.1). Never without a user.
+     */
+    public function retype(?User $user, Variable $variable, VariableType $type): bool
+    {
+        if ($variable->type !== VariableType::Secret || $type !== VariableType::Config) {
+            return true;
+        }
+
+        return $user instanceof User && $this->reveal($user, $variable);
     }
 
     public function delete(User $user, Variable $variable): bool
     {
-        return $variable->connection_id === null
+        return ! $variable->isManagedByConnection()
             && $user->hasTeamPermission($variable->team_id, Permission::WriteVariables);
     }
 
@@ -40,9 +67,17 @@ final class VariablePolicy
      */
     public function reveal(User $user, Variable $variable): bool
     {
-        return $user->hasTeamPermission(
-            $variable->team_id,
-            $variable->type === VariableType::Secret ? Permission::RevealSecrets : Permission::View,
-        );
+        return $variable->type === VariableType::Secret
+            ? $user->hasTeamPermission($variable->team_id, Permission::RevealSecrets)
+            : $user->hasTeamPermission($variable->team_id, Permission::View);
+    }
+
+    /**
+     * Secret values of a project at once (resolved env export, the editor's
+     * reveal buttons).
+     */
+    public function revealSecrets(User $user, Project $project): bool
+    {
+        return $user->hasTeamPermission($project->team_id, Permission::RevealSecrets);
     }
 }

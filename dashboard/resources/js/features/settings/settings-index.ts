@@ -1,23 +1,7 @@
 import { buildSettingsIndex } from '@/components/settings/search';
 import type { SettingDraft, SettingResult } from '@/components/settings/search';
 import type { SettingsNavGroup } from '@/components/settings/types';
-
-export type AccountPage =
-    | 'profile'
-    | 'security'
-    | 'api-tokens'
-    | 'appearance'
-    | 'team'
-    | 'git'
-    | 'backups'
-    | 'notifications'
-    | 'dockerfile-generation'
-    | 'updates'
-    | 'network'
-    | 'dashboard-domain'
-    | 'registry'
-    | 'instance-security'
-    | 'move';
+import type { AccountPage } from './settings-layout';
 
 /**
  * The search index of `/settings` (docs/08 §1): every page, then the rows
@@ -29,7 +13,6 @@ export function accountSettingsIndex(
     groups: SettingsNavGroup<AccountPage>[],
 ): SettingResult<AccountPage>[] {
     const drafts: SettingDraft<AccountPage>[] = [
-        // Profile
         {
             target: 'profile',
             label: 'Name',
@@ -52,7 +35,6 @@ export function accountSettingsIndex(
             anchor: 'delete-account',
         },
 
-        // Security
         {
             target: 'security',
             label: 'Password',
@@ -75,7 +57,6 @@ export function accountSettingsIndex(
             anchor: 'passkeys',
         },
 
-        // API tokens
         {
             target: 'api-tokens',
             label: 'Use the CLI',
@@ -91,7 +72,6 @@ export function accountSettingsIndex(
             anchor: 'tokens',
         },
 
-        // Appearance
         {
             target: 'appearance',
             label: 'Theme',
@@ -99,7 +79,6 @@ export function accountSettingsIndex(
             keywords: ['dark mode', 'light mode', 'colors'],
         },
 
-        // Members
         {
             target: 'team',
             label: 'Invite people',
@@ -120,7 +99,6 @@ export function accountSettingsIndex(
             anchor: 'console-recording',
         },
 
-        // Git
         {
             target: 'git',
             label: 'Connect a git provider',
@@ -134,7 +112,6 @@ export function accountSettingsIndex(
             keywords: ['webhook', 'push'],
         },
 
-        // Backups
         {
             target: 'backups',
             label: 'Destinations',
@@ -155,7 +132,6 @@ export function accountSettingsIndex(
             anchor: 'recovery-kit',
         },
 
-        // Notifications
         {
             target: 'notifications',
             label: 'Channels',
@@ -175,7 +151,6 @@ export function accountSettingsIndex(
             ],
         },
 
-        // Dockerfile generation
         {
             target: 'dockerfile-generation',
             label: 'Model provider',
@@ -183,7 +158,6 @@ export function accountSettingsIndex(
             keywords: ['anthropic', 'claude', 'api key', 'ai'],
         },
 
-        // Updates
         {
             target: 'updates',
             label: 'Automatic updates',
@@ -191,7 +165,6 @@ export function accountSettingsIndex(
             keywords: ['auto update', 'upgrade', 'release', 'version'],
         },
 
-        // Network
         {
             target: 'network',
             label: 'Apps domain',
@@ -211,7 +184,6 @@ export function accountSettingsIndex(
             keywords: ['tls', 'ssl', 'https', 'lets encrypt', 'acme'],
         },
 
-        // Dashboard domain
         {
             target: 'dashboard-domain',
             label: 'Dashboard address',
@@ -219,7 +191,6 @@ export function accountSettingsIndex(
             keywords: ['url', 'domain', 'https'],
         },
 
-        // Registry
         {
             target: 'registry',
             label: 'Image storage',
@@ -227,7 +198,6 @@ export function accountSettingsIndex(
             keywords: ['bucket', 's3', 'images', 'cache'],
         },
 
-        // Security (this launchroom)
         {
             target: 'instance-security',
             label: 'Server certificates',

@@ -12,7 +12,6 @@ type StepperProps = {
     step?: number;
     /** Unit after the value ("replicas", "GB"). */
     unit?: string;
-    /** One helper line. */
     helper?: ReactNode;
     /** The live consequence ("fits on 2 servers"). */
     consequence?: ReactNode;

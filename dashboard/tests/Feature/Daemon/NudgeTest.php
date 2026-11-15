@@ -9,6 +9,9 @@ use App\Data\Protocol\V1\EnrollResponse;
 use App\Data\Protocol\V1\NudgeConfig;
 use App\Data\Protocol\V1\PollIntervals;
 use App\Data\Protocol\V1\RegistryInfo;
+use App\Data\Protocol\V1\Tasks\InventorySpec;
+use App\Data\Servers\HostFactsData;
+use App\Enums\DaemonFeature;
 use App\Enums\DaemonTaskStatus;
 use App\Enums\DaemonTaskType;
 use App\Enums\ServerRole;
@@ -16,6 +19,7 @@ use App\Enums\ServerStatus;
 use App\Models\DaemonTask;
 use App\Models\Server;
 use App\Services\Daemon\DaemonNudger;
+use App\Services\Tasks\DaemonTasks;
 use Illuminate\Support\Facades\DB;
 use Tests\Support\FakeDaemon;
 use Tests\Support\ProtocolSchemas;
@@ -121,6 +125,17 @@ test('queued tasks nudge the servers that may lease them', function (): void {
     $pinned->forceFill(['attempt' => 1, 'max_attempts' => 3, 'lease_expires_at' => now()->subMinute()]);
     $pinned->transitionTo(DaemonTaskStatus::Leased);
     resolve(RequeueExpiredLeases::class)->handle();
+    expect($this->spy->pairs())->toBe(['task.available private-daemon.'.$this->server->public_id]);
+});
+
+test('only servers that can lease a task get nudged: platform and launchroomd features count', function (): void {
+    $team = $this->server->team_id;
+    $this->server->forceFill(['roles' => [ServerRole::Build], 'daemon_features' => [DaemonFeature::Inventory->value]])->save();
+    // Same team and role, but an amd64 server without the inventory feature.
+    Server::factory()->online()->create(['team_id' => $team, 'roles' => [ServerRole::Build], 'facts' => new HostFactsData('amd', 'linux', 'amd64', 4, 8192)]);
+
+    resolve(DaemonTasks::class)->create($team, new InventorySpec('127.0.0.1:5000/library/nginx@sha256:'.str_repeat('a', 64), 'linux/arm64'), 900, role: ServerRole::Build);
+
     expect($this->spy->pairs())->toBe(['task.available private-daemon.'.$this->server->public_id]);
 });
 

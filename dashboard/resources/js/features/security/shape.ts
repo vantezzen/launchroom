@@ -1,3 +1,4 @@
+import { vocabulary } from '@/lib/vocabulary';
 import type { StatusState } from '@/components/status';
 
 type Finding = App.Data.Security.FindingCardData;
@@ -20,16 +21,12 @@ export type ActionGroup = {
     findings: Finding[];
 };
 
-const SEVERITY_RANK: Record<string, number> = {
-    critical: 0,
-    high: 1,
-    medium: 2,
-    low: 3,
-    unknown: 4,
-};
+function severityRank(severity: string): number {
+    const severities = vocabulary.Security.Severity;
 
-export function severityRank(severity: string): number {
-    return SEVERITY_RANK[severity] ?? 5;
+    return severity in severities
+        ? -severities[severity as App.Enums.Security.Severity].rank
+        : 1;
 }
 
 /**
@@ -94,7 +91,7 @@ export function groupActionNeeded(findings: Finding[]): ActionGroup[] {
     );
 }
 
-export type Verdict = {
+type Verdict = {
     state: StatusState;
     /** Short headline: "Nothing unusual found". */
     title: string;

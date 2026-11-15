@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace App\Data\Api;
 
+use App\Data\Attributes\PublicIdOf;
 use App\Enums\ApiAbility;
 use Illuminate\Validation\Rule;
 use Spatie\LaravelData\Attributes\Validation\In;
 use Spatie\LaravelData\Attributes\Validation\Min;
-use Spatie\LaravelData\Attributes\Validation\Regex;
 use Spatie\LaravelData\Data;
 
 /**
@@ -21,7 +21,7 @@ final class ApproveCliLoginInput extends Data
      * @param  list<string>  $abilities  ApiAbility values
      */
     public function __construct(
-        #[Regex('/^team_[0-7][0-9A-HJKMNP-TV-Z]{25}$/D')]
+        #[PublicIdOf('team')]
         public string $team,
         #[Min(1)]
         public array $abilities,

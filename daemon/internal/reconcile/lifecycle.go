@@ -5,7 +5,6 @@ import (
 	"slices"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/vantezzen/launchroom/daemon/internal/docker"
 	"github.com/vantezzen/launchroom/daemon/internal/health"
@@ -82,7 +81,7 @@ func (r *Reconciler) emitLocked(ev state.WorkloadEvent) {
 	ev.At = ev.At.UTC()
 	ev.Seq = max(r.events.last+1, uint64(max(now.UnixMicro(), 1))) //nolint:gosec // positive
 	r.events.last = ev.Seq
-	ev.Message = clip(ev.Message, 1024)
+	ev.Message = state.Clip(ev.Message, state.MaxStatusLen)
 	r.events.buf = append(r.events.buf, ev)
 	if over := len(r.events.buf) - maxBufferedEvents; over > 0 {
 		r.events.buf = slices.Delete(r.events.buf, 0, over)
@@ -145,7 +144,7 @@ func (r *Reconciler) trackLocked(id state.WorkloadID, deployment state.Deploymen
 		if recent(c.StartedAt) {
 			r.emitLocked(state.WorkloadEvent{Workload: id, Deployment: m.deployment, At: c.StartedAt, Kind: state.EventStarted})
 		}
-		if recent(c.FinishedAt) && !c.FinishedAt.Before(c.StartedAt) && !c.Running {
+		if recent(c.FinishedAt) && !c.FinishedAt.Before(c.StartedAt) && !c.Running() {
 			exits = append(exits, r.exitLocked(id, m.deployment, c))
 			m.noteExit(c)
 		}
@@ -181,7 +180,7 @@ func (r *Reconciler) exitLocked(id state.WorkloadID, deployment state.Deployment
 }
 
 func exitCode(c docker.Container) (int, bool) {
-	if c.Running && !c.Restarting {
+	if c.Running() && !c.Restarting() {
 		return 0, false
 	}
 	return c.ExitCode, true
@@ -210,7 +209,7 @@ func (r *Reconciler) tail(ctx context.Context, container string) []state.LogLine
 	defer cancel()
 	var lines []state.LogLine
 	_ = r.o.Docker.StreamLogs(ctx, container, docker.LogsOptions{Tail: exitTailLines}, func(l docker.LogLine) error {
-		line := state.LogLine{Time: l.Time.UTC(), Stream: state.StreamStdout, Text: clipLine(l.Text)}
+		line := state.LogLine{Time: l.Time.UTC(), Stream: state.StreamStdout, Text: state.Clip(strings.TrimRight(l.Text, "\r\n"), 2048)}
 		if l.Stream == "stderr" {
 			line.Stream = state.StreamStderr
 		}
@@ -224,19 +223,6 @@ func (r *Reconciler) tail(ctx context.Context, container string) []state.LogLine
 		lines = lines[over:]
 	}
 	return lines
-}
-
-// clipLine makes an output line valid UTF-8 and at most 2 KiB.
-func clipLine(s string) string {
-	s = strings.ToValidUTF8(strings.TrimRight(s, "\r\n"), "�")
-	if len(s) <= 2048 {
-		return s
-	}
-	cut := 2048
-	for cut > 0 && !utf8.RuneStart(s[cut]) {
-		cut--
-	}
-	return s[:cut]
 }
 
 // probeEventsLocked reports health check transitions of a workload (r.mu held).
@@ -279,7 +265,7 @@ func (r *Reconciler) issueLocked(spec *state.WorkloadSpec, o observed, probe *he
 	c := o.c
 	defer func() { r.marks[spec.ID] = m }()
 
-	looping := spec.Schedule == nil && c.RestartCount >= crashLoopRestarts && (!c.Running || c.Restarting || now.Sub(c.StartedAt) < stableRun)
+	looping := modeOf(spec).crashLoopApplies() && c.RestartCount >= crashLoopRestarts && (!c.Running() || c.Restarting() || now.Sub(c.StartedAt) < stableRun)
 	if looping {
 		if m.loopSince.IsZero() {
 			m.loopSince = now
@@ -316,27 +302,22 @@ func (r *Reconciler) issueLocked(spec *state.WorkloadSpec, o observed, probe *he
 // launchroom probes ("" = nothing clearly wrong, e.g. it doesn't listen
 // anywhere yet, which is just a slow start).
 func portIssue(spec *state.WorkloadSpec, o observed, probe *health.Status) state.WorkloadIssueKind {
-	if spec.Port == nil || spec.Health == nil || o.ports == nil || !o.c.Running || o.c.Restarting {
+	if spec.Port == nil || spec.Health == nil || o.ports == nil || !o.c.Running() || o.c.Restarting() {
 		return ""
 	}
 	if probe != nil && probe.State == state.ProbePassing {
 		return ""
 	}
-	want := int(*spec.Port)
-	other := false
-	for _, l := range o.ports {
-		if l.Port == want {
-			if l.LoopbackOnly {
-				return state.IssueLoopbackOnly
-			}
-			return ""
+	hint, _ := health.Hint(int(*spec.Port), o.ports)
+	switch hint {
+	case state.PortHintLoopbackOnly:
+		return state.IssueLoopbackOnly
+	case state.PortHintWrongPort:
+		// Only loopback listeners elsewhere (a debugger, a dev server
+		// starting) are not yet clearly wrong.
+		if slices.ContainsFunc(o.ports, func(l health.Listener) bool { return !l.LoopbackOnly }) {
+			return state.IssueWrongPort
 		}
-		if !l.LoopbackOnly {
-			other = true
-		}
-	}
-	if other {
-		return state.IssueWrongPort
 	}
 	return ""
 }
@@ -345,17 +326,17 @@ func portIssue(spec *state.WorkloadSpec, o observed, probe *health.Status) state
 // its health check passed (or, without one, it has been running) for
 // settledAfter, or it started longer than startupWindow ago.
 func (r *Reconciler) settledLocked(spec *state.WorkloadSpec, o observed, now time.Time) bool {
-	if spec.Schedule != nil || spec.Role != state.RoleServing {
+	if !modeOf(spec).watchesStartup() || spec.Role != state.RoleServing {
 		return true
 	}
 	c := o.c
 	if c.StartedAt.IsZero() {
-		return c.State != "created" // never started and not about to
+		return c.State != docker.StateCreated // never started and not about to
 	}
 	if now.Sub(c.StartedAt) > startupWindow {
 		return true
 	}
-	if !c.Running || c.Restarting {
+	if !c.Running() || c.Restarting() {
 		return false
 	}
 	if spec.Health == nil {
@@ -420,7 +401,7 @@ func (r *Reconciler) Watch(ctx context.Context) bool {
 			continue // removed in between: the next pass sees it
 		}
 		o := observed{c: c}
-		if c.Running && c.Pid > 0 {
+		if c.Running() && c.Pid > 0 {
 			if ls, err := r.o.Ports.Listeners(c.Pid); err == nil {
 				o.ports = ls
 			} else {
@@ -434,7 +415,7 @@ func (r *Reconciler) Watch(ctx context.Context) bool {
 		}
 		exits = append(exits, r.trackLocked(t.spec.ID, t.spec.Deployment, c)...)
 		probe := r.probeLocked(t.spec)
-		r.probeEventsLocked(t.spec, probe, c.Running)
+		r.probeEventsLocked(t.spec, probe, c.Running())
 		o.issue = r.issueLocked(t.spec, o, probe)
 		if !had || prev.c.State != c.State || prev.c.RestartCount != c.RestartCount || !prev.c.StartedAt.Equal(c.StartedAt) ||
 			(prev.issue == nil) != (o.issue == nil) || !slices.Equal(health.Ports(prev.ports), health.Ports(o.ports)) {

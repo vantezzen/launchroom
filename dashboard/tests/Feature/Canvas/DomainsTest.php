@@ -2,14 +2,18 @@
 
 declare(strict_types=1);
 
+use App\Data\Domains\DnsCheckData;
 use App\Enums\AuditAction;
 use App\Enums\DomainKind;
+use App\Enums\Domains\DnsCheckStatus;
 use App\Enums\TeamRole;
 use App\Jobs\Domains\VerifyDomainJob;
 use App\Models\AuditEvent;
 use App\Models\Domain;
 use App\Models\InstanceSettings;
 use App\Models\Team;
+use Carbon\CarbonInterface;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Tests\Support\FakeDns;
 use Tests\Support\Projects;
@@ -37,7 +41,7 @@ test('adding a custom domain checks its DNS right away and shows the result', fu
 
     $this->actingAs($this->developer)->post(($this->route)('projects.domains.store'), ['hostname' => 'shop.example.com'])->assertRedirect();
 
-    expect(domainNamed('shop.example.com')->verification)->toMatchArray(['status' => 'ok', 'addresses' => ['203.0.113.7'], 'expected' => ['203.0.113.7']]);
+    expect(domainNamed('shop.example.com')->verification?->toArray())->toMatchArray(['status' => 'ok', 'addresses' => ['203.0.113.7'], 'expected' => ['203.0.113.7']]);
 
     ($this->settings)()->assertInertia(fn ($page) => $page
         ->where('panel.settings.domains.0.hostname', 'shop.example.com')
@@ -54,11 +58,11 @@ test('verification tells missing, foreign and partial records apart', function (
     $verify = fn () => $this->actingAs($this->developer)->post(($this->route)('projects.domains.verify', $domain))->assertRedirect();
 
     $verify();
-    expect($domain->refresh()->verification['status'])->toBe('missing');
+    expect($domain->refresh()->verification?->status)->toBe(DnsCheckStatus::Missing);
 
     FakeDns::set('shop.example.com', ['198.51.100.9'], ['old-host.example.net']);
     $verify();
-    expect($domain->refresh()->verification)->toMatchArray([
+    expect($domain->refresh()->verification?->toArray())->toMatchArray([
         'status' => 'mismatch',
         'cname' => 'old-host.example.net',
         'message' => 'shop.example.com points at 198.51.100.9, not at your server (203.0.113.7).',
@@ -66,12 +70,12 @@ test('verification tells missing, foreign and partial records apart', function (
 
     FakeDns::set('shop.example.com', ['203.0.113.7', '198.51.100.9']);
     $verify();
-    expect($domain->refresh()->verification['status'])->toBe('mismatch')
-        ->and($domain->verification['message'])->toContain('also points at 198.51.100.9');
+    expect($domain->refresh()->verification?->status)->toBe(DnsCheckStatus::Mismatch)
+        ->and($domain->verification?->message)->toContain('also points at 198.51.100.9');
 
     FakeDns::fail('shop.example.com');
     $verify();
-    expect($domain->refresh()->verification['status'])->toBe('error');
+    expect($domain->refresh()->verification?->status)->toBe(DnsCheckStatus::Error);
 });
 
 test('viewers see verification but cannot re-check or change domains', function (): void {
@@ -145,15 +149,37 @@ test('custom domains may point at the generated hostname under the platform doma
             ->where('panel.settings.domains.1.apex', true));
 });
 
+test('DNS checks the Data cast can\'t read are dropped by its migration', function (): void {
+    $instanceId = $this->web->instances()->sole()->id;
+    $migration = require database_path('migrations/2026_12_30_210000_type_json_columns.php');
+    $migration->down();
+
+    $never = Domain::query()->create(['team_id' => $this->team->id, 'service_instance_id' => $instanceId, 'hostname' => 'never.example.com', 'kind' => DomainKind::Custom]);
+    $old = Domain::query()->create(['team_id' => $this->team->id, 'service_instance_id' => $instanceId, 'hostname' => 'old.example.com', 'kind' => DomainKind::Custom]);
+    $ok = Domain::query()->create(['team_id' => $this->team->id, 'service_instance_id' => $instanceId, 'hostname' => 'ok.example.com', 'kind' => DomainKind::Custom]);
+    DB::table('domains')->where('id', $old->id)->update(['verification' => json_encode(['status' => 'pending', 'checkedAt' => '2026-11-01T00:00:00Z'])]);
+    DB::table('domains')->where('id', $ok->id)->update(['verification' => json_encode(['status' => 'ok', 'hostname' => 'ok.example.com', 'addresses' => ['203.0.113.7'], 'expected' => ['203.0.113.7'], 'cname' => null, 'message' => 'ok', 'checkedAt' => '2026-11-01T00:00:00Z'])]);
+
+    expect(DB::table('domains')->where('id', $never->id)->value('verification'))->toBe('{}');
+
+    $migration->up();
+
+    expect($never->refresh()->verification)->toBeNull()
+        ->and($old->refresh()->verification)->toBeNull()
+        ->and($ok->refresh()->verification?->status)->toBe(DnsCheckStatus::Ok);
+});
+
 test('the periodic check queues domains that are due', function (): void {
     $instanceId = $this->web->instances()->sole()->id;
-    $create = fn (string $host, array $verification) => Domain::query()->create(['team_id' => $this->team->id, 'service_instance_id' => $instanceId, 'hostname' => $host, 'kind' => DomainKind::Custom])->forceFill(['verification' => $verification])->save();
+    $create = fn (string $host, ?DnsCheckStatus $status = null, ?CarbonInterface $checkedAt = null) => Domain::query()->create(['team_id' => $this->team->id, 'service_instance_id' => $instanceId, 'hostname' => $host, 'kind' => DomainKind::Custom])->forceFill([
+        'verification' => $status instanceof DnsCheckStatus ? new DnsCheckData($status, $host, [], [], null, '', (string) $checkedAt?->toIso8601ZuluString()) : null,
+    ])->save();
 
-    $create('never.example.com', []);
-    $create('pending-old.example.com', ['status' => 'missing', 'checkedAt' => now()->subMinutes(10)->toIso8601ZuluString()]);
-    $create('pending-new.example.com', ['status' => 'missing', 'checkedAt' => now()->subMinute()->toIso8601ZuluString()]);
-    $create('ok-old.example.com', ['status' => 'ok', 'checkedAt' => now()->subHours(7)->toIso8601ZuluString()]);
-    $create('ok-new.example.com', ['status' => 'ok', 'checkedAt' => now()->subHour()->toIso8601ZuluString()]);
+    $create('never.example.com');
+    $create('pending-old.example.com', DnsCheckStatus::Missing, now()->subMinutes(10));
+    $create('pending-new.example.com', DnsCheckStatus::Missing, now()->subMinute());
+    $create('ok-old.example.com', DnsCheckStatus::Ok, now()->subHours(7));
+    $create('ok-new.example.com', DnsCheckStatus::Ok, now()->subHour());
 
     Queue::fake();
     $this->artisan('launchroom:domains:verify')->assertSuccessful();

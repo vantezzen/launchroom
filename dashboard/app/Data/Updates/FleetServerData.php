@@ -7,7 +7,7 @@ namespace App\Data\Updates;
 use App\Enums\ServerRole;
 use App\Enums\ServerStatus;
 use App\Models\Server;
-use App\Services\Daemon\ProtocolVersions;
+use App\Support\Protocol\ProtocolVersions;
 use App\Support\Semver;
 use Spatie\LaravelData\Data;
 

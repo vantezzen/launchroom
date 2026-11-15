@@ -59,17 +59,19 @@ func checkEnum(kind, v string, values []string) error {
 	return nil
 }
 
-func truncate(s string) string {
-	const n = 80
-	if len(s) <= n {
-		return s
-	}
-	return s[:n] + "…"
-}
+func truncate(s string) string { return Shorten(s, 80) }
+
+// Encodings several types share.
+var (
+	reBase64 = regexp.MustCompile(`^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$`)
+	reHex64  = regexp.MustCompile(`^[a-f0-9]{64}$`)
+)
 
 // ---- Public IDs: "<prefix>_<ULID>" (docs/07-data-model.md) ----
 
-const ulid = `[0-9A-HJKMNP-TV-Z]{26}`
+// ulid is a canonical (uppercase) ULID: 26 Crockford base32 characters whose
+// first one is 0-7 (a 128-bit value; 8-Z would overflow).
+const ulid = `[0-7][0-9A-HJKMNP-TV-Z]{25}`
 
 func idRegexp(prefix string) *regexp.Regexp {
 	return regexp.MustCompile(`^` + prefix + `_` + ulid + `$`)
@@ -474,7 +476,6 @@ var (
 	reGitSHA       = regexp.MustCompile(`^[0-9a-f]{40}(?:[0-9a-f]{24})?$`)
 	reCacheKey     = regexp.MustCompile(`^[a-z0-9][a-z0-9_.-]{0,127}$`)
 	reSemver       = regexp.MustCompile(`^v?[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$`)
-	reSealed       = regexp.MustCompile(`^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$`)
 	reEd25519Key   = regexp.MustCompile(`^ed25519:[A-Za-z0-9+/]{43}=$`)
 	reX25519Key    = regexp.MustCompile(`^x25519:[A-Za-z0-9+/]{43}=$`)
 	reKID          = regexp.MustCompile(`^[A-Za-z0-9._-]{1,64}$`)
@@ -489,7 +490,6 @@ var (
 	reRegion       = regexp.MustCompile(`^[a-z0-9-]{1,32}$`)
 	reHostLabel    = regexp.MustCompile(`^[A-Za-z0-9._-]{1,128}$`)
 	reProtocolVer  = regexp.MustCompile(`^v[1-9][0-9]{0,2}$`)
-	reContainerID  = regexp.MustCompile(`^[a-f0-9]{64}$`)
 )
 
 // Duration is a positive duration with a single unit: "500ms", "30s", "5m", "1h".
@@ -602,7 +602,7 @@ type SealedBox string
 
 // ProtocolSchema implements SchemaDescriber.
 func (SealedBox) ProtocolSchema() ScalarSchema {
-	s := strSchema(reSealed, MaxSealedBytes)
+	s := strSchema(reBase64, MaxSealedBytes)
 	s.MinLength = 64 // 48 bytes of crypto_box_seal overhead + at least 1 byte
 	return s
 }
@@ -612,7 +612,7 @@ func (v SealedBox) Validate() error {
 	if len(v) < 64 {
 		return errors.New("sealed value is too short to be a crypto_box_seal output")
 	}
-	return checkPattern("sealed value", string(v), reSealed, MaxSealedBytes)
+	return checkPattern("sealed value", string(v), reBase64, MaxSealedBytes)
 }
 
 // Sealed wraps a sealed payload: {"sealed": "<base64>"}.

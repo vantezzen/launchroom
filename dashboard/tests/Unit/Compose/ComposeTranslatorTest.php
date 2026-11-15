@@ -9,12 +9,12 @@ use App\Data\Blueprints\BlueprintVariable;
 use App\Data\Blueprints\ComposeInputData;
 use App\Data\Blueprints\SkippedServiceData;
 use App\Data\Services\ConfigFile;
+use App\Drivers\DatabaseEngines\DatabaseEngines;
 use App\Enums\BlueprintNoteKind;
 use App\Enums\ConnectionStyle;
 use App\Enums\DatabaseEngine;
 use App\Enums\HealthcheckType;
 use App\Enums\ServiceKind;
-use App\Services\Blueprints\EngineVersions;
 use App\Support\Blueprints\BlueprintValidator;
 use App\Support\Compose\ComposeRejected;
 use App\Support\Compose\ComposeTranslation;
@@ -28,7 +28,7 @@ function bpCompose(string $fixtureOrYaml, array $options = []): ComposeTranslati
 
     return ComposeTranslator::translate($yaml, new TranslationOptions(...[
         'repository' => true,
-        'engines' => resolve(EngineVersions::class)->all(),
+        'engines' => resolve(DatabaseEngines::class),
         ...$options,
     ]));
 }

@@ -6,12 +6,11 @@ namespace App\Queries\Security;
 
 use App\Data\Security\AuditLogOverviewData;
 use App\Data\Security\AuditSinkData;
-use App\Data\Security\AuditVerificationData;
 use App\Enums\Audit\AuditSinkKind;
 use App\Models\AuditCheckpoint;
 use App\Models\AuditEvent;
 use App\Models\AuditSink;
-use App\Services\Audit\AuditVerificationStatus;
+use App\Models\InstanceSettings;
 use App\Services\Crypto\Signer;
 
 /**
@@ -21,7 +20,6 @@ use App\Services\Crypto\Signer;
 final readonly class AuditLogOverview
 {
     public function __construct(
-        private AuditVerificationStatus $status,
         private Signer $signer,
     ) {}
 
@@ -32,7 +30,7 @@ final readonly class AuditLogOverview
         $sinks = AuditSink::query()->orderBy('id')->get();
 
         return new AuditLogOverviewData(
-            verification: AuditVerificationData::fromStatus($this->status->current()),
+            verification: InstanceSettings::current()->audit_verification,
             entries: AuditEvent::query()->count(),
             lastCheckpointAt: AuditCheckpoint::query()->orderByDesc('id')->first()?->created_at,
             publicKey: $this->signer->publicKey(),

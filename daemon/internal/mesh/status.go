@@ -92,7 +92,7 @@ func ParseStatus(raw []byte, now time.Time) (parsedStatus, error) {
 		rep.Message = "mesh client is " + strings.ToLower(safeWord(s.Status.BackendState))
 	}
 	if rep.State != state.MeshConnected && len(s.Status.Health) > 0 {
-		rep.Message = truncate(rep.Message + ": " + strings.Join(s.Status.Health, "; "))
+		rep.Message = clipStatus(rep.Message + ": " + strings.Join(s.Status.Health, "; "))
 	}
 	if rep.State != state.MeshConnected {
 		return out, nil

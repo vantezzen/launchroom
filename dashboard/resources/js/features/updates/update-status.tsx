@@ -18,6 +18,7 @@ import { Spinner } from '@/components/ui/spinner';
 import { UpdateDialog } from '@/features/updates/update-dialog';
 import { updateSteps } from '@/features/updates/update-steps';
 import { cn } from '@/lib/utils';
+import { vocabulary } from '@/lib/vocabulary';
 import { settings as backupSettings } from '@/routes/backups';
 import { check } from '@/routes/updates';
 
@@ -46,7 +47,7 @@ const time = (iso: string | null): string =>
               minute: '2-digit',
           });
 
-export function CheckButton({
+function CheckButton({
     variant = 'outline',
 }: {
     variant?: 'outline' | 'ghost';
@@ -281,7 +282,7 @@ export function UpdateHero(
     const available = result.available;
     const updating =
         update !== null &&
-        !['succeeded', 'failed', 'rolled_back'].includes(update.status);
+        !vocabulary.Updates.ControlPlaneUpdateStatus[update.status].isTerminal;
     const serversRunning =
         !updating &&
         fleetUpdate !== null &&
@@ -378,7 +379,7 @@ export function UpdateHero(
     if (
         update !== null &&
         update.toVersion === available.version &&
-        (update.status === 'failed' || update.status === 'rolled_back')
+        vocabulary.Updates.ControlPlaneUpdateStatus[update.status].isFailed
     ) {
         return null;
     }

@@ -7,13 +7,13 @@ namespace App\Http\Controllers\Teams;
 use App\Actions\Teams\CreateTeam;
 use App\Data\Teams\CreateTeamData;
 use App\Http\Controllers\Controller;
+use App\Http\Toast;
 use App\Models\Team;
 use App\Models\User;
 use Illuminate\Container\Attributes\CurrentUser;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
-use Inertia\Inertia;
 
 final class TeamController extends Controller
 {
@@ -27,7 +27,7 @@ final class TeamController extends Controller
 
         $team = $createTeam->handle($user, $data->name, false, $this->auditActor($request, $user), switchTo: true);
 
-        Inertia::flash('toast', ['type' => 'success', 'message' => "{$team->name} is ready. Invite people under Settings → Team."]);
+        Toast::success("{$team->name} is ready. Invite people under Settings → Team.");
 
         return to_route('projects.index');
     }

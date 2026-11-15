@@ -14,21 +14,20 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { TimeAgo } from '@/components/time-ago';
-import type { ProjectShellProps } from '@/features/projects/types';
-import { StageOption } from '@/features/staged-changes/deploy-dialog';
+import { StageOption } from '@/features/staged-changes/stage-option';
 import {
     Blockers,
     ChangeRow,
 } from '@/features/staged-changes/staged-changes-sheet';
-import {
-    effectLabel,
-    effectSummary,
-} from '@/features/staged-changes/use-staged-changes';
+import { effectSummary } from '@/features/staged-changes/use-staged-changes';
 import { canvas } from '@/routes/projects';
 import { revert } from '@/routes/environments';
 import { deploy, discard } from '@/routes/staged-changes';
+import { shortSha } from '@/lib/format';
+import ProjectLayout from '@/features/app-shell/project-layout';
+import { effectLabel } from '@/features/staged-changes/effects';
 
-type Props = ProjectShellProps & {
+type Props = App.Data.Canvas.ProjectShellPropsData & {
     changes: App.Data.StagedChanges.StagedChangesData;
     revisions: App.Data.StagedChanges.RevisionData[];
 };
@@ -223,7 +222,7 @@ export default function StagedChangesPage({
                                 <li key={image.serviceId} className="type-body">
                                     {image.serviceName} deploys{' '}
                                     <span className="type-mono">
-                                        {image.commitSha.slice(0, 7)}
+                                        {shortSha(image.commitSha)}
                                     </span>{' '}
                                     <span className="text-muted-foreground">
                                         (running in {image.fromEnvironment})
@@ -406,3 +405,5 @@ export default function StagedChangesPage({
         </>
     );
 }
+
+StagedChangesPage.layout = ProjectLayout;

@@ -4,10 +4,9 @@ declare(strict_types=1);
 
 namespace App\Services\Transfers;
 
-use App\Actions\Transfers\EndDatabasePreparation;
-use App\Actions\Transfers\PrepareDatabaseForImport;
 use App\Data\Services\DatabaseSource;
 use App\Data\Transfers\DatabasePreparationData;
+use App\Enums\DeploymentPurpose;
 use App\Enums\DeploymentStatus;
 use App\Enums\Transfers\ImportRunStatus;
 use App\Enums\WorkloadPhase;
@@ -21,23 +20,16 @@ use App\Services\Backups\DatabaseWorkloads;
 /**
  * Databases started alone for an import before their first deploy (docs/14
  * §12.9). A preparation is a staged deployment of the database only
- * (`hold_traffic`, `plan.prepareImport`): it runs on its volume with the
+ * (`hold_traffic`, {@see DeploymentPurpose::PrepareImport}): it runs on its volume with the
  * credentials the apps will get, stops in `ready` and is never routed or
- * promoted. {@see PrepareDatabaseForImport} starts it,
- * {@see EndDatabasePreparation} stops it again (the volume stays), so the
+ * promoted. PrepareDatabaseForImport starts it,
+ * EndDatabasePreparation stops it again (the volume stays), so the
  * first deploy finds the data in place.
  */
 final class DatabasePreparations
 {
-    public const string KEY = 'prepareImport';
-
     /** How long a preparation waits for an import before it is stopped. */
     public const int LEASE_SECONDS = 600;
-
-    public static function is(Deployment $deployment): bool
-    {
-        return is_array($deployment->plan[self::KEY] ?? null);
-    }
 
     /**
      * The preparation of $instance that hasn't ended (queued, starting or ready), or null.
@@ -46,8 +38,8 @@ final class DatabasePreparations
     {
         return Deployment::query()
             ->where('service_instance_id', $instance->id)
-            ->whereIn('status', DeploymentStatus::values([DeploymentStatus::Queued, ...DeploymentStatus::inFlight()]))
-            ->whereNotNull('plan->'.self::KEY)
+            ->unfinished()
+            ->withPurpose(DeploymentPurpose::PrepareImport)
             ->latest('id')
             ->first();
     }
@@ -59,7 +51,7 @@ final class DatabasePreparations
     {
         return Deployment::query()
             ->where('service_instance_id', $instance->id)
-            ->whereNotNull('plan->'.self::KEY)
+            ->withPurpose(DeploymentPurpose::PrepareImport)
             ->latest('id')
             ->first();
     }
@@ -78,7 +70,7 @@ final class DatabasePreparations
         return Placement::query()
             ->where('deployment_id', $deployment->id)
             ->where('role', WorkloadRole::Serving->value)
-            ->whereIn('phase', [WorkloadPhase::Healthy->value, WorkloadPhase::Running->value])
+            ->whereIn('phase', WorkloadPhase::serving())
             ->with('server')
             ->orderBy('slot')
             ->first();
@@ -102,21 +94,20 @@ final class DatabasePreparations
         $source = DatabaseWorkloads::source($instance);
 
         return $source instanceof DatabaseSource
-            && in_array($source->engine, ImportTarget::IMPORTABLE, true)
+            && ImportTarget::accepts($source->engine)
             && $instance->active_deployment_id === null
             && ! Deployment::query()
                 ->where('service_instance_id', $instance->id)
-                ->whereIn('status', DeploymentStatus::values([DeploymentStatus::Queued, ...DeploymentStatus::inFlight(), DeploymentStatus::Active]))
-                ->whereNull('plan->'.self::KEY)
+                ->whereIn('status', DeploymentStatus::values([...DeploymentStatus::unfinished(), DeploymentStatus::Active]))
+                ->withPurpose(DeploymentPurpose::Release)
                 ->exists();
     }
 
-    /** An import of $instanceId is waiting or running. */
     public static function importing(int $instanceId): bool
     {
         return DataImportRun::query()
             ->where('service_instance_id', $instanceId)
-            ->whereIn('status', [ImportRunStatus::WaitingForSafetyBackup->value, ImportRunStatus::Holding->value, ImportRunStatus::Importing->value])
+            ->whereIn('status', ImportRunStatus::nonTerminal())
             ->exists();
     }
 

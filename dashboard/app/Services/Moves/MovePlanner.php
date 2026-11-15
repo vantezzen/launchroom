@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Services\Moves;
 
-use App\Actions\Moves\StartServerMove;
 use App\Data\Moves\MoveDnsRecordData;
 use App\Data\Moves\MovePlanData;
 use App\Data\Moves\MovePlanItemData;
@@ -17,6 +16,7 @@ use App\Enums\DaemonFeature;
 use App\Enums\DomainKind;
 use App\Enums\Moves\MoveItemKind;
 use App\Enums\Moves\ServerMoveStatus;
+use App\Enums\NodeStateField;
 use App\Enums\ServerRole;
 use App\Enums\ServerStatus;
 use App\Enums\ServiceKind;
@@ -35,12 +35,14 @@ use App\Models\Transfers\DataImportRun;
 use App\Models\Volume;
 use App\Scheduling\BuildCandidate;
 use App\Services\Backups\DatabaseWorkloads;
-use App\Services\Backups\RestoreHolds;
 use App\Services\Builds\BuildRouting;
 use App\Services\Dns\DnsCheck;
+use App\Services\Holds\MoveHolds;
 use App\Services\Instance\DashboardOrigin;
+use App\Services\NodeStates\FeatureGate;
 use App\Services\Transfers\ImportTarget;
 use App\Services\Transfers\TransferStore;
+use App\Support\ByteSize;
 use App\Support\Hostname;
 use App\Support\ServerPlatform;
 use App\Support\Servers\HostRoleLimits;
@@ -52,7 +54,7 @@ use Illuminate\Contracts\Database\Query\Builder;
  * what it costs (downtime from the latest backup's size at an assumed
  * transfer rate, rebuilds on an architecture change), which DNS records
  * change, and what refuses the move (blockers) or deserves a look
- * (warnings). The wizard shows it; {@see StartServerMove}
+ * (warnings). The wizard shows it; StartServerMove
  * checks it again under a lock.
  */
 final readonly class MovePlanner
@@ -116,7 +118,7 @@ final readonly class MovePlanner
 
         $database = DatabaseWorkloads::source($instance);
 
-        return $database instanceof DatabaseSource && in_array($database->engine, ImportTarget::IMPORTABLE, true) ? MoveItemKind::Dump : MoveItemKind::Files;
+        return $database instanceof DatabaseSource && ImportTarget::accepts($database->engine) ? MoveItemKind::Dump : MoveItemKind::Files;
     }
 
     public function plan(Server $source, ?Server $target, bool $controlPlane = false, bool $checkDns = false): MovePlanData
@@ -130,15 +132,12 @@ final readonly class MovePlanner
         $stateful = array_values(array_filter($services, static fn (array $entry): bool => $entry['kind']->isStateful()));
         $files = array_values(array_filter($services, static fn (array $entry): bool => $entry['kind'] === MoveItemKind::Files));
 
-        // The source.
         $blockers = [...$blockers, ...$this->sourceBlockers($source, $controlPlane)];
 
-        // The target.
         if ($target instanceof Server) {
             $blockers = [...$blockers, ...$this->targetBlockers($source, $target, $services !== [], $stateful !== [], $files !== [])];
         }
 
-        // Everyone involved must be able to copy data.
         if ($stateful !== [] && ! $source->supportsDaemonFeature(DaemonFeature::DataTransfer)) {
             $blockers[] = "{$source->name} runs an older version that can’t copy data off the server. Update it in Settings → Updates first.";
         }
@@ -159,7 +158,6 @@ final readonly class MovePlanner
             $blockers[] = "{$source->name} is the only server that serves your domains, and {$target->name} can’t take over: {$refusal}";
         }
 
-        // Rebuilds on an architecture change.
         $rebuilds = [];
 
         if ($platformChange) {
@@ -191,20 +189,19 @@ final readonly class MovePlanner
         }
 
         if ($target instanceof Server && $copyBytes !== null) {
-            $free = MoveServerData::diskFreeMb($target);
+            $free = $target->host_status?->volumeDiskFreeMb();
 
             if ($free !== null && $free * 1024 * 1024 < $copyBytes + self::MARGIN_BYTES) {
-                $blockers[] = "{$target->name} has ".self::size($free * 1024 * 1024).' free, but the data to move needs about '.self::size($copyBytes + self::MARGIN_BYTES).'. Free up space or pick a bigger server.';
+                $blockers[] = "{$target->name} has ".ByteSize::format($free * 1024 * 1024).' free, but the data to move needs about '.ByteSize::format($copyBytes + self::MARGIN_BYTES).'. Free up space or pick a bigger server.';
             }
         }
 
         $dashboardFree = $this->transfers->freeBytes();
 
         if ($largest > 0 && $dashboardFree !== null && $dashboardFree < $largest + self::MARGIN_BYTES) {
-            $blockers[] = 'Each copy passes through the dashboard’s disk, which has '.self::size($dashboardFree).' free; the largest needs about '.self::size($largest + self::MARGIN_BYTES).'.';
+            $blockers[] = 'Each copy passes through the dashboard’s disk, which has '.ByteSize::format($dashboardFree).' free; the largest needs about '.ByteSize::format($largest + self::MARGIN_BYTES).'.';
         }
 
-        // Items.
         $items = [];
         $total = 0;
 
@@ -280,9 +277,9 @@ final readonly class MovePlanner
         }
 
         $active = Deployment::query()->find($instance->active_deployment_id);
-        $current = $active?->plan['platform'] ?? null;
+        $current = $active?->plan?->platform;
 
-        return is_string($current) && $current !== $platform;
+        return $current !== null && $current !== $platform;
     }
 
     /**
@@ -317,15 +314,12 @@ final readonly class MovePlanner
             $hasServices && HostRoleLimits::refusal($target, ServerRole::Runtime) !== null ? "{$target->name} can’t run apps: ".HostRoleLimits::refusal($target, ServerRole::Runtime) : null,
             $hasServices && ! $target->hasRole(ServerRole::Runtime) ? "{$target->name} doesn’t run apps. Turn on Run apps in its settings first." : null,
             $hasStateful && ! $target->supportsDaemonFeature(DaemonFeature::DataTransfer) ? "{$target->name} runs an older version that can’t receive data. Update it in Settings → Updates first." : null,
-            $hasFiles && ! $target->supportsDaemonFeature(DaemonFeature::PreparedVolumes) ? "{$target->name} runs an older version that can’t receive volumes. Update it in Settings → Updates first." : null,
+            $hasFiles && ! FeatureGate::accepts($target, NodeStateField::PreparedVolume) ? "{$target->name} runs an older version that can’t receive volumes. Update it in Settings → Updates first." : null,
             $hasServices && ! $mesh ? 'The private network between your servers is off. Turn it on in Servers → Private network first.' : null,
             $hasServices && $mesh && ($target->mesh_ip === null || $source->mesh_ip === null) ? ($target->mesh_ip === null ? "{$target->name}" : "{$source->name}").' hasn’t joined the private network yet. Wait a minute and check again.' : null,
         ]));
     }
 
-    /**
-     * The open move $server is part of (as source or target), if any.
-     */
     public function openMove(Server $server): ?ServerMove
     {
         return ServerMove::query()
@@ -338,11 +332,11 @@ final readonly class MovePlanner
     {
         return DataImportRun::query()
             ->where('service_instance_id', $instance->id)
-            ->whereIn('status', [ImportRunStatus::WaitingForSafetyBackup->value, ImportRunStatus::Holding->value, ImportRunStatus::Importing->value])
+            ->whereIn('status', ImportRunStatus::nonTerminal())
             ->exists()
             || RestoreRun::query()
                 ->where('target_service_instance_id', $instance->id)
-                ->whereNotIn('status', [RestoreRunStatus::Succeeded->value, RestoreRunStatus::Failed->value])
+                ->whereIn('status', RestoreRunStatus::nonTerminal())
                 ->exists();
     }
 
@@ -388,11 +382,7 @@ final readonly class MovePlanner
      */
     private function stops(ServiceInstance $instance, MoveItemKind $kind): array
     {
-        $ids = DatabaseWorkloads::source($instance) instanceof DatabaseSource ? RestoreHolds::dependentIds($instance) : [];
-
-        if ($kind === MoveItemKind::Files) {
-            $ids = [$instance->id, ...$ids];
-        }
+        $ids = MoveHolds::wouldHold($instance, $kind);
 
         if ($ids === []) {
             return [];
@@ -429,8 +419,7 @@ final readonly class MovePlanner
     {
         return array_values(Server::query()
             ->where('team_id', $teamId)
-            ->whereIn('status', [ServerStatus::Online->value, ServerStatus::Unreachable->value, ServerStatus::Offline->value])
-            ->whereJsonContains('roles', ServerRole::Edge->value)
+            ->edges()
             ->orderBy('id')
             ->get()
             ->all());
@@ -519,19 +508,5 @@ final readonly class MovePlanner
             DatabaseWorkloads::source($instance) instanceof DatabaseSource => 2,
             default => 3,
         };
-    }
-
-    public static function size(int $bytes): string
-    {
-        $units = ['B', 'KB', 'MB', 'GB', 'TB'];
-        $value = (float) $bytes;
-        $unit = 0;
-
-        while ($value >= 1000 && $unit < count($units) - 1) {
-            $value /= 1000;
-            $unit++;
-        }
-
-        return ($unit === 0 ? (string) (int) $value : number_format($value, $value < 10 ? 1 : 0)).' '.$units[$unit];
     }
 }

@@ -5,11 +5,10 @@ declare(strict_types=1);
 namespace App\Data\Git;
 
 use App\Enums\Git\DeploymentReportState;
-use App\Services\GitHub\GitHubDeploymentReporter;
 use Spatie\LaravelData\Data;
 
 /**
- * What {@see GitHubDeploymentReporter} reports for one
+ * What GitHubDeploymentReporter reports for one
  * launchroom deployment of one service. Built by the core domain from its
  * deployment (on `DeploymentStatusChanged`).
  *
@@ -23,7 +22,7 @@ use Spatie\LaravelData\Data;
  * - `pullRequestNumber`: set for preview environments; adds/updates the row
  *   in the single PR comment.
  * - `deploymentApi`: false for previews, whose GitHub Deployment is one per
- *   preview environment (App\Services\Previews\PreviewGitHub); check runs
+ *   preview environment (App\Services\Git\Providers\GitHub\GitHubPreviews); check runs
  *   and the comment row stay per service.
  */
 final class DeploymentStatusReport extends Data

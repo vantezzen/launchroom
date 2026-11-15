@@ -43,9 +43,6 @@ enum DeletionRequestStatus: string implements HasTransitionTable
         };
     }
 
-    /**
-     * The deletion may proceed.
-     */
     public function allowsDeletion(): bool
     {
         return in_array($this, [self::Ready, self::Overridden], true);

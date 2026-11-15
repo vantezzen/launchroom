@@ -7,10 +7,14 @@ use App\Actions\Deployments\DeployEnvironment;
 use App\Data\Audit\AuditActor;
 use App\Enums\ConnectionMode;
 use App\Enums\ConnectionStyle;
+use App\Enums\Sessions\InteractiveSessionKind;
 use App\Enums\TeamRole;
 use App\Models\CanvasLayout;
+use App\Models\Membership;
 use App\Models\Server;
+use App\Models\Sessions\InteractiveSession;
 use App\Models\Team;
+use Illuminate\Support\Facades\Gate;
 use Tests\Support\Projects;
 
 beforeEach(function (): void {
@@ -33,7 +37,7 @@ test('the canvas has a node per service, connection edges and the viewer’s abi
             ->where('project.id', $this->project->public_id)
             ->where('environment.id', $this->production->public_id)
             ->where('environment.branch', 'main')
-            ->where('abilities', ['manage' => false, 'connect' => false, 'deploy' => false])
+            ->where('abilities', ['manage' => false, 'connect' => false, 'deploy' => false, 'console' => false])
             ->has('nodes', 2)
             ->where('nodes.0.id', $this->web->public_id)
             ->where('nodes.0.kind', 'image')
@@ -54,7 +58,22 @@ test('the canvas has a node per service, connection edges and the viewer’s abi
             ->has('engines', 6));
 
     $this->actingAs($this->developer)->get(route('projects.canvas', [$this->project, $this->production]))
-        ->assertInertia(fn ($page) => $page->where('abilities', ['manage' => true, 'connect' => true, 'deploy' => true]));
+        ->assertInertia(fn ($page) => $page->where('abilities', ['manage' => true, 'connect' => true, 'deploy' => true, 'console' => false]));
+});
+
+test('the console ability follows the session policy, grants included', function (): void {
+    Membership::query()->where('team_id', $this->team->id)->where('user_id', $this->developer->id)->update(['permissions' => json_encode(['containers.exec'])]);
+    $this->developer->forgetTeamRoles();
+    $owner = memberOf($this->team, TeamRole::Owner);
+
+    foreach ([[$this->developer, true], [$owner, true], [$this->viewer, false]] as [$user, $allowed]) {
+        $this->actingAs($user)->get(route('projects.canvas', [$this->project, $this->production]))
+            ->assertInertia(fn ($page) => $page->where('abilities.console', $allowed));
+    }
+
+    $instance = $this->web->instances()->sole();
+
+    expect(Gate::forUser($this->developer)->allows('viewAny', [InteractiveSession::class, $instance, InteractiveSessionKind::Console]))->toBeTrue();
 });
 
 test('deployed services show their status and are no longer staged', function (): void {

@@ -8,7 +8,7 @@ import type { SettingsNavGroup } from './types';
  * (`SettingsRow`/`SettingsCard` `setting` prop); when that row isn't drawn
  * right now, `fallback` is tried, then the page's top.
  */
-export type SettingEntry<Target extends string = string> = {
+type SettingEntry<Target extends string = string> = {
     key: string;
     target: Target;
     label: string;

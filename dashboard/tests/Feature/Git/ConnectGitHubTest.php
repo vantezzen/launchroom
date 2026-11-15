@@ -2,8 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Data\Git\ManifestRedirectData;
 use App\Enums\TeamRole;
-use App\Http\Controllers\Git\GitSettingsController;
 use App\Models\Git\GitHubApp;
 use App\Models\Git\GitHubInstallation;
 use App\Models\Team;
@@ -48,7 +48,7 @@ test('connecting GitHub reaches github.com with the manifest after a real sessio
 
     // Regression: a Data object in the session came back as an array and the
     // page silently showed nothing (the button just stopped spinning).
-    expect(session(GitSettingsController::MANIFEST_FLASH_KEY))->toBeArray();
+    expect(session(ManifestRedirectData::SESSION_KEY))->toBeArray();
     ghJsonRoundTripSession();
 
     $this->get(route('git.edit'))->assertOk()->assertInertia(fn ($page) => $page
@@ -77,7 +77,7 @@ test('the callback and the setup URL complete the connection', function (): void
     $this->actingAs($this->admin)
         ->post(route('git.github.manifest.store'));
     ghJsonRoundTripSession();
-    parse_str((string) parse_url(session(GitSettingsController::MANIFEST_FLASH_KEY)['action'], PHP_URL_QUERY), $query);
+    parse_str((string) parse_url(session(ManifestRedirectData::SESSION_KEY)['action'], PHP_URL_QUERY), $query);
 
     Http::fake([
         'https://api.github.com/app-manifests/code123/conversions' => Http::response([
@@ -126,7 +126,7 @@ test('a dashboard GitHub cannot reach gets an app without webhooks and a clear n
         ->assertSessionHasNoErrors();
     ghJsonRoundTripSession();
 
-    $manifest = json_decode(session(GitSettingsController::MANIFEST_FLASH_KEY)['manifest'], true);
+    $manifest = json_decode(session(ManifestRedirectData::SESSION_KEY)['manifest'], true);
 
     // github.com rejects the whole manifest for a localhost hook, even an
     // inactive one, so it carries none; pushes arrive by polling.
@@ -144,7 +144,7 @@ test('GitHub Enterprise Server keeps the webhook on a private address', function
     $this->actingAs($this->admin)
         ->post(route('git.github.manifest.store'), ['githubUrl' => 'https://ghe.example.com']);
 
-    $manifest = json_decode(session(GitSettingsController::MANIFEST_FLASH_KEY)['manifest'], true);
+    $manifest = json_decode(session(ManifestRedirectData::SESSION_KEY)['manifest'], true);
 
     expect($manifest['hook_attributes']['url'])->toBe('http://launchroom.lan/webhooks/github');
 });
@@ -185,12 +185,12 @@ test('webhook reachability is decided by grammar alone', function (string $url, 
 
 test('a missing manifest, a foreign value or a viewer never gets a form', function (): void {
     $this->actingAs($this->admin)
-        ->withSession([GitSettingsController::MANIFEST_FLASH_KEY => ['action' => 1]])
+        ->withSession([ManifestRedirectData::SESSION_KEY => ['action' => 1]])
         ->get(route('git.edit'))
         ->assertInertia(fn ($page) => $page->where('pendingManifest', null));
 
     $this->actingAs(memberOf($this->team, TeamRole::Viewer))
-        ->withSession([GitSettingsController::MANIFEST_FLASH_KEY => ['action' => 'https://github.com/settings/apps/new', 'manifest' => '{}']])
+        ->withSession([ManifestRedirectData::SESSION_KEY => ['action' => 'https://github.com/settings/apps/new', 'manifest' => '{}']])
         ->get(route('git.edit'))
         ->assertInertia(fn ($page) => $page->where('pendingManifest', null));
 });

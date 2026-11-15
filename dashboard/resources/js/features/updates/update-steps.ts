@@ -1,18 +1,9 @@
 import type { Step } from '@/components/steps/step-list';
 import type { StepStatus } from '@/components/steps/step-icon';
+import { vocabulary } from '@/lib/vocabulary';
 
 type Update = App.Data.Updates.ControlPlaneUpdateData;
 type Fleet = App.Data.Updates.FleetUpdateData;
-
-export const terminalStatuses: App.Enums.Updates.ControlPlaneUpdateStatus[] = [
-    'succeeded',
-    'failed',
-    'rolled_back',
-];
-
-export function isRunning(update: Update | null): update is Update {
-    return update !== null && !terminalStatuses.includes(update.status);
-}
 
 const fleetStepStatus: Record<
     App.Enums.Updates.FleetUpdateStepStatus,
@@ -29,15 +20,6 @@ const fleetStepStatus: Record<
 /** Where a control-plane update stopped: 1 backup, 2 install, 3 check. */
 function failedAt(update: Update): number {
     return update.backupStatus === 'failed' ? 1 : 2;
-}
-
-/** The error without the "rolled back to x: " prefix the step already says. */
-function reason(update: Update): string | undefined {
-    if (update.error === null) {
-        return undefined;
-    }
-
-    return update.error.replace(/^rolled back to [^:]+:\s*/, '');
 }
 
 function phase(update: Update): number {
@@ -66,7 +48,7 @@ export function updateSteps(
     serverCount: number,
 ): Step[] {
     const failed =
-        update.status === 'failed' || update.status === 'rolled_back';
+        vocabulary.Updates.ControlPlaneUpdateStatus[update.status].isFailed;
     const stop = failed ? failedAt(update) : null;
     const pick = (order: number): StepStatus => {
         if (stop !== null) {
@@ -108,7 +90,7 @@ export function updateSteps(
                     ? (update.progress ??
                       'The dashboard is unavailable for a few minutes')
                     : stop === 2
-                      ? reason(update)
+                      ? (update.error ?? undefined)
                       : undefined,
         },
         update.status === 'rolled_back'

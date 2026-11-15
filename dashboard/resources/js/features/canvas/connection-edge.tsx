@@ -8,7 +8,7 @@ import type { ConnectionFlowEdge } from './types';
  * "DATABASE_URL", or "DB_* (6)" when a connection injects a family of
  * variables.
  */
-export function edgeLabel(variables: string[]): string {
+function edgeLabel(variables: string[]): string {
     if (variables.length === 0) {
         return '';
     }

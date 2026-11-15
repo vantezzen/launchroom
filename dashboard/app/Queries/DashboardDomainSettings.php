@@ -6,7 +6,6 @@ namespace App\Queries;
 
 use App\Data\Canvas\DnsRecordData;
 use App\Data\Domains\DnsCheckData;
-use App\Data\Instance\DashboardCertificateData;
 use App\Data\Instance\DashboardDomainChangeData;
 use App\Data\Instance\DashboardDomainSettingsData;
 use App\Data\Instance\DashboardDomainStepData;
@@ -16,6 +15,8 @@ use App\Data\Instance\DashboardOriginData;
 use App\Data\Instance\DashboardProbeData;
 use App\Data\Instance\DashboardServerUrlData;
 use App\Data\Instance\DashboardSwitchImpactData;
+use App\Enums\CertStatus;
+use App\Enums\Domains\DnsCheckStatus;
 use App\Enums\Mesh\MeshMode;
 use App\Models\DashboardDomainChange;
 use App\Models\Git\GitHubApp;
@@ -91,23 +92,23 @@ final readonly class DashboardDomainSettings
 
     private function change(DashboardDomainChange $change, User $user): DashboardDomainChangeData
     {
-        $dns = DnsCheckData::fromStored($change->dns);
-        $probe = DashboardProbeData::fromStored($change->probe);
-        $certificate = DashboardCertificateData::fromStored($change->certificate);
-        $dnsOk = $dns?->status === 'ok';
+        $dns = $change->dns;
+        $probe = $change->probe;
+        $certificate = $change->certificate;
+        $dnsOk = $dns?->status === DnsCheckStatus::Ok;
         $httpsOk = $probe?->ok === true;
 
         $dnsState = match (true) {
             ! $dns instanceof DnsCheckData => 'waiting',
             $dnsOk => 'done',
-            $dns->status === 'mismatch' => 'failed',
+            $dns->status === DnsCheckStatus::Mismatch => 'failed',
             default => 'waiting',
         };
 
         $certificateState = match (true) {
             ! $dnsOk => 'blocked',
-            $httpsOk || $certificate?->state === 'issued' => 'done',
-            $certificate?->state === 'failed' => 'failed',
+            $httpsOk || $certificate?->state === CertStatus::Issued => 'done',
+            $certificate?->state === CertStatus::Failed => 'failed',
             default => 'waiting',
         };
 
@@ -177,19 +178,19 @@ final readonly class DashboardDomainSettings
     {
         return array_values(Server::query()
             ->where('is_control_plane', false)
-            ->whereNull('revoked_at')
+            ->notRevoked()
             ->orderBy('name')
             ->get()
             ->map(static function (Server $server) use ($canonical): DashboardServerUrlData {
                 $reported = $server->daemon_control_plane;
-                $active = is_string($reported['active'] ?? null) ? $reported['active'] : null;
+                $active = $reported?->active;
 
                 return new DashboardServerUrlData(
                     id: $server->public_id,
                     name: $server->name,
-                    state: is_array($reported) ? (string) $reported['state'] : 'unknown',
+                    state: $reported->state ?? 'unknown',
                     url: $active,
-                    message: is_string($reported['message'] ?? null) ? $reported['message'] : null,
+                    message: $reported?->message,
                     current: $active !== null && Origin::normalize($active) === $canonical,
                 );
             })

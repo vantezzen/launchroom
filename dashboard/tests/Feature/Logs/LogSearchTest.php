@@ -16,6 +16,7 @@ use App\Support\Logs\LogSearchQuery;
 use Illuminate\Contracts\Database\Query\Builder;
 use Tests\Support\DeploymentUi;
 use Tests\Support\FakeDaemon;
+use Tests\Support\LogChunks;
 use Tests\Support\Projects;
 
 /*
@@ -35,7 +36,7 @@ function searchLines(DeploymentUi $world, Deployment $deployment, array $texts, 
 {
     $placement = Placement::query()->where('deployment_id', $deployment->id)->first();
 
-    LogChunk::query()->create([
+    LogChunks::create([
         'team_id' => $deployment->team_id, 'server_id' => $world->server->id, 'deployment_id' => $deployment->id,
         'source_kind' => $runtime && $placement instanceof Placement ? LogSourceKind::Workload : LogSourceKind::Deployment,
         'source_id' => $runtime && $placement instanceof Placement ? $placement->workload_id : $deployment->public_id,
@@ -144,7 +145,6 @@ test('team-wide search is for owners and admins and never leaves the team', func
         $this->actingAs($member)->get(route('logs.index'))->assertForbidden();
     }
 
-    // Another team's project and environment are not reachable.
     $outsider = $other->member(TeamRole::Owner);
     $this->actingAs($outsider)->getJson(route('projects.logs.search', ['project' => $world->project->public_id]))->assertNotFound();
     $this->app['auth']->forgetGuards();

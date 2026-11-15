@@ -12,37 +12,21 @@ package nudge
 
 import (
 	"context"
-	"encoding/json/jsontext"
-	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"log/slog"
 	"math/rand/v2"
 	"net/http"
 	"net/url"
-	"strings"
 	"time"
 
-	"github.com/coder/websocket"
-
 	"github.com/vantezzen/launchroom/daemon/internal/controlplane"
+	"github.com/vantezzen/launchroom/daemon/internal/pusher"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
 
-// Pusher protocol (https://pusher.com/docs/channels/library_auth_reference/pusher-websockets-protocol/).
 const (
-	protocolVersion         = "7"
-	evConnectionEstablished = "pusher:connection_established"
-	evError                 = "pusher:error"
-	evPing                  = "pusher:ping"
-	evPong                  = "pusher:pong"
-	evSubscribe             = "pusher:subscribe"
-	evSubscribed            = "pusher_internal:subscription_succeeded"
-	evSubscriptionError     = "pusher:subscription_error"
-
-	readLimit        = 64 << 10
 	handshakeTimeout = 15 * time.Second
-	writeTimeout     = 10 * time.Second
 	pongTimeout      = 30 * time.Second
 	// healthyAfter: a connection that lasted this long resets the backoff.
 	healthyAfter = 2 * time.Minute
@@ -51,7 +35,7 @@ const (
 // ControlPlane is the subset of the control-plane client the nudge client uses.
 type ControlPlane interface {
 	FetchConfig(ctx context.Context) (*state.DaemonConfig, error)
-	BroadcastAuth(ctx context.Context, socketID state.SocketID, channel state.DaemonChannel) (state.PusherAuth, error)
+	pusher.Authorizer
 }
 
 // Options configures Run.
@@ -180,107 +164,31 @@ func resolveConfig(ctx context.Context, o Options) (nudge *state.NudgeConfig, un
 	return o.Fallback, !notFound
 }
 
-// Endpoint returns the Pusher WebSocket URL for cfg.
-func Endpoint(cfg *state.NudgeConfig, controlPlane *url.URL, daemonVersion string) (string, error) {
-	var base *url.URL
-	if cfg.URL != "" {
-		u, err := url.Parse(string(cfg.URL))
-		if err != nil {
-			return "", fmt.Errorf("nudge: %w", err)
-		}
-		base = u
-	} else {
-		if controlPlane == nil {
-			return "", errors.New("nudge: no WebSocket URL and no control-plane URL")
-		}
-		u := *controlPlane
-		switch u.Scheme {
-		case "https":
-			u.Scheme = "wss"
-		case "http":
-			u.Scheme = "ws"
-		default:
-			return "", fmt.Errorf("nudge: cannot derive a WebSocket URL from %q", controlPlane.Scheme)
-		}
-		u.RawQuery, u.Fragment, u.User = "", "", nil
-		base = &u
-	}
-	ep := base.JoinPath("app", string(cfg.Key))
-	ep.RawQuery = url.Values{
-		"protocol": {protocolVersion}, "client": {"launchroomd"}, "version": {daemonVersion}, "flash": {"false"},
-	}.Encode()
-	return ep.String(), nil
-}
-
-// message is a Pusher protocol frame. Data is a JSON string for server
-// events (Pusher double-encodes) or an object for client events.
-type message struct {
-	Event   string         `json:"event"`
-	Channel string         `json:"channel,omitzero"`
-	Data    jsontext.Value `json:"data,omitzero"`
-}
-
-// dataObject decodes Data, accepting both the string-encoded and the plain form.
-func (m message) dataObject(v any) error {
-	raw := m.Data
-	if len(raw) > 0 && raw[0] == '"' {
-		var s string
-		if err := json.Unmarshal(raw, &s); err != nil {
-			return err
-		}
-		raw = jsontext.Value(s)
-	}
-	return json.Unmarshal(raw, v)
-}
-
-type established struct {
-	SocketID        string `json:"socket_id"`
-	ActivityTimeout int    `json:"activity_timeout"`
-}
-
-type pusherError struct {
-	Code    int    `json:"code"`
-	Message string `json:"message"`
-}
-
 // session runs one connection: connect, authorize, subscribe, then dispatch
 // events and keep the connection alive with pings until it fails.
 func session(ctx context.Context, o Options, cfg *state.NudgeConfig) error {
 	cp := o.controlPlane()
-	endpoint, err := Endpoint(cfg, cp, o.DaemonVersion)
+	endpoint, err := pusher.Endpoint(cfg, cp, o.DaemonVersion)
 	if err != nil {
 		return err
 	}
 	hctx, cancel := context.WithTimeout(ctx, handshakeTimeout)
-	h := http.Header{}
-	if cp != nil {
-		h.Set("Origin", cp.Scheme+"://"+cp.Host)
-	}
-	conn, resp, err := websocket.Dial(hctx, endpoint, &websocket.DialOptions{HTTPClient: o.HTTPClient, HTTPHeader: h})
+	conn, err := pusher.Dial(hctx, endpoint, cp, o.HTTPClient)
 	cancel()
-	if resp != nil && resp.Body != nil {
-		_ = resp.Body.Close() // the library owns the connection; this only satisfies bodyclose
-	}
 	if err != nil {
 		return fmt.Errorf("nudge: connect: %w", err)
 	}
 	defer func() { _ = conn.CloseNow() }()
-	conn.SetReadLimit(readLimit)
 
-	msgs := make(chan message, 16)
+	msgs := make(chan pusher.Message, 16)
 	readErr := make(chan error, 1)
 	rctx, stopRead := context.WithCancel(ctx)
 	defer stopRead()
 	go func() {
 		for {
-			_, data, err := conn.Read(rctx)
+			m, err := conn.Read(rctx)
 			if err != nil {
 				readErr <- err
-				return
-			}
-			var m message
-			if err := json.Unmarshal(data, &m); err != nil {
-				readErr <- fmt.Errorf("nudge: malformed frame: %w", err)
 				return
 			}
 			select {
@@ -299,7 +207,7 @@ func session(ctx context.Context, o Options, cfg *state.NudgeConfig) error {
 	for {
 		select {
 		case <-ctx.Done():
-			_ = conn.Close(websocket.StatusNormalClosure, "daemon stopping")
+			_ = conn.Close("daemon stopping")
 			return nil
 		case err := <-readErr:
 			return fmt.Errorf("nudge: read: %w", err)
@@ -310,7 +218,7 @@ func session(ctx context.Context, o Options, cfg *state.NudgeConfig) error {
 			case awaitingPong:
 				return errors.New("nudge: no answer to ping")
 			}
-			if err := s.write(ctx, message{Event: evPing, Data: jsontext.Value(`{}`)}); err != nil {
+			if err := conn.Ping(ctx); err != nil {
 				return err
 			}
 			awaitingPong = true
@@ -334,95 +242,51 @@ func session(ctx context.Context, o Options, cfg *state.NudgeConfig) error {
 
 type sess struct {
 	o          Options
-	conn       *websocket.Conn
+	conn       *pusher.Conn
 	channel    state.DaemonChannel
 	subscribed bool
 }
 
-func (s *sess) write(ctx context.Context, m message) error {
-	data, err := json.Marshal(m)
-	if err != nil {
-		return err
-	}
-	wctx, cancel := context.WithTimeout(ctx, writeTimeout)
-	defer cancel()
-	if err := s.conn.Write(wctx, websocket.MessageText, data); err != nil {
-		return fmt.Errorf("nudge: write: %w", err)
-	}
-	return nil
-}
-
 // handle processes one frame; it returns the server's activity timeout when
 // the frame announces one.
-func (s *sess) handle(ctx context.Context, m message) (time.Duration, error) {
+func (s *sess) handle(ctx context.Context, m pusher.Message) (time.Duration, error) {
 	switch m.Event {
-	case evConnectionEstablished:
-		var est established
-		if err := m.dataObject(&est); err != nil {
-			return 0, fmt.Errorf("nudge: connection_established: %w", err)
-		}
-		socketID := state.SocketID(est.SocketID)
-		if err := socketID.Validate(); err != nil {
+	case pusher.EvEstablished:
+		activity, err := s.conn.Subscribe(ctx, m, s.o.CP, s.channel)
+		if err != nil {
 			return 0, fmt.Errorf("nudge: %w", err)
 		}
-		auth, err := s.o.CP.BroadcastAuth(ctx, socketID, s.channel)
-		if err != nil {
-			return 0, fmt.Errorf("nudge: channel authorization: %w", err)
-		}
-		sub, err := json.Marshal(map[string]string{"auth": string(auth), "channel": string(s.channel)})
-		if err != nil {
-			return 0, err
-		}
-		if err := s.write(ctx, message{Event: evSubscribe, Data: sub}); err != nil {
-			return 0, err
-		}
 		// Ping a little before the server would consider us idle.
-		return activityInterval(est.ActivityTimeout), nil
-	case evSubscribed:
+		return activityInterval(activity), nil
+	case pusher.EvSubscribed:
 		if m.Channel == string(s.channel) && !s.subscribed {
 			s.subscribed = true
 			s.o.Log.Info("realtime nudges connected", "channel", s.channel)
 			s.o.OnSubscribed()
 		}
-	case evPing:
-		return 0, s.write(ctx, message{Event: evPong, Data: jsontext.Value(`{}`)})
-	case evPong:
-	case evError, evSubscriptionError:
-		var pe pusherError
-		_ = m.dataObject(&pe)
-		return 0, fmt.Errorf("nudge: server error %d: %s", pe.Code, clip(pe.Message))
+	case pusher.EvPing:
+		return 0, s.conn.Pong(ctx)
+	case pusher.EvPong:
+	case pusher.EvError, pusher.EvSubscriptionError:
+		return 0, fmt.Errorf("nudge: server error %s", m.ErrorText())
 	case state.NudgeStateChanged, state.NudgeTaskAvailable, state.NudgeLogsRequested:
 		if m.Channel == string(s.channel) && s.subscribed {
 			s.o.Log.Debug("nudge received", "event", m.Event)
 			s.o.OnEvent(m.Event)
 		}
 	default:
-		s.o.Log.Debug("ignoring nudge frame", "event", clip(m.Event))
+		s.o.Log.Debug("ignoring nudge frame", "event", state.ClipLine(m.Event, 200))
 	}
 	return 0, nil
 }
 
-// activityInterval converts Pusher's activity_timeout (seconds) into the
-// client's idle interval before it pings, clamped to 10–120 s.
-func activityInterval(seconds int) time.Duration {
-	d := time.Duration(seconds) * time.Second
+// activityInterval converts Pusher's activity_timeout into the client's
+// idle interval before it pings, clamped to 10–120 s.
+func activityInterval(d time.Duration) time.Duration {
 	if d <= 0 {
 		d = 30 * time.Second
 	}
 	return min(max(d-2*time.Second, 10*time.Second), 120*time.Second)
-}
-
-func clip(s string) string {
-	s = strings.Map(func(r rune) rune {
-		if r < 0x20 || r == 0x7f {
-			return -1
-		}
-		return r
-	}, s)
-	if len(s) > 200 {
-		return s[:200]
-	}
-	return s
 }
 
 // fullJitter returns a random duration in [d/2, d].

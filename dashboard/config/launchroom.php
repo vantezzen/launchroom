@@ -130,9 +130,6 @@ return [
         // header shares none of them are refused with 426.
         'protocol_versions' => ['v1'],
 
-        // Where the Docker daemon pulls from (the local forwarder or Zot).
-        'registry_address' => env('LAUNCHROOM_REGISTRY_ADDRESS', '127.0.0.1:5000'),
-
         // Daemon image (digest-pinned) that /install/server.sh installs on new
         // servers; set from the release's image pins (deploy/control-plane).
         'image' => env('LAUNCHROOM_DAEMON_IMAGE'),
@@ -155,21 +152,6 @@ return [
             'files' => env('LAUNCHROOM_FILES_IMAGE', 'docker.io/library/busybox@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e'),
         ],
     ],
-
-    /*
-    |--------------------------------------------------------------------------
-    | Control-plane install (docs/11 §2-3, docs/05 §4)
-    |--------------------------------------------------------------------------
-    |
-    | dashboard_upstream: the dashboard's address as seen from the control-plane
-    | host ("127.0.0.1:8000" in deploy/control-plane/compose.yml). When set, the
-    | control-plane server's NodeState routes APP_URL's host there through the
-    | daemon's Caddy. Unset (dev, tests): no dashboard route.
-    |
-    | scripts_path: where the daemon installer (server.sh + daemon-compose.yml from
-    | deploy/) lives; the production image copies them to /var/www/install.
-    |
-    */
 
     /*
     |--------------------------------------------------------------------------
@@ -215,6 +197,25 @@ return [
         'private_addresses' => (bool) env('LAUNCHROOM_PRIVATE_SERVER_ADDRESSES', env('APP_ENV') === 'local'),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Control-plane install (docs/11 §2-3, docs/05 §4)
+    |--------------------------------------------------------------------------
+    |
+    | dashboard_upstream: the dashboard's address as seen from the control-plane
+    | host ("127.0.0.1:8000" in deploy/control-plane/compose.yml). When set, the
+    | control-plane server's NodeState routes APP_URL's host there through the
+    | daemon's Caddy. Unset (dev, tests): no dashboard route.
+    |
+    | scripts_path: where the daemon installer (server.sh + daemon-compose.yml from
+    | deploy/) lives; the production image copies them to /var/www/install.
+    |
+    | installer_url / cli_installer_url: the public control-plane installer
+    | (deploy/install/install.sh, served by the site) and the CLI installer
+    | (release asset); App\Support\InstallCommands builds every command from them.
+    |
+    */
+
     'control_plane' => [
         'dashboard_upstream' => env('LAUNCHROOM_DASHBOARD_UPSTREAM'),
     ],
@@ -255,6 +256,8 @@ return [
 
     'install' => [
         'scripts_path' => env('LAUNCHROOM_INSTALL_SCRIPTS_PATH', '/var/www/install'),
+        'installer_url' => 'https://launchroom.vantezzen.io/install',
+        'cli_installer_url' => 'https://github.com/vantezzen/launchroom/releases/latest/download/cli.sh',
     ],
 
     /*
@@ -291,8 +294,6 @@ return [
         // The dashboard's API key is rotated when it has less than 30 days left.
         'api_key_ttl_days' => 180,
         'api_key_rotate_days' => 30,
-        // Port of the registry on the control plane's mesh IP (launchroomd forwarder).
-        'registry_port' => 5000,
     ],
 
     /*
@@ -387,18 +388,6 @@ return [
         'environment_prefix' => 24,
     ],
 
-    /*
-    |--------------------------------------------------------------------------
-    | Workload images (docs/04 §5 "Mirrors", docs/05 §6)
-    |--------------------------------------------------------------------------
-    |
-    | Workloads only run digest-pinned images from the local registry. Upstream
-    | images (image services, database engines) are pulled through Zot's
-    | mirror: `<mirror_prefix>/<upstream registry>/<repository>@sha256:…`,
-    | e.g. 127.0.0.1:5000/mirror/docker.io/library/postgres@sha256:….
-    |
-    */
-
     'domains' => [
         // Local dev serves generated domains on *.localhost (docs/05 §5, docs/11).
         'localhost' => (bool) env('LAUNCHROOM_LOCALHOST_DOMAINS', env('APP_ENV') === 'local'),
@@ -458,18 +447,14 @@ return [
 
     'docs_url' => env('LAUNCHROOM_DOCS_URL', 'https://launchroom.vantezzen.io/docs'),
 
-    'images' => [
-        'mirror_prefix' => env('LAUNCHROOM_IMAGE_MIRROR_PREFIX', '127.0.0.1:5000/mirror'),
-        'apps_prefix' => env('LAUNCHROOM_IMAGE_APPS_PREFIX', '127.0.0.1:5000/apps'),
-    ],
-
     /*
     |--------------------------------------------------------------------------
     | Database engines (docs/04 §10)
     |--------------------------------------------------------------------------
     |
     | Upstream images per major version, always pinned by (multi-arch index)
-    | digest. Upgrading a digest is a deliberate change here.
+    | digest, newest first: the first version is the default for new
+    | databases. Upgrading a digest is a deliberate change here.
     |
     */
 
@@ -571,8 +556,6 @@ return [
         'access_cache_seconds' => 60,
         // Default team limit for "clone from another database" (compressed backup size).
         'clone_limit_mb' => (int) env('LAUNCHROOM_PREVIEW_CLONE_LIMIT_MB', 1024),
-        // A clone source's latest backup older than this is still used, but flagged.
-        'clone_stale_hours' => 48,
     ],
 
     /*
@@ -692,7 +675,8 @@ return [
     'git' => [
         'plain_sources' => (bool) env('LAUNCHROOM_PLAIN_GIT_SOURCES', env('APP_ENV') === 'local'),
         'insecure_hosts' => array_values(array_filter(explode(',', (string) env('LAUNCHROOM_INSECURE_GIT_HOSTS', env('APP_ENV') === 'local' ? 'git-fixtures,forgejo' : '')))),
-        'head_timeout_seconds' => 10,
+        // Reading an https remote's refs (PublicGitRemote): branch heads, the import check.
+        'refs_timeout_seconds' => 10,
 
         // GitLab / Gitea / Forgejo / plain git servers (docs/19).
         'gitlab_url' => 'https://gitlab.com',
@@ -916,17 +900,6 @@ return [
     ],
 
     /*
-    |--------------------------------------------------------------------------
-    | Interactive sessions: Console and Data tabs (docs/03 §11, docs/09 R33)
-    |--------------------------------------------------------------------------
-    |
-    | `enabled` is the instance-wide kill switch: off refuses new sessions and
-    | cancels open ones on their next heartbeat. Servers have their own local
-    | switch (LR_INTERACTIVE_SESSIONS in the server's .env).
-    |
-    */
-
-    /*
     | Temporary remote access (D61, docs/09 R39): Connect via SSH and
     | temporary database access. LAUNCHROOM_REMOTE_ACCESS=false refuses new
     | ones and ends open ones on their next heartbeat.
@@ -940,13 +913,23 @@ return [
         'pickup_seconds' => 120,
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Interactive sessions: Console and Data tabs (docs/03 §11, docs/09 R33)
+    |--------------------------------------------------------------------------
+    |
+    | `enabled` is the instance-wide kill switch: off refuses new sessions and
+    | cancels open ones on their next heartbeat. Servers have their own local
+    | switch (LR_INTERACTIVE_SESSIONS in the server's .env).
+    |
+    */
+
     'sessions' => [
         'enabled' => (bool) env('LAUNCHROOM_INTERACTIVE_SESSIONS', true),
         'ticket_seconds' => 60,
         'idle_minutes' => (int) env('LAUNCHROOM_SESSION_IDLE_MINUTES', 15),
         'max_minutes' => min(240, max(5, (int) env('LAUNCHROOM_SESSION_MAX_MINUTES', 60))),
         'max_open_per_user' => 3,
-        'command_ttl_seconds' => 60,
         'history_limit' => 50,
     ],
 

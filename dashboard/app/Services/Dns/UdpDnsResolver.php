@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace App\Services\Dns;
 
 use App\Contracts\PublicDnsResolver;
+use App\Enums\Domains\DnsLookupStatus;
 use App\Support\Hostname;
+use App\Support\Network\DnsLookup;
 
 /**
  * A minimal stub resolver: one UDP query per record type (A, AAAA) to the
@@ -47,7 +49,7 @@ final class UdpDnsResolver implements PublicDnsResolver
             }
 
             if ($a['nxdomain']) {
-                return new DnsLookup('nxdomain');
+                return new DnsLookup(DnsLookupStatus::NxDomain);
             }
 
             $aaaa = $this->query($resolver, $hostname, self::TYPE_AAAA, $timeout);

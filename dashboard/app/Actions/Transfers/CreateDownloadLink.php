@@ -10,6 +10,7 @@ use App\Exceptions\DomainRuleViolation;
 use App\Models\Transfers\DataExportRun;
 use App\Models\Transfers\DataTransfer;
 use App\Models\User;
+use App\Support\Transfers\DownloadToken;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 
@@ -32,10 +33,10 @@ final readonly class CreateDownloadLink
                 throw DomainRuleViolation::conflict('This download isn’t available any more. Start a new one.');
             }
 
-            $token = 'lr_dl_'.rtrim(strtr(base64_encode(random_bytes(32)), '+/', '-_'), '=');
+            $token = DownloadToken::generate();
             $expiresAt = CarbonImmutable::now()->addSeconds(config()->integer('launchroom.transfers.link_ttl_seconds'));
             $transfer->forceFill([
-                'link_token_hash' => hash('sha256', $token),
+                'link_token_hash' => DownloadToken::hash($token),
                 'link_user_id' => $user->id,
                 'link_expires_at' => $expiresAt,
             ])->save();

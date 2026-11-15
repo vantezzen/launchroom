@@ -7,15 +7,14 @@ namespace App\Http\Controllers\Git;
 use App\Contracts\Git\SourceRepository;
 use App\Data\Git\GitRepositoryData;
 use App\Enums\Git\GitProviderKind;
+use App\Exceptions\Git\GitConnectionUnusable;
+use App\Exceptions\Git\GitProviderRequestFailed;
 use App\Http\Controllers\Controller;
-use App\Http\Controllers\Teams\TeamSettingsController;
+use App\Http\Routing\CurrentTeam;
 use App\Models\Git\GitHubRepository;
-use App\Models\User;
-use App\Services\Git\Exceptions\GitConnectionUnusable;
-use App\Services\Git\Exceptions\GitProviderRequestFailed;
+use App\Models\Team;
 use App\Services\Git\GitProviders;
-use App\Services\GitHub\Exceptions\GitHubRequestFailed;
-use Illuminate\Container\Attributes\CurrentUser;
+use App\Services\Git\Providers\GitHub\Exceptions\GitHubRequestFailed;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -27,9 +26,8 @@ use Illuminate\Support\Facades\Gate;
  */
 final class GitRepositoryController extends Controller
 {
-    public function index(Request $request, #[CurrentUser] User $user, GitProviders $providers): JsonResponse
+    public function index(Request $request, GitProviders $providers, #[CurrentTeam] Team $team): JsonResponse
     {
-        $team = TeamSettingsController::currentTeam($user);
         Gate::authorize('viewAny', [GitHubRepository::class, $team]);
 
         $search = $request->query('search');
@@ -58,9 +56,8 @@ final class GitRepositoryController extends Controller
         )]);
     }
 
-    public function branches(string $repository, #[CurrentUser] User $user, GitProviders $providers): JsonResponse
+    public function branches(string $repository, GitProviders $providers, #[CurrentTeam] Team $team): JsonResponse
     {
-        $team = TeamSettingsController::currentTeam($user);
         $source = $providers->repository($team, $repository);
 
         abort_if(! $source instanceof SourceRepository, 404);

@@ -13,7 +13,9 @@ use App\Data\Audit\AuditActor;
 use App\Data\Protocol\V1\LeaseRequest;
 use App\Data\Protocol\V1\Report;
 use App\Data\Protocol\V1\TaskCompletion;
-use App\Enums\Backups\BackupAlertKind;
+use App\Enums\Alerts\AlertRule;
+use App\Enums\Alerts\AlertSeverity;
+use App\Enums\Alerts\AlertStatus;
 use App\Enums\Backups\BackupReason;
 use App\Enums\Backups\BackupRunStatus;
 use App\Enums\Backups\BackupSubject;
@@ -22,8 +24,7 @@ use App\Enums\Backups\VerificationStatus;
 use App\Enums\Backups\WalArchiveState;
 use App\Enums\DaemonTaskType;
 use App\Enums\TeamRole;
-use App\Events\Backups\BackupAlertRaised;
-use App\Events\Backups\BackupAlertResolved;
+use App\Models\Alerts\Alert;
 use App\Models\Backups\BackupRun;
 use App\Models\Backups\BackupVerification;
 use App\Models\Backups\RestoreRun;
@@ -33,9 +34,9 @@ use App\Models\Server;
 use App\Models\ServiceInstance;
 use App\Models\User;
 use App\Services\NodeStates\NodeStateValidator;
+use App\Services\Tasks\TaskSecrets;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Event;
 use Tests\Support\Backups;
 use Tests\Support\Projects;
 
@@ -107,9 +108,6 @@ function enablePitr(ServiceInstance $instance, User $owner): void
         ->assertJsonPath('pointInTime.keepDays', 7);
 }
 
-/**
- * A succeeded base backup (task completed with a snapshot).
- */
 function baseBackupDone(Server $server, string $snapshot): BackupRun
 {
     $task = leaseTask($server, DaemonTaskType::Backup);
@@ -217,7 +215,8 @@ test('restoring to a point in time as a new service replays the base backup with
     expect($restore->refresh()->status)->toBe(RestoreRunStatus::Restoring);
 
     $task = leaseTask($server, DaemonTaskType::Restore);
-    $spec = taskSpec($task);
+    // Sealed for the leasing server, like the lease response.
+    $spec = resolve(TaskSecrets::class)->materialize($task, $server)->toProtocol();
     $target = ServiceInstance::query()->whereKey($restore->target_service_instance_id)->sole();
     $env = Backups::openTaskEnv($spec['runtime']['env']['sealed'], $keypair);
 
@@ -325,24 +324,31 @@ test('with point-in-time recovery the newest base backup is verified together wi
 
 test('scheduled verification runs weekly at the instance’s minute, once it has a backup', function (): void {
     [$server, , $instance, $owner] = pitrPostgres();
-    resolve(RunBackupTick::class)->handle();
+    $noon = CarbonImmutable::now()->utc()->setTime(12, 0);
+    // Every minute of an hour: the instance's minute is somewhere in it.
+    $tickHour = static function () use ($noon): void {
+        for ($minute = 0; $minute < 60; $minute++) {
+            resolve(RunBackupTick::class)->handle($noon->addMinutes($minute));
+        }
+    };
+
+    $tickHour();
+    expect(BackupVerification::query()->count())->toBe(0);
+
     resolve(StartDatabaseBackup::class)->handle($instance, BackupReason::Manual, $owner, AuditActor::user($owner));
     completeTask($server, leaseTask($server, DaemonTaskType::Backup), ['backup' => ['snapshotId' => str_repeat('c', 64), 'sizeBytes' => 10, 'durationMs' => 5]]);
 
-    $minute = crc32($instance->public_id.'|verify') % 60;
-    $other = CarbonImmutable::now()->utc()->setTime(12, ($minute + 1) % 60);
-    resolve(RunBackupTick::class)->handle($other);
-    expect(BackupVerification::query()->count())->toBe(0);
+    $tickHour();
+    expect(BackupVerification::query()->count())->toBe(1);
 
-    $due = CarbonImmutable::now()->utc()->setTime(12, $minute);
-    resolve(RunBackupTick::class)->handle($due);
-    resolve(RunBackupTick::class)->handle($due);
+    // Verified this week: the next hour starts nothing.
+    $tickHour();
     expect(BackupVerification::query()->count())->toBe(1);
 });
 
 test('failed backups, failed verifications and WAL lag raise alerts once and resolve on recovery', function (): void {
-    Event::fake([BackupAlertRaised::class, BackupAlertResolved::class]);
     [$server, , $instance, $owner] = pitrPostgres();
+    $alert = fn (string $subject): ?Alert => Alert::query()->where('rule', AlertRule::BackupFailed->value)->where('subject_key', $subject.':'.$instance->public_id)->first();
     resolve(RunBackupTick::class)->handle();
 
     resolve(StartDatabaseBackup::class)->handle($instance, BackupReason::Manual, $owner, AuditActor::user($owner));
@@ -350,14 +356,15 @@ test('failed backups, failed verifications and WAL lag raise alerts once and res
 
     resolve(EvaluateBackupAlerts::class)->handle();
     resolve(EvaluateBackupAlerts::class)->handle();
-    Event::assertDispatchedTimes(BackupAlertRaised::class, 1);
-    Event::assertDispatched(BackupAlertRaised::class, fn (BackupAlertRaised $event): bool => $event->kind === BackupAlertKind::Failed
-        && $event->subject === 'backup:'.$instance->public_id && ! str_contains($event->summary, 'super-secret'));
+    expect(Alert::query()->where('rule', AlertRule::BackupFailed->value)->count())->toBe(1)
+        ->and($alert('backup')?->status)->toBe(AlertStatus::Firing)
+        ->and($alert('backup')?->severity)->toBe(AlertSeverity::Critical)
+        ->and($alert('backup')?->summary)->not->toContain('super-secret');
 
     resolve(StartDatabaseBackup::class)->handle($instance, BackupReason::Manual, $owner, AuditActor::user($owner));
     completeTask($server, leaseTask($server, DaemonTaskType::Backup), ['backup' => ['snapshotId' => str_repeat('c', 64), 'sizeBytes' => 10, 'durationMs' => 5]]);
     resolve(EvaluateBackupAlerts::class)->handle();
-    Event::assertDispatched(BackupAlertResolved::class, fn (BackupAlertResolved $event): bool => $event->kind === BackupAlertKind::Failed);
+    expect($alert('backup')?->status)->toBe(AlertStatus::Resolved);
 
     // Verification failed.
     $this->actingAs($owner)->postJson(route('backups.services.verify', $instance))->assertSuccessful();
@@ -368,17 +375,18 @@ test('failed backups, failed verifications and WAL lag raise alerts once and res
     expect($failed->status)->toBe(VerificationStatus::Failed)
         ->and($failed->error)->toBe('restore: pg_restore exited with code 1');
     resolve(EvaluateBackupAlerts::class)->handle();
-    Event::assertDispatched(BackupAlertRaised::class, fn (BackupAlertRaised $event): bool => $event->kind === BackupAlertKind::VerificationFailed);
+    expect($alert('backup_verify')?->status)->toBe(AlertStatus::Firing);
 
     // WAL lagging: on for a while, nothing shipped, segments waiting.
     enablePitr($instance, $owner);
     WalArchive::query()->update(['enabled_at' => now()->subHour(), 'state' => 'failing', 'failing_since' => now()->subMinutes(30), 'checked_at' => now(), 'pending_segments' => 4]);
     resolve(EvaluateBackupAlerts::class)->handle();
-    Event::assertDispatched(BackupAlertRaised::class, fn (BackupAlertRaised $event): bool => $event->kind === BackupAlertKind::WalLagging && $event->subject === 'wal_archive:'.$instance->public_id);
+    expect($alert('wal_archive')?->status)->toBe(AlertStatus::Firing)
+        ->and($alert('wal_archive')?->severity)->toBe(AlertSeverity::Warning);
 
     WalArchive::query()->update(['state' => 'active', 'failing_since' => null, 'pending_segments' => 0, 'last_archived_at' => now()]);
     resolve(EvaluateBackupAlerts::class)->handle();
-    Event::assertDispatched(BackupAlertResolved::class, fn (BackupAlertResolved $event): bool => $event->kind === BackupAlertKind::WalLagging);
+    expect($alert('wal_archive')?->status)->toBe(AlertStatus::Resolved);
 });
 
 test('backup alerts reach the alerts API', function (): void {

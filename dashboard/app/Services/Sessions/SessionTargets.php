@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Services\Sessions;
 
 use App\Data\Services\DatabaseSource;
-use App\Enums\ServerStatus;
 use App\Enums\Sessions\InteractiveSessionKind;
 use App\Enums\WorkloadPhase;
 use App\Enums\WorkloadRole;
@@ -22,9 +21,6 @@ use Illuminate\Support\Collection;
  */
 final class SessionTargets
 {
-    /** Phases with a running container. */
-    public const array RUNNING = [WorkloadPhase::Starting, WorkloadPhase::Running, WorkloadPhase::Healthy, WorkloadPhase::Unhealthy];
-
     /**
      * Running replicas; with $kind only those whose server allows that kind
      * of session (Report.host.features, the server's local switch).
@@ -41,12 +37,11 @@ final class SessionTargets
             ->where('service_instance_id', $instance->id)
             ->where('deployment_id', $instance->active_deployment_id)
             ->where('role', WorkloadRole::Serving->value)
-            ->whereIn('phase', array_map(static fn (WorkloadPhase $phase): string => $phase->value, self::RUNNING))
+            ->whereIn('phase', WorkloadPhase::running())
             ->with('server:id,public_id,name,status,team_id,daemon_features')
             ->orderBy('slot')
             ->get()
-            ->filter(static fn (Placement $placement): bool => $placement->server->status->isApproved()
-                && $placement->server->status !== ServerStatus::Offline
+            ->filter(static fn (Placement $placement): bool => $placement->server->status->isReachable()
                 && (! $kind instanceof InteractiveSessionKind || $placement->server->supportsDaemonFeature($kind->feature())))
             ->values();
     }
@@ -74,7 +69,7 @@ final class SessionTargets
             ->where('service_instance_id', $instance->id)
             ->where('workload_id', $workloadId)
             ->where('server_id', $serverId)
-            ->whereIn('phase', array_map(static fn (WorkloadPhase $phase): string => $phase->value, [...self::RUNNING, WorkloadPhase::Draining]))
+            ->whereIn('phase', [...WorkloadPhase::running(), WorkloadPhase::Draining])
             ->exists();
     }
 }

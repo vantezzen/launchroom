@@ -8,31 +8,22 @@ use App\Data\Protocol\V1\AmbassadorSpec;
 use App\Data\Protocol\V1\MeshAllowRule;
 use App\Data\Specs\ServiceSpec;
 use App\Enums\Mesh\MeshMode;
-use App\Enums\ServerRole;
-use App\Enums\ServerStatus;
 use App\Enums\WorkloadRole;
-use App\Events\NodeStateInvalidated;
 use App\Models\Placement;
 use App\Models\Server;
 use App\Models\ServiceInstance;
 use App\Services\Mesh\MeshTopology;
 use App\Support\Deployments\EffectiveDeploy;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
+use App\Support\Network\Mesh;
 
 /**
  * Cross-server service links over the mesh (docs/05 §3):
  *
- * - Provider side: a workload consumed from another server gets a
- *   dashboard-allocated `placements.mesh_port` (31000–32999, unique per
- *   server) and is published on its server's mesh IP only (`publishOnMesh`).
- *   "Consumed" is environment-relative, like Compose: every service of an
- *   environment may reach every other by its slug, so a workload is consumed
- *   when another server hosts a placement of its environment; web services
- *   also when the team has another edge (edges route every service and every
- *   immutable URL). The port is sticky: it stays with the placement until the
- *   row is deleted and stays published, so a database is not recreated
- *   whenever its consumers move.
+ * - Provider side: a workload consumed from another server has a
+ *   `placements.mesh_port` (App\Actions\Mesh\AllocateMeshPorts) and is
+ *   published on its server's mesh IP only (`publishOnMesh`). The port is
+ *   sticky: it stays published, so a database is not recreated whenever its
+ *   consumers move.
  * - `firewall.meshAllow`: a published port is reachable only from the mesh
  *   IPs of the other servers hosting placements of its environment, plus the
  *   team's other edges for web services. Everything else on the mesh is
@@ -43,21 +34,11 @@ use Illuminate\Support\Facades\Log;
  *   forwarding to those replicas (serving ones; draining ones only when no
  *   serving one exists).
  *
- * Only with the mesh on and for servers with a mesh IP. A port allocated while
- * rendering another server (a consumer or an edge) re-renders the provider.
+ * Only with the mesh on and for servers with a mesh IP. Reads only: a
+ * placement without a port yet is neither published nor an upstream.
  */
 final readonly class MeshLinks
 {
-    public const int FIRST_PORT = 31000;
-
-    public const int LAST_PORT = 32999;
-
-    /** One global allocation lock: renders of different servers never wait on each other in different orders. */
-    private const int LOCK_KEY = 0x6C724D50; // "lrMP"
-
-    /** The Tailscale/Headscale CGNAT range launchroomd accepts mesh addresses in. */
-    private const string MESH_PATTERN = '/^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d{1,3}\.\d{1,3}$/D';
-
     public function __construct(
         private MeshTopology $topology,
     ) {}
@@ -68,16 +49,12 @@ final readonly class MeshLinks
     }
 
     /**
-     * A server's mesh IPv4 if it is a usable mesh address, else null.
+     * Where an edge reaches a replica on another server (docs/05 §3–4):
+     * `<its server's mesh IPv4>:<mesh_port>`; null without either.
      */
-    public static function meshIp(?string $ip): ?string
+    public static function upstreamAddress(Placement $placement): ?string
     {
-        return is_string($ip) && preg_match(self::MESH_PATTERN, $ip) === 1 && filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false ? $ip : null;
-    }
-
-    public static function validPort(?int $port): bool
-    {
-        return $port !== null && $port >= self::FIRST_PORT && $port <= self::LAST_PORT;
+        return Mesh::publishedAddress($placement->server->mesh_ip, $placement->mesh_port);
     }
 
     /**
@@ -91,7 +68,7 @@ final readonly class MeshLinks
     {
         $none = ['publish' => [], 'meshAllow' => [], 'ambassadors' => []];
 
-        if (! $this->active() || self::meshIp($server->mesh_ip) === null || $placements === []) {
+        if (! $this->active() || Mesh::ip($server->mesh_ip) === null || $placements === []) {
             return $none;
         }
 
@@ -126,64 +103,25 @@ final readonly class MeshLinks
                 continue;
             }
 
-            $peers[$environment][$placement->server_id] = self::meshIp($placement->server->mesh_ip);
+            $peers[$environment][$placement->server_id] = Mesh::ip($placement->server->mesh_ip);
         }
 
-        $allocate = [];
         $ambassadorCandidates = [];
 
         foreach ($all as $placement) {
-            $port = self::port($placement);
-
-            if ($port === null) {
-                continue;
-            }
-
-            if ($placement->server_id === $server->id) {
-                $consumed = ($peers[$placement->serviceInstance->environment_id] ?? []) !== [] || (self::isWeb($placement) && $edges !== []);
-
-                if ($consumed && $placement->mesh_port === null) {
-                    $allocate[] = $placement;
-                }
-
-                continue;
-            }
-
-            if (isset($local[$placement->service_instance_id]) || $placement->phase->isStopped() || self::meshIp($placement->server->mesh_ip) === null) {
+            if ($placement->server_id === $server->id || self::containerPort($placement) === null
+                || isset($local[$placement->service_instance_id]) || $placement->phase->isStopped() || Mesh::ip($placement->server->mesh_ip) === null) {
                 continue;
             }
 
             $ambassadorCandidates[] = $placement;
-
-            if ($placement->mesh_port === null) {
-                $allocate[] = $placement;
-            }
         }
-
-        $this->allocate($server, $allocate);
 
         return [
             'publish' => $this->published($server, $all),
             'meshAllow' => $this->allowList($server, $all, $peers, $edges),
             'ambassadors' => $this->ambassadors($ambassadorCandidates),
         ];
-    }
-
-    /**
-     * Makes sure the web replicas among these placements on other servers
-     * (edge upstreams) have a mesh port; their servers re-render to publish
-     * it. Other services (databases) are not published for edges.
-     *
-     * @param  list<Placement>  $placements
-     */
-    public function ensurePorts(Server $renderer, array $placements): void
-    {
-        if (! $this->active()) {
-            return;
-        }
-
-        $this->allocate($renderer, array_values(array_filter($placements, static fn (Placement $placement): bool => $placement->mesh_port === null
-            && self::meshIp($placement->server->mesh_ip) !== null && self::isWeb($placement) && self::port($placement) !== null)));
     }
 
     /**
@@ -211,8 +149,7 @@ final readonly class MeshLinks
         $edges = Server::query()
             ->where('team_id', $server->team_id)
             ->where('id', '!=', $server->id)
-            ->whereIn('status', [ServerStatus::Online->value, ServerStatus::Unreachable->value, ServerStatus::Offline->value])
-            ->whereJsonContains('roles', ServerRole::Edge->value)
+            ->edges()
             ->pluck('id')
             ->all();
 
@@ -220,78 +157,6 @@ final readonly class MeshLinks
         sort($all);
 
         return $all;
-    }
-
-    /**
-     * Allocates the lowest free port per server for placements without one.
-     * The lock is taken only when something is missing; the partial unique
-     * index (server_id, mesh_port) is the backstop. Providers other than
-     * $renderer are re-rendered so they publish the new port.
-     *
-     * @param  list<Placement>  $placements
-     */
-    private function allocate(Server $renderer, array $placements): void
-    {
-        $missing = [];
-
-        foreach ($placements as $placement) {
-            if ($placement->mesh_port === null) {
-                $missing[$placement->id] = $placement;
-            }
-        }
-
-        if ($missing === []) {
-            return;
-        }
-
-        $changed = DB::transaction(function () use ($missing): array {
-            DB::select('select pg_advisory_xact_lock(?)', [self::LOCK_KEY]);
-
-            $current = Placement::query()->whereKey(array_keys($missing))->pluck('mesh_port', 'id')->all();
-            $used = [];
-
-            foreach (Placement::query()->whereIn('server_id', array_unique(array_map(static fn (Placement $p): int => $p->server_id, $missing)))->whereNotNull('mesh_port')->get(['server_id', 'mesh_port']) as $row) {
-                $used[$row->server_id][(int) $row->mesh_port] = true;
-            }
-
-            $changed = [];
-
-            foreach ($missing as $id => $placement) {
-                $have = $current[$id] ?? null;
-
-                if (is_numeric($have)) {
-                    // Allocated concurrently by another render.
-                    $placement->setRawAttributes([...$placement->getAttributes(), 'mesh_port' => (int) $have], true);
-
-                    continue;
-                }
-
-                $port = self::FIRST_PORT;
-
-                while ($port <= self::LAST_PORT && isset($used[$placement->server_id][$port])) {
-                    $port++;
-                }
-
-                if ($port > self::LAST_PORT) {
-                    Log::error('No free mesh-published port left on the server (31000–32999).', ['server' => $placement->server_id, 'workload' => $placement->workload_id]);
-
-                    continue;
-                }
-
-                Placement::query()->whereKey($id)->whereNull('mesh_port')->update(['mesh_port' => $port]);
-                $used[$placement->server_id][$port] = true;
-                $placement->setRawAttributes([...$placement->getAttributes(), 'mesh_port' => $port], true);
-                $changed[] = $placement->server_id;
-            }
-
-            return $changed;
-        });
-
-        $providers = array_values(array_unique(array_filter($changed, static fn (int $id): bool => $id !== $renderer->id)));
-
-        if ($providers !== []) {
-            event(new NodeStateInvalidated($providers));
-        }
     }
 
     /**
@@ -303,7 +168,7 @@ final readonly class MeshLinks
         $publish = [];
 
         foreach ($all as $placement) {
-            if ($placement->server_id === $server->id && self::validPort($placement->mesh_port) && self::port($placement) !== null) {
+            if ($placement->server_id === $server->id && Mesh::isPublishedPort($placement->mesh_port) && self::containerPort($placement) !== null) {
                 $publish[$placement->workload_id] = (int) $placement->mesh_port;
             }
         }
@@ -322,7 +187,7 @@ final readonly class MeshLinks
         $rules = [];
 
         foreach ($all as $placement) {
-            if ($placement->server_id !== $server->id || ! self::validPort($placement->mesh_port) || self::port($placement) === null) {
+            if ($placement->server_id !== $server->id || ! Mesh::isPublishedPort($placement->mesh_port) || self::containerPort($placement) === null) {
                 continue;
             }
 
@@ -336,7 +201,7 @@ final readonly class MeshLinks
             sort($from);
 
             if ($from !== []) {
-                $rules[(int) $placement->mesh_port] = new MeshAllowRule((int) $placement->mesh_port, array_slice($from, 0, 256));
+                $rules[(int) $placement->mesh_port] = new MeshAllowRule((int) $placement->mesh_port, array_slice($from, 0, Mesh::MAX_ALLOW_FROM));
             }
         }
 
@@ -355,7 +220,7 @@ final readonly class MeshLinks
         $byInstance = [];
 
         foreach ($candidates as $placement) {
-            if (self::validPort($placement->mesh_port)) {
+            if (Mesh::isPublishedPort($placement->mesh_port)) {
                 $byInstance[$placement->service_instance_id][] = $placement;
             }
         }
@@ -368,8 +233,8 @@ final readonly class MeshLinks
 
             foreach ($chosen as $placement) {
                 $spec = self::spec($placement);
-                $port = self::port($placement);
-                $ip = self::meshIp($placement->server->mesh_ip);
+                $port = self::containerPort($placement);
+                $ip = Mesh::ip($placement->server->mesh_ip);
 
                 if (! $spec instanceof ServiceSpec || $port === null || $ip === null) {
                     continue;
@@ -388,7 +253,7 @@ final readonly class MeshLinks
         foreach ($listeners as $listener) {
             $upstreams = array_values(array_unique($listener['upstreams']));
             sort($upstreams);
-            $out[] = new AmbassadorSpec($listener['network'], $listener['alias'], $listener['port'], array_slice($upstreams, 0, 64));
+            $out[] = new AmbassadorSpec($listener['network'], $listener['alias'], $listener['port'], array_slice($upstreams, 0, Mesh::MAX_UPSTREAMS));
         }
 
         return $out;
@@ -406,11 +271,10 @@ final readonly class MeshLinks
         foreach (Server::query()
             ->where('team_id', $server->team_id)
             ->where('id', '!=', $server->id)
-            ->whereIn('status', [ServerStatus::Online->value, ServerStatus::Unreachable->value, ServerStatus::Offline->value])
-            ->whereJsonContains('roles', ServerRole::Edge->value)
+            ->edges()
             ->pluck('mesh_ip')
             ->all() as $ip) {
-            $ip = self::meshIp(is_string($ip) ? $ip : null);
+            $ip = Mesh::ip(is_string($ip) ? $ip : null);
 
             if ($ip !== null) {
                 $ips[] = $ip;
@@ -430,14 +294,14 @@ final readonly class MeshLinks
     /**
      * The container port of the placement's deployment (null: no port, a worker).
      */
-    private static function port(Placement $placement): ?int
+    public static function containerPort(Placement $placement): ?int
     {
         $spec = self::spec($placement);
 
         return $spec instanceof ServiceSpec ? EffectiveDeploy::for($spec, $placement->deployment)->port : null;
     }
 
-    private static function isWeb(Placement $placement): bool
+    public static function isWeb(Placement $placement): bool
     {
         return self::spec($placement)?->kind->isWeb() ?? false;
     }

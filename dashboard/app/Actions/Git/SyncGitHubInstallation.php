@@ -6,7 +6,7 @@ namespace App\Actions\Git;
 
 use App\Models\Git\GitHubApp;
 use App\Models\Git\GitHubInstallation;
-use App\Services\GitHub\Dto\InstallationInfo;
+use App\Services\Git\Providers\GitHub\Dto\InstallationInfo;
 
 /**
  * Upserts an installation from data GitHub confirmed (a signed webhook or the

@@ -8,7 +8,7 @@ use App\Actions\Sessions\OpenSession;
 use App\Data\Sessions\OpenSessionData;
 use App\Enums\Sessions\InteractiveSessionKind;
 use App\Http\Controllers\Controller;
-use App\Http\Controllers\Projects\ProjectScope;
+use App\Http\Routing\RouteScope;
 use App\Models\Environment;
 use App\Models\Project;
 use App\Models\Service;
@@ -28,7 +28,7 @@ final class ServiceSessionController extends Controller
 {
     public function show(Request $request, Project $project, Environment $environment, Service $service, string $kind, #[CurrentUser] User $user, SessionTabs $tabs): JsonResponse
     {
-        $instance = ProjectScope::instance($project, $environment, $service);
+        $instance = RouteScope::instance($project, $environment, $service);
         $sessionKind = InteractiveSessionKind::from($kind);
         Gate::authorize('view', $instance);
         Gate::authorize('viewAny', [InteractiveSession::class, $instance, $sessionKind]);
@@ -44,7 +44,7 @@ final class ServiceSessionController extends Controller
 
     public function store(Request $request, Project $project, Environment $environment, Service $service, string $kind, OpenSessionData $data, #[CurrentUser] User $user, OpenSession $open): JsonResponse
     {
-        $instance = ProjectScope::instance($project, $environment, $service);
+        $instance = RouteScope::instance($project, $environment, $service);
         $sessionKind = InteractiveSessionKind::from($kind);
         Gate::authorize('view', $instance);
         Gate::authorize('open', [InteractiveSession::class, $instance, $sessionKind]);

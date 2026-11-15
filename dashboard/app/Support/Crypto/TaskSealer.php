@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Support\Crypto;
 
+use App\Support\Variables\VariableKey;
 use InvalidArgumentException;
 use SensitiveParameter;
 
@@ -16,8 +17,6 @@ use SensitiveParameter;
  */
 final class TaskSealer
 {
-    private const string NAME = '/^[A-Za-z_][A-Za-z0-9_]{0,255}$/D';
-
     /**
      * @param  array<string, string>  $env
      */
@@ -28,7 +27,7 @@ final class TaskSealer
         }
 
         foreach ($env as $name => $value) {
-            if (preg_match(self::NAME, (string) $name) !== 1 || str_contains($value, "\0") || strlen($value) > 128 * 1024) {
+            if (! VariableKey::isValid((string) $name) || str_contains($value, "\0") || strlen($value) > VariableKey::MAX_VALUE_BYTES) {
                 throw new InvalidArgumentException("Variable {$name} can't be passed to a task (name grammar, NUL byte or size).");
             }
         }

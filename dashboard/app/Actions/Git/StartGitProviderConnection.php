@@ -12,17 +12,17 @@ use App\Enums\AuditAction;
 use App\Enums\Git\GitAuthMethod;
 use App\Enums\Git\GitConnectionStatus;
 use App\Enums\Git\GitProviderKind;
-use App\Enums\Git\GitServerKind;
 use App\Exceptions\DomainRuleViolation;
 use App\Models\Git\GitConnection;
 use App\Models\Git\GitOAuthState;
 use App\Models\Team;
 use App\Models\User;
+use App\Services\Crypto\SealedColumns;
 use App\Services\Git\GitConnectionAccounts;
-use App\Services\Git\GitConnectionSecrets;
 use App\Services\Git\GitProviderApi;
+use App\Services\Git\GitProviders;
 use App\Services\Git\GitServerProbe;
-use App\Services\GitHub\JsonObject;
+use App\Support\Json\JsonObject;
 use App\Support\PublicId;
 use Illuminate\Support\Facades\DB;
 use Throwable;
@@ -43,9 +43,10 @@ final readonly class StartGitProviderConnection
 {
     public function __construct(
         private GitServerProbe $probe,
-        private GitConnectionSecrets $secrets,
+        private SealedColumns $sealed,
         private GitProviderApi $api,
         private RecordAuditEvent $audit,
+        private GitProviders $providers,
     ) {}
 
     /**
@@ -83,12 +84,12 @@ final readonly class StartGitProviderConnection
             'created_by' => $user->id,
         ]);
         $connection->public_id = PublicId::generate(GitConnection::publicIdPrefix());
-        $this->secrets->initialize($connection);
+        $this->sealed->seal($connection, 'webhook_secret', bin2hex(random_bytes(32)), $this->sealed->newKey($connection));
 
         if ($oauth) {
-            $this->secrets->put($connection, 'oauth_client_secret', $data->clientSecret);
+            $this->sealed->seal($connection, 'oauth_client_secret', $data->clientSecret);
 
-            return DB::transaction(function () use ($connection, $user, $actor, $kind): string {
+            return DB::transaction(function () use ($connection, $user, $actor): string {
                 $connection->save();
                 $this->audited($connection, $actor, AuditAction::GitConnectionCreated);
 
@@ -104,15 +105,14 @@ final readonly class StartGitProviderConnection
 
                 $challenge = rtrim(strtr(base64_encode(hash('sha256', $verifier, true)), '+/', '-_'), '=');
 
-                return $connection->origin().($kind === GitServerKind::GitLab ? '/oauth/authorize' : '/login/oauth/authorize').'?'.http_build_query([
-                    'client_id' => $connection->oauth_client_id,
+                return $this->providers->api($connection->provider)->oauthAuthorizeUrl($connection, [
+                    'client_id' => (string) $connection->oauth_client_id,
                     'redirect_uri' => route('git.oauth.callback'),
                     'response_type' => 'code',
                     'state' => $state,
                     'code_challenge' => $challenge,
                     'code_challenge_method' => 'S256',
-                    ...($kind === GitServerKind::GitLab ? ['scope' => 'api'] : []),
-                ], '', '&', PHP_QUERY_RFC3986);
+                ]);
             });
         }
 
@@ -124,8 +124,8 @@ final readonly class StartGitProviderConnection
             throw DomainRuleViolation::on('token', "{$kind->label()} didn’t accept this token. Check its scopes (GitLab: api; Gitea: write:repository and read:user).");
         }
 
-        $this->secrets->put($connection, 'access_token', $token);
-        GitConnectionAccounts::apply($connection, $account);
+        $this->sealed->seal($connection, 'access_token', $token);
+        $this->providers->api($connection->provider)->applyAccount($connection, $account);
 
         DB::transaction(function () use ($connection, $actor): void {
             $existing = GitConnectionAccounts::existing($connection);

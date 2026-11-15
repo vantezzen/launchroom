@@ -13,6 +13,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+
+	"github.com/vantezzen/launchroom/cli/internal/fsutil"
 )
 
 // Store names where a token lives.
@@ -90,36 +92,5 @@ func (c *Config) Save(dir string) error {
 	if err != nil {
 		return err
 	}
-	return WriteFileAtomic(filepath.Join(dir, "config.json"), append(b, '\n'), 0o600)
-}
-
-// WriteFileAtomic writes via a temp file in the same directory and rename,
-// creating the directory with 0700.
-func WriteFileAtomic(path string, data []byte, perm os.FileMode) error {
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return err
-	}
-	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+".tmp-*")
-	if err != nil {
-		return err
-	}
-	name := tmp.Name()
-	defer func() { _ = os.Remove(name) }()
-	if err := tmp.Chmod(perm); err != nil && runtime.GOOS != "windows" {
-		_ = tmp.Close()
-		return err
-	}
-	if _, err := tmp.Write(data); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if err := tmp.Sync(); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	return os.Rename(name, path)
+	return fsutil.WriteFileAtomic(filepath.Join(dir, "config.json"), append(b, '\n'), 0o600)
 }

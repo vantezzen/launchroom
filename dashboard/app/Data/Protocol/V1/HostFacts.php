@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Data\Protocol\V1;
 
 use App\Data\Servers\HostFactsData;
+use App\Support\Protocol\Grammar;
 use Spatie\LaravelData\Attributes\Validation\Max;
 use Spatie\LaravelData\Attributes\Validation\Min;
 use Spatie\LaravelData\Attributes\Validation\Regex;
@@ -13,14 +14,12 @@ use Spatie\LaravelData\Optional;
 
 final class HostFacts extends Data
 {
-    private const string LABEL = '/^[A-Za-z0-9._-]{1,128}$/D';
-
     public function __construct(
-        #[Regex(self::LABEL)]
+        #[Regex(Grammar::LABEL)]
         public string $hostname,
-        #[Regex(self::LABEL)]
+        #[Regex(Grammar::LABEL)]
         public string $os,
-        #[Regex(self::LABEL)]
+        #[Regex(Grammar::LABEL)]
         public string $arch,
         #[Min(1), Max(4096)]
         public int $cpus,

@@ -37,7 +37,7 @@ final readonly class SweepTransfers
         $active = [ImportRunStatus::WaitingForSafetyBackup->value, ImportRunStatus::Holding->value, ImportRunStatus::Importing->value];
 
         $due = DataTransfer::query()
-            ->whereIn('status', [TransferStatus::Receiving->value, TransferStatus::Ready->value])
+            ->whereIn('status', TransferStatus::nonTerminal())
             ->where('expires_at', '<', now())
             ->whereNotExists(static fn (Builder $query) => $query->select(DB::raw(1))->from('data_import_runs')->whereColumn('data_import_runs.transfer_id', 'data_transfers.id')->whereIn('data_import_runs.status', $active))
             ->pluck('id');
@@ -53,7 +53,7 @@ final readonly class SweepTransfers
                 $preparing = $transfer->direction === TransferDirection::Download && $transfer->status === TransferStatus::Receiving;
                 $transfer->transitionTo($preparing ? TransferStatus::Failed : TransferStatus::Expired, $preparing ? 'The export took too long.' : null);
 
-                foreach (DataExportRun::query()->where('transfer_id', $transfer->id)->whereIn('status', [ExportRunStatus::Preparing->value, ExportRunStatus::Ready->value])->get() as $run) {
+                foreach (DataExportRun::query()->where('transfer_id', $transfer->id)->whereIn('status', ExportRunStatus::nonTerminal())->get() as $run) {
                     $run->transitionTo($run->status === ExportRunStatus::Ready ? ExportRunStatus::Expired : ExportRunStatus::Failed, $preparing ? 'The export took too long.' : null);
                 }
 
@@ -63,7 +63,7 @@ final readonly class SweepTransfers
 
         // Chunks of ended transfers and of rows that no longer exist.
         $removed = 0;
-        $live = DataTransfer::query()->whereIn('status', [TransferStatus::Receiving->value, TransferStatus::Ready->value])->pluck('public_id')->all();
+        $live = DataTransfer::query()->whereIn('status', TransferStatus::nonTerminal())->pluck('public_id')->all();
 
         foreach ($this->store->directories() as $directory) {
             if (! in_array($directory, $live, true)) {

@@ -49,9 +49,6 @@ final readonly class HeadscaleClient
         return null;
     }
 
-    /**
-     * The user's id, creating the user if it does not exist.
-     */
     public function ensureUser(string $name): string
     {
         $id = $this->userId($name);
@@ -153,9 +150,6 @@ final readonly class HeadscaleClient
         $this->call('PUT', '/api/v1/policy', ['policy' => $policy], 'set policy');
     }
 
-    /**
-     * A new API key, valid until $expiresAt.
-     */
     public function createApiKey(CarbonInterface $expiresAt): string
     {
         $key = $this->call('POST', '/api/v1/apikey', ['expiration' => $expiresAt->toImmutable()->utc()->format('Y-m-d\TH:i:s\Z')], 'create API key')->json('apiKey');

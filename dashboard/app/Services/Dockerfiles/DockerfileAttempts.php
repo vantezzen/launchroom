@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Dockerfiles;
 
+use App\Data\Dockerfiles\DockerfileAttemptRecordData;
 use App\Enums\Dockerfiles\DockerfileGenerationStatus;
 use App\Enums\LogSourceKind;
 use App\Models\DaemonTask;
@@ -19,21 +20,21 @@ use App\Support\Dockerfiles\RepositoryContext;
 final class DockerfileAttempts
 {
     /**
-     * Merges $patch into the newest attempt.
+     * Merges $patch (keys of DockerfileAttemptRecordData) into the newest attempt.
      *
      * @param  array<string, mixed>  $patch
      */
     public function record(DockerfileGeneration $generation, array $patch): void
     {
-        $attempts = $generation->attempts ?? [];
+        $attempts = array_values($generation->attempts?->items() ?? []);
 
         if ($attempts === []) {
-            $attempts[] = ['n' => max(1, $generation->attempt)];
+            $attempts[] = new DockerfileAttemptRecordData(n: max(1, $generation->attempt));
         }
 
         $last = count($attempts) - 1;
-        $attempts[$last] = [...$attempts[$last], ...$patch];
-        $generation->attempts = $attempts;
+        $attempts[$last] = DockerfileAttemptRecordData::from([...$attempts[$last]->toArray(), ...$patch]);
+        $generation->forceFill(['attempts' => $attempts]);
     }
 
     /**
@@ -103,10 +104,8 @@ final class DockerfileAttempts
     }
 
     /**
-     * What the plan detected, for the prompt and the sheet.
-     *
      * @param  array<mixed>  $summary
-     * @return array<string, string|int|null>
+     * @return array{provider: string|null, framework: string|null, packageManager: string|null, runtime: string|null, installCommand: string|null, buildCommand: string|null, startCommand: string|null, port: int|null}
      */
     public static function facts(array $summary): array
     {

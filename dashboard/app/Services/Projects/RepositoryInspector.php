@@ -10,12 +10,11 @@ use App\Data\Projects\InspectedAppData;
 use App\Data\Projects\RepositoryInspectionData;
 use App\Data\Projects\SuggestedDatabaseData;
 use App\Enums\DatabaseEngine;
-use App\Services\Git\Exceptions\RepositoryFileUnavailable;
+use App\Exceptions\Git\RepositoryFileUnavailable;
 use App\Services\Git\GitProviders;
 use App\Support\Projects\DatabaseSuggestions;
 use App\Support\Projects\RepositoryLayout;
 use Illuminate\Contracts\Cache\Repository as Cache;
-use RuntimeException;
 
 /**
  * "We looked at acme/shop" (flows.md §3): reads the repository's file list
@@ -39,7 +38,7 @@ final readonly class RepositoryInspector
     ) {}
 
     /**
-     * @throws RuntimeException when the provider can't list the files
+     * @throws RepositoryFileUnavailable when the provider can't list the files
      */
     public function inspect(SourceRepository $repository, string $branch): RepositoryInspectionData
     {
@@ -54,7 +53,7 @@ final readonly class RepositoryInspector
         $provider = $this->providers->for($ref->provider);
         $name = basename($repository->repositoryFullName());
 
-        if (! $ref->provider->hasApi()) {
+        if (! $provider->canReadFiles()) {
             return new RepositoryInspectionData(
                 repository: $repository->repositoryPublicId(),
                 branch: $branch,

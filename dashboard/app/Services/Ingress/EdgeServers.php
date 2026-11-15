@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace App\Services\Ingress;
 
-use App\Enums\ServerRole;
-use App\Enums\ServerStatus;
 use App\Models\Server;
 
 /**
@@ -18,13 +16,12 @@ final class EdgeServers
     /**
      * @return list<int>
      */
-    public function ids(?int $teamId = null): array
+    public static function ids(?int $teamId = null): array
     {
         /** @var list<int> $ids */
         $ids = Server::query()
             ->when($teamId !== null, static fn ($query) => $query->where('team_id', $teamId))
-            ->whereIn('status', [ServerStatus::Online->value, ServerStatus::Unreachable->value, ServerStatus::Offline->value])
-            ->whereJsonContains('roles', ServerRole::Edge->value)
+            ->edges()
             ->orderBy('id')
             ->pluck('id')
             ->all();
@@ -33,14 +30,12 @@ final class EdgeServers
     }
 
     /**
-     * The install's edge servers, control plane first, then by name.
-     *
      * @return list<Server>
      */
     public function servers(): array
     {
         return array_values(Server::query()
-            ->whereKey($this->ids())
+            ->whereKey(self::ids())
             ->orderByDesc('is_control_plane')
             ->orderBy('name')
             ->get()

@@ -4,9 +4,10 @@ declare(strict_types=1);
 
 namespace App\Actions\Audit;
 
+use App\Enums\AdvisoryLock;
 use App\Models\AuditCheckpoint;
 use App\Models\AuditEvent;
-use App\Services\Backups\SnapshotTags;
+use App\Models\InstanceSettings;
 use App\Services\Crypto\Signer;
 use App\Support\AuditChain;
 use Illuminate\Support\Facades\DB;
@@ -29,7 +30,7 @@ final readonly class CreateAuditCheckpoint
     public function handle(): ?AuditCheckpoint
     {
         return DB::transaction(function (): ?AuditCheckpoint {
-            DB::select('SELECT pg_advisory_xact_lock(?)', [RecordAuditEvent::LOCK_KEY]);
+            AdvisoryLock::AuditChain->holdForTransaction();
 
             $latest = AuditEvent::query()->orderByDesc('id')->first(['id', 'hash']);
 
@@ -48,7 +49,7 @@ final readonly class CreateAuditCheckpoint
                 : $previous->event_count + AuditEvent::query()->where('id', '>', $previous->event_id)->where('id', '<=', $latest->id)->count();
 
             $createdAt = now()->toImmutable()->utc();
-            $instance = SnapshotTags::instanceId();
+            $instance = InstanceSettings::instanceId();
             $signature = $this->signer->signAuditCheckpoint(
                 AuditChain::checkpointMessage($count, $createdAt, $latest->id, $latest->hash, $instance),
             );

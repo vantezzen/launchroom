@@ -10,6 +10,7 @@ use App\Data\Audit\AuditActor;
 use App\Data\Audit\AuditEntryData;
 use App\Data\Services\DatabaseSource;
 use App\Data\Specs\ChangeItem;
+use App\Data\Variables\VariableTargetRow;
 use App\Enums\AuditAction;
 use App\Enums\Backups\BackupReason;
 use App\Enums\Backups\BackupRunStatus;
@@ -19,7 +20,6 @@ use App\Enums\Backups\RestoreRunStatus;
 use App\Exceptions\DomainRuleViolation;
 use App\Models\Backups\BackupDestination;
 use App\Models\Backups\BackupRun;
-use App\Models\Backups\BackupSchedule;
 use App\Models\Backups\RestoreRun;
 use App\Models\Backups\WalArchive;
 use App\Models\Environment;
@@ -39,6 +39,7 @@ use App\Services\Environments\EnvironmentIntentCopier;
 use App\Services\Projects\ServiceProvisioner;
 use App\Services\Variables\VariableStore;
 use App\Support\Changes\SpecDiff;
+use App\Support\Protocol\Grammar;
 use App\Support\Slug;
 use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Database\Query\Builder;
@@ -107,7 +108,7 @@ final readonly class StartRestore
             throw DomainRuleViolation::on('pointInTime', 'No base backup was finished by then. Pick a later time.');
         }
 
-        if (RestoreRun::query()->where('source_service_instance_id', $source->id)->whereNotIn('status', [RestoreRunStatus::Succeeded->value, RestoreRunStatus::Failed->value])->exists()) {
+        if (RestoreRun::query()->where('source_service_instance_id', $source->id)->whereIn('status', RestoreRunStatus::nonTerminal())->exists()) {
             throw DomainRuleViolation::conflict('A restore of this service is already in progress.');
         }
 
@@ -178,7 +179,7 @@ final readonly class StartRestore
             return $this->pointInTime($source, $at, $mode, $confirmation, $user, $actor);
         }
 
-        if (preg_match('/^[a-f0-9]{8,64}$/D', $snapshotId) !== 1) {
+        if (preg_match(Grammar::SNAPSHOT_ID, $snapshotId) !== 1) {
             throw DomainRuleViolation::on('snapshot', 'Pick a snapshot from the list.');
         }
 
@@ -204,14 +205,13 @@ final readonly class StartRestore
         }
 
         [$snapshotId, $volumeId] = $this->knownSnapshot($source, $snapshotId, $subject);
-        $destination = BackupSchedule::query()->where('service_instance_id', $source->id)->first()?->destination()->first()
-            ?? BackupDestination::defaultFor($source->team_id);
+        $destination = BackupDestination::forService($source);
 
         if (! $destination instanceof BackupDestination) {
             throw DomainRuleViolation::on('destination', 'This service has no backup destination.');
         }
 
-        if (RestoreRun::query()->where('source_service_instance_id', $source->id)->whereNotIn('status', [RestoreRunStatus::Succeeded->value, RestoreRunStatus::Failed->value])->exists()) {
+        if (RestoreRun::query()->where('source_service_instance_id', $source->id)->whereIn('status', RestoreRunStatus::nonTerminal())->exists()) {
             throw DomainRuleViolation::conflict('A restore of this service is already in progress.');
         }
 
@@ -393,13 +393,13 @@ final readonly class StartRestore
             ->get();
 
         foreach ($variables as $variable) {
-            $this->variables->create(
+            $this->variables->copy(
                 $environment->project,
                 $copy,
                 $variable->key,
                 $this->variables->plaintext($environment->project, $variable),
                 $variable->type,
-                [['environment_id' => $environment->id, 'all_previews' => false, 'branch_pattern' => null]],
+                [VariableTargetRow::environment($environment->id)],
                 $variable->exposure_override,
                 actor: $user,
             );

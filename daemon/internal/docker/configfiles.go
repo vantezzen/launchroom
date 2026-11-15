@@ -13,7 +13,6 @@ import (
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
 
-// configFileMode is the mode of every config file: read-only for everyone.
 const configFileMode = 0o444
 
 // ConfigFilesTar renders config files as a tar archive to extract at "/":

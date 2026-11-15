@@ -25,6 +25,7 @@ import (
 	"github.com/vantezzen/launchroom/daemon/internal/docker"
 	"github.com/vantezzen/launchroom/daemon/internal/health"
 	"github.com/vantezzen/launchroom/daemon/internal/ingress/caddy"
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/policy"
 	"github.com/vantezzen/launchroom/daemon/internal/reconcile"
 	"github.com/vantezzen/launchroom/daemon/internal/sealed"
@@ -58,7 +59,7 @@ func sweep(t *testing.T, api *client.Client) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 	f := client.Filters{}
-	f.Add("label", docker.LabelManaged+"=true")
+	f.Add("label", names.LabelManaged+"=true")
 	cs, err := api.ContainerList(ctx, client.ContainerListOptions{All: true, Filters: f})
 	if err != nil {
 		t.Fatalf("docker not reachable (run via `make test-daemon-integration`): %v", err)
@@ -160,7 +161,7 @@ func setupEdge(t *testing.T, extra caddy.Options, local []netip.AddrPort, open f
 	t.Cleanup(mon.Close)
 	e.rec = reconcile.New(reconcile.Options{
 		ServerID: e.serverID, Docker: e.engine, Policy: pol, Health: mon, Ingress: ingress,
-		EnvHashKey: reconcile.EnvHashKey(e.key.Bytes()),
+		EnvHashKey: docker.EnvHashKey(e.key.Bytes()),
 		OpenEnv: func(s *state.WorkloadSpec) (map[string]secret.Secret, error) {
 			return sealed.OpenWorkloadEnv(s.Env, e.key, e.serverID, s.ID)
 		},
@@ -310,7 +311,7 @@ func TestReconcileWorkloadAndIngress(t *testing.T) {
 	if hc.PidsLimit == nil || *hc.PidsLimit != 64 || hc.Memory != 64<<20 {
 		t.Errorf("limits pids=%v mem=%d", hc.PidsLimit, hc.Memory)
 	}
-	if insp.Container.Config.Labels[docker.LabelManaged] != "true" || insp.Container.Config.Labels[docker.LabelServer] != string(e.serverID) {
+	if insp.Container.Config.Labels[names.LabelManaged] != "true" || insp.Container.Config.Labels[names.LabelServer] != string(e.serverID) {
 		t.Errorf("labels %v", insp.Container.Config.Labels)
 	}
 
@@ -364,7 +365,7 @@ func TestReconcileWorkloadAndIngress(t *testing.T) {
 	// Remove the workload: container and network go away, the route 404s.
 	ns2, _ := e.nodeState(t, 2, false, true)
 	converge(t, e, ns2, func() bool { return status(e.rec, wl).Phase == state.PhaseRemoved })
-	cs, err := e.engine.ListContainers(ctx, map[string]string{docker.LabelWorkload: string(wl)})
+	cs, err := e.engine.ListContainers(ctx, map[string]string{names.LabelWorkload: string(wl)})
 	if err != nil || len(cs) != 0 {
 		t.Fatalf("workload containers left: %v %v", cs, err)
 	}
@@ -381,7 +382,7 @@ func TestReconcileWorkloadAndIngress(t *testing.T) {
 	if err := e.rec.Reconcile(ctx, ns3); err != nil {
 		t.Fatal(err)
 	}
-	sys, _ := e.engine.ListContainers(ctx, map[string]string{docker.LabelSystem: policy.SystemCaddy})
+	sys, _ := e.engine.ListContainers(ctx, map[string]string{names.LabelSystem: names.SystemCaddy})
 	if len(sys) != 0 {
 		t.Fatalf("caddy still running: %v", sys)
 	}

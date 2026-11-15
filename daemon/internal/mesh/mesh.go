@@ -25,8 +25,6 @@ package mesh
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -42,6 +40,7 @@ import (
 	"github.com/moby/moby/api/types/mount"
 
 	"github.com/vantezzen/launchroom/daemon/internal/docker"
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/policy"
 	"github.com/vantezzen/launchroom/daemon/internal/secret"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
@@ -49,14 +48,11 @@ import (
 
 // Fixed host-side names (docs/05 §2).
 const (
-	ContainerName = "lr-system-tailscale"
-	StateVolume   = "lr-system-tailscale-state"
 	// Interface is the WireGuard interface tailscaled creates on the host.
 	Interface = "tailscale0"
 
-	socketPath  = "/var/run/tailscale/tailscaled.sock"
-	stateDir    = "/var/lib/tailscale"
-	specVersion = "tailscale-v1"
+	socketPath = "/var/run/tailscale/tailscaled.sock"
+	stateDir   = "/var/lib/tailscale"
 
 	statusTimeout  = 15 * time.Second
 	loginTimeout   = 75 * time.Second
@@ -147,7 +143,7 @@ func (m *Manager) set(st *state.MeshStatus) *state.MeshStatus {
 }
 
 func (m *Manager) fail(format string, args ...any) *state.MeshStatus {
-	msg := truncate(fmt.Sprintf(format, args...))
+	msg := clipStatus(fmt.Sprintf(format, args...))
 	m.o.Log.Warn("mesh not converged", "reason", msg)
 	return m.set(&state.MeshStatus{State: state.MeshError, Message: msg, CheckedAt: m.o.Now().UTC()})
 }
@@ -165,7 +161,7 @@ func (m *Manager) Sync(ctx context.Context, spec state.TailscaleSpec) *state.Mes
 	if m.o.Exec == nil {
 		return m.fail("this Docker client cannot run the mesh client")
 	}
-	if err := policy.CheckSystemImage(policy.SystemTailscale, spec.Image, m.o.Policy); err != nil {
+	if err := policy.CheckSystemImage(names.SystemTailscale, spec.Image, m.o.Policy); err != nil {
 		return m.fail("%v", err)
 	}
 	if err := policy.CheckMeshLoginServer(spec.LoginServer, m.o.InsecureLoginHosts); err != nil {
@@ -177,7 +173,7 @@ func (m *Manager) Sync(ctx context.Context, spec state.TailscaleSpec) *state.Mes
 	}
 	raw, err := m.statusJSON(ctx, id)
 	if err != nil {
-		return m.set(&state.MeshStatus{State: state.MeshStarting, Message: "waiting for the mesh client: " + truncate(err.Error()), CheckedAt: m.o.Now().UTC()})
+		return m.set(&state.MeshStatus{State: state.MeshStarting, Message: "waiting for the mesh client: " + clipStatus(err.Error()), CheckedAt: m.o.Now().UTC()})
 	}
 	st, err := ParseStatus(raw, m.o.Now())
 	if err != nil {
@@ -236,8 +232,6 @@ func (m *Manager) recoverControl(ctx context.Context, id string, loginServer sta
 	}
 }
 
-// dialLoginServer reports whether the login server's host accepts a TCP
-// connection on its URL's port.
 func dialLoginServer(ctx context.Context, loginServer state.MeshLoginURL) bool {
 	u, err := url.Parse(string(loginServer))
 	if err != nil || u.Hostname() == "" {
@@ -290,11 +284,11 @@ func (m *Manager) login(ctx context.Context, id string, spec state.TailscaleSpec
 	last, lastErr := m.lastLogin, m.loginErr
 	m.mu.Unlock()
 	if !last.IsZero() && now.Sub(last) < retryAfter {
-		return &state.MeshStatus{State: state.MeshError, Message: truncate("login failed, retrying shortly: " + lastErr), CheckedAt: now}
+		return &state.MeshStatus{State: state.MeshError, Message: clipStatus("login failed, retrying shortly: " + lastErr), CheckedAt: now}
 	}
 	key, err := m.o.OpenAuthKey(*spec.AuthKey)
 	if err != nil {
-		return &state.MeshStatus{State: state.MeshError, Message: truncate("mesh key cannot be opened: " + err.Error()), CheckedAt: now}
+		return &state.MeshStatus{State: state.MeshError, Message: clipStatus("mesh key cannot be opened: " + err.Error()), CheckedAt: now}
 	}
 	argv := UpArgs(spec, Hostname(m.o.ServerID), reauth)
 	ctx, cancel := context.WithTimeout(ctx, loginTimeout)
@@ -315,7 +309,7 @@ func (m *Manager) login(ctx context.Context, id string, spec state.TailscaleSpec
 		msg = fmt.Sprintf("tailscale up exited with %d: %s", res.ExitCode, strings.TrimSpace(res.Stderr))
 	}
 	// The CLI never echoes the key, but never risk reporting it.
-	msg = truncate(strings.ReplaceAll(msg, key.Reveal(), "[redacted]"))
+	msg = clipStatus(strings.ReplaceAll(msg, key.Reveal(), "[redacted]"))
 	m.mu.Lock()
 	m.lastLogin, m.loginErr = now, msg
 	m.mu.Unlock()
@@ -325,7 +319,7 @@ func (m *Manager) login(ctx context.Context, id string, spec state.TailscaleSpec
 	if err := m.o.Docker.StopContainer(context.WithoutCancel(ctx), id, 10*time.Second); err == nil {
 		_ = m.o.Docker.StartContainer(context.WithoutCancel(ctx), id)
 	}
-	return &state.MeshStatus{State: state.MeshError, Message: truncate("login failed: " + msg), CheckedAt: now}
+	return &state.MeshStatus{State: state.MeshError, Message: clipStatus("login failed: " + msg), CheckedAt: now}
 }
 
 // UpArgs is the `tailscale up` argv. Every non-default setting is named
@@ -405,21 +399,26 @@ func (m *Manager) statusJSON(ctx context.Context, id string) ([]byte, error) {
 	return b.Bytes(), nil
 }
 
-// SpecHash identifies the built-in container spec for an image.
-func SpecHash(image state.ImageRef) string {
-	sum := sha256.Sum256([]byte(specVersion + "|" + string(image)))
-	return hex.EncodeToString(sum[:16])
-}
-
 // ContainerSpec is the built-in spec of the mesh client (docs/05 §2).
 func ContainerSpec(serverID state.ServerID, image state.ImageRef) *docker.ContainerCreate {
 	labels := docker.ManagedLabels(string(serverID))
-	labels[docker.LabelSystem] = policy.SystemTailscale
-	labels[docker.LabelSpecHash] = SpecHash(image)
+	labels[names.LabelSystem] = names.SystemTailscale
 	memory := int64(512 << 20)
 	pids := int64(1024)
+	// Kernel mode: the WireGuard interface lives in the host's network
+	// namespace, where launchroomd binds the mesh IP and Caddy reaches
+	// mesh-published replicas.
+	hc := policy.BaseHostConfig()
+	hc.NetworkMode = "host"
+	hc.RestartPolicy = container.RestartPolicy{Name: container.RestartPolicyUnlessStopped}
+	hc.CapAdd = []string{"NET_ADMIN", "NET_RAW"}
+	hc.Resources = container.Resources{
+		Memory: memory, MemorySwap: memory, PidsLimit: &pids,
+		Devices: []container.DeviceMapping{{PathOnHost: "/dev/net/tun", PathInContainer: "/dev/net/tun", CgroupPermissions: "rwm"}},
+	}
+	hc.Mounts = []mount.Mount{{Type: mount.TypeVolume, Source: names.TailscaleStateVolume, Target: stateDir}}
 	return &docker.ContainerCreate{
-		Name: ContainerName,
+		Name: names.TailscaleContainer,
 		Config: &container.Config{
 			Image:      string(image),
 			Entrypoint: []string{"tailscaled"},
@@ -431,30 +430,12 @@ func ContainerSpec(serverID state.ServerID, image state.ImageRef) *docker.Contai
 			},
 			Labels: labels,
 		},
-		HostConfig: &container.HostConfig{
-			// Kernel mode: the WireGuard interface lives in the host's network
-			// namespace, where launchroomd binds the mesh IP and Caddy reaches
-			// mesh-published replicas.
-			NetworkMode:   "host",
-			RestartPolicy: container.RestartPolicy{Name: container.RestartPolicyUnlessStopped},
-			CapDrop:       []string{"ALL"},
-			CapAdd:        []string{"NET_ADMIN", "NET_RAW"},
-			SecurityOpt:   []string{policy.NoNewPrivileges},
-			Resources: container.Resources{
-				Memory: memory, MemorySwap: memory, PidsLimit: &pids,
-				Devices: []container.DeviceMapping{{PathOnHost: "/dev/net/tun", PathInContainer: "/dev/net/tun", CgroupPermissions: "rwm"}},
-			},
-			LogConfig: container.LogConfig{
-				Type:   policy.LogDriver,
-				Config: map[string]string{"max-size": policy.LogMaxSize, "max-file": policy.LogMaxFile},
-			},
-			Mounts: []mount.Mount{{Type: mount.TypeVolume, Source: StateVolume, Target: stateDir}},
-		},
+		HostConfig: hc,
 	}
 }
 
 func (m *Manager) list(ctx context.Context) ([]docker.Container, error) {
-	return m.o.Docker.ListContainers(ctx, map[string]string{docker.LabelSystem: policy.SystemTailscale})
+	return m.o.Docker.ListContainers(ctx, map[string]string{names.LabelSystem: names.SystemTailscale})
 }
 
 func (m *Manager) remove(ctx context.Context) error {
@@ -464,7 +445,7 @@ func (m *Manager) remove(ctx context.Context) error {
 	}
 	var errs []error
 	for _, c := range cs {
-		if c.Running {
+		if c.Running() {
 			errs = append(errs, m.o.Docker.StopContainer(ctx, c.ID, 10*time.Second))
 		}
 		errs = append(errs, m.o.Docker.RemoveContainer(ctx, c.ID))
@@ -473,66 +454,13 @@ func (m *Manager) remove(ctx context.Context) error {
 }
 
 func (m *Manager) ensureContainer(ctx context.Context, image state.ImageRef) (string, error) {
-	hash := SpecHash(image)
-	cs, err := m.list(ctx)
-	if err != nil {
-		return "", err
-	}
-	var current *docker.Container
-	for i := range cs {
-		c := cs[i]
-		if current == nil && c.Name == ContainerName && c.Labels[docker.LabelSpecHash] == hash {
-			current = &cs[i]
-			continue
-		}
-		m.o.Log.Info("replacing system mesh client container", "container", c.Name)
-		if c.Running {
-			_ = m.o.Docker.StopContainer(ctx, c.ID, 10*time.Second)
-		}
-		if err := m.o.Docker.RemoveContainer(ctx, c.ID); err != nil {
-			return "", err
-		}
-	}
-	if current == nil {
-		labels := docker.ManagedLabels(string(m.o.ServerID))
-		labels[docker.LabelVolume] = "system-" + StateVolume
-		labels[docker.LabelSystem] = policy.SystemTailscale
-		if err := m.o.Docker.CreateVolume(ctx, docker.VolumeCreate{Name: StateVolume, Labels: labels}); err != nil {
-			return "", err
-		}
-		present, err := m.o.Docker.ImagePresent(ctx, string(image))
-		if err != nil {
-			return "", err
-		}
-		if !present {
-			m.o.Log.Info("pulling system mesh client image", "image", image)
-			if err := m.o.Docker.PullImage(ctx, string(image)); err != nil {
-				return "", err
-			}
-		}
-		id, err := m.o.Docker.CreateContainer(ctx, ContainerSpec(m.o.ServerID, image))
-		if err != nil {
-			return "", err
-		}
-		c, err := m.o.Docker.InspectContainer(ctx, id)
-		if err != nil {
-			return "", err
-		}
-		current = &c
-	}
-	if !current.Running {
-		if err := m.o.Docker.StartContainer(ctx, current.ID); err != nil {
-			return "", err
-		}
-	}
-	return current.ID, nil
-}
-
-func truncate(s string) string {
-	if len(s) > 1024 {
-		return s[:1024]
-	}
-	return s
+	c, _, err := docker.SystemContainer{
+		Component: names.SystemTailscale, Spec: ContainerSpec(m.o.ServerID, image),
+		Volumes: []string{names.TailscaleStateVolume}, Pull: true,
+	}.Ensure(ctx, m.o.Docker, m.o.Log)
+	return c.ID, err
 }
 
 var _ io.Writer = (*limitedBuffer)(nil)
+
+func clipStatus(s string) string { return state.Clip(s, state.MaxStatusLen) }

@@ -17,6 +17,7 @@ use App\Enums\AuditAction;
 use App\Enums\DaemonTaskStatus;
 use App\Enums\DaemonTaskType;
 use App\Enums\ServiceKind;
+use App\Enums\ServicePlanStatus;
 use App\Enums\TeamRole;
 use App\Enums\VariableType;
 use App\Models\AuditEvent;
@@ -24,8 +25,8 @@ use App\Models\DaemonTask;
 use App\Models\Server;
 use App\Models\Service;
 use App\Models\Team;
-use GuzzleHttp\Promise\PromiseInterface;
-use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\DB;
+use Tests\Support\GitFixtures;
 use Tests\Support\Projects;
 
 const SP_SHA = '4015b57a143aec5156fd1444a017a32137a3fd0f';
@@ -33,13 +34,7 @@ const SP_SHA = '4015b57a143aec5156fd1444a017a32137a3fd0f';
 beforeEach(function (): void {
     Projects::useTestKek();
     config(['launchroom.git.plain_sources' => true, 'launchroom.git.insecure_hosts' => ['git-fixtures']]);
-    Http::fake([
-        'http://git-fixtures:8080/*' => static function (): PromiseInterface {
-            $pkt = static fn (string $line): string => sprintf('%04x', strlen($line) + 4).$line;
-
-            return Http::response($pkt("# service=git-upload-pack\n").'0000'.$pkt(SP_SHA." HEAD\0multi_ack\n").$pkt(SP_SHA." refs/heads/main\n").'0000');
-        },
-    ]);
+    GitFixtures::fake(SP_SHA);
 
     $this->team = Team::factory()->create();
     $this->developer = memberOf($this->team, TeamRole::Developer);
@@ -134,7 +129,7 @@ test('detection can be re-run by members who can edit', function (): void {
     expect(DaemonTask::query()->where('type', DaemonTaskType::Plan->value)->count())->toBe(2);
 
     $image = Projects::image($this->project, 'docs');
-    $this->actingAs($this->developer)->post(route('projects.services.replan', [$this->project, $this->production, $image]))->assertStatus(409);
+    $this->actingAs($this->developer)->post(route('projects.services.replan', [$this->project, $this->production, $image]))->assertSessionHasErrors(['general' => 'Only app services are planned.']);
 });
 
 test('renaming keeps the slug, is staged and audited', function (): void {
@@ -152,4 +147,23 @@ test('renaming keeps the slug, is staged and audited', function (): void {
 
     $other = Projects::create(Team::factory()->create(), 'Other');
     $this->actingAs($this->developer)->patch(route('projects.services.rename', [$other, $other->production()->sole(), $this->web]), ['name' => 'x'])->assertNotFound();
+});
+
+test('stored plans the Data casts can\'t read are cleaned up by their migration', function (): void {
+    $instance = $this->web->instances()->sole();
+    $migration = require database_path('migrations/2026_12_30_210000_type_json_columns.php');
+    $old = ['status' => 'ready', 'sha' => SP_SHA, 'summary' => ['builder' => 'railpack', 'builderReason' => 'no-longer-a-reason']];
+    DB::table('service_instances')->where('id', $instance->id)->update(['plan' => json_encode($old)]);
+
+    $migration->up();
+
+    expect($instance->refresh()->plan?->status)->toBe(ServicePlanStatus::Ready)
+        ->and($instance->plan?->sha)->toBe(SP_SHA)
+        ->and($instance->plan?->summary)->toBeNull();
+
+    DB::table('service_instances')->where('id', $instance->id)->update(['plan' => json_encode(['status' => 'unknown'])]);
+
+    $migration->up();
+
+    expect($instance->refresh()->plan)->toBeNull();
 });

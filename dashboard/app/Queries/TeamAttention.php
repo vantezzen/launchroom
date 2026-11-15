@@ -6,15 +6,13 @@ namespace App\Queries;
 
 use App\Data\Attention\AttentionItemData;
 use App\Data\Canvas\ProjectSummaryData;
-use App\Enums\AttentionState;
-use App\Enums\CanvasNodeState;
 use App\Enums\EnvironmentKind;
 use App\Enums\HealthCheckState;
+use App\Enums\NodeStatusReason;
 use App\Enums\Permission;
 use App\Enums\Previews\PreviewStatus;
-use App\Enums\Security\FindingLevel;
-use App\Enums\Security\SecurityFindingStatus;
 use App\Enums\ServerStatus;
+use App\Enums\StatusTone;
 use App\Models\Environment;
 use App\Models\Previews\Preview;
 use App\Models\Security\SecurityFinding;
@@ -73,14 +71,14 @@ final readonly class TeamAttention
         foreach ($summaries as $summary) {
             foreach ($summary->environments as $environment) {
                 foreach ($environment->problems as $problem) {
-                    $failedDeploy = in_array($problem->status->label, ['Failed', 'Last deploy failed'], true);
+                    $failedDeploy = $problem->status->reason->isFailedDeploy();
                     $items[] = new AttentionItemData(
                         key: "service:{$environment->id}:{$problem->serviceId}",
                         kind: 'service',
-                        state: $problem->status->state === CanvasNodeState::Failed ? AttentionState::Failed : AttentionState::Warning,
+                        state: $problem->status->state === StatusTone::Failed ? StatusTone::Failed : StatusTone::Warning,
                         title: $problem->sentence,
                         context: $environment->kind === EnvironmentKind::Production ? $summary->name : "{$summary->name}, {$environment->name}",
-                        detail: $problem->status->label === 'Last deploy failed' ? 'The previous version is still serving.' : null,
+                        detail: $problem->status->reason === NodeStatusReason::LastDeployFailed ? 'The previous version is still serving.' : null,
                         at: $problem->status->since,
                         href: $problem->href,
                         action: $failedDeploy ? 'See why' : 'Open',
@@ -100,18 +98,18 @@ final readonly class TeamAttention
         $items = [];
         $servers = Server::query()
             ->where('team_id', $team->id)
-            ->whereIn('status', [ServerStatus::Online->value, ServerStatus::Unreachable->value, ServerStatus::Offline->value, ServerStatus::PendingApproval->value])
+            ->notRevoked()
             ->orderBy('name')
             ->get();
 
         foreach ($servers as $server) {
             $href = route('servers.show', [$server->public_id], absolute: false);
 
-            if (in_array($server->status, [ServerStatus::Unreachable, ServerStatus::Offline], true)) {
+            if ($server->status->isDown()) {
                 $items[] = new AttentionItemData(
                     key: "server:{$server->public_id}",
                     kind: 'server',
-                    state: AttentionState::Failed,
+                    state: StatusTone::Failed,
                     title: "{$server->name} is ".strtolower($server->status->label()),
                     context: null,
                     detail: 'Services placed there may be down.',
@@ -127,7 +125,7 @@ final readonly class TeamAttention
                 $items[] = new AttentionItemData(
                     key: "server:{$server->public_id}",
                     kind: 'server',
-                    state: AttentionState::Staged,
+                    state: StatusTone::Staged,
                     title: "{$server->name} is waiting for approval",
                     context: null,
                     detail: null,
@@ -144,7 +142,7 @@ final readonly class TeamAttention
                     $items[] = new AttentionItemData(
                         key: "server-disk:{$server->public_id}",
                         kind: 'server',
-                        state: $check->state === HealthCheckState::Critical ? AttentionState::Failed : AttentionState::Warning,
+                        state: $check->state === HealthCheckState::Critical ? StatusTone::Failed : StatusTone::Warning,
                         title: "{$server->name} is running out of disk space",
                         context: null,
                         detail: $check->value,
@@ -166,8 +164,7 @@ final readonly class TeamAttention
     {
         $count = SecurityFinding::query()
             ->where('team_id', $team->id)
-            ->where('status', SecurityFindingStatus::Open->value)
-            ->where('level', FindingLevel::ActionNeeded->value)
+            ->actionNeeded()
             ->count();
 
         if ($count === 0) {
@@ -177,7 +174,7 @@ final readonly class TeamAttention
         return [new AttentionItemData(
             key: 'security',
             kind: 'security',
-            state: AttentionState::Warning,
+            state: StatusTone::Warning,
             title: $count === 1 ? '1 security finding needs action' : "{$count} security findings need action",
             context: null,
             detail: null,
@@ -213,7 +210,7 @@ final readonly class TeamAttention
                 $items[] = new AttentionItemData(
                     key: "paused:{$environment->public_id}",
                     kind: 'paused',
-                    state: AttentionState::Idle,
+                    state: StatusTone::Idle,
                     title: 'Auto-deploy is paused after a rollback',
                     context: $context,
                     detail: 'New pushes won’t go live until you resume it.',
@@ -229,7 +226,7 @@ final readonly class TeamAttention
                 $items[] = new AttentionItemData(
                     key: "staged:{$environment->public_id}",
                     kind: 'staged',
-                    state: AttentionState::Staged,
+                    state: StatusTone::Staged,
                     title: $count === 1 ? '1 change is waiting to deploy' : "{$count} changes are waiting to deploy",
                     context: $context,
                     detail: null,
@@ -257,7 +254,7 @@ final readonly class TeamAttention
             ->map(static fn (Preview $preview): AttentionItemData => new AttentionItemData(
                 key: "preview:{$preview->public_id}",
                 kind: 'preview',
-                state: AttentionState::Staged,
+                state: StatusTone::Staged,
                 title: "Pull request #{$preview->pr_number} from a fork is waiting for approval",
                 context: $preview->project->name,
                 detail: $preview->title,

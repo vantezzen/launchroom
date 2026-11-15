@@ -64,8 +64,32 @@ test('--force revokes the enrolled control-plane server and issues a new token',
         ->and(Server::query()->sole()->status)->toBe(ServerStatus::Revoked);
 });
 
+test('after --force the revoked server is no longer the control plane', function (): void {
+    $old = new FakeDaemon;
+    $old->send($this, 'POST', '/daemon/v1/enroll', $old->enrollBody(bootstrapLocal()['token']))->assertCreated();
+    $revoked = Server::query()->sole();
+
+    $new = new FakeDaemon;
+    $new->send($this, 'POST', '/daemon/v1/enroll', $new->enrollBody(bootstrapLocal(['--force' => true])['token']))->assertCreated();
+    $current = Server::query()->whereKeyNot($revoked->id)->sole();
+
+    expect($revoked->refresh()->is_control_plane)->toBeFalse()
+        ->and(Server::currentControlPlane()?->is($current))->toBeTrue()
+        ->and(Server::query()->controlPlane()->pluck('id')->all())->toBe([$current->id]);
+});
+
 test('it fails without a team', function (): void {
     $this->owner->forceFill(['current_team_id' => null])->save();
 
     $this->artisan('launchroom:servers:bootstrap-local')->assertFailed();
+});
+
+test('join tokens for other servers print the same fields', function (): void {
+    bootstrapLocal();
+    Artisan::call('launchroom:servers:join-token', ['--team' => $this->team->public_id, '--roles' => 'runtime', '--name' => 'worker']);
+    $out = json_decode(trim(Artisan::output()), true, flags: JSON_THROW_ON_ERROR);
+
+    expect(array_keys($out))->toBe(['serverId', 'token', 'cpKey', 'kid'])
+        ->and($out['token'])->toMatch('/^lr_jt_[A-Za-z0-9_-]{43}$/')
+        ->and($out['cpKey'])->toBe(resolve(Signer::class)->publicKey());
 });

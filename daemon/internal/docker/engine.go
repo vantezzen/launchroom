@@ -19,11 +19,11 @@ import (
 	"github.com/moby/moby/client"
 
 	"github.com/vantezzen/launchroom/daemon/internal/guard/guardapi"
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 )
 
 // RegistryAuth returns the base64 X-Registry-Auth value for pulling ref, or
-// "" for anonymous pulls. The daemon will obtain short-lived pull tokens from
-// the dashboard here (docs/05 §6); for now the hook is a stub.
+// "" for anonymous pulls (short-lived pull tokens from the dashboard, docs/05 §6).
 type RegistryAuth func(ctx context.Context, ref string) (string, error)
 
 // EngineOptions configures an Engine.
@@ -47,7 +47,7 @@ type EngineOptions struct {
 	BuiltWarmTimeout time.Duration
 	// Auth supplies registry credentials per pull (default: anonymous).
 	Auth RegistryAuth
-	// UserAgent identifies the daemon to the daemon.
+	// UserAgent identifies launchroomd to Docker.
 	UserAgent string
 }
 
@@ -61,9 +61,16 @@ type Engine struct {
 	builtWarm   time.Duration
 	warm        MirrorWarm
 	auth        RegistryAuth
+	isolation   isolation
 }
 
-var _ Client = (*Engine)(nil)
+var (
+	_ Client   = (*Engine)(nil)
+	_ Isolator = (*Engine)(nil)
+)
+
+// SetIsolation implements Isolator.
+func (e *Engine) SetIsolation(check func(ctx context.Context) error) { e.isolation.set(check) }
 
 // NewEngine returns a client for the local Docker daemon. It does not connect yet.
 func NewEngine(opts EngineOptions) (*Engine, error) {
@@ -113,7 +120,7 @@ func (e *Engine) call(ctx context.Context) (context.Context, context.CancelFunc)
 
 func (e *Engine) managedFilter(extra map[string]string) client.Filters {
 	f := client.Filters{}
-	f.Add("label", LabelManaged+"=true", LabelServer+"="+e.serverID)
+	f.Add("label", names.LabelManaged+"=true", names.LabelServer+"="+e.serverID)
 	for k, v := range extra {
 		f.Add("label", k+"="+v)
 	}
@@ -202,9 +209,7 @@ func fromInspect(r container.InspectResponse) Container {
 		c.Init = *r.HostConfig.Init
 	}
 	if s := r.State; s != nil {
-		c.State = string(s.Status)
-		c.Running = s.Running
-		c.Restarting = s.Restarting
+		c.State = ContainerState(s.Status)
 		c.OOMKilled = s.OOMKilled
 		c.Pid = s.Pid
 		c.ExitCode = s.ExitCode
@@ -269,8 +274,11 @@ func (e *Engine) CreateContainer(ctx context.Context, cc *ContainerCreate) (stri
 	if !IsManaged(cc.Config.Labels, e.serverID) {
 		return "", fmt.Errorf("%w: refusing to create an unlabelled container", ErrNotManaged)
 	}
-	if !strings.HasPrefix(cc.Name, "lr-") {
+	if !names.Managed(cc.Name) {
 		return "", fmt.Errorf("docker: container name %q must be generated (lr-…)", cc.Name)
+	}
+	if err := e.isolation.before(ctx, AttachedNetworks(cc)...); err != nil {
+		return "", err
 	}
 	cctx, cancel := e.call(ctx)
 	defer cancel()
@@ -294,12 +302,16 @@ func (e *Engine) CreateContainer(ctx context.Context, cc *ContainerCreate) (stri
 
 // StartContainer implements Client.
 func (e *Engine) StartContainer(ctx context.Context, id string) error {
-	if err := e.mustOwnContainer(ctx, id); err != nil {
+	c, err := e.InspectContainer(ctx, id)
+	if err != nil {
+		return err
+	}
+	if err := e.isolation.before(ctx, c.NetworkNames()...); err != nil {
 		return err
 	}
 	ctx, cancel := e.call(ctx)
 	defer cancel()
-	_, err := e.api.ContainerStart(ctx, id, client.ContainerStartOptions{})
+	_, err = e.api.ContainerStart(ctx, id, client.ContainerStartOptions{})
 	return wrap("start container", err)
 }
 
@@ -392,7 +404,7 @@ func (e *Engine) CreateNetwork(ctx context.Context, n NetworkCreate) (string, er
 	if !IsManaged(n.Labels, e.serverID) {
 		return "", fmt.Errorf("%w: refusing to create an unlabelled network", ErrNotManaged)
 	}
-	if !strings.HasPrefix(n.Name, "lr-") || !n.Subnet.IsValid() {
+	if !names.Managed(n.Name) || !n.Subnet.IsValid() {
 		return "", fmt.Errorf("docker: network %q needs a generated name and a subnet", n.Name)
 	}
 	ctx, cancel := e.call(ctx)
@@ -449,7 +461,7 @@ func (e *Engine) CreateVolume(ctx context.Context, v VolumeCreate) error {
 	if !IsManaged(v.Labels, e.serverID) {
 		return fmt.Errorf("%w: refusing to create an unlabelled volume", ErrNotManaged)
 	}
-	if !strings.HasPrefix(v.Name, "lr-") {
+	if !names.Managed(v.Name) {
 		return fmt.Errorf("docker: volume name %q must be generated (lr-…)", v.Name)
 	}
 	ctx, cancel := e.call(ctx)
@@ -482,7 +494,7 @@ func (e *Engine) CreateVolume(ctx context.Context, v VolumeCreate) error {
 // unmanaged ones; the removal is never forced, so Docker refuses a volume
 // that any container (managed or not, running or stopped) still uses.
 func (e *Engine) RemoveVolume(ctx context.Context, name string) error {
-	if !strings.HasPrefix(name, "lr-") {
+	if !names.Managed(name) {
 		return fmt.Errorf("docker: volume name %q must be generated (lr-…)", name)
 	}
 	ctx, cancel := e.call(ctx)

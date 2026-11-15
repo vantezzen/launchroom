@@ -10,8 +10,10 @@ use App\Data\Protocol\V1\BuildWarning;
 use App\Data\Protocol\V1\NextBuildInfo;
 use App\Data\Protocol\V1\PhpExtension;
 use App\Data\Protocol\V1\ResolvedPackage;
+use App\Enums\Builds\BuilderReason;
+use App\Enums\Builds\ChosenBuilder;
+use App\Support\Variables\VariableKey;
 use Spatie\LaravelData\Data;
-use Throwable;
 
 /**
  * The "We detected…" summary of a build plan (docs/04 §4): framework,
@@ -52,10 +54,8 @@ final class DetectedPlanData extends Data
      * @param  list<string>  $phpExtensions
      */
     public function __construct(
-        /** `dockerfile` or `railpack`. */
-        public ?string $builder = null,
-        /** `explicit`, `dockerfile_detected`, `preset` or `railpack`. */
-        public ?string $builderReason = null,
+        public ?ChosenBuilder $builder = null,
+        public ?BuilderReason $builderReason = null,
         /** Display name: "Next.js". */
         public ?string $framework = null,
         public ?string $frameworkVersion = null,
@@ -124,8 +124,8 @@ final class DetectedPlanData extends Data
         return new self(
             builder: $summary->builder,
             builderReason: $summary->builderReason,
-            framework: $summary->framework === null || isset(self::RUNTIMES[strtolower($summary->framework)]) ? null : self::frameworkLabel($summary->framework),
             // "node" or "python" is the runtime, already in the headline.
+            framework: $summary->framework === null || isset(self::RUNTIMES[strtolower($summary->framework)]) ? null : self::frameworkLabel($summary->framework),
             frameworkVersion: $summary->next?->nextVersion,
             provider: $summary->provider,
             packageManager: $packageManager,
@@ -154,49 +154,9 @@ final class DetectedPlanData extends Data
         );
     }
 
-    /**
-     * "Next.js" for the framework id `next`; unknown ids as reported.
-     */
     public static function frameworkLabel(string $framework): string
     {
         return self::FRAMEWORKS[strtolower($framework)] ?? mb_substr($framework, 0, 64);
-    }
-
-    /**
-     * A stored summary (`service_instances.plan.summary`,
-     * `deployments.plan.summary`); null when absent or malformed, so the UI
-     * degrades instead of failing when the protocol grows.
-     *
-     * @param  list<string>|null  $definedKeys
-     */
-    public static function fromStored(mixed $summary, ?array $definedKeys = null): ?self
-    {
-        if (! is_array($summary) || $summary === []) {
-            return null;
-        }
-
-        try {
-            return self::fromSummary(BuildSummary::from($summary), $definedKeys);
-        } catch (Throwable) {
-            return null;
-        }
-    }
-
-    /**
-     * The Next.js build report of a stored build summary
-     * (`deployments.plan.summary.next`); null when absent or malformed.
-     */
-    public static function nextFromStored(mixed $summary): ?NextBuildInfo
-    {
-        if (! is_array($summary) || ! is_array($summary['next'] ?? null)) {
-            return null;
-        }
-
-        try {
-            return NextBuildInfo::from($summary['next']);
-        } catch (Throwable) {
-            return null;
-        }
     }
 
     /**
@@ -205,7 +165,7 @@ final class DetectedPlanData extends Data
      */
     private static function names(array $names): array
     {
-        $names = array_values(array_unique(array_filter($names, static fn (mixed $name): bool => is_string($name) && preg_match('/^[A-Za-z_][A-Za-z0-9_]{0,255}$/D', $name) === 1)));
+        $names = array_values(array_unique(array_filter($names, static fn (mixed $name): bool => is_string($name) && VariableKey::isValid($name))));
         sort($names);
 
         return array_slice($names, 0, 256);

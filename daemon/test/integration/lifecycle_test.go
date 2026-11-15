@@ -17,6 +17,7 @@ import (
 
 	"github.com/vantezzen/launchroom/daemon/internal/docker"
 	"github.com/vantezzen/launchroom/daemon/internal/health"
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/policy"
 	"github.com/vantezzen/launchroom/daemon/internal/reconcile"
 	"github.com/vantezzen/launchroom/daemon/internal/sealed"
@@ -55,7 +56,7 @@ func lifecycleEnv(t *testing.T, warm docker.MirrorWarm) *env {
 	t.Cleanup(mon.Close)
 	e.rec = reconcile.New(reconcile.Options{
 		ServerID: e.serverID, Docker: e.engine, Policy: pol, Health: mon, Ingress: e.ingress,
-		EnvHashKey: reconcile.EnvHashKey(e.key.Bytes()),
+		EnvHashKey: docker.EnvHashKey(e.key.Bytes()),
 		OpenEnv: func(s *state.WorkloadSpec) (map[string]secret.Secret, error) {
 			return sealed.OpenWorkloadEnv(s.Env, e.key, e.serverID, s.ID)
 		},
@@ -260,7 +261,7 @@ func TestStopStartAndRestart(t *testing.T) {
 	if rm := events(e, a.ID, state.EventRemoved); len(rm) != 1 || rm[0].Reason != state.ReasonNotDesired {
 		t.Fatalf("removal %+v", rm)
 	}
-	cs, _ := e.engine.ListContainers(t.Context(), map[string]string{docker.LabelWorkload: string(a.ID)})
+	cs, _ := e.engine.ListContainers(t.Context(), map[string]string{names.LabelWorkload: string(a.ID)})
 	if len(cs) != 0 {
 		t.Fatalf("containers left: %v", cs)
 	}

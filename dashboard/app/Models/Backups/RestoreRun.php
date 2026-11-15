@@ -4,11 +4,15 @@ declare(strict_types=1);
 
 namespace App\Models\Backups;
 
+use App\Broadcasting\ServiceActivityTopic;
 use App\Enums\Backups\BackupSubject;
 use App\Enums\Backups\RestoreMode;
 use App\Enums\Backups\RestoreRunStatus;
+use App\Enums\Contracts\HasTransitionTable;
+use App\Events\Broadcasts\ServiceActivityChanged;
 use App\Models\Concerns\BelongsToTeam;
 use App\Models\Concerns\HasPublicId;
+use App\Models\Concerns\HasStatusTransitions;
 use App\Models\DaemonTask;
 use App\Models\ServiceInstance;
 use App\Models\User;
@@ -56,6 +60,9 @@ final class RestoreRun extends Model
 {
     use BelongsToTeam, HasPublicId;
 
+    /** @use HasStatusTransitions<RestoreRunStatus> */
+    use HasStatusTransitions;
+
     /** @var array<string, mixed> */
     protected $attributes = [
         'subject' => 'database',
@@ -67,23 +74,19 @@ final class RestoreRun extends Model
     }
 
     /**
-     * The only way a restore's status changes (docs/10 §2.2 rule 3).
+     * @param  RestoreRunStatus  $from
+     * @param  RestoreRunStatus  $to
      */
-    public function transitionTo(RestoreRunStatus $to, ?string $error = null): void
+    protected function recordTransition(HasTransitionTable $from, HasTransitionTable $to, ?string $note): void
     {
-        $this->status->assertCanTransitionTo($to);
-        $this->status = $to;
-
         if ($to === RestoreRunStatus::Restoring) {
             $this->forceFill(['started_at' => $this->started_at ?? now()]);
         }
 
         if ($to->isTerminal()) {
             $this->forceFill(['finished_at' => now()]);
-            $this->error = $error === null ? null : mb_substr($error, 0, 2048);
+            $this->error = $note;
         }
-
-        $this->save();
     }
 
     /**
@@ -157,5 +160,14 @@ final class RestoreRun extends Model
             'started_at' => 'datetime',
             'finished_at' => 'datetime',
         ];
+    }
+
+    protected function transitioned(HasTransitionTable $from, HasTransitionTable $to): void
+    {
+        ServiceActivityChanged::about($this->source, ServiceActivityTopic::Backups);
+
+        if ($this->target_service_instance_id !== null && $this->target_service_instance_id !== $this->source_service_instance_id) {
+            ServiceActivityChanged::about($this->target, ServiceActivityTopic::Backups);
+        }
     }
 }

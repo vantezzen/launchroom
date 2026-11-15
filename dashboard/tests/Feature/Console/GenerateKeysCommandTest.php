@@ -40,6 +40,7 @@ afterEach(function (): void {
 });
 
 test('generates the KEK and signing key files when missing', function (): void {
+    $this->freezeTime();
     $this->artisan('launchroom:keys:generate')
         ->expectsOutputToContain('KEK created')
         ->expectsOutputToContain('Signing key created')

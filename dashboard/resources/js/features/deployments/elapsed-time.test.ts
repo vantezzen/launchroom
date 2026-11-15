@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { elapsedSeconds } from './format';
+import { elapsedSeconds } from '@/lib/format';
 
 test('running durations advance with the clock without a status update', () => {
     const start = '2026-10-22T12:00:00Z';

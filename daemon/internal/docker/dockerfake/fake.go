@@ -49,7 +49,9 @@ type Fake struct {
 	// Logs are returned by StreamLogs per container id.
 	Logs map[string][]docker.LogLine
 	// Now is the clock (default time.Now).
-	Now func() time.Time
+	Now     func() time.Time
+	isolate func(context.Context) error
+
 	// OnPull runs at the start of every PullImage (without the lock), e.g. to
 	// report progress through docker.ReportPullProgress.
 	OnPull func(ctx context.Context, ref string)
@@ -125,7 +127,7 @@ func (f *Fake) AddUnmanagedContainer(name string, labels map[string]string) stri
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	id := newID()
-	f.containers[id] = &entry{c: docker.Container{ID: id, Name: name, Labels: labels, State: "running", Running: true}}
+	f.containers[id] = &entry{c: docker.Container{ID: id, Name: name, Labels: labels, State: docker.StateRunning}}
 	return id
 }
 
@@ -146,7 +148,7 @@ func (f *Fake) SetState(id, state string, exitCode int) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if e, ok := f.containers[id]; ok {
-		e.c.State, e.c.Running, e.c.ExitCode = state, state == "running", exitCode
+		e.c.State, e.c.ExitCode = docker.ContainerState(state), exitCode
 	}
 }
 
@@ -243,8 +245,25 @@ func (f *Fake) InspectContainer(_ context.Context, id string) (docker.Container,
 	return clone(e.c), nil
 }
 
+// SetIsolation implements docker.Isolator.
+func (f *Fake) SetIsolation(check func(ctx context.Context) error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.isolate = check
+}
+
+func (f *Fake) isolated(ctx context.Context, networks []string) error {
+	f.mu.Lock()
+	check := f.isolate
+	f.mu.Unlock()
+	return docker.CheckIsolation(ctx, check, networks...)
+}
+
 // CreateContainer implements docker.Client.
-func (f *Fake) CreateContainer(_ context.Context, cc *docker.ContainerCreate) (string, error) {
+func (f *Fake) CreateContainer(ctx context.Context, cc *docker.ContainerCreate) (string, error) {
+	if err := f.isolated(ctx, docker.AttachedNetworks(cc)); err != nil {
+		return "", err
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if !f.owned(cc.Config.Labels) {
@@ -328,15 +347,27 @@ func (f *Fake) allocIP(network string) netip.Addr {
 }
 
 // StartContainer implements docker.Client.
-func (f *Fake) StartContainer(_ context.Context, id string) error {
+func (f *Fake) StartContainer(ctx context.Context, id string) error {
 	f.mu.Lock()
-	defer f.mu.Unlock()
 	e, err := f.get(id)
+	var nets []string
+	if err == nil {
+		nets = e.c.NetworkNames()
+	}
+	f.mu.Unlock()
 	if err != nil {
 		return err
 	}
+	if err := f.isolated(ctx, nets); err != nil {
+		return err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if e, err = f.get(id); err != nil {
+		return err
+	}
 	f.pid++
-	e.c.State, e.c.Running, e.c.Pid, e.c.StartedAt, e.c.ExitCode = "running", true, f.pid, f.now().UTC(), 0
+	e.c.State, e.c.Pid, e.c.StartedAt, e.c.ExitCode = "running", f.pid, f.now().UTC(), 0
 	e.c.HostPorts = nil
 	if hc := e.create.HostConfig; hc != nil && !f.Unbound[e.c.Name] {
 		for _, bs := range hc.PortBindings {
@@ -348,7 +379,7 @@ func (f *Fake) StartContainer(_ context.Context, id string) error {
 		}
 	}
 	if code, ok := f.ExitOnStart[e.c.Name]; ok {
-		e.c.State, e.c.Running, e.c.Pid, e.c.ExitCode, e.c.FinishedAt = "exited", false, 0, code, f.now().UTC()
+		e.c.State, e.c.Pid, e.c.ExitCode, e.c.FinishedAt = "exited", 0, code, f.now().UTC()
 	}
 	f.record("start %s", e.c.Name)
 	return nil
@@ -362,7 +393,7 @@ func (f *Fake) StopContainer(_ context.Context, id string, grace time.Duration) 
 	if err != nil {
 		return err
 	}
-	e.c.State, e.c.Running, e.c.Pid, e.c.FinishedAt, e.c.HostPorts = "exited", false, 0, f.now().UTC(), nil
+	e.c.State, e.c.Pid, e.c.FinishedAt, e.c.HostPorts = "exited", 0, f.now().UTC(), nil
 	f.record("stop %s %s", e.c.Name, grace)
 	return nil
 }

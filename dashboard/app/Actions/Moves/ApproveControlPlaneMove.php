@@ -56,7 +56,7 @@ final readonly class ApproveControlPlaneMove
                 array_map(static fn (ServerRole $role): string => $role->value, $source->roles->all()),
                 static fn (string $role): bool => in_array($role, ['edge', 'runtime', 'build'], true),
             ));
-            $name = $move->receiver['hostname'] ?? null;
+            $name = $move->receiver?->hostname;
             $issued = $this->enrollments->handle(
                 $source->team,
                 new CreateEnrollmentData($roles === [] ? ['edge', 'runtime', 'build'] : $roles, is_string($name) && preg_match('/^[\pL\pN ._-]{1,64}$/u', $name) === 1 ? $name : 'new server'),

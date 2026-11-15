@@ -5,7 +5,9 @@ declare(strict_types=1);
 use App\Http\Controllers\Transfers\DownloadController;
 use App\Http\Controllers\Transfers\ServiceTransfersController;
 use App\Http\Controllers\Transfers\TransferController;
+use App\Models\DaemonTask;
 use App\Support\PublicId;
+use App\Support\Transfers\DownloadToken;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -25,7 +27,7 @@ Route::middleware(['web', 'auth', 'verified'])->group(function (): void {
         ->middleware('throttle:20,1')
         ->name('transfers.services.inspect');
     Route::get('transfers/services/{serviceInstance}/inspect/{task}', [ServiceTransfersController::class, 'inspection'])
-        ->where('task', PublicId::routePattern('tsk'))
+        ->where('task', PublicId::routePattern(DaemonTask::publicIdPrefix()))
         ->middleware('throttle:120,1')
         ->name('transfers.services.inspection');
     Route::post('transfers/services/{serviceInstance}/imports', [ServiceTransfersController::class, 'storeImport'])
@@ -64,7 +66,7 @@ Route::middleware(['web', 'auth', 'verified'])->group(function (): void {
         ->name('transfers.destroy');
 
     Route::get('transfers/download/{token}', DownloadController::class)
-        ->where('token', 'lr_dl_[A-Za-z0-9_-]{43}')
+        ->where('token', DownloadToken::ROUTE_PATTERN)
         ->middleware('throttle:30,1')
         ->name('transfers.download');
 });

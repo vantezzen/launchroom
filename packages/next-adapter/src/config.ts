@@ -81,8 +81,8 @@ export function applyLaunchroomConfig(input: NextConfigLike, ctx: ModifyConfigCo
     }
   }
 
-  // 4. Shared cache for ISR / revalidateTag across replicas (documented TODO:
-  //    launchroom does not ship a cache handler yet; see README).
+  // 4. LAUNCHROOM_NEXT_CACHE is reserved for a shared ISR / revalidateTag cache;
+  //    the adapter ships no handler (README), so only the app's own is kept.
   const cache = env.LAUNCHROOM_NEXT_CACHE?.trim();
   if (cache && cache !== 'local') {
     const hasHandler = Boolean(config.cacheHandler) || Object.values(config.cacheHandlers ?? {}).some(Boolean);

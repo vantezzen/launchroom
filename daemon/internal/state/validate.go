@@ -14,9 +14,7 @@ const (
 	maxArgLen      = 8192
 	maxListItems   = 1024
 	maxErrors      = 25
-	maxMessageLen  = 4096
 	maxLogLines    = 5000
-	maxLogLineLen  = 16384
 	maxHeaderValue = 1024
 )
 
@@ -40,7 +38,6 @@ func NewTypeMeta(kind string) TypeMeta { return TypeMeta{APIVersion: APIVersion,
 
 type validator interface{ Validate() error }
 
-// errs accumulates validation errors with a JSON-ish path.
 type errs struct{ list []error }
 
 func (e *errs) add(path string, err error) {

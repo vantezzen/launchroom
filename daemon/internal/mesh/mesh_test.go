@@ -13,6 +13,7 @@ import (
 
 	"github.com/vantezzen/launchroom/daemon/internal/docker"
 	"github.com/vantezzen/launchroom/daemon/internal/docker/dockerfake"
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/policy"
 	"github.com/vantezzen/launchroom/daemon/internal/secret"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
@@ -67,7 +68,6 @@ func TestParseStatusConnected(t *testing.T) {
 	if st.controlURL != "https://dash.example.com" || st.backend != "Running" {
 		t.Fatalf("parsed = %+v", st)
 	}
-	// The report passes the protocol validation.
 	rep := &state.Report{TypeMeta: state.NewTypeMeta(state.KindReport), ServerID: serverID, ObservedAt: t0, Seq: 1,
 		Host: &state.HostStatus{CPUs: 1, DaemonVersion: "0.1.0", Mesh: r}}
 	if err := rep.Validate(); err != nil {
@@ -158,7 +158,7 @@ func TestContainerSpec(t *testing.T) {
 			t.Fatalf("no credentials in env: %s", e)
 		}
 	}
-	if !docker.IsManaged(cc.Config.Labels, string(serverID)) || cc.Config.Labels[docker.LabelSystem] != policy.SystemTailscale {
+	if !docker.IsManaged(cc.Config.Labels, string(serverID)) || cc.Config.Labels[names.LabelSystem] != names.SystemTailscale {
 		t.Fatalf("labels = %v", cc.Config.Labels)
 	}
 }
@@ -244,7 +244,7 @@ func TestSyncLogsInWithTheKeyOnStdin(t *testing.T) {
 	if st.State != state.MeshNeedsLogin || len(ex.upArgv) != 0 {
 		t.Fatalf("without a key: %+v, ups %d", st, len(ex.upArgv))
 	}
-	if _, ok := d.Create(ContainerName); !ok {
+	if _, ok := d.Create(names.TailscaleContainer); !ok {
 		t.Fatal("container not created")
 	}
 
@@ -310,7 +310,7 @@ func TestSyncRefusesUnpinnedImagesAndPlainHTTP(t *testing.T) {
 	if st := m.Sync(context.Background(), s); st.State != state.MeshError || !strings.Contains(st.Message, "plain http") {
 		t.Fatalf("plain http: %+v", st)
 	}
-	if _, ok := d.Create(ContainerName); ok {
+	if _, ok := d.Create(names.TailscaleContainer); ok {
 		t.Fatal("refused specs must not create the container")
 	}
 	// Locally allowed dev host.
@@ -330,7 +330,7 @@ func TestSyncDisabledRemovesTheClient(t *testing.T) {
 	if st := m.Sync(context.Background(), state.TailscaleSpec{}); st != nil || m.Status() != nil || m.IPv4().IsValid() {
 		t.Fatalf("disabled: %+v", st)
 	}
-	cs, _ := d.ListContainers(context.Background(), map[string]string{docker.LabelSystem: policy.SystemTailscale})
+	cs, _ := d.ListContainers(context.Background(), map[string]string{names.LabelSystem: names.SystemTailscale})
 	if len(cs) != 0 {
 		t.Fatalf("container left: %v", cs)
 	}

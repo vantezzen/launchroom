@@ -5,10 +5,10 @@ declare(strict_types=1);
 use App\Actions\Servers\RenderNodeState;
 use App\Enums\ServerRole;
 use App\Models\Server;
-use App\Services\Crypto\ResponseSignature;
 use App\Services\Crypto\Signer;
 use Tests\Support\FakeDaemon;
 use Tests\Support\ProtocolSchemas;
+use Tests\Support\ResponseSignature;
 
 function onlineServer(string $seed, array $roles = [ServerRole::Edge, ServerRole::Runtime, ServerRole::Build]): Server
 {

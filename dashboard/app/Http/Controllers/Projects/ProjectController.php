@@ -7,8 +7,9 @@ namespace App\Http\Controllers\Projects;
 use App\Actions\Projects\CreateProject;
 use App\Data\Projects\CreateProjectData;
 use App\Http\Controllers\Controller;
-use App\Http\Controllers\Teams\TeamSettingsController;
+use App\Http\Routing\CurrentTeam;
 use App\Models\Project;
+use App\Models\Team;
 use App\Models\User;
 use App\Queries\ProjectSummaries;
 use App\Queries\TeamAttention;
@@ -33,9 +34,8 @@ final class ProjectController extends Controller
      * environment's staged changes), the team's last deployments (deferred)
      * and the project cards, problems first.
      */
-    public function index(#[CurrentUser] User $user, ProjectSummaries $summaries, TeamAttention $attention, TeamRecentDeployments $recent): Response
+    public function index(#[CurrentUser] User $user, ProjectSummaries $summaries, TeamAttention $attention, TeamRecentDeployments $recent, #[CurrentTeam] Team $team): Response
     {
-        $team = TeamSettingsController::currentTeam($user);
         Gate::authorize('viewAny', [Project::class, $team]);
 
         $projects = null;
@@ -52,9 +52,8 @@ final class ProjectController extends Controller
         ]);
     }
 
-    public function store(Request $request, CreateProjectData $data, #[CurrentUser] User $user, CreateProject $createProject): RedirectResponse
+    public function store(Request $request, CreateProjectData $data, #[CurrentUser] User $user, CreateProject $createProject, #[CurrentTeam] Team $team): RedirectResponse
     {
-        $team = TeamSettingsController::currentTeam($user);
         Gate::authorize('create', [Project::class, $team]);
 
         $project = $createProject->handle($team, $data, $this->auditActor($request, $user));
@@ -62,9 +61,6 @@ final class ProjectController extends Controller
         return to_route('projects.show', $project);
     }
 
-    /**
-     * The project's home: the production canvas.
-     */
     public function show(Project $project): RedirectResponse
     {
         Gate::authorize('view', $project);

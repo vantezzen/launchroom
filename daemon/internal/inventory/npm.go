@@ -76,7 +76,6 @@ func (g *npmGraph) packages() int {
 	return n
 }
 
-// facts walks the graph from its roots.
 func (g *npmGraph) facts(direct map[string]bool) *npmFacts {
 	f := &npmFacts{prod: map[string]bool{}, dev: map[string]bool{}, direct: direct, lockfile: true}
 	walk := func(roots []string, into map[string]bool, list *[]nameVersion) {

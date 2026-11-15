@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Services\Domains;
 
 use App\Enums\ServerRole;
-use App\Enums\ServerStatus;
 use App\Models\Domain;
 use App\Models\Environment;
 use App\Models\InstanceSettings;
@@ -69,8 +68,8 @@ final class GeneratedDomains
 
         $ip = Server::query()
             ->where('team_id', $project->team_id)
-            ->where('status', ServerStatus::Online->value)
-            ->whereJsonContains('roles', ServerRole::Edge->value)
+            ->online()
+            ->withRole(ServerRole::Edge)
             ->whereNotNull('public_ipv4')
             ->orderBy('id')
             ->value('public_ipv4');

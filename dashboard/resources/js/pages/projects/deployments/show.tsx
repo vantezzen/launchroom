@@ -8,27 +8,21 @@ import { Page, PageHeader } from '@/components/patterns/page';
 import { Section } from '@/components/patterns/section';
 import { Button } from '@/components/ui/button';
 import { ConfigFailureCard } from '@/features/config-as-code/config-failure-card';
-import {
-    FailureCard,
-    fixAction,
-} from '@/features/deployment-detail/failure-card';
-import { DeploymentImpact } from '@/features/deployment-detail/deployment-impact';
-import { OverviewCard } from '@/features/deployment-detail/overview-card';
+import { FailureCard, fixAction } from '@/features/deployments/failure-card';
+import { DeploymentImpact } from '@/features/deployments/deployment-impact';
+import { OverviewCard } from '@/features/deployments/overview-card';
 import {
     deploymentLogsHref,
     RelatedCards,
-} from '@/features/deployment-detail/related-cards';
-import { stepRows } from '@/features/deployment-detail/steps';
+} from '@/features/deployments/related-cards';
+import { stepRows } from '@/features/deployments/steps';
 import type { PendingAction } from '@/features/deployments/deployment-actions';
 import { DeploymentActionDialog } from '@/features/deployments/deployment-actions';
 import {
     deploymentTitle,
-    formatDuration,
     isInProgress,
-    shortSha,
     startedBy,
 } from '@/features/deployments/format';
-import { ChannelEvents } from '@/features/deployments/realtime';
 import type { TimelineStep } from '@/features/logs/log-viewer';
 import { LogViewer } from '@/features/logs/log-viewer';
 import {
@@ -38,12 +32,15 @@ import {
     withLoggedSteps,
 } from '@/features/logs/step-log';
 import { useDeploymentLogs } from '@/features/logs/use-deployment-logs';
-import { liveReload } from '@/features/projects/environment-live-updates';
-import type { ProjectShellProps } from '@/features/projects/types';
+import { liveReload } from '@/lib/live-reload';
 import services from '@/routes/projects/services';
 import { TimeAgo } from '@/components/time-ago';
+import { formatDuration, shortSha } from '@/lib/format';
+import ProjectLayout from '@/features/app-shell/project-layout';
+import { ChannelEvents } from '@/components/channel-events';
+import { channelName } from '@/lib/realtime';
 
-type Props = ProjectShellProps & {
+type Props = App.Data.Canvas.ProjectShellPropsData & {
     detail: App.Data.Deployments.DeploymentDetailData;
     logs: App.Data.Deployments.LogPageData;
     /** "Since this deploy" (docs/08 §12); null without traffic to compare. */
@@ -155,14 +152,14 @@ function DeploymentPage({
             {live && !pending && (
                 <>
                     <ChannelEvents
-                        channel={`deployments.${deployment.id}`}
-                        event=".logs.appended"
+                        channel={channelName('deployments', deployment.id)}
+                        event="logs.appended"
                         pollMs={3_000}
                         onEvent={() => stream.nudge()}
                     />
                     <ChannelEvents
-                        channel={`deployments.${deployment.id}`}
-                        event=".deployment.updated"
+                        channel={channelName('deployments', deployment.id)}
+                        event="deployment.updated"
                         pollMs={5_000}
                         onEvent={() => {
                             refreshDetail();
@@ -353,3 +350,5 @@ function DeploymentPage({
         </>
     );
 }
+
+DeploymentShow.layout = ProjectLayout;

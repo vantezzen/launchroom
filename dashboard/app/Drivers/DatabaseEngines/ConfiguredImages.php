@@ -33,6 +33,15 @@ final readonly class ConfiguredImages
     }
 
     /**
+     * The first configured version: config lists them newest first, and
+     * the newest is offered by default.
+     */
+    public function defaultVersion(DatabaseEngine $engine): string
+    {
+        return $this->versions($engine)[0] ?? throw new InvalidArgumentException("No version is configured for {$engine->value}.");
+    }
+
+    /**
      * @return list<string>
      */
     public function versions(DatabaseEngine $engine): array

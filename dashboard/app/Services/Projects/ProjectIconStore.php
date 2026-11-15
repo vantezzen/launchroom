@@ -35,9 +35,6 @@ final class ProjectIconStore
         return ['icon_path' => $path, 'icon_type' => $icon->extension, 'icon_version' => $version];
     }
 
-    /**
-     * Removes every file of the project except the current one.
-     */
     public function prune(Project $project): void
     {
         foreach ($this->disk()->files($this->directory($project)) as $file) {

@@ -7,19 +7,18 @@ namespace App\Actions\Variables;
 use App\Actions\Audit\RecordAuditEvent;
 use App\Data\Audit\AuditActor;
 use App\Data\Audit\AuditEntryData;
+use App\Data\Variables\VariableTargetRow;
 use App\Data\Variables\VariableUpdate;
 use App\Enums\AuditAction;
-use App\Enums\Permission;
-use App\Enums\VariableType;
+use App\Events\CanvasChanged;
 use App\Exceptions\DomainRuleViolation;
 use App\Models\Environment;
 use App\Models\User;
 use App\Models\Variable;
 use App\Models\VariableTarget;
-use App\Services\Variables\SecretExposureGuard;
 use App\Services\Variables\VariableStore;
 use App\Services\Variables\VariableTargets;
-use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
 use Spatie\LaravelData\Optional;
 
 /**
@@ -36,18 +35,20 @@ final readonly class UpdateVariable
 {
     public function __construct(
         private VariableStore $store,
-        private SecretExposureGuard $exposure,
         private VariableTargets $targets,
         private RecordAuditEvent $audit,
     ) {}
 
     public function handle(Variable $variable, VariableUpdate $update, ?User $user, AuditActor $actor): Variable
     {
-        return DB::transaction(function () use ($variable, $update, $user, $actor): Variable {
+        $variable->loadMissing('project');
+
+        return $this->store->write($variable->project, function () use ($variable, $update, $user, $actor): Variable {
             $variable = Variable::query()->whereKey($variable->id)->with('project')->lockForUpdate()->firstOrFail();
             $project = $variable->project;
+            CanvasChanged::forProject($project);
 
-            if ($variable->connection_id !== null) {
+            if ($variable->isManagedByConnection()) {
                 throw DomainRuleViolation::on('variable', 'This variable belongs to a connection. Change or remove the connection instead.');
             }
 
@@ -55,17 +56,12 @@ final readonly class UpdateVariable
                 return $this->split($variable, $update, $update->onlyEnvironment, $user, $actor);
             }
 
-            $previousKey = $variable->key;
             $key = $update->key instanceof Optional ? $variable->key : $update->key;
             $type = $update->type instanceof Optional ? $variable->type : $update->type;
             $exposure = $update->exposureOverride instanceof Optional ? $variable->exposure_override : $update->exposureOverride;
 
             $targets = $update->targets instanceof Optional ? null : $this->targets->resolve($project, $update->targets);
-            $currentTargets = array_values($variable->targets()->get()->map(static fn ($target): array => [
-                'environment_id' => $target->environment_id,
-                'all_previews' => $target->all_previews,
-                'branch_pattern' => $target->branch_pattern,
-            ])->all());
+            $currentTargets = array_values($variable->targets()->get()->map(VariableTargetRow::of(...))->all());
             $this->targets->assertNoOverlap($project, $variable->service_id, $key, $targets ?? $currentTargets, $variable->id);
 
             $this->store->updateMeta($variable, $key, $type, $exposure, $user);
@@ -78,8 +74,6 @@ final readonly class UpdateVariable
                 $this->store->replaceTargets($variable, $targets);
             }
 
-            $this->exposure->assertNoPublicSecrets($project, array_values(array_unique([$previousKey, $key])), $update->value instanceof Optional ? 'type' : 'value');
-
             $this->audit->handle(new AuditEntryData(
                 action: AuditAction::VariableUpdated,
                 actor: $actor,
@@ -90,7 +84,7 @@ final readonly class UpdateVariable
             ));
 
             return $variable;
-        });
+        }, $update->value instanceof Optional ? 'type' : 'value');
     }
 
     private function split(Variable $variable, VariableUpdate $update, string $environmentId, ?User $user, AuditActor $actor): Variable
@@ -109,20 +103,19 @@ final readonly class UpdateVariable
         $value = $update->value instanceof Optional ? $this->store->plaintext($project, $variable) : $update->value;
 
         VariableTarget::query()->where('variable_id', $variable->id)->where('environment_id', $environment->id)->delete();
-        $target = [['environment_id' => $environment->id, 'all_previews' => false, 'branch_pattern' => null]];
+        $target = [VariableTargetRow::environment($environment->id)];
         $this->targets->assertNoOverlap($project, $variable->service_id, $key, $target);
 
-        if ($variable->type === VariableType::Secret && $type === VariableType::Config && ! ($user?->hasTeamPermission($variable->team_id, Permission::RevealSecrets) ?? false)) {
+        if (! Gate::forUser($user)->allows('retype', [$variable, $type])) {
             throw DomainRuleViolation::on('type', 'Changing a secret to config requires permission to reveal secrets.');
         }
 
+        $this->store->touch($variable->key);
         $copy = $this->store->create($project, $variable->service, $key, $value, $type, $target, $exposure, actor: $user);
 
         if ($variable->service_id === null && $variable->usedBy()->exists()) {
             $copy->usedBy()->syncWithoutDetaching($variable->usedBy()->pluck('services.id')->all());
         }
-
-        $this->exposure->assertNoPublicSecrets($project, array_values(array_unique([$variable->key, $key])), $update->value instanceof Optional ? 'type' : 'value');
 
         $this->audit->handle(new AuditEntryData(
             action: AuditAction::VariableUpdated,

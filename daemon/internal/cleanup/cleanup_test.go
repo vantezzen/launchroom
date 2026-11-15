@@ -15,6 +15,7 @@ import (
 
 	"github.com/vantezzen/launchroom/daemon/internal/docker"
 	"github.com/vantezzen/launchroom/daemon/internal/docker/dockerfake"
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
 
@@ -112,7 +113,7 @@ func runOnce(t *testing.T, f *dockerfake.Fake, name string, created time.Time, s
 	f.AddImage(ref)
 	f.Now = func() time.Time { return created }
 	labels := maps.Clone(docker.ManagedLabels(server))
-	labels[docker.LabelTask] = "tsk_01J9Z8X7W6V5T4S3R2Q1P0N9P0"
+	labels[names.LabelTask] = "tsk_01J9Z8X7W6V5T4S3R2Q1P0N9P0"
 	id, err := f.CreateContainer(context.Background(), &docker.ContainerCreate{
 		Name: name, Config: &container.Config{Image: ref, Labels: labels}, HostConfig: &container.HostConfig{},
 	})
@@ -139,11 +140,15 @@ func TestRunRemovesLeftoversImagesAndPrunesBuildCache(t *testing.T) {
 		inUse:  map[string]bool{"busy": true},
 	}
 	var pruned []string
+	var pruneErr error
 	c := New(Options{
 		Docker: f, Host: host, RegistryPrefix: reg, Now: func() time.Time { return now },
 		PruneBuildCache: func(context.Context) BuildCachePrune {
 			return func(_ context.Context, age time.Duration, keep int64) (int64, error) {
 				pruned = append(pruned, age.String()+"/"+itoa(keep>>30))
+				if pruneErr != nil {
+					return 0, pruneErr
+				}
 				return 300 << 20, nil
 			}
 		},
@@ -159,25 +164,20 @@ func TestRunRemovesLeftoversImagesAndPrunesBuildCache(t *testing.T) {
 		t.Fatalf("removed images %v", host.removed) // "busy" was refused as in use, a3/a4 kept
 	}
 	left, _ := f.ListContainers(context.Background(), nil)
-	var names []string
+	var got []string
 	for _, c := range left {
-		names = append(names, c.Name)
+		got = append(got, c.Name)
 	}
-	slices.Sort(names)
-	if !slices.Equal(names, []string{"lr-run-recent", "lr-run-running"}) {
-		t.Fatalf("containers left %v", names)
+	slices.Sort(got)
+	if !slices.Equal(got, []string{"lr-run-recent", "lr-run-running"}) {
+		t.Fatalf("containers left %v", got)
 	}
 	if !slices.Equal(pruned, []string{"168h0m0s/10"}) {
 		t.Fatalf("build cache prune %v (never --all)", pruned)
 	}
 
 	// Disk pressure prunes the build cache harder; errors are reported, not fatal.
-	c.o.PruneBuildCache = func(context.Context) BuildCachePrune {
-		return func(_ context.Context, age time.Duration, keep int64) (int64, error) {
-			pruned = append(pruned, age.String()+"/"+itoa(keep>>30))
-			return 0, errors.New("buildkitd went away")
-		}
-	}
+	pruneErr = errors.New("buildkitd went away")
 	res = c.Run(context.Background(), state.CleanupDiskPressure)
 	if pruned[1] != "24h0m0s/2" || !strings.Contains(res.Error, "buildkitd went away") || c.Last().Trigger != state.CleanupDiskPressure {
 		t.Fatalf("pressure run: %v %+v", pruned, res)

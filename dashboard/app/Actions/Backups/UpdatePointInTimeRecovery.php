@@ -11,11 +11,10 @@ use App\Enums\AuditAction;
 use App\Events\NodeStateInvalidated;
 use App\Exceptions\DomainRuleViolation;
 use App\Models\Backups\BackupDestination;
-use App\Models\Backups\BackupSchedule;
 use App\Models\Backups\WalArchive;
 use App\Models\ServiceInstance;
 use App\Services\Backups\PointInTimeRecovery;
-use App\Services\Backups\RestoreHolds;
+use App\Services\Holds\Holds;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -47,8 +46,7 @@ final readonly class UpdatePointInTimeRecovery
 
         $archive = DB::transaction(function () use ($instance, $enabled, $keepDays): WalArchive {
             $archive = WalArchive::query()->where('service_instance_id', $instance->id)->lockForUpdate()->first();
-            $destination = BackupSchedule::query()->where('service_instance_id', $instance->id)->first()?->destination()->first()
-                ?? BackupDestination::defaultFor($instance->team_id);
+            $destination = BackupDestination::forService($instance);
 
             if (! $archive instanceof WalArchive) {
                 if (! $destination instanceof BackupDestination) {
@@ -82,11 +80,9 @@ final readonly class UpdatePointInTimeRecovery
             return $archive;
         });
 
-        $servers = RestoreHolds::serverIds([$instance->id]);
+        $servers = Holds::serverIds([$instance->id]);
 
-        if ($servers !== []) {
-            event(new NodeStateInvalidated($servers));
-        }
+        NodeStateInvalidated::servers($servers);
 
         $this->audit->handle(new AuditEntryData(
             action: AuditAction::PointInTimeRecoveryUpdated,

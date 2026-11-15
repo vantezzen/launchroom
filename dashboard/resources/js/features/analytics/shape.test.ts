@@ -2,13 +2,13 @@ import { describe, expect, test } from 'vite-plus/test';
 import { tickIndexes } from '@/components/charts/stacked-bars';
 import {
     agentRows,
-    formatShare,
     pathRows,
     projectSeries,
     referrerRows,
     share,
     statusSeries,
 } from './shape';
+import { formatShare } from '@/lib/format';
 
 type Analytics = App.Data.Analytics.AnalyticsData;
 

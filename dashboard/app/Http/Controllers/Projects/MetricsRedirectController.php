@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Projects;
 
 use App\Http\Controllers\Controller;
+use App\Http\Routing\RouteScope;
 use App\Models\Environment;
 use App\Models\Project;
 use App\Models\Service;
@@ -26,7 +27,7 @@ final class MetricsRedirectController extends Controller
      */
     public function project(Request $request, Project $project, Environment $environment): RedirectResponse
     {
-        ProjectScope::environment($project, $environment);
+        RouteScope::environment($project, $environment);
         Gate::authorize('view', $environment);
 
         return $this->to(route('projects.resources-page', [$project, $environment], false), $request->query());
@@ -38,12 +39,12 @@ final class MetricsRedirectController extends Controller
      */
     public function service(Request $request, Project $project, Environment $environment, Service $service): RedirectResponse
     {
-        $instance = ProjectScope::instance($project, $environment, $service);
+        $instance = RouteScope::instance($project, $environment, $service);
         Gate::authorize('view', $instance);
 
         $range = $request->query('range');
 
-        return redirect()->to(Links::serviceAnalytics($instance, is_string($range) ? $range : null), 301);
+        return redirect()->to(Links::serviceAnalytics($instance, $instance->domains()->exists(), is_string($range) ? $range : null), 301);
     }
 
     /**

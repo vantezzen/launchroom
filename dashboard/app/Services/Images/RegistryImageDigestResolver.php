@@ -9,13 +9,14 @@ use App\Data\Registry\RegistryScope;
 use App\Exceptions\ImageResolutionFailed;
 use App\Services\Registry\RegistryTokenIssuer;
 use App\Support\Images\ImageReference;
+use App\Support\Images\RegistryLayout;
 use Illuminate\Contracts\Cache\Repository as Cache;
 use Illuminate\Http\Client\Factory as HttpFactory;
 use Throwable;
 
 /**
  * Resolves `image:tag` to its digest through the local registry's
- * pull-through mirror (docs/04 §11): `HEAD /v2/mirror/<registry>/<repository>/manifests/<tag>`
+ * pull-through mirror (docs/04 §11): `HEAD /v2/<mirror path>/<registry>/<repository>/manifests/<tag>`
  * with a dashboard-issued pull token for exactly that mirror repository,
  * accepting OCI indexes and Docker manifest lists (so the digest is the
  * multi-arch one). Asking the mirror also syncs the image into it, so the
@@ -26,13 +27,6 @@ use Throwable;
  */
 final readonly class RegistryImageDigestResolver implements ImageDigestResolver
 {
-    private const array ACCEPT = [
-        'application/vnd.oci.image.index.v1+json',
-        'application/vnd.docker.distribution.manifest.list.v2+json',
-        'application/vnd.oci.image.manifest.v1+json',
-        'application/vnd.docker.distribution.manifest.v2+json',
-    ];
-
     public function __construct(
         private HttpFactory $http,
         private RegistryTokenIssuer $tokens,
@@ -46,11 +40,11 @@ final readonly class RegistryImageDigestResolver implements ImageDigestResolver
         }
 
         $tag = $reference->tag ?? 'latest';
-        $repository = strtolower('mirror/'.$reference->registry.'/'.$reference->repository);
+        $repository = RegistryLayout::mirrorRepository($reference);
         $key = 'launchroom:image-digest:'.hash('sha256', $repository.':'.$tag);
         $cached = $this->cache->get($key);
 
-        if (is_string($cached) && preg_match('/^sha256:[a-f0-9]{64}$/D', $cached) === 1) {
+        if (is_string($cached) && ImageReference::isDigest($cached)) {
             return $reference->withDigest($cached);
         }
 
@@ -71,19 +65,19 @@ final readonly class RegistryImageDigestResolver implements ImageDigestResolver
                 ->timeout(config()->integer('launchroom.registry_lookup.timeout_seconds'))
                 ->withoutRedirecting()
                 ->withToken($token->token)
-                ->accept(implode(', ', self::ACCEPT))
+                ->accept(implode(', ', RegistryLayout::MANIFEST_ACCEPT))
                 ->head($url);
         } catch (Throwable) {
             throw new ImageResolutionFailed("Could not reach the image registry to resolve {$name}. Try again, or pin the image with @sha256:… .");
         }
 
         if ($response->status() === 404) {
-            throw new ImageResolutionFailed("{$name} was not found (only public images on docker.io and ghcr.io can be mirrored). Check the name and tag, or pin it with @sha256:… .");
+            throw new ImageResolutionFailed("{$name} was not found (only public images on ".RegistryLayout::mirroredList().' can be mirrored). Check the name and tag, or pin it with @sha256:… .');
         }
 
         $digest = $response->header('Docker-Content-Digest');
 
-        if (! $response->successful() || preg_match('/^sha256:[a-f0-9]{64}$/D', $digest) !== 1) {
+        if (! $response->successful() || ! ImageReference::isDigest($digest)) {
             throw new ImageResolutionFailed("The registry could not resolve {$name} (HTTP {$response->status()}). Try again, or pin it with @sha256:… .");
         }
 

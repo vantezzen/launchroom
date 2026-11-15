@@ -7,8 +7,10 @@ import {
     RotateCcw,
     X,
 } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
+import { ServiceActivityEvents } from '@/components/channel-events';
 import { MetaLine } from '@/components/patterns/meta-line';
 import { Section } from '@/components/patterns/section';
 import { Status } from '@/components/status';
@@ -19,11 +21,12 @@ import { Spinner } from '@/components/ui/spinner';
 import { show as showSection } from '@/routes/transfers/services';
 import { link as linkRoute } from '@/routes/transfers/services/exports';
 import { cancel as cancelImportRoute } from '@/routes/transfers/services/imports';
-import { transfersApi } from './api';
+import { requestJson } from '@/lib/http';
 import type { ExportRun, ImportRun, ServiceTransfers } from './api';
-import { formatBytes, formatDuration } from './format';
 import { ImportSheet } from './import-sheet';
 import type { ImportTarget } from './import-sheet';
+import { formatBytes, formatMs, listNames } from '@/lib/format';
+import { vocabulary } from '@/lib/vocabulary';
 
 /** A backup snapshot to download, picked on the snapshot timeline. */
 export type SnapshotDownload = { id: string; label: string };
@@ -59,13 +62,15 @@ function exportState(status: App.Enums.Transfers.ExportRunStatus): StatusState {
             : 'progress';
 }
 
+/**
+ * Something runs: an import (its step and the safety backup it waits for
+ * move without an `imports` event) or an export being prepared.
+ */
 function isBusy(data: ServiceTransfers): boolean {
     return (
         data.imports.some(
             (run) =>
-                run.status !== 'succeeded' &&
-                run.status !== 'failed' &&
-                run.status !== 'cancelled',
+                !vocabulary.Transfers.ImportRunStatus[run.status].isTerminal,
         ) || data.exports.some((run) => run.status === 'preparing')
     );
 }
@@ -80,7 +85,7 @@ function outcome(run: ImportRun): (string | null)[] {
             ? `${run.result.files} files`
             : `${run.result.tables} ${run.result.tables === 1 ? 'table' : 'tables'}`,
         run.result.sizeBytes > 0 ? formatBytes(run.result.sizeBytes) : null,
-        `in ${formatDuration(run.result.durationMs)}`,
+        `in ${formatMs(run.result.durationMs)}`,
         run.result.sourceVersion ? `from ${run.result.sourceVersion}` : null,
     ];
 }
@@ -88,73 +93,60 @@ function outcome(run: ImportRun): (string | null)[] {
 /**
  * Move data (docs/14 §12.6): import a dump, a connection URL or an archive,
  * and download the data as it is now or from a backup. Mounted by the
- * Backups settings page; fetches its own data and polls while something runs.
+ * Backups settings page; fetches its own data and refetches on
+ * `service.activity` (imports), polling only what has no event.
  */
 export function MoveDataSection({
+    environment,
+    service,
     serviceInstanceId,
     snapshotDownload,
     onSnapshotDownloadHandled,
 }: {
+    environment: string;
+    service: string;
     serviceInstanceId: string;
     snapshotDownload: SnapshotDownload | null;
     onSnapshotDownloadHandled: () => void;
 }) {
-    const [data, setData] = useState<ServiceTransfers | null>(null);
     const [target, setTarget] = useState<ImportTarget | null>(null);
     const [busy, setBusy] = useState<string | null>(null);
-    // Failed polls in a row: polling goes on (slower) instead of freezing
-    // the last status on screen.
-    const [failures, setFailures] = useState(0);
-    const abort = useRef<AbortController | null>(null);
-    const url = showSection(serviceInstanceId).url;
-
-    const load = useCallback(async () => {
-        abort.current?.abort();
-        const controller = new AbortController();
-        abort.current = controller;
-
-        try {
-            setData(
-                await transfersApi<ServiceTransfers>(
-                    'get',
-                    url,
-                    undefined,
-                    controller.signal,
-                ),
-            );
-            setFailures(0);
-        } catch {
-            // The Backups page around it shows connection problems.
-            if (!controller.signal.aborted) {
-                setFailures((count) => count + 1);
-            }
-        }
-    }, [url]);
-
-    useEffect(() => {
-        void load();
-
-        return () => abort.current?.abort();
-    }, [load]);
-
-    useEffect(() => {
-        if (failures === 0 && (data === null || !isBusy(data))) {
-            return;
-        }
-
-        const timer = window.setTimeout(
-            () => void load(),
-            failures === 0 ? 3000 : Math.min(30000, 3000 * 2 ** failures),
-        );
-
-        return () => window.clearTimeout(timer);
-    }, [data, failures, load]);
+    const queryClient = useQueryClient();
+    const key = useMemo(
+        () => ['transfers', serviceInstanceId] as const,
+        [serviceInstanceId],
+    );
+    const query = useQuery({
+        queryKey: key,
+        queryFn: ({ signal }) =>
+            requestJson<ServiceTransfers>(
+                'get',
+                showSection(serviceInstanceId).url,
+                undefined,
+                signal,
+            ),
+        // A failing poll goes on (slower) instead of freezing the last
+        // status on screen; the Backups page around it shows the problem.
+        refetchInterval: (current) =>
+            current.state.status === 'error'
+                ? 30_000
+                : current.state.data && isBusy(current.state.data)
+                  ? 3000
+                  : false,
+        retry: false,
+    });
+    const data = query.data ?? null;
+    const setData = useCallback(
+        (next: ServiceTransfers) => queryClient.setQueryData(key, next),
+        [queryClient, key],
+    );
+    const load = () => query.refetch();
 
     const cancelImport = async (run: ImportRun) => {
         setBusy(`cancel:${run.id}`);
         try {
             setData(
-                await transfersApi<ServiceTransfers>(
+                await requestJson<ServiceTransfers>(
                     'post',
                     cancelImportRoute({
                         serviceInstance: serviceInstanceId,
@@ -182,7 +174,7 @@ export function MoveDataSection({
             setBusy(`export:${label}`);
             try {
                 setData(
-                    await transfersApi<ServiceTransfers>(
+                    await requestJson<ServiceTransfers>(
                         'post',
                         data.urls.exports,
                         body,
@@ -201,21 +193,20 @@ export function MoveDataSection({
                 setBusy(null);
             }
         },
-        [data],
+        [data, setData],
     );
 
     const download = async (run: ExportRun) => {
         setBusy(`link:${run.id}`);
         try {
-            const made =
-                await transfersApi<App.Data.Transfers.DownloadLinkData>(
-                    'post',
-                    linkRoute({
-                        serviceInstance: serviceInstanceId,
-                        export: run.id,
-                    }).url,
-                    {},
-                );
+            const made = await requestJson<App.Data.Transfers.DownloadLinkData>(
+                'post',
+                linkRoute({
+                    serviceInstance: serviceInstanceId,
+                    export: run.id,
+                }).url,
+                {},
+            );
             window.location.assign(made.url);
         } catch (error) {
             toast.error(
@@ -242,8 +233,19 @@ export function MoveDataSection({
         );
     }, [snapshotDownload, data, startExport, onSnapshotDownloadHandled]);
 
+    const activity = (
+        <ServiceActivityEvents
+            environment={environment}
+            service={service}
+            topic="imports"
+            onChange={() =>
+                void queryClient.invalidateQueries({ queryKey: key })
+            }
+        />
+    );
+
     if (data === null || data.subject === null) {
-        return null;
+        return activity;
     }
 
     const volumes = data.subject === 'volume';
@@ -261,158 +263,171 @@ export function MoveDataSection({
     ].sort((a, b) => b.at.localeCompare(a.at));
 
     return (
-        <Section
-            level={4}
-            data-setting="move-data"
-            title="Move data"
-            description={
-                volumes
-                    ? 'Import an archive into a volume, or download its files.'
-                    : `Import a dump or another ${data.engineLabel ?? 'database'}, or download the data.`
-            }
-        >
-            {data.unavailableReason !== null &&
-                (data.canImport || data.canExport) && (
-                    <Status state="warning" label={data.unavailableReason} />
+        <>
+            {activity}
+            <Section
+                level={4}
+                data-setting="move-data"
+                title="Move data"
+                description={
+                    volumes
+                        ? 'Import an archive into a volume, or download its files.'
+                        : `Import a dump or another ${data.engineLabel ?? 'database'}, or download the data.`
+                }
+            >
+                {data.unavailableReason !== null &&
+                    (data.canImport || data.canExport) && (
+                        <Status
+                            state="warning"
+                            label={data.unavailableReason}
+                        />
+                    )}
+
+                {!volumes && data.preparation !== null && data.canImport && (
+                    <PrepareCard
+                        data={data}
+                        onImport={() => setTarget({ volume: null })}
+                    />
                 )}
 
-            {!volumes && data.preparation !== null && data.canImport && (
-                <PrepareCard
-                    data={data}
-                    onImport={() => setTarget({ volume: null })}
-                />
-            )}
-
-            {!volumes && data.preparation === null && (
-                <div className="flex flex-wrap items-center gap-2">
-                    {data.canImport && (
-                        <Button
-                            variant="outline"
-                            disabled={data.unavailableReason !== null}
-                            onClick={() => setTarget({ volume: null })}
-                        >
-                            <FileUp aria-hidden="true" />
-                            Import data…
-                        </Button>
-                    )}
-                    {data.canExport && (
-                        <Button
-                            variant="ghost"
-                            disabled={
-                                data.unavailableReason !== null || busy !== null
-                            }
-                            onClick={() => void startExport({}, 'now')}
-                        >
-                            {busy === 'export:now' ? (
-                                <Spinner />
-                            ) : (
-                                <FileDown aria-hidden="true" />
-                            )}
-                            Download now
-                        </Button>
-                    )}
-                    {!data.importSupported && (
-                        <p className="type-small text-muted-foreground">
-                            Importing into {data.engineLabel} isn’t supported;
-                            downloads work.
-                        </p>
-                    )}
-                </div>
-            )}
-
-            {volumes && data.volumes.length > 0 && (
-                <ul className="flex flex-col divide-y overflow-hidden rounded-xl border bg-card shadow-card">
-                    {data.volumes.map((volume) => (
-                        <li
-                            key={volume.id}
-                            className="flex flex-wrap items-center justify-between gap-3 px-4 py-3"
-                        >
-                            <span className="truncate type-mono">
-                                {volume.mountPath}
-                            </span>
-                            <div className="flex flex-wrap gap-2">
-                                {data.canImport && (
-                                    <Button
-                                        size="sm"
-                                        variant="outline"
-                                        disabled={
-                                            data.unavailableReason !== null
-                                        }
-                                        onClick={() => setTarget({ volume })}
-                                    >
-                                        <FolderUp aria-hidden="true" />
-                                        Import files…
-                                    </Button>
-                                )}
-                                {data.canExport && (
-                                    <Button
-                                        size="sm"
-                                        variant="ghost"
-                                        disabled={
-                                            data.unavailableReason !== null ||
-                                            busy !== null
-                                        }
-                                        onClick={() =>
-                                            void startExport(
-                                                { volume: volume.id },
-                                                volume.id,
-                                            )
-                                        }
-                                    >
-                                        {busy === `export:${volume.id}` ? (
-                                            <Spinner />
-                                        ) : (
-                                            <FileDown aria-hidden="true" />
-                                        )}
-                                        Download
-                                    </Button>
-                                )}
-                            </div>
-                        </li>
-                    ))}
-                </ul>
-            )}
-
-            {runs.length > 0 && (
-                <ul className="flex flex-col divide-y overflow-hidden rounded-xl border bg-card shadow-card">
-                    {runs.map((entry) =>
-                        entry.kind === 'import' ? (
-                            <ImportRow
-                                key={entry.run.id}
-                                run={entry.run}
-                                data={data}
-                                cancelling={busy === `cancel:${entry.run.id}`}
-                                onCancel={() => void cancelImport(entry.run)}
-                                onRetry={() =>
-                                    setTarget({
-                                        volume: entry.run.volume,
-                                        transferId: entry.run.transferId,
-                                    })
+                {!volumes && data.preparation === null && (
+                    <div className="flex flex-wrap items-center gap-2">
+                        {data.canImport && (
+                            <Button
+                                variant="outline"
+                                disabled={data.unavailableReason !== null}
+                                onClick={() => setTarget({ volume: null })}
+                            >
+                                <FileUp aria-hidden="true" />
+                                Import data…
+                            </Button>
+                        )}
+                        {data.canExport && (
+                            <Button
+                                variant="ghost"
+                                disabled={
+                                    data.unavailableReason !== null ||
+                                    busy !== null
                                 }
-                            />
-                        ) : (
-                            <ExportRow
-                                key={entry.run.id}
-                                run={entry.run}
-                                canDownload={data.canExport}
-                                busy={busy === `link:${entry.run.id}`}
-                                onDownload={() => void download(entry.run)}
-                            />
-                        ),
-                    )}
-                </ul>
-            )}
+                                onClick={() => void startExport({}, 'now')}
+                            >
+                                {busy === 'export:now' ? (
+                                    <Spinner />
+                                ) : (
+                                    <FileDown aria-hidden="true" />
+                                )}
+                                Download now
+                            </Button>
+                        )}
+                        {!data.importSupported && (
+                            <p className="type-small text-muted-foreground">
+                                Importing into {data.engineLabel} isn’t
+                                supported; downloads work.
+                            </p>
+                        )}
+                    </div>
+                )}
 
-            <ImportSheet
-                data={data}
-                target={target}
-                onClose={() => setTarget(null)}
-                onStarted={() => {
-                    setTarget(null);
-                    void load();
-                }}
-            />
-        </Section>
+                {volumes && data.volumes.length > 0 && (
+                    <ul className="flex flex-col divide-y overflow-hidden rounded-xl border bg-card shadow-card">
+                        {data.volumes.map((volume) => (
+                            <li
+                                key={volume.id}
+                                className="flex flex-wrap items-center justify-between gap-3 px-4 py-3"
+                            >
+                                <span className="truncate type-mono">
+                                    {volume.mountPath}
+                                </span>
+                                <div className="flex flex-wrap gap-2">
+                                    {data.canImport && (
+                                        <Button
+                                            size="sm"
+                                            variant="outline"
+                                            disabled={
+                                                data.unavailableReason !== null
+                                            }
+                                            onClick={() =>
+                                                setTarget({ volume })
+                                            }
+                                        >
+                                            <FolderUp aria-hidden="true" />
+                                            Import files…
+                                        </Button>
+                                    )}
+                                    {data.canExport && (
+                                        <Button
+                                            size="sm"
+                                            variant="ghost"
+                                            disabled={
+                                                data.unavailableReason !==
+                                                    null || busy !== null
+                                            }
+                                            onClick={() =>
+                                                void startExport(
+                                                    { volume: volume.id },
+                                                    volume.id,
+                                                )
+                                            }
+                                        >
+                                            {busy === `export:${volume.id}` ? (
+                                                <Spinner />
+                                            ) : (
+                                                <FileDown aria-hidden="true" />
+                                            )}
+                                            Download
+                                        </Button>
+                                    )}
+                                </div>
+                            </li>
+                        ))}
+                    </ul>
+                )}
+
+                {runs.length > 0 && (
+                    <ul className="flex flex-col divide-y overflow-hidden rounded-xl border bg-card shadow-card">
+                        {runs.map((entry) =>
+                            entry.kind === 'import' ? (
+                                <ImportRow
+                                    key={entry.run.id}
+                                    run={entry.run}
+                                    data={data}
+                                    cancelling={
+                                        busy === `cancel:${entry.run.id}`
+                                    }
+                                    onCancel={() =>
+                                        void cancelImport(entry.run)
+                                    }
+                                    onRetry={() =>
+                                        setTarget({
+                                            volume: entry.run.volume,
+                                            transferId: entry.run.transferId,
+                                        })
+                                    }
+                                />
+                            ) : (
+                                <ExportRow
+                                    key={entry.run.id}
+                                    run={entry.run}
+                                    canDownload={data.canExport}
+                                    busy={busy === `link:${entry.run.id}`}
+                                    onDownload={() => void download(entry.run)}
+                                />
+                            ),
+                        )}
+                    </ul>
+                )}
+
+                <ImportSheet
+                    data={data}
+                    target={target}
+                    onClose={() => setTarget(null)}
+                    onStarted={() => {
+                        setTarget(null);
+                        void load();
+                    }}
+                />
+            </Section>
+        </>
     );
 }
 
@@ -488,8 +503,7 @@ function ImportRow({
 }) {
     const cancellable =
         data.canImport &&
-        (run.status === 'waiting_for_safety_backup' ||
-            run.status === 'holding');
+        vocabulary.Transfers.ImportRunStatus[run.status].isWaiting;
     const into = run.volume !== null ? run.volume.mountPath : data.serviceName;
     const label =
         run.status === 'holding' && run.subject === 'volume'
@@ -574,12 +588,6 @@ function ImportRow({
             )}
         </li>
     );
-}
-
-function listNames(names: string[]): string {
-    return names.length < 2
-        ? (names[0] ?? '')
-        : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
 }
 
 function ExportRow({

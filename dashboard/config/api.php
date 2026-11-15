@@ -16,7 +16,8 @@ declare(strict_types=1);
 return [
     'token_lifetimes' => [7, 30, 90, 365],
     'max_token_days' => 365,
-    'cli_token_days' => 90,
+    // Preselected lifetime in Settings → API tokens and on CLI sign-in.
+    'default_token_days' => 90,
 
     'rate_limits' => [
         'requests_per_minute' => (int) env('LAUNCHROOM_API_RATE_LIMIT', 300),
@@ -27,9 +28,14 @@ return [
 
     'idempotency_hours' => 24,
 
+    // Pruned daily (launchroom:api:prune): expired sign-in requests after a
+    // day, expired tokens after 30 days (docs/16 §2.1, §4).
+    'expired_token_retention_days' => 30,
+
     'cli_login' => [
         'expires_seconds' => 600,
         'interval_seconds' => 2,
+        'retention_hours' => 24,
     ],
 
     'streams' => [
@@ -37,7 +43,4 @@ return [
         'poll_milliseconds' => 1000,
         'ping_seconds' => 15,
     ],
-
-    'page_size' => 25,
-    'max_page_size' => 100,
 ];

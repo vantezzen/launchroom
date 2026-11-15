@@ -4,12 +4,15 @@ declare(strict_types=1);
 
 namespace App\Enums\Updates;
 
+use App\Enums\Attributes\SharedFacts;
 use App\Enums\Concerns\HasTransitions;
 use App\Enums\Contracts\HasTransitionTable;
+use App\Enums\StatusTone;
 
 /**
  * Lifecycle of a control-plane update (docs/11 §4, docs/07 `control_plane_updates`).
  */
+#[SharedFacts('isFailed')]
 enum ControlPlaneUpdateStatus: string implements HasTransitionTable
 {
     use HasTransitions;
@@ -35,6 +38,12 @@ enum ControlPlaneUpdateStatus: string implements HasTransitionTable
         };
     }
 
+    /** Finished without the new release running: failed, or restored to the previous one. */
+    public function isFailed(): bool
+    {
+        return $this === self::Failed || $this === self::RolledBack;
+    }
+
     public function label(): string
     {
         return match ($this) {
@@ -44,6 +53,16 @@ enum ControlPlaneUpdateStatus: string implements HasTransitionTable
             self::Succeeded => 'Updated',
             self::Failed => 'Failed',
             self::RolledBack => 'Rolled back',
+        };
+    }
+
+    public function tone(): StatusTone
+    {
+        return match ($this) {
+            self::Pending, self::BackingUp, self::Updating => StatusTone::Progress,
+            self::Succeeded => StatusTone::Active,
+            self::Failed => StatusTone::Failed,
+            self::RolledBack => StatusTone::Warning,
         };
     }
 }

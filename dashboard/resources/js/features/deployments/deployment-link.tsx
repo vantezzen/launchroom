@@ -1,6 +1,7 @@
 import { Link, router } from '@inertiajs/react';
 import type { PageProps } from '@inertiajs/core';
 import type { ComponentProps, MouseEvent } from 'react';
+import { projectShellKeys } from '@/features/projects/shell-props';
 import { deploymentUrl } from './deployment-actions';
 import { deploymentCacheTags } from './service-deployments';
 
@@ -8,21 +9,11 @@ type Summary = App.Data.Deployments.DeploymentSummaryData;
 type Detail = App.Data.Deployments.DeploymentDetailData;
 
 /** What the row knows beyond the summary: the expanded row's steps, the service logo. */
-export type DeploymentPreview = {
+type DeploymentPreview = {
     steps?: App.Data.Deployments.DeploymentStepData[];
     expectsRelease?: boolean;
     logo?: string;
 };
-
-/** The project shell (ProjectScope::shellProps) the deployment page shares with every project page. */
-const SHELL_PROPS = [
-    'project',
-    'environment',
-    'environments',
-    'projects',
-    'abilities',
-    'edgeOverview',
-];
 
 /**
  * The deployment page drawn from a row (docs/10 §3, instant visit): the
@@ -31,14 +22,16 @@ const SHELL_PROPS = [
  * shares with the deployment page (shared props, the project shell) is
  * carried over.
  */
-export function instantDeploymentProps(
+function instantDeploymentProps(
     current: PageProps,
     shared: Partial<PageProps>,
     deployment: Summary,
     preview: DeploymentPreview = {},
 ): Record<string, unknown> {
     const shell = Object.fromEntries(
-        Object.entries(current).filter(([key]) => SHELL_PROPS.includes(key)),
+        Object.entries(current).filter(([key]) =>
+            (projectShellKeys as string[]).includes(key),
+        ),
     );
     const project = current.project as { name?: string } | undefined;
     const detail: Detail = {

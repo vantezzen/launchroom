@@ -3,7 +3,7 @@ import { memo } from 'react';
 import { GROUPS } from './groups';
 import type { GroupId } from './groups';
 
-export type GroupFrameData = { group: GroupId; count: number };
+type GroupFrameData = { group: GroupId; count: number };
 
 export type GroupFlowNode = Node<GroupFrameData, 'group-frame'>;
 

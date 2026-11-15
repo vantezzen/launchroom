@@ -14,7 +14,6 @@ import type { NodeProps } from '@xyflow/react';
 import { createContext, memo, useContext } from 'react';
 import type { MouseEvent, ReactNode } from 'react';
 import { AlertsChip } from '@/components/attention-chip';
-import { formatCompact } from '@/components/charts/format';
 import { Sparkline } from '@/components/charts/sparkline';
 import { Status } from '@/components/status';
 import { secondarySignals } from '@/features/service-panel/panel-signals';
@@ -24,14 +23,19 @@ import {
     TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { BackupHealthStatus } from '@/features/backups/backup-health';
-import { formatErrorRate } from '@/features/metrics/format';
 import { sharedElement } from '@/lib/motion';
 import { cn } from '@/lib/utils';
 import { NODE_WIDTH } from './auto-layout';
-import { formatMemory, useServiceMetrics } from './canvas-metrics';
-import { compactAge } from './format';
-import { ServiceGlyph } from './service-glyph';
+import { useServiceMetrics } from './canvas-metrics';
 import type { ServiceFlowNode } from './types';
+import {
+    compactAge,
+    formatCompact,
+    formatMemory,
+    formatShare,
+} from '@/lib/format';
+import { ServiceGlyph } from '@/components/service-glyph';
+import { StagedChip } from '@/features/staged-changes/effects';
 
 /**
  * What a node's toolbar can do, provided by the canvas (service-canvas.tsx):
@@ -55,29 +59,8 @@ export const NodeActionsContext = createContext<NodeActions | null>(null);
 const ERROR_WARN_PCT = 5;
 const ERROR_CRITICAL_PCT = 25;
 
-/** The staged chip: one word (design-system §3.3). */
-export const stagedChip: Record<App.Enums.ChangeEffect, string> = {
-    new: 'New',
-    remove: 'Removed',
-    rebuild: 'Changed',
-    restart: 'Changed',
-    route: 'Changed',
-    none: 'Changed',
-};
-
-export function StagedChip({ effect }: { effect: App.Enums.ChangeEffect }) {
-    return (
-        <span className="inline-flex h-5 shrink-0 items-center rounded-full border border-dashed border-signal bg-signal-soft px-2 type-small text-signal">
-            {stagedChip[effect]}
-            <span className="sr-only"> (staged)</span>
-        </span>
-    );
-}
-
 /** "×2 on fra-1, hel-1", "Scaled to zero". */
-export function placementLine(
-    node: App.Data.Canvas.CanvasNodeData,
-): string | null {
+function placementLine(node: App.Data.Canvas.CanvasNodeData): string | null {
     if (node.replicas === 0) {
         return 'Scaled to zero';
     }
@@ -202,7 +185,7 @@ export const ServiceNode = memo(function ServiceNode({
                             <AlertsChip
                                 // Not the alert the status already says.
                                 alerts={secondarySignals(
-                                    data.status.label,
+                                    data.status.reason,
                                     data.openAlerts,
                                     null,
                                 )}
@@ -260,7 +243,7 @@ export const ServiceNode = memo(function ServiceNode({
                                             className="size-3"
                                         />
                                     )}
-                                    {formatErrorRate(errorRate)} errors
+                                    {formatShare(errorRate)} errors
                                 </span>
                             )}
                         </>

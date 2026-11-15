@@ -24,7 +24,6 @@ import (
 // pulled through the docker.io mirror.
 const SBOMGenerator = "docker.io/docker/buildkit-syft-scanner@sha256:ae4f3b554449e7e25548e7d8ccc029d17357348e30c6e3df01b92bc93654d6a9"
 
-// solveRequest is one BuildKit solve.
 type solveRequest struct {
 	Frontend      string
 	FrontendAttrs map[string]string
@@ -41,8 +40,7 @@ type solveRequest struct {
 type solveResult struct {
 	Digest string
 	// Tail are the last log lines (for error hints).
-	Tail string
-	// FailedStep is the step of the vertex that failed, if any.
+	Tail       string
 	FailedStep string
 }
 
@@ -109,7 +107,6 @@ type LogSink interface {
 	Line(step string, stream state.LogStream, text string)
 }
 
-// logMapper turns BuildKit's SolveStatus stream into step-grouped lines.
 type logMapper struct {
 	stepOf func(string) string
 	sink   LogSink
@@ -278,7 +275,6 @@ func dockerfileStep(name string) string {
 	return "build"
 }
 
-// exportStep recognises BuildKit's export, push and cache vertices.
 func exportStep(name string) string {
 	switch {
 	case strings.HasPrefix(name, "importing cache"), strings.HasPrefix(name, "exporting cache"):
@@ -292,7 +288,6 @@ func exportStep(name string) string {
 	return ""
 }
 
-// railpackStepper maps Railpack vertices to plan step names.
 func railpackStepper(names map[string]string) func(string) string {
 	var mu sync.Mutex
 	lastStep := "setup"

@@ -1,8 +1,6 @@
-import { router } from '@inertiajs/react';
 import { MoreHorizontal } from 'lucide-react';
 import { useId, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { toast } from 'sonner';
 import { ConfirmPopover } from '@/components/patterns/confirm-popover';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -17,26 +15,24 @@ import {
     TooltipContent,
     TooltipTrigger,
 } from '@/components/ui/tooltip';
-import {
-    optimisticQueued,
-    optimisticService,
-    rollbackToast,
-} from '@/features/deployments/optimistic';
+import { cn } from '@/lib/utils';
 import {
     LIFECYCLE_CONSEQUENCE,
     LIFECYCLE_ICON,
-} from '@/features/service-panel/lifecycle';
-import { openStagedChanges } from '@/features/staged-changes/staged-changes-sheet';
-import { cn } from '@/lib/utils';
-import { redeploy as redeployService } from '@/routes/deployments/service';
-import lifecycle from '@/routes/services/lifecycle';
+} from '@/features/service-lifecycle/lifecycle';
+import {
+    redeployService,
+    restartService,
+    startService,
+    stopService,
+} from '@/features/service-lifecycle/actions';
+import { DeployButton } from '@/features/service-lifecycle/deploy-button';
 
 type Controls = App.Data.Canvas.ServiceControlsData;
 
 const RestartIcon = LIFECYCLE_ICON.restart;
 const StopIcon = LIFECYCLE_ICON.stop;
 const StartIcon = LIFECYCLE_ICON.start;
-const DeployIcon = LIFECYCLE_ICON.deploy;
 const RedeployIcon = LIFECYCLE_ICON.redeploy;
 
 type MenuAction = 'redeploy' | 'restart' | 'stop';
@@ -85,43 +81,8 @@ export function ServiceControls({
     // Lands on the new deployment's page; the node says "Queued" at once.
     const redeploy = () => {
         setBusy(true);
-        router.post(
-            redeployService(args).url,
-            {},
-            {
-                optimistic: optimisticQueued(service),
-                ...rollbackToast(`Couldn’t redeploy ${name}.`),
-                onFinish: () => setBusy(false),
-            },
-        );
+        redeployService(args, name, { onFinish: () => setBusy(false) });
     };
-    const post = (kind: 'restart' | 'stop', done: string) =>
-        router.post(
-            lifecycle[kind](args).url,
-            { processes },
-            {
-                preserveScroll: true,
-                preserveState: true,
-                optimistic:
-                    kind === 'stop'
-                        ? optimisticService(
-                              service,
-                              { state: 'idle', label: 'Stopped' },
-                              {
-                                  stopped: true,
-                                  stoppedAt: new Date().toISOString(),
-                              },
-                          )
-                        : optimisticService(
-                              service,
-                              { state: 'progress', label: 'Restarting' },
-                              { deploying: true },
-                          ),
-                onSuccess: () => toast.success(done),
-                ...rollbackToast(`Couldn’t ${kind} ${name}.`),
-            },
-        );
-
     const processChoice =
         controls.processes > 0 ? (
             <ProcessChoice
@@ -218,7 +179,7 @@ export function ServiceControls({
                 </>
             ),
             label: 'Restart',
-            run: () => post('restart', `Restarting ${name}`),
+            run: () => restartService(args, name, { processes }),
         },
         stop: {
             title: `Stop ${name}?`,
@@ -231,7 +192,7 @@ export function ServiceControls({
                 </>
             ),
             label: 'Stop',
-            run: () => post('stop', `${name} is stopped`),
+            run: () => stopService(args, name, { processes }),
         },
     };
     const current = confirm[confirming ?? 'restart'];
@@ -319,7 +280,7 @@ export function ServiceControlsPlaceholder({
 }: {
     node: App.Data.Canvas.CanvasNodeData;
 }) {
-    const versioned = node.kind === 'app' || node.kind === 'image';
+    const versioned = node.capabilities.deploysNewVersions;
 
     return (
         <div aria-hidden="true" className="invisible flex shrink-0 gap-2">
@@ -421,7 +382,7 @@ function BlockedButton({
  * app with workers or crons, whether they start too. The header's primary
  * while stopped and on the stopped row of the Deployments tab.
  */
-export function StartButton({
+function StartButton({
     project,
     environment,
     service,
@@ -443,24 +404,10 @@ export function StartButton({
     const [processes, setProcesses] = useState(true);
 
     const start = () =>
-        router.post(
-            lifecycle.start({ project, environment, service }).url,
-            { processes },
-            {
-                preserveScroll: true,
-                preserveState: true,
-                optimistic: optimisticService(
-                    service,
-                    { state: 'progress', label: 'Starting' },
-                    { stopped: false, stoppedAt: null, stoppedBy: null },
-                ),
-                onSuccess: () => {
-                    toast.success(`Starting ${name}`);
-                    onStarted?.();
-                },
-                ...rollbackToast(`Couldn’t start ${name}.`),
-            },
-        );
+        startService({ project, environment, service }, name, {
+            processes,
+            onSuccess: onStarted,
+        });
 
     return (
         <ConfirmPopover
@@ -508,83 +455,5 @@ function ProcessChoice({
                 ? 'Include its worker or cron'
                 : `Include its ${count} workers and crons`}
         </label>
-    );
-}
-
-/**
- * Deploy: the latest commit of the tracked branch (or the image's tag
- * again; a database, worker or cron that never ran: its last deployed
- * configuration); with staged changes, "Review & apply", which opens the
- * environment's staged changes (D75).
- * The header's primary, and the action of the Deployments tab's empty
- * state.
- */
-export function DeployButton({
-    project,
-    environment,
-    service,
-    name,
-    staged,
-    versioned = true,
-    disabled = false,
-    variant = 'default',
-    className,
-}: {
-    project: string;
-    environment: string;
-    service: string;
-    name: string;
-    staged: boolean;
-    versioned?: boolean;
-    disabled?: boolean;
-    variant?: 'default' | 'outline';
-    className?: string;
-}) {
-    const [busy, setBusy] = useState(false);
-
-    const deploy = () => {
-        if (staged) {
-            openStagedChanges();
-
-            return;
-        }
-
-        setBusy(true);
-
-        // The node says "Queued" on the click; the answer opens the new
-        // deployment's page.
-        router.post(
-            lifecycle.deploy({ project, environment, service }).url,
-            {},
-            {
-                optimistic: optimisticQueued(service),
-                ...rollbackToast(`Couldn’t deploy ${name}.`),
-                onFinish: () => setBusy(false),
-            },
-        );
-    };
-
-    return (
-        <Tooltip>
-            <TooltipTrigger asChild>
-                <Button
-                    size="sm"
-                    variant={variant}
-                    onClick={deploy}
-                    disabled={disabled || busy}
-                    className={className}
-                >
-                    <DeployIcon aria-hidden="true" />
-                    {staged ? 'Review & apply' : 'Deploy'}
-                </Button>
-            </TooltipTrigger>
-            <TooltipContent>
-                {staged
-                    ? 'Review the staged changes of this environment and apply them'
-                    : versioned
-                      ? 'Builds and deploys the latest version'
-                      : 'Deploys the last deployed configuration again'}
-            </TooltipContent>
-        </Tooltip>
     );
 }

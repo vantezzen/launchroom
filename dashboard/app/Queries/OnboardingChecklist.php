@@ -9,6 +9,8 @@ use App\Data\Instance\OnboardingData;
 use App\Data\Instance\OnboardingProgressData;
 use App\Data\Instance\OnboardingStepData;
 use App\Data\Servers\ServerData;
+use App\Enums\Instance\OnboardingStep;
+use App\Enums\Instance\OnboardingStepStatus;
 use App\Enums\ServerStatus;
 use App\Models\Backups\BackupDestination;
 use App\Models\Git\GitHubApp;
@@ -36,11 +38,6 @@ use Laravel\Fortify\Features;
  */
 final readonly class OnboardingChecklist
 {
-    /** Order of flows §1: the first deploy comes before the optional backup. */
-    public const array STEPS = ['server', 'github', 'domain', 'project', 'backups'];
-
-    public const array SKIPPABLE = ['github', 'domain', 'backups'];
-
     public function __construct(
         private EdgeAddresses $edges,
         private SmallServerHint $smallServer,
@@ -49,11 +46,10 @@ final readonly class OnboardingChecklist
     public function for(User $user): OnboardingData
     {
         $settings = InstanceSettings::current();
-        ['team' => $team, 'server' => $server, 'app' => $app, 'installation' => $installation, 'recoveryKit' => $recoveryKit, 'projectCount' => $projectCount, 'confirmed' => $confirmed, 'steps' => $steps] = $this->state($user, $settings);
+        ['team' => $team, 'server' => $server, 'app' => $app, 'installation' => $installation, 'recoveryKit' => $recoveryKit, 'projectCount' => $projectCount, 'steps' => $steps] = $this->state($user, $settings);
         $githubConnected = $installation instanceof GitHubInstallation;
         $ipv4 = ServerAddress::ipv4($server?->public_ipv4);
         $address = $ipv4 ?? ServerAddress::ipv6($server?->public_ipv6);
-        $domainConfirmed = $settings->onboarding['domainConfirmed'] ?? null;
 
         return new OnboardingData(
             steps: $steps,
@@ -64,7 +60,7 @@ final readonly class OnboardingChecklist
             githubAppName: $app?->name,
             appsDomain: $settings->apps_domain,
             edgeAddresses: $this->edges->addresses(null),
-            sslipExample: $ipv4 === null ? null : GeneratedHostname::sslip('web', 'production', 'shop', $ipv4),
+            freeWildcard: $ipv4 === null ? null : GeneratedHostname::sslipWildcard($ipv4),
             dashboardHost: (string) parse_url(config()->string('app.url'), PHP_URL_HOST),
             teamBackupsConfigured: $team instanceof Team && BackupDestination::query()->where('team_id', $team->id)->exists(),
             recoveryKit: $recoveryKit,
@@ -75,7 +71,7 @@ final readonly class OnboardingChecklist
             githubRepositories: is_numeric($installation?->getAttribute('repositories_count')) ? (int) $installation->getAttribute('repositories_count') : 0,
             canConnectGitHub: $team instanceof Team && Gate::forUser($user)->allows('create', [GitHubApp::class, $team]),
             recommendTwoFactor: $this->recommendTwoFactor($settings, $user),
-            appsDomainVerified: $confirmed && is_array($domainConfirmed) ? ($domainConfirmed['verified'] ?? null) : null,
+            appsDomainVerified: $settings->onboarding?->verified($settings->apps_domain),
             smallServerHint: $team instanceof Team ? $this->smallServer->for($user, $team) : null,
         );
     }
@@ -88,7 +84,7 @@ final readonly class OnboardingChecklist
 
         $confirmed = User::query()->whereKey($user->id)->whereNotNull('two_factor_confirmed_at')->exists();
 
-        return ! $confirmed && ! in_array($user->id, $settings->onboarding['twoFactorDismissed'] ?? [], true);
+        return ! $confirmed && ! in_array($user->id, $settings->onboarding->twoFactorDismissed ?? [], true);
     }
 
     /**
@@ -118,7 +114,7 @@ final readonly class OnboardingChecklist
         // The session's user model may be partial (strict mode); read the team id fresh.
         $teamId = User::query()->whereKey($user->id)->value('current_team_id');
         $team = is_int($teamId) ? Team::query()->whereKey($teamId)->first() : null;
-        $server = Server::query()->where('is_control_plane', true)->orderBy('id')->first();
+        $server = Server::currentControlPlane();
         $app = $team instanceof Team ? GitHubApp::query()->where('team_id', $team->id)->orderBy('id')->first() : null;
         $installation = $app instanceof GitHubApp ? GitHubInstallation::query()
             ->where('github_app_id', $app->id)
@@ -129,17 +125,15 @@ final readonly class OnboardingChecklist
             ->first() : null;
         $recoveryKit = RecoveryKitStatusData::fromSettings($settings, BackupDestination::forInstance() instanceof BackupDestination);
         $projectCount = $team instanceof Team ? Project::query()->where('team_id', $team->id)->count() : 0;
-        $domainConfirmed = $settings->onboarding['domainConfirmed'] ?? null;
-        $confirmed = is_string($settings->apps_domain) && $settings->apps_domain !== ''
-            && is_array($domainConfirmed) && $domainConfirmed['domain'] === $settings->apps_domain;
+        $confirmed = $settings->onboarding?->confirmed($settings->apps_domain) === true;
 
         $steps = $this->steps($settings, [
-            'server' => $server instanceof Server && $server->status === ServerStatus::Online,
-            'github' => $installation instanceof GitHubInstallation,
+            OnboardingStep::Server->value => $server instanceof Server && $server->status === ServerStatus::Online,
+            OnboardingStep::Github->value => $installation instanceof GitHubInstallation,
             // Done once the owner continued after the DNS check (saving alone isn't).
-            'domain' => $confirmed,
-            'backups' => ! $recoveryKit->needsAttention,
-            'project' => $projectCount > 0,
+            OnboardingStep::Domain->value => $confirmed,
+            OnboardingStep::Backups->value => ! $recoveryKit->needsAttention,
+            OnboardingStep::Project->value => $projectCount > 0,
         ]);
 
         return ['team' => $team, 'server' => $server, 'app' => $app, 'installation' => $installation, 'recoveryKit' => $recoveryKit, 'projectCount' => $projectCount, 'confirmed' => $confirmed, 'steps' => $steps];
@@ -151,13 +145,17 @@ final readonly class OnboardingChecklist
      */
     private function steps(InstanceSettings $settings, array $done): array
     {
-        $skipped = $settings->onboarding['skipped'] ?? [];
+        $skipped = $settings->onboarding->skipped ?? [];
 
-        return array_map(static fn (string $id): OnboardingStepData => new OnboardingStepData(
-            id: $id,
-            status: ($done[$id] ?? false) ? 'done' : (in_array($id, $skipped, true) ? 'skipped' : 'pending'),
-            skippable: in_array($id, self::SKIPPABLE, true),
-        ), self::STEPS);
+        return array_map(static fn (OnboardingStep $step): OnboardingStepData => new OnboardingStepData(
+            id: $step,
+            status: match (true) {
+                $done[$step->value] ?? false => OnboardingStepStatus::Done,
+                in_array($step->value, $skipped, true) => OnboardingStepStatus::Skipped,
+                default => OnboardingStepStatus::Pending,
+            },
+            skippable: $step->skippable(),
+        ), OnboardingStep::cases());
     }
 
     /**
@@ -165,13 +163,13 @@ final readonly class OnboardingChecklist
      */
     private function progress(InstanceSettings $settings, array $steps): OnboardingProgressData
     {
-        $done = count(array_filter($steps, static fn (OnboardingStepData $step): bool => $step->status !== 'pending'));
+        $done = count(array_filter($steps, static fn (OnboardingStepData $step): bool => $step->status !== OnboardingStepStatus::Pending));
 
         return new OnboardingProgressData(
             done: $done,
             total: count($steps),
             complete: $done === count($steps),
-            dismissed: is_string($settings->onboarding['dismissedAt'] ?? null),
+            dismissed: $settings->onboarding?->dismissedAt !== null,
         );
     }
 }

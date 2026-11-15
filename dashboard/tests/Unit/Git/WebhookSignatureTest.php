@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-use App\Services\GitHub\WebhookSignature;
+use App\Services\Git\Providers\GitHub\WebhookSignature;
 
 $body = '{"zen":"Keep it logically awesome.","hook_id":1}';
 

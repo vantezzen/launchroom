@@ -10,15 +10,13 @@ namespace App\Support\Variables;
  */
 final class VariableReferences
 {
-    public const string KEY_PATTERN = '[A-Za-z_][A-Za-z0-9_]{0,255}';
-
     public const string SCOPE_PATTERN = '[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?';
 
     /** Every `${{ … }}` expression, valid or not. */
     private const string EXPRESSION = '/\$\{\{(.*?)\}\}/s';
 
     /** The inside of a reference expression. */
-    private const string REFERENCE = '/^\s*(?:('.self::SCOPE_PATTERN.')\.)?('.self::KEY_PATTERN.')\s*$/D';
+    private const string REFERENCE = '/^\s*(?:('.self::SCOPE_PATTERN.')\.)?('.VariableKey::BODY.')\s*$/D';
 
     /**
      * @return list<VariableReference>

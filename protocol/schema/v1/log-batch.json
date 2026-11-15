@@ -16,6 +16,7 @@
             "$ref": "#/$defs/LogLine"
           },
           "type": "array",
+          "maxItems": 5000,
           "minItems": 1
         }
       },
@@ -43,7 +44,8 @@
           ]
         },
         "text": {
-          "type": "string"
+          "type": "string",
+          "maxLength": 16384
         },
         "step": {
           "type": "string",
@@ -72,7 +74,7 @@
         },
         "id": {
           "type": "string",
-          "pattern": "^(?:tsk|dpl|wl)_[0-9A-HJKMNP-TV-Z]{26}$"
+          "pattern": "^(?:tsk|dpl|wl)_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
         }
       },
       "additionalProperties": false,
@@ -98,6 +100,7 @@
         "$ref": "#/$defs/LogChunk"
       },
       "type": "array",
+      "maxItems": 256,
       "minItems": 1
     }
   },

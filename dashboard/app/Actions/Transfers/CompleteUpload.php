@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Transfers;
 
 use App\Data\Services\DatabaseSource;
+use App\Data\Transfers\TransferSniffData;
 use App\Enums\Transfers\TransferDirection;
 use App\Enums\Transfers\TransferPurpose;
 use App\Enums\Transfers\TransferStatus;
@@ -65,20 +66,24 @@ final readonly class CompleteUpload
             throw DomainRuleViolation::on('file', $refusal);
         }
 
+        if ($result->generic) {
+            $result = $result->forTarget(ImportTarget::for($transfer->serviceInstance)->import());
+        }
+
         $transfer->forceFill([
             'digest' => $digest,
             'format' => $result->format,
             'compressed' => $result->compressed,
             'source_version' => $result->sourceVersionLabel(),
             'detail' => $result->detail(),
-            'sniff' => array_filter([
-                'family' => $result->family,
-                'serverVersion' => $result->serverVersion,
-                'toolVersion' => $result->toolVersion,
-                'entries' => $result->entries === [] ? null : array_slice($result->entries, 0, 200),
-                'entriesComplete' => $result->entriesComplete,
-                'topFolder' => $result->topFolder(),
-            ], static fn (mixed $value): bool => $value !== null),
+            'sniff' => new TransferSniffData(
+                family: $result->family,
+                serverVersion: $result->serverVersion,
+                toolVersion: $result->toolVersion,
+                entries: array_slice($result->entries, 0, 200),
+                entriesComplete: $result->entriesComplete,
+                topFolder: $result->topFolder(),
+            ),
             'expires_at' => now()->addHours(config()->integer('launchroom.transfers.upload_ttl_hours')),
         ]);
         $transfer->transitionTo(TransferStatus::Ready);
@@ -113,6 +118,6 @@ final readonly class CompleteUpload
             return 'This service is not a database.';
         }
 
-        return FileSniffer::refusal($result, $target->engine(), $database->version, $transfer->serviceInstance->service->name);
+        return FileSniffer::refusal($result, $target->import(), $database->version, $transfer->serviceInstance->service->name);
     }
 }

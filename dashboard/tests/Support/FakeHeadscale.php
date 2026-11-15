@@ -53,9 +53,6 @@ final class FakeHeadscale
         return $fake;
     }
 
-    /**
-     * Writes the installer's bootstrap key file and points the config at it.
-     */
     public function writeBootstrapFile(): string
     {
         $path = tempnam(sys_get_temp_dir(), 'hs-bootstrap-');
@@ -232,8 +229,6 @@ final class FakeHeadscale
     }
 
     /**
-     * The API keys that still authenticate.
-     *
      * @return list<string>
      */
     public function liveApiKeys(): array

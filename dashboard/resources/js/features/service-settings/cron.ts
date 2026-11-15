@@ -1,3 +1,4 @@
+import { listNames } from '@/lib/format';
 /**
  * Cron expressions of scheduled cron services, in the grammar launchroomd
  * runs (daemon/internal/cronexpr, App\Support\Cron\CronGrammar): five fields
@@ -169,8 +170,6 @@ export function normalizeCron(expression: string): string {
     return expression.trim().split(/\s+/).join(' ');
 }
 
-// ---- Next runs in a time zone ------------------------------------------------
-
 type Wall = {
     year: number;
     month: number;
@@ -318,8 +317,6 @@ export function nextRuns(
     return runs;
 }
 
-// ---- In words -------------------------------------------------------------
-
 const WEEKDAYS = [
     'Sunday',
     'Monday',
@@ -346,14 +343,6 @@ const MONTHS = [
 ];
 
 const pad = (value: number) => String(value).padStart(2, '0');
-
-function list(words: string[]): string {
-    if (words.length <= 1) {
-        return words.join('');
-    }
-
-    return `${words.slice(0, -1).join(', ')} and ${words[words.length - 1]}`;
-}
 
 function ordinal(value: number): string {
     const tens = value % 100;
@@ -410,7 +399,7 @@ function dayPhrase(cron: ParsedCron): string {
 
         return run
             ? `${WEEKDAYS[run[0]]} to ${WEEKDAYS[run[1]]}`
-            : `every ${list(weekdays.map((day) => WEEKDAYS[day]))}`;
+            : `every ${listNames(weekdays.map((day) => WEEKDAYS[day]))}`;
     };
 
     const dayWords = () => {
@@ -418,7 +407,7 @@ function dayPhrase(cron: ParsedCron): string {
 
         return run
             ? `on days ${run[0]} to ${run[1]}`
-            : `on the ${list(days.map(ordinal))}`;
+            : `on the ${listNames(days.map(ordinal))}`;
     };
 
     if (cron.domStar && cron.dowStar) {
@@ -432,7 +421,7 @@ function dayPhrase(cron: ParsedCron): string {
     }
 
     if (months.length < 12) {
-        const monthWords = list(months.map((month) => MONTHS[month - 1]));
+        const monthWords = listNames(months.map((month) => MONTHS[month - 1]));
 
         phrase =
             cron.domStar && cron.dowStar
@@ -476,7 +465,7 @@ export function describeCron(cron: ParsedCron): string {
 
         return run
             ? `${every} from ${pad(run[0])}:00 to ${pad(run[1])}:59${onDays}`
-            : `${every} during hour${hours.length === 1 ? '' : 's'} ${list(hours.map((hour) => pad(hour)))}${onDays}`;
+            : `${every} during hour${hours.length === 1 ? '' : 's'} ${listNames(hours.map((hour) => pad(hour)))}${onDays}`;
     }
 
     const minuteWords =
@@ -484,7 +473,7 @@ export function describeCron(cron: ParsedCron): string {
             ? minutes[0] === 0
                 ? 'on the hour'
                 : `at :${pad(minutes[0])}`
-            : `at ${list(minutes.map((minute) => `:${pad(minute)}`))}`;
+            : `at ${listNames(minutes.map((minute) => `:${pad(minute)}`))}`;
 
     if (hourStep !== null) {
         const every = hourStep === 1 ? 'Every hour' : `Every ${hourStep} hours`;
@@ -497,13 +486,13 @@ export function describeCron(cron: ParsedCron): string {
             minutes.map((minute) => `${pad(hour)}:${pad(minute)}`),
         );
 
-        return `${capitalize(days)} at ${list(times)}`;
+        return `${capitalize(days)} at ${listNames(times)}`;
     }
 
     const run = span(hours);
     const hourWords = run
         ? `from ${pad(run[0])}:00 to ${pad(run[1])}:59`
-        : `in hours ${list(hours.map((hour) => pad(hour)))}`;
+        : `in hours ${listNames(hours.map((hour) => pad(hour)))}`;
 
     return `${capitalize(days)}, ${hourWords}, ${minuteWords}`;
 }

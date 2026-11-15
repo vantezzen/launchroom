@@ -5,92 +5,141 @@ declare(strict_types=1);
 namespace App\Services\Tasks;
 
 use App\Data\Git\RepositoryRef;
-use App\Data\Services\GitSource;
-use App\Enums\RemoteAccess\RemoteAccessStatus;
-use App\Enums\Sessions\InteractiveSessionStatus;
+use App\Data\Protocol\V1\Sealed;
+use App\Data\Protocol\V1\Tasks\AccessSpec;
+use App\Data\Protocol\V1\Tasks\BackupDestination as DestinationSpec;
+use App\Data\Protocol\V1\Tasks\BackupMaintenanceSpec;
+use App\Data\Protocol\V1\Tasks\BackupSnapshotsSpec;
+use App\Data\Protocol\V1\Tasks\BackupSpec;
+use App\Data\Protocol\V1\Tasks\BuildInputs;
+use App\Data\Protocol\V1\Tasks\BuildSpec;
+use App\Data\Protocol\V1\Tasks\DbExportSpec;
+use App\Data\Protocol\V1\Tasks\HostKey as HostKeySpec;
+use App\Data\Protocol\V1\Tasks\InventorySource;
+use App\Data\Protocol\V1\Tasks\InventorySpec;
+use App\Data\Protocol\V1\Tasks\PlanSpec;
+use App\Data\Protocol\V1\Tasks\RepoSpec;
+use App\Data\Protocol\V1\Tasks\RestoreRuntime;
+use App\Data\Protocol\V1\Tasks\RestoreSpec;
+use App\Data\Protocol\V1\Tasks\RunOnceSpec;
+use App\Data\Protocol\V1\Tasks\SessionSpec;
+use App\Data\Protocol\V1\Tasks\TaskSpec;
+use App\Data\Protocol\V1\Tasks\VerifyRestoreSpec;
+use App\Data\Protocol\V1\Tasks\VolumeExportSpec;
+use App\Data\Tasks\CloneSeal;
+use App\Data\Tasks\EnvSeal;
+use App\Data\Tasks\TaskSeal;
+use App\Enums\TaskBackedAccessStatus;
+use App\Enums\TaskFailureClass;
+use App\Exceptions\DecryptionFailed;
 use App\Exceptions\DomainRuleViolation;
 use App\Exceptions\TaskSealingFailed;
+use App\Models\Backups\BackupDestination;
 use App\Models\DaemonTask;
 use App\Models\Deployment;
 use App\Models\RemoteAccess\RemoteAccess;
 use App\Models\Server;
+use App\Models\ServiceInstance;
 use App\Models\Sessions\InteractiveSession;
 use App\Models\Team;
+use App\Services\Backups\DestinationSecrets;
+use App\Services\Backups\PointInTimeRecovery;
 use App\Services\Crypto\ProjectKeyring;
 use App\Services\Git\GitProviders;
 use App\Support\Crypto\TaskSealer;
 use App\Support\Deployments\EffectiveDeploy;
 use App\Support\Git\HostKey;
+use App\Support\Variables\VariableKey;
+use Illuminate\Contracts\Database\Query\Builder;
 use InvalidArgumentException;
-use stdClass;
+use SensitiveParameter;
 use Throwable;
 
 /**
- * Sealing at lease time (docs/03 §7): task specs are stored as templates
- * without secrets; `daemon_tasks.seal` only references what a task needs.
- * When a specific server leases the task, the secrets are resolved and
- * sealed to that server's X25519 key, bound to (server, task):
- *
- * - `env`: `{"deployment": id, "keys": [..] | null, "defaults": bool}` → the
- *   deployment's env snapshot (only `keys` when given; plus the build summary
- *   runtime defaults when `defaults`), sealed as TaskEnv into `spec.env`; or
- *   `{"names": [..]}` → those names with empty values (plan previews only
- *   need names); or `{"values": {NAME: value}}` → literal non-secret values
- *   (the verification run of a generated Dockerfile: `PORT`, docs/20 §5);
- * - `cloneToken`: `{"source": GitSource}` → the source's provider credentials
- *   (docs/19 §6): an HTTP token (a fresh repository-scoped GitHub
- *   installation token, the GitLab/Gitea connection token) sealed as
- *   TaskToken purpose `clone` into `spec.cloneToken`, or a deploy key seed
- *   sealed as purpose `ssh_key` into `spec.sshKey` plus the pinned host keys
- *   as `spec.repo.knownHosts`; public remotes get nothing;
- * - `sourceCloneToken`: the same into `spec.source` (inventory tasks, docs/03 §13.1);
- * - `sessionKey`: `{"session": ses_…}` → the interactive session's key,
- *   sealed as TaskToken (purpose session) into `spec.key` (docs/03 §11).
- *
- * Nothing sealed is stored: a retried lease seals again for its server.
+ * Sealing at lease time (docs/03 §7): specs are stored as templates without
+ * secrets and `daemon_tasks.seal` ({@see TaskSeal}) only
+ * references what a task needs. When a server leases the task, the secrets
+ * are resolved and sealed to that server's X25519 key, bound to (server,
+ * task). Nothing sealed is stored: a retried lease seals again for its
+ * server.
  */
 final readonly class TaskSecrets
 {
     public function __construct(
         private ProjectKeyring $keyring,
         private GitProviders $providers,
+        private DestinationSecrets $destinations,
+        private PointInTimeRecovery $pointInTime,
     ) {}
 
     /**
-     * The spec to send to $server.
+     * The typed spec to send to $server, its secrets sealed.
      *
      * @throws TaskSealingFailed
      */
-    public function materialize(DaemonTask $task, Server $server): stdClass
+    public function materialize(DaemonTask $task, Server $server): TaskSpec
     {
-        $spec = json_decode(json_encode($task->spec, JSON_THROW_ON_ERROR), false, 64, JSON_THROW_ON_ERROR);
-
-        if (! $spec instanceof stdClass) {
-            throw new TaskSealingFailed('The task has no spec.');
+        try {
+            $spec = TaskSpec::fromStored($task->type, $task->spec);
+        } catch (InvalidArgumentException $e) {
+            throw new TaskSealingFailed($e->getMessage());
         }
 
-        $seal = $task->seal ?? [];
+        $seal = $task->seal;
+
+        if ($seal === null) {
+            return $spec;
+        }
 
         try {
-            if (is_array($seal['env'] ?? null)) {
-                $spec->env = (object) ['sealed' => TaskSealer::env($server->sealing_public_key, $server->public_id, $task->public_id, $this->env($task, $seal['env']))];
+            if ($seal->env instanceof EnvSeal) {
+                $sealed = $this->sealEnv($server, $task, $this->env($task, $seal->env));
+
+                match (true) {
+                    $spec instanceof BuildSpec, $spec instanceof PlanSpec => $spec->inputs->env = $sealed,
+                    $spec instanceof RunOnceSpec => $spec->env = $sealed,
+                    default => throw new TaskSealingFailed('This task takes no environment.'),
+                };
             }
 
-            if (is_array($seal['cloneToken'] ?? null)) {
-                $this->cloneCredentials($spec, $task, $server, $seal['cloneToken']);
+            if ($seal->cloneToken instanceof CloneSeal) {
+                $inputs = $spec instanceof BuildSpec || $spec instanceof PlanSpec ? $spec->inputs : null;
+
+                if (! $inputs instanceof BuildInputs) {
+                    throw new TaskSealingFailed('The task has no repository to clone.', TaskFailureClass::CloneError);
+                }
+
+                [$inputs->cloneToken, $inputs->sshKey] = $this->cloneCredentials($inputs->repo, $task, $server, $seal->cloneToken);
             }
 
-            // Inventory tasks carry the build's repository under `source` (docs/03 §13.1).
-            if (is_array($seal['sourceCloneToken'] ?? null) && ($spec->source ?? null) instanceof stdClass) {
-                $this->cloneCredentials($spec->source, $task, $server, $seal['sourceCloneToken']);
+            if ($seal->sourceCloneToken instanceof CloneSeal && $spec instanceof InventorySpec && $spec->source instanceof InventorySource) {
+                [$spec->source->cloneToken, $spec->source->sshKey] = $this->cloneCredentials($spec->source->repo, $task, $server, $seal->sourceCloneToken);
             }
 
-            if (is_array($seal['accessPassword'] ?? null)) {
-                $spec->password = (object) ['sealed' => $this->accessPassword($task, $server, $seal['accessPassword'])];
+            if ($seal->accessPassword !== null && $spec instanceof AccessSpec) {
+                $spec->password = $this->sealToken($server, $task, 'access', $this->accessPassword($task, $server, $seal->accessPassword->access));
             }
 
-            if (is_array($seal['sessionKey'] ?? null)) {
-                $spec->key = (object) ['sealed' => $this->sessionKey($task, $server, $seal['sessionKey'])];
+            if ($seal->sessionKey !== null && $spec instanceof SessionSpec) {
+                $spec->key = $this->sealToken($server, $task, 'session', $this->sessionKey($task, $seal->sessionKey->session));
+            }
+
+            if ($seal->destination !== null) {
+                $destination = $this->destinationOf($spec);
+
+                if (! $destination instanceof DestinationSpec) {
+                    throw new TaskSealingFailed('This task reads no backup destination.');
+                }
+
+                $destination->credentials = $this->sealEnv($server, $task, $this->destinationCredentials($task, $seal->destination));
+            }
+
+            if ($seal->restoreRuntimeEnv !== null) {
+                if (! $spec instanceof RestoreSpec || ! $spec->runtime instanceof RestoreRuntime) {
+                    throw new TaskSealingFailed('This task runs no database to restore into.');
+                }
+
+                $spec->runtime->env = $this->sealEnv($server, $task, $this->restoreRuntimeEnv($task, $seal->restoreRuntimeEnv));
             }
         } catch (InvalidArgumentException $e) {
             throw new TaskSealingFailed($e->getMessage());
@@ -100,23 +149,32 @@ final readonly class TaskSecrets
     }
 
     /**
-     * @param  array<mixed>  $reference
+     * @param  array<string, string>  $env
+     */
+    private function sealEnv(Server $server, DaemonTask $task, #[SensitiveParameter] array $env): Sealed
+    {
+        return new Sealed(TaskSealer::env($server->sealing_public_key, $server->public_id, $task->public_id, $env));
+    }
+
+    private function sealToken(Server $server, DaemonTask $task, string $purpose, #[SensitiveParameter] string $token): Sealed
+    {
+        return new Sealed(TaskSealer::token($server->sealing_public_key, $server->public_id, $task->public_id, $purpose, $token));
+    }
+
+    /**
      * @return array<string, string>
      */
-    private function env(DaemonTask $task, array $reference): array
+    private function env(DaemonTask $task, EnvSeal $reference): array
     {
-        if (is_array($reference['names'] ?? null)) {
-            $names = array_filter($reference['names'], is_string(...));
-
-            return array_fill_keys($names, '');
+        if ($reference->names !== null) {
+            return array_fill_keys($reference->names, '');
         }
 
-        // Literal, non-secret values (the verification run's PORT, docs/20 §5).
-        if (is_array($reference['values'] ?? null)) {
+        if ($reference->values !== null) {
             $values = [];
 
-            foreach ($reference['values'] as $name => $value) {
-                if (is_string($name) && preg_match('/^[A-Za-z_][A-Za-z0-9_]{0,255}$/D', $name) === 1 && is_string($value) && strlen($value) <= 1024) {
+            foreach ($reference->values as $name => $value) {
+                if (VariableKey::isValid($name) && strlen($value) <= 1024) {
                     $values[$name] = $value;
                 }
             }
@@ -129,7 +187,7 @@ final readonly class TaskSecrets
         $deployment = Deployment::query()
             ->with('environment.project', 'serviceInstance.service', 'revision')
             ->where('team_id', $task->team_id)
-            ->whereKey(is_int($reference['deployment'] ?? null) ? $reference['deployment'] : 0)
+            ->whereKey($reference->deployment ?? 0)
             ->first();
 
         if (! $deployment instanceof Deployment || $deployment->env_snapshot === null) {
@@ -138,12 +196,11 @@ final readonly class TaskSecrets
 
         $env = $this->keyring->decryptSnapshot($deployment->environment->project, $deployment->public_id, $deployment->env_snapshot);
 
-        if (is_array($reference['keys'] ?? null)) {
-            $keys = array_filter($reference['keys'], is_string(...));
-            $env = array_intersect_key($env, array_flip($keys));
+        if ($reference->keys !== null) {
+            $env = array_intersect_key($env, array_flip($reference->keys));
         }
 
-        if (($reference['defaults'] ?? false) === true) {
+        if ($reference->defaults) {
             $spec = $deployment->revision?->spec->service($deployment->serviceInstance->service->public_id);
 
             if ($spec !== null) {
@@ -157,97 +214,144 @@ final readonly class TaskSecrets
     }
 
     /**
-     * The interactive session's key, sealed as TaskToken purpose `session`
-     * (docs/03 §11.1). The key is only kept until this lease: the session
-     * opens and its stored copy is wiped in the same transaction.
-     *
-     * @param  array<mixed>  $reference
+     * The interactive session's key (docs/03 §11.1). The key is only kept
+     * until this lease: the session opens and wipes it in the same
+     * transaction (App\Listeners\Sessions\OpenSessionOnLease).
      */
-    private function sessionKey(DaemonTask $task, Server $server, array $reference): string
+    private function sessionKey(DaemonTask $task, string $sessionId): string
     {
         $session = InteractiveSession::query()
             ->where('team_id', $task->team_id)
             ->where('daemon_task_id', $task->id)
-            ->where('public_id', is_string($reference['session'] ?? null) ? $reference['session'] : '')
+            ->where('public_id', $sessionId)
             ->lockForUpdate()
             ->first();
 
         $key = $session?->session_key;
 
-        if (! $session instanceof InteractiveSession || $session->status !== InteractiveSessionStatus::Pending || ! is_string($key) || $key === '') {
+        if (! $session instanceof InteractiveSession || $session->status !== TaskBackedAccessStatus::Pending || ! is_string($key) || $key === '') {
             throw new TaskSealingFailed('The session this task belongs to is no longer waiting for its server.');
         }
 
-        $sealed = TaskSealer::token($server->sealing_public_key, $server->public_id, $task->public_id, 'session', $key);
-        $session->forceFill(['session_key' => null]);
-        $session->transitionTo(InteractiveSessionStatus::Open);
-
-        return $sealed;
+        return $key;
     }
 
     /**
-     * The password of a temporary access, sealed as TaskToken purpose
-     * `access` to the leasing server and task (docs/03 §12.1). The dashboard
-     * keeps its encrypted copy for the opener until the access ends.
-     *
-     * @param  array<mixed>  $reference
+     * The password of a temporary access (docs/03 §12.1). The dashboard keeps
+     * its encrypted copy for the opener until the access ends.
      */
-    private function accessPassword(DaemonTask $task, Server $server, array $reference): string
+    private function accessPassword(DaemonTask $task, Server $server, string $accessId): string
     {
         $access = RemoteAccess::query()
             ->where('team_id', $task->team_id)
             ->where('daemon_task_id', $task->id)
-            ->where('public_id', is_string($reference['access'] ?? null) ? $reference['access'] : '')
+            ->where('public_id', $accessId)
             ->where('server_id', $server->id)
             ->lockForUpdate()
             ->first();
 
         $password = $access?->password;
 
-        if (! $access instanceof RemoteAccess || $access->status !== RemoteAccessStatus::Pending || ! is_string($password) || $password === '') {
+        if (! $access instanceof RemoteAccess || $access->status !== TaskBackedAccessStatus::Pending || ! is_string($password) || $password === '') {
             throw new TaskSealingFailed('The access this task belongs to is no longer waiting for its server.');
         }
 
-        $sealed = TaskSealer::token($server->sealing_public_key, $server->public_id, $task->public_id, 'access', $password);
-        $access->transitionTo(RemoteAccessStatus::Open);
-
-        return $sealed;
+        return $password;
     }
 
     /**
-     * @param  array<mixed>  $reference
+     * The source's provider credential (docs/19 §6): an HTTP token (a fresh
+     * repository-scoped GitHub installation token, the GitLab/Gitea
+     * connection token) as TaskToken purpose `clone`, or a deploy key seed as
+     * purpose `ssh_key` plus the pinned host keys in `repo.knownHosts`.
+     * Public remotes get nothing.
+     *
+     * @return array{Sealed|null, Sealed|null}
      */
-    private function cloneCredentials(stdClass $spec, DaemonTask $task, Server $server, array $reference): void
+    private function cloneCredentials(RepoSpec $repo, DaemonTask $task, Server $server, CloneSeal $reference): array
     {
         $team = Team::query()->whereKey($task->team_id)->first();
-        $source = is_array($reference['source'] ?? null) ? GitSource::from($reference['source']) : null;
 
-        if (! $team instanceof Team || ! $source instanceof GitSource) {
-            throw new TaskSealingFailed('The task has no repository to clone.', 'clone_error');
+        if (! $team instanceof Team) {
+            throw new TaskSealingFailed('The task has no repository to clone.', TaskFailureClass::CloneError);
         }
 
-        $provider = $source->kind()->label();
+        $source = $reference->source;
+        $provider = $source->provider->label();
 
         try {
             $credentials = $this->providers->forSource($source)->cloneCredentials(RepositoryRef::fromSource($team->id, $source));
         } catch (DomainRuleViolation $e) {
-            throw new TaskSealingFailed($e->getMessage(), 'clone_error');
+            throw new TaskSealingFailed($e->getMessage(), TaskFailureClass::CloneError);
         } catch (Throwable) {
-            throw new TaskSealingFailed("{$provider} did not issue a clone token for this repository; it will be retried.", 'transient');
+            throw new TaskSealingFailed("{$provider} did not issue a clone token for this repository; it will be retried.", TaskFailureClass::Transient);
         }
 
-        if ($credentials->token !== null) {
-            $spec->cloneToken = (object) ['sealed' => TaskSealer::token($server->sealing_public_key, $server->public_id, $task->public_id, 'clone', $credentials->token)];
-        }
+        $sshKey = null;
 
         if ($credentials->sshKeySeed !== null) {
-            $spec->sshKey = (object) ['sealed' => TaskSealer::token($server->sealing_public_key, $server->public_id, $task->public_id, 'ssh_key', $credentials->sshKeySeed)];
-
-            if (! ($spec->repo ?? null) instanceof stdClass) {
-                throw new TaskSealingFailed('The task has no repository to clone.', 'clone_error');
-            }
-
-            $spec->repo->knownHosts = array_map(static fn (HostKey $key): array => ['type' => $key->type, 'key' => $key->key], $credentials->knownHosts);
+            $sshKey = $this->sealToken($server, $task, 'ssh_key', $credentials->sshKeySeed);
+            $repo->knownHosts = array_map(static fn (HostKey $key): HostKeySpec => new HostKeySpec($key->type, $key->key), $credentials->knownHosts);
         }
+
+        return [$credentials->token === null ? null : $this->sealToken($server, $task, 'clone', $credentials->token), $sshKey];
+    }
+
+    /**
+     * A backup destination's credentials as the TaskEnv restic reads
+     * (docs/14 §7): AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, RESTIC_PASSWORD.
+     *
+     * @return array<string, string>
+     */
+    private function destinationCredentials(DaemonTask $task, int $destinationId): array
+    {
+        $destination = BackupDestination::query()
+            ->whereKey($destinationId)
+            ->where(static fn (Builder $query) => $query->whereNull('team_id')->orWhere('team_id', $task->team_id))
+            ->first();
+
+        if (! $destination instanceof BackupDestination) {
+            throw new TaskSealingFailed('The backup destination of this task no longer exists.');
+        }
+
+        try {
+            $credentials = $this->destinations->reveal($destination);
+        } catch (DecryptionFailed) {
+            throw new TaskSealingFailed('The credentials of the backup destination could not be read.');
+        }
+
+        return [
+            'AWS_ACCESS_KEY_ID' => $credentials->accessKeyId,
+            'AWS_SECRET_ACCESS_KEY' => $credentials->secretAccessKey,
+            'RESTIC_PASSWORD' => $credentials->repositoryPassword,
+        ];
+    }
+
+    /**
+     * POSTGRES_USER, POSTGRES_PASSWORD and POSTGRES_DB of the database a
+     * point-in-time restore replays into (docs/14 §10.3).
+     *
+     * @return array<string, string>
+     */
+    private function restoreRuntimeEnv(DaemonTask $task, int $instanceId): array
+    {
+        $instance = ServiceInstance::query()->where('team_id', $task->team_id)->whereKey($instanceId)->first();
+        $env = $instance instanceof ServiceInstance ? $this->pointInTime->postgresEnv($instance) : null;
+
+        if ($env === null) {
+            throw new TaskSealingFailed('The database to restore into has no credentials to replay with.');
+        }
+
+        return $env;
+    }
+
+    private function destinationOf(TaskSpec $spec): ?DestinationSpec
+    {
+        return match (true) {
+            $spec instanceof BackupSpec, $spec instanceof RestoreSpec, $spec instanceof VerifyRestoreSpec,
+            $spec instanceof BackupSnapshotsSpec, $spec instanceof BackupMaintenanceSpec => $spec->destination,
+            $spec instanceof DbExportSpec, $spec instanceof VolumeExportSpec => $spec->destination,
+            default => null,
+        };
     }
 }

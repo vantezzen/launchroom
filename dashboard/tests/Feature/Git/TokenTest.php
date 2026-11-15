@@ -2,14 +2,15 @@
 
 declare(strict_types=1);
 
-use App\Actions\Git\GitCloneCredentials;
+use App\Data\Git\RepositoryRef;
 use App\Data\Services\GitSource;
 use App\Exceptions\DomainRuleViolation;
 use App\Models\Team;
-use App\Services\GitHub\Exceptions\GitHubClockSkew;
-use App\Services\GitHub\GitHubClientFactory;
-use App\Services\GitHub\GitHubClock;
-use App\Services\GitHub\TokenScope;
+use App\Services\Git\Providers\GitHub\Exceptions\GitHubClockSkew;
+use App\Services\Git\Providers\GitHub\GitHubClientFactory;
+use App\Services\Git\Providers\GitHub\GitHubClock;
+use App\Services\Git\Providers\GitHub\GitHubProvider;
+use App\Services\Git\Providers\GitHub\TokenScope;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -26,16 +27,14 @@ beforeEach(function (): void {
 test('clone credentials are a token scoped to one repository with read-only contents', function (): void {
     Http::fake(['https://api.github.com/app/installations/100/access_tokens' => GitHubFake::tokenResponse('ghs_clone')]);
 
-    $credentials = resolve(GitCloneCredentials::class)->handle($this->team, new GitSource(
+    $credentials = resolve(GitHubProvider::class)->cloneCredentials(RepositoryRef::fromSource($this->team->id, new GitSource(
         repositoryId: 555,
         fullName: 'octo-org/web',
         installationId: $this->installation->id,
-    ));
+    )));
 
     expect($credentials->cloneUrl)->toBe('https://github.com/octo-org/web.git')
-        ->and($credentials->token->reveal())->toBe('ghs_clone')
-        ->and($credentials->token->repositoryIds)->toBe([555])
-        ->and($credentials->authorizationHeader())->toBe('Authorization: Basic '.base64_encode('x-access-token:ghs_clone'))
+        ->and($credentials->token)->toBe('ghs_clone')
         ->and(print_r($credentials, true))->not->toContain('ghs_clone')
         ->and(fn (): string => serialize($credentials))->toThrow(LogicException::class);
 
@@ -50,10 +49,10 @@ test('every build gets its own clone token: clone tokens are never cached or reu
         ->pushResponse(GitHubFake::tokenResponse('ghs_build_1'))
         ->pushResponse(GitHubFake::tokenResponse('ghs_build_2')),
     ]);
-    $source = new GitSource(repositoryId: 555, fullName: 'octo-org/web', installationId: $this->installation->id);
+    $ref = RepositoryRef::fromSource($this->team->id, new GitSource(repositoryId: 555, fullName: 'octo-org/web', installationId: $this->installation->id));
 
-    expect(resolve(GitCloneCredentials::class)->handle($this->team, $source)->token->reveal())->toBe('ghs_build_1')
-        ->and(resolve(GitCloneCredentials::class)->handle($this->team, $source)->token->reveal())->toBe('ghs_build_2');
+    expect(resolve(GitHubProvider::class)->cloneCredentials($ref)->token)->toBe('ghs_build_1')
+        ->and(resolve(GitHubProvider::class)->cloneCredentials($ref)->token)->toBe('ghs_build_2');
 
     Http::assertSentCount(2);
 });
@@ -61,7 +60,7 @@ test('every build gets its own clone token: clone tokens are never cached or reu
 test('clone credentials refuse installations of other teams and unknown repositories', function (GitSource $source): void {
     Http::fake();
 
-    resolve(GitCloneCredentials::class)->handle($this->team, $source);
+    resolve(GitHubProvider::class)->cloneCredentials(RepositoryRef::fromSource($this->team->id, $source));
 })->with([
     'other team' => fn (): GitSource => new GitSource(555, 'octo-org/web', GitHubFake::installation(GitHubFake::app(Team::factory()->create(), 99), 300)->id),
     'unknown repository' => fn (): GitSource => new GitSource(999, 'octo-org/other', $this->installation->id),
@@ -123,4 +122,18 @@ test('a known skew shifts JWT timestamps to GitHub’s clock', function (): void
     $claims = json_decode(base64_decode(strtr(explode('.', $jwt)[1], '-_', '+/')), true);
 
     expect($claims['iat'])->toBeGreaterThanOrEqual(now()->getTimestamp() + 120 - 60 - 2);
+});
+
+test('GitHub Enterprise Server repositories clone and link to their own host, not github.com (bug 5)', function (): void {
+    $app = GitHubFake::app($this->team, 77, apiUrl: 'https://ghe.example.com/api/v3');
+    $installation = GitHubFake::installation($app, 700);
+    GitHubFake::repository($installation, 777, 'corp/shop');
+    $ref = RepositoryRef::fromSource($this->team->id, new GitSource(repositoryId: 777, fullName: 'corp/shop', installationId: $installation->id));
+    $provider = resolve(GitHubProvider::class);
+
+    expect($provider->cloneUrl($ref))->toBe('https://ghe.example.com/corp/shop.git')
+        ->and($provider->repositoryUrl($ref))->toBe('https://ghe.example.com/corp/shop')
+        ->and($provider->repositoryUrl($ref, 'feature/login'))->toBe('https://ghe.example.com/corp/shop/tree/feature/login')
+        ->and($provider->compareUrl($ref, 'aaa', 'bbb'))->toBe('https://ghe.example.com/corp/shop/compare/aaa...bbb')
+        ->and($provider->fileUrl($ref, 'config/launchroom.json', str_repeat('c', 40), 14))->toBe('https://ghe.example.com/corp/shop/blob/'.str_repeat('c', 40).'/config/launchroom.json#L14');
 });

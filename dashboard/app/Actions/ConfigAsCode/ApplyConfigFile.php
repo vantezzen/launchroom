@@ -7,25 +7,24 @@ namespace App\Actions\ConfigAsCode;
 use App\Actions\Audit\RecordAuditEvent;
 use App\Data\Audit\AuditActor;
 use App\Data\Audit\AuditEntryData;
+use App\Data\ConfigAsCode\ConfigApplyOutcome;
+use App\Data\ConfigAsCode\ConfigApplyResult;
 use App\Data\ConfigAsCode\ConfigFileProblemData;
 use App\Data\ConfigAsCode\ManagedConfigData;
 use App\Data\Services\GitSource;
 use App\Enums\AuditAction;
 use App\Enums\ConfigAsCode\ConfigFileStatus;
 use App\Enums\ConfigAsCode\ConfigTrust;
+use App\Events\CanvasChanged;
+use App\Exceptions\ConfigApplyFailed;
 use App\Models\ConfigAsCode\EnvironmentConfigFile;
 use App\Models\Environment;
 use App\Queries\CurrentEnvironmentSpec;
-use App\Services\ConfigAsCode\ConfigApplier;
-use App\Services\ConfigAsCode\ConfigApplyFailed;
-use App\Services\ConfigAsCode\ConfigApplyOutcome;
-use App\Services\ConfigAsCode\ConfigApplyResult;
 use App\Support\Changes\SpecDiff;
 use App\Support\ConfigAsCode\ConfigCheck;
 use App\Support\ConfigAsCode\ConfigContext;
 use App\Support\ConfigAsCode\ConfigFile;
 use App\Support\ConfigAsCode\ConfigFileValidator;
-use App\Support\ConfigAsCode\Problems;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -39,7 +38,7 @@ final readonly class ApplyConfigFile
 {
     public function __construct(
         private ConfigFileValidator $validator,
-        private ConfigApplier $applier,
+        private StageConfigFile $stage,
         private CurrentEnvironmentSpec $currentSpec,
         private RecordAuditEvent $audit,
     ) {}
@@ -83,7 +82,7 @@ final readonly class ApplyConfigFile
             $otherStaged = $base === null || ! SpecDiff::between($base, $before)->isEmpty();
 
             try {
-                $result = DB::transaction(fn (): ConfigApplyResult => $this->applier->apply($environment, $check->file, $trust, $repository, $actor, $previous));
+                $result = DB::transaction(fn (): ConfigApplyResult => $this->stage->handle($environment, $check->file, $trust, $repository, $actor, $previous));
             } catch (ConfigApplyFailed $e) {
                 return $this->invalid($environment, $record, $e->problems, $check->warnings, new ConfigCheck(null, $e->problems)->summary($path), $commitSha, $actor);
             }
@@ -95,8 +94,8 @@ final readonly class ApplyConfigFile
             $record->status = $changed ? ConfigFileStatus::Staged : ConfigFileStatus::Unchanged;
             $record->fill([
                 'managed' => $result->managed,
-                'warnings' => Problems::rows($check->warnings),
-                'ignored' => Problems::rows($result->ignored),
+                'warnings' => $check->warnings,
+                'ignored' => $result->ignored,
             ]);
             $record->save();
 
@@ -109,6 +108,7 @@ final readonly class ApplyConfigFile
                     subjectId: $environment->public_id,
                     meta: ['path' => $path, 'commit' => $commitSha, 'trust' => $trust->value, 'changes' => count($diff->items), 'domains' => count($result->domains)],
                 ));
+                event(new CanvasChanged($environment->public_id));
             }
 
             return new ConfigApplyOutcome($record->status, $record, $changed, $otherStaged);
@@ -123,7 +123,7 @@ final readonly class ApplyConfigFile
     {
         // What the file managed stays managed: the last good file still describes it.
         $record->status = ConfigFileStatus::Invalid;
-        $record->fill(['errors' => Problems::rows($errors), 'warnings' => Problems::rows($warnings)]);
+        $record->fill(['errors' => $errors, 'warnings' => $warnings]);
 
         if (! $record->exists) {
             $record->managed = new ManagedConfigData;

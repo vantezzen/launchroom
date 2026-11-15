@@ -118,11 +118,11 @@ final readonly class StagedChangesView
 
         $images = [];
 
-        foreach ($promotion->images as $serviceId => $pin) {
+        foreach ($promotion->images->items() as $serviceId => $pin) {
             $service = $current->service($serviceId);
 
             if ($service instanceof ServiceSpec) {
-                $images[] = new PromotedImageData($serviceId, $service->name, $pin['commitSha'], $pin['deployment'], $promotion->fromEnvironment->name);
+                $images[] = new PromotedImageData($serviceId, $service->name, $pin->commitSha, $pin->deployment, $promotion->fromEnvironment->name);
             }
         }
 

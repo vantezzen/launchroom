@@ -5,7 +5,7 @@ declare(strict_types=1);
 use App\Enums\AuditAction;
 use App\Enums\DaemonTaskStatus;
 use App\Enums\RemoteAccess\RemoteAccessEndReason;
-use App\Enums\RemoteAccess\RemoteAccessStatus;
+use App\Enums\TaskBackedAccessStatus;
 use App\Enums\TeamRole;
 use App\Models\AuditEvent;
 use App\Models\DaemonTask;
@@ -154,6 +154,18 @@ test('heartbeats re-authorize: a lost permission, the instance switch or the har
     expect(accessBeat($this, $second)['cancel'])->toBeTrue();
 });
 
+test('deleting an account cancels its live accesses before the rows go', function (): void {
+    memberOf($this->team, TeamRole::Owner);
+    $admin = memberOf($this->team, TeamRole::Admin);
+    $this->actingAs($admin)->postJson(accessUrl($this->instance, 'ssh'), ['allowFrom' => ['198.51.100.7'], 'publicKeys' => [ED25519_KEY]])->assertCreated();
+    $task = accessLease($this);
+
+    $this->actingAs($admin)->delete(route('profile.destroy'), ['password' => 'password'])->assertSessionHasNoErrors();
+
+    expect($admin->fresh())->toBeNull()
+        ->and(DaemonTask::query()->where('public_id', $task['id'])->sole()->cancel_requested_at)->not->toBeNull();
+});
+
 test('ssh with a key sends only the key; the answer has no password', function (): void {
     $owner = memberOf($this->team, TeamRole::Owner);
     $json = $this->actingAs($owner)->postJson(accessUrl($this->instance, 'ssh'), ['allowFrom' => ['198.51.100.7'], 'publicKeys' => [ED25519_KEY]])->assertCreated()->json();
@@ -199,7 +211,7 @@ test('end now cancels the task; completion closes it, wipes the password and aud
     ], ['Idempotency-Key' => $task['id'].':1'])->assertSuccessful();
 
     $access = RemoteAccess::query()->where('public_id', $opened['id'])->sole();
-    expect($access->status)->toBe(RemoteAccessStatus::Ended)
+    expect($access->status)->toBe(TaskBackedAccessStatus::Ended)
         ->and($access->end_reason)->toBe(RemoteAccessEndReason::Ended)
         ->and($access->password)->toBeNull()
         ->and($access->connections)->toBe(1);
@@ -219,7 +231,7 @@ test('a restart of launchroomd fails the access instead of re-queuing it', funct
     ], ['Idempotency-Key' => $task['id'].':1'])->assertSuccessful();
 
     expect(DaemonTask::query()->where('public_id', $task['id'])->sole()->status)->toBe(DaemonTaskStatus::Failed)
-        ->and(RemoteAccess::query()->sole()->status)->toBe(RemoteAccessStatus::Ended);
+        ->and(RemoteAccess::query()->sole()->status)->toBe(TaskBackedAccessStatus::Ended);
 });
 
 test('limits: two live accesses per person; servers without the feature are refused', function (): void {
@@ -248,7 +260,7 @@ test('the sweep ends accesses no server picked up', function (): void {
 
     $this->artisan('launchroom:remote-access:sweep')->assertSuccessful();
 
-    expect(RemoteAccess::query()->sole()->status)->toBe(RemoteAccessStatus::Ended);
+    expect(RemoteAccess::query()->sole()->status)->toBe(TaskBackedAccessStatus::Ended);
 });
 
 test('prefixes and keys follow launchroomd’s grammar', function (): void {

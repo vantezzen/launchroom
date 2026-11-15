@@ -15,14 +15,11 @@ import (
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
+
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 )
 
-// Labels of the containers this package creates (supervisor, helpers).
 const (
-	labelManaged = "launchroom.managed"
-	labelRole    = "launchroom.role"
-	labelTask    = "launchroom.update-task"
-	roleUpdater  = "updater"
 	// RoleControlPlane is the role label of the control-plane compose stack.
 	RoleControlPlane = "control-plane"
 
@@ -55,7 +52,7 @@ type Self struct {
 // so its PID is the host PID Docker reports).
 func Discover(ctx context.Context, api *client.Client, pid int, dataDir string) (Self, error) {
 	f := client.Filters{}
-	f.Add("label", labelManaged+"=true")
+	f.Add("label", names.LabelManaged+"=true")
 	f.Add("label", composeService)
 	list, err := api.ContainerList(ctx, client.ContainerListOptions{Filters: f})
 	if err != nil {
@@ -92,7 +89,7 @@ func withGuardSocket(ctx context.Context, api *client.Client, r container.Inspec
 		return s, err
 	}
 	f := client.Filters{}
-	f.Add("label", labelManaged+"=true", composeProject+"="+r.Config.Labels[composeProject], composeService+"="+guardService)
+	f.Add("label", names.LabelManaged+"=true", composeProject+"="+r.Config.Labels[composeProject], composeService+"="+guardService)
 	list, lerr := api.ContainerList(ctx, client.ContainerListOptions{Filters: f})
 	if lerr != nil {
 		return Self{}, fmt.Errorf("list containers: %w", lerr)
@@ -113,7 +110,6 @@ func withGuardSocket(ctx context.Context, api *client.Client, r container.Inspec
 	return Self{}, err
 }
 
-// errNoSocket: launchroomd's container has no Docker socket mount.
 var errNoSocket = errors.New("own container has no Docker socket bind mount")
 
 const guardService = "dockerd-guard"
@@ -123,7 +119,7 @@ func selfFromInspect(r container.InspectResponse, dataDir string) (Self, error) 
 		return Self{}, errors.New("own container has no config")
 	}
 	l := r.Config.Labels
-	s := Self{ContainerID: r.ID, Image: r.Image, ProjectDir: l[composeWorkingDir], Project: l[composeProject], Service: l[composeService], Role: l[labelRole]}
+	s := Self{ContainerID: r.ID, Image: r.Image, ProjectDir: l[composeWorkingDir], Project: l[composeProject], Service: l[composeService], Role: l[names.LabelRole]}
 	for _, m := range r.Mounts {
 		switch m.Destination {
 		case dataDir:
@@ -147,7 +143,6 @@ func selfFromInspect(r container.InspectResponse, dataDir string) (Self, error) 
 	return s, nil
 }
 
-// pull pulls a digest-pinned image (anonymously).
 func pull(ctx context.Context, api *client.Client, ref string) error {
 	if !strings.Contains(ref, "@sha256:") {
 		return fmt.Errorf("refusing to pull %q: not digest-pinned", ref)
@@ -165,7 +160,6 @@ func pull(ctx context.Context, api *client.Client, ref string) error {
 	return nil
 }
 
-// helper describes a short-lived container (supervisor or installer helper).
 type helper struct {
 	Name       string
 	Image      string
@@ -176,7 +170,7 @@ type helper struct {
 	User       string
 	GroupAdd   []string
 	TaskID     string
-	// Binds are host paths mounted at the same path inside, plus the Docker socket.
+	// SameBinds are host paths mounted at the same path inside.
 	SameBinds  []string
 	SocketPath string
 }
@@ -193,7 +187,7 @@ func (h helper) create(ctx context.Context, api *client.Client) (string, error) 
 			Image: h.Image, Entrypoint: h.Entrypoint, Cmd: h.Cmd, Env: h.Env, WorkingDir: h.WorkingDir, User: h.User,
 			// A TTY makes the log stream raw (no multiplexing).
 			Tty:    true,
-			Labels: map[string]string{labelManaged: "true", labelRole: roleUpdater, labelTask: h.TaskID},
+			Labels: map[string]string{names.LabelManaged: "true", names.LabelRole: names.RoleUpdater, names.LabelUpdateTask: h.TaskID},
 		},
 		HostConfig: &container.HostConfig{
 			Mounts: mounts, GroupAdd: h.GroupAdd,
@@ -208,7 +202,6 @@ func (h helper) create(ctx context.Context, api *client.Client) (string, error) 
 	return res.ID, nil
 }
 
-// start creates and starts the container and returns its id.
 func (h helper) start(ctx context.Context, api *client.Client) (string, error) {
 	id, err := h.create(ctx, api)
 	if err != nil {
@@ -221,8 +214,6 @@ func (h helper) start(ctx context.Context, api *client.Client) (string, error) {
 	return id, nil
 }
 
-// run starts the container, waits for it to exit (within timeout), and
-// returns its exit code and the tail of its output; the container is removed.
 func (h helper) run(ctx context.Context, api *client.Client, timeout time.Duration) (int, string, error) {
 	id, err := h.start(ctx, api)
 	if err != nil {
@@ -241,7 +232,6 @@ func (h helper) run(ctx context.Context, api *client.Client, timeout time.Durati
 	return code, logs, nil
 }
 
-// wait blocks until the container is not running and returns its exit code.
 func wait(ctx context.Context, api *client.Client, id string) (int, error) {
 	w := api.ContainerWait(ctx, id, client.ContainerWaitOptions{Condition: container.WaitConditionNotRunning})
 	select {
@@ -279,13 +269,12 @@ func removeByName(ctx context.Context, api *client.Client, name string) {
 		return
 	}
 	// Only our own helpers, never anything else that happens to have the name.
-	if res.Container.Config == nil || res.Container.Config.Labels[labelRole] != roleUpdater {
+	if res.Container.Config == nil || res.Container.Config.Labels[names.LabelRole] != names.RoleUpdater {
 		return
 	}
 	_, _ = api.ContainerRemove(ctx, res.Container.ID, client.ContainerRemoveOptions{Force: true})
 }
 
-// containerRunning reports whether a container by that name runs (false if gone).
 func containerRunning(ctx context.Context, api *client.Client, name string) (bool, error) {
 	res, err := api.ContainerInspect(ctx, name, client.ContainerInspectOptions{})
 	if errdefs.IsNotFound(err) {

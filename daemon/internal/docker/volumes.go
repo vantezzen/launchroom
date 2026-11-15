@@ -11,21 +11,8 @@ import (
 
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/moby/moby/client"
-)
 
-// Volume backups (docs/14 §2) read and write named volumes through a helper
-// container that is created but never started: it only mounts the volume at
-// /data, and the Engine API's archive endpoints stream its content (GET) or
-// extract a tar into it (PUT). No process runs in it, so no image content is
-// needed: the helper image is imported locally from an archive holding just
-// the /data mount point.
-const (
-	// HelperImage is the local image of volume helper containers.
-	HelperImage = "launchroom-local/volume-helper:1"
-	// LabelHelper marks a volume helper container ("volume").
-	LabelHelper = "launchroom.helper"
-	// HelperMount is where a helper container mounts its volume.
-	HelperMount = "/data"
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 )
 
 // VolumeOps are the Engine operations volume backups need on top of Client.
@@ -40,7 +27,7 @@ type VolumeOps interface {
 	// StreamToContainer extracts a tar stream at dst inside a managed
 	// container, keeping the archive's owners. Bounded by ctx only.
 	StreamToContainer(ctx context.Context, id, dst string, tar io.Reader) error
-	// EnsureHelperImage imports HelperImage when it is missing.
+	// EnsureHelperImage imports names.VolumeHelperImage when it is missing.
 	EnsureHelperImage(ctx context.Context) error
 }
 
@@ -91,7 +78,7 @@ func (e *Engine) StreamToContainer(ctx context.Context, id, dst string, tar io.R
 
 // EnsureHelperImage implements VolumeOps.
 func (e *Engine) EnsureHelperImage(ctx context.Context) error {
-	if ok, err := e.ImagePresent(ctx, HelperImage); err != nil || ok {
+	if ok, err := e.ImagePresent(ctx, names.VolumeHelperImage); err != nil || ok {
 		return err
 	}
 	var buf bytes.Buffer
@@ -104,10 +91,10 @@ func (e *Engine) EnsureHelperImage(ctx context.Context) error {
 	}
 	ctx, cancel := context.WithTimeout(ctx, e.pullTimeout)
 	defer cancel()
-	res, err := e.api.ImageImport(ctx, client.ImageImportSource{Source: &buf, SourceName: "-"}, HelperImage, client.ImageImportOptions{
+	res, err := e.api.ImageImport(ctx, client.ImageImportSource{Source: &buf, SourceName: "-"}, names.VolumeHelperImage, client.ImageImportOptions{
 		Message: "launchroom volume helper (never started)",
 		// A command is required to create a container; it is never run.
-		Changes: []string{`CMD ["/launchroom-volume-helper"]`, "LABEL " + LabelManaged + "=true " + LabelHelper + "=volume"},
+		Changes: []string{`CMD ["/launchroom-volume-helper"]`, "LABEL " + names.LabelManaged + "=true " + names.LabelHelper + "=" + names.HelperVolume},
 	})
 	if err != nil {
 		return wrap("import helper image", err)
@@ -116,7 +103,7 @@ func (e *Engine) EnsureHelperImage(ctx context.Context) error {
 	if _, err := io.Copy(io.Discard, res); err != nil {
 		return wrap("import helper image", err)
 	}
-	if ok, err := e.ImagePresent(ctx, HelperImage); err != nil || !ok {
+	if ok, err := e.ImagePresent(ctx, names.VolumeHelperImage); err != nil || !ok {
 		return errors.Join(errors.New("docker: helper image missing after import"), err)
 	}
 	return nil

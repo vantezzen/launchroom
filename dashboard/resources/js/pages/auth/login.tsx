@@ -14,6 +14,7 @@ import {
 } from '@/features/auth/auth-frame';
 import { store } from '@/routes/login';
 import { request } from '@/routes/password';
+import { noLayout } from '@/lib/pages';
 
 type Props = {
     status?: string;
@@ -107,3 +108,5 @@ export default function Login({ status, canResetPassword }: Props) {
         </AuthFrame>
     );
 }
+
+Login.layout = noLayout;

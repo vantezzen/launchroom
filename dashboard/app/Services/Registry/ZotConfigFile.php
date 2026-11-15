@@ -15,9 +15,6 @@ use SensitiveParameter;
  */
 final class ZotConfigFile
 {
-    /**
-     * sha256 of the file's contents, or null when it doesn't exist.
-     */
     public function hash(string $path): ?string
     {
         if (! is_file($path)) {

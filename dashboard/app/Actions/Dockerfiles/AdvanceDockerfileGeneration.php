@@ -4,6 +4,11 @@ declare(strict_types=1);
 
 namespace App\Actions\Dockerfiles;
 
+use App\Data\Dockerfiles\DockerfileDetectedData;
+use App\Data\Dockerfiles\DockerfileFileSentData;
+use App\Data\Dockerfiles\RepositoryContextData;
+use App\Data\Protocol\V1\ProbeOutcome;
+use App\Data\Protocol\V1\RunOnceResult;
 use App\Enums\DaemonTaskStatus;
 use App\Enums\Dockerfiles\DockerfileGenerationStatus;
 use App\Exceptions\DomainRuleViolation;
@@ -84,8 +89,8 @@ final readonly class AdvanceDockerfileGeneration
             return false;
         }
 
-        $result = $task->result ?? [];
-        $inspection = is_array($result['inspection'] ?? null) ? $result['inspection'] : null;
+        $result = $task->result;
+        $inspection = $result?->inspection;
 
         if ($inspection === null) {
             $this->attempts->fail($generation, 'launchroom could not read the repository'.($task->error !== null ? ': '.mb_substr($task->error, 0, 300) : '.'));
@@ -94,20 +99,17 @@ final readonly class AdvanceDockerfileGeneration
         }
 
         $project = $generation->serviceInstance->environment->project;
-        $context = RepositoryContext::sanitize($inspection, $this->secrets->for($project));
-
-        $failure = is_array($result['failure'] ?? null) ? $result['failure'] : [];
-        $plan = is_array($result['plan'] ?? null) ? $result['plan'] : [];
-        $summary = is_array($plan['summary'] ?? null) ? $plan['summary'] : (is_array($failure['summary'] ?? null) ? $failure['summary'] : []);
+        $context = RepositoryContextData::from(RepositoryContext::sanitize($inspection->toArray(), $this->secrets->for($project)));
+        $summary = ($result->plan->summary ?? $result->failure?->summary)?->toArray() ?? [];
 
         $generation->forceFill([
             'context' => $context,
-            'files_sent' => array_map(static fn (array $file): array => ['path' => $file['path'], 'bytes' => strlen($file['content']), 'truncated' => $file['truncated']], $context['files']),
-            'detected' => [
+            'files_sent' => array_map(static fn (array $file): DockerfileFileSentData => new DockerfileFileSentData($file['path'], strlen($file['content']), $file['truncated']), $context->files),
+            'detected' => new DockerfileDetectedData(
                 ...DockerfileAttempts::facts($summary),
-                'error' => $task->status === DaemonTaskStatus::Succeeded ? null : RepositoryContext::scrub(mb_substr($task->error ?? '', 0, 1000)),
-                'healthPath' => is_string($summary['healthPath'] ?? null) && $summary['healthPath'] !== '/' ? $summary['healthPath'] : null,
-            ],
+                error: $task->status === DaemonTaskStatus::Succeeded ? null : RepositoryContext::scrub(mb_substr($task->error ?? '', 0, 1000)),
+                healthPath: is_string($summary['healthPath'] ?? null) && $summary['healthPath'] !== '/' ? $summary['healthPath'] : null,
+            ),
         ]);
         $generation->transitionTo(DockerfileGenerationStatus::Drafting);
 
@@ -122,21 +124,19 @@ final readonly class AdvanceDockerfileGeneration
             return false;
         }
 
-        $built = is_array($task->result['build'] ?? null) ? $task->result['build'] : [];
-        $image = $built['image'] ?? null;
+        $built = $task->result?->build;
 
-        if ($task->status !== DaemonTaskStatus::Succeeded || ! is_string($image)) {
-            $failure = is_array($task->result['failure'] ?? null) ? $task->result['failure'] : [];
-            $step = is_string($failure['step'] ?? null) ? $failure['step'] : null;
+        if ($task->status !== DaemonTaskStatus::Succeeded || $built === null) {
+            $step = $task->result?->failure?->step;
             $message = $task->status === DaemonTaskStatus::Cancelled ? 'The build was cancelled.' : ($task->error ?? 'The build failed.');
 
             return $this->attempts->repairOrFail($generation, 'build', ($step !== null ? "({$step}) " : '').mb_substr($message, 0, 600), $this->attempts->logTail($task));
         }
 
-        $generation->forceFill(['image' => $image]);
+        $generation->forceFill(['image' => $built->image]);
 
         try {
-            $run = $this->runs->create($generation, $image, $task);
+            $run = $this->runs->create($generation, $built->image, $task);
         } catch (DomainRuleViolation $e) {
             $this->attempts->fail($generation, $e->getMessage());
 
@@ -144,7 +144,7 @@ final readonly class AdvanceDockerfileGeneration
         }
 
         $generation->forceFill(['run_task_id' => $run->id]);
-        $this->attempts->record($generation, ['buildTask' => $task->public_id, 'buildMs' => is_int($built['durationMs'] ?? null) ? $built['durationMs'] : null]);
+        $this->attempts->record($generation, ['buildTask' => $task->public_id, 'buildMs' => $built->durationMs]);
         $generation->transitionTo(DockerfileGenerationStatus::Starting);
 
         return false;
@@ -158,11 +158,11 @@ final readonly class AdvanceDockerfileGeneration
             return false;
         }
 
-        $run = is_array($task->result['runOnce'] ?? null) ? $task->result['runOnce'] : [];
-        $probe = is_array($run['probe'] ?? null) ? $run['probe'] : [];
+        $run = $task->result?->runOnce;
+        $probe = $run?->probe instanceof ProbeOutcome ? $run->probe : null;
 
-        if ($task->status === DaemonTaskStatus::Succeeded && ($probe['listening'] ?? false) === true) {
-            $this->attempts->record($generation, ['outcome' => 'verified', 'runTask' => $task->public_id, 'startedAfterMs' => $probe['afterMs'] ?? null, 'httpStatus' => $probe['httpStatus'] ?? null]);
+        if ($task->status === DaemonTaskStatus::Succeeded && $probe?->listening === true) {
+            $this->attempts->record($generation, ['outcome' => 'verified', 'runTask' => $task->public_id, 'startedAfterMs' => $probe->afterMs, 'httpStatus' => is_int($probe->httpStatus) ? $probe->httpStatus : null]);
             $generation->forceFill(['error' => null]);
             $generation->transitionTo(DockerfileGenerationStatus::Verified);
 
@@ -174,11 +174,8 @@ final readonly class AdvanceDockerfileGeneration
 
     /**
      * "Exited with code 1", "Didn't listen on 3000 within 90 s; it listens on 5173".
-     *
-     * @param  array<mixed>  $run
-     * @param  array<mixed>  $probe
      */
-    private function startMessage(DockerfileGeneration $generation, DaemonTask $task, array $run, array $probe): string
+    private function startMessage(DockerfileGeneration $generation, DaemonTask $task, ?RunOnceResult $run, ?ProbeOutcome $probe): string
     {
         $port = $generation->port ?? 0;
 
@@ -186,11 +183,11 @@ final readonly class AdvanceDockerfileGeneration
             return 'The app could not be started'.($task->error !== null ? ': '.mb_substr($task->error, 0, 400) : '.');
         }
 
-        if (($probe['exited'] ?? false) === true) {
-            return 'The app exited with code '.(is_int($run['exitCode'] ?? null) ? $run['exitCode'] : '?')." before it listened on port {$port}.";
+        if ($probe?->exited === true) {
+            return 'The app exited with code '.($run->exitCode ?? '?')." before it listened on port {$port}.";
         }
 
-        $ports = array_values(array_filter(is_array($probe['listeningPorts'] ?? null) ? $probe['listeningPorts'] : [], is_int(...)));
+        $ports = array_values(array_filter(is_array($probe?->listeningPorts) ? $probe->listeningPorts : [], is_int(...)));
         $seconds = config()->integer('launchroom.dockerfile_generation.probe_seconds');
 
         return "The app did not listen on port {$port} within {$seconds} seconds".($ports === [] ? '.' : '; it listens on '.implode(', ', $ports).' instead.');

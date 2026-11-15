@@ -4,7 +4,7 @@ import type { LucideIcon } from 'lucide-react';
 import type { MouseEvent } from 'react';
 import { cn } from '@/lib/utils';
 
-export type AttentionTone = 'error' | 'warning' | 'info';
+type AttentionTone = 'error' | 'warning' | 'info';
 
 const TONE: Record<
     AttentionTone,
@@ -23,7 +23,7 @@ const TONE: Record<
     info: { icon: Info, iconClass: 'text-muted-foreground', srPrefix: '' },
 };
 
-export type AttentionChipProps = {
+type AttentionChipProps = {
     /** The problem in a word or two: "Unhealthy", "Errors 8%", "Disk 93%". */
     label: string;
     tone?: AttentionTone;

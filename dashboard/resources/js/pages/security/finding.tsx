@@ -7,6 +7,7 @@ import {
     useFindingDetail,
 } from '@/features/security/finding-detail';
 import { index } from '@/routes/security';
+import { securityKeys } from '@/features/security/query-keys';
 
 type Detail = App.Data.Security.FindingDetailData;
 
@@ -20,7 +21,7 @@ export default function FindingPage({ detail: initial }: { detail: Detail }) {
     const detail = data ?? initial;
     const refresh = () =>
         void client.invalidateQueries({
-            queryKey: ['security-finding', initial.finding.id],
+            queryKey: securityKeys.finding(initial.finding.id),
         });
 
     return (

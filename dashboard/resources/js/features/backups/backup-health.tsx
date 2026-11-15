@@ -1,6 +1,6 @@
 import type { StatusState } from '@/components/status';
 import { Status } from '@/components/status';
-import { relativeTime } from '@/components/time-ago';
+import { relativeTime } from '@/lib/format';
 
 type Health = App.Data.Backups.ServiceBackupStatusData;
 

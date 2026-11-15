@@ -26,6 +26,7 @@ import { SessionClient } from './session-client';
 import { Terminal } from './terminal';
 import type { TerminalHandle } from './terminal';
 import { useTabData } from './use-tab-data';
+import { ServiceActivityEvents } from '@/components/channel-events';
 
 type Data = App.Data.Sessions.ConsoleTabData;
 type Opened = App.Data.Sessions.OpenedSessionData;
@@ -97,7 +98,6 @@ function ConsoleView({
     const [phase, setPhase] = useState<Phase>({ kind: 'idle' });
     const [opened, setOpened] = useState<Opened | null>(null);
     const [error, setError] = useState<string | null>(null);
-    // The page's shared clock (one interval, paused in hidden tabs).
     const now = useNow(phase.kind === 'live');
     const lastInput = useRef(Date.now());
     const terminal = useRef<TerminalHandle>(null);
@@ -216,8 +216,6 @@ function ConsoleView({
         stop();
         setPhase({ kind: 'ended', reason: 'You ended the session.' });
         refresh();
-        // The server closes it within a second or two; show that in the list.
-        window.setTimeout(refresh, 2500);
     };
 
     const elapsed = phase.kind === 'live' ? (now - phase.since) / 1000 : 0;
@@ -231,6 +229,12 @@ function ConsoleView({
 
     return (
         <div className="flex flex-col gap-8">
+            <ServiceActivityEvents
+                environment={serviceRef.environment}
+                service={serviceRef.service}
+                topic="sessions"
+                onChange={refresh}
+            />
             {phase.kind === 'idle' && (
                 <div className="flex flex-col gap-4">
                     {!data.available ? (

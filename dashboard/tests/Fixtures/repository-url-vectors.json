@@ -1,0 +1,170 @@
+[
+    {
+        "input": "github.com/umami-software/umami",
+        "fullName": "github.com/umami-software/umami",
+        "provider": "github",
+        "error": null
+    },
+    {
+        "input": "https://github.com/Umami-Software/Umami.git/",
+        "fullName": "github.com/Umami-Software/Umami",
+        "provider": "github",
+        "error": null
+    },
+    {
+        "input": "HTTPS://WWW.GitHub.com/acme/app",
+        "fullName": "github.com/acme/app",
+        "provider": "github",
+        "error": null
+    },
+    {
+        "input": "https://github.com/acme/app/tree/dev",
+        "fullName": "github.com/acme/app",
+        "provider": "github",
+        "error": null
+    },
+    {
+        "input": "https://github.com/acme/app/blob/main/README.md",
+        "fullName": "github.com/acme/app",
+        "provider": "github",
+        "error": null
+    },
+    {
+        "input": "https://gitlab.com/group/sub/app/-/tree/main",
+        "fullName": "gitlab.com/group/sub/app",
+        "provider": "gitlab",
+        "error": null
+    },
+    {
+        "input": "codeberg.org/forgejo/forgejo/src/branch/forgejo",
+        "fullName": "codeberg.org/forgejo/forgejo",
+        "provider": "codeberg",
+        "error": null
+    },
+    {
+        "input": "https://bitbucket.org/team/repo",
+        "fullName": "bitbucket.org/team/repo",
+        "provider": "git",
+        "error": null
+    },
+    {
+        "input": "https://git.example.org/srv/app",
+        "fullName": "git.example.org/srv/app",
+        "provider": "git",
+        "error": null
+    },
+    {
+        "input": "https://git.example.org/app.git",
+        "fullName": "git.example.org/app",
+        "provider": "git",
+        "error": null
+    },
+    {
+        "input": "  git.example.org:3000/app  ",
+        "fullName": "git.example.org:3000/app",
+        "provider": "git",
+        "error": null
+    },
+    {
+        "input": "http://github.com/acme/app",
+        "fullName": null,
+        "provider": null,
+        "error": "Use the https:// address of the repository."
+    },
+    {
+        "input": "git@github.com:acme/app.git",
+        "fullName": null,
+        "provider": null,
+        "error": "Paste the https:// address. SSH addresses need a deploy key: add them in Settings → Git."
+    },
+    {
+        "input": "ssh://git@github.com/acme/app.git",
+        "fullName": null,
+        "provider": null,
+        "error": "Paste the https:// address. SSH addresses need a deploy key: add them in Settings → Git."
+    },
+    {
+        "input": "git://github.com/acme/app.git",
+        "fullName": null,
+        "provider": null,
+        "error": "Paste the https:// address. SSH addresses need a deploy key: add them in Settings → Git."
+    },
+    {
+        "input": "https://user:token@github.com/acme/app",
+        "fullName": null,
+        "provider": null,
+        "error": "Paste the repository URL without a query, fragment or credentials."
+    },
+    {
+        "input": "https://github.com/acme/app?tab=readme",
+        "fullName": null,
+        "provider": null,
+        "error": "Paste the repository URL without a query, fragment or credentials."
+    },
+    {
+        "input": "https://github.com/acme/app#readme",
+        "fullName": null,
+        "provider": null,
+        "error": "Paste the repository URL without a query, fragment or credentials."
+    },
+    {
+        "input": "https://github.com\\acme/app",
+        "fullName": null,
+        "provider": null,
+        "error": "Paste the repository URL without a query, fragment or credentials."
+    },
+    {
+        "input": "https://exa mple.com/app",
+        "fullName": null,
+        "provider": null,
+        "error": "Paste the repository URL without a query, fragment or credentials."
+    },
+    {
+        "input": "https://github.com/acme",
+        "fullName": null,
+        "provider": null,
+        "error": "Add the repository to the URL, for example github.com/owner/app."
+    },
+    {
+        "input": "https://gitlab.com/acme",
+        "fullName": null,
+        "provider": null,
+        "error": "Add the repository to the URL, for example github.com/owner/app."
+    },
+    {
+        "input": "https://git.example.org/",
+        "fullName": null,
+        "provider": null,
+        "error": "Add the repository to the URL, for example github.com/owner/app."
+    },
+    {
+        "input": "https://localhost/app",
+        "fullName": null,
+        "provider": null,
+        "error": "That doesn’t look like a repository URL, for example github.com/owner/app."
+    },
+    {
+        "input": "https://git.example.org/a/../b",
+        "fullName": null,
+        "provider": null,
+        "error": "That doesn’t look like a repository URL, for example github.com/owner/app."
+    },
+    {
+        "input": "https://git.example.org/a/b%20c",
+        "fullName": null,
+        "provider": null,
+        "error": "That doesn’t look like a repository URL, for example github.com/owner/app."
+    },
+    {
+        "input": "file:///etc/passwd",
+        "fullName": null,
+        "provider": null,
+        "error": "That doesn’t look like a repository URL, for example github.com/owner/app."
+    },
+    {
+        "input": "https://git.example.org/a/a/a/a/a/a/a/a/a/a/a",
+        "fullName": null,
+        "provider": null,
+        "error": "Add the repository to the URL, for example github.com/owner/app."
+    }
+]

@@ -5,15 +5,20 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Casts\ServiceSourceCast;
+use App\Contracts\Git\GitAccount;
+use App\Data\Services\ConnectionVariableData;
 use App\Data\Services\ServiceSource;
 use App\Enums\ServiceKind;
 use App\Models\Concerns\BelongsToTeam;
 use App\Models\Concerns\HasPublicId;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Attributes\Scope;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
+use Spatie\LaravelData\DataCollection;
 
 /**
  * A service's identity, shared by all environments (docs/06 §1). Settings
@@ -28,7 +33,7 @@ use Illuminate\Support\Carbon;
  * @property int|null $parent_service_id
  * @property ServiceSource $source
  * @property string|null $icon
- * @property list<array{key: string, value: string}>|null $connection_variables what a connection to it injects (D65), null: the default naming
+ * @property DataCollection<int, ConnectionVariableData>|null $connection_variables what a connection to it injects (D65), null: the default naming
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property-read Project $project
@@ -77,6 +82,23 @@ final class Service extends Model
     }
 
     /**
+     * Services built from repository $repositoryId of $account (docs/09 R18:
+     * matched by provider, account row and numeric repository id, never by
+     * name), within the account's team.
+     *
+     * @param  Builder<self>  $query
+     */
+    #[Scope]
+    protected function sourcedFrom(Builder $query, GitAccount $account, int $repositoryId): void
+    {
+        $query->where('team_id', $account->accountTeamId())
+            ->whereRaw("source->>'type' = 'git'")
+            ->whereRaw("COALESCE(source->>'provider', 'github') = ?", [$account->gitProvider()->value])
+            ->whereRaw("(source->>'installationId')::bigint = ?", [$account->accountId()])
+            ->whereRaw("(source->>'repositoryId')::bigint = ?", [$repositoryId]);
+    }
+
+    /**
      * Repository path segment of built images: lowercase (Docker requires it).
      */
     public function imageRepository(): string
@@ -92,7 +114,7 @@ final class Service extends Model
         return [
             'kind' => ServiceKind::class,
             'source' => ServiceSourceCast::class,
-            'connection_variables' => 'array',
+            'connection_variables' => DataCollection::class.':'.ConnectionVariableData::class,
         ];
     }
 }

@@ -5,6 +5,10 @@ declare(strict_types=1);
 namespace App\Services\Registry;
 
 use App\Models\Registry\RegistryStorage;
+use App\Services\Crypto\SealedColumns;
+use App\Support\Images\RegistryLayout;
+use App\Support\S3\S3Credentials;
+use App\Support\S3\S3Location;
 use JsonException;
 
 /**
@@ -28,7 +32,7 @@ final readonly class ZotConfig
     public const string REDACTED = '[redacted]';
 
     public function __construct(
-        private RegistryStorageSecrets $secrets,
+        private SealedColumns $sealed,
     ) {}
 
     /**
@@ -46,7 +50,7 @@ final readonly class ZotConfig
         ];
 
         if ($storage instanceof RegistryStorage) {
-            $credentials = $reveal ? $this->secrets->reveal($storage) : ['accessKeyId' => self::REDACTED, 'secretAccessKey' => self::REDACTED];
+            $credentials = $reveal ? S3Credentials::of($this->sealed->revealJson($storage, 'credentials'))->toArray() : ['accessKeyId' => self::REDACTED, 'secretAccessKey' => self::REDACTED];
             $prefix = trim($storage->prefix, '/');
 
             $storageConfig = [
@@ -60,7 +64,7 @@ final readonly class ZotConfig
                 'storageDriver' => [
                     'name' => 's3',
                     'rootdirectory' => '/'.$prefix,
-                    'region' => $storage->region ?? 'us-east-1',
+                    'region' => S3Location::regionOrDefault($storage->region),
                     'regionendpoint' => $storage->endpoint,
                     'bucket' => $storage->bucket,
                     'forcepathstyle' => $storage->force_path_style,
@@ -72,13 +76,13 @@ final readonly class ZotConfig
             ];
         }
 
-        $sync = [
-            'enable' => true,
-            'registries' => [
-                $this->mirror('https://registry-1.docker.io', '/mirror/docker.io'),
-                $this->mirror('https://ghcr.io', '/mirror/ghcr.io'),
-            ],
-        ];
+        $registries = [];
+
+        foreach (RegistryLayout::MIRRORED as $registry => $url) {
+            $registries[] = $this->mirror($url, '/'.RegistryLayout::MIRROR.'/'.$registry);
+        }
+
+        $sync = ['enable' => true, 'registries' => $registries];
 
         if ($storage instanceof RegistryStorage) {
             // Zot requires a local staging directory when on-demand mirroring
@@ -110,8 +114,6 @@ final readonly class ZotConfig
     }
 
     /**
-     * The file contents: pretty JSON with a trailing newline.
-     *
      * @throws JsonException
      */
     public function json(?RegistryStorage $storage = null): string
@@ -139,19 +141,19 @@ final readonly class ZotConfig
             'delay' => '24h',
             'policies' => [
                 [
-                    'repositories' => ['apps/**'],
+                    'repositories' => [RegistryLayout::APPS.'/**'],
                     'deleteReferrers' => true,
                     'deleteUntagged' => true,
                     'keepTags' => [['mostRecentlyPushedCount' => 10]],
                 ],
                 [
-                    'repositories' => ['cache/**'],
+                    'repositories' => [RegistryLayout::CACHE.'/**'],
                     'deleteReferrers' => true,
                     'deleteUntagged' => true,
                     'keepTags' => [['mostRecentlyPushedCount' => 2]],
                 ],
                 [
-                    'repositories' => ['mirror/**'],
+                    'repositories' => [RegistryLayout::MIRROR.'/**'],
                     'deleteReferrers' => false,
                     'deleteUntagged' => true,
                     'keepTags' => [['pulledWithin' => '720h']],

@@ -58,7 +58,7 @@ final readonly class SwitchDashboardDomain
             $change = DashboardDomainChange::query()->whereKey($open->id)->lockForUpdate()->firstOrFail();
 
             if ($change->status !== DashboardDomainStatus::Ready || ! $this->fresh($change)) {
-                throw DomainRuleViolation::on('hostname', 'https://'.$change->hostname.' isn’t ready: '.($change->probe['message'] ?? 'the checks haven’t passed yet.'));
+                throw DomainRuleViolation::on('hostname', 'https://'.$change->hostname.' isn’t ready: '.($change->probe->message ?? 'the checks haven’t passed yet.'));
             }
 
             $previous = DashboardDomainChange::active();
@@ -89,9 +89,9 @@ final readonly class SwitchDashboardDomain
 
     private function fresh(DashboardDomainChange $change): bool
     {
-        $checkedAt = $change->probe['checkedAt'] ?? null;
+        $probe = $change->probe;
 
-        return ($change->probe['ok'] ?? false) === true && is_string($checkedAt)
-            && CarbonImmutable::parse($checkedAt)->greaterThan(now()->subSeconds(config()->integer('launchroom.dashboard.probe_fresh_seconds')));
+        return $probe?->ok === true
+            && CarbonImmutable::parse($probe->checkedAt)->greaterThan(now()->subSeconds(config()->integer('launchroom.dashboard.probe_fresh_seconds')));
     }
 }

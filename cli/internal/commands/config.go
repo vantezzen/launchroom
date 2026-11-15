@@ -12,9 +12,9 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/vantezzen/launchroom/cli/internal/api"
-	"github.com/vantezzen/launchroom/cli/internal/config"
 	"github.com/vantezzen/launchroom/cli/internal/configfile"
 	"github.com/vantezzen/launchroom/cli/internal/exitcode"
+	"github.com/vantezzen/launchroom/cli/internal/fsutil"
 )
 
 // configCmd is `launchroom config` (docs/18 §7): launchroom.json.
@@ -87,7 +87,7 @@ func (a *App) configPullCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if err := config.WriteFileAtomic(file, []byte(export.Content), 0o644); err != nil {
+			if err := fsutil.WriteFileAtomic(file, []byte(export.Content), 0o644); err != nil {
 				return err
 			}
 			out := map[string]any{"file": file, "environment": t.Environment.ID, "revision": export.Revision, "suggestedPath": export.Path}

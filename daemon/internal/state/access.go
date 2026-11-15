@@ -32,7 +32,6 @@ var (
 	reAccessPrefix   = regexp.MustCompile(`^[0-9a-f.:]{2,45}/[0-9]{1,3}$`)
 	reSSHPublicKey   = regexp.MustCompile(`^(ssh-ed25519|ecdsa-sha2-nistp256|ecdsa-sha2-nistp384|ecdsa-sha2-nistp521|ssh-rsa) [A-Za-z0-9+/]+={0,2}$`)
 	reSSHFingerprint = regexp.MustCompile(`^SHA256:[A-Za-z0-9+/]{43}$`)
-	reHexSHA256      = regexp.MustCompile(`^[0-9a-f]{64}$`)
 	reAccessHost     = regexp.MustCompile(`^[a-z0-9.:-]{1,253}$`)
 	accessKinds      = []string{string(AccessSSH), string(AccessDatabase), string(AccessVolume)}
 	accessEnds       = []string{string(AccessEndEnded), string(AccessEndIdle), string(AccessEndDeadline), string(AccessEndLocked), string(AccessEndRefused), string(AccessEndError)}
@@ -443,7 +442,7 @@ func (s *AccessStatus) validate(e *errs, p string) {
 			e.addf(p+".hostKey", "is not an ed25519 key with its SHA256 fingerprint")
 		}
 	}
-	if s.Certificate != nil && (!reHexSHA256.MatchString(s.Certificate.SHA256) || len(s.Certificate.PEM) > 4096) {
+	if s.Certificate != nil && (!reHex64.MatchString(s.Certificate.SHA256) || len(s.Certificate.PEM) > 4096) {
 		e.addf(p+".certificate", "needs a hex SHA-256 and a PEM of at most 4096 bytes")
 	}
 	if s.Database != "" {
@@ -475,10 +474,15 @@ type AccessResult struct {
 	BytesOut     int64           `json:"bytesOut" jsonschema:"minimum=0"`
 	// Events are those after the last heartbeat.
 	Events []AccessEvent `json:"events,omitzero" jsonschema:"maxItems=50"`
+	// Failure says why the access could not start (omitted otherwise).
+	Failure StartFailure `json:"failure,omitzero"`
 }
 
 func (r *AccessResult) validate(e *errs) {
 	e.check("access.endReason", r.EndReason)
+	if r.Failure != "" {
+		e.check("access.failure", r.Failure)
+	}
 	if r.Connections < 0 || r.AuthFailures < 0 || r.BytesIn < 0 || r.BytesOut < 0 {
 		e.addf("access", "counts must be >= 0")
 	}

@@ -16,6 +16,7 @@ use App\Enums\ChangeEffect;
 use App\Enums\PromotionClass;
 use App\Enums\PromotionEntryType;
 use App\Enums\ServiceKind;
+use App\Enums\VariableLayer;
 use App\Enums\VariableType;
 use App\Models\Project;
 use App\Models\Variable;
@@ -66,7 +67,7 @@ final readonly class PromotionSnapshots
             $this->fields($entries, $service);
 
             foreach ($service->variables as $variable) {
-                if ($variable->layer !== VariableSpec::LAYER_ENVIRONMENT) {
+                if ($variable->layer !== VariableLayer::Environment) {
                     continue;
                 }
 
@@ -123,7 +124,7 @@ final readonly class PromotionSnapshots
         }
 
         foreach ($spec->sharedVariables as $variable) {
-            if ($variable->layer === VariableSpec::LAYER_ENVIRONMENT) {
+            if ($variable->layer === VariableLayer::Environment) {
                 $entries["sharedVariables.{$variable->key}"] = $this->variable($project, $variable, PromotionEntryType::SharedVariable, null, $generators[$variable->id] ?? null);
             }
         }

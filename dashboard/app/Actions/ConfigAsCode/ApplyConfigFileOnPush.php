@@ -6,25 +6,20 @@ namespace App\Actions\ConfigAsCode;
 
 use App\Actions\Deployments\DeployEnvironment;
 use App\Data\Audit\AuditActor;
+use App\Data\ConfigAsCode\ConfigApplyOutcome;
+use App\Data\ConfigAsCode\DeploymentConfigErrorsData;
+use App\Data\Deployments\DeploymentCommit;
 use App\Data\Git\CommitData;
 use App\Data\Services\GitSource;
 use App\Enums\ConfigAsCode\ConfigFileStatus;
 use App\Enums\ConfigAsCode\ConfigTrust;
-use App\Enums\DeploymentFailureClass;
-use App\Enums\DeploymentStatus;
 use App\Enums\DeploymentTrigger;
-use App\Enums\Git\DeploymentReportState;
-use App\Events\CanvasChanged;
 use App\Exceptions\DomainRuleViolation;
 use App\Exceptions\UnresolvedReferences;
-use App\Listeners\Git\ReportDeploymentToGitHub;
-use App\Models\Deployment;
 use App\Models\Environment;
 use App\Models\ServiceInstance;
-use App\Services\ConfigAsCode\ConfigApplyOutcome;
 use App\Services\ConfigAsCode\ConfigFileReader;
-use App\Support\ConfigAsCode\Problems;
-use App\Support\Git\GitHubAvatar;
+use App\Services\Deployments\DeploymentFactory;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
@@ -51,6 +46,7 @@ final readonly class ApplyConfigFileOnPush
         private ConfigFileReader $reader,
         private ApplyConfigFile $apply,
         private DeployEnvironment $deploy,
+        private DeploymentFactory $factory,
     ) {}
 
     /**
@@ -87,10 +83,6 @@ final readonly class ApplyConfigFileOnPush
         }
 
         if (! $outcome->changed || $outcome->otherStaged) {
-            if ($outcome->changed) {
-                broadcast(new CanvasChanged($environment->public_id));
-            }
-
             return $pushed;
         }
 
@@ -113,14 +105,6 @@ final readonly class ApplyConfigFileOnPush
         $outcome->record->status = ConfigFileStatus::Applied;
         $outcome->record->forceFill(['applied_at' => now()])->save();
 
-        foreach ($result->deployments as $deployment) {
-            if ($deployment->commit_sha !== null) {
-                ReportDeploymentToGitHub::report($deployment, DeploymentReportState::Queued);
-            }
-        }
-
-        broadcast(new CanvasChanged($environment->public_id));
-
         return [];
     }
 
@@ -131,29 +115,12 @@ final readonly class ApplyConfigFileOnPush
     {
         DB::transaction(function () use ($environment, $instances, $outcome, $path, $commit, $ref, $trigger): void {
             foreach ($instances as $instance) {
-                $deployment = new Deployment;
-                $deployment->forceFill([
-                    'team_id' => $instance->team_id,
-                    'service_instance_id' => $instance->id,
-                    'environment_id' => $environment->id,
-                    'revision_id' => $environment->last_applied_revision_id,
-                    'trigger' => $trigger,
-                    'git_ref' => $ref,
-                    'commit_sha' => $commit->sha,
-                    'commit_message' => mb_substr($commit->message, 0, 4000),
-                    'commit_author' => $commit->authorLogin ?? $commit->authorName,
-                    'commit_author_avatar_url' => GitHubAvatar::url($commit->authorAvatarUrl, $commit->authorLogin),
-                    'queued_at' => now(),
-                    'config_errors' => [
-                        'path' => $path,
-                        'commitSha' => $commit->sha,
-                        'repository' => $outcome->record->repository,
-                        'errors' => Problems::rows($outcome->errors),
-                    ],
-                ])->save();
-                // Created queued (the column default), failed right away.
-                $deployment->refresh();
-                $deployment->transitionTo(DeploymentStatus::Failed, DeploymentFailureClass::ConfigError, $outcome->summary);
+                $this->factory->rejected($instance, $environment->last_applied_revision_id, $trigger, DeploymentCommit::pushed($commit, $ref), new DeploymentConfigErrorsData(
+                    $path,
+                    $commit->sha,
+                    $outcome->record->repository,
+                    $outcome->errors,
+                ), $outcome->summary);
             }
         });
     }

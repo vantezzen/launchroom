@@ -2,14 +2,14 @@
 
 declare(strict_types=1);
 
+use App\Data\Git\ManifestRedirectData;
 use App\Enums\AuditAction;
 use App\Enums\TeamRole;
-use App\Http\Controllers\Git\GitSettingsController;
+use App\Exceptions\DecryptionFailed;
 use App\Models\AuditEvent;
 use App\Models\Git\GitHubApp;
 use App\Models\Team;
-use App\Services\Crypto\Exceptions\DecryptionFailed;
-use App\Services\GitHub\GitHubAppSecrets;
+use App\Services\Crypto\SealedColumns;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\URL;
@@ -35,7 +35,7 @@ function ghStartManifest(object $test, array $input = []): array
         ->post(route('git.github.manifest.store'), $input)
         ->assertRedirect(route('git.edit'));
 
-    $redirect = session(GitSettingsController::MANIFEST_FLASH_KEY);
+    $redirect = session(ManifestRedirectData::SESSION_KEY);
     parse_str((string) parse_url($redirect['action'], PHP_URL_QUERY), $query);
 
     return [$query['state'], json_decode($redirect['manifest'], true), $redirect['action']];
@@ -125,7 +125,7 @@ test('the callback converts the code and stores every secret envelope-encrypted'
         ->assertSessionHasNoErrors();
 
     $app = GitHubApp::query()->sole();
-    $secrets = resolve(GitHubAppSecrets::class);
+    $secrets = resolve(SealedColumns::class);
 
     expect($app->team_id)->toBe($this->team->id)
         ->and($app->app_id)->toBe(4242)
@@ -133,9 +133,9 @@ test('the callback converts the code and stores every secret envelope-encrypted'
         ->and($app->client_secret)->toStartWith('lr1:')->not->toContain('client-secret-plain')
         ->and($app->webhook_secret)->toStartWith('lr1:')
         ->and($app->private_key)->toStartWith('lr1:')->not->toContain('PRIVATE KEY')
-        ->and($secrets->clientSecret($app))->toBe('client-secret-plain')
-        ->and($secrets->webhookSecret($app))->toBe('webhook-secret-plain')
-        ->and($secrets->privateKey($app))->toBe(GitHubFake::privateKey())
+        ->and($secrets->reveal($app, 'client_secret'))->toBe('client-secret-plain')
+        ->and($secrets->reveal($app, 'webhook_secret'))->toBe('webhook-secret-plain')
+        ->and($secrets->reveal($app, 'private_key'))->toBe(GitHubFake::privateKey())
         ->and(json_encode($app->toArray()))->not->toContain('lr1:')
         ->and($app->toArray())->not->toHaveKeys(['client_secret', 'webhook_secret', 'private_key', 'wrapped_dek'])
         ->and(AuditEvent::query()->where('action', AuditAction::GitHubAppCreated->value)->count())->toBe(1);
@@ -158,10 +158,10 @@ test('ciphertexts are bound to their app and field', function (): void {
 
     // Swapping a ciphertext into another field or app fails to decrypt.
     $a->private_key = $a->client_secret;
-    expect(fn () => resolve(GitHubAppSecrets::class)->privateKey($a))->toThrow(DecryptionFailed::class);
+    expect(fn () => resolve(SealedColumns::class)->reveal($a, 'private_key'))->toThrow(DecryptionFailed::class);
 
     $b->wrapped_dek = GitHubApp::query()->whereKey($a->id)->value('wrapped_dek');
-    expect(fn () => resolve(GitHubAppSecrets::class)->clientSecret($b))->toThrow(DecryptionFailed::class);
+    expect(fn () => resolve(SealedColumns::class)->reveal($b, 'client_secret'))->toThrow(DecryptionFailed::class);
 });
 
 test('the state is single use and bound to the user who started the flow', function (): void {

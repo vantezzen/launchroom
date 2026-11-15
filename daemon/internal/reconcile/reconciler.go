@@ -12,7 +12,8 @@ import (
 
 	"github.com/vantezzen/launchroom/daemon/internal/docker"
 	"github.com/vantezzen/launchroom/daemon/internal/health"
-	"github.com/vantezzen/launchroom/daemon/internal/ingress/caddy"
+	"github.com/vantezzen/launchroom/daemon/internal/ingress"
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/policy"
 	"github.com/vantezzen/launchroom/daemon/internal/secret"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
@@ -25,12 +26,12 @@ const (
 	// running this long without exiting (docs/04 §8).
 	NoProbeHealthyAfter = 10 * time.Second
 	removedRetention    = 10 * time.Minute
-	maxMessage          = 1024
 )
 
-// Ingress converges the system Caddy and its config (caddy.Manager).
+// Ingress converges the system Caddy and its config (caddy.Manager); it
+// resolves same-server upstreams through the reconciler's observation.
 type Ingress interface {
-	Sync(ctx context.Context, sys state.SystemContainer, routes []caddy.Route) *state.IngressStatus
+	Sync(ctx context.Context, sys state.SystemContainer, routes []state.RouteSpec, resolve ingress.Resolver) *state.IngressStatus
 }
 
 // EnvOpener decrypts a workload's sealed env (sealed.OpenWorkloadEnv bound to the daemon key).
@@ -60,14 +61,9 @@ type Options struct {
 	// OnPullDone is called (non-blocking) when a background pull ends: the
 	// workloads waiting for it can be created now. nil = none.
 	OnPullDone func()
-	// Isolate makes sure the network isolation covers every network
-	// (firewall.Manager.Sync). It runs once per pass, after new networks are
-	// created and before any container is created or started; while it fails,
-	// no workload is created or started (fail closed). nil = no isolation.
-	Isolate func(ctx context.Context) error
-	// Holds are the environment networks run_once tasks currently use; the
-	// reconciler never removes a held network (nil = none).
-	Holds *docker.NetworkHolds
+	// Networks creates and removes environment networks; run_once tasks
+	// share it and hold the networks they use (nil: one of its own).
+	Networks *docker.Networks
 	// BeforeNetworkRemove detaches launchroom's system containers (the
 	// ambassador) from an environment network about to be removed; Docker
 	// refuses to remove a network with endpoints. nil = none.
@@ -132,6 +128,9 @@ func New(o Options) *Reconciler {
 	if o.Now == nil {
 		o.Now = time.Now
 	}
+	if o.Networks == nil {
+		o.Networks = docker.NewNetworks(o.Docker, o.ServerID)
+	}
 	if o.Ports == nil {
 		o.Ports = health.ProcScanner{}
 	}
@@ -153,10 +152,7 @@ func New(o Options) *Reconciler {
 func (r *Reconciler) setNote(id state.WorkloadID, phase state.WorkloadPhase, msg string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if len(msg) > maxMessage {
-		msg = msg[:maxMessage]
-	}
-	r.book[id] = note{phase: phase, message: msg, at: r.o.Now()}
+	r.book[id] = note{phase: phase, message: state.Clip(msg, state.MaxStatusLen), at: r.o.Now()}
 }
 
 // observedContainer reports whether the workload has a container (last observation).
@@ -205,13 +201,12 @@ func (r *Reconciler) Reconcile(ctx context.Context, ns *state.NodeState) error {
 		applyErr = errors.Join(applyErr, err)
 	}
 
-	// Re-observe what we converged to, then probes, ingress and statuses.
 	if err := r.refresh(ctx, ns); err != nil {
 		return errors.Join(applyErr, fmt.Errorf("reconcile: refresh: %w", err))
 	}
 	r.syncHealth(ns) //nolint:contextcheck // probes run on the monitor's own long-lived context
 	if r.o.Ingress != nil {
-		st := r.o.Ingress.Sync(ctx, ns.System.Caddy, caddy.ResolveRoutes(r.routes(ns), r.resolve))
+		st := r.o.Ingress.Sync(ctx, ns.System.Caddy, r.routes(ns), r.resolve)
 		r.mu.Lock()
 		r.ingress = st
 		r.mu.Unlock()
@@ -237,12 +232,12 @@ func (r *Reconciler) unrouteLeaving(ctx context.Context, ns *state.NodeState, pl
 	if len(leaving) == 0 {
 		return
 	}
-	st := r.o.Ingress.Sync(ctx, ns.System.Caddy, caddy.ResolveRoutes(r.routes(ns), func(id state.WorkloadID) (caddy.Endpoint, bool) {
+	st := r.o.Ingress.Sync(ctx, ns.System.Caddy, r.routes(ns), func(id state.WorkloadID) (ingress.Endpoint, bool) {
 		if leaving[id] {
-			return caddy.Endpoint{}, false
+			return ingress.Endpoint{}, false
 		}
 		return r.resolve(id)
-	}))
+	})
 	r.mu.Lock()
 	r.ingress = st
 	r.mu.Unlock()
@@ -299,12 +294,12 @@ func (r *Reconciler) desired(ns *state.NodeState) (Desired, map[state.WorkloadID
 			r.o.Log.Warn("workload cannot be created", "workload", spec.ID, "err", err)
 			continue
 		}
-		hash, err := SpecHash(cc, r.o.EnvHashKey)
+		hash, err := docker.SpecHash(cc, r.o.EnvHashKey)
 		if err != nil {
 			d.Skipped[spec.ID] = err.Error()
 			continue
 		}
-		cc.Config.Labels[docker.LabelSpecHash] = hash
+		cc.Config.Labels[names.LabelSpecHash] = hash
 		creates[spec.ID] = cc
 		r.mu.Lock()
 		if n, ok := r.book[spec.ID]; ok && n.phase == state.PhaseFailed {
@@ -345,7 +340,7 @@ func (r *Reconciler) observe(ctx context.Context, d Desired) (Actual, error) {
 	}
 	for _, n := range nets {
 		// System networks (lr-system-build) belong to their system container manager.
-		if n.Labels[docker.LabelSystem] == "" {
+		if n.Labels[names.LabelSystem] == "" {
 			a.Networks = append(a.Networks, n)
 		}
 	}
@@ -360,10 +355,10 @@ func (r *Reconciler) observe(ctx context.Context, d Desired) (Actual, error) {
 	// an environment network this server has no workloads in yet).
 	taskNets := map[string]bool{}
 	for _, c := range cs {
-		if c.Labels[docker.LabelSystem] == "" && c.Labels[docker.LabelWorkload] != "" {
+		if c.Kind() == docker.KindWorkload {
 			a.Containers = append(a.Containers, c)
 		}
-		if c.Labels[docker.LabelTask] != "" {
+		if c.Labels[names.LabelTask] != "" {
 			for name := range c.Networks {
 				taskNets[name] = true
 			}
@@ -375,7 +370,7 @@ func (r *Reconciler) observe(ctx context.Context, d Desired) (Actual, error) {
 	// Networks a run_once task holds right now (it may have created one
 	// and not attached its container yet) are not removal candidates.
 	for _, n := range a.Networks {
-		if r.o.Holds.Held(n.Name) {
+		if r.o.Networks.Held(n.Name) {
 			taskNets[n.Name] = true
 		}
 	}
@@ -414,45 +409,36 @@ func (r *Reconciler) apply(ctx context.Context, ns *state.NodeState, p Plan, cre
 	event := func(a Action, kind state.WorkloadEventKind, msg string) {
 		r.emit(state.WorkloadEvent{Workload: a.Workload, Deployment: deployments[a.Workload], Kind: kind, Reason: a.Why, Message: msg})
 	}
-	isolated := false
-	var isoErr error
-	isolate := func() {
-		if isolated || r.o.Isolate == nil {
-			return
+	// Fail closed but wait: Docker refuses to create or start a container
+	// while the firewall can't be applied (docker.ErrNotIsolated). That is a
+	// host condition (reported in the host status), retried every pass; the
+	// workload isn't broken, so it must not fail its deployment.
+	notIsolated := func(a Action, err error) bool {
+		if !errors.Is(err, docker.ErrNotIsolated) {
+			return false
 		}
-		isolated = true
-		if isoErr = r.o.Isolate(ctx); isoErr != nil {
-			errs = append(errs, isoErr)
-		}
+		errs = append(errs, err)
+		r.setNote(a.Workload, state.PhasePending, "waiting: "+err.Error())
+		return true
 	}
 	for _, a := range p.Actions {
 		if ctx.Err() != nil {
 			return errors.Join(append(errs, ctx.Err())...)
 		}
-		if a.Kind != CreateNetwork {
-			isolate()
-		}
-		if isoErr != nil && (a.Kind == CreateWorkload || a.Kind == StartContainer) {
-			// Fail closed but wait: a firewall that can't be applied is a host
-			// condition (reported in the host status), retried every pass; the
-			// workload isn't broken, so it must not fail its deployment.
-			r.setNote(a.Workload, state.PhasePending, "waiting: "+isoErr.Error())
-			continue
-		}
 		r.o.Log.Info("reconcile", "action", string(a.Kind), "target", a.String())
 		switch a.Kind {
 		case CreateNetwork:
-			if err := r.createNetwork(ctx, a.Network); err != nil {
+			if err := r.o.Networks.Ensure(ctx, a.Network); err != nil {
 				fail(a, err)
 			}
 		case CreateVolume:
 			labels := docker.ManagedLabels(string(r.o.ServerID))
-			labels[docker.LabelVolume] = string(a.Volume.ID)
+			labels[names.LabelVolume] = string(a.Volume.ID)
 			// An owner-less (prepared) volume records no service: the first
 			// workload that mounts it may (volumeMountError).
 			if a.VolumeOwner.Service != "" {
-				labels[docker.LabelService] = string(a.VolumeOwner.Service)
-				labels[docker.LabelEnvironment] = string(a.VolumeOwner.Environment)
+				labels[names.LabelService] = string(a.VolumeOwner.Service)
+				labels[names.LabelEnvironment] = string(a.VolumeOwner.Environment)
 			}
 			if err := r.o.Docker.CreateVolume(ctx, docker.VolumeCreate{Name: string(a.Volume.Name), Labels: labels}); err != nil {
 				failedVolume[string(a.Volume.Name)] = err
@@ -491,6 +477,9 @@ func (r *Reconciler) apply(ctx context.Context, ns *state.NodeState, p Plan, cre
 				continue
 			}
 			if err := r.createAndStart(ctx, ns, creates[a.Workload], !a.CreateOnly); err != nil {
+				if notIsolated(a, err) {
+					continue
+				}
 				r.setNote(a.Workload, state.PhaseFailed, err.Error())
 				event(a, state.EventCreateFailed, err.Error())
 				fail(a, err)
@@ -500,6 +489,9 @@ func (r *Reconciler) apply(ctx context.Context, ns *state.NodeState, p Plan, cre
 			r.clearNote(a.Workload)
 		case StartContainer:
 			if err := r.o.Docker.StartContainer(ctx, a.ContainerID); err != nil {
+				if notIsolated(a, err) {
+					continue
+				}
 				r.setNote(a.Workload, state.PhaseFailed, "start: "+err.Error())
 				event(a, state.EventCreateFailed, "start: "+err.Error())
 				fail(a, err)
@@ -513,7 +505,7 @@ func (r *Reconciler) apply(ctx context.Context, ns *state.NodeState, p Plan, cre
 			}
 			event(a, state.EventStopped, "")
 		case RemoveNetwork:
-			removed, err := r.o.Holds.RemoveUnlessHeld(a.NetworkName, func() error {
+			removed, err := r.o.Networks.RemoveUnlessHeld(a.NetworkName, func() error {
 				if r.o.BeforeNetworkRemove != nil {
 					if err := r.o.BeforeNetworkRemove(ctx, a.NetworkName); err != nil {
 						return err
@@ -528,7 +520,6 @@ func (r *Reconciler) apply(ctx context.Context, ns *state.NodeState, p Plan, cre
 			}
 		}
 	}
-	isolate() // drift check on passes without workload changes
 	return errors.Join(errs...)
 }
 
@@ -598,77 +589,29 @@ func (r *Reconciler) removeContainer(ctx context.Context, a Action) error {
 	return nil
 }
 
-// createNetwork creates a desired network. A creation error is not final if
-// the network exists anyway (created concurrently, e.g. by a run_once task)
-// with this network's id label: that is verified by listing.
-func (r *Reconciler) createNetwork(ctx context.Context, n state.NetworkSpec) error {
-	labels := docker.ManagedLabels(string(r.o.ServerID))
-	labels[docker.LabelNetwork] = string(n.ID)
-	prefix, _ := netip.ParsePrefix(string(n.Subnet))
-	_, err := r.o.Docker.CreateNetwork(ctx, docker.NetworkCreate{Name: string(n.Name), Subnet: prefix, Labels: labels})
-	if err == nil {
-		return nil
-	}
-	if ok, lerr := r.networkExists(ctx, n); lerr == nil && ok {
-		return nil
-	}
-	return err
-}
-
-// networkExists reports whether the managed network n exists with n's id label.
-func (r *Reconciler) networkExists(ctx context.Context, n state.NetworkSpec) (bool, error) {
-	nets, err := r.o.Docker.ListNetworks(ctx)
-	if err != nil {
-		return false, err
-	}
-	for _, have := range nets {
-		if have.Name == string(n.Name) {
-			return have.Labels[docker.LabelNetwork] == string(n.ID), nil
-		}
-	}
-	return false, nil
-}
-
-// ensureNetworks (re)creates the desired networks cc attaches to that are missing.
-func (r *Reconciler) ensureNetworks(ctx context.Context, ns *state.NodeState, cc *docker.ContainerCreate) error {
-	if cc.Networking == nil {
-		return nil
-	}
-	for _, n := range ns.Networks {
-		if _, attached := cc.Networking.EndpointsConfig[string(n.Name)]; !attached {
-			continue
-		}
-		ok, err := r.networkExists(ctx, n)
-		if err != nil {
-			return err
-		}
-		if !ok {
-			r.o.Log.Warn("network vanished before its container was created; creating it again", "network", n.Name)
-			if err := r.createNetwork(ctx, n); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
 // createAndStart creates and (unless start is false) starts a workload
-// container. "Network not
-// found" (the network was removed or is not visible yet) re-ensures the
-// networks and retries with bounded backoff (docker.CreateWithNetworkRetry).
+// container through the network owner, which re-ensures its networks when
+// Docker does not find one.
 func (r *Reconciler) createAndStart(ctx context.Context, ns *state.NodeState, cc *docker.ContainerCreate, start bool) error {
 	if cc == nil {
 		return errors.New("no container spec")
 	}
-	ensure := func(ctx context.Context) error { return r.ensureNetworks(ctx, ns, cc) }
-	id, err := docker.CreateWithNetworkRetry(ctx, func() (string, error) { return r.o.Docker.CreateContainer(ctx, cc) }, ensure)
+	var nets []state.NetworkSpec
+	if cc.Networking != nil {
+		for _, n := range ns.Networks {
+			if _, attached := cc.Networking.EndpointsConfig[string(n.Name)]; attached {
+				nets = append(nets, n)
+			}
+		}
+	}
+	id, err := r.o.Networks.CreateContainer(ctx, cc, nets)
 	if err != nil {
 		return fmt.Errorf("create: %w", err)
 	}
 	if !start {
 		return nil
 	}
-	if _, err := docker.CreateWithNetworkRetry(ctx, func() (string, error) { return id, r.o.Docker.StartContainer(ctx, id) }, ensure); err != nil {
+	if err := r.o.Networks.StartContainer(ctx, id, nets); err != nil {
 		return fmt.Errorf("start: %w", err)
 	}
 	return nil
@@ -689,19 +632,12 @@ func (r *Reconciler) refresh(ctx context.Context, ns *state.NodeState) error {
 		specs[ns.Workloads[i].ID] = &ns.Workloads[i]
 	}
 	obs := map[state.WorkloadID]observed{}
-	for _, c := range cs {
-		id := state.WorkloadID(c.Labels[docker.LabelWorkload])
-		if c.Labels[docker.LabelSystem] != "" || id == "" {
-			continue
-		}
-		if prev, dup := obs[id]; dup && (prev.c.Running || !c.Running) {
-			continue // prefer the running one
-		}
+	for id, c := range docker.WorkloadContainers(cs) {
 		o := observed{c: c}
 		if spec := specs[id]; spec != nil && len(spec.Networks) > 0 {
 			o.ip = c.Networks[nets[spec.Networks[0].Network]]
 		}
-		if c.Running && c.Pid > 0 {
+		if c.Running() && c.Pid > 0 {
 			ls, err := r.o.Ports.Listeners(c.Pid)
 			if err != nil {
 				o.portsErr = true
@@ -723,7 +659,7 @@ func (r *Reconciler) refresh(ctx context.Context, ns *state.NodeState) error {
 		exits = append(exits, r.trackLocked(id, dep, o.c)...)
 		if spec != nil {
 			probe := r.probeLocked(spec)
-			r.probeEventsLocked(spec, probe, o.c.Running)
+			r.probeEventsLocked(spec, probe, o.c.Running())
 			o.issue = r.issueLocked(spec, o, probe)
 			obs[id] = o
 		}
@@ -758,7 +694,7 @@ func (r *Reconciler) syncHealth(ns *state.NodeState) {
 	for i := range ns.Workloads {
 		s := &ns.Workloads[i]
 		o, ok := r.observed[s.ID]
-		if !ok || s.Health == nil || s.Port == nil || !o.c.Running || !o.ip.IsValid() {
+		if !ok || s.Health == nil || s.Port == nil || !o.c.Running() || !o.ip.IsValid() {
 			continue
 		}
 		targets = append(targets, health.Target{
@@ -771,27 +707,22 @@ func (r *Reconciler) syncHealth(ns *state.NodeState) {
 }
 
 // resolve is the ingress resolver over the last observation.
-func (r *Reconciler) resolve(id state.WorkloadID) (caddy.Endpoint, bool) {
+func (r *Reconciler) resolve(id state.WorkloadID) (ingress.Endpoint, bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	o, ok := r.observed[id]
 	if !ok || r.ns == nil {
-		return caddy.Endpoint{}, false
+		return ingress.Endpoint{}, false
 	}
-	var spec *state.WorkloadSpec
-	for i := range r.ns.Workloads {
-		if r.ns.Workloads[i].ID == id {
-			spec = &r.ns.Workloads[i]
-		}
-	}
+	spec := r.ns.Workload(id)
 	if spec == nil {
-		return caddy.Endpoint{}, false
+		return ingress.Endpoint{}, false
 	}
-	return caddy.Endpoint{Addr: o.ip, Serving: spec.Role == state.RoleServing, Ready: r.readyLocked(spec, o)}, true
+	return ingress.Endpoint{Addr: o.ip, Serving: spec.Role == state.RoleServing, Ready: r.readyLocked(spec, o)}, true
 }
 
 func (r *Reconciler) readyLocked(spec *state.WorkloadSpec, o observed) bool {
-	if !o.c.Running {
+	if !o.c.Running() {
 		return false
 	}
 	if spec.Health == nil {
@@ -857,7 +788,7 @@ func (r *Reconciler) Snapshot() (version int64, workloads []state.WorkloadStatus
 func statusOf(s *state.WorkloadSpec, o *observed, n *note, probe *health.Status, now time.Time) state.WorkloadStatus {
 	ws := state.WorkloadStatus{ID: s.ID, ObservedAt: now}
 	if probe != nil {
-		ps := &state.ProbeStatus{State: probe.State, ConsecutiveFailures: probe.ConsecutiveFailures, LastError: clip(probe.LastError, 1024), Attempts: probe.Attempts}
+		ps := &state.ProbeStatus{State: probe.State, ConsecutiveFailures: probe.ConsecutiveFailures, LastError: state.Clip(probe.LastError, state.MaxStatusLen), Attempts: probe.Attempts}
 		if !probe.LastCheckedAt.IsZero() {
 			t := probe.LastCheckedAt.UTC()
 			ps.LastCheckedAt = &t
@@ -904,23 +835,27 @@ func statusOf(s *state.WorkloadSpec, o *observed, n *note, probe *health.Status,
 		if s.Port == nil || o.ports == nil {
 			return ""
 		}
-		return health.Hint(int(*s.Port), o.ports)
+		code, msg := health.Hint(int(*s.Port), o.ports)
+		ws.PortHint = code
+		return msg
 	}
 
+	if s.Role == state.RoleServing && (n == nil || n.phase != state.PhaseFailed || c.Running()) {
+		if phase, msg, ok := modeOf(s).status(c, &ws); ok {
+			ws.Phase, ws.Message = phase, state.Clip(msg, state.MaxStatusLen)
+			return ws
+		}
+	}
 	switch {
-	case n != nil && n.phase == state.PhaseFailed && !c.Running:
+	case n != nil && n.phase == state.PhaseFailed && !c.Running():
 		ws.Phase, ws.Message = state.PhaseFailed, n.message
-	case s.Schedule != nil && s.Role == state.RoleServing:
-		// A scheduled job is ready once its container exists: between runs
-		// it is "created" or "exited", which is how it should be.
-		ws.Phase, ws.Message = scheduledStatus(c, &ws)
 	case s.Role == state.RoleDraining:
-		if c.Running {
+		if c.Running() {
 			ws.Phase = state.PhaseDraining
 		} else {
 			ws.Phase, ws.Message = state.PhaseExited, "drained"
 		}
-	case c.State == "running":
+	case c.State == docker.StateRunning:
 		switch {
 		case s.Health != nil && probe != nil && probe.State == state.ProbePassing:
 			ws.Phase = state.PhaseHealthy
@@ -937,13 +872,13 @@ func statusOf(s *state.WorkloadSpec, o *observed, n *note, probe *health.Status,
 		default:
 			ws.Phase = state.PhaseStarting
 		}
-	case c.State == "restarting":
+	case c.State == docker.StateRestarting:
 		ws.Phase, ws.Message = state.PhaseUnhealthy, fmt.Sprintf("restarting after exit code %d", c.ExitCode)
-	case c.State == "created":
+	case c.State == docker.StateCreated:
 		ws.Phase = state.PhaseStarting
-	case c.State == "paused":
+	case c.State == docker.StatePaused:
 		ws.Phase, ws.Message = state.PhaseUnhealthy, "paused"
-	case c.State == "removing":
+	case c.State == docker.StateRemoving:
 		ws.Phase = state.PhaseRemoved
 	default: // exited, dead
 		ws.Phase = state.PhaseExited
@@ -953,32 +888,8 @@ func statusOf(s *state.WorkloadSpec, o *observed, n *note, probe *health.Status,
 			ws.Message = "killed: out of memory (raise the memory limit)"
 		}
 	}
-	ws.Message = clip(ws.Message, maxMessage)
+	ws.Message = state.Clip(ws.Message, state.MaxStatusLen)
 	return ws
-}
-
-// scheduledStatus: healthy unless Docker can't run it; the last run's
-// outcome is in the message (and its exit code in ExitCode).
-func scheduledStatus(c docker.Container, ws *state.WorkloadStatus) (state.WorkloadPhase, string) {
-	switch c.State {
-	case "running":
-		return state.PhaseHealthy, "scheduled: running now"
-	case "created":
-		return state.PhaseHealthy, "scheduled: waiting for the first run"
-	case "exited":
-		code := c.ExitCode
-		ws.ExitCode = &code
-		switch {
-		case c.OOMKilled:
-			return state.PhaseHealthy, "scheduled: the last run was killed: out of memory (raise the memory limit)"
-		case code != 0:
-			return state.PhaseHealthy, fmt.Sprintf("scheduled: the last run exited with code %d", code)
-		}
-		return state.PhaseHealthy, "scheduled: the last run succeeded"
-	case "removing":
-		return state.PhaseRemoved, ""
-	}
-	return state.PhaseUnhealthy, "scheduled: container is " + c.State
 }
 
 func joinMsg(a, b string) string {
@@ -986,11 +897,4 @@ func joinMsg(a, b string) string {
 		return a
 	}
 	return a + "; " + b
-}
-
-func clip(s string, n int) string {
-	if len(s) > n {
-		return s[:n]
-	}
-	return s
 }

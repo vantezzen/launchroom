@@ -55,7 +55,7 @@ final class CliLoginController extends Controller
             ) : null,
             'teamOptions' => $options->teams($user),
             'lifetimes' => ApiTokenOptions::lifetimes(),
-            'defaultLifetime' => config()->integer('api.cli_token_days'),
+            'defaultLifetime' => ApiTokenOptions::defaultLifetime(),
         ]);
     }
 

@@ -1,4 +1,5 @@
 import { router } from '@inertiajs/react';
+import { formatBytes } from '@/lib/format';
 import {
     BaseEdge,
     EdgeLabelRenderer,
@@ -14,15 +15,16 @@ import InputError from '@/components/input-error';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Spinner } from '@/components/ui/spinner';
-import { requestJson } from '@/features/projects/http';
+import { requestJson } from '@/lib/http';
 import { RemoteAccessButton } from '@/features/remote-access/remote-access';
-import { panelVisitOptions } from '@/features/service-panel/service-panel';
+import { panelVisitOptions } from '@/features/service-panel/use-panel-navigation';
 import { cn } from '@/lib/utils';
 import services from '@/routes/projects/services';
 import volumeMounts from '@/routes/projects/services/volume-mounts';
 import { FloatingPanel } from './floating-panel';
-import { ServiceGlyph } from './service-glyph';
-import { StagedChip } from './service-node';
+import { ServiceGlyph } from '@/components/service-glyph';
+import { StagedChip } from '@/features/staged-changes/effects';
+import { grammar } from '@/types/grammar.generated';
 
 /**
  * Volumes on the canvas (D73, docs/08 §3.3): each app volume is its own
@@ -37,14 +39,14 @@ type ServiceNodeInfo = App.Data.Canvas.CanvasNodeData;
 
 export const VOLUME_NODE_WIDTH = 220;
 
-export type VolumeNodeData = Volume & {
+type VolumeNodeData = Volume & {
     connectable: boolean;
     sharedBy: number;
 };
 
 export type VolumeFlowNode = Node<VolumeNodeData, 'volume'>;
 
-export type MountEdgeData = {
+type MountEdgeData = {
     volumeId: string;
     mountPath: string;
     owner: boolean;
@@ -59,24 +61,13 @@ export function isVolumeId(id: string | null | undefined): boolean {
     return typeof id === 'string' && id.startsWith('vol_');
 }
 
-/** "1.2 GB", "340 MB". */
-export function formatVolumeSize(bytes: number): string {
-    const gb = bytes / 1024 ** 3;
-
-    if (gb >= 1) {
-        return `${gb < 10 ? gb.toFixed(1) : Math.round(gb)} GB`;
-    }
-
-    return `${Math.max(1, Math.round(bytes / 1024 ** 2))} MB`;
-}
-
 function whereLine(volume: Volume): string {
     if (volume.server === null) {
         return 'Created with the next deploy';
     }
 
     return volume.sizeBytes !== null
-        ? `${formatVolumeSize(volume.sizeBytes)} on ${volume.server}`
+        ? `${formatBytes(volume.sizeBytes)} on ${volume.server}`
         : `On ${volume.server}`;
 }
 
@@ -191,8 +182,7 @@ export function MountEdge({
 }
 
 /**
- * Who may mount a shared volume: apps, images, workers and crons
- * (VolumeSharing::BORROWERS). The server checks the rest.
+ * Whether the drop target may mount the volume; the server checks the rest.
  */
 export function canMountVolume(
     service: ServiceNodeInfo | undefined,
@@ -203,7 +193,7 @@ export function canMountVolume(
         volume !== undefined &&
         !service.removed &&
         !volume.removing &&
-        service.kind !== 'database' &&
+        service.capabilities.canMountSharedVolume &&
         !volume.mounts.some(
             (mount) => mount.serviceId === service.id && !mount.removing,
         )
@@ -404,8 +394,6 @@ export function VolumePopover({
     );
 }
 
-const PATH = /^\/[A-Za-z0-9._@+=,-]+(?:\/[A-Za-z0-9._@+=,-]+)*$/;
-
 /**
  * After a drag from a service onto a volume: pick where the service sees
  * the files, with what changes for it (it runs where the volume is).
@@ -440,7 +428,8 @@ export function AttachVolumePopover({
 
         requestJson<App.Data.Canvas.VolumeAttachPreviewData>(
             'get',
-            volumeMounts.preview([...route]).url,
+            volumeMounts.preview([project, environment, service.id, volume.id])
+                .url,
             undefined,
             controller.signal,
         )
@@ -459,11 +448,10 @@ export function AttachVolumePopover({
             });
 
         return () => controller.abort();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [project, environment, service.id, volume.id]);
 
     const path = mountPath.trim();
-    const valid = PATH.test(path);
+    const valid = grammar.containerPath.test(path);
     const blocked = preview?.problem ?? null;
 
     const submit = (event: FormEvent) => {

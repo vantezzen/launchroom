@@ -1,6 +1,8 @@
 package state
 
-import "regexp"
+import (
+	"regexp"
+)
 
 // Hardware facts (docs/design/direction.md §7.3): what launchroomd can read
 // about the machine from local files and syscalls, so the dashboard can show
@@ -11,7 +13,6 @@ import "regexp"
 const maxFactTextLen = 128
 
 var (
-	// reFactText is printable text without control characters.
 	reFactText = regexp.MustCompile(`^[^\x00-\x1f\x7f]{1,128}$`)
 	// reTimezone is an IANA zone name such as Europe/Berlin or America/Argentina/Buenos_Aires.
 	reTimezone = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_+-]{0,31}(/[A-Za-z0-9_+-]{1,32}){0,2}$`)

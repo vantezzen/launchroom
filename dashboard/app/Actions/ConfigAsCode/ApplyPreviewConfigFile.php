@@ -38,10 +38,8 @@ final readonly class ApplyPreviewConfigFile
             return null;
         }
 
-        if (($preview->data['configSha'] ?? null) === $preview->head_sha) {
-            $error = $preview->data['configError'] ?? null;
-
-            return is_string($error) ? $error : null;
+        if ($preview->data->configSha === $preview->head_sha) {
+            return $preview->data->configError;
         }
 
         $environment = Environment::query()->whereKey($preview->environment_id)->with('project')->first();
@@ -70,7 +68,7 @@ final readonly class ApplyPreviewConfigFile
         );
 
         $error = $outcome->invalid() ? $outcome->summary : null;
-        $preview->forceFill(['data' => [...$preview->data, 'configSha' => $preview->head_sha, 'configError' => $error]])->save();
+        $preview->forceFill(['data' => $preview->data->changed(['configSha' => $preview->head_sha, 'configError' => $error])])->save();
 
         return $error;
     }

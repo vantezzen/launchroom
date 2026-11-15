@@ -1,7 +1,6 @@
 import { Plus } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { Logo } from '@/components/logo';
-import { openAddServiceWith } from '@/features/add-service/preset';
 import { cn } from '@/lib/utils';
 import { GROUPS } from './groups';
 import type { GroupId } from './groups';
@@ -45,27 +44,28 @@ function GhostTile({
 
 /**
  * Empty canvas (direction §9.16): the three group frames drawn empty with
- * ghost tiles, not a modal. One line says what goes here.
+ * ghost tiles, not a modal. One line says what goes here. Without
+ * `onAdd` (no permission) the tiles only describe.
  */
-export function EmptyCanvas({ canAdd }: { canAdd: boolean }) {
+export function EmptyCanvas({
+    onAdd,
+}: {
+    onAdd?: (choice: 'github' | 'database') => void;
+}) {
     const tiles: Record<GroupId, ReactNode> = {
         public: <GhostTile logo="nextjs" label="Web apps with an address" />,
         app: (
             <GhostTile
                 logo="github"
                 label="Add a repository"
-                onClick={
-                    canAdd ? () => openAddServiceWith('github') : undefined
-                }
+                onClick={onAdd ? () => onAdd('github') : undefined}
             />
         ),
         data: (
             <GhostTile
                 logo="postgres"
                 label="Add a database"
-                onClick={
-                    canAdd ? () => openAddServiceWith('database') : undefined
-                }
+                onClick={onAdd ? () => onAdd('database') : undefined}
             />
         ),
     };
@@ -92,7 +92,7 @@ export function EmptyCanvas({ canAdd }: { canAdd: boolean }) {
                 ))}
             </div>
             <p className="pointer-events-auto type-body text-muted-foreground">
-                {canAdd
+                {onAdd
                     ? 'Add a repository or a database to get started.'
                     : 'Nothing here yet. Adding services needs the developer role.'}
             </p>

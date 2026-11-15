@@ -5,8 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Volumes;
 
 use App\Data\Canvas\VolumeAttachPreviewData;
-use App\Enums\DaemonFeature;
-use App\Enums\ServiceKind;
+use App\Enums\NodeStateField;
 use App\Models\Placement;
 use App\Models\Server;
 use App\Models\ServiceInstance;
@@ -15,6 +14,7 @@ use App\Models\VolumeMount;
 use App\Scheduling\SchedulableServer;
 use App\Scheduling\Scheduler;
 use App\Services\Deployments\Placer;
+use App\Services\NodeStates\FeatureGate;
 use App\Support\Services\VolumeMountRules;
 
 /**
@@ -26,9 +26,6 @@ use App\Support\Services\VolumeMountRules;
  */
 final readonly class VolumeSharing
 {
-    /** Kinds that may mount a shared volume: they run code that reads files. */
-    public const array BORROWERS = [ServiceKind::App, ServiceKind::Image, ServiceKind::Worker, ServiceKind::Cron];
-
     public function __construct(
         private Placer $placer,
     ) {}
@@ -44,11 +41,11 @@ final readonly class VolumeSharing
 
         $problem = match (true) {
             $borrower->removed_at !== null => "{$name} is removed with the next deploy.",
-            ! in_array($borrower->service->kind, self::BORROWERS, true) => 'A database keeps its own data. Volumes can be shared with apps, workers and crons.',
+            ! $borrower->service->kind->canMountSharedVolume() => 'A database keeps its own data. Volumes can be shared with apps, workers and crons.',
             $owner->environment_id !== $borrower->environment_id => 'A volume can only be shared within one environment.',
             $owner->id === $borrower->id => "{$name} already uses this volume.",
             $owner->removed_at !== null || $volume->removed_at !== null => 'This volume is removed with the next deploy.',
-            ! in_array($owner->service->kind, [ServiceKind::App, ServiceKind::Image], true) => 'A database keeps its data on this volume, so it can’t be shared. Connect to the database instead.',
+            ! $owner->service->kind->ownsVolumes() => 'A database keeps its data on this volume, so it can’t be shared. Connect to the database instead.',
             $borrower->volumeMounts->contains('volume_id', $volume->id) => "{$name} already uses this volume.",
             default => $this->placementProblem($borrower, $volume),
         };
@@ -94,7 +91,7 @@ final readonly class VolumeSharing
             return null;
         }
 
-        if (! $server->supportsDaemonFeature(DaemonFeature::SharedVolumes)) {
+        if (! FeatureGate::accepts($server, NodeStateField::SharedVolume)) {
             return "{$server->name} runs an older version of launchroom that can’t share volumes. Update it first.";
         }
 

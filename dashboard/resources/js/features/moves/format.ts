@@ -1,27 +1,5 @@
 import type { StatusState } from '@/components/status';
 
-/** "about 2 min" for an estimate in seconds. */
-export function formatDuration(seconds: number | null): string {
-    if (seconds === null) {
-        return 'unknown';
-    }
-
-    if (seconds < 60) {
-        return 'under a minute';
-    }
-
-    const minutes = Math.ceil(seconds / 60);
-
-    if (minutes < 60) {
-        return `about ${minutes} min`;
-    }
-
-    const hours = Math.floor(minutes / 60);
-    const rest = minutes % 60;
-
-    return rest === 0 ? `about ${hours} h` : `about ${hours} h ${rest} min`;
-}
-
 /** Status word and state of one service of a move. */
 export const itemStates: Record<
     App.Enums.Moves.MoveItemStatus,

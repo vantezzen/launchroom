@@ -17,7 +17,7 @@ export const ADD_SERVER_STEPS = [
 
 export type Machine = 'cloud' | 'dedicated' | 'home' | 'mac' | 'board';
 
-export const MACHINES: {
+const MACHINES: {
     value: Machine;
     label: string;
     description: string;

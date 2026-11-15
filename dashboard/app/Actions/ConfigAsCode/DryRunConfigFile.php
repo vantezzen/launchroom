@@ -12,11 +12,10 @@ use App\Enums\ChangeKind;
 use App\Enums\ConfigAsCode\ConfigTrust;
 use App\Enums\EnvironmentKind;
 use App\Enums\PromotionClass;
+use App\Exceptions\ConfigApplyFailed;
 use App\Models\ConfigAsCode\EnvironmentConfigFile;
 use App\Models\Environment;
 use App\Queries\CurrentEnvironmentSpec;
-use App\Services\ConfigAsCode\ConfigApplier;
-use App\Services\ConfigAsCode\ConfigApplyFailed;
 use App\Services\ConfigAsCode\ConfigFileReader;
 use App\Support\Changes\SpecDiff;
 use App\Support\ConfigAsCode\ConfigContext;
@@ -28,13 +27,15 @@ use Illuminate\Support\Facades\DB;
  * `config validate` / `config diff` (docs/18 §7): checks a launchroom.json
  * against an environment and, with $diff, applies it inside a transaction
  * that is always rolled back to list the staged changes it would produce.
- * Domains are only described (they would apply at once), nothing is audited.
+ * Every effect outside the database (jobs, broadcasts, renders) waits for a
+ * commit that never comes, so domains are checked like a real apply and
+ * listed as applying at once, and nothing is kept or audited.
  */
 final readonly class DryRunConfigFile
 {
     public function __construct(
         private ConfigFileValidator $validator,
-        private ConfigApplier $applier,
+        private StageConfigFile $stage,
         private CurrentEnvironmentSpec $currentSpec,
         private ConfigFileReader $reader,
     ) {}
@@ -61,16 +62,17 @@ final readonly class DryRunConfigFile
             $trust = $locked->kind === EnvironmentKind::Preview ? ($locked->secrets_withheld ? ConfigTrust::Fork : ConfigTrust::Preview) : ConfigTrust::Trusted;
 
             try {
-                $result = $this->applier->apply($locked, $check->file, $trust, $this->reader->repository($locked->project), AuditActor::system(), $previous, dryRun: true);
+                $result = $this->stage->handle($locked, $check->file, $trust, $this->reader->repository($locked->project), AuditActor::system(), $previous);
             } catch (ConfigApplyFailed $e) {
                 return new ConfigCheckData(false, $e->problems, $check->warnings);
             }
 
             $changes = SpecDiff::between($before, $this->currentSpec->get($locked))->items;
+            $domains = [];
 
             foreach ($result->domains as $domain) {
                 $service = $before->serviceBySlug($domain['service']);
-                $changes[] = new ChangeItem(
+                $domains[] = new ChangeItem(
                     path: 'services.'.($service->id ?? $domain['service']).'.domains.'.$domain['hostname'],
                     kind: $domain['kind'] === 'added' ? ChangeKind::Added : ChangeKind::Removed,
                     effect: ChangeEffect::Route,
@@ -79,6 +81,10 @@ final readonly class DryRunConfigFile
                     serviceId: $service?->id,
                 );
             }
+
+            // Domains apply right away instead of being staged: they are listed as such.
+            $paths = array_map(static fn (ChangeItem $item): string => $item->path, $domains);
+            $changes = [...array_values(array_filter($changes, static fn (ChangeItem $item): bool => ! in_array($item->path, $paths, true))), ...$domains];
 
             return new ConfigCheckData(true, [], $check->warnings, $result->ignored, $changes);
         } finally {

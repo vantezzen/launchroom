@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Actions\Deployments\DeployEnvironment;
 use App\Actions\Domains\AddDomain;
 use App\Actions\Domains\SetDomainHsts;
+use App\Actions\Ingress\ProvisionCertStorage;
 use App\Actions\Ingress\SetDnsProvider;
 use App\Actions\Servers\RecordReport;
 use App\Actions\Servers\RenderNodeState;
@@ -21,6 +22,7 @@ use App\Enums\IngressCredentialPurpose;
 use App\Enums\ServerRole;
 use App\Enums\TeamRole;
 use App\Events\NodeStateInvalidated;
+use App\Exceptions\DecryptionFailed;
 use App\Exceptions\DomainRuleViolation;
 use App\Models\AuditEvent;
 use App\Models\Domain;
@@ -65,8 +67,6 @@ function renderFor(Server $server): array
 }
 
 /**
- * Opens a sealed ingress credential with the server's key pair.
- *
  * @return array{serverId: string, purpose: string, values: array<string, string>}
  */
 function openIngressSecret(string $sealed, string $keypair): array
@@ -236,6 +236,8 @@ test('shared certificate storage is sealed to every edge with one generated key'
     [$two, $keyTwo] = Projects::server($team, [ServerRole::Edge], ip: '203.0.113.8');
     $one->forceFill(['is_control_plane' => true])->save();
     $two->forceFill(['shared_edge_approved_at' => now()])->save();
+    // The encryption key is provisioned outside rendering (scheduler, invalidations).
+    resolve(ProvisionCertStorage::class)->handle();
 
     $a = openIngressSecret(renderFor($one)['ingress']['storage']['credentials']['sealed'], $keyOne);
     $b = openIngressSecret(renderFor($two)['ingress']['storage']['credentials']['sealed'], $keyTwo);
@@ -281,7 +283,7 @@ test('edges report certificates; HSTS follows an issued certificate', function (
         ->and($domain->cert_expires_at?->toIso8601ZuluString())->toBe('2026-12-30T00:00:00Z')
         ->and($domain->cert_server_id)->toBe($edge->id)
         ->and($foreign->refresh()->cert_status)->toBeNull()
-        ->and($edge->refresh()->ingress_status)->toBe(['state' => 'applied', 'routes' => 1, 'storage' => ['state' => 'shared', 'mirrored' => 1]]);
+        ->and($edge->refresh()->ingress_status?->toArray())->toBe(['state' => 'applied', 'routes' => 1, 'storage' => ['state' => 'shared', 'mirrored' => 1, 'message' => null]]);
     Event::assertDispatched(NodeStateInvalidated::class, fn (NodeStateInvalidated $event): bool => in_array($edge->id, $event->serverIds, true) && in_array($other->id, $event->serverIds, true));
 
     $route = collect(renderFor($edge)['routes'])->firstWhere('hosts.0', 'shop.example.org');
@@ -420,9 +422,13 @@ test('providers the edge image lacks are neither offered nor rendered', function
         ->toThrow(DomainRuleViolation::class);
 });
 
-test('credentials stored before per-provider fields still work', function (): void {
+test('stored credentials keep their token when the provider stays, and a value without the format is refused', function (): void {
     InstanceSettings::current()->forceFill(['apps_domain' => 'apps.example.com', 'dns_provider' => DnsProvider::Cloudflare])->save();
     resolve(IngressSecrets::class)->put(IngressCredentialPurpose::DnsToken, 'legacy-cf-token');
+
+    expect(fn () => resolve(DnsCredentials::class)->get())->toThrow(DecryptionFailed::class);
+
+    resolve(DnsCredentials::class)->put(['token' => 'legacy-cf-token']);
 
     expect(resolve(DnsCredentials::class)->for(DnsProvider::Cloudflare))->toBe(['token' => 'legacy-cf-token'])
         ->and(resolve(DnsCredentials::class)->for(DnsProvider::Route53))->toBeNull();

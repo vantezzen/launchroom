@@ -113,9 +113,10 @@ test('a failed final backup blocks the deletion until an admin deletes without o
         ->and($request->error)->toContain('no space left')
         ->and(Project::query()->whereKey($this->project->id)->exists())->toBeTrue();
 
-    // Asking again doesn't delete either.
+    // Asking again doesn't delete either, and says where to go on.
     ($this->delete)()->assertRedirect();
-    expect(Project::query()->whereKey($this->project->id)->exists())->toBeTrue();
+    expect(Project::query()->whereKey($this->project->id)->exists())->toBeTrue()
+        ->and(session('inertia.flash_data.toast'))->toBe(['type' => 'error', 'message' => "{$this->project->name} was not deleted: its final backup failed. See the Danger zone."]);
 
     $skip = route('deletions.skip', ['deletion' => $request->public_id]);
     $admin = memberOf($this->team, TeamRole::Admin);
@@ -171,8 +172,10 @@ test('deleting tears the project down through desired state and is audited', fun
 });
 
 test('the server stops the project’s workloads with the next node state', function (): void {
+    $service = $this->database->service->public_id;
+    expect(collect(Projects::nodeState($this->server)['workloads'])->pluck('service')->all())->toContain($service);
+
     ($this->delete)()->assertRedirect();
 
-    $state = Projects::nodeState($this->server->refresh());
-    expect($state['spec']['workloads'] ?? [])->toBe([]);
+    expect(collect(Projects::nodeState($this->server->refresh())['workloads'] ?? [])->pluck('service')->all())->not->toContain($service);
 });

@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace App\Actions\Audit;
 
+use App\Exceptions\DecryptionFailed;
 use App\Exceptions\DomainRuleViolation;
 use App\Models\AuditSink;
 use App\Services\Audit\AuditDeliveryFailed;
 use App\Services\Audit\AuditForwarder;
-use App\Services\Crypto\Exceptions\DecryptionFailed;
 
 /**
  * "Send test" (docs/09 R34): one harmless record to the destination, with

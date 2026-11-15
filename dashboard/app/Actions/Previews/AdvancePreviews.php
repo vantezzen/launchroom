@@ -31,7 +31,6 @@ final readonly class AdvancePreviews
     {
         $touched = 0;
 
-        // Removals that waited for a running backup or restore.
         $pending = Preview::query()
             ->whereNotNull('environment_id')
             ->whereNotNull('data->pendingClose')
@@ -41,11 +40,10 @@ final readonly class AdvancePreviews
             ->get();
 
         foreach ($pending as $preview) {
-            $close = is_array($preview->data['pendingClose'] ?? null) ? $preview->data['pendingClose'] : [];
-            $status = PreviewStatus::tryFrom(is_string($close['to'] ?? null) ? $close['to'] : '') ?? PreviewStatus::Closed;
+            $close = $preview->data->pendingClose;
 
             try {
-                $this->destroy->handle($preview, $status, is_string($close['reason'] ?? null) ? $close['reason'] : 'The pull request was closed.');
+                $this->destroy->handle($preview, $close->to ?? PreviewStatus::Closed, $close->reason ?? 'The pull request was closed.');
                 $touched++;
             } catch (Throwable $e) {
                 report($e);

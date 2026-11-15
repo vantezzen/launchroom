@@ -17,7 +17,6 @@ use App\Enums\Security\InvestigationStatus;
 use App\Enums\Security\SecurityFindingStatus;
 use App\Enums\TeamRole;
 use App\Models\Alerts\Alert;
-use App\Models\Deployment;
 use App\Models\Security\SecurityFinding;
 use App\Models\Team;
 use Carbon\CarbonImmutable;
@@ -78,7 +77,6 @@ test('a matched advisory opens an "Action needed" finding, investigates it and a
         ->and($alert?->summary)->toStartWith('Fixed in 4.17.21.')
         ->and($alert?->href)->toBe('/security/findings/'.$finding->public_id);
 
-    // Evaluating again changes nothing.
     ($this->evaluate)();
     expect(SecurityFinding::query()->count())->toBe(1)
         ->and(Alert::query()->where('rule', AlertRule::Vulnerability->value)->count())->toBe(1);
@@ -234,6 +232,5 @@ test('teams never see each other\'s findings', function (): void {
     $other = Team::factory()->create();
 
     expect(resolve(EvaluateSecurityFindings::class)->handle($other))->toBe(['open' => 0, 'actionNeeded' => 0, 'resolved' => 0])
-        ->and(SecurityFinding::query()->where('team_id', $other->id)->count())->toBe(0)
-        ->and(Deployment::query()->whereKey($this->deployment->id)->value('inventory_id'))->toBe($this->inventory->id);
+        ->and(SecurityFinding::query()->where('team_id', $other->id)->count())->toBe(0);
 });

@@ -8,7 +8,7 @@ use App\Actions\RemoteAccess\EndRemoteAccess;
 use App\Http\Controllers\Controller;
 use App\Models\RemoteAccess\RemoteAccess;
 use App\Models\User;
-use App\Services\RemoteAccess\RemoteAccessView;
+use App\Queries\RemoteAccess\RemoteAccessView;
 use Illuminate\Container\Attributes\CurrentUser;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Gate;

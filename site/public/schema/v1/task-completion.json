@@ -92,6 +92,21 @@
           "type": "array",
           "maxItems": 50,
           "description": "Events are those after the last heartbeat."
+        },
+        "failure": {
+          "type": "string",
+          "enum": [
+            "no_shell",
+            "shell_missing",
+            "shell_start_failed",
+            "kind_disabled",
+            "guard_refused",
+            "policy_refused",
+            "not_running",
+            "relay_unreachable",
+            "session_key"
+          ],
+          "description": "Failure says why the access could not start (omitted otherwise)."
         }
       },
       "additionalProperties": false,
@@ -120,7 +135,8 @@
           "items": {
             "$ref": "#/$defs/PresetDecision"
           },
-          "type": "array"
+          "type": "array",
+          "maxItems": 32
         }
       },
       "additionalProperties": false,
@@ -223,6 +239,7 @@
                 ]
               },
               "type": "array",
+              "maxItems": 2,
               "description": "Attestations attached to the image index."
             },
             {
@@ -436,6 +453,21 @@
             }
           ]
         },
+        "phpExtensions": {
+          "oneOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/PhpExtension"
+              },
+              "type": "array",
+              "maxItems": 8,
+              "description": "PhpExtensions are the BuilderSpec.phpExtensions added to the Railpack\nplan (PHP provider only; daemon feature phpExtensions)."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "plan": {
           "type": "object",
           "description": "Plan is the resolved Railpack build plan (railpack builds); it lists secret names only."
@@ -621,7 +653,7 @@
       "properties": {
         "workload": {
           "type": "string",
-          "pattern": "^wl_[0-9A-HJKMNP-TV-Z]{26}$"
+          "pattern": "^wl_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
         },
         "containerId": {
           "type": "string",
@@ -1373,6 +1405,40 @@
       ],
       "description": "NextRouteCounts counts the user-facing outputs of a Next.js build."
     },
+    "PhpExtension": {
+      "properties": {
+        "name": {
+          "type": "string",
+          "enum": [
+            "pdo_pgsql",
+            "pgsql",
+            "pdo_mysql",
+            "mysqli",
+            "redis",
+            "mongodb"
+          ]
+        },
+        "for": {
+          "type": "string",
+          "enum": [
+            "postgres",
+            "mysql",
+            "mariadb",
+            "redis",
+            "mongodb",
+            "valkey",
+            "clickhouse"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "name",
+        "for"
+      ],
+      "description": "PhpExtension is one PHP extension a build adds and the database engine that needs it (shown as \"pdo_pgsql (for postgres)\")."
+    },
     "PlanResult": {
       "properties": {
         "durationMs": {
@@ -1638,7 +1704,12 @@
         },
         "rolledBack": {
           "type": "boolean",
-          "description": "RolledBack is true when the new version was installed but did not\nbecome healthy and the previous version was restored."
+          "description": "RolledBack is true when the new version was installed but did not\nbecome healthy and the previous version (fromVersion) was restored."
+        },
+        "reason": {
+          "type": "string",
+          "maxLength": 4096,
+          "description": "Reason is why the new version was rolled back (secret-free)."
         }
       },
       "additionalProperties": false,
@@ -1655,7 +1726,7 @@
       "properties": {
         "op": {
           "type": "string",
-          "pattern": "^op_[0-9A-HJKMNP-TV-Z]{26}$"
+          "pattern": "^op_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
         },
         "status": {
           "type": "string",
@@ -1732,6 +1803,21 @@
           },
           "type": "array",
           "maxItems": 1000
+        },
+        "failure": {
+          "type": "string",
+          "enum": [
+            "no_shell",
+            "shell_missing",
+            "shell_start_failed",
+            "kind_disabled",
+            "guard_refused",
+            "policy_refused",
+            "not_running",
+            "relay_unreachable",
+            "session_key"
+          ],
+          "description": "Failure says why the session could not start (omitted otherwise)."
         }
       },
       "additionalProperties": false,
@@ -1952,6 +2038,17 @@
       "maxLength": 4096,
       "description": "Error is a short, secret-free failure description."
     },
+    "failure": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/TaskFailure",
+          "description": "Failure classifies a failed build or plan task (docs/04 §6)."
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "build": {
       "oneOf": [
         {
@@ -1968,17 +2065,6 @@
         {
           "$ref": "#/$defs/PlanResult",
           "description": "Plan is set for successful plan tasks."
-        },
-        {
-          "type": "null"
-        }
-      ]
-    },
-    "failure": {
-      "oneOf": [
-        {
-          "$ref": "#/$defs/TaskFailure",
-          "description": "Failure classifies a failed build or plan task (docs/04 §6)."
         },
         {
           "type": "null"

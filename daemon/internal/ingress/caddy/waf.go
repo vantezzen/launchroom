@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/vantezzen/launchroom/daemon/internal/state"
+	"github.com/vantezzen/launchroom/daemon/internal/waf"
 )
 
 // Web firewall (docs/22 §6.3): Coraza with the OWASP Core Rule Set, compiled
@@ -31,9 +32,6 @@ type WafOptions struct {
 // shared rule set. It is set right before the firewall (overwriting whatever
 // a client sent) and removed right after it.
 const WafRouteHeader = "X-Lr-Waf-Route"
-
-// WafLogPath is the path Coraza posts audit records to.
-const WafLogPath = "/waf"
 
 // wafLogger is the Caddy logger name of the firewall module. Its lines carry
 // client addresses, URIs and matched data, so they never reach Caddy's log.
@@ -118,7 +116,7 @@ func wafDirectives(routes []Route, logAddress string) (string, error) {
 		return "", errors.New("caddy: the firewall log address must be a loopback ip:port")
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, wafHead, "http://"+ap.String()+WafLogPath)
+	fmt.Fprintf(&b, wafHead, "http://"+ap.String()+waf.Path)
 	id := wafFirstRouteRule
 	next := func() (int, error) {
 		if id > wafLocalRuleMax {

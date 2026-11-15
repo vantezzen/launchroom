@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/vantezzen/launchroom/daemon/internal/docker"
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/policy"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
@@ -37,7 +38,7 @@ func TestContainerSpec(t *testing.T) {
 	m := New(Options{ServerID: "srv_01J9Z8X7W6V5T4S3R2Q1P0N9MK", Resources: Resources{MemoryMB: 2048, SwapMB: 1024, CPUs: 2, CPUShares: 64, BlkioWeight: 10, OOMScoreAdj: 1000}})
 	cc := m.ContainerSpec(image, appArmorUnconfined)
 	hc := cc.HostConfig
-	if hc.Privileged || hc.NetworkMode != NetworkName || hc.PidMode != "" || len(hc.CapAdd) != 0 || len(hc.Binds) != 0 {
+	if hc.Privileged || hc.NetworkMode != names.BuildkitNetwork || hc.PidMode != "" || len(hc.CapAdd) != 0 || len(hc.Binds) != 0 {
 		t.Fatalf("buildkitd must not be privileged or share host namespaces: %+v", hc)
 	}
 	if strings.Join(hc.SecurityOpt, ",") != "seccomp=unconfined,apparmor=unconfined" || hc.MaskedPaths == nil || len(hc.MaskedPaths) != 0 || hc.ReadonlyPaths == nil {
@@ -49,7 +50,7 @@ func TestContainerSpec(t *testing.T) {
 	if hc.CPUShares != 64 || hc.BlkioWeight != 10 || hc.OomScoreAdj != 1000 || hc.MemoryReservation != 0 {
 		t.Fatalf("priority: shares %d blkio %d oom %d reservation %d", hc.CPUShares, hc.BlkioWeight, hc.OomScoreAdj, hc.MemoryReservation)
 	}
-	if !docker.IsManaged(cc.Config.Labels, "srv_01J9Z8X7W6V5T4S3R2Q1P0N9MK") || cc.Config.Labels[docker.LabelSystem] != policy.SystemBuildkit {
+	if !docker.IsManaged(cc.Config.Labels, "srv_01J9Z8X7W6V5T4S3R2Q1P0N9MK") || cc.Config.Labels[names.LabelSystem] != names.SystemBuildkit {
 		t.Fatalf("labels %v", cc.Config.Labels)
 	}
 	for _, a := range cc.Config.Cmd {
@@ -62,16 +63,16 @@ func TestContainerSpec(t *testing.T) {
 	}
 	// The profile changes the spec (a clean recreate), unconfined keeps the
 	// hash of earlier releases.
-	if m.SpecHash(image, AppArmorProfile) == m.SpecHash(image, appArmorUnconfined) {
+	if m.SpecHash(image, names.BuildkitAppArmorProfile) == m.SpecHash(image, appArmorUnconfined) {
 		t.Fatal("spec hash ignores the AppArmor profile")
 	}
-	if got := m.ContainerSpec(image, AppArmorProfile).HostConfig.SecurityOpt; strings.Join(got, ",") != "seccomp=unconfined,apparmor=launchroom-buildkit" {
+	if got := m.ContainerSpec(image, names.BuildkitAppArmorProfile).HostConfig.SecurityOpt; strings.Join(got, ",") != "seccomp=unconfined,apparmor=launchroom-buildkit" {
 		t.Fatalf("profile security options %v", got)
 	}
-	if err := policy.CheckSystemImage(policy.SystemBuildkit, image, policy.DefaultConfig()); err != nil {
+	if err := policy.CheckSystemImage(names.SystemBuildkit, image, policy.DefaultConfig()); err != nil {
 		t.Fatalf("pinned digest rejected: %v", err)
 	}
-	if err := policy.CheckSystemImage(policy.SystemBuildkit, state.ImageRef("docker.io/moby/buildkit@sha256:"+strings.Repeat("0", 64)), policy.DefaultConfig()); err == nil {
+	if err := policy.CheckSystemImage(names.SystemBuildkit, state.ImageRef("docker.io/moby/buildkit@sha256:"+strings.Repeat("0", 64)), policy.DefaultConfig()); err == nil {
 		t.Fatal("unpinned buildkit digest accepted")
 	}
 }

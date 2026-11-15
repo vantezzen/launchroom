@@ -13,6 +13,7 @@ import {
     serverFacts,
 } from '@/features/onboarding/server-summary';
 import { store } from '@/routes/setup';
+import { noLayout } from '@/lib/pages';
 
 type Props = {
     token: string;
@@ -196,3 +197,5 @@ export default function Setup({
         </div>
     );
 }
+
+Setup.layout = noLayout;

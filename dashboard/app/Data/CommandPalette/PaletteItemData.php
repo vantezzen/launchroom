@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Data\CommandPalette;
 
 use App\Data\Canvas\NodeStatusData;
+use App\Enums\AnalyticsView;
 use App\Enums\ServiceKind;
 use Spatie\LaravelData\Data;
 
@@ -33,5 +34,7 @@ final class PaletteItemData extends Data
         /** Services: glyph key (framework or engine logo). */
         public ?string $logo = null,
         public ?ServiceKind $serviceKind = null,
+        /** Services: the view their Analytics links open. */
+        public ?AnalyticsView $analyticsView = null,
     ) {}
 }

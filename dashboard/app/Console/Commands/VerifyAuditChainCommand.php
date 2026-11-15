@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Actions\Audit\VerifyAuditChain;
-use App\Services\Audit\AuditVerificationStatus;
 use App\Services\Crypto\Signer;
 use Carbon\CarbonImmutable;
 use Illuminate\Console\Attributes\Description;
@@ -16,7 +15,7 @@ use Illuminate\Console\Command;
 #[Description('Verify the audit log: its hash chain and signed checkpoints (docs/09 R34)')]
 final class VerifyAuditChainCommand extends Command
 {
-    public function handle(VerifyAuditChain $verifyAuditChain, AuditVerificationStatus $status, Signer $signer): int
+    public function handle(VerifyAuditChain $verifyAuditChain, Signer $signer): int
     {
         if ($this->option('public-key') === true) {
             $this->line($signer->kid.' '.$signer->publicKey());
@@ -25,7 +24,6 @@ final class VerifyAuditChainCommand extends Command
         }
 
         $result = $verifyAuditChain->handle($this->option('from-checkpoint') === true);
-        $status->record($result);
 
         if (! $result->valid) {
             $this->components->error("Audit chain broken at event #{$result->firstInvalidId} (after {$result->checked} valid entries): {$result->message}");

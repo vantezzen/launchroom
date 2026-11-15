@@ -18,14 +18,12 @@ final class DeploymentPolicy
 
     public function rollback(User $user, Deployment $deployment): bool
     {
-        return $deployment->status === DeploymentStatus::Superseded
-            && $deployment->image !== null
-            && $deployment->image_pruned_at === null
+        return $deployment->isRollbackTarget()
             && $user->hasTeamPermission($deployment->team_id, Permission::Deploy);
     }
 
     /**
-     * Redeploy (same revision and commit) or cancel: the "Deploy" permission
+     * Redeploy the same revision and commit: the "Deploy" permission
      * (docs/09 R9).
      */
     public function redeploy(User $user, Deployment $deployment): bool

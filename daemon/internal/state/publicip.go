@@ -1,6 +1,8 @@
 package state
 
-import "net/netip"
+import (
+	"net/netip"
+)
 
 // Non-public ranges (IANA special-purpose registries). The same list as the
 // dashboard's App\Support\Network\IpClassifier, so both sides agree on what

@@ -17,6 +17,7 @@ import (
 
 	"github.com/vantezzen/launchroom/daemon/internal/backup"
 	"github.com/vantezzen/launchroom/daemon/internal/docker"
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/policy"
 	"github.com/vantezzen/launchroom/daemon/internal/secret"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
@@ -47,7 +48,7 @@ func (b *backupEnv) ensureNetwork(ctx context.Context, t *testing.T) string {
 		return b.network
 	}
 	labels := docker.ManagedLabels(string(b.serverID))
-	labels[docker.LabelNetwork] = randomID("net")
+	labels[names.LabelNetwork] = randomID("net")
 	name := "lr-e_" + strings.ToLower(randomID("x")[2:18])
 	sub := netip.MustParsePrefix(fmt.Sprintf("10.231.%d.0/24", 100+rand.IntN(100)))
 	if _, err := b.engine.CreateNetwork(ctx, docker.NetworkCreate{Name: name, Subnet: sub, Labels: labels}); err != nil {
@@ -63,21 +64,20 @@ func (b *backupEnv) run(ctx context.Context, t *testing.T, wl state.WorkloadID, 
 	return b.runMounted(ctx, t, wl, image, env, cmd, nil)
 }
 
-// runMounted is run with volume mounts.
 func (b *backupEnv) runMounted(ctx context.Context, t *testing.T, wl state.WorkloadID, image string, env map[string]secret.Secret, cmd []string, mounts []mount.Mount) string {
 	t.Helper()
 	if err := b.engine.PullImage(ctx, image); err != nil {
 		t.Fatalf("pull %s: %v", image, err)
 	}
 	labels := docker.ManagedLabels(string(b.serverID))
-	labels[docker.LabelWorkload] = string(wl)
+	labels[names.LabelWorkload] = string(wl)
 	stopTimeout, noInit, pids := 60, false, int64(1024)
 	var kv []string
 	for k, v := range env {
 		kv = append(kv, k+"="+v.Reveal())
 	}
 	id, err := b.engine.CreateContainer(ctx, &docker.ContainerCreate{
-		Name:   docker.ContainerName(wl),
+		Name:   names.WorkloadContainer(wl),
 		Config: &container.Config{Image: image, Env: kv, Labels: labels, Cmd: cmd, StopSignal: "SIGTERM", StopTimeout: &stopTimeout},
 		// Hardened like a database workload (the dind's dockerd-guard and
 		// launchroomd's policy floor refuse anything less): no init, typed stop.
@@ -227,8 +227,13 @@ func TestBackupAndRestorePostgresThroughRestic(t *testing.T) {
 
 	// Redis: `redis-cli --rdb -` streams an RDB to stdout.
 	rwl := state.WorkloadID(randomID("wl"))
-	b.run(ctx, t, rwl, redisImage, map[string]secret.Secret{"REDIS_PASSWORD": "redis-pw-123456"}, []string{"redis-server", "--requirepass", "redis-pw-123456"})
-	time.Sleep(2 * time.Second)
+	rid := b.run(ctx, t, rwl, redisImage, map[string]secret.Secret{"REDIS_PASSWORD": "redis-pw-123456"}, []string{"redis-server", "--requirepass", "redis-pw-123456"})
+	waitFor(ctx, t, "redis", func() error {
+		if out, _ := b.exec(ctx, t, rid, []string{"redis-cli", "--no-auth-warning", "-a", "redis-pw-123456", "ping"}); out != "PONG" {
+			return fmt.Errorf("ping: %q", out)
+		}
+		return nil
+	})
 	rtags := []state.BackupTag{"kind:database", state.BackupTag("service:" + strings.ToLower(string(rwl)))}
 	rb, err := eng.Backup(ctx, &state.BackupSpec{Kind: state.BackupDatabase, Target: state.BackupTarget{Engine: state.EngineRedis, Workload: rwl}, Destination: dest, Tags: rtags}, creds, logf)
 	if err != nil {

@@ -14,7 +14,6 @@ import (
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
 
-// dockerfileFacts are what launchroom reads from a Dockerfile.
 type dockerfileFacts struct {
 	// Args are names declared with ARG (any stage).
 	Args map[string]bool
@@ -33,7 +32,6 @@ type dockerfileFacts struct {
 
 var reDevCmd = regexp.MustCompile(`(?i)\b(npm run dev|yarn dev|pnpm dev|bun dev|next dev|vite(\s|$|"|')|artisan serve|manage\.py runserver|runserver|nodemon|rails s(erver)?\b.*-e development)`)
 
-// defaultDockerfiles are probed in order when the spec names none.
 var defaultDockerfiles = []state.RelPath{"Dockerfile", "Containerfile"}
 
 // readDockerfile reads name (relative to the app directory) through root,
@@ -86,13 +84,11 @@ func readDockerfile(root *os.Root, name string) (dockerfileFacts, error) {
 	f.Cmd = shellWords(words)
 	f.CmdPort = commandPort(words)
 	if f.DevOnly == "" && f.Cmd != "" && reDevCmd.MatchString(f.Cmd) {
-		f.DevOnly = "its CMD runs a development server (" + clipText(strings.TrimSpace(f.Cmd), 120) + ")"
+		f.DevOnly = "its CMD runs a development server (" + state.Clip(strings.TrimSpace(f.Cmd), 120) + ")"
 	}
 	return f, nil
 }
 
-// commandWords are the words of a CMD or ENTRYPOINT: the exec form's
-// elements, or the shell form's text as one word.
 func commandWords(n *parser.Node) []string {
 	if n.Attributes["json"] {
 		var words []string

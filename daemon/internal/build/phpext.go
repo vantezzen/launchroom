@@ -46,6 +46,6 @@ func dockerfilePhpWarning(xs []state.PhpExtension, phpApp bool) (state.BuildWarn
 	}
 	return state.BuildWarning{
 		Code:    "dockerfile-php-extensions",
-		Message: clipText("This Dockerfile may need the PHP extensions "+describePhpExtensions(xs)+" for the connected databases. launchroom adds them only to Railpack builds; install them in the Dockerfile (for example with install-php-extensions).", 1024),
+		Message: state.Clip("This Dockerfile may need the PHP extensions "+describePhpExtensions(xs)+" for the connected databases. launchroom adds them only to Railpack builds; install them in the Dockerfile (for example with install-php-extensions).", 1024),
 	}, true
 }

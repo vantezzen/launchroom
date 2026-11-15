@@ -72,7 +72,7 @@ func New(o Options) *Builder {
 		o.Now = time.Now
 	}
 	if o.PublicRegistry == "" {
-		o.PublicRegistry = "127.0.0.1:5000"
+		o.PublicRegistry = state.RegistryAddress
 	}
 	return &Builder{o: o}
 }
@@ -105,7 +105,7 @@ type Outcome struct {
 }
 
 type maskedSink struct {
-	m    *Masker
+	m    *secret.Masker
 	sink LogSink
 }
 
@@ -115,7 +115,6 @@ func (s maskedSink) Line(step string, stream state.LogStream, text string) {
 	}
 }
 
-// secretValues lists every value that must never appear in logs.
 func secretValues(job *Job) []string {
 	var out []string
 	for _, v := range job.Env {
@@ -152,7 +151,7 @@ func SecretsHash(env map[string]secret.Secret) state.SHA256Hex {
 // Run executes the job. Failures are *Error (classified); their messages are masked.
 func (b *Builder) Run(ctx context.Context, job Job) (out *Outcome, err error) {
 	start := b.o.Now()
-	masker := NewMasker(secretValues(&job)...)
+	masker := secret.NewMasker(secretValues(&job)...)
 	sink := maskedSink{m: masker, sink: job.Sink}
 	defer func() {
 		var be *Error
@@ -186,11 +185,12 @@ func (b *Builder) Run(ctx context.Context, job Job) (out *Outcome, err error) {
 		Progress: func(s string) { sink.Line("clone", state.StreamStdout, s) },
 	}); err != nil {
 		class := state.FailureClone
-		if isHostKeyMismatch(err) {
-			class = state.FailureClone
-		} else if ctx.Err() != nil {
+		switch {
+		case isHostKeyMismatch(err):
+			// A changed host key looks like a network error but must not be retried.
+		case ctx.Err() != nil:
 			class = state.FailureTimeout
-		} else if isNetErr(err) || reTransient.MatchString(err.Error()) {
+		case isNetErr(err) || reTransient.MatchString(err.Error()):
 			class = state.FailureTransient
 		}
 		return nil, fail(class, "clone", err)
@@ -220,7 +220,6 @@ func (b *Builder) Run(ctx context.Context, job Job) (out *Outcome, err error) {
 			return nil, fail(state.FailureConfig, "plan", fmt.Errorf("inspect repository: %w", ierr))
 		}
 		inspection = ins
-		// Attach the inspection to any later failure.
 		defer func() {
 			var be *Error
 			if errors.As(err, &be) && be.Inspection == nil {
@@ -235,7 +234,7 @@ func (b *Builder) Run(ctx context.Context, job Job) (out *Outcome, err error) {
 		return nil, err
 	}
 	if len(removed) > 0 {
-		res.summary.Warnings = append(res.summary.Warnings, state.BuildWarning{Code: "unsafe-links-removed", Message: clipText(prunedMessage(removed), 1024)})
+		res.summary.Warnings = append(res.summary.Warnings, state.BuildWarning{Code: "unsafe-links-removed", Message: state.Clip(prunedMessage(removed), 1024)})
 	}
 	out = &Outcome{Summary: res.summary, Inspection: inspection}
 	if job.Image == "" {
@@ -275,13 +274,11 @@ func (b *Builder) Run(ctx context.Context, job Job) (out *Outcome, err error) {
 	return out, nil
 }
 
-// resolved is the outcome of builder resolution and planning.
 type resolved struct {
 	summary state.BuildSummary
 	// railpack builds
-	plan  []byte
-	steps map[string]string
-	// nextAdapter: the Next.js deployment adapter runs in this build.
+	plan        []byte
+	steps       map[string]string
 	nextAdapter bool
 	// dockerfile builds
 	dockerfileDir  string
@@ -383,11 +380,11 @@ func (b *Builder) resolve(dir, work string, job *Job, envNames []string, sink Lo
 		}
 		s.Builder = state.BuilderDockerfile
 		s.DockerfilePath = dfRel
-		s.StartCommand = clipText(df.Cmd, 4096)
+		s.StartCommand = state.Clip(df.Cmd, 4096)
 		s.Port = dockerfilePort(sink, df)
 		s.HealthPath = "/"
 		if df.DevOnly != "" {
-			s.Warnings = append(s.Warnings, state.BuildWarning{Code: "dockerfile-dev-only", Message: clipText("This Dockerfile looks like a development setup: "+df.DevOnly+". Switch to auto-build (Railpack) for a production image.", 1024)})
+			s.Warnings = append(s.Warnings, state.BuildWarning{Code: "dockerfile-dev-only", Message: state.Clip("This Dockerfile looks like a development setup: "+df.DevOnly+". Switch to auto-build (Railpack) for a production image.", 1024)})
 		}
 		if phpApp {
 			s.Warnings = append(s.Warnings, phpWarning)
@@ -422,7 +419,8 @@ func (b *Builder) resolve(dir, work string, job *Job, envNames []string, sink Lo
 	}
 	if rp == nil {
 		e := fail(state.FailurePlan, "plan", errors.New("railpack could not plan this app (see the plan log); set build/start commands, add a Dockerfile, or pick another root directory"))
-		e.Hints = hintsFor(strings.Join(planLogs, "\n"))
+		e.Hints = append([]state.FailureHint{{Code: state.HintRailpackCannotPlan, Message: "Railpack could not detect how to build this app. Set build and start commands, add a Dockerfile, or pick another root directory."}},
+			hintsFor(strings.Join(planLogs, "\n"))...)
 		s.Builder = state.BuilderRailpack
 		s.RailpackVersion = RailpackVersion
 		if s.BuilderReason == "" {
@@ -450,7 +448,7 @@ func (b *Builder) resolve(dir, work string, job *Job, envNames []string, sink Lo
 			preset.Plan.BuildVariables["LAUNCHROOM_DEPLOYMENT_ID"] = string(job.Inputs.Deployment)
 		}
 		if err := applyPatch(rp.result.Plan, preset.Plan); err != nil {
-			s.Warnings = append(s.Warnings, state.BuildWarning{Code: "preset-not-applied", Message: clipText("Preset "+string(preset.Applied.Name)+" could not patch the plan: "+err.Error(), 1024)})
+			s.Warnings = append(s.Warnings, state.BuildWarning{Code: "preset-not-applied", Message: state.Clip("Preset "+string(preset.Applied.Name)+" could not patch the plan: "+err.Error(), 1024)})
 		}
 		s.Presets = []state.AppliedPreset{preset.Applied}
 		s.RuntimeEnv = preset.RuntimeEnv
@@ -504,7 +502,6 @@ func (b *Builder) resolve(dir, work string, job *Job, envNames []string, sink Lo
 	return r, nil
 }
 
-// pushTarget returns the buildkitd-side push name and the public repository.
 func (b *Builder) pushTarget(job *Job) (pushName string, public string, err error) {
 	repo := state.AppRepository(job.Inputs.Service)
 	want := b.o.PublicRegistry + "/" + string(repo)
@@ -645,11 +642,11 @@ func (b *Builder) resolveInline(work, content string, r *resolved, sink LogSink)
 	}
 	s.Builder = state.BuilderDockerfile
 	s.BuilderReason = state.ReasonExplicit
-	s.StartCommand = clipText(df.Cmd, 4096)
+	s.StartCommand = state.Clip(df.Cmd, 4096)
 	s.Port = dockerfilePort(sink, df)
 	s.HealthPath = "/"
 	if df.DevOnly != "" {
-		s.Warnings = append(s.Warnings, state.BuildWarning{Code: "dockerfile-dev-only", Message: clipText("This Dockerfile looks like a development setup: "+df.DevOnly+".", 1024)})
+		s.Warnings = append(s.Warnings, state.BuildWarning{Code: "dockerfile-dev-only", Message: state.Clip("This Dockerfile looks like a development setup: "+df.DevOnly+".", 1024)})
 	}
 	r.dockerfileDir, r.dockerfileName, r.dockerArgs = dfDir, "Dockerfile", df.Args
 	return r, nil

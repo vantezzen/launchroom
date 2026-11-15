@@ -44,6 +44,16 @@ final class Membership extends Pivot
         return 'mem';
     }
 
+    protected static function booted(): void
+    {
+        self::saved(static function (): void {
+            User::membershipsChanged();
+        });
+        self::deleted(static function (): void {
+            User::membershipsChanged();
+        });
+    }
+
     /**
      * The grantable permissions this member was granted (only those their
      * role accepts; a stale grant after a role change counts for nothing).

@@ -7,11 +7,10 @@ namespace App\Http\Controllers\Logs;
 use App\Data\Logs\LogExplorerPageData;
 use App\Data\Logs\LogQueryData;
 use App\Http\Controllers\Controller;
-use App\Http\Controllers\Teams\TeamSettingsController;
-use App\Models\User;
+use App\Http\Routing\CurrentTeam;
+use App\Models\Team;
 use App\Queries\LogSearch;
 use App\Support\Logs\LogScope;
-use Illuminate\Container\Attributes\CurrentUser;
 use Illuminate\Support\Facades\Gate;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -24,9 +23,8 @@ use Inertia\Response;
  */
 final class TeamLogsController extends Controller
 {
-    public function show(#[CurrentUser] User $user): Response
+    public function show(#[CurrentTeam] Team $team): Response
     {
-        $team = TeamSettingsController::currentTeam($user);
         Gate::authorize('searchLogs', $team);
 
         return Inertia::render('logs', [
@@ -34,9 +32,8 @@ final class TeamLogsController extends Controller
         ]);
     }
 
-    public function entries(LogQueryData $query, #[CurrentUser] User $user, LogSearch $logs): LogExplorerPageData
+    public function entries(LogQueryData $query, LogSearch $logs, #[CurrentTeam] Team $team): LogExplorerPageData
     {
-        $team = TeamSettingsController::currentTeam($user);
         Gate::authorize('searchLogs', $team);
 
         return $logs->page(LogScope::team($team), $query);

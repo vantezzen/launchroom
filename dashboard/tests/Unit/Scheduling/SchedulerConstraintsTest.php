@@ -153,8 +153,6 @@ test('previous servers win ties, but never over anti-affinity', function (): voi
 });
 
 /**
- * Random clusters for the properties below.
- *
  * @return list<SchedulableServer>
  */
 function randomCluster(): array

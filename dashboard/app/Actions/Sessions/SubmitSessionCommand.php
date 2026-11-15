@@ -9,9 +9,10 @@ use App\Data\Audit\AuditActor;
 use App\Data\Audit\AuditEntryData;
 use App\Data\Sessions\SessionCommandData;
 use App\Enums\AuditAction;
+use App\Enums\Crypto\ProjectCiphertext;
 use App\Enums\Sessions\DatabaseQueryStatus;
 use App\Enums\Sessions\InteractiveSessionKind;
-use App\Enums\Sessions\InteractiveSessionStatus;
+use App\Enums\TaskBackedAccessStatus;
 use App\Exceptions\DomainRuleViolation;
 use App\Models\Sessions\DatabaseQuery;
 use App\Models\Sessions\InteractiveSession;
@@ -45,8 +46,8 @@ final readonly class SubmitSessionCommand
             throw DomainRuleViolation::forbidden('Only the person who opened this session can use it.');
         }
 
-        if ($session->status !== InteractiveSessionStatus::Open) {
-            throw DomainRuleViolation::conflict($session->status === InteractiveSessionStatus::Ended
+        if ($session->status !== TaskBackedAccessStatus::Open) {
+            throw DomainRuleViolation::conflict($session->status === TaskBackedAccessStatus::Ended
                 ? 'This session has ended. Open a new one.'
                 : 'Still connecting to the server…');
         }
@@ -68,7 +69,7 @@ final readonly class SubmitSessionCommand
                     'allow_writes' => $command->allowWrites === true,
                 ]);
                 $query->public_id = PublicId::generate(DatabaseQuery::publicIdPrefix());
-                $query->statement = $this->keyring->encryptQuery($session->project, $query->public_id, $statement);
+                $query->statement = $this->keyring->encrypt(ProjectCiphertext::Query, $session->project, $query->public_id, $statement);
                 $query->save();
 
                 $this->audit->handle(new AuditEntryData(

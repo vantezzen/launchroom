@@ -6,7 +6,6 @@ use App\Http\Controllers\Security\FindingController;
 use App\Http\Controllers\Security\SecurityController;
 use App\Http\Controllers\Security\SecuritySourcesController;
 use App\Http\Controllers\Security\ServiceFirewallController;
-use App\Support\PublicId;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -29,22 +28,17 @@ Route::middleware(['web', 'auth', 'verified'])->group(function (): void {
         ->name('security.inventory.search');
 
     Route::get('security/findings/{finding}', [FindingController::class, 'show'])
-        ->where('finding', PublicId::routePattern('fnd'))
         ->name('security.findings.show');
     Route::get('security/findings/{finding}/-/data', [FindingController::class, 'data'])
-        ->where('finding', PublicId::routePattern('fnd'))
         ->middleware('throttle:120,1')
         ->name('security.findings.data');
     Route::post('security/findings/{finding}/dismiss', [FindingController::class, 'dismiss'])
-        ->where('finding', PublicId::routePattern('fnd'))
         ->middleware('throttle:30,1')
         ->name('security.findings.dismiss');
     Route::post('security/findings/{finding}/reopen', [FindingController::class, 'reopen'])
-        ->where('finding', PublicId::routePattern('fnd'))
         ->middleware('throttle:30,1')
         ->name('security.findings.reopen');
     Route::post('security/findings/{finding}/investigate', [FindingController::class, 'investigate'])
-        ->where('finding', PublicId::routePattern('fnd'))
         ->middleware('throttle:12,1')
         ->name('security.findings.investigate');
 
@@ -58,7 +52,6 @@ Route::middleware(['web', 'auth', 'verified'])->group(function (): void {
         ->middleware('throttle:30,1')
         ->name('security.firewall.exclusions.store');
     Route::delete('p/{project}/{environment}/s/{service}/firewall/exclusions/{wafExclusion}', [ServiceFirewallController::class, 'destroy'])
-        ->where('wafExclusion', PublicId::routePattern('wfx'))
         ->middleware('throttle:30,1')
         ->name('security.firewall.exclusions.destroy');
     Route::post('p/{project}/{environment}/s/{service}/investigate', [ServiceFirewallController::class, 'investigate'])

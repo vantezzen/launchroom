@@ -8,8 +8,9 @@ use DateTimeInterface;
 use SensitiveParameter;
 
 /**
- * AWS Signature Version 4 for S3 requests (path-style). Small on purpose:
- * one region, service `s3`, the payload hash given by the caller.
+ * AWS Signature Version 4 (S3 path-style requests, Route 53). Small on
+ * purpose: one region and service per request, the payload hash given by
+ * the caller.
  * https://docs.aws.amazon.com/AmazonS3/latest/API/sig-v4-header-based-auth.html
  */
 final class SigV4
@@ -36,10 +37,11 @@ final class SigV4
         #[SensitiveParameter] string $accessKeyId,
         #[SensitiveParameter] string $secretAccessKey,
         DateTimeInterface $now,
+        string $service = 's3',
     ): array {
         $amzDate = gmdate('Ymd\THis\Z', $now->getTimestamp());
         $date = substr($amzDate, 0, 8);
-        $scope = "{$date}/{$region}/s3/aws4_request";
+        $scope = "{$date}/{$region}/{$service}/aws4_request";
 
         $signed = ['host' => $host, 'x-amz-content-sha256' => $payloadHash, 'x-amz-date' => $amzDate];
 
@@ -69,7 +71,7 @@ final class SigV4
 
         $key = hash_hmac('sha256', $date, 'AWS4'.$secretAccessKey, true);
         $key = hash_hmac('sha256', $region, $key, true);
-        $key = hash_hmac('sha256', 's3', $key, true);
+        $key = hash_hmac('sha256', $service, $key, true);
         $key = hash_hmac('sha256', 'aws4_request', $key, true);
         $signature = hash_hmac('sha256', $stringToSign, $key);
 

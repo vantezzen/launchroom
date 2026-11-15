@@ -5,22 +5,23 @@ declare(strict_types=1);
 namespace App\Actions\Environments;
 
 use App\Actions\Audit\RecordAuditEvent;
-use App\Casts\ServiceSourceCast;
+use App\Actions\Services\CancelServiceRemoval;
 use App\Data\Audit\AuditActor;
 use App\Data\Audit\AuditEntryData;
 use App\Data\Services\BuildSettings;
 use App\Data\Services\DeploySettings;
 use App\Data\Services\ScalingSettings;
+use App\Data\Services\ServiceSources;
 use App\Data\Specs\ChangeItem;
 use App\Data\Specs\EnvironmentSpec;
 use App\Data\Specs\ServiceSpec;
 use App\Data\Specs\VariableSpec;
 use App\Data\Specs\VolumeSpec;
 use App\Enums\AuditAction;
-use App\Enums\Backups\DeletionRequestStatus;
 use App\Enums\ChangeKind;
+use App\Enums\VariableLayer;
+use App\Events\CanvasChanged;
 use App\Exceptions\DomainRuleViolation;
-use App\Models\Backups\DeletionRequest;
 use App\Models\Connection;
 use App\Models\Domain;
 use App\Models\Environment;
@@ -60,6 +61,7 @@ final class DiscardChanges
     public function __construct(
         private readonly CurrentEnvironmentSpec $currentSpec,
         private readonly VariableStore $variables,
+        private readonly CancelServiceRemoval $cancelRemoval,
         private readonly RecordAuditEvent $audit,
     ) {}
 
@@ -104,6 +106,8 @@ final class DiscardChanges
                 ));
             }
 
+            event(new CanvasChanged($environment->public_id));
+
             return count($items);
         });
     }
@@ -144,10 +148,7 @@ final class DiscardChanges
                     $service->delete();
                 }
             } elseif ($kind === ChangeKind::Removed && $instance !== null) {
-                $instance->forceFill(['removed_at' => null])->save();
-                // The removal's final backup no longer gates anything (docs/14 §9.13).
-                $pending = DeletionRequest::openFor(DeletionRequest::SERVICE_INSTANCE, $instance->id, lock: true);
-                $pending?->transitionTo(DeletionRequestStatus::Cancelled);
+                $this->cancelRemoval->handle($instance);
             }
 
             return;
@@ -161,7 +162,7 @@ final class DiscardChanges
 
         match ($field) {
             'name', 'icon' => $service->forceFill([$field => $field === 'name' ? $spec->name : $spec->icon])->save(),
-            'source' => $service->forceFill(['source' => ServiceSourceCast::fromArray($spec->source)])->save(),
+            'source' => $service->forceFill(['source' => ServiceSources::fromArray($spec->source)])->save(),
             'parentId' => $service->forceFill(['parent_service_id' => $spec->parentId === null ? null : Service::query()->where('public_id', $spec->parentId)->value('id')])->save(),
             'enabled' => $instance->forceFill(['enabled' => $spec->enabled])->save(),
             'branchOverride' => $instance->forceFill(['branch_override' => $spec->branchOverride])->save(),
@@ -246,8 +247,8 @@ final class DiscardChanges
         if ($connection === null) {
             VariableTarget::query()->create([
                 'variable_id' => $variable->id,
-                'environment_id' => $spec->layer === VariableSpec::LAYER_BRANCH ? null : $environment->id,
-                'all_previews' => $spec->layer === VariableSpec::LAYER_BRANCH,
+                'environment_id' => $spec->layer === VariableLayer::Branch ? null : $environment->id,
+                'all_previews' => $spec->layer === VariableLayer::Branch,
             ]);
         }
     }

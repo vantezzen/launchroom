@@ -4,8 +4,13 @@ declare(strict_types=1);
 
 namespace App\Models\Updates;
 
+use App\Data\Audit\AuditActor;
+use App\Data\Audit\AuditEntryData;
+use App\Enums\AuditAction;
+use App\Enums\Contracts\HasTransitionTable;
 use App\Enums\Updates\FleetUpdateStatus;
 use App\Models\Concerns\HasPublicId;
+use App\Models\Concerns\HasStatusTransitions;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
@@ -36,6 +41,9 @@ final class FleetUpdate extends Model
 {
     use HasPublicId;
 
+    /** @use HasStatusTransitions<FleetUpdateStatus> */
+    use HasStatusTransitions;
+
     /** @var array<string, mixed> */
     protected $attributes = [
         'status' => 'running',
@@ -46,17 +54,16 @@ final class FleetUpdate extends Model
         return 'flu';
     }
 
-    public function transitionTo(FleetUpdateStatus $to, ?string $error = null): void
+    /**
+     * @param  FleetUpdateStatus  $from
+     * @param  FleetUpdateStatus  $to
+     */
+    protected function recordTransition(HasTransitionTable $from, HasTransitionTable $to, ?string $note): void
     {
-        $this->status->assertCanTransitionTo($to);
-        $this->status = $to;
-
         if ($to->isTerminal()) {
             $this->forceFill(['finished_at' => now()]);
-            $this->error = $error === null ? null : mb_substr($error, 0, 2048);
+            $this->error = $note;
         }
-
-        $this->save();
     }
 
     /**
@@ -84,5 +91,17 @@ final class FleetUpdate extends Model
             'status' => FleetUpdateStatus::class,
             'finished_at' => 'datetime',
         ];
+    }
+
+    /** Recorded by the system: updates finish in the background (docs/09 R26). */
+    public function finishedAuditEntry(): AuditEntryData
+    {
+        return new AuditEntryData(
+            action: AuditAction::FleetUpdateFinished,
+            actor: AuditActor::system(),
+            subjectType: 'fleet_update',
+            subjectId: $this->public_id,
+            meta: ['to' => $this->to_version, 'status' => $this->status->value],
+        );
     }
 }

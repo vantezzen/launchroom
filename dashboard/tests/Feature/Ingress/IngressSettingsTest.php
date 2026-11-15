@@ -100,8 +100,8 @@ test('setting the provider stores the token encrypted and checks it without anot
 
     $settings = InstanceSettings::current();
     expect($settings->dns_provider)->toBe(DnsProvider::Cloudflare)
-        ->and($settings->dns_verification['ok'])->toBeTrue()
-        ->and($settings->dns_verification['zone'])->toBe('example.com')
+        ->and($settings->dns_verification?->ok)->toBeTrue()
+        ->and($settings->dns_verification?->zone)->toBe('example.com')
         ->and($settings->dns_verified_at)->not->toBeNull()
         ->and(json_encode($settings->toArray()))->not->toContain('cf-SECRET')
         ->and(AuditEvent::query()->where('action', AuditAction::DnsProviderChanged->value)->sole()->meta)->not->toHaveKey('token');
@@ -169,7 +169,7 @@ test('the form saves a multi-field provider and only shows its non-secret values
         ->assertRedirect()
         ->assertSessionHasNoErrors();
 
-    expect(InstanceSettings::current()->dns_verification['ok'])->toBeTrue();
+    expect(InstanceSettings::current()->dns_verification?->ok)->toBeTrue();
     Http::assertSent(fn (Request $request): bool => $request->url() === 'https://eu.api.ovh.com/1.0/domain/zone/example.com'
         && $request->header('X-Ovh-Signature')[0] === '$1$'.sha1('app-SECRET+consumer-SECRET+GET+https://eu.api.ovh.com/1.0/domain/zone/example.com++1760000000'));
 
@@ -208,7 +208,8 @@ test('route 53 is checked with a SigV4-signed read', function (): void {
             return false;
         }
         $date = '20261020T120000Z';
-        $canonical = "GET\n/2013-04-01/hostedzonesbyname\ndnsname=example.com&maxitems=1\nhost:route53.amazonaws.com\nx-amz-date:{$date}\n\nhost;x-amz-date\n".hash('sha256', '');
+        $empty = hash('sha256', '');
+        $canonical = "GET\n/2013-04-01/hostedzonesbyname\ndnsname=example.com&maxitems=1\nhost:route53.amazonaws.com\nx-amz-content-sha256:{$empty}\nx-amz-date:{$date}\n\nhost;x-amz-content-sha256;x-amz-date\n{$empty}";
         $toSign = "AWS4-HMAC-SHA256\n{$date}\n20261020/us-east-1/route53/aws4_request\n".hash('sha256', $canonical);
         $key = 'AWS4wJalr-SECRET';
         foreach (['20261020', 'us-east-1', 'route53', 'aws4_request'] as $part) {
@@ -216,7 +217,7 @@ test('route 53 is checked with a SigV4-signed read', function (): void {
         }
 
         return $request->header('X-Amz-Date')[0] === $date
-            && $request->header('Authorization')[0] === 'AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20261020/us-east-1/route53/aws4_request, SignedHeaders=host;x-amz-date, Signature='.hash_hmac('sha256', $toSign, $key);
+            && $request->header('Authorization')[0] === 'AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20261020/us-east-1/route53/aws4_request, SignedHeaders=host;x-amz-content-sha256;x-amz-date, Signature='.hash_hmac('sha256', $toSign, $key);
     });
 });
 

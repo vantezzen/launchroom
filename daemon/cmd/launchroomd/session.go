@@ -32,6 +32,9 @@ func (rt *daemonRuntime) sessionRunner(taskInterval time.Duration) *tasks.Runner
 	if !ok {
 		return nil
 	}
+	rt.addFeatures(func() []state.DaemonFeature {
+		return session.Features(func(k state.SessionKind) bool { return rt.cfg.SessionAllowed(string(k)) })
+	})
 	h := session.Handler(session.Options{
 		ServerID: rt.serverID, SealingKey: rt.sealingKey, Auth: rt.client,
 		Nudge:           rt.sessionNudge,
@@ -41,7 +44,7 @@ func (rt *daemonRuntime) sessionRunner(taskInterval time.Duration) *tasks.Runner
 		Trusted:          func() session.Verifier { return rt.client.Trusted() },
 		Docker:           dc,
 		WorkloadEnv:      rt.workloadEnv,
-		InDesiredState:   rt.inDesiredState,
+		InDesiredState:   func(id state.WorkloadID) bool { return rt.workloadSpec(id) != nil },
 		Allowed:          func(k state.SessionKind) bool { return rt.cfg.SessionAllowed(string(k)) },
 		Logs:             rt.client,
 		DaemonVersion:    version,
@@ -68,41 +71,4 @@ func (rt *daemonRuntime) sessionNudge(ctx context.Context) (*state.NudgeConfig, 
 		return rt.nudgeFallback, nil
 	}
 	return nil, err
-}
-
-// inDesiredState reports whether a workload is in the verified NodeState.
-func (rt *daemonRuntime) inDesiredState(id state.WorkloadID) bool {
-	cur := rt.store.Current()
-	if cur == nil {
-		return false
-	}
-	for i := range cur.State.Workloads {
-		if cur.State.Workloads[i].ID == id {
-			return true
-		}
-	}
-	return false
-}
-
-// features is SupportedFeatures plus the session kinds the local policy allows.
-func (rt *daemonRuntime) features() []state.DaemonFeature {
-	out := append([]state.DaemonFeature(nil), state.SupportedFeatures...)
-	if rt.dataTransfers() {
-		out = append(out, state.FeatureDataTransfer)
-	}
-	out = append(out, rt.accessFeatures()...)
-	if rt.ingress != nil && rt.ingress.WafSupport().Available() {
-		// Only while the running, pinned Caddy carries the firewall module (docs/22 §6.1).
-		out = append(out, state.FeatureWaf)
-	}
-	if _, ok := rt.docker.(session.Docker); !ok {
-		return out
-	}
-	if rt.cfg.SessionAllowed(string(state.SessionConsole)) {
-		out = append(out, state.FeatureConsoleSessions)
-	}
-	if rt.cfg.SessionAllowed(string(state.SessionData)) {
-		out = append(out, state.FeatureDataSessions)
-	}
-	return out
 }

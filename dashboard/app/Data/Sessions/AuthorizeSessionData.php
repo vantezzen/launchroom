@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace App\Data\Sessions;
 
+use App\Services\Sessions\SessionSecrets;
+use App\Support\Crypto\OpaqueToken;
+use App\Support\Protocol\Grammar;
 use Spatie\LaravelData\Attributes\MapInputName;
 use Spatie\LaravelData\Attributes\Validation\Regex;
 use Spatie\LaravelData\Data;
@@ -14,9 +17,9 @@ use Spatie\LaravelData\Data;
 final class AuthorizeSessionData extends Data
 {
     public function __construct(
-        #[MapInputName('socket_id'), Regex('/^[0-9]{1,20}\.[0-9]{1,20}$/')]
+        #[MapInputName('socket_id'), Regex(Grammar::SOCKET_ID)]
         public string $socketId,
-        #[Regex('/^lr_st_[A-Za-z0-9_-]{43}$/')]
+        #[Regex('/^'.SessionSecrets::TICKET_PREFIX.OpaqueToken::BODY.'$/D')]
         public string $ticket,
     ) {}
 }

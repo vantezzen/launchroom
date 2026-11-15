@@ -6,7 +6,6 @@ namespace App\Actions\Servers;
 
 use App\Enums\ServerStatus;
 use App\Models\Server;
-use App\Services\Deployments\Rescheduler;
 use Illuminate\Contracts\Database\Query\Builder;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -33,7 +32,8 @@ final readonly class RescheduleDeadServers
     private const string WATCHING_SINCE = 'launchroom:liveness:watching-since';
 
     public function __construct(
-        private Rescheduler $rescheduler,
+        private EvacuateDeadServer $evacuate,
+        private ClearResolvedPlacementIssues $clearIssues,
     ) {}
 
     public function handle(): int
@@ -47,7 +47,7 @@ final readonly class RescheduleDeadServers
         $moved = 0;
 
         $ids = Server::query()
-            ->whereIn('status', [ServerStatus::Unreachable->value, ServerStatus::Offline->value])
+            ->whereIn('status', ServerStatus::down())
             ->where(static fn (Builder $query) => $query->whereNull('last_seen_at')->orWhere('last_seen_at', '<', now()->subSeconds($threshold)))
             ->orderBy('id')
             ->pluck('id');
@@ -57,16 +57,16 @@ final readonly class RescheduleDeadServers
                 $server = Server::query()->whereKey($id)->lockForUpdate()->first();
 
                 // Re-checked under the lock: it may have checked in meanwhile.
-                if ($server === null || ! in_array($server->status, [ServerStatus::Unreachable, ServerStatus::Offline], true)
+                if ($server === null || ! $server->status->isDown()
                     || ($server->last_seen_at !== null && $server->last_seen_at->greaterThanOrEqualTo(now()->subSeconds($threshold)))) {
                     return 0;
                 }
 
-                return $this->rescheduler->evacuate($server);
+                return $this->evacuate->handle($server);
             });
         }
 
-        DB::transaction(fn (): int => $this->rescheduler->refreshIssues());
+        DB::transaction(fn (): int => $this->clearIssues->handle());
 
         return $moved;
     }

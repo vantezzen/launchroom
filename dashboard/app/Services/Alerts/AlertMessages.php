@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Alerts;
 
+use App\Data\Alerts\AlertMessage;
 use App\Enums\Alerts\AlertDeliveryEvent;
 use App\Models\Alerts\Alert;
 use App\Models\Team;
@@ -63,7 +64,7 @@ final readonly class AlertMessages
     {
         $title = 'launchroom can reach you here';
         $summary = 'This is a test from Settings → Notifications. Alerts will look like this.';
-        $url = $this->absolute('/settings/notifications');
+        $url = $this->absolute(route('notifications.edit', absolute: false));
 
         return new AlertMessage(
             event: AlertDeliveryEvent::Test,

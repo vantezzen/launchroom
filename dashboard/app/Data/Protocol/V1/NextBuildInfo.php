@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Data\Protocol\V1;
 
+use App\Support\Protocol\Grammar;
 use Spatie\LaravelData\Attributes\Validation\Max;
 use Spatie\LaravelData\Attributes\Validation\Regex;
 use Spatie\LaravelData\Data;
@@ -19,9 +20,9 @@ final class NextBuildInfo extends Data
      * @param  list<string>|null  $isrRoutes  prerendered paths with time-based revalidation (first 32)
      */
     public function __construct(
-        #[Max(64), Regex('/^v?[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/D')]
+        #[Max(64), Regex(Grammar::SEMVER)]
         public string $adapterVersion,
-        #[Max(64), Regex('/^v?[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/D')]
+        #[Max(64), Regex(Grammar::SEMVER)]
         public string $nextVersion,
         public bool $middleware,
         public bool $imageOptimization,

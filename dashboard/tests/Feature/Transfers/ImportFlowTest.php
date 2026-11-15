@@ -16,6 +16,7 @@ use App\Models\Server;
 use App\Models\Team;
 use App\Models\Transfers\DataImportRun;
 use App\Models\Transfers\DataTransfer;
+use App\Services\Tasks\TaskSecrets;
 use Illuminate\Support\Facades\DB;
 use Tests\Support\Backups;
 use Tests\Support\Projects;
@@ -147,7 +148,6 @@ test('replacing needs the typed slug, takes a safety snapshot, then launchroomd 
         ->assertJsonPath('imports.0.sourceLabel', 'umami.dump');
     $run = DataImportRun::query()->sole();
 
-    // A second import while one runs is refused.
     $this->postJson(route('transfers.services.imports.store', $postgres), ['transfer' => $transfer->public_id, 'replace' => true, 'confirmation' => $postgres->service->slug])->assertStatus(409);
 
     VolumeServices::backedUp($server, str_repeat('ab', 32));
@@ -163,7 +163,7 @@ test('replacing needs the typed slug, takes a safety snapshot, then launchroomd 
     $daemon->send($this, 'GET', $chunkUrl)->assertNotFound();
 
     $task = VolumeServices::lease($server, DaemonTaskType::DbImport);
-    expect(ProtocolSchemas::errors('task-lease', ProtocolJson::encode(new TaskLease([Task::fromTask($task)]))))->toBe([]);
+    expect(ProtocolSchemas::errors('task-lease', ProtocolJson::encode(new TaskLease([Task::fromTask($task, resolve(TaskSecrets::class)->materialize($task, $server))]))))->toBe([]);
     $spec = json_decode(json_encode($task->spec, JSON_THROW_ON_ERROR), true, 32, JSON_THROW_ON_ERROR);
     expect($spec['mode'])->toBe('import')
         ->and($spec['engine'])->toBe('postgres')
@@ -179,7 +179,7 @@ test('replacing needs the typed slug, takes a safety snapshot, then launchroomd 
     VolumeServices::finish($server, $task, 'succeeded', ['dataImport' => ['mode' => 'import', 'empty' => false, 'tables' => 14, 'sizeBytes' => 48234496, 'serverVersion' => '18.1', 'format' => 'postgres_custom', 'sourceVersion' => 'PostgreSQL 15.8', 'readBytes' => strlen($bytes), 'durationMs' => 73000]]);
 
     expect($run->refresh()->status)->toBe(ImportRunStatus::Succeeded)
-        ->and($run->result['tables'] ?? null)->toBe(14)
+        ->and($run->result?->tables)->toBe(14)
         ->and(AuditEvent::query()->where('action', 'data.import_finished')->exists())->toBeTrue();
     $daemon->send($this, 'GET', $chunkUrl)->assertNotFound();
     $this->getJson(route('transfers.services.show', $postgres))->assertJsonPath('imports.0.result.tables', 14);

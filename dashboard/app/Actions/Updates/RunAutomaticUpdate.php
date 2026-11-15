@@ -70,7 +70,7 @@ final readonly class RunAutomaticUpdate
             return 'an update is running';
         }
 
-        if (! BackupDestination::query()->whereNull('team_id')->exists()) {
+        if (! BackupDestination::query()->instanceWide()->exists()) {
             return 'no control-plane backup destination';
         }
 

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Support\Connections;
 
 use App\Models\Service;
+use App\Support\Variables\VariableKey;
 use App\Support\Variables\VariableReference;
 use App\Support\Variables\VariableReferences;
 
@@ -21,8 +22,6 @@ final class ProvidedVariables
 {
     public const int MAX = 16;
 
-    private const string KEY = '/^[A-Za-z_][A-Za-z0-9_]{0,255}$/D';
-
     /**
      * @param  array<string, string>  $variables  key => value
      * @return list<string> one sentence per problem; empty when valid
@@ -36,7 +35,7 @@ final class ProvidedVariables
         }
 
         foreach ($variables as $key => $value) {
-            if (preg_match(self::KEY, (string) $key) !== 1) {
+            if (! VariableKey::isValid((string) $key)) {
                 $errors[] = "“{$key}” isn’t a valid variable name.";
             }
 
@@ -65,15 +64,15 @@ final class ProvidedVariables
     {
         $declared = $provider->connection_variables;
 
-        if ($declared === null || $declared === []) {
+        if ($declared === null || $declared->count() === 0) {
             return null;
         }
 
         $injected = [];
 
-        foreach ($declared as $variable) {
-            $injected[$variable['key']] = VariableReferences::replace(
-                $variable['value'],
+        foreach ($declared->items() as $variable) {
+            $injected[$variable->key] = VariableReferences::replace(
+                $variable->value,
                 static fn (VariableReference $reference): ?string => $reference->scope === null ? '${{'.$provider->slug.'.'.$reference->key.'}}' : null,
             );
         }

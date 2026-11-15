@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Services\Alerts\Senders;
 
+use App\Data\Alerts\AlertMessage;
 use App\Models\Alerts\AlertChannel;
 use App\Notifications\AlertEmailNotification;
-use App\Services\Alerts\AlertMessage;
 use App\Services\Alerts\DeliveryFailed;
 use Illuminate\Support\Facades\Notification;
 use Throwable;

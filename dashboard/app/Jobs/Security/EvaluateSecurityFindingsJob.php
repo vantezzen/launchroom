@@ -18,8 +18,9 @@ use Illuminate\Queue\InteractsWithQueue;
 
 /**
  * Recomputes one team's findings (docs/22 §5.5) after a sync, an
- * inventory, a live deployment, a domain or protection change or a KEV
- * update. Unique per team while queued: bursts collapse into one run.
+ * inventory, a live deployment, a domain change (ApplyDomainRoutes: the
+ * `public` flag) or a KEV update. Unique per team while queued: bursts
+ * collapse into one run.
  */
 #[Timeout(600)]
 #[Tries(3)]

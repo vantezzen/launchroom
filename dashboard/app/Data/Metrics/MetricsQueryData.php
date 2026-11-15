@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Data\Metrics;
 
+use App\Data\Attributes\PublicIdOf;
 use App\Enums\MetricRange;
-use Spatie\LaravelData\Attributes\Validation\Regex;
 use Spatie\LaravelData\Data;
 
 /**
@@ -17,9 +17,9 @@ final class MetricsQueryData extends Data
 {
     public function __construct(
         public MetricRange $range = MetricRange::Hour,
-        #[Regex('/^env_[0-9A-HJKMNP-TV-Z]{26}$/D')]
+        #[PublicIdOf('env')]
         public ?string $environment = null,
-        #[Regex('/^svc_[0-9A-HJKMNP-TV-Z]{26}$/D')]
+        #[PublicIdOf('svc')]
         public ?string $service = null,
     ) {}
 }

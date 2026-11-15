@@ -1,19 +1,13 @@
 import { Head, Link, useForm, usePage } from '@inertiajs/react';
 import ProfileController from '@/actions/App/Http/Controllers/Settings/ProfileController';
-import DeleteUser from '@/components/delete-user';
+import DeleteUser from '@/features/account/delete-user';
 import InputError from '@/components/input-error';
 import { UnsavedBar } from '@/components/patterns/unsaved-bar';
 import { Status } from '@/components/status';
 import { Input } from '@/components/ui/input';
-import { SettingsCard, SettingsRow } from '@/features/settings/settings-card';
-import { edit } from '@/routes/profile';
-import { index as settingsHome } from '@/routes/settings';
 import { send } from '@/routes/verification';
-import type { Auth } from '@/types';
-
-type PageProps = {
-    auth: Auth;
-};
+import { SettingsCard, SettingsRow } from '@/components/settings/settings-card';
+import SettingsLayout from '@/features/settings/settings-layout';
 
 /**
  * Settings → Profile: name and email as rows; changes show the floating
@@ -27,13 +21,13 @@ export default function Profile({
     mustVerifyEmail: boolean;
     status?: string;
 }) {
-    const { auth } = usePage<PageProps>().props;
+    const { auth } = usePage().props;
     const form = useForm({
-        name: auth.user.name,
-        email: auth.user.email,
+        name: auth.user?.name ?? '',
+        email: auth.user?.email ?? '',
         current_password: '',
     });
-    const emailChanged = form.data.email !== auth.user.email;
+    const emailChanged = form.data.email !== auth.user?.email;
 
     const save = () =>
         form.patch(ProfileController.update().url, {
@@ -83,7 +77,7 @@ export default function Profile({
                         label="Email"
                         description={
                             mustVerifyEmail &&
-                            auth.user.email_verified_at === null ? (
+                            auth.user?.emailVerified === false ? (
                                 <span className="flex flex-col gap-1">
                                     <Status
                                         state="warning"
@@ -161,12 +155,4 @@ export default function Profile({
     );
 }
 
-Profile.layout = {
-    breadcrumbs: [
-        { title: 'Settings', href: settingsHome() },
-        {
-            title: 'Profile',
-            href: edit(),
-        },
-    ],
-};
+Profile.layout = SettingsLayout;

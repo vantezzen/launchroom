@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Backups;
 
+use App\Support\Files\SecureFile;
 use RuntimeException;
 use SensitiveParameter;
 
@@ -63,12 +64,6 @@ final class RestoredKeyFiles
 
     private static function file(string $path, #[SensitiveParameter] string $contents, int $mode, bool $force): void
     {
-        $dir = dirname($path);
-
-        if (! is_dir($dir) && ! @mkdir($dir, 0700, true) && ! is_dir($dir)) {
-            throw new RuntimeException("Can't create {$dir}.");
-        }
-
         if (file_exists($path)) {
             if (! $force) {
                 throw new RuntimeException("{$path} exists; pass --force to overwrite it.");
@@ -78,15 +73,6 @@ final class RestoredKeyFiles
             @unlink($path);
         }
 
-        $handle = @fopen($path, 'x');
-
-        if ($handle === false) {
-            throw new RuntimeException("Can't write {$path}.");
-        }
-
-        chmod($path, 0600);
-        fwrite($handle, $contents);
-        fclose($handle);
-        chmod($path, $mode);
+        SecureFile::createExclusive($path, $contents, $mode);
     }
 }

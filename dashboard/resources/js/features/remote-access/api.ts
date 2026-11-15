@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { api } from '@/features/variables/api';
+import { requestJson } from '@/lib/http';
 import remoteAccess from '@/routes/remote-access';
 import services from '@/routes/remote-access/services';
 
@@ -16,6 +16,19 @@ export type ServiceRef = {
  * The panel's data; polled while an access is starting or open. A volume
  * access (D67) names its volume.
  */
+export const remoteAccessKeys = {
+    kind: (kind: AccessKind) => ['remote-access', kind] as const,
+    panel: (ref: ServiceRef, kind: AccessKind, volume?: string) =>
+        [
+            'remote-access',
+            kind,
+            ref.project,
+            ref.environment,
+            ref.service,
+            volume ?? null,
+        ] as const,
+};
+
 export function usePanel(
     ref: ServiceRef,
     kind: AccessKind,
@@ -23,16 +36,9 @@ export function usePanel(
     volume?: string,
 ) {
     return useQuery({
-        queryKey: [
-            'remote-access',
-            kind,
-            ref.project,
-            ref.environment,
-            ref.service,
-            volume ?? null,
-        ],
+        queryKey: remoteAccessKeys.panel(ref, kind, volume),
         queryFn: ({ signal }) =>
-            api<Panel>(
+            requestJson<Panel>(
                 'get',
                 services.show(
                     { ...ref, kind },
@@ -69,11 +75,11 @@ export function startAccess(
         volume?: string | null;
     },
 ): Promise<Access> {
-    return api('post', services.open({ ...ref, kind }).url, body);
+    return requestJson('post', services.open({ ...ref, kind }).url, body);
 }
 
 export function endAccess(id: string): Promise<Access> {
-    return api('post', remoteAccess.end(id).url, {});
+    return requestJson('post', remoteAccess.end(id).url, {});
 }
 
 /** The last public key used, remembered in this browser only. */

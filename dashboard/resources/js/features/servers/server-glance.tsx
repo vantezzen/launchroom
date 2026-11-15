@@ -6,7 +6,7 @@ import { StatusIcon } from '@/components/status';
 import { TimeAgo } from '@/components/time-ago';
 import { Skeleton } from '@/components/ui/skeleton';
 import { RoleHints } from '@/features/servers/role-hints';
-import { formatLatency } from '@/features/servers/link-format';
+import { formatLatency, listNames } from '@/lib/format';
 import { roleIcons, roleTitles } from '@/features/servers/server-status';
 import { tab } from '@/routes/servers';
 
@@ -69,10 +69,7 @@ function duties(roles: App.Enums.ServerRole[]): string {
         return 'Nothing yet';
     }
 
-    const text =
-        words.length === 1
-            ? words[0]
-            : `${words.slice(0, -1).join(', ')} and ${words.at(-1)}`;
+    const text = listNames(words);
 
     return text.charAt(0).toUpperCase() + text.slice(1);
 }

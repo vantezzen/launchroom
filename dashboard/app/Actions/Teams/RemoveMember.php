@@ -5,11 +5,11 @@ declare(strict_types=1);
 namespace App\Actions\Teams;
 
 use App\Actions\Audit\RecordAuditEvent;
-use App\Actions\Sessions\EndUserSessions;
 use App\Data\Audit\AuditActor;
 use App\Data\Audit\AuditEntryData;
 use App\Enums\AuditAction;
 use App\Enums\TeamRole;
+use App\Events\Teams\MemberAccessChanged;
 use App\Exceptions\DomainRuleViolation;
 use App\Models\ApiToken;
 use App\Models\Membership;
@@ -23,7 +23,6 @@ final readonly class RemoveMember
 {
     public function __construct(
         private RecordAuditEvent $audit,
-        private EndUserSessions $endSessions,
     ) {}
 
     public function handle(User $actor, Membership $membership, AuditActor $auditActor): void
@@ -63,8 +62,6 @@ final readonly class RemoveMember
                 $user->forceFill(['current_team_id' => is_int($next) ? $next : null])->save();
             }
 
-            $actor->forgetTeamRoles();
-
             $this->audit->handle(new AuditEntryData(
                 action: AuditAction::MemberRemoved,
                 actor: $auditActor,
@@ -75,7 +72,6 @@ final readonly class RemoveMember
             ));
         });
 
-        // A removed member keeps no Console or Data session (docs/03 §11.3).
-        $this->endSessions->handle($membership->team_id, $membership->user_id);
+        event(new MemberAccessChanged($membership->team_id, $membership->user_id));
     }
 }

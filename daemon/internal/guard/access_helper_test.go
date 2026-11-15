@@ -11,6 +11,7 @@ import (
 	"github.com/moby/moby/api/types/mount"
 
 	"github.com/vantezzen/launchroom/daemon/internal/access"
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/policy"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
@@ -28,7 +29,7 @@ func accessHelper(t *testing.T) (string, container.CreateRequest) {
 }
 
 func TestAccessHelperConstantsMatch(t *testing.T) {
-	if accessHelperMount != access.HelperMount || int(access.HelperMaxLifetime/time.Second) != accessHelperMaxSleep || access.HelperKind != "access" || access.LabelAccess != "launchroom.access" {
+	if int(access.HelperMaxLifetime/time.Second) != accessHelperMaxSleep {
 		t.Fatal("guard constants differ from internal/access")
 	}
 }
@@ -53,7 +54,7 @@ func TestAccessHelperShape(t *testing.T) {
 		want string
 	}{
 		"not generated": {func(n *string, _ *container.CreateRequest) { *n = "lr-acc-mine" }, "not generated"},
-		"no access id":  {func(_ *string, r *container.CreateRequest) { delete(r.Labels, "launchroom.access") }, "access id"},
+		"no access id":  {func(_ *string, r *container.CreateRequest) { delete(r.Labels, names.LabelAccess) }, "access id"},
 		"another image": {func(_ *string, r *container.CreateRequest) { r.Image = "docker.io/library/busybox@" + testDigest }, "pinned files image"},
 		"a shell": {func(_ *string, r *container.CreateRequest) {
 			r.Entrypoint = []string{"sh"}
@@ -96,8 +97,8 @@ func TestAccessHelperShape(t *testing.T) {
 func TestAccessHelperExecAndStart(t *testing.T) {
 	h := newHarness(t)
 	l := managed()
-	l[labelHelper] = "access"
-	l["launchroom.access"] = "acc_01J9Z8X7W6V5T4S3R2Q1P0N9A1"
+	l[names.LabelHelper] = "access"
+	l[names.LabelAccess] = "acc_01J9Z8X7W6V5T4S3R2Q1P0N9A1"
 	id := strings.Repeat("5", 64)
 	h.fake.addContainer(id, "lr-acc-0123456789ab", l)
 	for _, tool := range accessHelperTools {

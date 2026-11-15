@@ -6,6 +6,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/vantezzen/launchroom/daemon/internal/dbengine"
 	"github.com/vantezzen/launchroom/daemon/internal/docker"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
@@ -22,6 +23,8 @@ for (const c of d.getCollectionInfos({type: "collection"}, {nameOnly: true})) {
 }
 print(n + "|" + docs + "|" + bad.join(","));`
 
+var verifyURI = "mongodb://127.0.0.1:" + dbengine.Of(state.EngineMongoDB).PortText() + "/verify"
+
 // verifyMongo restores the archive into a throwaway mongod (no network, no
 // users: nothing but launchroomd's exec can reach it) as database
 // "verify", counts it and validates every collection.
@@ -35,10 +38,10 @@ func (e *Engine) verifyMongo(ctx context.Context, r *repo, spec *state.VerifyRes
 	if err := e.o.Runtime.StartContainer(ctx, id); err != nil {
 		return fmt.Errorf("backup: starting the throwaway database: %w", err)
 	}
-	if !v.check(state.VerifyCheckStart, e.waitFor(ctx, id, nil, nil, "mongosh", "--quiet", "--norc", "mongodb://127.0.0.1:27017/verify", "--eval", "db.runCommand({ping: 1}).ok"), "a fresh mongodb started") {
+	if !v.check(state.VerifyCheckStart, e.waitFor(ctx, id, nil, nil, "mongosh", "--quiet", "--norc", verifyURI, "--eval", "db.runCommand({ping: 1}).ok"), "a fresh mongodb started") {
 		return nil
 	}
-	argv := []string{"mongorestore", "--host=127.0.0.1", "--port=27017", "--quiet", "--archive", "--gzip", "--nsFrom=$db$.$coll$", "--nsTo=verify.$coll$", "--stopOnError"}
+	argv := []string{"mongorestore", "--host=127.0.0.1", "--port=" + dbengine.Of(state.EngineMongoDB).PortText(), "--quiet", "--archive", "--gzip", "--nsFrom=$db$.$coll$", "--nsTo=verify.$coll$", "--stopOnError"}
 	var restored int64
 	err = r.streamFile(ctx, snap.ID, mongo.file, func(src io.Reader) error {
 		counted := &countingReader{r: src}
@@ -57,7 +60,7 @@ func (e *Engine) verifyMongo(ctx context.Context, r *repo, spec *state.VerifyRes
 		return nil
 	}
 	logf("Restored %s; checking it", humanBytes(restored))
-	out, res, err := e.execIn(ctx, id, nil, nil, "mongosh", "--quiet", "--norc", "mongodb://127.0.0.1:27017/verify", "--eval", mongoCheckScript)
+	out, res, err := e.execIn(ctx, id, nil, nil, "mongosh", "--quiet", "--norc", verifyURI, "--eval", mongoCheckScript)
 	if err == nil && res.ExitCode != 0 {
 		err = fmt.Errorf("mongosh exited with code %d: %s", res.ExitCode, firstLines(res.Stderr))
 	}
@@ -65,7 +68,7 @@ func (e *Engine) verifyMongo(ctx context.Context, r *repo, spec *state.VerifyRes
 	if err == nil {
 		f := strings.SplitN(lastLine(out), "|", 3)
 		if len(f) != 3 {
-			err = fmt.Errorf("unexpected check output %q", clip(out, 64))
+			err = fmt.Errorf("unexpected check output %q", state.Clip(out, 64))
 		} else {
 			invalid = f[2]
 			var collections, docs int64
@@ -78,7 +81,7 @@ func (e *Engine) verifyMongo(ctx context.Context, r *repo, spec *state.VerifyRes
 	if err != nil {
 		verr = err
 	} else if invalid != "" {
-		verr = fmt.Errorf("validate reported problems in %s", clip(invalid, 200))
+		verr = fmt.Errorf("validate reported problems in %s", state.Clip(invalid, 200))
 	}
 	v.check(state.VerifyCheckValidate, verr, "validate: every collection OK")
 	return nil

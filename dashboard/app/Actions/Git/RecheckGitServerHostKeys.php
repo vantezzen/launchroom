@@ -7,8 +7,8 @@ namespace App\Actions\Git;
 use App\Contracts\Git\SshRemotes;
 use App\Enums\Git\GitAuthMethod;
 use App\Exceptions\DomainRuleViolation;
+use App\Exceptions\Git\GitConnectionUnusable;
 use App\Models\Git\GitConnection;
-use App\Services\Git\Exceptions\GitConnectionUnusable;
 use App\Support\Git\HostKey;
 use App\Support\Git\SshUrl;
 

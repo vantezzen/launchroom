@@ -1,11 +1,11 @@
 import { ArrowRight, GitBranch, Link2 } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useEffectEvent, useMemo, useRef, useState } from 'react';
 import { Logo, logoLabel } from '@/components/logo';
 import { MetaLine } from '@/components/patterns/meta-line';
 import { StatusIcon } from '@/components/status';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
-import { requestJson, RequestFailed } from '@/features/projects/http';
+import { requestJson, RequestFailed } from '@/lib/http';
 import { cn } from '@/lib/utils';
 import { addUrl, checkUrl } from '@/routes/projects/import';
 import { parseRepositoryUrl } from './repository-url';
@@ -169,15 +169,20 @@ export function RepositoryUrlField({
             });
     };
 
+    const alreadyChecked = useEffectEvent(() => current !== null);
+    const checkValue = useEffectEvent(
+        (signal: AbortSignal) => void check(value, signal),
+    );
+
     // Read the repository after a short pause on a complete URL.
     useEffect(() => {
-        if (!parsed.ok || current) {
+        if (checkedFor === null || alreadyChecked()) {
             return;
         }
 
         const controller = new AbortController();
         const timer = window.setTimeout(
-            () => void check(value, controller.signal),
+            () => checkValue(controller.signal),
             900,
         );
 
@@ -185,8 +190,6 @@ export function RepositoryUrlField({
             window.clearTimeout(timer);
             controller.abort();
         };
-        // `check` is recreated per render; the URL decides.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [checkedFor]);
 
     const proceed = (checked: Checked) => {

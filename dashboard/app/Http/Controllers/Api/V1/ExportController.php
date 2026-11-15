@@ -12,6 +12,7 @@ use App\Data\Transfers\Inputs\StartExportInput;
 use App\Http\Api\ApiOperation;
 use App\Http\Api\ApiResponse;
 use App\Http\Controllers\Controller;
+use App\Http\Routing\RouteScope;
 use App\Models\Environment;
 use App\Models\Service;
 use App\Models\Transfers\DataExportRun;
@@ -31,7 +32,7 @@ final class ExportController extends Controller
     #[ApiOperation(id: 'createExport', summary: 'Prepare a download of the data, now or from a backup', tag: 'Data', response: ExportRunData::class, request: StartExportInput::class, status: 201, description: 'Follow it with GET /exports/{export}; once ready, make a link and download it.')]
     public function store(Request $request, Environment $environment, Service $service, StartExportInput $input, #[CurrentUser] User $user, StartExport $start): JsonResponse
     {
-        $instance = $this->instance($environment, $service);
+        $instance = RouteScope::instanceIn($environment, $service);
         Gate::authorize('create', [DataExportRun::class, $instance]);
 
         return ApiResponse::item(ExportRunData::fromRun($start->handle($instance, $input, $user, $this->auditActor($request, $user))), 201);

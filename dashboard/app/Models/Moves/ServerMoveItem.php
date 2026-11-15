@@ -4,17 +4,21 @@ declare(strict_types=1);
 
 namespace App\Models\Moves;
 
+use App\Data\Moves\MoveTransferData;
+use App\Enums\Contracts\HasTransitionTable;
 use App\Enums\Moves\MoveItemKind;
 use App\Enums\Moves\MoveItemStatus;
 use App\Models\Backups\BackupRun;
 use App\Models\Concerns\BelongsToTeam;
 use App\Models\Concerns\HasPublicId;
+use App\Models\Concerns\HasStatusTransitions;
 use App\Models\Deployment;
 use App\Models\ServiceInstance;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Spatie\LaravelData\DataCollection;
 
 /**
  * One service of a server move (docs/14 §13.2) and where it is
@@ -35,7 +39,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int|null $deployment_id the deployment that moves it (on the target, or back on the source)
  * @property int|null $prebuild_deployment_id the build for the target's platform
  * @property int|null $backup_run_id the fresh backup before it stopped
- * @property list<array{volume: string|null, backup?: string|null, export: string|null, import: string|null}> $transfers per volume (null: the database): the fresh backup, the export and the import
+ * @property DataCollection<int, MoveTransferData> $transfers per volume (null: the database): the fresh backup, the export and the import
  * @property int|null $target_version the target's desired-state version that declares the copied volumes
  * @property int $attempts
  * @property CarbonImmutable|null $stopped_at
@@ -55,6 +59,9 @@ final class ServerMoveItem extends Model
 {
     use BelongsToTeam, HasPublicId;
 
+    /** @use HasStatusTransitions<MoveItemStatus> */
+    use HasStatusTransitions;
+
     /** @var array<string, mixed> */
     protected $attributes = [
         'status' => 'pending',
@@ -68,14 +75,12 @@ final class ServerMoveItem extends Model
     }
 
     /**
-     * The only way an item's status changes (docs/10 §2.2 rule 3).
+     * @param  MoveItemStatus  $from
+     * @param  MoveItemStatus  $to
      */
-    public function transitionTo(MoveItemStatus $to, ?string $message = null): void
+    protected function recordTransition(HasTransitionTable $from, HasTransitionTable $to, ?string $note): void
     {
-        $this->status->assertCanTransitionTo($to);
-        $from = $this->status;
-        $this->status = $to;
-        $this->message = $message === null ? null : mb_substr($message, 0, 2048);
+        $this->message = $note;
 
         if ($to === MoveItemStatus::Failed && $from !== MoveItemStatus::RollingBack) {
             $this->failed_step = $from->value;
@@ -102,8 +107,6 @@ final class ServerMoveItem extends Model
         if (in_array($to, [MoveItemStatus::Done, MoveItemStatus::Failed, MoveItemStatus::RolledBack, MoveItemStatus::Cancelled, MoveItemStatus::Skipped], true)) {
             $this->finished_at = now();
         }
-
-        $this->save();
     }
 
     /**
@@ -157,7 +160,7 @@ final class ServerMoveItem extends Model
             'position' => 'integer',
             'expected_bytes' => 'integer',
             'copied_bytes' => 'integer',
-            'transfers' => 'array',
+            'transfers' => DataCollection::class.':'.MoveTransferData::class.',default',
             'target_version' => 'integer',
             'attempts' => 'integer',
             'stopped_at' => 'datetime',

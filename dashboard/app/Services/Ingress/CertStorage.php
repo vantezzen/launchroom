@@ -8,12 +8,10 @@ use App\Enums\IngressCredentialPurpose;
 use App\Enums\Mesh\MeshMode;
 use App\Models\Server;
 use App\Services\Mesh\MeshTopology;
-use App\Services\NodeStates\MeshLinks;
-use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Log;
+use App\Support\Crypto\OpaqueToken;
+use App\Support\Network\Mesh;
 use Illuminate\Support\Facades\Redis;
 use SensitiveParameter;
-use Throwable;
 
 /**
  * Automatic shared certificate storage (docs/05 §5): with two or more edges
@@ -29,18 +27,15 @@ use Throwable;
  * sealed. `LAUNCHROOM_CERT_STORAGE_ADDRESS` + password override all of this
  * (an external Redis).
  *
- * Valkey keeps ACL users only in memory: ensureUser() runs when a render of
- * the control plane needs it (at most once a minute) and every minute from
- * the scheduler (`launchroom:ingress:cert-storage-user`), so a Valkey restart
- * heals within a minute; edges serve their mirrored certificates meanwhile.
+ * Reads only: the credentials and the ACL user are provisioned by
+ * App\Actions\Ingress\ProvisionCertStorage, so rendering a NodeState never
+ * writes them.
  */
 final readonly class CertStorage
 {
     public const string USERNAME = 'lr-caddy';
 
     public const string KEY_PREFIX = 'lr-caddy';
-
-    public const int MESH_PORT = 6379;
 
     /**
      * Exactly the commands the edges' clients send (2026-10 review M3; no
@@ -77,24 +72,23 @@ final readonly class CertStorage
             return null;
         }
 
-        // Only edges an instance owner admitted (docs/05 §5).
         $edges = $this->edges->shared();
 
         if (count($edges) < 2) {
             return null;
         }
 
-        $controlPlane = Server::query()->where('is_control_plane', true)->whereNull('revoked_at')->orderBy('id')->first();
-        $ip = $controlPlane === null ? null : MeshLinks::meshIp($controlPlane->mesh_ip);
+        $controlPlane = Server::currentControlPlane();
+        $ip = $controlPlane instanceof Server ? Mesh::ip($controlPlane->mesh_ip) : null;
 
-        if ($controlPlane === null || $ip === null) {
+        if (! $controlPlane instanceof Server || $ip === null) {
             return null;
         }
 
         $ips = [];
 
         foreach ($edges as $edge) {
-            $edgeIp = MeshLinks::meshIp($edge->mesh_ip);
+            $edgeIp = Mesh::ip($edge->mesh_ip);
 
             if ($edge->id !== $controlPlane->id && $edgeIp !== null) {
                 $ips[] = $edgeIp;
@@ -104,7 +98,7 @@ final readonly class CertStorage
         $ips = array_values(array_unique($ips));
         sort($ips);
 
-        return ['controlPlane' => $controlPlane, 'address' => $ip.':'.self::MESH_PORT, 'edges' => $ips];
+        return ['controlPlane' => $controlPlane, 'address' => $ip.':'.Mesh::CERT_STORAGE_PORT, 'edges' => $ips];
     }
 
     /**
@@ -121,19 +115,10 @@ final readonly class CertStorage
             return null;
         }
 
-        try {
-            $this->ensureUser(throttle: true);
-        } catch (Throwable $e) {
-            // The scheduled command retries; the edges keep their mirror meanwhile.
-            Log::warning('Could not create the certificate storage ACL user on Valkey.', ['error' => $e::class]);
-        }
-
         return $automatic['edges'];
     }
 
     /**
-     * The storage the edges use: the configured one, else the automatic one.
-     *
      * @return array{address: string, username: string, password: string, keyPrefix: string}|null
      */
     public function config(): ?array
@@ -149,25 +134,22 @@ final readonly class CertStorage
         }
 
         $automatic = $this->automatic();
+        $password = $automatic === null ? null : $this->secrets->get(IngressCredentialPurpose::StoragePassword);
 
-        if ($automatic === null) {
+        if ($automatic === null || $password === null) {
             return null;
         }
 
-        return ['address' => $automatic['address'], 'username' => self::USERNAME, 'password' => $this->password(), 'keyPrefix' => self::KEY_PREFIX];
+        return ['address' => $automatic['address'], 'username' => self::USERNAME, 'password' => $password, 'keyPrefix' => self::KEY_PREFIX];
     }
 
     /**
      * Creates or resets the `lr-caddy` ACL user on the dashboard's Valkey
      * (idempotent). Only the password's SHA-256 travels in the command.
      */
-    public function ensureUser(bool $throttle = false): void
+    public function ensureUser(#[SensitiveParameter] string $password): void
     {
-        if ($throttle && ! Cache::add('launchroom:cert-storage-user', true, 60)) {
-            return;
-        }
-
-        Redis::connection()->command('acl', self::setUserArguments($this->password()));
+        Redis::connection()->command('acl', self::setUserArguments($password));
     }
 
     /**
@@ -184,16 +166,11 @@ final readonly class CertStorage
         ];
     }
 
-    private function password(): string
-    {
-        return $this->secrets->ensure(IngressCredentialPurpose::StoragePassword, self::generatePassword(...));
-    }
-
     /**
      * 43 URL-safe characters (256 bits).
      */
     public static function generatePassword(): string
     {
-        return rtrim(strtr(base64_encode(random_bytes(32)), '+/', '-_'), '=');
+        return OpaqueToken::generate();
     }
 }

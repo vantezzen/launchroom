@@ -6,6 +6,7 @@ namespace App\Actions\Instance\DashboardDomain;
 
 use App\Data\Instance\DashboardProbeData;
 use App\Enums\DashboardDomainStatus;
+use App\Enums\Domains\DnsCheckStatus;
 use App\Models\DashboardDomainChange;
 use App\Models\InstanceSettings;
 use App\Services\Instance\DashboardDomainChecks;
@@ -44,7 +45,7 @@ final readonly class CheckDashboardDomain
         }
 
         $dns = $this->checks->dns($change->hostname);
-        $dnsOk = $dns->status === 'ok';
+        $dnsOk = $dns->status === DnsCheckStatus::Ok;
 
         $routed = DB::transaction(function () use ($change, $dnsOk): bool {
             $settings = InstanceSettings::lockedForUpdate();
@@ -81,8 +82,8 @@ final readonly class CheckDashboardDomain
             }
 
             $current->forceFill([
-                'dns' => $dns->toArray(),
-                'probe' => $probe->toArray(),
+                'dns' => $dns,
+                'probe' => $probe,
                 'checked_at' => now(),
             ]);
 

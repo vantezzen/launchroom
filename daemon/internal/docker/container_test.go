@@ -10,6 +10,7 @@ import (
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/api/types/network"
 
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/policy"
 	"github.com/vantezzen/launchroom/daemon/internal/secret"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
@@ -68,7 +69,7 @@ func TestBuildContainerWeb(t *testing.T) {
 	if !slices.Equal(c.Env, []string{"DATABASE_URL=postgres://u:p@postgres/db", "PORT=3000"}) {
 		t.Errorf("env = %v", c.Env)
 	}
-	if c.Labels[LabelManaged] != "true" || c.Labels[LabelWorkload] != "wl_01J9Z8X7W6V5T4S3R2Q1P0N9MK" || c.Labels[LabelServer] == "" {
+	if c.Labels[names.LabelManaged] != "true" || c.Labels[names.LabelWorkload] != "wl_01J9Z8X7W6V5T4S3R2Q1P0N9MK" || c.Labels[names.LabelServer] == "" {
 		t.Errorf("labels = %v", c.Labels)
 	}
 	if _, ok := c.ExposedPorts[network.MustParsePort("3000/tcp")]; !ok {

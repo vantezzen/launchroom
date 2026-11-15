@@ -10,7 +10,10 @@ use App\Data\Dockerfiles\AiProviderSettingsData;
 use App\Data\Dockerfiles\TeamDockerfileGenerationData;
 use App\Data\Dockerfiles\UpdateAiProviderData;
 use App\Http\Controllers\Controller;
+use App\Http\Routing\CurrentTeam;
+use App\Http\Toast;
 use App\Models\Dockerfiles\AiProviderSettings;
+use App\Models\Team;
 use App\Models\User;
 use App\Support\Dockerfiles\RepositoryContext;
 use Illuminate\Container\Attributes\CurrentUser;
@@ -27,9 +30,8 @@ use Inertia\Response;
  */
 final class DockerfileGenerationSettingsController extends Controller
 {
-    public function edit(#[CurrentUser] User $user): Response
+    public function edit(#[CurrentTeam] Team $team): Response
     {
-        $team = $user->currentTeam()->firstOrFail();
         Gate::authorize('view', $team);
 
         $suggested = config('launchroom.dockerfile_generation.suggested_models');
@@ -62,12 +64,13 @@ final class DockerfileGenerationSettingsController extends Controller
 
         $update->handle($data, $user, $this->auditActor($request, $user));
 
-        return back()->with('success', 'Dockerfile generation settings saved.');
+        Toast::success('Dockerfile generation settings saved.');
+
+        return back();
     }
 
-    public function team(Request $request, TeamDockerfileGenerationData $data, #[CurrentUser] User $user, UpdateTeamDockerfileGeneration $update): RedirectResponse
+    public function team(Request $request, TeamDockerfileGenerationData $data, #[CurrentUser] User $user, UpdateTeamDockerfileGeneration $update, #[CurrentTeam] Team $team): RedirectResponse
     {
-        $team = $user->currentTeam()->firstOrFail();
         Gate::authorize('update', $team);
 
         $update->handle($team, $data->enabled, $this->auditActor($request, $user));

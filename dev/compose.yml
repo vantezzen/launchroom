@@ -75,8 +75,9 @@ x-dashboard-env: &dashboard-env
   LAUNCHROOM_GIT_WEBHOOK_URL: http://dashboard:8000
   # Apps are served on the host-mapped HTTPS port (LR_INGRESS_HTTPS_PORT).
   LAUNCHROOM_PREVIEW_HTTPS_PORT: "${LR_DEV_HTTPS_PORT:-8443}"
-  # The edge Caddy: stock caddy:2.11.7 unless `make caddy-image-pin` pinned
-  # the local launchroom-caddy build (modules, web firewall; docs/11 §6).
+  # The edge Caddy: stock Caddy (deploy/pins.env LR_STOCK_CADDY_IMAGE) unless
+  # `make caddy-image-pin` pinned the local launchroom-caddy build (modules,
+  # web firewall; docs/11 §6).
   LAUNCHROOM_CADDY_IMAGE: ${LR_DEV_CADDY_IMAGE:-docker.io/library/caddy@sha256:685ae3d7c34d9b5f8caeddc5d14051db7bbd88ff1f5a2fa0c16bd8ca328fb7af}
   # Generate a Dockerfile (docs/20 §8): no real API key in dev, a stub model
   # answers from a fixture. Set LR_DOCKERFILE_MODEL=anthropic in dev/.env and
@@ -127,7 +128,7 @@ x-dashboard: &dashboard
 
 services:
   postgres:
-    image: postgres:18-alpine
+    image: ${LR_POSTGRES_IMAGE:?run through make or dev/bin/compose.sh (deploy/control-plane/images.env)}
     labels: *labels
     restart: unless-stopped
     environment:
@@ -148,7 +149,7 @@ services:
       retries: 20
 
   valkey:
-    image: valkey/valkey:8-alpine
+    image: ${LR_VALKEY_IMAGE:?run through make or dev/bin/compose.sh (deploy/control-plane/images.env)}
     labels: *labels
     restart: unless-stopped
     volumes:
@@ -236,8 +237,7 @@ services:
       disable: true
 
   zot:
-    # v2.1.22, multi-arch index digest (linux/amd64, linux/arm64).
-    image: ghcr.io/project-zot/zot@sha256:96cda11459ce6f8c60da3b03f03e9f67fd11b3ae2d82c4c04c92b3c608996080
+    image: ${LR_ZOT_IMAGE:?run through make or dev/bin/compose.sh}
     labels: *labels
     restart: unless-stopped
     # Internal only: reachable as http://zot:5000 inside the network (server-1's
@@ -266,7 +266,7 @@ services:
       context: ..
       dockerfile: dev/git-fixtures/Dockerfile
       args:
-        GO_IMAGE: ${LR_GO_IMAGE:-golang:1.27}
+        GO_IMAGE: ${LR_GO_IMAGE:?run through make or dev/bin/compose.sh}
       labels: *labels
     labels: *labels
     restart: unless-stopped
@@ -284,7 +284,7 @@ services:
   # SQLite, built-in SSH on 2222; http://forgejo:3000 on the compose network,
   # http://127.0.0.1:3300 for the browser. Dev-only credentials (make dev-forgejo).
   forgejo:
-    image: codeberg.org/forgejo/forgejo:11-rootless@sha256:f7c2234b9ef3115c00f0b6dc6d2d0923171ab7785995f83ca70fb132b81b79e0
+    image: ${LR_FORGEJO_IMAGE:?run through make or dev/bin/compose.sh}
     labels: *labels
     profiles: [forgejo]
     restart: unless-stopped
@@ -315,12 +315,12 @@ services:
       retries: 12
 
   # Dev-only S3 target for backups (profile "backups", `make up-backups`):
-  # versitygw v1.9.0 with its posix backend (MinIO no longer publishes
+  # versitygw with its posix backend (MinIO no longer publishes
   # images). Plain http on the compose network only, no host ports. Use it as
   # a destination with endpoint http://versitygw:7070 and "allow a private
   # network" (dev credentials below; never reuse them).
   versitygw:
-    image: docker.io/versity/versitygw@sha256:eb7f786fcd91e72194e48fcf1ac16302d686bf8e3a71434bdbc067a6efd3fdc7
+    image: ${LR_VERSITYGW_IMAGE:?run through make or dev/bin/compose.sh}
     labels: *labels
     profiles: [backups]
     restart: unless-stopped
@@ -343,75 +343,31 @@ services:
       timeout: 3s
       retries: 6
 
-  # "Fake server": its own Docker daemon (dind) + launchroomd.
+  # "Fake server": its own Docker daemon (dind) + launchroomd (compose.server.yml).
   # Roles edge+runtime+build are assigned by the dashboard at enrollment.
   server-1:
-    image: launchroom-dev-dind:dev
-    pull_policy: never
-    build:
-      context: ./dind
-      args:
-        UID: ${LR_DEV_UID:-1000}
-        GID: ${LR_DEV_GID:-1000}
-      labels: *labels
-    labels: *labels
+    extends:
+      file: compose.server.yml
+      service: fake-server
     hostname: server-1
-    # The ONLY privileged containers in the stack are the dind fake servers.
-    privileged: true
-    # Everything deployed in dev runs inside this container: cap it so a busy
-    # test app can't take the whole machine.
-    cpus: ${LR_DEV_SERVER_CPUS:-2}
-    restart: unless-stopped
     environment:
       LR_DEV_SERVER_NAME: server-1
-      # Extra system image pins (host config): `make caddy-image-pin` adds the
-      # local launchroom-caddy build here.
-      LR_SYSTEM_IMAGE_DIGESTS: ${LR_DEV_SYSTEM_IMAGE_DIGESTS:-}
       # Pretend host time zone (suggests a location for the server map).
       LR_HOST_TIMEZONE: Europe/Berlin
-      # Dev never asks IP echo services (fake servers have no public address).
-      LR_PUBLIC_IP_DETECT: "off"
-      LR_CONTROL_PLANE_URL: http://dashboard:8000
-      LR_CP_KEY: ${LR_DEV_CP_KEY:-}
-      LR_JOIN_TOKEN_FILE: /data/join-token
-      # Alternative to LR_CP_KEY (a file in the data volume); if both are set they must match.
-      LR_CP_KEY_FILE: /data/cp-key
-      # Redirects point at the host-mapped HTTPS port (apps on https://<name>.localhost:8443).
-      LR_INGRESS_HTTPS_PORT: "${LR_DEV_HTTPS_PORT:-8443}"
-      LR_DOCKERD_ARGS: ${LR_DEV_DOCKERD_ARGS:-}
       # Registry forwarder target (docs/05 §6): launchroomd serves 127.0.0.1:5000
       # and forwards to the dev Zot on the compose network.
       LR_REGISTRY_UPSTREAM: zot:5000
-      # Fixture repositories are cloned over plain http from the dev git server
-      # and the dev Forgejo (profile "forgejo", docs/19 §8).
-      LR_BUILD_INSECURE_GIT_HOSTS: git-fixtures,forgejo
-      # The dev S3 target (profile "backups") speaks plain http (docs/14 §3).
-      LR_BACKUP_INSECURE_HOSTS: versitygw
-      # Network isolation of apps and builds (nftables in the fake server's
-      # kernel namespace, docs/05 §1). Dev apps that must reach a dev-stack
-      # service (e.g. mailpit) need its CIDR in LR_DEV_FIREWALL_ALLOW_PRIVATE.
-      LR_FIREWALL: ${LR_DEV_FIREWALL:-enforce}
-      LR_FIREWALL_ALLOW_PRIVATE: ${LR_DEV_FIREWALL_ALLOW_PRIVATE:-}
-      # The dev Headscale (make up-multi) speaks plain http (docs/05 §2).
-      LR_MESH_INSECURE_LOGIN_HOSTS: headscale
       # Certificate storage on the mesh (system.certStorage, docs/05 §5):
       # launchroomd serves <mesh IP>:6379 → the dev Valkey.
       LR_CERT_STORAGE_UPSTREAM: valkey:6379
     volumes:
       - server-1-docker:/var/lib/docker # nested Docker state (images, app containers, volumes)
       - server-1-data:/data # daemon data dir (keys, state.json, caddy cache)
-      - daemon-bin:/opt/launchroom/bin:ro # built by `make dev-daemon`
     ports:
       # launchroomd's Caddy (inside the nested Docker) publishes 80/443 on the
       # fake server; apps are reachable at http(s)://<name>.localhost:8080/8443.
       - 127.0.0.1:${LR_DEV_HTTP_PORT:-8080}:80
       - 127.0.0.1:${LR_DEV_HTTPS_PORT:-8443}:443
-    healthcheck:
-      test: ["CMD", "docker", "info"]
-      interval: 10s
-      timeout: 5s
-      start_period: 30s
-      retries: 6
 
   # --- Tools (profile "tools"): one-off containers used by the Makefile. -----
 
@@ -461,7 +417,7 @@ services:
     build:
       context: ./go
       args:
-        GO_IMAGE: ${LR_GO_IMAGE:-golang:1.27}
+        GO_IMAGE: ${LR_GO_IMAGE:?run through make or dev/bin/compose.sh}
         UID: ${LR_DEV_UID:-1000}
         GID: ${LR_DEV_GID:-1000}
       labels: *labels
@@ -471,7 +427,9 @@ services:
     volumes:
       - ../daemon:/src/daemon
       - ../cli:/src/cli # launchroom CLI module (make test-cli, docs/16)
+      - ../dashboard/resources/api:/src/dashboard/resources/api:ro # the API's OpenAPI document the CLI is checked against
       - ../protocol:/src/protocol
+      - ../packages/next-adapter:/src/packages/next-adapter:ro # the Next.js adapter source its vendored copy is checked against
       - go-mod:/go/pkg/mod
       - go-build:/home/launchroom/.cache/go-build
       - daemon-bin:/out
@@ -480,7 +438,7 @@ services:
       - ../deploy:/src/deploy:ro # install scripts used by the self-update integration test
 
   golangci-lint:
-    image: ${LR_GOLANGCI_IMAGE:-golangci/golangci-lint:v2.15.0}
+    image: ${LR_GOLANGCI_IMAGE:-golangci/golangci-lint:${LR_GOLANGCI_LINT_VERSION:?run through make or dev/bin/compose.sh}}
     # Tool containers share a CPU budget so parallel workstreams can't saturate the host.
     cpus: ${LR_TOOL_CPUS:-4}
     labels: *labels
@@ -512,6 +470,7 @@ services:
     build:
       context: ./dind
       args:
+        DIND_IMAGE: ${LR_DIND_IMAGE:?run through make or dev/bin/compose.sh}
         UID: ${LR_DEV_UID:-1000}
         GID: ${LR_DEV_GID:-1000}
       labels: *labels
@@ -539,7 +498,7 @@ services:
   # requirement for dind-rootless). Ports below 1024 are unprivileged in it,
   # as server.sh --rootless requires on real hosts.
   dind-rootless-test:
-    image: docker:29-dind-rootless@sha256:825e451c9bd898245ca8fb07bd9a48999ccf33c0192fd68594c73aed7b67d11f
+    image: ${LR_DIND_ROOTLESS_IMAGE:?run through make or dev/bin/compose.sh}
     cpus: ${LR_TOOL_CPUS:-4}
     labels: *labels
     profiles: [tools]

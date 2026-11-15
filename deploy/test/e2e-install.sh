@@ -46,8 +46,10 @@
 # the digest the VPS reports). Run from the repo root.
 set -eu
 
+# shellcheck source=deploy/test/lib.sh
+. deploy/test/lib.sh
+
 VPS=launchroom-dev-e2e-vps
-DIND_IMAGE="docker:29-dind@sha256:3e5756e2b6dad6a5f1f5deacf0a19f9eaa2581b76ae092b2d4a118162e1d4d4e"
 DASHBOARD_IMAGE=launchroom-dev-e2e-dashboard:test
 DAEMON_IMAGE=launchroom-dev-e2e-daemon:test
 CADDY_IMAGE=launchroom-dev-e2e-caddy:test
@@ -55,18 +57,14 @@ DOMAIN=test.localhost
 # Settings → Dashboard domain scenario (docs/05 §4.1).
 NEW_DOMAIN=dash.test-new.localhost
 LR=/root/launchroom
-# S3 target for the restore scenario: versitygw v1.9.0 (same pin as dev/compose.yml).
+# S3 target for the restore scenario.
 S3=launchroom-dev-e2e-s3
 S3_NET=launchroom-dev-e2e-net
-S3_IMAGE="docker.io/versity/versitygw@sha256:eb7f786fcd91e72194e48fcf1ac16302d686bf8e3a71434bdbc067a6efd3fdc7"
 S3_KEY=launchroom-e2e
 S3_SECRET=launchroom-e2e-secret
 S3_BUCKET=launchroom-e2e
 PASSPHRASE="e2e restore passphrase $(date +%s)"
 
-step() { printf '\n==> %s\n' "$*"; }
-fail() { printf '\nFAIL: %s\n' "$*" >&2; exit 1; }
-ok() { printf '    ok: %s\n' "$*"; }
 in_vps() { docker exec "$VPS" "$@"; }
 in_lr() { docker exec -w "$LR" "$VPS" "$@"; }
 
@@ -85,42 +83,22 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-# retry SECONDS COMMAND...: run until it succeeds or the time is up.
-retry() {
-	limit=$1
-	shift
-	start=$(date +%s)
-	until "$@" >/dev/null 2>&1; do
-		[ $(($(date +%s) - start)) -lt "$limit" ] || return 1
-		sleep 3
-	done
-}
-
-if [ "${SKIP_BUILD:-0}" = 1 ]; then
-	step "SKIP_BUILD=1: using the existing $DASHBOARD_IMAGE and $CADDY_IMAGE"
-else
-	step "building images (dashboard production target, launchroom-caddy)"
-	docker build -q -f deploy/images/dashboard/Dockerfile --target production \
-		--label launchroom.dev=true -t "$DASHBOARD_IMAGE" . >/dev/null
-	docker build -q --label launchroom.dev=true -t "$CADDY_IMAGE" deploy/images/caddy >/dev/null
-	ok "built $DASHBOARD_IMAGE and $CADDY_IMAGE"
-fi
+build_images "$DASHBOARD_IMAGE" "$CADDY_IMAGE"
 
 step "starting a fresh VPS ($VPS, docker:dind, no host ports)"
 docker rm -f -v "$VPS" >/dev/null 2>&1 || true
 docker run -d --name "$VPS" --hostname e2e-vps --privileged \
 	--label launchroom.dev=true \
 	--mount type=volume,dst=/var/lib/docker,volume-label=launchroom.dev=true \
-	"$DIND_IMAGE" >/dev/null
+	"$LR_DIND_IMAGE" >/dev/null
 retry 60 in_vps docker info || fail "the VPS's Docker daemon did not start"
 ok "Docker $(in_vps docker version --format '{{.Server.Version}}') ready"
 
 step "loading launchroom-caddy, building launchroomd with its digest (as a release does)"
 docker save "$CADDY_IMAGE" | docker exec -i "$VPS" docker load -q
-caddy_digest="$(in_vps docker image inspect "$CADDY_IMAGE" --format '{{index .RepoDigests 0}}' | sed 's/.*@//')"
-printf '%s' "$caddy_digest" | grep -Eq '^sha256:[0-9a-f]{64}$' || fail "no digest for $CADDY_IMAGE in the VPS ($caddy_digest)"
+caddy_digest="$(digest_in "$VPS" "$CADDY_IMAGE")"
 CADDY_REF="docker.io/library/${CADDY_IMAGE%%:*}@$caddy_digest"
-docker build -q --build-arg CADDY_DIGEST="$caddy_digest" --label launchroom.dev=true -t "$DAEMON_IMAGE" daemon >/dev/null
+build_daemon "$DAEMON_IMAGE" "$caddy_digest"
 ok "built $DAEMON_IMAGE for $CADDY_REF"
 
 step "loading the local images into the VPS (docker save | docker load)"
@@ -322,7 +300,7 @@ docker network create --label launchroom.dev=true "$S3_NET" >/dev/null
 docker run -d --name "$S3" --label launchroom.dev=true --network "$S3_NET" \
 	-e ROOT_ACCESS_KEY="$S3_KEY" -e ROOT_SECRET_KEY="$S3_SECRET" \
 	--mount type=volume,dst=/data,volume-label=launchroom.dev=true \
-	"$S3_IMAGE" posix /data >/dev/null
+	"$LR_VERSITYGW_IMAGE" posix /data >/dev/null
 docker network connect "$S3_NET" "$VPS"
 s3_ip="$(docker inspect -f "{{(index .NetworkSettings.Networks \"$S3_NET\").IPAddress}}" "$S3")"
 [ -n "$s3_ip" ] || fail "no address for $S3"

@@ -6,7 +6,7 @@ import { allPages } from '@/components/settings/types';
 import { ManagedByFile } from '@/features/config-as-code/managed-by-file';
 import services from '@/routes/projects/services';
 import { backupHealthLabel } from '@/features/backups/backup-health';
-import { VariablesSection } from '@/features/variables/variables-section';
+import { VariablesSection } from './variables-section';
 import { AdvancedSection } from './advanced-section';
 import { BackupsSection } from './backups-section';
 import { BuildSection } from './build-section';
@@ -27,6 +27,7 @@ import type { SettingsContext } from './settings-context';
 import { settingsIndex } from './settings-index';
 import { SourceSection } from './source-section';
 import { VolumesSection } from './volumes-section';
+import { plural } from '@/lib/format';
 
 export type Navigate = (section: SectionId | null) => void;
 
@@ -71,10 +72,6 @@ function pageFor(
         case 'danger':
             return <DangerZone context={context} />;
     }
-}
-
-function plural(count: number, word: string): string {
-    return `${count} ${word}${count === 1 ? '' : 's'}`;
 }
 
 function scheduleSummary(

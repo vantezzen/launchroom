@@ -21,17 +21,15 @@ set -u
 
 cd "$(dirname "$0")/.." || exit 1
 
-COMPOSE="docker compose --project-directory dev --env-file dev/.env -f dev/compose.yml"
+COMPOSE="sh dev/bin/compose.sh"
 URL="http://dashboard:8000"
 E2E=/src/cli/bin/e2e
 HOST_E2E=cli/bin/e2e
 ENVIRONMENT="${LR_E2E_ENVIRONMENT:-production}"
 ABILITIES="read,deploy,env:read,env:write,secrets:read"
 
-passed=0
-failed=0
-pass() { passed=$((passed + 1)); printf '  PASS  %s\n' "$1"; }
-fail() { failed=$((failed + 1)); printf '  FAIL  %s\n' "$1"; [ -z "${2:-}" ] || printf '%s\n' "$2" | sed 's/^/        /'; }
+# shellcheck source=dev/bin/checks.sh
+. dev/bin/checks.sh
 
 cleanup() {
 	[ "${KEEP:-}" = 1 ] || rm -rf "$HOST_E2E"

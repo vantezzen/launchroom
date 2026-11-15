@@ -4,24 +4,27 @@ declare(strict_types=1);
 
 namespace App\Actions\Servers;
 
+use App\Data\Deployments\ContainerExitData;
+use App\Data\Holds\Hold;
 use App\Data\Protocol\V1\LogLine;
 use App\Data\Protocol\V1\WorkloadEvent;
 use App\Data\Specs\ServiceSpec;
 use App\Enums\DeploymentStatus;
 use App\Enums\LogSourceKind;
+use App\Enums\WorkloadEventKind;
 use App\Events\LogChunksStored;
 use App\Models\DaemonTask;
 use App\Models\Deployment;
+use App\Models\LogChunk;
 use App\Models\Placement;
 use App\Models\Server;
-use App\Services\Backups\DataHolds;
 use App\Services\Deployments\DeploymentLogMasker;
 use App\Services\Deployments\RetiredWorkloads;
+use App\Services\Holds\Holds;
 use App\Support\Deployments\EffectiveDeploy;
 use App\Support\Deployments\LifecycleLines;
 use App\Support\Deployments\LogSections;
-use App\Support\Logs\LogLevel;
-use Illuminate\Support\Facades\DB;
+use App\Support\Logs\LogChunkRow;
 
 /**
  * Stores launchroomd's container lifecycle events (Report.events, D68,
@@ -86,7 +89,7 @@ final readonly class RecordWorkloadEvents
             $line = $this->context($server, $deployment, $placement)->line($event);
             $lines = [['time' => $event->at, 'stream' => 'system', 'text' => $line['text'], 'step' => $section, 'level' => $line['level']]];
 
-            if ($event->kind === 'exited') {
+            if ($event->kind === WorkloadEventKind::Exited) {
                 $output = array_map(fn (LogLine $out): array => [
                     'time' => $out->time,
                     'stream' => $out->stream,
@@ -94,40 +97,22 @@ final readonly class RecordWorkloadEvents
                 ], $event->lines());
 
                 if ($placement instanceof Placement) {
-                    $placement->forceFill(['last_exit' => [
-                        'at' => $event->at,
-                        'code' => is_int($event->exitCode) ? $event->exitCode : null,
-                        'oomKilled' => $event->oomKilled === true,
-                        'output' => $output,
-                    ]])->save();
+                    $placement->forceFill(['last_exit' => new ContainerExitData(
+                        at: $event->at,
+                        code: is_int($event->exitCode) ? $event->exitCode : null,
+                        oomKilled: $event->oomKilled === true,
+                        output: $output,
+                    )])->save();
                 }
 
                 if ($section === 'runtime') {
                     foreach ($output as $out) {
-                        $lines[] = [...$out, 'step' => $section, 'level' => LogLevel::guess($out['text'])];
+                        $lines[] = [...$out, 'step' => $section];
                     }
                 }
             }
 
-            $json = json_encode($lines, JSON_THROW_ON_ERROR);
-            $rows[] = [
-                'team_id' => $server->team_id,
-                'server_id' => $server->id,
-                'daemon_task_id' => null,
-                'deployment_id' => $deployment->id,
-                'source_kind' => LogSourceKind::Deployment->value,
-                'source_id' => $deployment->public_id,
-                'seq' => $event->seq,
-                'lines' => $json,
-                'project_id' => $deployment->environment->project_id,
-                'environment_id' => $deployment->environment_id,
-                'service_id' => $deployment->serviceInstance->service_id,
-                'runtime' => false,
-                'line_count' => count($lines),
-                'error_count' => count(array_filter($lines, static fn (array $l): bool => $l['level'] === 'error')),
-                'bytes' => strlen($json),
-                'created_at' => now(),
-            ];
+            $rows[] = LogChunkRow::build($server->team_id, $server->id, LogSourceKind::Deployment, $deployment->public_id, $event->seq, $lines, false, LogChunkRow::scopeOf($deployment));
             $sources[$deployment->public_id] = ['kind' => LogSourceKind::Deployment, 'id' => $deployment->public_id];
         }
 
@@ -135,7 +120,7 @@ final readonly class RecordWorkloadEvents
             return;
         }
 
-        DB::table('log_chunks')->insertOrIgnore($rows);
+        LogChunk::query()->insertOrIgnore($rows);
         event(new LogChunksStored($server->team_id, $server->id, array_values($sources)));
     }
 
@@ -172,10 +157,10 @@ final readonly class RecordWorkloadEvents
             $replacedBy = Deployment::query()->whereKey($instance->active_deployment_id)->value('public_id');
         }
 
-        $hold = DataHolds::for($instance->id);
+        $hold = Holds::blocking($instance->id);
         $removedBecause = match (true) {
             $instance->stopped_at !== null => 'the service was stopped',
-            $hold !== null => $hold['reason'],
+            $hold instanceof Hold => $hold->reason,
             $deployment->status === DeploymentStatus::Failed => "the deployment didn't go live",
             $deployment->status === DeploymentStatus::Cancelled => 'the deployment was cancelled',
             default => null,

@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Rector\Config\RectorConfig;
+use Rector\DeadCode\Rector\ClassMethod\RemoveUnusedPublicMethodParameterRector;
 use Rector\Php55\Rector\String_\StringClassNameToClassConstantRector;
 use RectorLaravel\Set\LaravelLevelSetList;
 use RectorLaravel\Set\LaravelSetList;
@@ -38,6 +39,9 @@ return RectorConfig::configure()
     ->withSkip([
         // Arch rules read better with namespaces/classes as plain strings.
         StringClassNameToClassConstantRector::class => [__DIR__.'/tests/Arch'],
+        // Event discovery wires a listener by the type of handle()'s
+        // parameter, so it is used even when the body never reads it.
+        RemoveUnusedPublicMethodParameterRector::class => [__DIR__.'/app/Listeners'],
     ])
     ->withImportNames(importShortClasses: false, removeUnusedImports: true)
     // Bounded parallelism: with many workers, the dev stack's bind mount

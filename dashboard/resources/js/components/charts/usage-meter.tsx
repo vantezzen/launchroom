@@ -12,7 +12,7 @@ function formatShare(value: number, total: number): string {
     return share > 0 && share < 1 ? '<1%' : `${Math.round(share)}%`;
 }
 
-export type UsageMeterProps = {
+type UsageMeterProps = {
     /** Who uses what. One item without a slot → drawn in the signal colour. */
     items: Breakdown[];
     /** Capacity; the remainder is drawn as the empty track ("free"). */

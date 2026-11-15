@@ -114,11 +114,11 @@ describe('adapter', () => {
 });
 
 describe('launchroom-next-finalize CLI', () => {
-  it('finalizes and prints the summary line', () => {
+  it('finalizes and prints the summary line', async () => {
     const dir = tmpProject();
     fakeStandaloneBuild(dir);
     const a = createAdapter({ env: {}, log: () => {}, finalizeOnExit: false });
-    void a.onBuildComplete!(buildCtx(dir, { outputs: sampleOutputs() }));
+    await a.onBuildComplete!(buildCtx(dir, { outputs: sampleOutputs() }));
     const r = spawnSync(process.execPath, [path.join(pkgDir, 'dist/cli.js'), dir], { encoding: 'utf8' });
     assert.equal(r.status, 0, r.stderr);
     const line = r.stdout.split('\n').find((l) => l.startsWith(SUMMARY_MARKER));

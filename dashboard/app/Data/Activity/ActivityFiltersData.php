@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Data\Activity;
 
+use App\Data\Attributes\PublicIdOf;
 use Spatie\LaravelData\Attributes\Validation\In;
-use Spatie\LaravelData\Attributes\Validation\Regex;
 use Spatie\LaravelData\Data;
 
 /**
@@ -22,7 +22,7 @@ final class ActivityFiltersData extends Data
     ];
 
     public function __construct(
-        #[Regex('/^prj_[0-7][0-9A-HJKMNP-TV-Z]{25}$/D')]
+        #[PublicIdOf('prj')]
         public ?string $project = null,
         #[In(['deploys', 'promotions', 'changes', 'team', 'alerts'])]
         public ?string $kind = null,

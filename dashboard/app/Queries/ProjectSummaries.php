@@ -12,10 +12,10 @@ use App\Data\Canvas\EnvironmentSummaryData;
 use App\Data\Canvas\ProjectLastDeploymentData;
 use App\Data\Canvas\ProjectSummaryData;
 use App\Data\Canvas\ServiceProblemData;
-use App\Enums\CanvasNodeState;
 use App\Enums\DeploymentStatus;
 use App\Enums\DomainKind;
 use App\Enums\EnvironmentKind;
+use App\Enums\StatusTone;
 use App\Models\CanvasLayout;
 use App\Models\Connection;
 use App\Models\Deployment;
@@ -24,12 +24,11 @@ use App\Models\Environment;
 use App\Models\Project;
 use App\Models\ServiceInstance;
 use App\Models\Team;
+use App\Services\Git\AvatarOrigins;
 use App\Support\Canvas\NodeStatus;
 use App\Support\Canvas\ServiceGlyph;
 use App\Support\Canvas\ServiceProblems;
-use App\Support\Git\GitHubAvatar;
 use Carbon\CarbonImmutable;
-use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -61,7 +60,7 @@ final readonly class ProjectSummaries
     {
         $projects = Project::query()
             ->where('team_id', $team->id)
-            ->with(['environments' => fn ($query) => $query->where('kind', '!=', EnvironmentKind::Preview->value)->orderByRaw("case when kind = 'production' then 0 else 1 end")->orderBy('name')])
+            ->with(['environments' => fn ($query) => $query->where('kind', '!=', EnvironmentKind::Preview->value)->inDisplayOrder()])
             ->orderBy('name')
             ->get();
 
@@ -174,8 +173,8 @@ final readonly class ProjectSummaries
         }
 
         return match ($production->status->state) {
-            CanvasNodeState::Failed => 2,
-            CanvasNodeState::Warning => 1,
+            StatusTone::Failed => 2,
+            StatusTone::Warning => 1,
             default => 0,
         };
     }
@@ -301,7 +300,7 @@ final readonly class ProjectSummaries
                 author: $deployment->commit_author,
                 sha: $deployment->commit_sha === null ? null : substr($deployment->commit_sha, 0, 7),
                 createdAt: $deployment->queued_at,
-                authorAvatarUrl: GitHubAvatar::fromAvatarUrl($deployment->commit_author_avatar_url),
+                authorAvatarUrl: AvatarOrigins::allowed($deployment->commit_author_avatar_url),
             );
         }
 
@@ -324,12 +323,10 @@ final readonly class ProjectSummaries
 
         $from = CarbonImmutable::now('UTC')->startOfDay()->subDays(self::DEPLOY_DAYS - 1);
 
-        $rows = DB::table('deployments')
+        $rows = Deployment::query()->counted()->toBase()
             ->join('environments', 'environments.id', '=', 'deployments.environment_id')
             ->whereIn('environments.project_id', $projectIds)
             ->where('deployments.queued_at', '>=', $from)
-            ->where('deployments.status', '!=', DeploymentStatus::Cancelled->value)
-            ->where(static fn (Builder $query) => $query->where('deployments.status', '!=', DeploymentStatus::Superseded->value)->orWhereNotNull('deployments.started_at'))
             ->groupBy('environments.project_id', DB::raw('date(deployments.queued_at)'))
             ->selectRaw('environments.project_id as project_id, date(deployments.queued_at) as day, count(*) as total, count(*) filter (where deployments.status = ?) as failed', [DeploymentStatus::Failed->value])
             ->get();

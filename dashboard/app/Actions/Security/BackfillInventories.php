@@ -4,12 +4,9 @@ declare(strict_types=1);
 
 namespace App\Actions\Security;
 
-use App\Enums\DaemonTaskStatus;
 use App\Enums\DaemonTaskType;
 use App\Enums\EnvironmentKind;
 use App\Enums\Security\InventoryStatus;
-use App\Enums\ServerRole;
-use App\Enums\ServerStatus;
 use App\Models\DaemonTask;
 use App\Models\Deployment;
 use App\Models\Security\ImageInventory;
@@ -85,14 +82,13 @@ final readonly class BackfillInventories
     {
         $builders = Server::query()
             ->where('team_id', $teamId)
-            ->where('status', ServerStatus::Online->value)
-            ->whereJsonContains('roles', ServerRole::Build->value)
+            ->onlineBuilders()
             ->count();
 
         $pending = DaemonTask::query()
             ->where('team_id', $teamId)
             ->where('type', DaemonTaskType::Inventory->value)
-            ->whereIn('status', [DaemonTaskStatus::Pending->value, DaemonTaskStatus::Leased->value])
+            ->open()
             ->count();
 
         return $builders * config()->integer('launchroom.security.backfill_per_server', 2) - $pending;

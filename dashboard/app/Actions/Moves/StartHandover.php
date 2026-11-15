@@ -10,9 +10,7 @@ use App\Data\Audit\AuditEntryData;
 use App\Enums\AuditAction;
 use App\Enums\Backups\BackupRunStatus;
 use App\Enums\Backups\RestoreRunStatus;
-use App\Enums\DaemonTaskStatus;
 use App\Enums\DaemonTaskType;
-use App\Enums\DeploymentStatus;
 use App\Enums\Moves\ControlPlaneMoveStatus;
 use App\Enums\Moves\ServerMoveStatus;
 use App\Enums\Transfers\ExportRunStatus;
@@ -51,8 +49,12 @@ final readonly class StartHandover
         private RecordAuditEvent $audit,
     ) {}
 
-    public function handle(ControlPlaneMove $move, AuditActor $actor): ControlPlaneMove
+    public function handle(ControlPlaneMove $move, string $confirmation, AuditActor $actor): ControlPlaneMove
     {
+        if (strtolower(trim($confirmation)) !== 'hand over') {
+            throw DomainRuleViolation::on('confirmation', 'Type “hand over” to confirm.');
+        }
+
         return DB::transaction(function () use ($move, $actor): ControlPlaneMove {
             $move = ControlPlaneMove::query()->whereKey($move->id)->lockForUpdate()->firstOrFail();
 
@@ -98,23 +100,23 @@ final readonly class StartHandover
     {
         $busy = [];
 
-        if (Deployment::query()->whereIn('status', [DeploymentStatus::Queued->value, ...DeploymentStatus::values(DeploymentStatus::inFlight())])->exists()) {
+        if (Deployment::query()->unfinished()->exists()) {
             $busy[] = 'deployments';
         }
 
-        if (DaemonTask::query()->whereIn('status', [DaemonTaskStatus::Pending->value, DaemonTaskStatus::Leased->value])->whereIn('type', [DaemonTaskType::Build->value, DaemonTaskType::Backup->value, DaemonTaskType::Restore->value, DaemonTaskType::DbImport->value, DaemonTaskType::VolumeImport->value, DaemonTaskType::DbExport->value, DaemonTaskType::VolumeExport->value])->exists()) {
+        if (DaemonTask::query()->open()->whereIn('type', [DaemonTaskType::Build->value, DaemonTaskType::Backup->value, DaemonTaskType::Restore->value, DaemonTaskType::DbImport->value, DaemonTaskType::VolumeImport->value, DaemonTaskType::DbExport->value, DaemonTaskType::VolumeExport->value])->exists()) {
             $busy[] = 'builds, backups or data copies';
         }
 
-        if (BackupRun::query()->whereIn('status', [BackupRunStatus::Pending->value, BackupRunStatus::Running->value])->exists()) {
+        if (BackupRun::query()->whereIn('status', BackupRunStatus::nonTerminal())->exists()) {
             $busy[] = 'backups';
         }
 
-        if (RestoreRun::query()->whereNotIn('status', [RestoreRunStatus::Succeeded->value, RestoreRunStatus::Failed->value])->exists()) {
+        if (RestoreRun::query()->whereIn('status', RestoreRunStatus::nonTerminal())->exists()) {
             $busy[] = 'restores';
         }
 
-        if (DataImportRun::query()->whereIn('status', [ImportRunStatus::WaitingForSafetyBackup->value, ImportRunStatus::Holding->value, ImportRunStatus::Importing->value])->exists()
+        if (DataImportRun::query()->whereIn('status', ImportRunStatus::nonTerminal())->exists()
             || DataExportRun::query()->where('status', ExportRunStatus::Preparing->value)->exists()) {
             $busy[] = 'imports or downloads';
         }

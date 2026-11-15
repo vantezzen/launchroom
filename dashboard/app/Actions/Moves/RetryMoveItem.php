@@ -33,7 +33,7 @@ final readonly class RetryMoveItem
             $move = ServerMove::query()->whereKey($move->id)->lockForUpdate()->firstOrFail();
             $item = ServerMoveItem::query()->whereKey($item->id)->where('server_move_id', $move->id)->lockForUpdate()->firstOrFail();
 
-            if (! in_array($move->status, [ServerMoveStatus::Running, ServerMoveStatus::Ready], true)) {
+            if (! $move->status->isUnderway()) {
                 throw DomainRuleViolation::conflict('This move has ended.');
             }
 

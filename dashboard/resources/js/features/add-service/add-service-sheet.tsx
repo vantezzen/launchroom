@@ -6,16 +6,12 @@ import { Logo } from '@/components/logo';
 import { SidePanel } from '@/components/patterns/sheet';
 import { Button } from '@/components/ui/button';
 import { NODE_HEIGHT, NODE_WIDTH } from '@/features/canvas/auto-layout';
-import {
-    closeAddService,
-    useAddService,
-} from '@/features/projects/add-service-store';
+import { closeAddService, useAddService } from './store';
 import services from '@/routes/projects/services';
 import { CatalogPicker } from '@/features/templates/catalog-picker';
 import { GitHubForm } from './github-form';
 import { DatabaseForm, ImageForm, ProcessForm } from './simple-forms';
-import { takePreset } from './preset';
-import type { AddChoice as Choice } from './preset';
+import type { AddChoice as Choice } from './store';
 import type { AddServicePayload } from './types';
 
 const choices: {
@@ -81,7 +77,7 @@ export function AddServiceSheet({
     /** Services a new database can connect to right away. */
     consumers?: { id: string; name: string; logo: string }[];
 }) {
-    const { open, position } = useAddService();
+    const { open, position, choice: requested } = useAddService();
     const flow = useReactFlow();
     const [choice, setChoice] = useState<Choice | null>(null);
     const [processing, setProcessing] = useState(false);
@@ -89,10 +85,10 @@ export function AddServiceSheet({
 
     useEffect(() => {
         if (open) {
-            setChoice(takePreset());
+            setChoice(requested);
             setErrors({});
         }
-    }, [open]);
+    }, [open, requested]);
 
     const placement = () => {
         if (position) {

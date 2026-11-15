@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Exceptions;
 
+use App\Support\Refusal;
 use App\Support\Variables\ReferenceError;
 use DomainException;
 
@@ -28,6 +29,11 @@ final class UnresolvedReferences extends DomainException
 
     public function toDomainRuleViolation(): DomainRuleViolation
     {
-        return DomainRuleViolation::on('variables', $this->getMessage());
+        return $this->toRefusal()->violation();
+    }
+
+    public function toRefusal(): Refusal
+    {
+        return Refusal::on('variables', $this->getMessage());
     }
 }

@@ -154,7 +154,7 @@ type ContainerProcess struct {
 func (r *ContainerInspectionResult) validate(e *errs) {
 	const p = "containerInspection"
 	e.check(p+".workload", r.Workload)
-	if !reContainerID.MatchString(r.ContainerID) {
+	if !reHex64.MatchString(r.ContainerID) {
 		e.addf(p+".containerId", "must be 64 lowercase hex characters")
 	}
 	if !reImageID.MatchString(r.ImageID) {
@@ -255,6 +255,9 @@ var (
 	reImageID      = regexp.MustCompile(`^sha256:[a-f0-9]{64}$`)
 	errInvalidUTF8 = errors.New("must be valid UTF-8")
 )
+
+// IsImageID reports whether s is a local image id ("sha256:<64 hex>").
+func IsImageID(s string) bool { return reImageID.MatchString(s) }
 
 // InspectedPath is a path inside a container as reported by an inspection:
 // absolute, valid UTF-8, no control characters (escaped as \xNN by

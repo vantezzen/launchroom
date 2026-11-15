@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Enums\Domains\DnsCheckStatus;
 use App\Enums\ServerRole;
 use App\Enums\ServerStatus;
 use App\Enums\TeamRole;
@@ -156,6 +157,6 @@ test('custom domains get the same proxy verdict', function (): void {
 
     $result = resolve(DnsCheck::class)->hostname('shop.example.com', ['93.184.216.34']);
 
-    expect($result->status)->toBe('ok')->and($result->proxy)->toBe('Cloudflare');
+    expect($result->status)->toBe(DnsCheckStatus::Ok)->and($result->proxy)->toBe('Cloudflare');
     Http::assertSent(fn (Request $request): bool => str_starts_with($request->url(), 'http://shop.example.com/.well-known/launchroom/check/'));
 });

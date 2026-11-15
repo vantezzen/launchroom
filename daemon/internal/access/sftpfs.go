@@ -15,6 +15,8 @@ import (
 	"time"
 
 	"github.com/pkg/sftp"
+
+	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
 
 // SFTP over the container's own file tools (docs/03 §12.2, docs/09 R39):
@@ -29,19 +31,15 @@ type Runner interface {
 	Run(ctx context.Context, argv []string, stdin io.Reader, stdout io.Writer) (exitCode int, stderr string, err error)
 }
 
-// SFTP limits.
 const (
 	maxSFTPPath = 4096
-	// statBatch is how many paths one stat exec takes when listing.
-	statBatch = 100
+	statBatch   = 100
 	// window is how far reads may come out of order, and how much
 	// out-of-order write data is held, per open file.
-	window = 16 << 20
-	// maxListing bounds the entries of one directory listing.
+	window     = 16 << 20
 	maxListing = 100000
 )
 
-// errNoTools is what images without the file tools get.
 var errNoTools = errors.New("this image has no file tools (ls, stat, cat); SFTP needs them")
 
 // deniedError is a permission error both fs and the SFTP status codes know.
@@ -84,8 +82,7 @@ type FS struct {
 	run Runner
 	ctx context.Context
 	// root is the container folder served as "/" ("" = the whole container).
-	root string
-	// onActivity is called for every operation (idle tracking).
+	root       string
 	onActivity func(n int)
 }
 
@@ -126,7 +123,6 @@ func (f *FS) clientPath(p string) (string, error) {
 	return path.Clean(p), nil
 }
 
-// resolve turns an SFTP path into the container path the tools get.
 func (f *FS) resolve(p string) (string, error) {
 	c, err := f.clientPath(p)
 	if err != nil || f.root == "" {
@@ -135,7 +131,6 @@ func (f *FS) resolve(p string) (string, error) {
 	return path.Join(f.root, c), nil
 }
 
-// top is the container path served as "/".
 func (f *FS) top() string {
 	if f.root == "" {
 		return "/"
@@ -148,7 +143,6 @@ func (f *FS) Handlers() sftp.Handlers {
 	return sftp.Handlers{FileGet: f, FilePut: f, FileCmd: f, FileList: f}
 }
 
-// exec runs argv and maps failures to fs errors.
 func (f *FS) exec(argv []string, stdin io.Reader, stdout io.Writer) error {
 	f.onActivity(0)
 	code, stderr, err := f.run.Run(f.ctx, argv, stdin, stdout)
@@ -161,7 +155,6 @@ func (f *FS) exec(argv []string, stdin io.Reader, stdout io.Writer) error {
 	return nil
 }
 
-// toolError maps a tool's failure to an fs error the SFTP status codes know.
 func toolError(tool string, code int, stderr string) error {
 	l := strings.ToLower(stderr)
 	switch {
@@ -178,21 +171,16 @@ func toolError(tool string, code int, stderr string) error {
 	if i := strings.IndexByte(msg, '\n'); i >= 0 {
 		msg = msg[:i]
 	}
-	if len(msg) > 200 {
-		msg = msg[:200]
-	}
+	msg = state.Clip(msg, 200)
 	if msg == "" {
 		msg = fmt.Sprintf("exit code %d", code)
 	}
 	return fmt.Errorf("%s: %s", tool, msg)
 }
 
-// ---- stat ----
-
 // statFormat: raw mode (hex), size, mtime, uid, gid, then the name as given.
 const statFormat = "%f %s %Y %u %g %n"
 
-// fileInfo is one parsed stat line.
 type fileInfo struct {
 	name  string
 	size  int64
@@ -211,7 +199,6 @@ func (i *fileInfo) Sys() any           { return nil }
 func (i *fileInfo) Uid() uint32        { return i.uid } //nolint:revive // pkg/sftp's interface
 func (i *fileInfo) Gid() uint32        { return i.gid } //nolint:revive // pkg/sftp's interface
 
-// parseStatLine parses one statFormat line.
 func parseStatLine(line string) (*fileInfo, error) {
 	f := strings.SplitN(line, " ", 6)
 	if len(f) != 6 {
@@ -228,7 +215,6 @@ func parseStatLine(line string) (*fileInfo, error) {
 	return &fileInfo{name: path.Base(f[5]), size: size, mode: unixMode(uint32(raw)), mtime: time.Unix(mt, 0), uid: uint32(uid), gid: uint32(gid)}, nil
 }
 
-// unixMode converts st_mode to an fs.FileMode.
 func unixMode(m uint32) fs.FileMode {
 	mode := fs.FileMode(m & 0o777)
 	switch m & 0o170000 {
@@ -277,7 +263,6 @@ func (f *FS) stat(p string, follow bool) (*fileInfo, error) {
 	return fi, nil
 }
 
-// list returns the entries of dir (lstat of each).
 func (f *FS) list(dir string) ([]os.FileInfo, error) {
 	var out bytes.Buffer
 	if err := f.exec([]string{"ls", "-1A", "--", dir}, nil, &out); err != nil {
@@ -322,7 +307,6 @@ func (f *FS) list(dir string) ([]os.FileInfo, error) {
 	return infos, nil
 }
 
-// listerAt serves a fixed listing.
 type listerAt []os.FileInfo
 
 func (l listerAt) ListAt(out []os.FileInfo, off int64) (int, error) {
@@ -387,7 +371,6 @@ func (f *FS) Readlink(p string) (string, error) {
 	return f.readlink(p)
 }
 
-// readlink reads a link at a container path.
 func (f *FS) readlink(p string) (string, error) {
 	var out bytes.Buffer
 	if err := f.exec([]string{"readlink", "--", p}, nil, &out); err != nil {
@@ -401,8 +384,6 @@ func (f *FS) readlink(p string) (string, error) {
 func (f *FS) RealPath(p string) (string, error) {
 	return f.clientPath(p)
 }
-
-// ---- commands ----
 
 // Filecmd implements sftp.FileCmder.
 func (f *FS) Filecmd(r *sftp.Request) error {
@@ -488,8 +469,6 @@ func (f *FS) setstat(p string, r *sftp.Request) error {
 	return nil
 }
 
-// ---- reading ----
-
 // Fileread implements sftp.FileReader.
 func (f *FS) Fileread(r *sftp.Request) (io.ReaderAt, error) {
 	p, err := f.resolve(r.Filepath)
@@ -524,7 +503,6 @@ type streamReader struct {
 	eof  bool
 }
 
-// readArgv is the reader process for a stream starting at off.
 func readArgv(p string, off int64) []string {
 	if off == 0 {
 		return []string{"cat", "--", p}
@@ -558,7 +536,6 @@ func (s *streamReader) stop() {
 	}
 }
 
-// ReadAt implements io.ReaderAt.
 func (s *streamReader) ReadAt(p []byte, off int64) (int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -579,7 +556,6 @@ func (s *streamReader) ReadAt(p []byte, off int64) (int, error) {
 		} else if err != nil {
 			return 0, err
 		}
-		// Keep at most the window behind the furthest read.
 		if over := len(s.buf) - 2*window; over > 0 {
 			s.buf = append([]byte(nil), s.buf[over:]...)
 			s.base += int64(over)
@@ -599,15 +575,12 @@ func (s *streamReader) ReadAt(p []byte, off int64) (int, error) {
 	return n, nil
 }
 
-// Close stops the stream.
 func (s *streamReader) Close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.stop()
 	return nil
 }
-
-// ---- writing ----
 
 // Filewrite implements sftp.FileWriter.
 func (f *FS) Filewrite(r *sftp.Request) (io.WriterAt, error) {
@@ -664,7 +637,6 @@ func newStreamWriter(f *FS, argv []string) *streamWriter {
 	return w
 }
 
-// WriteAt implements io.WriterAt.
 func (w *streamWriter) WriteAt(p []byte, off int64) (int, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -712,7 +684,6 @@ func (w *streamWriter) write(p []byte) error {
 	return nil
 }
 
-// Close ends the input and waits for the writer process.
 func (w *streamWriter) Close() error {
 	w.mu.Lock()
 	defer w.mu.Unlock()

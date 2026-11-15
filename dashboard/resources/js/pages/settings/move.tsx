@@ -1,67 +1,50 @@
 import { Form, Head, Link, router } from '@inertiajs/react';
 import { Ban, CircleCheck, Info, TriangleAlert } from 'lucide-react';
 import type { ReactNode } from 'react';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { ConfirmAction } from '@/components/confirm-action';
 import { CopyValue } from '@/components/copy-value';
 import InputError from '@/components/input-error';
 import { MetaLine } from '@/components/patterns/meta-line';
-import type { StatusState } from '@/components/status';
 import { Status } from '@/components/status';
+import { vocabulary } from '@/lib/vocabulary';
 import { TimeAgo } from '@/components/time-ago';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
+import {
+    CutoverDnsStep,
+    CutoverImagesStep,
+    CutoverServersStep,
+} from '@/features/moves/cutover-steps';
 import { DnsRecords } from '@/features/moves/dns-records';
 import { MovePlanView } from '@/features/moves/move-plan';
 import { MoveProgress } from '@/features/moves/move-progress';
 import { TypedConfirm } from '@/features/moves/typed-confirm';
-import { StepCard } from '@/features/onboarding/step-card';
-import type { GuidedStepStatus } from '@/features/onboarding/step-card';
+import { StepCard } from '@/components/steps/step-card';
+import type { GuidedStepStatus } from '@/components/steps/step-card';
 import { settings as backupSettings } from '@/routes/backups';
 import {
     abort,
-    approve,
     cancel,
     edit,
     finish,
     handover,
-    rebuild,
     retry,
     start,
     workloads,
+    approve,
+    rebuild,
 } from '@/routes/move';
-import { index as settingsHome } from '@/routes/settings';
+import SettingsLayout from '@/features/settings/settings-layout';
+import { useLiveProps } from '@/hooks/use-live-props';
 
 type Move = App.Data.Moves.ControlPlaneMoveData;
 type MoveStatus = App.Enums.Moves.ControlPlaneMoveStatus;
 
-type Checklist = {
-    startedAt: string | null;
-    previousUrl: string | null;
-    url: string;
-    previous: { name: string; addresses: string[] } | null;
-    current: { name: string; addresses: string[] } | null;
-    expectedAddresses: string[];
-    dns: {
-        label: string;
-        host: string;
-        check: App.Data.Domains.DnsCheckData | null;
-    }[];
-    servers: {
-        id: string;
-        name: string;
-        status: App.Enums.ServerStatus;
-        reconnected: boolean;
-    }[];
-    images: {
-        checked: number;
-        missing: { service: string; deployment: string; commit: string }[];
-    } | null;
-    needsRecoveryKit: boolean;
-};
+type Checklist = App.Data.Moves.MoveChecklistData;
 
 type Props = {
     move: Move | null;
@@ -75,26 +58,9 @@ type Props = {
     checklist: Checklist | null;
 };
 
-const ORDER: MoveStatus[] = [
-    'waiting_for_server',
-    'claimed',
-    'joining',
-    'joined',
-    'moving',
-    'ready_to_hand_over',
-    'handing_over',
-    'handover_ready',
-    'handed_over',
-];
+const moveStatuses = vocabulary.Moves.ControlPlaneMoveStatus;
 
-const CANCELLABLE: MoveStatus[] = [
-    'waiting_for_server',
-    'claimed',
-    'joining',
-    'joined',
-    'moving',
-    'ready_to_hand_over',
-];
+const ORDER = Object.keys(moveStatuses) as MoveStatus[];
 
 const checkIcons: Record<string, ReactNode> = {
     ok: <CircleCheck aria-hidden="true" className="size-4 text-status-ok" />,
@@ -113,14 +79,6 @@ const checkWords: Record<string, string> = {
     info: 'Note',
     warning: 'Check',
     blocker: 'Blocks the move',
-};
-
-const dnsStates: Record<string, StatusState> = {
-    ok: 'active',
-    missing: 'warning',
-    mismatch: 'warning',
-    unknown: 'warning',
-    error: 'warning',
 };
 
 function reached(status: MoveStatus | null, step: MoveStatus): boolean {
@@ -183,21 +141,10 @@ function MoveSteps({
         setShownCommand(command);
     }
 
-    useEffect(() => {
-        if (!open) {
-            return;
-        }
-
-        const timer = window.setInterval(
-            () =>
-                router.reload({
-                    only: ['move', 'serverMove', 'plan', 'preflight'],
-                }),
-            4000,
-        );
-
-        return () => window.clearInterval(timer);
-    }, [open]);
+    useLiveProps(['move', 'serverMove', 'plan', 'preflight'], {
+        while: open,
+        everyMs: 4000,
+    });
 
     const stepStatus = (done: boolean): GuidedStepStatus =>
         done ? 'done' : 'pending';
@@ -439,7 +386,7 @@ function MoveSteps({
                 </StepCard>
             </ol>
 
-            {status !== null && CANCELLABLE.includes(status) && (
+            {status !== null && moveStatuses[status].isCancellable && (
                 <div className="flex flex-col gap-3 rounded-xl border bg-card p-5 shadow-card sm:flex-row sm:items-center">
                     <p className="min-w-0 flex-1 type-small text-muted-foreground">
                         If you cancel, launchroom stays on this server. Services
@@ -667,19 +614,7 @@ function HandingOver({ move }: { move: Move }) {
 }
 
 function MoveChecklist({ checklist }: { checklist: Checklist }) {
-    const dnsOk =
-        checklist.dns.length > 0 &&
-        checklist.dns.every((record) => record.check?.status === 'ok');
-    const checked = checklist.dns.some((record) => record.check !== null);
-    const imagesOk =
-        checklist.images !== null && checklist.images.missing.length === 0;
-    const serversOk = checklist.servers.every((server) => server.reconnected);
-    const open = [
-        ...(dnsOk ? [] : ['dns']),
-        ...(imagesOk ? [] : ['images']),
-        ...(serversOk ? [] : ['servers']),
-        ...(checklist.needsRecoveryKit ? ['recovery-kit'] : []),
-    ];
+    const { checks, openSteps: open } = checklist;
     const [openId, setOpenId] = useState<string | null>(
         open[0] === 'recovery-kit' ? 'old' : (open[0] ?? 'old'),
     );
@@ -705,168 +640,36 @@ function MoveChecklist({ checklist }: { checklist: Checklist }) {
             </p>
 
             <ol className="flex flex-col gap-3">
-                <StepCard
-                    id="dns"
+                <CutoverDnsStep
+                    checks={checks}
                     number={1}
-                    status={dnsOk ? 'done' : 'pending'}
-                    title="Point DNS at this server"
-                    line={
-                        dnsOk
-                            ? 'Every hostname points here'
-                            : checklist.expectedAddresses.join(', ') ||
-                              undefined
-                    }
                     open={openId === 'dns'}
                     onOpen={() => setOpenId('dns')}
-                >
-                    {checklist.dns.length === 0 ? (
-                        <p className="type-body text-muted-foreground">
-                            No public hostname to check.
-                        </p>
-                    ) : (
-                        <ul className="flex flex-col gap-3">
-                            {checklist.dns.map((record) => (
-                                <li
-                                    key={record.host}
-                                    className="flex flex-col gap-0.5"
-                                >
-                                    <div className="flex flex-wrap items-center gap-3">
-                                        <Status
-                                            state={
-                                                record.check === null
-                                                    ? 'idle'
-                                                    : (dnsStates[
-                                                          record.check.status
-                                                      ] ?? 'warning')
-                                            }
-                                            label={record.label}
-                                        />
-                                        <span className="type-mono-small break-all text-muted-foreground">
-                                            {record.host}
-                                        </span>
-                                    </div>
-                                    <span className="type-small text-muted-foreground">
-                                        {record.check?.message ??
-                                            `Point it at ${checklist.expectedAddresses.join(', ')}.`}
-                                    </span>
-                                </li>
-                            ))}
-                        </ul>
-                    )}
-                    <div>
-                        <Button variant="outline" size="sm" onClick={check}>
-                            {checked ? 'Check again' : 'Check DNS'}
-                        </Button>
-                    </div>
-                </StepCard>
+                    onCheck={check}
+                />
 
-                <StepCard
-                    id="images"
+                <CutoverImagesStep
+                    checks={checks}
                     number={2}
-                    status={imagesOk ? 'done' : 'pending'}
-                    title="Rebuild app images"
-                    line={
-                        imagesOk
-                            ? 'All images are in the registry'
-                            : checklist.images === null
-                              ? 'Not checked yet'
-                              : `${checklist.images.missing.length} not here yet`
-                    }
                     open={openId === 'images'}
                     onOpen={() => setOpenId('images')}
+                    onCheck={check}
+                    title="Rebuild app images"
+                    rebuild={rebuild.form()}
                 >
-                    <p className="max-w-[65ch] type-body text-muted-foreground">
-                        Images weren’t copied. Running apps keep their current
-                        image, and each app builds again from its commit on its
-                        next deploy. Rebuild now to have them ready.
-                    </p>
-                    {checklist.images === null ? (
-                        <div>
-                            <Button variant="outline" size="sm" onClick={check}>
-                                Check the registry
-                            </Button>
-                        </div>
-                    ) : checklist.images.missing.length === 0 ? (
-                        <p className="type-small text-muted-foreground">
-                            All {checklist.images.checked} running images are in
-                            the registry.
-                        </p>
-                    ) : (
-                        <>
-                            <ul className="flex flex-col gap-1 type-small">
-                                {checklist.images.missing.map((item) => (
-                                    <li key={item.deployment}>
-                                        {item.service}{' '}
-                                        <span className="type-mono-small text-muted-foreground">
-                                            {item.commit}
-                                        </span>
-                                    </li>
-                                ))}
-                            </ul>
-                            <Form {...rebuild.form()}>
-                                {({ processing }) => (
-                                    <Button
-                                        type="submit"
-                                        size="sm"
-                                        disabled={processing}
-                                    >
-                                        {processing && <Spinner />}
-                                        Rebuild now
-                                    </Button>
-                                )}
-                            </Form>
-                        </>
-                    )}
-                </StepCard>
+                    Images weren’t copied. Running apps keep their current
+                    image, and each app builds again from its commit on its next
+                    deploy. Rebuild now to have them ready.
+                </CutoverImagesStep>
 
-                <StepCard
-                    id="servers"
+                <CutoverServersStep
+                    checks={checks}
                     number={3}
-                    status={serversOk ? 'done' : 'pending'}
-                    title="Other servers"
-                    line={
-                        checklist.servers.length === 0
-                            ? 'No other servers'
-                            : serversOk
-                              ? 'All reconnected'
-                              : `${checklist.servers.filter((server) => !server.reconnected).length} not seen yet`
-                    }
                     open={openId === 'servers'}
                     onOpen={() => setOpenId('servers')}
-                >
-                    {checklist.servers.length === 0 ? (
-                        <p className="type-body text-muted-foreground">
-                            There are no other servers.
-                        </p>
-                    ) : (
-                        <ul className="flex flex-col gap-2">
-                            {checklist.servers.map((server) => (
-                                <li
-                                    key={server.id}
-                                    className="flex flex-col gap-0.5"
-                                >
-                                    <Status
-                                        state={
-                                            server.reconnected
-                                                ? 'active'
-                                                : 'warning'
-                                        }
-                                        label={server.name}
-                                    />
-                                    {!server.reconnected && (
-                                        <span className="type-small text-muted-foreground">
-                                            Not seen since the move. If the
-                                            dashboard’s address changed, set
-                                            LR_CONTROL_PLANE_URL in
-                                            launchroomd/.env on that server and
-                                            run docker compose up -d there.
-                                        </span>
-                                    )}
-                                </li>
-                            ))}
-                        </ul>
-                    )}
-                </StepCard>
+                    title="Other servers"
+                    notSeen="Not seen since the move. If the dashboard’s address changed, set LR_CONTROL_PLANE_URL in launchroomd/.env on that server and run docker compose up -d there."
+                />
 
                 <StepCard
                     id="old"
@@ -909,7 +712,7 @@ function MoveChecklist({ checklist }: { checklist: Checklist }) {
                 </StepCard>
             </ol>
 
-            <Form {...finish.form()} transform={(data) => ({ ...data, open })}>
+            <Form {...finish.form()}>
                 {({ processing }) => (
                     <div className="flex flex-wrap items-center gap-3">
                         <Button
@@ -933,9 +736,4 @@ function MoveChecklist({ checklist }: { checklist: Checklist }) {
     );
 }
 
-MoveLaunchroom.layout = {
-    breadcrumbs: [
-        { title: 'Settings', href: settingsHome() },
-        { title: 'Move launchroom', href: edit() },
-    ],
-};
+MoveLaunchroom.layout = SettingsLayout;

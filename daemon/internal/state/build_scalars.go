@@ -15,11 +15,9 @@ import (
 var (
 	reGitURL       = regexp.MustCompile(`^(?:https?://[a-z0-9.-]+(?::[0-9]{1,5})?(?:/[A-Za-z0-9._~!$&'()*+,;=:@%/-]*)?|ssh://(?:[a-z_][a-z0-9_.-]{0,31}@)?[a-z0-9.-]+(?::[0-9]{1,5})?/[A-Za-z0-9._~/-]+)$`)
 	reGitRef       = regexp.MustCompile(`^refs/(?:heads|tags)/[A-Za-z0-9._/+-]{1,240}$`)
-	reHostKeyBlob  = regexp.MustCompile(`^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$`)
 	reIdent        = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$`)
 	reRegistryRepo = regexp.MustCompile(`^[a-z0-9]+(?:(?:\.|_|__|-+)[a-z0-9]+)*(?:/[a-z0-9]+(?:(?:\.|_|__|-+)[a-z0-9]+)*)*$`)
 	reRailpackEnv  = regexp.MustCompile(`^RAILPACK_[A-Z0-9_]{1,64}$`)
-	reSHA256Hex    = regexp.MustCompile(`^[a-f0-9]{64}$`)
 	reJWT          = regexp.MustCompile(`^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$`)
 )
 
@@ -93,7 +91,7 @@ type HostKeyBlob string
 
 // ProtocolSchema implements SchemaDescriber.
 func (HostKeyBlob) ProtocolSchema() ScalarSchema {
-	s := strSchema(reHostKeyBlob, 4096)
+	s := strSchema(reBase64, 4096)
 	s.MinLength = 16
 	return s
 }
@@ -103,7 +101,7 @@ func (v HostKeyBlob) Validate() error {
 	if len(v) < 16 {
 		return errors.New("host key is too short")
 	}
-	return checkPattern("host key", string(v), reHostKeyBlob, 4096)
+	return checkPattern("host key", string(v), reBase64, 4096)
 }
 
 // EnvName is an environment variable name.
@@ -154,10 +152,10 @@ func (v RailpackEnvName) Validate() error {
 type SHA256Hex string
 
 // ProtocolSchema implements SchemaDescriber.
-func (SHA256Hex) ProtocolSchema() ScalarSchema { return strSchema(reSHA256Hex, 0) }
+func (SHA256Hex) ProtocolSchema() ScalarSchema { return strSchema(reHex64, 0) }
 
 // Validate checks the grammar.
-func (v SHA256Hex) Validate() error { return checkPattern("sha256", string(v), reSHA256Hex, 0) }
+func (v SHA256Hex) Validate() error { return checkPattern("sha256", string(v), reHex64, 0) }
 
 // MaxRawObjectBytes bounds an embedded JSON object (a Railpack plan).
 const MaxRawObjectBytes = 512 << 10

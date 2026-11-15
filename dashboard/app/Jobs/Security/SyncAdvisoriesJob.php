@@ -48,7 +48,7 @@ final class SyncAdvisoriesJob implements ShouldBeUniqueUntilProcessing, ShouldQu
         $result = $sync->handle($inventory, $this->force);
 
         if (! $result['complete'] && $result['retryAfter'] !== null) {
-            dispatch(new self($this->inventoryId))->delay(now()->addSeconds($result['retryAfter']));
+            dispatch(new self($this->inventoryId, $this->force))->delay(now()->addSeconds($result['retryAfter']));
         }
     }
 }

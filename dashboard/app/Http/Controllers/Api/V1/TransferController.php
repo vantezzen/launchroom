@@ -11,11 +11,11 @@ use App\Actions\Transfers\StoreTransferChunk;
 use App\Data\Transfers\ChunkReceiptData;
 use App\Data\Transfers\Inputs\CreateTransferInput;
 use App\Data\Transfers\TransferData;
-use App\Enums\Transfers\TransferDirection;
+use App\Data\Transfers\UploadedChunk;
 use App\Http\Api\ApiOperation;
 use App\Http\Api\ApiResponse;
 use App\Http\Controllers\Controller;
-use App\Http\Controllers\Transfers\TransferController as WebTransferController;
+use App\Http\Routing\RouteScope;
 use App\Models\Environment;
 use App\Models\Service;
 use App\Models\Transfers\DataTransfer;
@@ -36,7 +36,7 @@ final class TransferController extends Controller
     #[ApiOperation(id: 'createTransfer', summary: 'Announce an upload to import', tag: 'Data', response: TransferData::class, request: CreateTransferInput::class, status: 201, description: 'Then send its chunks (0-based, chunkBytes each, the last one shorter) and complete it.')]
     public function store(Environment $environment, Service $service, CreateTransferInput $input, #[CurrentUser] User $user, CreateUpload $create): JsonResponse
     {
-        $instance = $this->instance($environment, $service);
+        $instance = RouteScope::editable(RouteScope::instanceIn($environment, $service));
         Gate::authorize('create', [DataTransfer::class, $instance]);
 
         return ApiResponse::item(TransferData::fromTransfer($create->handle($instance, $input, $user)), 201);
@@ -54,9 +54,11 @@ final class TransferController extends Controller
     public function chunk(Request $request, DataTransfer $transfer, int $index, StoreTransferChunk $store): JsonResponse
     {
         Gate::authorize('update', $transfer);
-        abort_unless($transfer->direction === TransferDirection::Upload, 404);
+        RouteScope::upload($transfer);
 
-        return ApiResponse::item($store->handle($transfer, $index, $request->getContent(), WebTransferController::chunkDigest($request)));
+        $chunk = UploadedChunk::fromRequest($request);
+
+        return ApiResponse::item($store->handle($transfer, $index, $chunk->body, $chunk->sha256));
     }
 
     #[ApiOperation(id: 'completeTransfer', summary: 'Finish an upload: checks it and says what it is', tag: 'Data', response: TransferData::class)]
@@ -71,7 +73,7 @@ final class TransferController extends Controller
     public function destroy(DataTransfer $transfer, CancelTransfer $cancel): Response
     {
         Gate::authorize('delete', $transfer);
-        abort_unless($transfer->direction === TransferDirection::Upload, 404);
+        RouteScope::upload($transfer);
 
         $cancel->handle($transfer);
 

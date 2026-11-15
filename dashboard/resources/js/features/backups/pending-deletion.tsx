@@ -1,6 +1,6 @@
 import { Form } from '@inertiajs/react';
 import type { StatusState } from '@/components/status';
-import { Status } from '@/components/status';
+import { Status, backupRunStatus } from '@/components/status';
 import { TimeAgo } from '@/components/time-ago';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
@@ -23,13 +23,6 @@ function state(status: App.Enums.Backups.DeletionRequestStatus): StatusState {
 
     return status === 'completed' ? 'active' : 'progress';
 }
-
-const runStates: Record<string, StatusState> = {
-    pending: 'progress',
-    running: 'progress',
-    succeeded: 'active',
-    failed: 'failed',
-};
 
 /**
  * A deletion waiting for its final backup (docs/14 §9.13): which databases
@@ -89,7 +82,11 @@ export function PendingDeletion({
                             className="flex flex-wrap items-center gap-x-3"
                         >
                             <Status
-                                state={runStates[run.status] ?? 'progress'}
+                                state={
+                                    backupRunStatus[
+                                        run.status as App.Enums.Backups.BackupRunStatus
+                                    ].state
+                                }
                                 label={run.status}
                             />
                             <span className="type-small">

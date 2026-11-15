@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Data\ConfigAsCode;
 
+use App\Support\Protocol\Grammar;
 use Spatie\LaravelData\Attributes\Validation\Max;
 use Spatie\LaravelData\Attributes\Validation\Regex;
 use Spatie\LaravelData\Data;
@@ -19,7 +20,7 @@ final class ConfigFileSettingsData extends Data
 
     public function __construct(
         public bool $enabled = true,
-        #[Max(1024), Regex('/^(?:[A-Za-z0-9_.@+=,-]+\/)*[A-Za-z0-9_.@+=,-]+\.json$/D')]
+        #[Max(1024), Regex('#^'.Grammar::REL_PATH_BODY.'(?<=[^/]\.json)$#D')]
         public string $path = self::DEFAULT_PATH,
         public ?int $repositoryId = null,
     ) {}

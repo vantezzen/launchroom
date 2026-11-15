@@ -10,17 +10,17 @@ use App\Data\Audit\AuditActor;
 use App\Data\Audit\AuditEntryData;
 use App\Data\Specs\ServiceSpec;
 use App\Enums\AuditAction;
-use App\Enums\Permission;
 use App\Models\AuditEvent;
 use App\Models\Environment;
 use App\Models\EnvironmentRevision;
 use App\Models\Service;
 use App\Models\User;
+use App\Models\Variable;
 use App\Queries\CurrentEnvironmentSpec;
 use App\Services\Variables\SpecVariableResolver;
-use App\Support\Variables\SecretTaint;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
 
 /**
  * The resolved env of a service for `env pull` and `run` (docs/16 §3.3):
@@ -51,8 +51,8 @@ final readonly class ExportEnvironment
         }
 
         $values = $this->resolver->resolve($environment->project, $spec, $serviceSpec)->all();
-        $tainted = SecretTaint::fromSpec($spec)->taintedKeys($serviceSpec->slug);
-        $includeSecrets = $withSecrets && $user->hasTeamPermission($environment->team_id, Permission::RevealSecrets);
+        $tainted = $this->resolver->taint($environment->project, $spec)->taintedKeys($serviceSpec->slug);
+        $includeSecrets = $withSecrets && Gate::forUser($user)->allows('revealSecrets', [Variable::class, $environment->project]);
         $withheld = [];
 
         if (! $includeSecrets) {

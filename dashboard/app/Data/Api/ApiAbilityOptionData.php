@@ -19,5 +19,7 @@ final class ApiAbilityOptionData extends Data
         public string $description,
         public bool $available,
         public bool $default,
+        /** Every token has it: shown checked, can't be unticked. */
+        public bool $locked = false,
     ) {}
 }

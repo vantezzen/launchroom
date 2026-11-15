@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Git\Ssh;
 
 use App\Contracts\Git\SshRemotes;
-use App\Services\Git\Exceptions\GitConnectionUnusable;
+use App\Exceptions\Git\GitConnectionUnusable;
 use App\Services\Http\Exceptions\UnsafeUrl;
 use App\Services\Http\UrlGuard;
 use App\Support\Git\HostKey;

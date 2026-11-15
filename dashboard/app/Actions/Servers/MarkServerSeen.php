@@ -27,7 +27,7 @@ final class MarkServerSeen
             $server->forceFill(['last_seen_at' => now()]);
             $this->fillClientCertificate($server, $presence);
 
-            if (in_array($server->status, [ServerStatus::Unreachable, ServerStatus::Offline], true)) {
+            if ($server->status->isDown()) {
                 $server->transitionTo(ServerStatus::Online);
 
                 return;

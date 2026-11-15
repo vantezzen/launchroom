@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 use App\Data\Canvas\ServiceOriginData;
 use App\Data\Services\GitSource;
+use App\Enums\Git\GitProviderKind;
 use App\Enums\TeamRole;
 use App\Models\Environment;
 use App\Models\Service;
 use App\Models\ServiceInstance;
 use App\Models\Team;
 use App\Queries\ServiceOrigin;
+use Tests\Support\GitHubFake;
 use Tests\Support\Projects;
 
 /*
@@ -31,7 +33,9 @@ function originOf(Service $service, Environment $environment): ServiceOriginData
 
 test('a GitHub repository links to the branch it deploys', function (): void {
     $web = Projects::image($this->project, 'web');
-    $web->forceFill(['kind' => 'app', 'source' => new GitSource(555, 'acme/shop', 1, branch: 'release/v2')])->save();
+    $installation = GitHubFake::installation(GitHubFake::app($this->team));
+    GitHubFake::repository($installation, 555, 'acme/shop');
+    $web->forceFill(['kind' => 'app', 'source' => new GitSource(555, 'acme/shop', $installation->id, branch: 'release/v2')])->save();
 
     $origin = originOf($web, $this->production);
 
@@ -48,7 +52,7 @@ test('a GitHub repository links to the branch it deploys', function (): void {
 
 test('a plain git server has no web page', function (): void {
     $web = Projects::image($this->project, 'web');
-    $web->forceFill(['kind' => 'app', 'source' => new GitSource(0, 'fixtures/node-hello', provider: 'git', cloneUrl: 'http://git-fixtures:8080/node-hello.git')])->save();
+    $web->forceFill(['kind' => 'app', 'source' => new GitSource(0, 'fixtures/node-hello', provider: GitProviderKind::Git, cloneUrl: 'http://git-fixtures:8080/node-hello.git')])->save();
 
     $origin = originOf($web, $this->production);
 

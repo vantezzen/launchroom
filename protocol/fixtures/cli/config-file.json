@@ -1,0 +1,4 @@
+{
+  "description": "launchroom.json (docs/18): the size limit the CLI checks locally and the dashboard enforces (App\\Support\\ConfigAsCode\\JsonDocument::MAX_BYTES). Read by cli/internal/configfile and the dashboard's JsonDocument test.",
+  "maxBytes": 262144
+}

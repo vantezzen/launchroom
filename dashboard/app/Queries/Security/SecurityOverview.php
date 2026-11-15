@@ -16,7 +16,6 @@ use App\Data\Security\WorthKnowingItemData;
 use App\Data\Services\DatabaseSource;
 use App\Enums\AnalyticsRange;
 use App\Enums\EnvironmentKind;
-use App\Enums\Permission;
 use App\Enums\Security\AdvisoryFeed;
 use App\Enums\Security\FindingLevel;
 use App\Enums\Security\FindingReason;
@@ -31,10 +30,10 @@ use App\Models\ServiceInstance;
 use App\Models\Team;
 use App\Models\User;
 use App\Queries\AnalyticsTiers;
+use App\Support\Links;
 use App\Support\Metrics\Cast;
 use App\Support\Security\InvestigationSummary;
 use App\Support\Security\LifecycleProducts;
-use App\Support\Security\SecurityScope;
 use App\Support\Security\VersionOrder;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Query\Builder;
@@ -145,7 +144,7 @@ final readonly class SecurityOverview
             canCheckNow: Gate::forUser($user)->allows('checkNow', [SecurityFinding::class, $team]),
             nextCheckAt: $nextCheck !== null && $nextCheck->isFuture() ? $nextCheck->toIso8601ZuluString() : null,
             canManageSources: $user->is_instance_owner === true,
-            canManage: $user->hasTeamPermission($team, Permission::ManageProjects),
+            canManage: Gate::forUser($user)->allows('manage', [SecurityFinding::class, $team]),
             summary: $summary,
             actionNeeded: array_map(static fn (array $c): FindingCardData => $c[1], $cards),
             firewall: $firewall,
@@ -179,10 +178,10 @@ final readonly class SecurityOverview
 
         return new FindingCardData(
             id: $finding->public_id,
-            href: '/security/findings/'.$finding->public_id,
+            href: Links::finding($finding),
             advisory: $finding->group_key,
             title: $title,
-            severity: $finding->severity->value,
+            severity: $finding->severity,
             cvss: $finding->cvss_score === null ? null : (float) $finding->cvss_score,
             knownExploited: $finding->known_exploited,
             knownExploitedSince: $finding->known_exploited_since?->toDateString(),
@@ -191,14 +190,14 @@ final readonly class SecurityOverview
             package: $finding->name,
             version: $finding->version,
             fixedVersion: $finding->fixed_version,
-            level: $finding->level->value,
+            level: $finding->level,
             reasons: $finding->reasons,
-            status: $finding->status->value,
+            status: $finding->status,
             firstSeenAt: $finding->first_seen_at->toIso8601ZuluString(),
             service: $service,
             investigation: $investigation instanceof SecurityInvestigation ? new FindingInvestigationData(
                 $investigation->public_id,
-                $investigation->status->value,
+                $investigation->status,
                 $investigation->started_at->toIso8601ZuluString(),
                 $investigation->finished_at?->toIso8601ZuluString(),
                 InvestigationSummary::sentences($investigation),
@@ -223,8 +222,6 @@ final readonly class SecurityOverview
     }
 
     /**
-     * Every advisory id of these findings.
-     *
      * @param  array<array-key, SecurityFinding>  $findings
      * @return list<string>
      */
@@ -576,7 +573,7 @@ final readonly class SecurityOverview
                     title: $title,
                     severity: $f->severity->value,
                     fixedVersion: $f->fixed_version,
-                    href: '/security/findings/'.$f->public_id,
+                    href: Links::finding($f),
                     services: array_values($item['services']),
                     reason: $reason,
                     text: FindingReason::from($reason)->label(),

@@ -20,7 +20,6 @@ fail() {
 	FAILED=1
 }
 
-# --- stubs --------------------------------------------------------------
 cat >"$STUBS/docker" <<'EOF'
 #!/bin/sh
 printf 'docker %s\n' "$*" >>"$STUB_LOG"

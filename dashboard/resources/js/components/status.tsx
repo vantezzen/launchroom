@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import { MetaDivider } from '@/components/patterns/meta-line';
 import { ProgressRing } from '@/components/progress-ring';
 import { cn } from '@/lib/utils';
+import { vocabulary } from '@/lib/vocabulary';
 
 /**
  * Visual state behind a status word (design-system §3.3):
@@ -13,13 +14,7 @@ import { cn } from '@/lib/utils';
  * - `idle`     hollow grey dot: Stopped, Superseded, Skipped, Not deployed
  * - `staged`   hollow signal dot: Ready to promote, has staged changes
  */
-export type StatusState =
-    | 'active'
-    | 'progress'
-    | 'failed'
-    | 'idle'
-    | 'warning'
-    | 'staged';
+export type StatusState = App.Enums.StatusTone;
 
 const tone: Record<StatusState, string> = {
     active: 'text-status-ok',
@@ -149,65 +144,27 @@ export function StatusPill({ state, label, detail, className }: StatusProps) {
     );
 }
 
-type Mapped = { state: StatusState; label: string };
+export type Mapped = { state: StatusState; label: string };
 
-/**
- * Every existing status enum mapped onto the unified vocabulary (§3.3).
- * Pages use these instead of local label tables.
- */
-export const deploymentStatus: Record<App.Enums.DeploymentStatus, Mapped> = {
-    queued: { state: 'progress', label: 'Queued' },
-    building: { state: 'progress', label: 'Deploying' },
-    releasing: { state: 'progress', label: 'Deploying' },
-    rolling_out: { state: 'progress', label: 'Deploying' },
-    health_checking: { state: 'progress', label: 'Deploying' },
-    routing: { state: 'progress', label: 'Deploying' },
-    ready: { state: 'staged', label: 'Ready to promote' },
-    active: { state: 'active', label: 'Live' },
-    failed: { state: 'failed', label: 'Failed' },
-    cancelled: { state: 'idle', label: 'Cancelled' },
-    superseded: { state: 'idle', label: 'Superseded' },
-};
+type Presented<K extends string> = Record<
+    K,
+    { label: string; tone: StatusState }
+>;
 
-export const serverStatus: Record<App.Enums.ServerStatus, Mapped> = {
-    online: { state: 'active', label: 'Online' },
-    pending_approval: { state: 'staged', label: 'Waiting for approval' },
-    unreachable: { state: 'failed', label: 'Unreachable' },
-    offline: { state: 'failed', label: 'Offline' },
-    revoked: { state: 'idle', label: 'Revoked' },
-};
+/** The word and state of every case, from the PHP enum's `label()` and `tone()`. */
+export function presented<K extends string>(
+    table: Presented<K>,
+): Record<K, Mapped> {
+    return Object.fromEntries(
+        Object.entries<{ label: string; tone: StatusState }>(table).map(
+            ([key, { label, tone }]) => [key, { state: tone, label }],
+        ),
+    ) as Record<K, Mapped>;
+}
 
-export const stepStatus: Record<App.Enums.DeploymentStepStatus, Mapped> = {
-    running: { state: 'progress', label: 'Running' },
-    succeeded: { state: 'active', label: 'Succeeded' },
-    failed: { state: 'failed', label: 'Failed' },
-    skipped: { state: 'idle', label: 'Skipped' },
-};
-
-export const backupRunStatus: Record<
-    App.Enums.Backups.BackupRunStatus,
-    Mapped
-> = {
-    pending: { state: 'progress', label: 'Waiting' },
-    running: { state: 'progress', label: 'Backing up' },
-    succeeded: { state: 'active', label: 'Succeeded' },
-    failed: { state: 'failed', label: 'Failed' },
-};
-
-export const previewStatus: Record<App.Enums.Previews.PreviewStatus, Mapped> = {
-    skipped: { state: 'idle', label: 'Skipped' },
-    awaiting_approval: { state: 'staged', label: 'Waiting for approval' },
-    queued: { state: 'progress', label: 'Queued' },
-    preparing: { state: 'progress', label: 'Deploying' },
-    running: { state: 'active', label: 'Live' },
-    failed: { state: 'failed', label: 'Failed' },
-    closed: { state: 'idle', label: 'Closed' },
-    expired: { state: 'idle', label: 'Expired' },
-};
-
-export const healthCheckState: Record<App.Enums.HealthCheckState, Mapped> = {
-    ok: { state: 'active', label: 'OK' },
-    warning: { state: 'warning', label: 'Warning' },
-    critical: { state: 'failed', label: 'Failing' },
-    unknown: { state: 'idle', label: 'Unknown' },
-};
+export const deploymentStatus = presented(vocabulary.DeploymentStatus);
+export const serverStatus = presented(vocabulary.ServerStatus);
+export const healthCheckState = presented(vocabulary.HealthCheckState);
+export const dnsCheckStatus = presented(vocabulary.Domains.DnsCheckStatus);
+export const backupRunStatus = presented(vocabulary.Backups.BackupRunStatus);
+export const previewStatus = presented(vocabulary.Previews.PreviewStatus);

@@ -6,7 +6,7 @@ type Analytics = App.Data.Analytics.AnalyticsData;
 type TeamAnalytics = App.Data.Analytics.TeamAnalyticsData;
 
 /** Projects with their own colour in the team chart; the rest is "Other". */
-export const TOP_PROJECTS = 4;
+const TOP_PROJECTS = 4;
 
 /**
  * Requests per bucket stacked by project (design-system §3.4, §9): the
@@ -91,7 +91,7 @@ export function share(part: number, total: number): number | null {
     return total > 0 ? (part / total) * 100 : null;
 }
 
-export type PathRow = {
+type PathRow = {
     key: string;
     path: string;
     requests: number;
@@ -187,21 +187,4 @@ export function agentRows(data: Analytics): ShareRow[] {
     ]
         .filter((row) => row.value > 0)
         .map((row) => ({ ...row, sharePct: share(row.value, total) ?? 0 }));
-}
-
-/** "4.2%", "0.31%", "0%". */
-export function formatShare(value: number | null): string {
-    if (value === null) {
-        return '–';
-    }
-
-    if (value === 0) {
-        return '0%';
-    }
-
-    if (value < 0.01) {
-        return '<0.01%';
-    }
-
-    return value < 1 ? `${value.toFixed(2)}%` : `${value.toFixed(1)}%`;
 }

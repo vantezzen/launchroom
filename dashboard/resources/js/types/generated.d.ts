@@ -1,5 +1,20 @@
 declare namespace App {
+namespace Broadcasting {
+export type BroadcastEvent = 'canvas.changed' | 'deployment.updated' | 'logs.appended' | 'server.metrics' | 'service.activity' | 'security.changed';
+export type Channel = 'environments' | 'deployments' | 'servers' | 'security' | 'daemon' | 'session';
+export type ServiceActivityTopic = 'sessions' | 'remote_access' | 'backups' | 'imports';
+}
 namespace Data {
+namespace Account {
+export type PasskeyData = {
+id: number,
+name: string,
+authenticator: string | null,
+addedAgo: string | null,
+lastUsedAgo: string | null,
+otherAddress: string | null,
+};
+}
 namespace Activity {
 export type ActivityEntryData = {
 id: string,
@@ -19,6 +34,9 @@ severity: string | null,
 };
 export type ActivityFiltersData = {
 project: string | null,
+kind: string | null,
+};
+export type ProjectActivityFilterData = {
 kind: string | null,
 };
 }
@@ -93,6 +111,9 @@ label: string,
 title: string,
 href: string | null,
 openedAt: string,
+kind: App.Enums.Alerts.AlertKind | null,
+backupKind: App.Enums.Backups.BackupAlertKind | null,
+value: number | null,
 };
 }
 namespace Analytics {
@@ -200,6 +221,7 @@ label: string,
 description: string,
 available: boolean,
 default: boolean,
+locked: boolean,
 };
 export type ApiCommitData = {
 sha: string,
@@ -375,7 +397,7 @@ limit: number,
 cursor: string | null,
 };
 export type ListFindingsQuery = {
-level: string | null,
+level: App.Enums.Security.FindingLevel | null,
 status: string,
 project: string | null,
 service: string | null,
@@ -480,12 +502,32 @@ detected: number,
 categories: App.Data.Security.WafCategoryCountData[],
 services: App.Data.Security.WafServiceCountData[],
 };
+namespace Events {
+export type DeploymentEndEvent = {
+status: App.Enums.DeploymentStatus,
+};
+export type DeploymentLinesEvent = {
+lines: App.Data.Deployments.LogLineData[],
+cursor: number,
+};
+export type DeploymentStatusEvent = {
+status: App.Enums.DeploymentStatus,
+finished: boolean,
+};
+export type EnvironmentLinesEvent = {
+entries: App.Data.Logs.LogEntryData[],
+cursor: number,
+};
+export type StreamReconnectEvent = {
+cursor: number,
+};
+}
 }
 namespace Attention {
 export type AttentionItemData = {
 key: string,
 kind: string,
-state: App.Enums.AttentionState,
+state: App.Enums.StatusTone,
 title: string,
 context: string | null,
 detail: string | null,
@@ -587,7 +629,6 @@ lastSizeBytes: number | null,
 export type BackupRunData = {
 id: string,
 reason: App.Enums.Backups.BackupReason,
-reasonLabel: string,
 status: App.Enums.Backups.BackupRunStatus,
 snapshotId: string | null,
 shortSnapshotId: string | null,
@@ -611,6 +652,7 @@ destinationId: string,
 destinationName: string,
 cron: string,
 retention: App.Data.Backups.RetentionData,
+retentionLimits: App.Data.Backups.RetentionLimitsData,
 retentionSummary: string,
 enabled: boolean,
 nextRunAt: string | null,
@@ -704,6 +746,10 @@ canConfigure: boolean,
 serverReady: boolean,
 updateUrl: string,
 };
+export type PointInTimeSettingsData = {
+enabled: boolean,
+keepDays: number,
+};
 export type RecoveryKitStatusData = {
 destinationConfigured: boolean,
 passphraseSet: boolean,
@@ -711,6 +757,9 @@ passphraseSetAt: string | null,
 kitDownloadedAt: string | null,
 kitConfirmedAt: string | null,
 needsAttention: boolean,
+};
+export type RecoveryPassphraseData = {
+passphrase: string,
 };
 export type RestoreRunData = {
 id: string,
@@ -727,6 +776,13 @@ pointInTime: boolean,
 requestedTime: string | null,
 restoredTo: string | null,
 };
+export type RestoreSnapshotData = {
+mode: App.Enums.Backups.RestoreMode,
+snapshot: string | null,
+confirmation: string | null,
+pointInTime: boolean,
+at: string | null,
+};
 export type RetentionData = {
 keepLast: number,
 keepHourly: number,
@@ -734,6 +790,12 @@ keepDaily: number,
 keepWeekly: number,
 keepMonthly: number,
 keepWithinHours: number,
+};
+export type RetentionLimitsData = {
+keepHourly: App.Data.Forms.NumberRangeData,
+keepDaily: App.Data.Forms.NumberRangeData,
+keepWeekly: App.Data.Forms.NumberRangeData,
+keepMonthly: App.Data.Forms.NumberRangeData,
 };
 export type ServiceBackupStatusData = {
 status: App.Enums.Backups.BackupHealth,
@@ -785,6 +847,12 @@ reason: string | null,
 source: App.Enums.Backups.SnapshotSource,
 volumeId: string | null,
 mountPath: string | null,
+};
+export type SwapRestoreData = {
+confirmation: string,
+};
+export type VolumeBackupSettingsData = {
+consistency: App.Enums.Backups.VolumeConsistency,
 };
 }
 namespace Blueprints {
@@ -918,12 +986,39 @@ service: string,
 engine: App.Enums.DatabaseEngine | null,
 managed: boolean | null,
 bindMounts: number,
+engineLabel: string | null,
 };
 export type SkippedServiceData = {
 name: string,
 reason: string,
 line: number | null,
 needsRepository: boolean,
+};
+}
+namespace Broadcasts {
+export type CanvasChangedData = {
+serviceId: string | null,
+};
+export type DeploymentUpdatedData = {
+deploymentId: string,
+environmentId: string,
+serviceId: string,
+status: App.Enums.DeploymentStatus,
+statusChanged: boolean,
+};
+export type LogsAppendedData = {
+deploymentId: string,
+};
+export type SecurityChangedData = {
+teamId: string,
+};
+export type ServerMetricsData = {
+serverId: string,
+at: string,
+};
+export type ServiceActivityData = {
+serviceId: string,
+topic: App.Broadcasting.ServiceActivityTopic,
 };
 }
 namespace Canvas {
@@ -959,7 +1054,7 @@ capabilityOptions: App.Data.Canvas.CapabilityOptionData[],
 };
 export type CanvasEdgeData = {
 id: string,
-type: string,
+type: App.Enums.CanvasEdgeType,
 source: string,
 target: string,
 variables: string[],
@@ -977,6 +1072,7 @@ instanceId: string,
 name: string,
 slug: string,
 kind: App.Enums.ServiceKind,
+capabilities: App.Data.Canvas.ServiceCapabilitiesData,
 logo: string,
 subtitle: string,
 status: App.Data.Canvas.NodeStatusData,
@@ -993,6 +1089,7 @@ position: App.Data.Canvas.CanvasPositionData | null,
 backup: App.Data.Backups.ServiceBackupStatusData | null,
 placementIssue: App.Data.Canvas.PlacementIssueData | null,
 openAlerts: App.Data.Alerts.OpenAlertData[],
+analyticsView: App.Enums.AnalyticsView,
 };
 export type CanvasPositionData = {
 x: number,
@@ -1064,6 +1161,8 @@ label: string,
 versions: string[],
 defaultVersion: string,
 tagline: string,
+provides: string[],
+category: App.Drivers.DatabaseEngines.DatabaseEngineCategory,
 };
 export type DeployDayData = {
 date: string,
@@ -1071,8 +1170,8 @@ total: number,
 failed: number,
 };
 export type DetectedPlanData = {
-builder: string | null,
-builderReason: string | null,
+builder: App.Enums.Builds.ChosenBuilder | null,
+builderReason: App.Enums.Builds.BuilderReason | null,
 framework: string | null,
 frameworkVersion: string | null,
 provider: string | null,
@@ -1144,13 +1243,15 @@ status: App.Data.Canvas.NodeStatusData,
 problems: App.Data.Canvas.ServiceProblemData[],
 };
 export type NodeStatusData = {
-state: App.Enums.CanvasNodeState,
+state: App.Enums.StatusTone,
+reason: App.Enums.NodeStatusReason,
 label: string,
 since: string | null,
 deploymentId: string | null,
+detail: string | null,
 };
 export type PlacementIssueData = {
-kind: string,
+kind: App.Enums.PlacementIssueKind,
 message: string,
 serverId: string | null,
 since: string,
@@ -1185,13 +1286,13 @@ allowPreviews: boolean,
 allowProduction: boolean,
 };
 export type PlanPreviewData = {
-status: string,
+status: App.Enums.PlanPreviewStatus,
 plan: App.Data.Canvas.DetectedPlanData | null,
 message: string | null,
 suggestions: App.Data.Projects.PlanSuggestionsData | null,
 };
 export type PlanStatusData = {
-status: string,
+status: App.Enums.ServicePlanStatus,
 commitSha: string | null,
 branch: string | null,
 finishedAt: string | null,
@@ -1201,6 +1302,7 @@ export type ProjectAbilitiesData = {
 manage: boolean,
 connect: boolean,
 deploy: boolean,
+console: boolean,
 };
 export type ProjectData = {
 id: string,
@@ -1226,6 +1328,19 @@ name: string,
 iconUrl: string | null,
 environmentId: string | null,
 };
+export type ProjectShellPropsData = {
+project: App.Data.Canvas.ProjectData,
+environment: App.Data.Canvas.EnvironmentData | null,
+environments: App.Data.Canvas.EnvironmentData[],
+projects: App.Data.Canvas.ProjectLinkData[],
+abilities: App.Data.Canvas.ProjectAbilitiesData,
+edgeOverview: App.Data.Ingress.EdgeOverviewData,
+projectStatuses?: App.Data.Canvas.ProjectStatusData[],
+};
+export type ProjectStatusData = {
+projectId: string,
+status: App.Data.Canvas.NodeStatusData,
+};
 export type ProjectSummaryData = {
 id: string,
 name: string,
@@ -1249,6 +1364,15 @@ export type ScalingPreviewData = {
 servers: App.Data.Canvas.PlacementPreviewServerData[],
 error: string | null,
 };
+export type ServiceCapabilitiesData = {
+web: boolean,
+built: boolean,
+stateful: boolean,
+listens: boolean,
+ownsVolumes: boolean,
+canMountSharedVolume: boolean,
+deploysNewVersions: boolean,
+};
 export type ServiceControlsData = {
 canControl: boolean,
 running: boolean,
@@ -1270,13 +1394,13 @@ host: string | null,
 };
 export type ServicePanelData = {
 serviceId: string,
-tab: string,
+tab: App.Enums.ServicePanelTab,
 settings: App.Data.Canvas.ServiceSettingsData | null,
 canUpdate: boolean,
 canDelete: boolean,
 canConsole: boolean,
 canData: boolean,
-section: string | null,
+section: App.Enums.ServiceSettingsSection | null,
 actionNeeded: number,
 actionNeededFinding: string | null,
 controls: App.Data.Canvas.ServiceControlsData | null,
@@ -1306,7 +1430,9 @@ plan: App.Data.Canvas.PlanStatusData | null,
 defaultRailpackVersion: string,
 build: App.Data.Services.BuildSettings,
 deploy: App.Data.Services.DeploySettings,
+deployLimits: App.Data.Services.DeployLimitsData,
 scaling: App.Data.Services.ScalingSettings,
+replicasRange: App.Data.Forms.NumberRangeData,
 enabled: boolean,
 domains: App.Data.Canvas.DomainData[],
 privateHost: string,
@@ -1319,7 +1445,7 @@ configFile: App.Data.ConfigAsCode.ManagedByFileData | null,
 dockerfileGeneration: App.Data.Dockerfiles.DockerfileGenerationPanelData | null,
 };
 export type ServiceSourceData = {
-type: string,
+type: App.Enums.ServiceSourceType,
 repository: string | null,
 rootDirectory: string | null,
 branch: string | null,
@@ -1330,7 +1456,7 @@ engine: App.Enums.DatabaseEngine | null,
 version: string | null,
 versions: string[],
 parentName: string | null,
-provider: string | null,
+provider: App.Enums.Git.GitProviderKind | null,
 };
 export type VolumeAttachPreviewData = {
 problem: string | null,
@@ -1382,6 +1508,7 @@ nodeStatus: App.Data.Canvas.NodeStatusData | null,
 domain: string | null,
 logo: string | null,
 serviceKind: App.Enums.ServiceKind | null,
+analyticsView: App.Enums.AnalyticsView | null,
 };
 }
 namespace ConfigAsCode {
@@ -1432,6 +1559,7 @@ column: number | null,
 path: string | null,
 hint: string | null,
 excerpt: App.Data.ConfigAsCode.ConfigExcerptLineData[],
+href: string | null,
 };
 export type ConfigFileSettingsData = {
 enabled: boolean,
@@ -1496,6 +1624,26 @@ id: string,
 name: string,
 device: App.Data.Servers.DeviceData,
 };
+export type CommitNotDeployed = {
+message: string,
+};
+export type ContainerExitData = {
+at: string,
+code: number | null,
+oomKilled: boolean,
+output: {
+time: string,
+stream: string,
+text: string,
+}[],
+};
+export type DeploymentCommit = {
+sha: string | null,
+ref: string | null,
+message: string | null,
+author: string | null,
+authorAvatarUrl: string | null,
+};
 export type DeploymentDetailData = {
 deployment: App.Data.Deployments.DeploymentSummaryData,
 projectName: string,
@@ -1545,6 +1693,20 @@ requests: number,
 requestsPerSecond: number,
 errorRatePct: number | null,
 p95Ms: number | null,
+};
+export type DeploymentListFilterData = {
+environment: string | null,
+service: string | null,
+status: App.Enums.DeploymentFilter | null,
+};
+export type DeploymentPlanData = {
+task: string | null,
+platform: string | null,
+durationMs: number | null,
+summary: App.Data.Protocol.V1.BuildSummary | null,
+secretsHash: string | null,
+attestations: string[] | null,
+reusedFrom: string | null,
 };
 export type DeploymentRefData = {
 id: string,
@@ -1639,6 +1801,20 @@ lines: App.Data.Deployments.LogLineData[],
 cursor: number,
 hasMore: boolean,
 };
+export type ProbeProgressData = {
+attempts: number | null,
+failures: number | null,
+lastError: string | null,
+checkedAt: string | null,
+portHint: App.Enums.PortHint | null,
+listening: number[],
+};
+export type PullProgressData = {
+stage: string,
+downloaded: number,
+total: number,
+updatedAt: string | null,
+};
 export type RecentDeploymentData = {
 deployment: App.Data.Deployments.DeploymentSummaryData,
 projectName: string,
@@ -1670,6 +1846,15 @@ export type ServiceStoppedData = {
 at: string,
 by: string | null,
 };
+export type WorkloadIssueData = {
+kind: App.Enums.WorkloadIssueKind,
+since: string,
+port: number | null,
+listening: number[],
+exitCode: number | null,
+oomKilled: boolean,
+restarts: number | null,
+};
 }
 namespace Dockerfiles {
 export type AiProviderSettingsData = {
@@ -1693,6 +1878,41 @@ lint: {
 line: number,
 message: string,
 }[],
+};
+export type DockerfileAttemptRecordData = {
+n: number,
+startedAt: string | null,
+dockerfile: string | null,
+port: number | null,
+startCommand: string | null,
+explanation: string | null,
+confidence: string | null,
+inputTokens: number | null,
+outputTokens: number | null,
+lint: {
+line: number,
+message: string,
+}[],
+buildTask: string | null,
+buildMs: number | null,
+runTask: string | null,
+startedAfterMs: number | null,
+httpStatus: number | null,
+outcome: string | null,
+message: string | null,
+log: string | null,
+};
+export type DockerfileDetectedData = {
+provider: string | null,
+framework: string | null,
+packageManager: string | null,
+runtime: string | null,
+installCommand: string | null,
+buildCommand: string | null,
+startCommand: string | null,
+port: number | null,
+error: string | null,
+healthPath: string | null,
 };
 export type DockerfileFileSentData = {
 path: string,
@@ -1744,6 +1964,15 @@ canEnable: boolean,
 planFailed: boolean,
 latest: App.Data.Dockerfiles.DockerfileGenerationData | null,
 };
+export type RepositoryContextData = {
+tree: string[],
+treeTruncated: boolean,
+files: {
+path: string,
+content: string,
+truncated: boolean,
+}[],
+};
 export type StartDockerfileGenerationData = {
 trigger: App.Enums.Dockerfiles.DockerfileGenerationTrigger,
 };
@@ -1777,7 +2006,7 @@ checkedAt: string | null,
 warning: string | null,
 };
 export type DnsCheckData = {
-status: string,
+status: App.Enums.Domains.DnsCheckStatus,
 hostname: string,
 addresses: string[],
 expected: string[],
@@ -1786,6 +2015,10 @@ message: string,
 checkedAt: string,
 proxy: string | null,
 reachedOverHttp: boolean,
+};
+export type UpdateDomainData = {
+hsts: boolean | null,
+wwwRedirect: boolean | null,
 };
 }
 namespace Environments {
@@ -1827,9 +2060,18 @@ branch: string | null,
 tagPattern: string | null,
 pullRequests: boolean,
 };
+export type SecretsPolicyData = {
+productionSecretsMustDiffer: boolean,
+};
 export type UpdateEnvironmentData = {
 name?: string,
 triggers?: App.Data.Environments.EnvironmentTriggers,
+};
+}
+namespace Forms {
+export type NumberRangeData = {
+min: number,
+max: number,
 };
 }
 namespace Git {
@@ -1844,6 +2086,9 @@ authorName: string | null,
 authorEmail: string | null,
 authorLogin: string | null,
 authorAvatarUrl: string | null,
+};
+export type ConfirmHostKeysData = {
+fingerprints: string[],
 };
 export type ConnectGitProviderData = {
 provider: string,
@@ -1889,7 +2134,6 @@ url: string,
 accountLogin: string | null,
 authMethod: App.Enums.Git.GitAuthMethod,
 status: App.Enums.Git.GitConnectionStatus,
-statusLabel: string,
 statusReason: string | null,
 webhooksHealthy: boolean,
 lastWebhookAt: string | null,
@@ -1946,6 +2190,12 @@ export type ManifestRedirectData = {
 action: string,
 manifest: string,
 };
+export type PlanPreviewInputData = {
+repository: string,
+branch: string,
+rootDirectory: string | null,
+retry: boolean,
+};
 export type PublicRepositoryData = {
 url: string,
 fullName: string,
@@ -1965,9 +2215,9 @@ via: string | null,
 export type PublicRepositoryUrlData = {
 url: string,
 };
-export type RefHeadUpdate = {
-previous: string | null,
-changed: boolean,
+export type RepositoryBranchData = {
+repository: string,
+branch: string,
 };
 export type StartManifestData = {
 organization: string | null,
@@ -1987,7 +2237,47 @@ lastStatus: App.Enums.Git.WebhookDeliveryStatus | null,
 missedAt: string | null,
 };
 }
+namespace Inertia {
+export type AuthData = {
+user: App.Data.Inertia.AuthUserData | null,
+};
+export type AuthUserData = {
+name: string,
+email: string,
+emailVerified: boolean,
+isInstanceOwner: boolean,
+};
+export type InstanceMoveData = {
+frozen: boolean,
+checklist: boolean,
+};
+export type SharedPropsData = {
+name: string,
+auth: App.Data.Inertia.AuthData,
+docsUrl: string,
+sidebarOpen: boolean,
+teams: App.Data.Teams.TeamContextData | null,
+version: string | null,
+recoveryKit: App.Data.Backups.RecoveryKitStatusData | null,
+recoveryMode: boolean,
+instanceMove: App.Data.Inertia.InstanceMoveData | null,
+realtime: App.Data.Instance.RealtimeConfigData | null,
+onboardingProgress: App.Data.Instance.OnboardingProgressData | null,
+controlPlaneLoad: App.Data.Servers.ControlPlaneLoadData | null,
+securityActionNeeded: number,
+updateAvailable: boolean,
+};
+export type ToastData = {
+type: App.Enums.ToastType,
+message: string,
+};
+}
 namespace Ingress {
+export type CertStorageReportData = {
+state: string,
+mirrored: number,
+message: string | null,
+};
 export type DnsCredentialFieldData = {
 key: string,
 label: string,
@@ -2000,6 +2290,11 @@ ok: boolean,
 message: string,
 zone: string | null,
 checkedAt: string,
+};
+export type DnsProviderInput = {
+provider: App.Enums.DnsProvider,
+token: string | null,
+credentials: Record<string, string | null>,
 };
 export type DnsProviderOptionData = {
 value: App.Enums.DnsProvider,
@@ -2029,6 +2324,11 @@ singleServer: boolean,
 degradedStorage: string[],
 guideUrl: string,
 };
+export type IngressReportData = {
+state: string,
+routes: number,
+storage: App.Data.Ingress.CertStorageReportData | null,
+};
 export type IngressSettingsData = {
 appsDomain: string | null,
 dnsProvider: App.Enums.DnsProvider | null,
@@ -2043,8 +2343,17 @@ storageAddress: string | null,
 edges: App.Data.Ingress.EdgeIngressStatusData[],
 overview: App.Data.Ingress.EdgeOverviewData,
 };
+export type SharedEdgeData = {
+shared: boolean,
+};
 }
 namespace Instance {
+export type AppsDomainData = {
+appsDomain: string | null,
+};
+export type ConfirmAppsDomainData = {
+anyway: boolean,
+};
 export type CreateOwnerData = {
 token: string,
 name: string,
@@ -2052,10 +2361,11 @@ email: string,
 password: string,
 };
 export type DashboardCertificateData = {
-state: string,
+state: App.Enums.CertStatus,
 issuer: string | null,
 notAfter: string | null,
 lastError: string | null,
+reportedAt: string | null,
 };
 export type DashboardDomainChangeData = {
 hostname: string,
@@ -2139,6 +2449,16 @@ keepsPasskeys: boolean,
 passkeysAffected: number,
 yourPasskeysAffected: number,
 };
+export type DomainConfirmationData = {
+domain: string,
+verified: boolean | null,
+at: string,
+};
+export type LegacyOriginEntryData = {
+url: string,
+since: string,
+until: string,
+};
 export type OnboardingData = {
 steps: App.Data.Instance.OnboardingStepData[],
 progress: App.Data.Instance.OnboardingProgressData,
@@ -2148,7 +2468,7 @@ githubConnected: boolean,
 githubAppName: string | null,
 appsDomain: string | null,
 edgeAddresses: string[],
-sslipExample: string | null,
+freeWildcard: string | null,
 dashboardHost: string,
 teamBackupsConfigured: boolean,
 recoveryKit: App.Data.Backups.RecoveryKitStatusData,
@@ -2168,9 +2488,16 @@ total: number,
 complete: boolean,
 dismissed: boolean,
 };
+export type OnboardingStateData = {
+dismissedAt: string | null,
+skipped: string[],
+twoFactorDismissed: number[],
+smallServerHintDismissed: number[],
+domainConfirmed: App.Data.Instance.DomainConfirmationData | null,
+};
 export type OnboardingStepData = {
-id: string,
-status: string,
+id: App.Enums.Instance.OnboardingStep,
+status: App.Enums.Instance.OnboardingStepStatus,
 skippable: boolean,
 };
 export type RealtimeConfigData = {
@@ -2179,8 +2506,32 @@ host: string | null,
 port: number | null,
 scheme: string | null,
 };
+export type RecoveryChecklistData = {
+active: boolean,
+startedAt: string | null,
+previous: App.Data.Servers.ReplaceableServerData | null,
+current: App.Data.Servers.ReplaceableServerData | null,
+plan: App.Data.Servers.ReplacementPlanItemData[],
+replacement: App.Data.Servers.ServerReplacementData | null,
+dashboardHost: string | null,
+checks: App.Data.Moves.CutoverChecksData,
+openSteps: string[],
+};
+export type RecoveryStateData = {
+startedAt: string,
+previousControlPlaneServerId: number | null,
+replacementId: number | null,
+};
 export type StartDashboardDomainData = {
 hostname: string,
+};
+export type UpdateOnboardingData = {
+dismissed: boolean | null,
+skip: string | null,
+unskip: string | null,
+};
+export type WildcardCheckData = {
+domain: string,
 };
 }
 namespace Logs {
@@ -2204,15 +2555,15 @@ errors: number,
 export type LogEntryData = {
 id: string,
 time: string,
-level: string,
-source: string,
+level: App.Enums.LogLineLevel,
+source: App.Enums.LogLineSource,
 service: string,
 serviceId: string | null,
 replica: string | null,
 server: string | null,
 deployment: string | null,
 deploymentId: string | null,
-stream: string,
+stream: App.Enums.LogStream,
 message: string,
 environment: string | null,
 project: string | null,
@@ -2230,7 +2581,7 @@ buckets: App.Data.Logs.LogBucketData[],
 matches: number,
 };
 export type LogQueryData = {
-range: string,
+range: App.Enums.LogRange,
 source: string,
 service: string | null,
 after: number,
@@ -2240,6 +2591,10 @@ to: number | null,
 };
 export type LogTailData = {
 service: string | null,
+};
+export type LogTailStartedData = {
+following: number,
+renewAfterSeconds: number,
 };
 export type RuntimeLogRetentionData = {
 enabled: boolean,
@@ -2407,6 +2762,23 @@ requests: App.Data.Metrics.RequestSeriesData | null,
 };
 }
 namespace Moves {
+export type AbortHandoverData = {
+reason: string | null,
+};
+export type ApproveMoveData = {
+code: string,
+};
+export type ClaimMoveData = {
+move: string,
+secret: string,
+publicKey: string,
+hostname: string,
+arch: string,
+version: string | null,
+};
+export type CompleteHandoverData = {
+url: string,
+};
 export type ControlPlaneMoveData = {
 id: string,
 status: App.Enums.Moves.ControlPlaneMoveStatus,
@@ -2424,6 +2796,79 @@ frozenAt: string | null,
 handedOverAt: string | null,
 newUrl: string | null,
 dumpSize: string | null,
+};
+export type CutoverChecksData = {
+expectedAddresses: string[],
+dns: App.Data.Moves.CutoverDnsRowData[],
+servers: App.Data.Moves.CutoverServerData[],
+images: App.Data.Moves.CutoverImagesData | null,
+dnsOk: boolean,
+imagesOk: boolean,
+serversOk: boolean,
+};
+export type CutoverDnsRowData = {
+label: string,
+host: string,
+check: App.Data.Domains.DnsCheckData | null,
+};
+export type CutoverImagesData = {
+checked: number,
+unknown: number,
+missing: App.Data.Moves.CutoverMissingImageData[],
+};
+export type CutoverMachineData = {
+name: string,
+addresses: string[],
+};
+export type CutoverMissingImageData = {
+service: string,
+deployment: string,
+commit: string,
+};
+export type CutoverServerData = {
+id: string,
+name: string,
+status: App.Enums.ServerStatus,
+lastSeenAt: string | null,
+reconnected: boolean,
+};
+export type HandoverDatabaseData = {
+chunks: number,
+chunkBytes: number,
+sizeBytes: number,
+digests: string[],
+digest: string,
+};
+export type HandoverKeysData = {
+bytes: number,
+sha256: string,
+};
+export type HandoverManifestData = {
+kind: string,
+move: string,
+createdAt: string,
+appUrl: string,
+canonicalUrl: string | null,
+database: App.Data.Moves.HandoverDatabaseData,
+sealedKey: string,
+keys: App.Data.Moves.HandoverKeysData,
+};
+export type MoveChecklistData = {
+startedAt: string | null,
+previousUrl: string | null,
+url: string,
+previous: App.Data.Moves.CutoverMachineData | null,
+current: App.Data.Moves.CutoverMachineData | null,
+checks: App.Data.Moves.CutoverChecksData,
+needsRecoveryKit: boolean,
+openSteps: string[],
+};
+export type MoveChecklistStateData = {
+startedAt: string,
+moveId: string | null,
+previousServerId: number | null,
+previousUrl: string | null,
+newServerId: number | null,
 };
 export type MoveDnsRecordData = {
 kind: string,
@@ -2464,6 +2909,12 @@ label: string,
 status: string,
 message: string,
 };
+export type MoveReceiverData = {
+hostname: string | null,
+arch: string | null,
+version: string | null,
+address: string | null,
+};
 export type MoveServerData = {
 id: string,
 name: string,
@@ -2474,6 +2925,18 @@ platform: string | null,
 addresses: string[],
 diskFreeMb: number | null,
 device: App.Enums.DeviceKind,
+};
+export type MoveTransferData = {
+volume: string | null,
+backup: string | null,
+export: string | null,
+import: string | null,
+};
+export type MoveWorkloadsData = {
+backupFirst: boolean,
+};
+export type RetireMovedServerData = {
+confirmation: string,
 };
 export type ServerMoveData = {
 id: string,
@@ -2507,6 +2970,33 @@ startedAt: string | null,
 finishedAt: string | null,
 canRetry: boolean,
 };
+export type ServerMoveOptionsData = {
+backupFirst: boolean,
+};
+export type ServerMoveTargetData = {
+target: string | null,
+};
+export type StartHandoverData = {
+confirmation: string,
+};
+export type StartServerMoveData = {
+target: string,
+confirmation: string,
+backupFirst: boolean,
+};
+export type StartedMovePlanData = {
+platformFrom: string | null,
+platformTo: string | null,
+downtimeSeconds: number | null,
+copyBytes: number | null,
+warnings: string[],
+dns: {
+kind: string,
+host: string,
+addresses: string[],
+remove: string[],
+}[],
+};
 }
 namespace Previews {
 export type ApprovePreviewInput = {
@@ -2529,12 +3019,15 @@ title: string,
 headRef: string,
 baseName: string,
 status: App.Enums.Previews.PreviewStatus,
-statusLabel: string,
 health: string,
 statusReason: string | null,
 secretsWithheld: boolean,
 expiresAt: string | null,
 edgeBadges: App.Data.Previews.PreviewEdgeBadgeData[],
+};
+export type PreviewClosingData = {
+to: App.Enums.Previews.PreviewStatus,
+reason: string,
 };
 export type PreviewData = {
 id: string,
@@ -2549,7 +3042,6 @@ headSha: string,
 headCommit: string,
 isFork: boolean,
 status: App.Enums.Previews.PreviewStatus,
-statusLabel: string,
 statusReason: string | null,
 environmentId: string | null,
 health: string,
@@ -2570,6 +3062,18 @@ message: string | null,
 source: string | null,
 downgradedFrom: App.Enums.PreviewStrategy | null,
 downgradeReason: string | null,
+};
+export type PreviewDatabaseStateData = {
+strategy: App.Enums.PreviewStrategy | null,
+state: unknown | null,
+message: string | null,
+restoreRun: string | null,
+source: string | null,
+snapshot: string | null,
+sizeBytes: number | null,
+task: string | null,
+downgradedFrom: App.Enums.PreviewStrategy | null,
+downgradeReason: unknown | null,
 };
 export type PreviewEdgeBadgeData = {
 serviceId: string,
@@ -2599,7 +3103,9 @@ effectiveBaseId: string | null,
 targetBranches: string | null,
 requiredLabel: string | null,
 maxConcurrent: number,
+maxConcurrentRange: App.Data.Forms.NumberRangeData,
 expiryDays: number,
+expiryDaysRange: App.Data.Forms.NumberRangeData,
 forkPolicy: App.Enums.Previews.ForkPolicy,
 protection: boolean,
 allowProductionClone: boolean,
@@ -2622,6 +3128,13 @@ forkPolicy: App.Enums.Previews.ForkPolicy,
 protection: boolean,
 allowProductionClone: boolean,
 };
+export type PreviewStateData = {
+databases: Record<string, App.Data.Previews.PreviewDatabaseStateData>,
+configSha: string | null,
+configError: string | null,
+deployedSha: string | null,
+pendingClose: App.Data.Previews.PreviewClosingData | null,
+};
 export type PreviewStrategyInput = {
 strategy: App.Enums.PreviewStrategy,
 cloneSourceId: string | null,
@@ -2632,11 +3145,11 @@ service: string,
 url: string,
 };
 export type PullRequestData = {
-provider: App.Enums.Previews.PreviewProvider,
+provider: App.Enums.Git.GitProviderKind,
 installationId: number | null,
 repositoryId: number,
 repositoryName: string,
-action: string,
+action: App.Enums.Git.PullRequestAction,
 number: number,
 title: string,
 headSha: string,
@@ -2710,6 +3223,14 @@ export type PlanSuggestionsData = {
 processes: App.Data.Projects.SuggestedProcessData[],
 databases: App.Data.Projects.SuggestedDatabaseData[],
 };
+export type ProjectDeletionData = {
+servicesWithBackups: number,
+inFlight: boolean,
+services: number,
+environments: number,
+pending: App.Data.Backups.DeletionRequestData | null,
+canSkipFinalBackup: boolean,
+};
 export type ProjectIconData = {
 mode: App.Enums.ProjectIconMode,
 url: string | null,
@@ -2741,11 +3262,17 @@ command: string[],
 };
 }
 namespace Promotions {
+export type PinnedImageData = {
+deployment: string,
+commitSha: string,
+gitRef: string | null,
+};
 export type PromoteChangesData = {
 from: string,
 to: string,
 items: App.Data.Promotions.PromoteItemInput[],
 images: string[],
+deploy: boolean,
 };
 export type PromoteItemInput = {
 path: string,
@@ -2841,7 +3368,7 @@ entries: Record<string, App.Data.Promotions.PromotionEntry>,
 namespace Protocol {
 namespace V1 {
 export type AccessResult = {
-endReason: string,
+endReason: App.Enums.RemoteAccess.RemoteAccessEndReason,
 connections: number,
 authFailures: number,
 bytesIn: number,
@@ -2855,6 +3382,7 @@ method?: string,
 channel?: string,
 count?: number,
 }[],
+failure: App.Enums.Sessions.StartFailure | null,
 };
 export type AccessStatus = {
 port: number,
@@ -2924,8 +3452,8 @@ secretsHash: string | null,
 attestations: string[] | null,
 };
 export type BuildSummary = {
-builder: string,
-builderReason: string,
+builder: App.Enums.Builds.ChosenBuilder,
+builderReason: App.Enums.Builds.BuilderReason,
 dockerfilePath: string | null,
 railpackVersion: string | null,
 provider: string | null,
@@ -2959,7 +3487,7 @@ message?: string,
 };
 export type CertificateStatus = {
 host: string,
-state: string,
+state: App.Enums.CertStatus,
 wildcard?: boolean,
 issuer?: string,
 notBefore?: string | null,
@@ -3063,7 +3591,7 @@ cpuModel?: string,
 cpuVendor?: string,
 dmi?: Record<string, any> | null,
 deviceTreeModel?: string,
-virtualization?: string,
+virtualization?: App.Enums.Servers.Virtualization,
 osName?: string,
 kernel?: string,
 timezone?: string,
@@ -3267,7 +3795,7 @@ httpStatus?: number,
 listeningPorts?: number[],
 };
 export type ProbeStatus = {
-state: string,
+state: App.Enums.ProbeState,
 consecutiveFailures: number,
 lastError?: string,
 lastCheckedAt?: string | null,
@@ -3313,6 +3841,11 @@ export type ResolvedPackage = {
 name: string,
 version: string,
 source: string | null,
+};
+export type Resources = {
+cpus: number,
+memoryMb: number,
+pids: number,
 };
 export type RestoreResult = {
 sizeBytes: number,
@@ -3363,11 +3896,15 @@ exitCode: number,
 durationMs: number,
 probe?: App.Data.Protocol.V1.ProbeOutcome | null,
 };
+export type Sealed = {
+sealed: string,
+};
 export type SelfUpdateResult = {
-scope: unknown,
+scope: App.Enums.Updates.UpdateScope,
 fromVersion: string,
 toVersion: string,
 rolledBack: boolean,
+reason: string | null,
 };
 export type SessionCommandResult = {
 op: string,
@@ -3377,12 +3914,13 @@ durationMs: number,
 truncated?: boolean,
 };
 export type SessionResult = {
-endReason: string,
+endReason: App.Enums.Sessions.SessionEndReason,
 bytesIn: number,
 bytesOut: number,
 startedAt?: string,
 exitCode?: number | null,
 commands?: App.Data.Protocol.V1.SessionCommandResult[],
+failure: App.Enums.Sessions.StartFailure | null,
 };
 export type SnapshotInfo = {
 id: string,
@@ -3428,7 +3966,7 @@ type: App.Enums.DaemonTaskType,
 leaseExpiresAt: string,
 attempt: number,
 deadline: string,
-spec: object,
+spec: App.Data.Protocol.V1.Tasks.TaskSpec,
 };
 export type TaskCompletion = {
 apiVersion: string,
@@ -3436,21 +3974,7 @@ kind: string,
 attempt: number,
 outcome: unknown,
 error?: string,
-build?: App.Data.Protocol.V1.BuildResult | null,
-runOnce?: App.Data.Protocol.V1.RunOnceResult | null,
-plan?: App.Data.Protocol.V1.PlanResult | null,
-failure?: App.Data.Protocol.V1.TaskFailure | null,
-backup?: App.Data.Protocol.V1.BackupResult | null,
-restore?: App.Data.Protocol.V1.RestoreResult | null,
-snapshots?: App.Data.Protocol.V1.BackupSnapshotsResult | null,
-maintenance?: App.Data.Protocol.V1.MaintenanceResult | null,
-selfUpdate?: App.Data.Protocol.V1.SelfUpdateResult | null,
-verify?: App.Data.Protocol.V1.VerifyResult | null,
-session?: App.Data.Protocol.V1.SessionResult | null,
-inspection?: App.Data.Protocol.V1.RepoInspection | null,
-dataImport?: App.Data.Protocol.V1.DataImportResult | null,
-dataExport?: App.Data.Protocol.V1.DataExportResult | null,
-access?: App.Data.Protocol.V1.AccessResult | null,
+results: App.Data.Protocol.V1.TaskResult,
 inventory?: Record<string, any> | null,
 containerInspection?: Record<string, any> | null,
 };
@@ -3474,6 +3998,23 @@ cancel: boolean,
 };
 export type TaskLease = {
 tasks: App.Data.Protocol.V1.Task[],
+};
+export type TaskResult = {
+build: App.Data.Protocol.V1.BuildResult | null,
+runOnce: App.Data.Protocol.V1.RunOnceResult | null,
+plan: App.Data.Protocol.V1.PlanResult | null,
+failure: App.Data.Protocol.V1.TaskFailure | null,
+backup: App.Data.Protocol.V1.BackupResult | null,
+restore: App.Data.Protocol.V1.RestoreResult | null,
+snapshots: App.Data.Protocol.V1.BackupSnapshotsResult | null,
+maintenance: App.Data.Protocol.V1.MaintenanceResult | null,
+selfUpdate: App.Data.Protocol.V1.SelfUpdateResult | null,
+verify: App.Data.Protocol.V1.VerifyResult | null,
+session: App.Data.Protocol.V1.SessionResult | null,
+inspection: App.Data.Protocol.V1.RepoInspection | null,
+dataImport: App.Data.Protocol.V1.DataImportResult | null,
+dataExport: App.Data.Protocol.V1.DataExportResult | null,
+access: App.Data.Protocol.V1.AccessResult | null,
 };
 export type VerifyResult = {
 passed: boolean,
@@ -3520,9 +4061,9 @@ export type WorkloadEvent = {
 seq: number,
 workload: string,
 at: string,
-kind: string,
+kind: App.Enums.WorkloadEventKind,
 deployment?: string,
-reason?: string,
+reason?: App.Enums.WorkloadEventReason | null,
 exitCode?: number | null,
 oomKilled?: boolean,
 restarts?: number,
@@ -3531,7 +4072,7 @@ message?: string,
 output?: App.Data.Protocol.V1.LogLine[] | null,
 };
 export type WorkloadIssue = {
-kind: string,
+kind: App.Enums.WorkloadIssueKind,
 since: string,
 port?: number | null,
 listening?: number[] | null,
@@ -3586,7 +4127,7 @@ content: string,
 };
 export type WorkloadStatus = {
 id: string,
-phase: string,
+phase: App.Enums.WorkloadPhase,
 observedAt: string,
 restartCount: number,
 containerId?: string,
@@ -3597,7 +4138,250 @@ detectedPorts?: number[] | null,
 health?: App.Data.Protocol.V1.ProbeStatus | null,
 pull?: App.Data.Protocol.V1.PullProgress | null,
 issue?: App.Data.Protocol.V1.WorkloadIssue | null,
+portHint?: App.Enums.PortHint | null,
 };
+namespace Tasks {
+export type AccessSpec = {
+access: string,
+kind: string,
+workload: string,
+user: string,
+allowFrom: string[],
+idleTimeout: string,
+engine: string | null,
+authorizedKeys: string[] | null,
+hosts: string[] | null,
+allowWrites: boolean | null,
+volume: string | null,
+image: string | null,
+password: App.Data.Protocol.V1.Sealed | null,
+};
+export type BackupDestination = {
+kind: string,
+endpoint: string | null,
+bucket: string | null,
+region: string | null,
+prefix: string | null,
+credentials: App.Data.Protocol.V1.Sealed | null,
+};
+export type BackupMaintenanceSpec = {
+operation: unknown,
+destination: App.Data.Protocol.V1.Tasks.BackupDestination,
+retention: App.Data.Protocol.V1.Tasks.Retention | null,
+tags: string[] | null,
+};
+export type BackupSnapshotsSpec = {
+destination: App.Data.Protocol.V1.Tasks.BackupDestination,
+tags: string[],
+};
+export type BackupSpec = {
+kind: unknown,
+target: App.Data.Protocol.V1.Tasks.BackupTarget,
+destination: App.Data.Protocol.V1.Tasks.BackupDestination,
+tags: string[],
+};
+export type BackupTarget = {
+engine: string | null,
+workload: string | null,
+volume: string | null,
+consistency: string | null,
+};
+export type BuildInputs = {
+service: string,
+environment: string,
+repo: App.Data.Protocol.V1.Tasks.RepoSpec,
+builder: App.Data.Protocol.V1.Tasks.BuilderSpec,
+platform: string,
+cacheKey: string,
+deployment: string | null,
+rootDir: string | null,
+buildArgs: string[] | null,
+cloneToken: App.Data.Protocol.V1.Sealed | null,
+sshKey: App.Data.Protocol.V1.Sealed | null,
+env: App.Data.Protocol.V1.Sealed | null,
+};
+export type BuildSpec = {
+inputs: App.Data.Protocol.V1.Tasks.BuildInputs,
+image: string,
+};
+export type BuilderSpec = {
+kind: unknown,
+dockerfilePath: string | null,
+dockerfile: string | null,
+preset: string | null,
+railpackVersion: string | null,
+disabledDecisions: string[] | null,
+installCommand: string | null,
+buildCommand: string | null,
+startCommand: string | null,
+railpackEnv: Record<string, string> | null,
+phpExtensions: App.Data.Protocol.V1.PhpExtension[] | null,
+};
+export type DbExportSpec = {
+engine: string,
+transfer: App.Data.Protocol.V1.Tasks.TransferTarget,
+workload: string | null,
+snapshot: string | null,
+destination: App.Data.Protocol.V1.Tasks.BackupDestination | null,
+};
+export type DbImportSource = {
+kind: unknown,
+file: App.Data.Protocol.V1.Tasks.TransferRef | null,
+url: App.Data.Protocol.V1.Sealed | null,
+};
+export type DbImportSpec = {
+mode: unknown,
+engine: string,
+workload: string,
+resources: App.Data.Protocol.V1.Resources,
+source: App.Data.Protocol.V1.Tasks.DbImportSource | null,
+replace: boolean | null,
+};
+export type FileOwner = {
+uid: number,
+gid: number,
+};
+export type HostKey = {
+type: string,
+key: string,
+};
+export type InspectContainerSpec = {
+workload: string,
+maskEnv: string[] | null,
+};
+export type InventorySource = {
+repo: App.Data.Protocol.V1.Tasks.RepoSpec,
+rootDir: string | null,
+cloneToken: App.Data.Protocol.V1.Sealed | null,
+sshKey: App.Data.Protocol.V1.Sealed | null,
+};
+export type InventorySpec = {
+image: string,
+platform: string,
+service: string | null,
+source: App.Data.Protocol.V1.Tasks.InventorySource | null,
+};
+export type LogsSpec = {
+workload: string,
+tail: number,
+follow: boolean,
+since: string | null,
+};
+export type PlanSpec = {
+inputs: App.Data.Protocol.V1.Tasks.BuildInputs,
+inspect: boolean | null,
+};
+export type RepoSpec = {
+provider: string,
+cloneUrl: string,
+sha: string,
+ref: string | null,
+knownHosts: App.Data.Protocol.V1.Tasks.HostKey[] | null,
+};
+export type RestoreRuntime = {
+image: string,
+mountPath: string,
+dataDirectory: string,
+resources: App.Data.Protocol.V1.Resources,
+archiveDirectory: string | null,
+env: App.Data.Protocol.V1.Sealed | null,
+};
+export type RestoreSpec = {
+kind: unknown,
+snapshot: string,
+target: App.Data.Protocol.V1.Tasks.BackupTarget,
+destination: App.Data.Protocol.V1.Tasks.BackupDestination,
+mode: unknown,
+pointInTime: string | null,
+walTags: string[] | null,
+runtime: App.Data.Protocol.V1.Tasks.RestoreRuntime | null,
+};
+export type Retention = {
+keepLast: number | null,
+keepHourly: number | null,
+keepDaily: number | null,
+keepWeekly: number | null,
+keepMonthly: number | null,
+keepWithinHours: number | null,
+};
+export type RunOnceProbe = {
+port: number,
+within: string,
+path: string | null,
+};
+export type RunOnceSpec = {
+service: string,
+environment: string,
+deployment: string,
+image: string,
+network: App.Data.Protocol.V1.NetworkSpec,
+timeout: string,
+resources: App.Data.Protocol.V1.Resources,
+command: string[] | null,
+args: string[] | null,
+maskEnv: string[] | null,
+probe: App.Data.Protocol.V1.Tasks.RunOnceProbe | null,
+env: App.Data.Protocol.V1.Sealed | null,
+};
+export type SelfUpdateSpec = {
+version: string,
+image: string,
+scope: unknown | null,
+};
+export type SessionSpec = {
+session: string,
+kind: unknown,
+workload: string,
+channel: string,
+idleTimeout: string,
+shell: string | null,
+cols: number | null,
+rows: number | null,
+record: boolean | null,
+engine: string | null,
+key: App.Data.Protocol.V1.Sealed | null,
+};
+export type TaskSpec = object;
+export type TransferRef = {
+id: string,
+sizeBytes: number,
+chunkBytes: number,
+chunks: number,
+sha256: string,
+};
+export type TransferTarget = {
+id: string,
+chunkBytes: number,
+};
+export type VerifyRestoreSpec = {
+kind: unknown,
+snapshot: string,
+destination: App.Data.Protocol.V1.Tasks.BackupDestination,
+resources: App.Data.Protocol.V1.Resources,
+engine: string | null,
+image: string | null,
+dataPath: string | null,
+dataDirectory: string | null,
+walTags: string[] | null,
+databaseUser: string | null,
+databaseName: string | null,
+};
+export type VolumeExportSpec = {
+transfer: App.Data.Protocol.V1.Tasks.TransferTarget,
+volume: string | null,
+consistency: unknown | null,
+snapshot: string | null,
+destination: App.Data.Protocol.V1.Tasks.BackupDestination | null,
+};
+export type VolumeImportSpec = {
+mode: unknown,
+volume: string,
+file: App.Data.Protocol.V1.Tasks.TransferRef | null,
+replace: boolean | null,
+stripComponents: number | null,
+owner: App.Data.Protocol.V1.Tasks.FileOwner | null,
+};
+}
 }
 }
 namespace Registry {
@@ -3638,6 +4422,15 @@ task?: string,
 };
 }
 namespace RemoteAccess {
+export type AccessCertificateData = {
+sha256: string,
+pem: string,
+};
+export type AccessHostKeyData = {
+type: string,
+sha256: string,
+publicKey: string,
+};
 export type OpenRemoteAccessData = {
 allowFrom: string[],
 publicKeys: string[],
@@ -3649,7 +4442,7 @@ volume: string | null,
 export type RemoteAccessData = {
 id: string,
 kind: App.Enums.RemoteAccess.RemoteAccessKind,
-status: App.Enums.RemoteAccess.RemoteAccessStatus,
+status: App.Enums.TaskBackedAccessStatus,
 isMine: boolean,
 userName: string,
 replicaLabel: string,
@@ -3684,6 +4477,8 @@ volumeId: string | null,
 mountPath: string | null,
 fileOwner: string | null,
 endedByOther: boolean,
+protocol: App.Enums.RemoteAccess.RemoteAccessProtocol | null,
+client: string | null,
 };
 export type RemoteAccessPanelData = {
 kind: App.Enums.RemoteAccess.RemoteAccessKind,
@@ -3703,6 +4498,10 @@ mountPath: string | null,
 volumeServer: string | null,
 writable: boolean,
 };
+export type VolumeOwnerData = {
+uid: number,
+gid: number,
+};
 }
 namespace Security {
 export type AddWafExclusionData = {
@@ -3710,6 +4509,9 @@ rule: number,
 path: string | null,
 target: string | null,
 note: string | null,
+};
+export type AdvisoryCursorData = {
+after: string[] | null,
 };
 export type AdvisoryDetailData = {
 ids: string[],
@@ -3758,6 +4560,10 @@ verifiedUpTo: string | null,
 problem: string | null,
 problemEntry: number | null,
 };
+export type ClientCertificateModeData = {
+mode: App.Enums.ClientCertificateMode,
+force: boolean,
+};
 export type ClientCertificatesOverviewData = {
 mode: string,
 changedAt: string | null,
@@ -3787,7 +4593,7 @@ id: string,
 href: string,
 advisory: string,
 title: string | null,
-severity: string,
+severity: App.Enums.Security.Severity,
 cvss: number | null,
 knownExploited: boolean,
 knownExploitedSince: string | null,
@@ -3796,9 +4602,9 @@ ecosystem: string,
 package: string,
 version: string,
 fixedVersion: string | null,
-level: string,
+level: App.Enums.Security.FindingLevel,
 reasons: string[],
-status: string,
+status: App.Enums.Security.SecurityFindingStatus,
 firstSeenAt: string,
 service: App.Data.Security.SecurityServiceRefData,
 investigation: App.Data.Security.FindingInvestigationData | null,
@@ -3838,7 +4644,7 @@ deployment: App.Data.Security.FindingDeploymentData | null,
 };
 export type FindingInvestigationData = {
 id: string,
-status: string,
+status: App.Enums.Security.InvestigationStatus,
 startedAt: string,
 finishedAt: string | null,
 summary: string[],
@@ -3859,6 +4665,15 @@ scope: string,
 kind: string,
 services: App.Data.Security.SecurityServiceRefData[],
 findings: App.Data.Security.FindingCardData[],
+};
+export type InvestigatedReplicaData = {
+workload: string,
+server: string,
+serverName: string,
+slot: number,
+task: string | null,
+state: string,
+message: string | null,
 };
 export type InvestigationCheckData = {
 label: string,
@@ -4072,6 +4887,16 @@ ruleSet: string | null,
 networksVisible: boolean,
 deploys: App.Data.Metrics.DeployMarkerData[],
 };
+export type WafReportData = {
+state: App.Enums.Security.WafEdgeState,
+since: string,
+routes: number,
+reportedAt: string,
+engine: string | null,
+ruleSet: string | null,
+droppedRecords: number | null,
+message: string | null,
+};
 export type WafRuleData = {
 id: number,
 message: string,
@@ -4112,15 +4937,29 @@ text: string,
 };
 }
 namespace Servers {
+export type CapabilityRowData = {
+name: App.Enums.Servers.RuntimeCapability,
+state: App.Enums.Servers.CapabilityState,
+explanation: string | null,
+};
 export type ControlPlaneLoadData = {
 serverId: string,
 serverName: string,
 cpuPct: number | null,
 memoryPct: number | null,
 };
+export type ControlPlaneUrlReportData = {
+state: string,
+reportedAt: string,
+configured: string | null,
+adopted: string | null,
+active: string | null,
+message: string | null,
+};
 export type CreateEnrollmentData = {
 roles: string[],
 name: string | null,
+machine: string | null,
 };
 export type DeviceData = {
 kind: App.Enums.DeviceKind,
@@ -4153,7 +4992,7 @@ cpuModel: string | null,
 cpuVendor: string | null,
 dmi: App.Data.Servers.DmiFactsData | null,
 deviceTreeModel: string | null,
-virtualization: string | null,
+virtualization: App.Enums.Servers.Virtualization | null,
 osName: string | null,
 kernel: string | null,
 timezone: string | null,
@@ -4228,6 +5067,43 @@ relay: string | null,
 lastHandshake: string | null,
 quality: App.Data.Servers.LinkQualityData | null,
 };
+export type MeshReportData = {
+state: App.Enums.Mesh.MeshClientState,
+ipv4: string | null,
+ipv6: string | null,
+message: string | null,
+checkedAt: string | null,
+peers: App.Data.Servers.MeshReportPeerData[],
+};
+export type MeshReportPeerData = {
+ipv4: string,
+online: boolean,
+connection: App.Enums.Mesh.MeshPath,
+relay: string | null,
+lastHandshake: string | null,
+};
+export type NodeStateFacts = {
+networks: string[],
+workloads: string[],
+meshAllow: string[][],
+images: string[],
+};
+export type PinnedLocationData = {
+label: string,
+latitude: number,
+longitude: number,
+countryCode: string | null,
+};
+export type RenderErrorData = {
+message: string,
+problems: string[],
+deployments: string[],
+at: string,
+};
+export type ReplaceServerData = {
+replacement: string,
+restore: string[],
+};
 export type ReplaceableServerData = {
 id: string,
 name: string,
@@ -4238,6 +5114,31 @@ isControlPlane: boolean,
 lastSeenAt: string | null,
 replacedBy: string | null,
 replacedAt: string | null,
+};
+export type ReplacedServiceData = {
+instance: string,
+service: string,
+name: string,
+kind: App.Enums.ReplacedServiceKind,
+restore: {
+snapshot: string,
+takenAt: string | null,
+} | null,
+restoreRuns: string[],
+deployment: string | null,
+status: App.Enums.ReplacedServiceStatus,
+message: string | null,
+};
+export type ReplacedServiceProgressData = {
+instance: string,
+name: string,
+kind: App.Enums.ReplacedServiceKind,
+restore: {
+snapshot: string,
+takenAt: string | null,
+} | null,
+status: App.Enums.ReplacedServiceStatus,
+message: string | null,
 };
 export type ReplacementPlanItemData = {
 instanceId: string,
@@ -4272,6 +5173,7 @@ export type RuntimeCapabilityData = {
 name: App.Enums.Servers.RuntimeCapability,
 state: App.Enums.Servers.CapabilityState,
 message: string | null,
+reason: App.Enums.Servers.CapabilityReason | null,
 };
 export type ServerData = {
 id: string,
@@ -4348,17 +5250,7 @@ status: App.Enums.ServerReplacementStatus,
 oldServer: string,
 newServer: string,
 newServerId: string,
-services: {
-instance: string,
-name: string,
-kind: string,
-restore: {
-snapshot: string,
-takenAt: string | null,
-} | null,
-status: string,
-message: string | null,
-}[],
+services: App.Data.Servers.ReplacedServiceProgressData[],
 recovery: boolean,
 error: string | null,
 createdAt: string | null,
@@ -4403,6 +5295,11 @@ serverName: string,
 cpus: number,
 memoryMb: number,
 };
+export type StateRejectionData = {
+version: number,
+error: string,
+rejectedAt: string,
+};
 export type UpdateServerAppearanceData = {
 device?: App.Enums.DeviceKind | null,
 location?: App.Data.Servers.ServerLocationInputData | null,
@@ -4420,6 +5317,72 @@ export type UseOwnTailscaleData = {
 loginServer: string,
 authKey: string,
 };
+namespace Host {
+export type DiskCleanupData = {
+at: string,
+trigger: App.Enums.Servers.CleanupTrigger,
+removedImages: number,
+removedContainers: number,
+reclaimedMb: number,
+error: string | null,
+};
+export type DiskUsageData = {
+totalMb: number,
+freeMb: number,
+};
+export type DockerUsageData = {
+imagesMb: number,
+imagesReclaimableMb: number,
+containersMb: number,
+};
+export type HostHealthData = {
+collectedAt: string | null,
+dataDisk: App.Data.Servers.Host.DiskUsageData | null,
+dockerDisk: App.Data.Servers.Host.DiskUsageData | null,
+memory: App.Data.Servers.Host.MemoryUsageData | null,
+load: App.Data.Servers.Host.LoadAverageData | null,
+inotify: App.Data.Servers.Host.InotifyLimitsData | null,
+networks: App.Data.Servers.Host.NetworkCountData | null,
+docker: App.Data.Servers.Host.DockerUsageData | null,
+buildCacheMb: number | null,
+clockSkewMs: number | null,
+cleanup: App.Data.Servers.Host.DiskCleanupData | null,
+};
+export type HostStatusData = {
+cpus: number,
+memoryMb: number,
+diskTotalMb: number,
+diskFreeMb: number,
+daemonVersion: string,
+dockerVersion: string | null,
+health: App.Data.Servers.Host.HostHealthData | null,
+registry: App.Data.Servers.Host.RegistryReachData | null,
+};
+export type InotifyLimitsData = {
+maxUserWatches: number,
+maxUserInstances: number,
+maxQueuedEvents: number,
+};
+export type LoadAverageData = {
+load1: number,
+load5: number,
+load15: number,
+};
+export type MemoryUsageData = {
+totalMb: number,
+availableMb: number,
+};
+export type NetworkCountData = {
+total: number,
+managed: number,
+};
+export type RegistryReachData = {
+reachable: boolean,
+checkedAt: string | null,
+latencyMs: number | null,
+error: string | null,
+};
+}
 }
 namespace Services {
 export type AddVolumeData = {
@@ -4445,10 +5408,14 @@ export type ConfigFile = {
 path: string,
 content: string,
 };
+export type ConnectionVariableData = {
+key: string,
+value: string,
+};
 export type CreateServiceData = {
 name: string,
 kind: App.Enums.ServiceKind,
-source: Record<string, any> | null,
+source: App.Data.Services.GitSource | App.Data.Services.ImageSource | App.Data.Services.DatabaseSource | null,
 slug: string | null,
 icon: string | null,
 parentServiceId: string | null,
@@ -4458,6 +5425,16 @@ startCommand: string[] | null,
 export type DatabaseSource = {
 engine: App.Enums.DatabaseEngine,
 version: string,
+};
+export type DeployLimitsData = {
+startPeriod: App.Data.Forms.NumberRangeData,
+interval: App.Data.Forms.NumberRangeData,
+timeout: App.Data.Forms.NumberRangeData,
+failures: App.Data.Forms.NumberRangeData,
+drain: App.Data.Forms.NumberRangeData,
+rolloutTimeout: App.Data.Forms.NumberRangeData,
+healthTimeout: App.Data.Forms.NumberRangeData,
+rolloutTimeoutDefault: number,
 };
 export type DeploySettings = {
 port: number | null,
@@ -4478,7 +5455,7 @@ repositoryId: number,
 fullName: string,
 installationId: number | null,
 rootDirectory: string,
-provider: string,
+provider: App.Enums.Git.GitProviderKind,
 cloneUrl: string | null,
 branch: string | null,
 };
@@ -4520,8 +5497,10 @@ export type ServiceLifecycleData = {
 processes: boolean,
 };
 export type ServicePlanData = {
-status: string,
-commitSha: string | null,
+status: App.Enums.ServicePlanStatus,
+task: string | null,
+inputs: string | null,
+sha: string | null,
 branch: string | null,
 requestedAt: string | null,
 finishedAt: string | null,
@@ -4610,7 +5589,7 @@ reason?: string,
 export type SessionHistoryItemData = {
 id: string,
 kind: App.Enums.Sessions.InteractiveSessionKind,
-status: App.Enums.Sessions.InteractiveSessionStatus,
+status: App.Enums.TaskBackedAccessStatus,
 userName: string,
 isMine: boolean,
 replicaLabel: string,
@@ -4716,7 +5695,7 @@ type: App.Enums.VariableType,
 version: number,
 exposure: App.Enums.VariableExposure,
 ciphertext: string,
-layer: string,
+layer: App.Enums.VariableLayer,
 generated: boolean,
 references: string[],
 connectionId: string | null,
@@ -4729,6 +5708,9 @@ sharedFrom: string | null,
 };
 }
 namespace StagedChanges {
+export type DiscardChangesData = {
+paths: string[] | null,
+};
 export type PromotedImageData = {
 serviceId: string,
 serviceName: string,
@@ -4765,6 +5747,33 @@ name: string,
 slug: string | null,
 effect: App.Enums.ChangeEffect,
 items: App.Data.Specs.ChangeItem[],
+};
+}
+namespace Tasks {
+export type AccessPasswordSeal = {
+access: string,
+};
+export type CloneSeal = {
+source: App.Data.Services.GitSource,
+};
+export type EnvSeal = {
+deployment: number | null,
+keys: string[] | null,
+defaults: boolean,
+names: string[] | null,
+values: Record<string, string> | null,
+};
+export type SessionKeySeal = {
+session: string,
+};
+export type TaskSeal = {
+env: App.Data.Tasks.EnvSeal | null,
+cloneToken: App.Data.Tasks.CloneSeal | null,
+sourceCloneToken: App.Data.Tasks.CloneSeal | null,
+sessionKey: App.Data.Tasks.SessionKeySeal | null,
+accessPassword: App.Data.Tasks.AccessPasswordSeal | null,
+destination: number | null,
+restoreRuntimeEnv: number | null,
 };
 }
 namespace Teams {
@@ -4822,8 +5831,8 @@ permissions: string[] | null,
 export type TeamContextData = {
 current: App.Data.Teams.TeamData | null,
 all: App.Data.Teams.TeamData[],
-permissions: App.Enums.Permission[],
 canCreateTeam: boolean,
+canSearchLogs: boolean,
 };
 export type TeamData = {
 id: string,
@@ -4905,6 +5914,11 @@ createdAt: string | null,
 readyAt: string | null,
 expiresAt: string | null,
 };
+export type ImportFormatData = {
+formats: string,
+urlExample: string,
+objects: string,
+};
 export type ImportInspectionData = {
 id: string,
 status: unknown,
@@ -4942,6 +5956,7 @@ error: string | null,
 createdAt: string | null,
 startedAt: string | null,
 finishedAt: string | null,
+finished: boolean,
 safetySnapshot: boolean,
 transferId: string | null,
 waitingFor: string[],
@@ -4975,6 +5990,7 @@ prepare: string,
 chunkBytes: number,
 maxBytes: number,
 preparation: App.Data.Transfers.DatabasePreparationData | null,
+importFormat: App.Data.Transfers.ImportFormatData | null,
 };
 export type TransferData = {
 id: string,
@@ -4994,6 +6010,14 @@ error: string | null,
 createdAt: string | null,
 expiresAt: string | null,
 entries: string[],
+topFolder: string | null,
+};
+export type TransferSniffData = {
+family: string | null,
+serverVersion: string | null,
+toolVersion: string | null,
+entries: string[],
+entriesComplete: boolean,
 topFolder: string | null,
 };
 export type TransferVolumeData = {
@@ -5037,7 +6061,6 @@ id: string,
 fromVersion: string,
 toVersion: string,
 status: App.Enums.Updates.ControlPlaneUpdateStatus,
-statusLabel: string,
 skipBackup: boolean,
 updateServers: boolean,
 automatic: boolean,
@@ -5119,6 +6142,11 @@ autoUpdate: boolean,
 };
 }
 namespace Variables {
+export type EnvImportData = {
+content: string,
+only: string[] | null,
+types: Record<string | number, string>,
+};
 export type EnvironmentOptionData = {
 id: string,
 name: string,
@@ -5160,6 +6188,9 @@ line: number,
 message: string,
 }[],
 };
+export type RawVariablesData = {
+content: string | null,
+};
 export type ReferenceScopeData = {
 scope: string | null,
 label: string,
@@ -5186,6 +6217,9 @@ preview: string | null,
 errors: string[],
 used: boolean,
 exposure: App.Enums.VariableExposure,
+};
+export type SharedVariableUsageData = {
+used: boolean,
 };
 export type SystemVariableData = {
 key: string,
@@ -5229,6 +6263,11 @@ environmentId: string | null,
 allPreviews: boolean,
 branchPattern: string | null,
 };
+export type VariableTargetRow = {
+environmentId: number | null,
+allPreviews: boolean,
+branchPattern: string | null,
+};
 export type VariableUpdate = {
 key?: string,
 value?: string,
@@ -5239,16 +6278,22 @@ onlyEnvironment?: string,
 };
 }
 }
+namespace Drivers {
+namespace DatabaseEngines {
+export type ConnectionPart = 'url' | 'host' | 'port' | 'native_port' | 'user' | 'password' | 'database';
+export type DatabaseEngineCategory = 'relational' | 'key_value' | 'document' | 'analytics';
+}
+}
 namespace Enums {
 export type ActorType = 'user' | 'server' | 'system';
+export type AdvisoryLock = 'audit_chain' | 'client_ca' | 'mesh_ports' | 'subnets';
 export type AnalyticsRange = '24h' | '7d' | '30d';
 export type AnalyticsView = 'traffic' | 'resources';
 export type ApiAbility = 'read' | 'deploy' | 'env:read' | 'env:write' | 'secrets:read' | 'domains:write' | 'data:transfer';
 export type ApiTokenClient = 'dashboard' | 'cli';
-export type AttentionState = 'failed' | 'warning' | 'staged' | 'idle';
-export type AuditAction = 'instance.setup_token_created' | 'instance.owner_created' | 'instance.team_claimed' | 'instance.owner_two_factor_reset' | 'team.created' | 'team.member_invited' | 'team.invitation_revoked' | 'team.invitation_accepted' | 'team.member_role_changed' | 'team.member_removed' | 'instance.signing_key_created' | 'server.enrollment_created' | 'server.enrollment_canceled' | 'server.enrolled' | 'server.approved' | 'server.revoked' | 'server.volume_deletion_confirmed' | 'instance.mesh_enabled' | 'instance.mesh_own_tailscale_configured' | 'server.mesh_node_removed' | 'project.created' | 'project.imported' | 'project.deleted' | 'project.renamed' | 'project.secrets_policy_changed' | 'project.icon_changed' | 'environment.created' | 'environment.deployed' | 'environment.changes_discarded' | 'environment.updated' | 'environment.deleted' | 'environment.reverted' | 'environment.changes_promoted' | 'environment.auto_deploy_resumed' | 'deployment.promoted' | 'service.created' | 'service.removed' | 'service.renamed' | 'variable.created' | 'variable.updated' | 'variable.deleted' | 'variable.imported' | 'variable.secret_revealed' | 'connection.created' | 'connection.deleted' | 'domain.added' | 'domain.removed' | 'domain.www_redirect_changed' | 'instance.apps_domain_changed' | 'instance.dashboard_domain_started' | 'instance.dashboard_domain_cancelled' | 'instance.dashboard_domain_switched' | 'instance.dashboard_domain_reverted' | 'instance.dashboard_domain_reset' | 'deployment.rolled_back' | 'deployment.redeployed' | 'deployment.cancelled' | 'variable.raw_edited' | 'github.app_created' | 'github.app_disconnected' | 'github.installation_linked' | 'git.connection_created' | 'git.connection_authorized' | 'git.connection_disconnected' | 'git.connection_private_network_allowed' | 'git.host_keys_confirmed' | 'git.webhook_secret_revealed' | 'backup.destination_created' | 'backup.destination_updated' | 'backup.destination_deleted' | 'backup.destination_private_network_allowed' | 'backup.schedule_updated' | 'backup.started' | 'backup.restore_started' | 'data.import_started' | 'data.import_finished' | 'data.import_cancelled' | 'data.import_source_checked' | 'data.import_prepared' | 'data.export_started' | 'data.export_downloaded' | 'backup.restore_swapped' | 'backup.volume_updated' | 'backup.final_backup_skipped' | 'backup.point_in_time_updated' | 'backup.verification_started' | 'service.volume_added' | 'service.volume_changed' | 'service.volume_removed' | 'service.volume_attached' | 'service.volume_detached' | 'service.image_changed' | 'service.stopped' | 'service.started' | 'service.restarted' | 'server.replaced' | 'instance.recovery_finished' | 'backup.recovery_passphrase_set' | 'backup.recovery_kit_downloaded' | 'backup.recovery_kit_confirmed' | 'preview.settings_updated' | 'preview.strategy_changed' | 'preview.approved' | 'preview.destroyed' | 'preview.share_link_created' | 'preview.share_link_revoked' | 'preview.bypass_rotated' | 'instance.update_started' | 'instance.update_finished' | 'instance.fleet_update_started' | 'instance.fleet_update_finished' | 'instance.update_preferences_changed' | 'instance.dns_provider_changed' | 'server.shared_edge_changed' | 'domain.hsts_changed' | 'instance.registry_storage_configured' | 'instance.registry_storage_private_network_allowed' | 'instance.registry_storage_removed' | 'instance.registry_config_written' | 'server.settings_updated' | 'server.roles_updated' | 'server.appearance_updated' | 'server.replicas_rescheduled' | 'service.degraded' | 'session.console_started' | 'session.console_ended' | 'session.data_started' | 'session.data_ended' | 'database.statement_executed' | 'session.recording_viewed' | 'team.console_recording_changed' | 'team.member_permissions_changed' | 'api_token.created' | 'api_token.revoked' | 'api_token.cli_login_approved' | 'api_token.cli_login_denied' | 'variable.env_exported' | 'deployment.requested' | 'alerts.channel_created' | 'alerts.channel_updated' | 'alerts.channel_deleted' | 'audit.sink_created' | 'audit.sink_updated' | 'audit.sink_deleted' | 'alerts.rules_updated' | 'config_file.applied' | 'config_file.invalid' | 'config_file.exported' | 'config_file.settings_updated' | 'ai_provider.updated' | 'team.dockerfile_generation_changed' | 'dockerfile_generation.started' | 'dockerfile_generation.used' | 'dockerfile_generation.pull_request_opened' | 'instance.client_certificates_changed' | 'server.client_certificate_issued' | 'server.client_certificates_revoked' | 'server.client_certificate_reissue_allowed' | 'server.move_started' | 'server.move_item_finished' | 'server.move_item_retried' | 'server.move_cancelled' | 'server.move_completed' | 'instance.control_plane_move_started' | 'instance.control_plane_move_claimed' | 'instance.control_plane_move_approved' | 'instance.control_plane_move_cancelled' | 'instance.control_plane_handover_started' | 'instance.control_plane_handover_aborted' | 'instance.control_plane_handed_over' | 'instance.control_plane_taken_over' | 'instance.control_plane_move_finished' | 'access.ssh_started' | 'access.ssh_ended' | 'access.database_started' | 'access.database_ended' | 'access.volume_started' | 'access.volume_ended' | 'access.connected' | 'access.auth_failed' | 'access.locked' | 'waf.mode_changed' | 'waf.paranoia_changed' | 'waf.inspect_body_changed' | 'waf.exclusion_added' | 'waf.exclusion_removed' | 'security.finding_dismissed' | 'security.finding_reopened' | 'security.investigation_started' | 'instance.security_sources_changed';
+export type AuditAction = 'instance.setup_token_created' | 'instance.owner_created' | 'instance.team_claimed' | 'instance.owner_two_factor_reset' | 'team.created' | 'team.member_invited' | 'team.invitation_revoked' | 'team.invitation_accepted' | 'team.member_role_changed' | 'team.member_removed' | 'instance.signing_key_created' | 'server.enrollment_created' | 'server.enrollment_canceled' | 'server.enrolled' | 'server.approved' | 'server.revoked' | 'server.volume_deletion_confirmed' | 'instance.mesh_enabled' | 'instance.mesh_own_tailscale_configured' | 'server.mesh_node_removed' | 'project.created' | 'project.imported' | 'project.deleted' | 'project.renamed' | 'project.secrets_policy_changed' | 'project.icon_changed' | 'environment.created' | 'environment.deployed' | 'environment.changes_discarded' | 'environment.updated' | 'environment.deleted' | 'environment.reverted' | 'environment.changes_promoted' | 'environment.auto_deploy_resumed' | 'deployment.promoted' | 'service.created' | 'service.removed' | 'service.renamed' | 'variable.created' | 'variable.updated' | 'variable.deleted' | 'variable.imported' | 'variable.secret_revealed' | 'connection.created' | 'connection.deleted' | 'domain.added' | 'domain.removed' | 'domain.www_redirect_changed' | 'instance.apps_domain_changed' | 'instance.dashboard_domain_started' | 'instance.dashboard_domain_cancelled' | 'instance.dashboard_domain_switched' | 'instance.dashboard_domain_reverted' | 'instance.dashboard_domain_reset' | 'deployment.rolled_back' | 'deployment.redeployed' | 'deployment.cancelled' | 'variable.raw_edited' | 'github.app_created' | 'github.app_disconnected' | 'github.installation_linked' | 'git.connection_created' | 'git.connection_authorized' | 'git.connection_disconnected' | 'git.connection_private_network_allowed' | 'git.host_keys_confirmed' | 'git.webhook_secret_revealed' | 'backup.destination_created' | 'backup.destination_updated' | 'backup.destination_deleted' | 'backup.destination_private_network_allowed' | 'backup.schedule_updated' | 'backup.started' | 'backup.restore_started' | 'data.import_started' | 'data.import_finished' | 'data.import_cancelled' | 'data.import_source_checked' | 'data.import_prepared' | 'data.export_started' | 'data.export_downloaded' | 'backup.restore_swapped' | 'backup.volume_updated' | 'backup.final_backup_skipped' | 'backup.point_in_time_updated' | 'backup.verification_started' | 'service.volume_added' | 'service.volume_changed' | 'service.volume_removed' | 'service.volume_attached' | 'service.volume_detached' | 'service.image_changed' | 'service.stopped' | 'service.started' | 'service.restarted' | 'server.replaced' | 'instance.recovery_finished' | 'backup.recovery_passphrase_set' | 'backup.recovery_kit_downloaded' | 'backup.recovery_kit_confirmed' | 'preview.settings_updated' | 'preview.strategy_changed' | 'preview.approved' | 'preview.destroyed' | 'preview.share_link_created' | 'preview.share_link_revoked' | 'preview.bypass_rotated' | 'instance.update_started' | 'instance.update_finished' | 'instance.fleet_update_started' | 'instance.fleet_update_finished' | 'instance.update_preferences_changed' | 'instance.dns_provider_changed' | 'server.shared_edge_changed' | 'domain.hsts_changed' | 'instance.registry_storage_configured' | 'instance.registry_storage_private_network_allowed' | 'instance.registry_storage_removed' | 'instance.registry_config_written' | 'server.settings_updated' | 'server.roles_updated' | 'server.appearance_updated' | 'server.replicas_rescheduled' | 'service.degraded' | 'session.console_started' | 'session.console_ended' | 'session.data_started' | 'session.data_ended' | 'database.statement_executed' | 'session.recording_viewed' | 'team.console_recording_changed' | 'team.member_permissions_changed' | 'api_token.created' | 'api_token.revoked' | 'api_token.cli_login_approved' | 'api_token.cli_login_denied' | 'variable.env_exported' | 'deployment.requested' | 'alerts.channel_created' | 'alerts.channel_updated' | 'alerts.channel_deleted' | 'audit.sink_created' | 'audit.sink_updated' | 'audit.sink_deleted' | 'alerts.rules_updated' | 'config_file.applied' | 'config_file.invalid' | 'config_file.exported' | 'config_file.settings_updated' | 'ai_provider.updated' | 'team.dockerfile_generation_changed' | 'dockerfile_generation.started' | 'dockerfile_generation.used' | 'dockerfile_generation.pull_request_opened' | 'instance.client_certificates_changed' | 'server.client_certificate_issued' | 'server.client_certificates_revoked' | 'server.client_certificate_reissue_allowed' | 'server.move_started' | 'server.move_item_finished' | 'server.move_item_retried' | 'server.move_cancelled' | 'server.move_completed' | 'instance.control_plane_move_started' | 'instance.control_plane_move_claimed' | 'instance.control_plane_move_approved' | 'instance.control_plane_move_cancelled' | 'instance.control_plane_handover_started' | 'instance.control_plane_handover_aborted' | 'instance.control_plane_handed_over' | 'instance.control_plane_taken_over' | 'instance.control_plane_move_finished' | 'access.ssh_started' | 'access.ssh_ended' | 'access.database_started' | 'access.database_ended' | 'access.volume_started' | 'access.volume_ended' | 'access.connected' | 'access.auth_failed' | 'access.locked' | 'waf.mode_changed' | 'waf.paranoia_changed' | 'waf.inspect_body_changed' | 'waf.exclusion_added' | 'waf.exclusion_removed' | 'security.finding_dismissed' | 'security.finding_reopened' | 'security.investigation_started' | 'instance.security_sources_changed' | 'account.email_changed' | 'account.password_changed';
 export type BlueprintNoteKind = 'translated' | 'ignored' | 'refused' | 'warning';
-export type CanvasNodeState = 'active' | 'progress' | 'failed' | 'idle' | 'warning';
+export type CanvasEdgeType = 'connection' | 'process' | 'inherited';
 export type CertStatus = 'issued' | 'pending' | 'failed';
 export type ChangeEffect = 'none' | 'route' | 'restart' | 'rebuild' | 'new' | 'remove';
 export type ChangeKind = 'added' | 'removed' | 'changed';
@@ -5258,11 +6303,14 @@ export type ConnectionMode = 'private' | 'public';
 export type ConnectionStyle = 'url' | 'laravel' | 'parts';
 export type DaemonFeature = 'linkProbe' | 'shipLogs' | 'pointInTime' | 'verifyRestore' | 'stopSpec' | 'consoleSessions' | 'dataSessions' | 'controlPlaneUrl' | 'gitProviders' | 'generatedDockerfile' | 'mongoClickhouse' | 'dnsProviders' | 'cronSchedule' | 'clientCertificates' | 'dataTransfer' | 'preparedVolumes' | 'requestAnalytics' | 'remoteAccessSsh' | 'remoteAccessDatabase' | 'remoteAccessVolume' | 'inventory' | 'containerInspection' | 'waf' | 'configFiles' | 'serviceStop' | 'phpExtensions' | 'sharedVolumes';
 export type DaemonNudge = 'state.changed' | 'task.available' | 'logs.requested';
+export type DaemonTaskPurpose = 'release' | 'seed' | 'sanitize' | 'dockerfile_check' | 'cp_update' | 'fleet_update' | 'console' | 'data' | 'access_ssh' | 'access_database' | 'access_volume' | 'log_tail';
 export type DaemonTaskStatus = 'pending' | 'leased' | 'succeeded' | 'failed' | 'cancelled';
 export type DaemonTaskType = 'build' | 'plan' | 'run_once' | 'backup' | 'restore' | 'backup_maintenance' | 'logs' | 'self_update' | 'backup_snapshots' | 'verify_restore' | 'session' | 'db_import' | 'volume_import' | 'db_export' | 'volume_export' | 'access' | 'inventory' | 'inspect_container';
 export type DashboardDomainStatus = 'pending' | 'ready' | 'active' | 'cancelled' | 'reverted';
 export type DatabaseEngine = 'postgres' | 'mysql' | 'redis' | 'valkey' | 'mongodb' | 'clickhouse';
-export type DeploymentFailureClass = 'plan_error' | 'build_error' | 'transient' | 'release_error' | 'runtime_error' | 'port_mismatch' | 'health_timeout' | 'config_error' | 'placement_error';
+export type DeploymentFailureClass = 'plan_error' | 'build_error' | 'build_timeout' | 'transient' | 'release_error' | 'runtime_error' | 'port_mismatch' | 'health_timeout' | 'config_error' | 'placement_error';
+export type DeploymentFilter = 'in_progress' | 'queued' | 'ready' | 'active' | 'failed' | 'cancelled' | 'superseded';
+export type DeploymentPurpose = 'release' | 'prebuild' | 'prepare_import';
 export type DeploymentStatus = 'queued' | 'building' | 'releasing' | 'rolling_out' | 'health_checking' | 'ready' | 'routing' | 'active' | 'failed' | 'cancelled' | 'superseded';
 export type DeploymentStepName = 'plan' | 'build' | 'release' | 'rollout' | 'health' | 'route' | 'cleanup';
 export type DeploymentStepStatus = 'running' | 'succeeded' | 'failed' | 'skipped';
@@ -5272,37 +6320,64 @@ export type DnsProvider = 'cloudflare' | 'hetzner' | 'route53' | 'digitalocean' 
 export type DomainKind = 'generated' | 'custom' | 'deployment';
 export type EnvironmentKind = 'production' | 'persistent' | 'preview';
 export type FailureFixAction = 'set_port' | 'raise_health_timeout' | 'add_variable' | 'generate_dockerfile';
+export type FeatureDowngrade = 'drop_field' | 'drop_item' | 'render_without';
 export type HealthCheckState = 'ok' | 'warning' | 'critical' | 'unknown';
 export type HealthcheckType = 'http' | 'tcp' | 'none';
+export type HoldKind = 'restore' | 'import' | 'move';
 export type HostingProvider = 'hetzner' | 'digitalocean' | 'aws' | 'gcp' | 'azure' | 'linode' | 'vultr' | 'ovh' | 'scaleway' | 'oracle' | 'upcloud' | 'exoscale';
 export type IngressCredentialPurpose = 'dns_token' | 'storage_key' | 'storage_password';
+export type LogLineLevel = 'error' | 'warning' | 'info' | 'debug';
+export type LogLineSource = 'build' | 'runtime';
+export type LogRange = '15m' | '1h' | '24h' | '7d' | '30d';
 export type LogSourceKind = 'task' | 'deployment' | 'workload';
+export type LogStream = 'stdout' | 'stderr' | 'system';
 export type MetricRange = '1h' | '6h' | '24h' | '7d' | '30d' | '90d' | '1y';
+export type NodeStateField = 'system.linkProbe' | 'system.controlPlane' | 'routes[].clientAuth' | 'routes[].waf' | 'routes[].stopped' | 'volumes[]' | 'volumes[].service' | 'workloads[].shipLogs' | 'workloads[].files' | 'workloads[].schedule' | 'workloads[].stop' | 'workloads[].walArchive' | 'ingress.dns.provider';
+export type NodeStatusReason = 'removal_staged' | 'disabled' | 'stopped' | 'paused' | 'deploying' | 'queued' | 'deploy_failed' | 'last_deploy_failed' | 'not_deployed' | 'server_down' | 'degraded' | 'crashed' | 'unhealthy' | 'not_running' | 'starting' | 'live' | 'running' | 'no_services' | 'services_failed' | 'services_need_attention' | 'partly_running';
 export type Permission = 'team.manage' | 'servers.manage' | 'members.manage' | 'projects.manage' | 'deployments.create' | 'variables.write' | 'secrets.reveal' | 'containers.exec' | 'databases.query' | 'exposure.manage' | 'resources.view' | 'backups.manage' | 'alerts.manage';
+export type PlacementIssueKind = 'stateful_server_down' | 'unplaceable';
 export type PlacementStrategy = 'spread' | 'pack';
+export type PlanPreviewStatus = 'ready' | 'pending' | 'failed' | 'unavailable';
+export type PortHint = 'loopback_only' | 'no_port' | 'wrong_port';
 export type PreviewStrategy = 'new_empty' | 'clone' | 'share';
 export type ProbeState = 'starting' | 'passing' | 'failing';
 export type ProjectIconMode = 'automatic' | 'uploaded' | 'none';
+export type ProjectSettingsSection = 'general' | 'environments' | 'previews' | 'config-file' | 'logs' | 'danger';
 export type PromotionClass = 'structural' | 'environment_specific' | 'never';
 export type PromotionEntryType = 'service' | 'field' | 'variable' | 'shared_variable' | 'shared_usage' | 'volume' | 'connection' | 'triggers';
 export type PromotionKind = 'created' | 'promoted';
+export type ReplacedServiceKind = 'stateful' | 'stateless';
+export type ReplacedServiceStatus = 'pending' | 'deploying' | 'restoring' | 'restored' | 'done' | 'running' | 'failed' | 'gone';
 export type ServerReplacementStatus = 'running' | 'completed' | 'failed';
 export type ServerRole = 'edge' | 'runtime' | 'build' | 'registry';
 export type ServerStatus = 'pending_approval' | 'online' | 'unreachable' | 'offline' | 'revoked';
 export type ServerTab = 'overview' | 'resources' | 'network' | 'settings';
 export type ServiceKind = 'app' | 'image' | 'database' | 'worker' | 'cron';
+export type ServicePanelTab = 'deployments' | 'logs' | 'console' | 'data' | 'settings';
+export type ServicePlanStatus = 'planning' | 'ready' | 'failed';
+export type ServiceSettingsSection = 'general' | 'source' | 'variables' | 'build' | 'deploy' | 'schedule' | 'domains' | 'networking' | 'firewall' | 'scaling' | 'volumes' | 'backups' | 'advanced' | 'danger';
+export type ServiceSourceType = 'git' | 'image' | 'database';
 export type SigningKeyStatus = 'active' | 'retired';
+export type StatusTone = 'active' | 'progress' | 'failed' | 'warning' | 'idle' | 'staged';
+export type TaskBackedAccessStatus = 'pending' | 'open' | 'ended';
+export type TaskFailureClass = 'plan_error' | 'build_error' | 'transient' | 'clone_error' | 'config_error' | 'timeout' | 'internal_error';
 export type TeamRole = 'owner' | 'admin' | 'developer' | 'viewer';
+export type ToastType = 'success' | 'info' | 'warning' | 'error';
 export type VariableExposure = 'runtime' | 'build' | 'both';
+export type VariableLayer = 'environment' | 'branch';
 export type VariableType = 'config' | 'secret';
 export type VolumeRetirementStatus = 'retained' | 'requested' | 'deleted';
 export type WorkloadCapability = 'CHOWN' | 'DAC_OVERRIDE' | 'FOWNER' | 'NET_BIND_SERVICE' | 'SETGID' | 'SETUID';
+export type WorkloadEventKind = 'created' | 'create_failed' | 'started' | 'exited' | 'restarted' | 'health_passing' | 'health_failing' | 'stopped' | 'removed';
+export type WorkloadEventReason = 'drained' | 'not_desired' | 'spec_changed' | 'duplicate' | 'port_not_bound';
+export type WorkloadIssueKind = 'crash_loop' | 'loopback_only' | 'wrong_port';
 export type WorkloadPhase = 'pending' | 'pulling' | 'starting' | 'running' | 'healthy' | 'unhealthy' | 'draining' | 'exited' | 'failed' | 'removed';
 export type WorkloadRole = 'serving' | 'draining';
 namespace Alerts {
 export type AlertChannelKind = 'email' | 'slack' | 'discord' | 'webhook';
 export type AlertDeliveryEvent = 'fired' | 'repeated' | 'resolved' | 'test';
 export type AlertDeliveryStatus = 'pending' | 'sent' | 'failed';
+export type AlertKind = 'unhealthy' | 'restarting';
 export type AlertRule = 'deploy_failed' | 'service_unhealthy' | 'error_rate_high' | 'server_offline' | 'cpu_high' | 'memory_high' | 'disk_full' | 'certificate_expiring' | 'backup_failed' | 'vulnerability' | 'waf_unavailable';
 export type AlertSeverity = 'warning' | 'critical';
 export type AlertStatus = 'firing' | 'resolved';
@@ -5318,7 +6393,7 @@ export type BackupHealth = 'ok' | 'stale' | 'failing' | 'running' | 'none' | 'un
 export type BackupReason = 'scheduled' | 'manual' | 'pre_upgrade' | 'pre_restore' | 'pre_delete' | 'pre_deploy' | 'pre_move';
 export type BackupRunStatus = 'pending' | 'running' | 'succeeded' | 'failed';
 export type BackupSubject = 'database' | 'volume' | 'control_plane' | 'base_backup';
-export type DeletionOutcome = 'deleted' | 'waiting_for_final_backup' | 'blocked';
+export type DeletionOutcome = 'deleted' | 'waiting_for_final_backup' | 'blocked' | 'busy';
 export type DeletionRequestStatus = 'backing_up' | 'blocked' | 'ready' | 'overridden' | 'completed' | 'cancelled';
 export type DestinationScope = 'team' | 'instance';
 export type DestinationStatus = 'unverified' | 'checking' | 'ok' | 'failing';
@@ -5331,15 +6406,27 @@ export type VerificationStatus = 'pending' | 'running' | 'passed' | 'failed';
 export type VolumeConsistency = 'live' | 'pause';
 export type WalArchiveState = 'active' | 'waiting' | 'failing';
 }
+namespace Builds {
+export type BuildHintCode = 'railpack-cannot-plan' | 'buildkit-not-ready' | 'buildkit-crash-loop' | 'buildkit-oom' | 'buildkit-userns-restricted' | 'pnpm-outdated-lockfile' | 'npm-ci-lockfile' | 'yarn-frozen-lockfile' | 'node-gyp-toolchain' | 'missing-module' | 'php-extension' | 'django-improperly-configured' | 'python-module-not-found' | 'out-of-memory' | 'no-start-command' | 'registry-rate-limit' | 'vite-env-undefined';
+export type BuilderReason = 'explicit' | 'dockerfile_detected' | 'preset' | 'railpack';
+export type ChosenBuilder = 'dockerfile' | 'railpack';
+}
 namespace ConfigAsCode {
 export type ConfigFileStatus = 'applied' | 'staged' | 'unchanged' | 'invalid' | 'missing';
 export type ConfigTrust = 'trusted' | 'preview' | 'fork';
+}
+namespace Crypto {
+export type ProjectCiphertext = 'var' | 'env' | 'query' | 'investigation';
 }
 namespace Dockerfiles {
 export type AiProvider = 'anthropic';
 export type DockerfileConfidence = 'high' | 'medium' | 'low';
 export type DockerfileGenerationStatus = 'reading' | 'drafting' | 'building' | 'starting' | 'verified' | 'failed' | 'cancelled';
 export type DockerfileGenerationTrigger = 'plan_failed' | 'build_failed' | 'on_demand';
+}
+namespace Domains {
+export type DnsCheckStatus = 'ok' | 'proxied' | 'mismatch' | 'missing' | 'unknown' | 'error';
+export type DnsLookupStatus = 'ok' | 'nxdomain' | 'empty' | 'error';
 }
 namespace Git {
 export type DeploymentReportState = 'queued' | 'in_progress' | 'success' | 'failure' | 'cancelled';
@@ -5348,12 +6435,21 @@ export type GitConnectionStatus = 'pending' | 'active' | 'needs_reauth';
 export type GitEventSource = 'webhook' | 'polling';
 export type GitProviderKind = 'github' | 'gitlab' | 'gitea' | 'git';
 export type GitServerKind = 'gitlab' | 'gitea' | 'forgejo' | 'git';
+export type PullRequestAction = 'opened' | 'reopened' | 'synchronize' | 'edited' | 'closed' | 'labeled' | 'unlabeled' | 'other';
 export type RepositorySelection = 'all' | 'selected';
 export type WebhookDeliveryStatus = 'received' | 'processed' | 'ignored' | 'failed';
 export type WebhookHealth = 'healthy' | 'stale' | 'never';
 export type WebhookReceipt = 'accepted' | 'duplicate' | 'invalid' | 'unauthorized';
 }
+namespace Http {
+export type WebhookPostFailure = 'unsafe_url' | 'response_too_large' | 'unreachable' | 'failed' | 'status';
+}
+namespace Instance {
+export type OnboardingStep = 'server' | 'github' | 'domain' | 'project' | 'backups';
+export type OnboardingStepStatus = 'done' | 'pending' | 'skipped';
+}
 namespace Mesh {
+export type MeshClientState = 'starting' | 'needs_login' | 'connected' | 'error';
 export type MeshCredentialPurpose = 'headscale_api_key' | 'tailscale_auth_key' | 'pre_auth_key';
 export type MeshMemberState = 'off' | 'connecting' | 'connected' | 'error';
 export type MeshMode = 'embedded' | 'byo';
@@ -5367,13 +6463,12 @@ export type ServerMoveStatus = 'running' | 'ready' | 'cancelling' | 'completed' 
 }
 namespace Previews {
 export type ForkPolicy = 'off' | 'approval';
-export type PreviewProvider = 'github' | 'gitlab' | 'gitea' | 'git';
 export type PreviewStatus = 'skipped' | 'awaiting_approval' | 'queued' | 'preparing' | 'running' | 'failed' | 'closed' | 'expired';
 }
 namespace RemoteAccess {
 export type RemoteAccessEndReason = 'ended' | 'idle' | 'deadline' | 'locked' | 'refused' | 'error';
 export type RemoteAccessKind = 'ssh' | 'database' | 'volume';
-export type RemoteAccessStatus = 'pending' | 'open' | 'ended';
+export type RemoteAccessProtocol = 'postgres' | 'redis';
 }
 namespace Security {
 export type AdvisoryFeed = 'osv' | 'kev' | 'eol';
@@ -5386,21 +6481,25 @@ export type InvestigationStatus = 'running' | 'completed' | 'partial' | 'failed'
 export type SecurityFindingStatus = 'open' | 'dismissed' | 'resolved';
 export type Severity = 'critical' | 'high' | 'medium' | 'low' | 'unknown';
 export type WafCategory = 'method' | 'scanner' | 'protocol' | 'lfi' | 'rfi' | 'rce' | 'php' | 'generic' | 'xss' | 'sqli' | 'session_fixation' | 'java' | 'other';
+export type WafEdgeState = 'on' | 'off' | 'error' | 'unsupported';
 export type WafMode = 'off' | 'log' | 'block';
 }
 namespace Servers {
+export type CapabilityReason = 'full_socket' | 'vm' | 'rootless' | 'no_rootlesskit_api' | 'ports_pending' | 'ports_refused' | 'turned_off' | 'error' | 'docker_desktop' | 'userns_profile' | 'userns_blocked' | 'no_swap' | 'build_limits';
 export type CapabilityState = 'full' | 'degraded' | 'unavailable';
+export type CleanupTrigger = 'schedule' | 'disk_pressure';
 export type DockerEngine = 'docker-engine' | 'docker-desktop' | 'orbstack' | 'colima';
 export type DockerMode = 'rootful' | 'rootless';
 export type HostOs = 'linux' | 'darwin';
 export type RoleHintTone = 'info' | 'warning';
 export type RuntimeCapability = 'dockerAccess' | 'edgePorts' | 'clientAddresses' | 'firewall' | 'mesh' | 'portDiscovery' | 'workloads' | 'builds';
+export type Virtualization = 'kvm' | 'qemu' | 'vmware' | 'virtualbox' | 'xen' | 'hyperv' | 'parallels' | 'apple' | 'bhyve' | 'container' | 'other';
 }
 namespace Sessions {
 export type DatabaseQueryStatus = 'sent' | 'ok' | 'error' | 'refused';
 export type InteractiveSessionKind = 'console' | 'data';
-export type InteractiveSessionStatus = 'pending' | 'open' | 'ended';
 export type SessionEndReason = 'closed' | 'exited' | 'idle' | 'deadline' | 'disconnected' | 'ended' | 'never_connected' | 'refused' | 'error';
+export type StartFailure = 'no_shell' | 'shell_missing' | 'shell_start_failed' | 'kind_disabled' | 'guard_refused' | 'policy_refused' | 'not_running' | 'relay_unreachable' | 'session_key';
 }
 namespace Transfers {
 export type DataSubject = 'database' | 'volume';

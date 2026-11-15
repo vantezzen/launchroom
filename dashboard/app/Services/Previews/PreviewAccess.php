@@ -119,9 +119,6 @@ final readonly class PreviewAccess
         return ['value' => new PreviewToken(PreviewToken::KIND_COOKIE, $environment->public_id, $host, $expires, shareLink: $link->public_id)->sign($this->key()), 'expires' => $expires];
     }
 
-    /**
-     * Whether the preview host's cookie grants access right now.
-     */
     public function cookieGrants(#[SensitiveParameter] string $cookie, Environment $environment, string $host): bool
     {
         $token = PreviewToken::verify($cookie, PreviewToken::KIND_COOKIE, $this->key(), now()->getTimestamp());
@@ -135,16 +132,52 @@ final readonly class PreviewAccess
         if ($token->userId !== null) {
             $userId = $token->userId;
 
-            return (bool) Cache::remember("launchroom:preview-access:user:{$userId}:{$environment->id}", $ttl, fn (): bool => $this->userMayView($userId, $environment));
+            return (bool) Cache::remember($this->memberKey($environment->team_id, $userId).":{$environment->id}", $ttl, fn (): bool => $this->userMayView($userId, $environment));
         }
 
         if ($token->shareLink !== null) {
             $link = $token->shareLink;
 
-            return (bool) Cache::remember("launchroom:preview-access:link:{$link}", $ttl, fn (): bool => $this->usableLink($link, $environment) instanceof PreviewShareLink);
+            return (bool) Cache::remember(self::linkKey($link), $ttl, fn (): bool => $this->usableLink($link, $environment) instanceof PreviewShareLink);
         }
 
         return false;
+    }
+
+    /**
+     * Drops the cached access answer of a revoked share link, so its cookies
+     * stop working at once instead of after `access_cache_seconds`.
+     */
+    public static function forgetShareLink(string $publicId): void
+    {
+        Cache::forget(self::linkKey($publicId));
+    }
+
+    /**
+     * Drops every cached access answer of a member in a team (membership
+     * removed, role or grants changed). The answers are cached per
+     * environment, so the member's key carries a version that this bumps.
+     */
+    public static function forgetMember(int $teamId, int $userId): void
+    {
+        Cache::forever(self::memberVersionKey($teamId, $userId), Str::random(16));
+    }
+
+    private static function linkKey(string $publicId): string
+    {
+        return "launchroom:preview-access:link:{$publicId}";
+    }
+
+    private function memberKey(int $teamId, int $userId): string
+    {
+        $version = Cache::get(self::memberVersionKey($teamId, $userId));
+
+        return "launchroom:preview-access:user:{$userId}:".(is_string($version) ? $version : '0');
+    }
+
+    private static function memberVersionKey(int $teamId, int $userId): string
+    {
+        return "launchroom:preview-access:member:{$teamId}:{$userId}";
     }
 
     /**

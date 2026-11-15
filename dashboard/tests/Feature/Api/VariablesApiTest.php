@@ -111,3 +111,18 @@ test('the resolved env withholds secrets unless asked and allowed', function ():
         ->and($audits[0]->meta['with_secrets'])->toBeFalse()
         ->and($audits[2]->meta['with_secrets'])->toBeTrue();
 });
+
+test('turning a secret into config needs the reveal permission, through the API too', function (): void {
+    $world = DeploymentUi::make();
+    $secret = $world->variable('API_SECRET', 'hunter2', VariableType::Secret);
+    $abilities = [ApiAbility::Read, ApiAbility::EnvRead, ApiAbility::EnvWrite];
+    $uri = "environments/{$world->production->public_id}/variables/{$secret->public_id}";
+
+    Api::call('PATCH', $uri, Api::token($world->member(TeamRole::Developer), $world->team, $abilities), ['type' => 'config'])->assertForbidden();
+    expect($secret->refresh()->type)->toBe(VariableType::Secret);
+
+    // A token reveals secrets only with secrets:read.
+    Api::call('PATCH', $uri, Api::token($world->member(TeamRole::Admin), $world->team, $abilities), ['type' => 'config'])->assertForbidden();
+    Api::call('PATCH', $uri, Api::token($world->member(TeamRole::Admin), $world->team, [...$abilities, ApiAbility::SecretsRead]), ['type' => 'config'])->assertOk();
+    expect(Variable::query()->where('project_id', $world->project->id)->where('key', 'API_SECRET')->sole()->type)->toBe(VariableType::Config);
+});

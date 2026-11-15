@@ -4,11 +4,14 @@ declare(strict_types=1);
 
 namespace App\Models\Alerts;
 
+use App\Enums\Alerts\AlertKind;
 use App\Enums\Alerts\AlertRule;
 use App\Enums\Alerts\AlertSeverity;
 use App\Enums\Alerts\AlertStatus;
+use App\Enums\Contracts\HasTransitionTable;
 use App\Models\Concerns\BelongsToTeam;
 use App\Models\Concerns\HasPublicId;
+use App\Models\Concerns\HasStatusTransitions;
 use App\Models\Environment;
 use App\Models\Project;
 use App\Models\Server;
@@ -39,6 +42,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property int|null $service_instance_id
  * @property int|null $server_id
  * @property array<string, string> $facts
+ * @property AlertKind|null $kind
+ * @property float|null $value
  * @property string|null $occurrence
  * @property int $occurrences
  * @property CarbonImmutable $opened_at
@@ -53,10 +58,13 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property-read ServiceInstance|null $serviceInstance
  * @property-read Server|null $server
  */
-#[Fillable(['team_id', 'rule', 'subject_key', 'severity', 'title', 'summary', 'href', 'project_id', 'environment_id', 'service_instance_id', 'server_id', 'facts', 'occurrence', 'occurrences', 'opened_at', 'last_seen_at', 'notified_at'])]
+#[Fillable(['team_id', 'rule', 'subject_key', 'severity', 'title', 'summary', 'href', 'project_id', 'environment_id', 'service_instance_id', 'server_id', 'facts', 'kind', 'value', 'occurrence', 'occurrences', 'opened_at', 'last_seen_at', 'notified_at'])]
 final class Alert extends Model
 {
     use BelongsToTeam, HasPublicId;
+
+    /** @use HasStatusTransitions<AlertStatus> */
+    use HasStatusTransitions;
 
     /** @var array<string, mixed> */
     protected $attributes = [
@@ -70,21 +78,15 @@ final class Alert extends Model
         return 'alr';
     }
 
-    public function transitionTo(AlertStatus $to, ?string $reason = null): void
+    /**
+     * @param  AlertStatus  $from
+     * @param  AlertStatus  $to
+     */
+    protected function recordTransition(HasTransitionTable $from, HasTransitionTable $to, ?string $note): void
     {
-        $this->status->assertCanTransitionTo($to);
-
-        $this->status = $to;
-
-        if ($to === AlertStatus::Resolved) {
-            $this->resolved_at = now();
-            $this->resolve_reason = $reason === null ? null : mb_substr($reason, 0, 300);
-        } else {
-            $this->resolved_at = null;
-            $this->resolve_reason = null;
-        }
-
-        $this->save();
+        $resolved = $to === AlertStatus::Resolved;
+        $this->resolved_at = $resolved ? now() : null;
+        $this->resolve_reason = $resolved ? $note : null;
     }
 
     public function isFiring(): bool
@@ -142,6 +144,8 @@ final class Alert extends Model
             'severity' => AlertSeverity::class,
             'status' => AlertStatus::class,
             'facts' => 'array',
+            'kind' => AlertKind::class,
+            'value' => 'float',
             'occurrences' => 'integer',
             'opened_at' => 'datetime',
             'last_seen_at' => 'datetime',

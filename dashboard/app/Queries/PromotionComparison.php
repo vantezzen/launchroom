@@ -50,8 +50,7 @@ final readonly class PromotionComparison
         $plan = $this->planner->plan($from, $to);
 
         $environments = array_values($project->environments()
-            ->orderByRaw("case kind when 'production' then 0 when 'persistent' then 1 else 2 end")
-            ->orderBy('name')
+            ->inDisplayOrder()
             ->get()
             ->map(static fn (Environment $environment): PromotionEnvironmentData => self::environment($environment))
             ->all());

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Data\Services;
 
+use App\Enums\ServiceSourceType;
 use App\Support\Images\ImageReference;
 use Spatie\LaravelData\Attributes\Validation\Max;
 use Spatie\LaravelData\Data;
@@ -20,9 +21,9 @@ final class ImageSource extends Data implements ServiceSource
         public string $reference,
     ) {}
 
-    public function type(): string
+    public function type(): ServiceSourceType
     {
-        return 'image';
+        return ServiceSourceType::Image;
     }
 
     /**

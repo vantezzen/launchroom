@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/vantezzen/launchroom/daemon/internal/build/presets"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
 
@@ -66,7 +67,7 @@ func normalize(comps []scanned, src *sourceFacts, next nextProbe, notes *[]strin
 			}
 		case state.EcosystemPyPI:
 			ic.Kind = state.ComponentLibrary
-			ic.Scope, ic.Direct = nameScope(pypiOf(src), pyName(c.name))
+			ic.Scope, ic.Direct = nameScope(pypiOf(src), presets.PythonName(c.name))
 		case state.EcosystemPackagist:
 			ic.Kind = state.ComponentLibrary
 			ic.Scope, ic.Direct = nameScope(composerOf(src), strings.ToLower(c.name))

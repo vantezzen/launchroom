@@ -31,8 +31,6 @@ function lazyPropsHeaders(string $component, string $only): array
 }
 
 /**
- * The SQL $request runs.
- *
  * @return list<string>
  */
 function lazyPropsQueries(Closure $request): array

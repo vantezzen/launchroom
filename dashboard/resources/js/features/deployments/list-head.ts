@@ -2,7 +2,7 @@ import { isInProgress } from './format';
 
 type Summary = App.Data.Deployments.DeploymentSummaryData;
 
-export type ServiceDeploymentList = {
+type ServiceDeploymentList = {
     active: Summary | null;
     deployments: Summary[];
     current: { id: string } | null;

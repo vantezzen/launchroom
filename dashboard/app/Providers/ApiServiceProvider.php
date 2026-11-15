@@ -4,16 +4,14 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
+use App\Http\Routing\TeamScopedBindings;
 use App\Models\ApiToken;
 use App\Models\User;
-use App\Support\PublicId;
 use Illuminate\Cache\RateLimiting\Limit;
-use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\RateLimiter;
-use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 use Laravel\Sanctum\Events\TokenAuthenticated;
 use Laravel\Sanctum\Sanctum;
@@ -43,14 +41,8 @@ final class ApiServiceProvider extends ServiceProvider
         });
 
         // Settings → API tokens: only the signed-in user's own tokens resolve.
-        Route::bind('apiToken', static function (string $value): ApiToken {
-            $user = Auth::user();
-
-            if (! $user instanceof User || ! PublicId::isValid($value, ApiToken::publicIdPrefix())) {
-                throw (new ModelNotFoundException)->setModel(ApiToken::class);
-            }
-
-            return ApiToken::query()->ownedBy($user)->where('public_id', $value)->firstOrFail();
+        TeamScopedBindings::define('apiToken', ApiToken::class, static function (Builder $query, User $user): void {
+            $query->ownedBy($user);
         });
 
         $limits = static fn (string $key): int => config()->integer('api.rate_limits.'.$key);

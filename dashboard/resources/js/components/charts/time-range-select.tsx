@@ -1,34 +1,22 @@
 import { useRef } from 'react';
 import type { KeyboardEvent } from 'react';
+import type { TimeRangeOption } from '@/lib/observe-scope';
 import { cn } from '@/lib/utils';
 
-export type TimeRange = '1h' | '24h' | '7d' | '30d';
-
-export type TimeRangeOption<T extends string = TimeRange> = {
-    value: T;
-    label: string;
-};
-
-export const DEFAULT_RANGES: TimeRangeOption[] = [
-    { value: '1h', label: 'Hour' },
-    { value: '24h', label: 'Day' },
-    { value: '7d', label: 'Week' },
-];
-
 /**
- * Segmented range control (design-system §5.3): Hour / Day / Week everywhere.
- * A radio group: arrow keys move the selection, one tab stop.
+ * Segmented range or filter control (design-system §5.3). A radio group:
+ * arrow keys move the selection, one tab stop.
  */
-export function TimeRangeSelect<T extends string = TimeRange>({
+export function TimeRangeSelect<T extends string>({
     value,
     onChange,
-    options = DEFAULT_RANGES as unknown as TimeRangeOption<T>[],
+    options,
     label = 'Time range',
     className,
 }: {
     value: T;
     onChange: (value: T) => void;
-    options?: TimeRangeOption<T>[];
+    options: TimeRangeOption<T>[];
     label?: string;
     className?: string;
 }) {

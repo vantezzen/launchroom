@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace App\Enums;
 
-use App\Models\InstanceSettings;
-
 /**
  * Client certificates for daemon transport (mTLS, D50, docs/03 §4.3), per
  * instance: the rollout goes Off → Verify ("Check") → Require.
@@ -20,12 +18,6 @@ enum ClientCertificateMode: string
 
     /** Daemon requests without a verified certificate are refused (except enroll, issuance and the control plane's loopback). */
     case Require = 'require';
-
-    /** The instance's mode (Off when never set). */
-    public static function current(): self
-    {
-        return InstanceSettings::current()->daemon_client_certificates ?? self::Off;
-    }
 
     public function label(): string
     {

@@ -5,26 +5,23 @@ declare(strict_types=1);
 namespace App\Services\Ingress;
 
 use App\Enums\IngressCredentialPurpose;
+use App\Exceptions\DecryptionFailed;
 use App\Models\IngressCredential;
-use App\Services\Crypto\Envelope;
-use App\Services\Crypto\Exceptions\DecryptionFailed;
+use App\Services\Crypto\SealedColumns;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use SensitiveParameter;
 
 /**
- * Envelope encryption for ingress secrets (docs/09 R13, docs/05 §5): the DNS
- * provider token and the shared certificate storage's encryption key. Each
- * row gets its own data key wrapped by the instance KEK (context
- * `ingress_credential:<purpose>`); the value is XChaCha20-Poly1305 with
- * associated data `ingress_credential|<purpose>`, so ciphertexts can't be
- * swapped between purposes. Values only leave the dashboard sealed to an edge
- * server's X25519 key (App\Support\Crypto\IngressSecretSealer).
+ * Ingress secrets (docs/05 §5): the DNS provider credentials and the shared
+ * certificate storage's password and encryption key, one sealed row per purpose
+ * (App\Services\Crypto\SealedColumns). Values only leave the dashboard
+ * sealed to an edge server's X25519 key (App\Support\Crypto\IngressSecretSealer).
  */
 final readonly class IngressSecrets
 {
     public function __construct(
-        private Envelope $envelope,
+        private SealedColumns $sealed,
     ) {}
 
     /**
@@ -32,14 +29,10 @@ final readonly class IngressSecrets
      */
     public function put(IngressCredentialPurpose $purpose, #[SensitiveParameter] string $value): IngressCredential
     {
-        $dek = $this->envelope->generateDataKey();
         $row = IngressCredential::query()->firstOrNew(['purpose' => $purpose->value]);
-        $row->forceFill([
-            'purpose' => $purpose,
-            'wrapped_dek' => $this->envelope->wrap($dek, $this->wrapContext($purpose)),
-            'kek_id' => $this->envelope->kekId(),
-            'ciphertext' => $dek->encrypt($value, $this->associatedData($purpose)),
-        ])->save();
+        $row->purpose = $purpose;
+        $this->sealed->seal($row, 'ciphertext', $value, $this->sealed->newKey($row));
+        $row->save();
 
         return $row;
     }
@@ -55,8 +48,7 @@ final readonly class IngressSecrets
             return null;
         }
 
-        return $this->envelope->unwrap($row->wrapped_dek, $this->wrapContext($purpose))
-            ->decrypt($row->ciphertext, $this->associatedData($purpose));
+        return $this->sealed->reveal($row, 'ciphertext');
     }
 
     /**
@@ -76,15 +68,12 @@ final readonly class IngressSecrets
             return $existing;
         }
 
-        $dek = $this->envelope->generateDataKey();
+        $row = new IngressCredential;
+        $row->purpose = $purpose;
+        $this->sealed->seal($row, 'ciphertext', $generate(), $this->sealed->newKey($row));
 
         try {
-            DB::transaction(fn () => IngressCredential::query()->create([
-                'purpose' => $purpose,
-                'wrapped_dek' => $this->envelope->wrap($dek, $this->wrapContext($purpose)),
-                'kek_id' => $this->envelope->kekId(),
-                'ciphertext' => $dek->encrypt($generate(), $this->associatedData($purpose)),
-            ]));
+            DB::transaction(fn () => $row->save());
         } catch (UniqueConstraintViolationException) {
             // Created concurrently.
         }
@@ -106,24 +95,5 @@ final readonly class IngressSecrets
         $ciphertext = IngressCredential::query()->where('purpose', $purpose->value)->value('ciphertext');
 
         return is_string($ciphertext) ? hash('sha256', $ciphertext) : null;
-    }
-
-    /**
-     * Re-wraps the stored DEK from one KEK to another (rotate-kek); the caller saves.
-     */
-    public function rewrap(IngressCredential $row, Envelope $from, Envelope $to): void
-    {
-        $row->wrapped_dek = $from->rewrap($row->wrapped_dek, $this->wrapContext($row->purpose), $to);
-        $row->kek_id = $to->kekId();
-    }
-
-    private function wrapContext(IngressCredentialPurpose $purpose): string
-    {
-        return 'ingress_credential:'.$purpose->value;
-    }
-
-    private function associatedData(IngressCredentialPurpose $purpose): string
-    {
-        return 'ingress_credential|'.$purpose->value;
     }
 }

@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace App\Data\Protocol\V1;
 
+use App\Data\Attributes\UnknownCodeAsNull;
+use App\Support\Protocol\Grammar;
+use App\Support\PublicId;
 use Spatie\LaravelData\Attributes\Validation\Max;
 use Spatie\LaravelData\Attributes\Validation\Min;
 use Spatie\LaravelData\Attributes\Validation\Regex;
@@ -13,13 +16,13 @@ use Spatie\LaravelData\Optional;
 /**
  * Report.host (protocol/schema/v1/report.json): host facts with the latest
  * periodic health snapshot. `health` is validated here and normalized by
- * App\Support\Servers\HostHealthFacts before it is stored.
+ * App\Data\Servers\Host\HostStatusData before it is stored.
  */
 final class HostStatus extends Data
 {
     /**
      * @param  array<string, mixed>|null|Optional  $health
-     * @param  array<string, mixed>|null|Optional  $mesh  the mesh client's state (docs/05 §2), normalized by App\Support\Servers\MeshStatusFacts
+     * @param  array<string, mixed>|null|Optional  $mesh  the mesh client's state (docs/05 §2), normalized by App\Data\Servers\MeshReportData
      * @param  list<array<string, mixed>>|null|Optional  $links  latest link measurements per peer (docs/05 §2.1), stored by App\Actions\Servers\RecordLinkQuality
      * @param  list<string>|null|Optional  $features  optional protocol features the daemon understands (docs/03 §10)
      * @param  array<string, mixed>|null|Optional  $controlPlane  which dashboard URL launchroomd uses (docs/05 §4.1)
@@ -36,9 +39,9 @@ final class HostStatus extends Data
         public int $diskTotalMb,
         #[Min(0)]
         public int $diskFreeMb,
-        #[Regex('/^v?[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/D')]
+        #[Regex(Grammar::SEMVER)]
         public string $daemonVersion,
-        #[Regex('/^[A-Za-z0-9._-]{1,128}$/D')]
+        #[Regex(Grammar::LABEL)]
         public string|Optional $dockerVersion = new Optional,
         public array|null|Optional $health = new Optional,
         public array|null|Optional $mesh = new Optional,
@@ -112,18 +115,18 @@ final class HostStatus extends Data
             'mesh.peers.*.ipv4' => ['required', 'ipv4'],
             'mesh.peers.*.online' => ['required', 'boolean'],
             'mesh.peers.*.connection' => ['required', 'in:direct,relay,idle'],
-            'mesh.peers.*.relay' => ['sometimes', 'string', 'regex:/^[A-Za-z0-9._-]{1,128}$/D'],
+            'mesh.peers.*.relay' => ['sometimes', 'string', 'regex:'.Grammar::LABEL],
             'mesh.peers.*.lastHandshake' => ['sometimes', 'nullable', ...$time],
             'links' => ['sometimes', 'nullable', 'array', 'max:256'],
             'links.*' => ['array'],
-            'links.*.peer' => ['required', 'string', 'regex:/^srv_[0-9A-HJKMNP-TV-Z]{26}$/D'],
+            'links.*.peer' => ['required', 'string', 'regex:'.PublicId::regex('srv')],
             'links.*.measuredAt' => ['required', ...$time],
             'links.*.rttMs' => ['sometimes', 'nullable', 'numeric', 'min:0', 'max:60000'],
             'links.*.error' => ['sometimes', 'string', 'max:256'],
             'links.*.throughputMbps' => ['sometimes', 'nullable', 'numeric', 'min:0', 'max:400000', 'required_with:links.*.throughputAt'],
             'links.*.throughputAt' => ['sometimes', 'nullable', 'required_with:links.*.throughputMbps', ...$time],
             'features' => ['sometimes', 'nullable', 'array', 'max:64'],
-            'features.*' => ['string', 'regex:/^[a-z][A-Za-z0-9]{0,31}$/D'],
+            'features.*' => ['string', 'regex:'.Grammar::DAEMON_FEATURE],
             // Which dashboard URL launchroomd uses (docs/05 §4.1), stored by RecordReport.
             'controlPlane' => ['sometimes', 'nullable', 'array'],
             'controlPlane.state' => ['required_with:controlPlane', 'in:configured,adopted,fallback,pending,refused'],
@@ -145,6 +148,7 @@ final class HostStatus extends Data
             'runtime.capabilities.*' => ['array'],
             'runtime.capabilities.*.name' => ['required', 'string', 'distinct', 'regex:/^[a-z][A-Za-z0-9]{0,31}$/D'],
             'runtime.capabilities.*.state' => ['required', 'string', 'in:full,degraded,unavailable'],
+            'runtime.capabilities.*.reason' => ['sometimes', 'string', 'regex:'.UnknownCodeAsNull::GRAMMAR],
             'runtime.capabilities.*.message' => ['sometimes', 'string', 'max:512'],
             // Public addresses (docs/05 §5), stored by RecordReport after ServerAddress.
             'publicAddresses' => ['sometimes', 'nullable', 'array'],

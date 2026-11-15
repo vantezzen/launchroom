@@ -10,6 +10,7 @@ use App\Data\Projects\ResetProjectIconData;
 use App\Enums\ProjectIconMode;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Projects\ProjectIconRequest;
+use App\Http\Toast;
 use App\Models\Project;
 use App\Models\User;
 use App\Services\Projects\ProjectIconStore;
@@ -18,7 +19,6 @@ use Illuminate\Container\Attributes\CurrentUser;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
-use Inertia\Inertia;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
@@ -58,7 +58,7 @@ final class ProjectIconController extends Controller
         Gate::authorize('update', $project);
 
         $setIcon->handle($project, $request->iconBytes(), $this->auditActor($request, $user));
-        Inertia::flash('toast', ['type' => 'success', 'message' => 'Icon updated.']);
+        Toast::success('Icon updated.');
 
         return back();
     }
@@ -70,9 +70,9 @@ final class ProjectIconController extends Controller
         $mode = $data->mode;
 
         $resetIcon->handle($project, $mode, $this->auditActor($request, $user));
-        Inertia::flash('toast', ['type' => 'success', 'message' => $mode === ProjectIconMode::Automatic
+        Toast::success($mode === ProjectIconMode::Automatic
             ? 'Icon reset. launchroom uses your app’s favicon if it finds one.'
-            : 'Icon removed.']);
+            : 'Icon removed.');
 
         return back();
     }

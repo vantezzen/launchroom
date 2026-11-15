@@ -22,6 +22,8 @@ import (
 	"time"
 
 	"github.com/vantezzen/launchroom/daemon/internal/docker/dockerfake"
+	"github.com/vantezzen/launchroom/daemon/internal/ingress"
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/policy"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
@@ -43,7 +45,7 @@ func wafFixtureRoutes(t *testing.T) []Route {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return ResolveRoutes(ns.Routes, resolver(map[state.WorkloadID]Endpoint{
+	return ResolveRoutes(ns.Routes, resolver(map[state.WorkloadID]ingress.Endpoint{
 		"wl_01J9Z8X7W6V5T4S3R2Q1P0N9N7": {Addr: netip.MustParseAddr("10.231.4.5"), Serving: true, Ready: true},
 	}))
 }
@@ -308,7 +310,7 @@ func (a *refusingAdmin) Load(ctx context.Context, cfg []byte) error {
 
 func TestManagerWaf(t *testing.T) {
 	ctx := t.Context()
-	image := state.ImageRef("docker.io/library/caddy@" + policy.DefaultSystemImageDigests[policy.SystemCaddy][0])
+	image := state.ImageRef("docker.io/library/caddy@" + policy.DefaultSystemImageDigests[names.SystemCaddy][0])
 	routes := wafFixtureRoutes(t)
 	newManager := func(labels map[string]string) (*Manager, *refusingAdmin) {
 		d := dockerfake.New(srvID)
@@ -324,7 +326,7 @@ func TestManagerWaf(t *testing.T) {
 
 	// Stock Caddy (no labels): routes are served without the firewall, the state says why.
 	m, admin := newManager(nil)
-	st := m.Sync(ctx, sys, routes)
+	st := m.sync(ctx, sys, routes)
 	if st.State != state.IngressApplied || st.Waf == nil || st.Waf.State != state.WafStateUnsupported || m.WafSupport().Available() {
 		t.Fatalf("stock caddy: %+v / %+v", st, st.Waf)
 	}
@@ -335,7 +337,7 @@ func TestManagerWaf(t *testing.T) {
 	// launchroom-caddy: on, with the versions from the image.
 	labels := map[string]string{LabelWafEngine: "coraza 3.8.1", LabelWafRuleSet: "OWASP CRS 4.25.0"}
 	m, admin = newManager(labels)
-	st = m.Sync(ctx, sys, routes)
+	st = m.sync(ctx, sys, routes)
 	want := state.WafStatus{State: state.WafStateOn, Engine: "coraza 3.8.1", RuleSet: "OWASP CRS 4.25.0", Routes: 2, DroppedRecords: 3}
 	if st.State != state.IngressApplied || st.Waf == nil || *st.Waf != want || !m.WafSupport().Available() {
 		t.Fatalf("launchroom-caddy: %+v / %+v", st, st.Waf)
@@ -348,14 +350,14 @@ func TestManagerWaf(t *testing.T) {
 	for i := range plain {
 		plain[i].Spec.Waf = nil
 	}
-	if st = m.Sync(ctx, sys, plain); st.Waf == nil || st.Waf.State != state.WafStateOff || st.Waf.Routes != 0 {
+	if st = m.sync(ctx, sys, plain); st.Waf == nil || st.Waf.State != state.WafStateOff || st.Waf.Routes != 0 {
 		t.Fatalf("off: %+v", st.Waf)
 	}
 
 	// Caddy refuses the firewall: the same routes without it, state error, no retry of the same config.
 	m, admin = newManager(labels)
 	admin.refuse = true
-	st = m.Sync(ctx, sys, routes)
+	st = m.sync(ctx, sys, routes)
 	if st.State != state.IngressApplied || st.Waf == nil || st.Waf.State != state.WafStateError || st.Waf.Routes != 0 || !strings.Contains(st.Waf.Message, "invalid directive") || strings.ContainsAny(st.Waf.Message, "\n") {
 		t.Fatalf("refused: %+v / %+v", st, st.Waf)
 	}
@@ -366,7 +368,7 @@ func TestManagerWaf(t *testing.T) {
 	if err := rep.Validate(); err != nil {
 		t.Fatalf("report with the error state: %v", err)
 	}
-	st = m.Sync(ctx, sys, routes)
+	st = m.sync(ctx, sys, routes)
 	if len(admin.loads) != 2 || st.Waf.State != state.WafStateError {
 		t.Fatalf("the refused config was tried again (%d loads, %+v)", len(admin.loads), st.Waf)
 	}
@@ -374,7 +376,7 @@ func TestManagerWaf(t *testing.T) {
 	admin.refuse = false
 	changed := slices.Clone(routes)
 	changed[1].Spec.Waf = &state.RouteWaf{Mode: state.WafModeBlock}
-	if st = m.Sync(ctx, sys, changed); st.Waf.State != state.WafStateOn || st.Waf.Routes != 2 || st.Waf.Message != "" {
+	if st = m.sync(ctx, sys, changed); st.Waf.State != state.WafStateOn || st.Waf.Routes != 2 || st.Waf.Message != "" {
 		t.Fatalf("after change: %+v", st.Waf)
 	}
 }
@@ -437,7 +439,7 @@ func (f *archiveFake) DialExec(context.Context, string, []string) (net.Conn, err
 // included, is loaded again, and the firewall ends up on (docs/22 §6.6).
 func TestManagerWafCaddyUnreachable(t *testing.T) {
 	ctx := t.Context()
-	image := state.ImageRef("docker.io/library/caddy@" + policy.DefaultSystemImageDigests[policy.SystemCaddy][0])
+	image := state.ImageRef("docker.io/library/caddy@" + policy.DefaultSystemImageDigests[names.SystemCaddy][0])
 	routes := wafFixtureRoutes(t)
 	labels := map[string]string{LabelWafEngine: "coraza 3.8.1", LabelWafRuleSet: "OWASP CRS 4.25.0"}
 	sys := state.SystemContainer{Enabled: true, Image: image}
@@ -456,7 +458,7 @@ func TestManagerWafCaddyUnreachable(t *testing.T) {
 
 	// First load refused at the connection, the retry in the same pass succeeds.
 	m, admin := newManager(1)
-	st := m.Sync(ctx, sys, routes)
+	st := m.sync(ctx, sys, routes)
 	if st.State != state.IngressApplied || st.Waf == nil || st.Waf.State != state.WafStateOn || st.Waf.Routes != 2 || st.Waf.Message != "" {
 		t.Fatalf("after one refused connection: %+v / %+v", st, st.Waf)
 	}
@@ -467,7 +469,7 @@ func TestManagerWafCaddyUnreachable(t *testing.T) {
 	// Caddy stays away for the whole pass: pending, no firewall error, no
 	// fallback without the firewall; the next pass loads it.
 	m, admin = newManager(loadAttempts)
-	st = m.Sync(ctx, sys, routes)
+	st = m.sync(ctx, sys, routes)
 	if st.State != state.IngressPending || !strings.Contains(st.Message, "Caddy wasn't reachable yet; retrying") || !strings.Contains(st.Message, "connection refused") {
 		t.Fatalf("unreachable: %+v", st)
 	}
@@ -486,7 +488,7 @@ func TestManagerWafCaddyUnreachable(t *testing.T) {
 	if err := rep.Validate(); err != nil {
 		t.Fatalf("report while unreachable: %v", err)
 	}
-	st = m.Sync(ctx, sys, routes)
+	st = m.sync(ctx, sys, routes)
 	if st.State != state.IngressApplied || st.Waf.State != state.WafStateOn || st.Waf.Routes != 2 || st.Waf.Message != "" {
 		t.Fatalf("next pass: %+v / %+v", st, st.Waf)
 	}
@@ -497,13 +499,13 @@ func TestManagerWafCaddyUnreachable(t *testing.T) {
 	// Unreachable for longer than wafUnreachableAfter: the firewall reports
 	// error (the dashboard's callout), yet every pass keeps trying.
 	m, admin = newManager(2 * loadAttempts)
-	m.Sync(ctx, sys, routes)
+	m.sync(ctx, sys, routes)
 	now = now.Add(wafUnreachableAfter)
-	st = m.Sync(ctx, sys, routes)
+	st = m.sync(ctx, sys, routes)
 	if st.State != state.IngressPending || st.Waf.State != state.WafStateError || !strings.Contains(st.Waf.Message, "hasn't been reachable since 2026-10-28T12:00:00Z") {
 		t.Fatalf("persistently unreachable: %+v / %+v", st, st.Waf)
 	}
-	st = m.Sync(ctx, sys, routes)
+	st = m.sync(ctx, sys, routes)
 	if st.State != state.IngressApplied || st.Waf.State != state.WafStateOn || st.Waf.Message != "" || admin.attempts != 2*loadAttempts+1 {
 		t.Fatalf("recovered: %+v / %+v (%d attempts)", st, st.Waf, admin.attempts)
 	}
@@ -512,7 +514,7 @@ func TestManagerWafCaddyUnreachable(t *testing.T) {
 // A real refusal (4xx) falls back at once, without retries in the pass.
 func TestManagerWafRefusalNotRetried(t *testing.T) {
 	ctx := t.Context()
-	image := state.ImageRef("docker.io/library/caddy@" + policy.DefaultSystemImageDigests[policy.SystemCaddy][0])
+	image := state.ImageRef("docker.io/library/caddy@" + policy.DefaultSystemImageDigests[names.SystemCaddy][0])
 	d := dockerfake.New(srvID)
 	d.ImageLabels = map[string]map[string]string{string(image): {LabelWafEngine: "coraza 3.8.1", LabelWafRuleSet: "OWASP CRS 4.25.0"}}
 	admin := &refusingAdmin{refuse: true}
@@ -523,7 +525,7 @@ func TestManagerWafRefusalNotRetried(t *testing.T) {
 	sys := state.SystemContainer{Enabled: true, Image: image}
 	routes := wafFixtureRoutes(t)
 	for range 3 {
-		st := m.Sync(ctx, sys, routes)
+		st := m.sync(ctx, sys, routes)
 		if st.State != state.IngressApplied || st.Waf.State != state.WafStateError || !strings.Contains(st.Waf.Message, "Caddy refused the firewall config") {
 			t.Fatalf("%+v / %+v", st, st.Waf)
 		}

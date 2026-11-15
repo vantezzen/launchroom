@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Enums\SigningKeyStatus;
+use App\Models\Concerns\HasStatusTransitions;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
@@ -23,17 +24,13 @@ use Illuminate\Support\Carbon;
 #[Fillable(['kid', 'public_key'])]
 final class SigningKey extends Model
 {
+    /** @use HasStatusTransitions<SigningKeyStatus> */
+    use HasStatusTransitions;
+
     /** @var array<string, mixed> */
     protected $attributes = [
         'status' => 'active',
     ];
-
-    public function transitionTo(SigningKeyStatus $to): void
-    {
-        $this->status->assertCanTransitionTo($to);
-        $this->status = $to;
-        $this->save();
-    }
 
     /**
      * @return array<string, string>

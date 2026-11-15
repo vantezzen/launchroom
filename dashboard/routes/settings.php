@@ -13,7 +13,6 @@ use App\Http\Controllers\Settings\ProfileController;
 use App\Http\Controllers\Settings\RegistrySettingsController;
 use App\Http\Controllers\Settings\SecurityController;
 use App\Http\Controllers\Settings\UpdatesController;
-use App\Support\PublicId;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Route;
 use Inertia\Controller as InertiaPage;
@@ -91,7 +90,6 @@ Route::middleware(['auth', 'verified'])->group(function (): void {
         ->name('client-certificates.update');
     Route::post('settings/instance-security/client-certificates/{serverId}/reissue', [ClientCertificatesController::class, 'reissue'])
         ->middleware('throttle:10,1')
-        ->where('serverId', 'srv_[0-9A-HJKMNP-TV-Z]{26}')
         ->name('client-certificates.reissue');
 
     // Settings → Security → Audit log (docs/09 R34).
@@ -114,7 +112,6 @@ Route::middleware(['auth', 'verified'])->group(function (): void {
         ->middleware('throttle:10,1')
         ->name('audit-sinks.retry');
 
-    // Settings → Registry (docs/14 §9.11): Zot's storage on S3.
     // Settings → Move launchroom (instance owners, docs/14 §13.4).
     Route::get('settings/move', [ControlPlaneMoveController::class, 'edit'])->name('move.edit');
     Route::post('settings/move', [ControlPlaneMoveController::class, 'start'])
@@ -127,7 +124,6 @@ Route::middleware(['auth', 'verified'])->group(function (): void {
         ->middleware('throttle:6,1')
         ->name('move.workloads');
     Route::post('settings/move/items/{item}/retry', [ControlPlaneMoveController::class, 'retry'])
-        ->where('item', PublicId::routePattern('smi'))
         ->middleware('throttle:20,1')
         ->name('move.retry');
     Route::post('settings/move/hand-over', [ControlPlaneMoveController::class, 'handover'])
@@ -144,6 +140,7 @@ Route::middleware(['auth', 'verified'])->group(function (): void {
         ->name('move.rebuild');
     Route::post('settings/move/finish', [ControlPlaneMoveController::class, 'finish'])->name('move.finish');
 
+    // Settings → Registry (docs/14 §9.11): Zot's storage on S3.
     Route::get('settings/registry', [RegistrySettingsController::class, 'edit'])->name('registry-settings.edit');
     Route::put('settings/registry/storage', [RegistrySettingsController::class, 'update'])
         ->middleware('throttle:10,1')

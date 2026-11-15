@@ -2,19 +2,24 @@
 
 declare(strict_types=1);
 
+use App\Enums\Crypto\ProjectCiphertext;
 use App\Enums\TeamRole;
 use App\Enums\VariableType;
+use App\Exceptions\DecryptionFailed;
 use App\Models\Backups\BackupDestination;
 use App\Models\Deployment;
 use App\Models\EnvironmentRevision;
 use App\Models\ProjectKey;
+use App\Models\ServiceInstance;
+use App\Models\Sessions\DatabaseQuery;
+use App\Models\Sessions\InteractiveSession;
 use App\Models\Variable;
 use App\Services\Backups\DestinationSecrets;
 use App\Services\Crypto\Envelope;
-use App\Services\Crypto\Exceptions\DecryptionFailed;
 use App\Services\Crypto\KeyFile;
 use App\Services\Crypto\ProjectKeyring;
 use App\Services\Variables\VariableStore;
+use App\Support\PublicId;
 use Tests\Support\Backups;
 use Tests\Support\DeploymentUi;
 use Tests\Support\Projects;
@@ -88,6 +93,38 @@ test('rotate-project --prune drops the old versions once nothing uses them', fun
     expect(ProjectKey::query()->where('project_id', $world->project->id)->pluck('version')->all())->toBe([2])
         ->and(resolve(VariableStore::class)->plaintext($world->project, $secret->refresh()))->toBe('tok_live_prune_me')
         ->and(fn (): string => $keyring->decryptVariable($world->project, $secret->public_id, $secret->version, $oldValue))->toThrow(LogicException::class, 'no data key version 1');
+});
+
+test('rotate-project re-encrypts SQL console history, so --prune keeps it readable (bug: history was skipped)', function (): void {
+    $world = DeploymentUi::make(deploy: false);
+    $instance = ServiceInstance::query()->where('service_id', $world->postgres->id)->where('environment_id', $world->production->id)->sole();
+    $user = $world->member(TeamRole::Owner);
+    $session = new InteractiveSession;
+    $session->forceFill([
+        'public_id' => PublicId::generate(InteractiveSession::publicIdPrefix()),
+        'team_id' => $world->team->id,
+        'project_id' => $world->project->id,
+        'environment_id' => $world->production->id,
+        'service_instance_id' => $instance->id,
+        'user_id' => $user->id,
+        'kind' => 'data',
+        'workload_id' => 'wl_test',
+        'ticket_hash' => hash('sha256', 'ticket'),
+        'ticket_expires_at' => now()->addMinute(),
+        'idle_seconds' => 60,
+        'max_seconds' => 600,
+    ])->save();
+    $query = new DatabaseQuery(['team_id' => $world->team->id, 'interactive_session_id' => $session->id, 'service_instance_id' => $instance->id, 'user_id' => $user->id, 'op_id' => 'op_test', 'statement' => '', 'statement_hash' => hash('sha256', 'select 1'), 'verb' => 'select']);
+    $query->public_id = PublicId::generate(DatabaseQuery::publicIdPrefix());
+    $query->statement = freshKeyring()->encrypt(ProjectCiphertext::Query, $world->project, $query->public_id, 'select secret from vault');
+    $query->save();
+
+    $this->artisan('launchroom:keys:rotate-project', ['project' => $world->project->public_id, '--prune' => true])->assertSuccessful();
+
+    $query->refresh();
+    expect(ProjectKey::query()->where('project_id', $world->project->id)->pluck('version')->all())->toBe([2])
+        ->and($query->statement)->toStartWith('k2.lr1:')
+        ->and(freshKeyring()->decrypt(ProjectCiphertext::Query, $world->project, $query->public_id, $query->statement))->toBe('select secret from vault');
 });
 
 test('rotate-project refuses unknown projects', function (): void {

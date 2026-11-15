@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Enums\Transfers;
 
+use App\Enums\Attributes\SharedFacts;
 use App\Enums\Concerns\HasTransitions;
 use App\Enums\Contracts\HasTransitionTable;
 
@@ -12,6 +13,7 @@ use App\Enums\Contracts\HasTransitionTable;
  * replacing, then the services that use the data are held, then the task
  * imports. Before the task starts a run can still be cancelled.
  */
+#[SharedFacts('isWaiting')]
 enum ImportRunStatus: string implements HasTransitionTable
 {
     use HasTransitions;
@@ -31,6 +33,22 @@ enum ImportRunStatus: string implements HasTransitionTable
             self::Importing => [self::Succeeded, self::Failed],
             self::Succeeded, self::Failed, self::Cancelled => [],
         };
+    }
+
+    /**
+     * Before the task starts: AdvanceImports moves it on, and it can still be
+     * cancelled.
+     *
+     * @return list<self>
+     */
+    public static function waiting(): array
+    {
+        return [self::WaitingForSafetyBackup, self::Holding];
+    }
+
+    public function isWaiting(): bool
+    {
+        return in_array($this, self::waiting(), true);
     }
 
     /** Whether the run's services are held (their workloads leave the desired state). */

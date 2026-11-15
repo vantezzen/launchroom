@@ -15,6 +15,8 @@ import (
 
 	"github.com/vantezzen/launchroom/daemon/internal/docker"
 	"github.com/vantezzen/launchroom/daemon/internal/docker/dockerfake"
+	"github.com/vantezzen/launchroom/daemon/internal/names"
+	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
 
 const readySrv = "srv_01J9Z8X7W6V5T4S3R2Q1P0N9MK"
@@ -37,7 +39,11 @@ func newReadyRig(t *testing.T, timeout time.Duration) *readyRig {
 	if err := os.WriteFile(sysctl, []byte("0\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	r.m = New(Options{ServerID: readySrv, Docker: r.d, ReadyTimeout: timeout, UsernsSysctl: sysctl})
+	enabled := filepath.Join(t.TempDir(), "apparmor")
+	if err := os.WriteFile(enabled, []byte("Y\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	r.m = New(Options{ServerID: readySrv, Docker: r.d, ReadyTimeout: timeout, UsernsSysctl: sysctl, AppArmorEnabled: enabled})
 	r.m.connect = func(context.Context, string) (*bkclient.Client, error) {
 		r.mu.Lock()
 		defer r.mu.Unlock()
@@ -50,12 +56,11 @@ func newReadyRig(t *testing.T, timeout time.Duration) *readyRig {
 	return r
 }
 
-// container creates and starts a managed buildkitd container and makes it the running one.
 func (r *readyRig) container(t *testing.T) string {
 	t.Helper()
 	r.d.AddImage("buildkit")
 	id, err := r.d.CreateContainer(t.Context(), &docker.ContainerCreate{
-		Name: ContainerName, Config: &container.Config{Image: "buildkit", Labels: docker.ManagedLabels(readySrv)},
+		Name: names.BuildkitContainer, Config: &container.Config{Image: "buildkit", Labels: docker.ManagedLabels(readySrv)},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -88,7 +93,7 @@ func (r *readyRig) wait(ctx context.Context) (*bkclient.Client, error) {
 }
 
 func restarting(c *docker.Container) {
-	c.State, c.Running, c.Restarting = "restarting", true, true
+	c.State = "restarting"
 	c.StartedAt = time.Now().Add(-2 * time.Second)
 	c.FinishedAt = time.Now().Add(-time.Second)
 }
@@ -111,7 +116,7 @@ func TestWaitClientWaitsForARestart(t *testing.T) {
 	r.d.Update(id, func(c *docker.Container) { restarting(c); c.RestartCount = 1; c.OOMKilled = true })
 	go func() {
 		time.Sleep(600 * time.Millisecond)
-		r.d.Update(id, func(c *docker.Container) { c.State, c.Restarting, c.RestartCount = "running", false, 2 })
+		r.d.Update(id, func(c *docker.Container) { c.State, c.RestartCount = "running", 2 })
 		r.setDial(true)
 	}()
 	start := time.Now()
@@ -136,7 +141,7 @@ func TestWaitClientWaitsForTheFirstSync(t *testing.T) {
 	go func() {
 		time.Sleep(400 * time.Millisecond)
 		id, _ := r.d.CreateContainer(context.Background(), &docker.ContainerCreate{
-			Name: ContainerName, Config: &container.Config{Image: "buildkit", Labels: docker.ManagedLabels(readySrv)},
+			Name: names.BuildkitContainer, Config: &container.Config{Image: "buildkit", Labels: docker.ManagedLabels(readySrv)},
 		})
 		_ = r.d.StartContainer(context.Background(), id)
 		r.synced(id)
@@ -154,7 +159,7 @@ func TestWaitClientFollowsAReplacement(t *testing.T) {
 	go func() {
 		time.Sleep(400 * time.Millisecond)
 		id, _ := r.d.CreateContainer(context.Background(), &docker.ContainerCreate{
-			Name: ContainerName, Config: &container.Config{Image: "buildkit", Labels: docker.ManagedLabels(readySrv)},
+			Name: names.BuildkitContainer, Config: &container.Config{Image: "buildkit", Labels: docker.ManagedLabels(readySrv)},
 		})
 		_ = r.d.StartContainer(context.Background(), id)
 		r.synced(id)
@@ -213,7 +218,7 @@ func TestWaitClientCrashLoop(t *testing.T) {
 	if nr.UsernsRestricted {
 		t.Fatal("blamed AppArmor although the sysctl is 0")
 	}
-	if h := nr.Hints(); len(h) != 1 || h[0].Code != HintCrashLoop {
+	if h := nr.Hints(); len(h) != 1 || h[0].Code != state.HintBuildkitCrashLoop {
 		t.Fatalf("hints %+v", h)
 	}
 }
@@ -233,7 +238,7 @@ func TestNotReadyDiagnosis(t *testing.T) {
 		t.Fatal(err)
 	}
 	nr := r.m.notReady(t.Context(), id, &c, true, time.Second, nil)
-	if !nr.UsernsRestricted || nr.Hints()[0].Code != HintUserns || !strings.Contains(nr.Hints()[0].Message, "apparmor_parser -r -W /etc/apparmor.d/launchroom-buildkit") {
+	if !nr.UsernsRestricted || nr.Hints()[0].Code != state.HintBuildkitUsernsRestricted || !strings.Contains(nr.Hints()[0].Message, "apparmor_parser -r -W /etc/apparmor.d/launchroom-buildkit") {
 		t.Fatalf("userns restriction not explained: %+v %+v", nr, nr.Hints())
 	}
 
@@ -255,7 +260,7 @@ func TestNotReadyDiagnosis(t *testing.T) {
 	c.OOMKilled, c.ExitCode = true, 137
 	r.d.Logs[id] = []docker.LogLine{{Text: "killed"}}
 	nr = r.m.notReady(t.Context(), id, &c, true, time.Second, nil)
-	if !strings.Contains(nr.Error(), "out of memory") || nr.Hints()[0].Code != HintOOM {
+	if !strings.Contains(nr.Error(), "out of memory") || nr.Hints()[0].Code != state.HintBuildkitOOM {
 		t.Fatalf("oom: %v %+v", nr, nr.Hints())
 	}
 }
@@ -268,7 +273,7 @@ func TestWaitClientTimesOut(t *testing.T) {
 	if !errors.As(err, &nr) || nr.CrashLoop || nr.State != "running" {
 		t.Fatalf("err = %#v", err)
 	}
-	if h := nr.Hints(); len(h) != 1 || h[0].Code != HintNotReady {
+	if h := nr.Hints(); len(h) != 1 || h[0].Code != state.HintBuildkitNotReady {
 		t.Fatalf("hints %+v", h)
 	}
 	if !strings.Contains(err.Error(), "did not become ready") || !strings.Contains(err.Error(), "connection refused") {

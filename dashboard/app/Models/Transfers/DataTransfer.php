@@ -4,25 +4,31 @@ declare(strict_types=1);
 
 namespace App\Models\Transfers;
 
+use App\Contracts\Crypto\SealedRow;
+use App\Data\Transfers\TransferSniffData;
+use App\Enums\Contracts\HasTransitionTable;
 use App\Enums\Transfers\TransferDirection;
 use App\Enums\Transfers\TransferPurpose;
 use App\Enums\Transfers\TransferStatus;
 use App\Models\Concerns\BelongsToTeam;
 use App\Models\Concerns\HasPublicId;
+use App\Models\Concerns\HasStatusTransitions;
 use App\Models\ServiceInstance;
 use App\Models\User;
 use App\Models\Volume;
-use App\Services\Transfers\TransferStore;
+use App\Support\Protocol\Grammar;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
+use InvalidArgumentException;
 
 /**
  * A file moving through the dashboard in chunks (docs/14 §12.1, D55): an
  * upload to import, or an export to download. Chunks live on disk,
- * encrypted with this transfer's own data key ({@see TransferStore}).
+ * encrypted with this transfer's own data key (App\Services\Transfers\TransferStore).
  *
  * @property int $id
  * @property string $public_id
@@ -42,7 +48,7 @@ use Illuminate\Support\Carbon;
  * @property bool $compressed
  * @property string|null $source_version "PostgreSQL 15.8"
  * @property string|null $detail human summary of what was detected
- * @property array<string, mixed>|null $sniff what the sniffer found (engine family, versions)
+ * @property TransferSniffData|null $sniff what the sniffer found (engine family, versions)
  * @property string $wrapped_dek
  * @property string $kek_id
  * @property int|null $created_by
@@ -62,9 +68,12 @@ use Illuminate\Support\Carbon;
  */
 #[Fillable(['team_id', 'service_instance_id', 'volume_id', 'direction', 'purpose', 'file_name', 'size_bytes', 'chunk_bytes', 'chunk_count', 'created_by', 'expires_at'])]
 #[Hidden(['wrapped_dek', 'kek_id', 'link_token_hash', 'chunk_digests', 'sniff'])]
-final class DataTransfer extends Model
+final class DataTransfer extends Model implements SealedRow
 {
     use BelongsToTeam, HasPublicId;
+
+    /** @use HasStatusTransitions<TransferStatus> */
+    use HasStatusTransitions;
 
     /** @var array<string, mixed> */
     protected $attributes = [
@@ -79,24 +88,20 @@ final class DataTransfer extends Model
     }
 
     /**
-     * The only way a transfer's status changes (docs/10 §2.2 rule 3).
+     * @param  TransferStatus  $from
+     * @param  TransferStatus  $to
      */
-    public function transitionTo(TransferStatus $to, ?string $error = null): void
+    protected function recordTransition(HasTransitionTable $from, HasTransitionTable $to, ?string $note): void
     {
-        $this->status->assertCanTransitionTo($to);
-        $this->status = $to;
-
         if ($to === TransferStatus::Ready) {
             $this->forceFill(['completed_at' => now()]);
         }
 
         if ($to->isTerminal()) {
-            $this->error = $error === null ? null : mb_substr($error, 0, 2048);
+            $this->error = $note;
             $this->link_token_hash = null;
             $this->link_expires_at = null;
         }
-
-        $this->save();
     }
 
     /**
@@ -124,7 +129,7 @@ final class DataTransfer extends Model
         for ($i = 0; $i < $count; $i++) {
             $digest = isset($chunks[$i]) ? $chunks[$i]['d'] : '';
 
-            if (preg_match('/^[a-f0-9]{64}$/D', $digest) !== 1) {
+            if (preg_match(Grammar::HEX64, $digest) !== 1) {
                 return null;
             }
 
@@ -198,7 +203,7 @@ final class DataTransfer extends Model
             'chunk_bytes' => 'integer',
             'chunk_count' => 'integer',
             'chunk_digests' => 'array',
-            'sniff' => 'array',
+            'sniff' => TransferSniffData::class,
             'compressed' => 'boolean',
             'downloads' => 'integer',
             'completed_at' => 'datetime',
@@ -206,5 +211,23 @@ final class DataTransfer extends Model
             'expires_at' => 'datetime',
             'link_expires_at' => 'datetime',
         ];
+    }
+
+    public function sealWrapContext(): string
+    {
+        return 'transfer:'.$this->public_id;
+    }
+
+    public function sealAssociatedData(string $column): string
+    {
+        throw new InvalidArgumentException("{$column} is not a sealed column.");
+    }
+
+    /**
+     * @return Builder<self>
+     */
+    public static function sealedRows(): Builder
+    {
+        return self::query()->whereIn('status', TransferStatus::nonTerminal());
     }
 }

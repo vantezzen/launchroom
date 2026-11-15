@@ -12,7 +12,6 @@ import {
     normalizeLine,
     withLoggedSteps,
 } from './step-log';
-import { followAfterScroll } from './use-follow-scroll';
 
 const line = (
     number: number,
@@ -150,20 +149,6 @@ describe('follow the running step', () => {
                 true,
             ),
         ]).toEqual(['build']);
-    });
-
-    test('scrolling up pauses, back at the bottom resumes', () => {
-        const box = (scrollTop: number) => ({
-            scrollTop,
-            scrollHeight: 2000,
-            clientHeight: 500,
-        });
-        expect(followAfterScroll(true, 1500, box(1000), 'end').follow).toBe(
-            false,
-        );
-        expect(followAfterScroll(false, 1000, box(1500), 'end').follow).toBe(
-            true,
-        );
     });
 });
 

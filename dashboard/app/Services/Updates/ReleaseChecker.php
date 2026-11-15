@@ -10,7 +10,8 @@ use App\Models\InstanceSettings;
 use App\Services\Http\Exceptions\ResponseTooLarge;
 use App\Services\Http\Exceptions\UnsafeUrl;
 use App\Services\Http\SafeHttpClient;
-use App\Support\ImageReference;
+use App\Support\Images\ImageReference;
+use App\Support\InstallCommands;
 use App\Support\Semver;
 use Illuminate\Contracts\Cache\Repository as Cache;
 use Illuminate\Http\Client\ConnectionException;
@@ -144,7 +145,7 @@ final readonly class ReleaseChecker
     {
         $semver = Semver::parse($version);
 
-        return 'curl -fsSL https://launchroom.vantezzen.io/install | sh'.($semver instanceof Semver ? ' -s -- --version '.$semver->normalized() : '');
+        return $semver instanceof Semver ? InstallCommands::controlPlane('--version', $semver->normalized()) : InstallCommands::controlPlane();
     }
 
     /**
@@ -230,10 +231,6 @@ final readonly class ReleaseChecker
 
         [$images, $problem] = $withImages ? $this->images($release) : [[], null];
 
-        if ($problem === null && ! isset($images['LR_DAEMON_IMAGE'])) {
-            $problem = 'Its image list (images.env) doesn’t pin the server image (LR_DAEMON_IMAGE) by digest.';
-        }
-
         $url = is_string($release['html_url'] ?? null) && str_starts_with($release['html_url'], 'https://github.com/') ? $release['html_url'] : '';
 
         return new ReleaseData(
@@ -253,30 +250,105 @@ final readonly class ReleaseChecker
 
     /**
      * Digest-pinned LR_*_IMAGE values of the release's images.env asset, and
-     * why it could not be read (plain words, shown on Settings → Updates).
+     * why the release can't be installed (plain words, shown on Settings →
+     * Updates): the list can't be read, or it doesn't pin an image the
+     * release's `manifest.json` requires. Releases without a manifest
+     * (before 0.1.5) require the server image only.
      *
      * @param  array<mixed>  $release
      * @return array{array<string, string>, ?string}
      */
     private function images(array $release): array
     {
+        [$body, $problem] = $this->asset($release, 'images.env', 'image list (images.env)');
+
+        if ($body === null) {
+            return [[], $problem];
+        }
+
+        $images = [];
+
+        foreach (preg_split('/\R/', $body) ?: [] as $line) {
+            if (preg_match('/^(LR_[A-Z_]+_IMAGE)=(\S+)$/D', trim($line), $m) === 1 && ImageReference::isDigestPinned($m[2])) {
+                $images[$m[1]] = $m[2];
+            }
+        }
+
+        [$manifest, $problem] = $this->asset($release, 'manifest.json', 'manifest (manifest.json)', optional: true);
+
+        if ($problem !== null) {
+            return [$images, $problem];
+        }
+
+        $required = $manifest === null ? ['LR_DAEMON_IMAGE'] : $this->requiredImages($manifest);
+
+        if ($required === null) {
+            return [$images, 'The release’s manifest (manifest.json) couldn’t be read.'];
+        }
+
+        foreach ($required as $key) {
+            if (! isset($images[$key])) {
+                return [$images, 'Its image list (images.env) doesn’t pin '.($key === 'LR_DAEMON_IMAGE' ? 'the server image (LR_DAEMON_IMAGE)' : $key).' by digest.'];
+            }
+        }
+
+        return [$images, null];
+    }
+
+    /**
+     * The `requiredImages` keys of a manifest.json, or null when it isn't one.
+     *
+     * @return list<string>|null
+     */
+    private function requiredImages(string $manifest): ?array
+    {
+        $json = json_decode($manifest, true, 8);
+        $keys = is_array($json) ? ($json['requiredImages'] ?? null) : null;
+
+        if (! is_array($keys) || $keys === []) {
+            return null;
+        }
+
+        $required = [];
+
+        foreach ($keys as $key) {
+            if (! is_string($key) || preg_match('/^LR_[A-Z_]+_IMAGE$/D', $key) !== 1) {
+                return null;
+            }
+
+            $required[] = $key;
+        }
+
+        return $required;
+    }
+
+    /**
+     * A release asset's contents. Null contents with a reason when it can't
+     * be downloaded; null contents without one when an optional asset is
+     * missing.
+     *
+     * @param  array<mixed>  $release
+     * @return array{?string, ?string}
+     */
+    private function asset(array $release, string $name, string $label, bool $optional = false): array
+    {
         $assets = is_array($release['assets'] ?? null) ? $release['assets'] : [];
         $assetUrl = null;
 
         foreach ($assets as $asset) {
-            if (is_array($asset) && ($asset['name'] ?? null) === 'images.env' && is_string($asset['url'] ?? null)) {
+            if (is_array($asset) && ($asset['name'] ?? null) === $name && is_string($asset['url'] ?? null)) {
                 $assetUrl = $asset['url'];
             }
         }
 
         if ($assetUrl === null) {
-            return [[], 'The release has no image list (images.env), so the dashboard doesn’t know which images to install.'];
+            return [null, $optional ? null : "The release has no {$label}, so the dashboard doesn’t know which images to install."];
         }
 
         $prefix = $this->apiBase().'/repos/'.$this->repository().'/releases/assets/';
 
         if (! str_starts_with($assetUrl, $prefix)) {
-            return [[], 'The release’s image list (images.env) isn’t stored with the release on GitHub.'];
+            return [null, "The release’s {$label} isn’t stored with the release on GitHub."];
         }
 
         try {
@@ -290,28 +362,20 @@ final readonly class ReleaseChecker
                 $host = parse_url($location, PHP_URL_HOST);
 
                 if (! str_starts_with($location, 'https://') || ! is_string($host) || ! in_array($host, $this->assetHosts(), true)) {
-                    return [[], 'GitHub sent the release’s image list (images.env) from an unexpected address, so the dashboard didn’t use it.'];
+                    return [null, "GitHub sent the release’s {$label} from an unexpected address, so the dashboard didn’t use it."];
                 }
 
                 $response = $this->http->get($location);
             }
         } catch (ConnectionException|UnsafeUrl|ResponseTooLarge) {
-            return [[], 'GitHub couldn’t be reached to download the release’s image list (images.env).'];
+            return [null, "GitHub couldn’t be reached to download the release’s {$label}."];
         }
 
         if (! $response->successful()) {
-            return [[], "GitHub answered {$response->status()} when the dashboard downloaded the release’s image list (images.env)."];
+            return [null, "GitHub answered {$response->status()} when the dashboard downloaded the release’s {$label}."];
         }
 
-        $images = [];
-
-        foreach (preg_split('/\R/', $response->body()) ?: [] as $line) {
-            if (preg_match('/^(LR_[A-Z_]+_IMAGE)=(\S+)$/D', trim($line), $m) === 1 && ImageReference::isDigestPinned($m[2])) {
-                $images[$m[1]] = $m[2];
-            }
-        }
-
-        return [$images, null];
+        return [$response->body(), null];
     }
 
     /**

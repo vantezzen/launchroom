@@ -49,12 +49,10 @@ final class SweepDeployments
             return $ids;
         });
 
-        if ($servers !== []) {
-            event(new NodeStateInvalidated($servers));
-        }
+        NodeStateInvalidated::servers($servers);
 
         $unfinished = Deployment::query()
-            ->whereIn('status', DeploymentStatus::values([DeploymentStatus::Queued, ...DeploymentStatus::inFlight()]))
+            ->unfinished()
             ->pluck('id');
 
         foreach ($unfinished as $id) {

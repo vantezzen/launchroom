@@ -12,7 +12,6 @@ use App\Enums\AuditAction;
 use App\Enums\Security\WafMode;
 use App\Events\NodeStateInvalidated;
 use App\Models\ServiceInstance;
-use App\Queries\TeamEdges;
 use Illuminate\Support\Facades\DB;
 use Spatie\LaravelData\Optional;
 
@@ -56,7 +55,7 @@ final readonly class SetWafSettings
             }
 
             if ($changed) {
-                event(new NodeStateInvalidated(TeamEdges::ids($instance->team_id)));
+                NodeStateInvalidated::edges($instance->team_id);
             }
 
             return $instance;

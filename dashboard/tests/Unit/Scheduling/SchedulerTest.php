@@ -104,10 +104,8 @@ test('property: anti-affinity, capacity and eligibility hold for random clusters
         foreach ($counts as $serverId => $count) {
             $server = $byId[$serverId];
 
-            // Eligibility.
             expect($server->online && $server->hasRole(ServerRole::Runtime) && $server->hasLabels($request->requiredLabels))->toBeTrue();
 
-            // Capacity.
             if ($server->memoryMb !== null) {
                 expect($server->allocatedMemoryMb + $count * $request->memoryMb)->toBeLessThanOrEqual($server->memoryMb);
             }

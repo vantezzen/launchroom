@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Data\Protocol;
 
+use App\Support\Protocol\Grammar;
+
 /**
  * A dashboard → daemon document (protocol/README.md). `toProtocol()` returns
  * exactly the wire shape: camelCase fields, optional fields omitted, maps as
@@ -11,7 +13,7 @@ namespace App\Data\Protocol;
  */
 interface ProtocolDocument
 {
-    public const string API_VERSION = 'launchroom.vantezzen.io/v1';
+    public const string API_VERSION = Grammar::API_VERSION;
 
     /**
      * @return array<string, mixed>

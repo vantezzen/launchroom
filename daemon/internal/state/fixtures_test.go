@@ -16,7 +16,6 @@ const (
 	fixtureDir = "../../../protocol/fixtures/v1"
 )
 
-// decoders maps a schema file to the strict Go decoder for that document.
 var decoders = map[string]func([]byte) error{
 	"node-state.json":                 decodeAs[NodeState],
 	"task.json":                       decodeAs[Task],
@@ -45,6 +44,15 @@ var decoders = map[string]func([]byte) error{
 	// Not a document: one capability of the policy floor's allow-list
 	// (generated for the dashboard, docs/03 §8).
 	"capability-allow-list.json": decodeCapability,
+	// Not a document: the grammars, limits and feature table (vocabulary.go).
+	"vocabulary.json": decodeVocabulary,
+}
+
+func decodeVocabulary(data []byte) error {
+	dec := stdjson.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	var v Vocabulary
+	return dec.Decode(&v)
 }
 
 func decodeCapability(data []byte) error {
@@ -121,6 +129,9 @@ func TestFixturesMatchTypesAndSchema(t *testing.T) {
 		t.Fatal("no fixtures")
 	}
 	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
 		t.Run(e.Name(), func(t *testing.T) {
 			schemaName, _, _ := strings.Cut(e.Name(), ".")
 			schemaName += ".json"

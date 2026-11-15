@@ -5,6 +5,7 @@ import { Spinner } from '@/components/ui/spinner';
 import { AuthFrame, AuthNotice } from '@/features/auth/auth-frame';
 import { logout } from '@/routes';
 import { send } from '@/routes/verification';
+import { noLayout } from '@/lib/pages';
 
 export default function VerifyEmail({ status }: { status?: string }) {
     return (
@@ -51,3 +52,5 @@ export default function VerifyEmail({ status }: { status?: string }) {
         </AuthFrame>
     );
 }
+
+VerifyEmail.layout = noLayout;

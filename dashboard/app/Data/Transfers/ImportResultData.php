@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Data\Transfers;
 
+use App\Data\Protocol\V1\DataImportResult;
 use Spatie\LaravelData\Data;
+use Spatie\LaravelData\Optional;
 
 /**
  * What an import left behind (from the task's DataImportResult).
@@ -25,19 +27,16 @@ final class ImportResultData extends Data
         public int $durationMs,
     ) {}
 
-    /**
-     * @param  array<string, mixed>|null  $result
-     */
-    public static function fromResult(?array $result): ?self
+    public static function fromResult(?DataImportResult $result): ?self
     {
-        if ($result === null) {
+        if (! $result instanceof DataImportResult) {
             return null;
         }
 
-        $int = static fn (string $key): int => is_int($result[$key] ?? null) ? $result[$key] : 0;
-        $string = static fn (string $key): ?string => is_string($result[$key] ?? null) ? $result[$key] : null;
-        $warnings = array_values(array_filter(is_array($result['warnings'] ?? null) ? $result['warnings'] : [], is_string(...)));
+        $int = static fn (int|Optional $value): int => $value instanceof Optional ? 0 : $value;
+        $string = static fn (string|Optional $value): ?string => $value instanceof Optional ? null : $value;
+        $warnings = $result->warnings instanceof Optional ? [] : array_values(array_filter($result->warnings ?? [], is_string(...)));
 
-        return new self($int('tables'), $int('files'), $int('sizeBytes'), $string('serverVersion'), $string('sourceVersion'), $string('format'), $warnings, $int('durationMs'));
+        return new self($int($result->tables), $int($result->files), $int($result->sizeBytes), $string($result->serverVersion), $string($result->sourceVersion), $string($result->format), $warnings, $result->durationMs);
     }
 }

@@ -9,6 +9,7 @@ use App\Enums\TeamRole;
 use App\Models\Domain;
 use App\Models\Server;
 use App\Models\Team;
+use App\Support\Ingress\RouteId;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Tests\Support\Projects;
@@ -32,7 +33,7 @@ beforeEach(function (): void {
     $this->environment = $this->project->production()->sole();
     $this->instance = $this->environment->serviceInstances()->sole();
     $domain = Domain::query()->create(['team_id' => $this->team->id, 'service_instance_id' => $this->instance->id, 'hostname' => 'shop.example.com', 'kind' => DomainKind::Custom]);
-    $this->route = Domain::routeIdFor($domain->public_id);
+    $this->route = RouteId::forDomain($domain->public_id);
 });
 
 afterEach(fn () => CarbonImmutable::setTestNow());
@@ -72,7 +73,6 @@ test('blocked requests are carved out of 4xx per bucket and reported as their ow
     blockedWafRow($this, 10, '2026-10-20 08:10:00+00', 40, ['paths' => json_encode([['p' => '/admin', 'b' => 40, 'd' => 0]])]);
     // Detected only (Log only) never counts as blocked.
     blockedWafRow($this, 10, '2026-10-20 09:10:00+00', 0, ['detected' => 7]);
-    // The previous day.
     blockedWafRow($this, 10, '2026-10-19 08:10:00+00', 4);
     DB::table('request_analytics_samples')->insert([
         'server_id' => $this->server->id, 'route_id' => $this->route, 'resolution' => 10, 'at' => '2026-10-20 11:50:00+00',

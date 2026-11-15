@@ -5,7 +5,8 @@ declare(strict_types=1);
 namespace App\Actions\Git;
 
 use App\Models\Git\GitHubInstallation;
-use App\Services\GitHub\GitHubClientFactory;
+use App\Services\Git\Providers\GitHub\GitHubClientFactory;
+use App\Services\Git\Providers\GitHub\GitHubRepositoryCache;
 
 /**
  * Re-reads every repository an installation can access (on installation
@@ -15,7 +16,7 @@ final readonly class RefreshInstallationRepositories
 {
     public function __construct(
         private GitHubClientFactory $clients,
-        private SyncInstallationRepositories $sync,
+        private GitHubRepositoryCache $repositoryCache,
     ) {}
 
     public function handle(GitHubInstallation $installation): void
@@ -26,6 +27,6 @@ final readonly class RefreshInstallationRepositories
 
         $repositories = $this->clients->for($installation->app)->installationRepositories($installation->installation_id);
 
-        $this->sync->handle($installation, $repositories, complete: true);
+        $this->repositoryCache->sync($installation, $repositories, complete: true);
     }
 }

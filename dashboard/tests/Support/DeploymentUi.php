@@ -17,7 +17,6 @@ use App\Enums\TeamRole;
 use App\Enums\VariableType;
 use App\Models\Deployment;
 use App\Models\Environment;
-use App\Models\LogChunk;
 use App\Models\Project;
 use App\Models\Server;
 use App\Models\Service;
@@ -108,7 +107,7 @@ final readonly class DeploymentUi
      */
     public function logs(Deployment $deployment, array $texts, int $seq = 1, ?string $step = null): void
     {
-        LogChunk::query()->create([
+        LogChunks::create([
             'team_id' => $deployment->team_id,
             'server_id' => $this->server->id,
             'deployment_id' => $deployment->id,

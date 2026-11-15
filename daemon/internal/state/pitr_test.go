@@ -123,7 +123,7 @@ func TestVerifyRestoreSpec(t *testing.T) {
 
 func TestVerifyResultAndWalStatusValidate(t *testing.T) {
 	c := &TaskCompletion{TypeMeta: NewTypeMeta(KindTaskCompletion), Attempt: 1, Outcome: OutcomeSucceeded,
-		Verify: &VerifyResult{Passed: false, Checks: []VerifyCheck{{Name: "bogus"}}}}
+		TaskResults: TaskResults{Verify: &VerifyResult{Passed: false, Checks: []VerifyCheck{{Name: "bogus"}}}}}
 	if c.Validate() == nil {
 		t.Error("unknown check name accepted")
 	}

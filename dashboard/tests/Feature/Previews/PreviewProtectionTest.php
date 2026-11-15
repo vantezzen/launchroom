@@ -4,11 +4,12 @@ declare(strict_types=1);
 
 use App\Actions\Previews\RevokeShareLink;
 use App\Actions\Servers\RenderNodeState;
+use App\Actions\Teams\RemoveMember;
 use App\Data\Audit\AuditActor;
 use App\Enums\TeamRole;
 use App\Models\Deployment;
 use App\Models\InstanceSettings;
-use App\Models\Previews\Preview;
+use App\Models\Membership;
 use App\Models\Previews\PreviewSettings;
 use App\Models\Previews\PreviewShareLink;
 use App\Models\Team;
@@ -89,7 +90,6 @@ test('protected preview routes forward-auth to the dashboard and are never index
     // The production route stays unprotected.
     expect($routes['web-production.shop.localhost'])->not->toHaveKey('protection');
 
-    // Turning protection off removes it.
     PreviewSettings::forProject($this->project)->forceFill(['protection' => false])->save();
     resolve(RenderNodeState::class)->handle($this->server);
     expect(collect(Projects::nodeState($this->server)['routes'])->firstWhere('hosts.0', PP_HOST))->not->toHaveKey('protection');
@@ -253,7 +253,6 @@ test('share links grant access until they expire or are revoked', function (): v
     ppCheck(cookie: $cookie)->assertStatus(302);
     ppCheck('/?'.PreviewAccess::TOKEN_PARAMETER.'='.urlencode($token))->assertStatus(403);
 
-    // Expired links don't work either.
     $expired = PreviewShareLink::query()->create(['team_id' => $this->team->id, 'preview_id' => $this->preview->id, 'expires_at' => now()->addMinute()]);
     $token = resolve(PreviewAccess::class)->shareToken($expired, $this->environment);
     $this->travel(2)->minutes();
@@ -291,5 +290,37 @@ test('previews without protection pass', function (): void {
     PreviewSettings::forProject($this->project)->forceFill(['protection' => false])->save();
 
     ppCheck()->assertOk();
-    expect(Preview::query()->count())->toBe(1);
+});
+
+test('routes strip the configured bypass header, the one the auth check reads', function (): void {
+    config(['launchroom.previews.bypass_header' => 'X-Ci-Preview-Key']);
+    resolve(RenderNodeState::class)->handle($this->server);
+
+    $route = collect(Projects::nodeState($this->server)['routes'])->firstWhere('hosts.0', PP_HOST);
+
+    expect($route['protection']['forwardAuth']['stripHeaders'])->toBe(['X-Ci-Preview-Key']);
+
+    $owner = memberOf($this->team, TeamRole::Owner);
+    $this->actingAs($owner)->post(route('projects.previews.bypass', $this->project))->assertRedirect();
+    $secret = (string) resolve(PreviewAccess::class)->bypassSecret($this->project, PreviewSettings::forProject($this->project));
+    auth()->logout();
+
+    // Headers stick to the test client between requests: the old name goes first.
+    ppCheck(headers: ['X-Launchroom-Bypass' => $secret])->assertStatus(302);
+    ppCheck(headers: ['X-Ci-Preview-Key' => $secret])->assertOk();
+});
+
+test('removing a member or lowering their access ends cached preview access at once', function (): void {
+    config(['launchroom.previews.access_cache_seconds' => 3600]);
+    $owner = memberOf($this->team, TeamRole::Owner);
+    $member = memberOf($this->team, TeamRole::Viewer);
+    $start = $this->actingAs($member)->get('/auth/preview/start?host='.urlencode(PP_HOST.':8443').'&path='.urlencode('/'));
+    auth()->logout();
+    $cookie = ppCookie(ppCheck('/?'.PreviewAccess::TOKEN_PARAMETER.'='.urlencode(ppToken($start))));
+
+    ppCheck(cookie: $cookie)->assertOk();
+
+    resolve(RemoveMember::class)->handle($owner, Membership::query()->where('user_id', $member->id)->where('team_id', $this->team->id)->sole(), AuditActor::system());
+
+    ppCheck(cookie: $cookie)->assertStatus(302);
 });

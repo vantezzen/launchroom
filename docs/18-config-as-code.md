@@ -119,7 +119,7 @@ The dashboard reads the file through the git provider contract of D46, `GitProvi
 
 | Moment | What happens |
 |---|---|
-| **Push** to a branch/tag an environment deploys (`DeployOnGitPush`) | The file at the pushed commit is read once per push and applied to each matching environment before its deployments are created (§3.4) |
+| **Push** to a branch/tag an environment deploys (`DeployPush`) | The file at the pushed commit is read once per push and applied to each matching environment before its deployments are created (§3.4) |
 | **Pull request head** (`DeployPreview`) | Applied to the preview environment at the head commit, with the preview trust rules (§5) |
 | **"Check now"** in Settings → Config file, `POST …/config/sync` | Reads the file at the head of the environment's tracked branch and stages the result (nothing deploys) |
 | `launchroom config diff`, `…/config/diff` | A dry run: the changes the file would stage, nothing is written (§7) |
@@ -200,7 +200,7 @@ A failed push shows on the deployment page as a **FailureCard** ("launchroom.jso
 |---|---|---|
 | `GET /environments/{environment}/config` | env:read | `{path, content, revision}`: the exported file (§4); `?revision=N` |
 | `POST /environments/{environment}/config/validate` | read | `{content}` (≤ 256 KiB) → `{valid, errors, warnings}`; layers 1–3 against this environment (layer 3 needs the project's services) |
-| `POST /environments/{environment}/config/diff` | read | `{content}` → `{valid, errors, warnings, changes, ignored}`: the staged changes the file would produce here (dry run in a rolled-back transaction, no domain checks, no audit) |
+| `POST /environments/{environment}/config/diff` | read | `{content}` → `{valid, errors, warnings, changes, ignored}`: the staged changes the file would produce here (dry run in a rolled-back transaction: domains are checked like a real apply and listed as applying at once; nothing is kept or audited) |
 | `GET /environments/{environment}/config/status` | read | The last read: commit, status, managed counts, errors |
 
 CLI (`cli/internal/commands/config.go`):
@@ -245,10 +245,10 @@ The export writes one environment; `environments` overrides are written by hand.
 
 ## 12. Implementation map
 
-- `App\Support\ConfigAsCode` (pure): `JsonDocument` + `JsonDocumentParser` (strict parser with positions), `ConfigSchema` (opis/json-schema over the committed schema, friendly messages, "did you mean"), `ConfigFileValidator` (rules, secret-value refusal), `ConfigFile` + `EffectiveService` (base ⊕ override, pointers back into the file), `Problems` (line/column, excerpt, masking), `ConfigContext`, `ConfigCheck`, `Arrays`.
-- `App\Services\ConfigAsCode`: `ConfigApplier` (trust filter, then the dashboard's own Actions and services; throws `ConfigApplyFailed` with positioned problems), `ConfigExporter`, `ConfigFileReader` (settings → repository → `fileAtRef`), `ManagedPaths` (staged items the file manages).
-- `App\Actions\ConfigAsCode`: `ApplyConfigFile` (check + apply + record, nested transaction so a failed apply writes nothing), `ApplyConfigFileOnPush` (§3.4), `ApplyPreviewConfigFile` (§5, once per head commit, `previews.data.configSha`/`configError`), `DryRunConfigFile` (rolled back), `ExportEnvironmentConfig`, `SyncConfigFile`, `UpdateConfigFileSettings`.
-- Hooks: `DeployOnGitPush` groups matched instances per environment (a change of the file's path counts as touching every service), `DeployPreview` (before its revision snapshot), `DeployEnvironment` (`$commits`: the pushed commit pinned on pushed services), `StagedChangesView` (`configFile`), `ServiceSettings` (`configFile`), `ServiceVariablesView` (`managedByFile`, config values read-only), `DeploymentDetailView` (`configErrors`).
+- `App\Support\ConfigAsCode` (pure): `JsonDocument` + `JsonDocumentParser` (strict parser with positions), `ConfigSchema` (opis/json-schema over the committed schema, friendly messages, "did you mean"), `ConfigFileValidator` (rules, secret-value refusal), `ConfigFile` + `EffectiveService` (base ⊕ override, pointers back into the file), `SettingsMap` (file ↔ settings names and defaults, used by both directions), `Problems` (line/column, excerpt, masking), `ConfigContext`, `ConfigCheck`, `Arrays`. Which settings a kind has is `ServiceKind::configFields()`; preview caps are `Support\Previews\PreviewLimits` (shared with preview creation).
+- `App\Services\ConfigAsCode`: `ConfigExporter`, `ConfigFileReader` (settings → repository → `fileAtRef`), `ManagedPaths` (staged items the file manages).
+- `App\Actions\ConfigAsCode`: `StageConfigFile` (trust filter, then the dashboard's own Actions; throws `App\Exceptions\ConfigApplyFailed` with positioned problems; every effect outside the database waits for the commit, so a dry run needs no flag), `ApplyConfigFile` (check + apply + record, nested transaction so a failed apply writes nothing), `ApplyConfigFileOnPush` (§3.4), `ApplyPreviewConfigFile` (§5, once per head commit, `previews.data.configSha`/`configError`), `DryRunConfigFile` (rolled back), `ExportEnvironmentConfig`, `SyncConfigFile`, `UpdateConfigFileSettings`.
+- Hooks: `DeployPush` groups matched instances per environment (a change of the file's path counts as touching every service), `DeployPreview` (before its revision snapshot), `DeployEnvironment` (`$commits`: the pushed commit pinned on pushed services), `StagedChangesView` (`configFile`), `ServiceSettings` (`configFile`), `ServiceVariablesView` (`managedByFile`, config values read-only), `DeploymentDetailView` (`configErrors`).
 - HTTP: `ConfigFileController` (settings, Check now, download), `Api\V1\ConfigController` (export, validate, diff, status), `ConfigSchemaController` (`/schema/launchroom.v1.json`, public).
 - UI (`resources/js/features/config-as-code`): `ManagedByFile` (callout + read-only page, wraps every service settings page), `ConfigProblem` (excerpt with the line marked and a caret), `ConfigFailureCard` (deployment page), `ConfigFileSettings` (project Settings → Config file), `StagedConfigNote` (review sheet); Settings → Variables's file icon and the staged items' `launchroom.json` chip.
 - CLI: `cli/internal/commands/config.go`, `cli/internal/configfile` (local syntax check, excerpts).

@@ -7,6 +7,7 @@ namespace App\Drivers\DatabaseEngines;
 use App\Data\Services\HealthcheckSettings;
 use App\Enums\ConnectionStyle;
 use App\Enums\DatabaseEngine;
+use App\Enums\RemoteAccess\RemoteAccessProtocol;
 use App\Enums\VariableType;
 use App\Support\Images\ImageReference;
 
@@ -44,7 +45,7 @@ final readonly class ClickHouse implements DatabaseEngineDriver
 
     public function defaultVersion(): string
     {
-        return '26.8';
+        return $this->images->defaultVersion($this->engine());
     }
 
     public function image(string $version): ImageReference
@@ -57,9 +58,19 @@ final readonly class ClickHouse implements DatabaseEngineDriver
         return 8123;
     }
 
+    public function category(): DatabaseEngineCategory
+    {
+        return DatabaseEngineCategory::Analytics;
+    }
+
     public function volumeMountPath(string $version): string
     {
         return '/var/lib/clickhouse';
+    }
+
+    public function dataDirectory(string $version): string
+    {
+        return $this->volumeMountPath($version);
     }
 
     public function variables(): array
@@ -79,6 +90,38 @@ final readonly class ClickHouse implements DatabaseEngineDriver
     public function exportedKeys(): array
     {
         return ['CLICKHOUSE_URL', 'CLICKHOUSE_HOST', 'CLICKHOUSE_PORT', 'CLICKHOUSE_NATIVE_PORT', 'CLICKHOUSE_USER', 'CLICKHOUSE_PASSWORD', 'CLICKHOUSE_DATABASE'];
+    }
+
+    public function exportedKey(ConnectionPart $part): string
+    {
+        return match ($part) {
+            ConnectionPart::Url => 'CLICKHOUSE_URL',
+            ConnectionPart::Host => 'CLICKHOUSE_HOST',
+            ConnectionPart::Port => 'CLICKHOUSE_PORT',
+            ConnectionPart::NativePort => 'CLICKHOUSE_NATIVE_PORT',
+            ConnectionPart::User => 'CLICKHOUSE_USER',
+            ConnectionPart::Password => 'CLICKHOUSE_PASSWORD',
+            ConnectionPart::Database => 'CLICKHOUSE_DATABASE',
+        };
+    }
+
+    public function imageEnvAliases(): array
+    {
+        return [
+            'user' => ['CLICKHOUSE_USER', 'CLICKHOUSE_ADMIN_USER'],
+            'password' => ['CLICKHOUSE_PASSWORD', 'CLICKHOUSE_ADMIN_PASSWORD'],
+            'database' => ['CLICKHOUSE_DB'],
+        ];
+    }
+
+    public function nativeSchemes(): array
+    {
+        return ['clickhouse', 'tcp'];
+    }
+
+    public function urlQuery(): array
+    {
+        return [];
     }
 
     public function connectionVariables(ConnectionStyle $style, string $slug): array
@@ -113,6 +156,11 @@ final readonly class ClickHouse implements DatabaseEngineDriver
         return 'SIGTERM';
     }
 
+    public function stopTimeout(): string
+    {
+        return '60s';
+    }
+
     public function entrypoint(): ?array
     {
         return null;
@@ -123,20 +171,38 @@ final readonly class ClickHouse implements DatabaseEngineDriver
         return null;
     }
 
-    public function dumpCommand(): array
+    public function client(): ?string
     {
-        // Native BACKUP into the data volume's backups/ directory, then streamed
-        // out by launchroomd (docs/14 §11); CLICKHOUSE_PASSWORD comes from env.
-        return ['clickhouse-client', '--user=app', '--query', 'BACKUP DATABASE app TO File(...)'];
+        return null;
     }
 
-    public function restoreCommand(): array
+    public function phpExtension(): ?string
     {
-        return ['clickhouse-client', '--user=app', '--query', 'RESTORE DATABASE app FROM File(...)'];
+        return null;
     }
 
-    public function dumpFileExtension(): string
+    public function exportFileExtension(): string
     {
         return 'zip';
+    }
+
+    public function importFormat(): ?DumpImport
+    {
+        return null;
+    }
+
+    public function restorable(): bool
+    {
+        return true;
+    }
+
+    public function pointInTimeRecoveryFrom(): null
+    {
+        return null;
+    }
+
+    public function remoteAccess(): ?RemoteAccessProtocol
+    {
+        return null;
     }
 }

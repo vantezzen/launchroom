@@ -4,18 +4,20 @@ declare(strict_types=1);
 
 namespace App\Models\Mesh;
 
+use App\Contracts\Crypto\SealedRow;
 use App\Enums\Mesh\MeshCredentialPurpose;
+use App\Models\Concerns\HasSealedSecret;
 use App\Models\Server;
-use App\Services\Mesh\MeshSecrets;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
+use InvalidArgumentException;
 
 /**
  * An envelope-encrypted mesh secret (docs/09 R13). Only ever written and
- * read through {@see MeshSecrets}; never serialized.
+ * read through App\Services\Mesh\MeshSecrets; never serialized.
  *
  * @property int $id
  * @property string $scope `instance` or `server:<id>`
@@ -30,8 +32,10 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $updated_at
  */
 #[Hidden(['ciphertext', 'wrapped_dek', 'kek_id'])]
-final class MeshCredential extends Model
+final class MeshCredential extends Model implements SealedRow
 {
+    use HasSealedSecret;
+
     /**
      * @return BelongsTo<Server, $this>
      */
@@ -49,5 +53,18 @@ final class MeshCredential extends Model
             'purpose' => MeshCredentialPurpose::class,
             'expires_at' => 'datetime',
         ];
+    }
+
+    public function sealWrapContext(): string
+    {
+        return "mesh_credential:{$this->scope}:{$this->purpose->value}";
+    }
+
+    public function sealAssociatedData(string $column): string
+    {
+        return match ($column) {
+            'ciphertext' => "mesh_credential|{$this->scope}|{$this->purpose->value}",
+            default => throw new InvalidArgumentException("{$column} is not a sealed column."),
+        };
     }
 }

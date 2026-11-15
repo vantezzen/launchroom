@@ -10,8 +10,8 @@ use Illuminate\Foundation\Events\Dispatchable;
 /**
  * A daemon task reached a terminal status (succeeded, failed, cancelled),
  * whether reported by the daemon, expired on its last lease or cancelled by
- * the dashboard. Dispatched after commit; listeners advance the deployment
- * the task belongs to and record plan previews.
+ * the dashboard. Dispatched after commit; RouteFinishedDaemonTask hands it
+ * to the task's owner.
  */
 final readonly class DaemonTaskFinished implements ShouldDispatchAfterCommit
 {

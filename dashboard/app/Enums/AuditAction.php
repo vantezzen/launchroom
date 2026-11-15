@@ -213,4 +213,7 @@ enum AuditAction: string
     case SecurityFindingReopened = 'security.finding_reopened';
     case SecurityInvestigationStarted = 'security.investigation_started';
     case SecuritySourcesChanged = 'instance.security_sources_changed';
+    // Account settings (docs/09 R10).
+    case AccountEmailChanged = 'account.email_changed';
+    case AccountPasswordChanged = 'account.password_changed';
 }

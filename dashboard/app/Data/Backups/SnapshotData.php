@@ -5,14 +5,11 @@ declare(strict_types=1);
 namespace App\Data\Backups;
 
 use App\Enums\Backups\SnapshotSource;
-use App\Services\Backups\SnapshotCache;
 use Carbon\CarbonInterface;
 use Spatie\LaravelData\Data;
 
 /**
  * A restorable snapshot: from a recorded run or from the repository listing.
- *
- * @see SnapshotCache
  */
 final class SnapshotData extends Data
 {

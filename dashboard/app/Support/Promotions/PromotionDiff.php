@@ -77,7 +77,6 @@ final class PromotionDiff
             return null;
         }
 
-        // The source changed it; did the target too?
         $conflict = $hasBase && ! self::same($t, $b);
         $entry = $s ?? $t ?? $b;
 

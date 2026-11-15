@@ -3,9 +3,10 @@
 declare(strict_types=1);
 
 use App\Data\Canvas\NodeStatusData;
-use App\Enums\CanvasNodeState;
 use App\Enums\DeploymentStatus;
+use App\Enums\NodeStatusReason;
 use App\Enums\ServerStatus;
+use App\Enums\StatusTone;
 use App\Enums\TeamRole;
 use App\Models\Deployment;
 use App\Models\Server;
@@ -77,12 +78,12 @@ test('a failed service is named on its card, links to why, and its project comes
 });
 
 test('problems read as sentences and crashes link to the runtime logs', function (): void {
-    expect(ServiceProblems::sentence('api', 'Last deploy failed'))->toBe('The last deploy of api failed')
-        ->and(ServiceProblems::sentence('api', 'Crashed'))->toBe('api crashed')
-        ->and(ServiceProblems::sentence('db', 'Paused: postgres is being imported'))->toBe('db is paused: postgres is being imported');
+    expect(ServiceProblems::sentence('api', new NodeStatusData(StatusTone::Warning, NodeStatusReason::LastDeployFailed, 'Last deploy failed')))->toBe('The last deploy of api failed')
+        ->and(ServiceProblems::sentence('api', new NodeStatusData(StatusTone::Failed, NodeStatusReason::Crashed, 'Crashed')))->toBe('api crashed')
+        ->and(ServiceProblems::sentence('db', new NodeStatusData(StatusTone::Warning, NodeStatusReason::Paused, 'Paused: postgres is being imported', detail: 'postgres is being imported')))->toBe('db is paused: postgres is being imported');
 
-    $crashed = ServiceProblems::for('prj_A', 'env_B', 'svc_C', 'api', new NodeStatusData(CanvasNodeState::Failed, 'Crashed', null, 'dpl_D'));
-    $live = ServiceProblems::for('prj_A', 'env_B', 'svc_C', 'api', new NodeStatusData(CanvasNodeState::Active, 'Live'));
+    $crashed = ServiceProblems::for('prj_A', 'env_B', 'svc_C', 'api', new NodeStatusData(StatusTone::Failed, NodeStatusReason::Crashed, 'Crashed', null, 'dpl_D'));
+    $live = ServiceProblems::for('prj_A', 'env_B', 'svc_C', 'api', new NodeStatusData(StatusTone::Active, NodeStatusReason::Live, 'Live'));
 
     expect($crashed?->href)->toEndWith('/s/svc_C/logs')
         ->and($live)->toBeNull();

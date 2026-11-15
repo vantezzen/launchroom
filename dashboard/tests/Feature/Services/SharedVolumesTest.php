@@ -87,7 +87,6 @@ test('another service mounts the volume at its own path with the next deploy', f
         ->and(($this->workload)($this->reader)['mounts'] ?? null)->toBeNull()
         ->and(AuditEvent::query()->where('action', AuditAction::ServiceVolumeAttached->value)->sole()->meta)->toMatchArray(['volume' => $this->volume->public_id, 'mountPath' => '/srv/files']);
 
-    // Mounting it twice is refused.
     $this->actingAs($this->developer)->post(($this->route)('projects.services.volume-mounts.store'), ['mountPath' => '/srv/other'])->assertSessionHasErrors(['mountPath' => 'reader already uses this volume.']);
 
     ($this->deploy)();

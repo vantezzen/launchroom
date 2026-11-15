@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/zalando/go-keyring"
+
+	"github.com/vantezzen/launchroom/cli/internal/fsutil"
 )
 
 // KeyringService is the keychain service name; the account is the URL.
@@ -111,7 +113,7 @@ func (c Credentials) Save(host, token string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if err := WriteFileAtomic(c.path(), append(b, '\n'), 0o600); err != nil {
+	if err := fsutil.WriteFileAtomic(c.path(), append(b, '\n'), 0o600); err != nil {
 		return "", err
 	}
 	return StoreFile, nil
@@ -163,7 +165,7 @@ func (c Credentials) deleteFromFile(host string) error {
 	if err != nil {
 		return err
 	}
-	return WriteFileAtomic(c.path(), append(b, '\n'), 0o600)
+	return fsutil.WriteFileAtomic(c.path(), append(b, '\n'), 0o600)
 }
 
 // readFile reads credentials.json and refuses one readable by others.

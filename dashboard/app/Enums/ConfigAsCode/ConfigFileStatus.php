@@ -29,10 +29,10 @@ enum ConfigFileStatus: string
     {
         return match ($this) {
             self::Applied => 'Applied',
-            self::Staged => 'Staged',
+            self::Staged => 'Changes staged',
             self::Unchanged => 'Up to date',
             self::Invalid => 'Has problems',
-            self::Missing => 'No file',
+            self::Missing => 'No file yet',
         };
     }
 }

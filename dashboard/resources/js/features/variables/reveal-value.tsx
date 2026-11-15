@@ -2,7 +2,7 @@ import { Eye, EyeOff } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { reveal } from '@/routes/variables';
-import { api } from './api';
+import { requestJson } from '@/lib/http';
 
 export const MASK = '••••••••';
 
@@ -33,7 +33,7 @@ export function RevealValue({
         setError(null);
 
         try {
-            const result = await api<{ value: string }>(
+            const result = await requestJson<{ value: string }>(
                 'post',
                 reveal({ project, environment, variable }).url,
                 {},

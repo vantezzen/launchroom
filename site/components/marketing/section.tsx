@@ -35,7 +35,6 @@ export function Section({
     );
 }
 
-/** Section heading: a short label, the headline and one or two sentences. */
 export function SectionHeading({
     id,
     label,
@@ -83,7 +82,6 @@ export function MoreLink({ href, children }: { href: string; children: ReactNode
     );
 }
 
-/** A feature row: copy on one side, a visual on the other. */
 export function FeatureRow({
     id,
     label,

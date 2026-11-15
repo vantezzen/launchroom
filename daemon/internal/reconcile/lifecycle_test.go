@@ -11,6 +11,7 @@ import (
 
 	"github.com/vantezzen/launchroom/daemon/internal/docker"
 	"github.com/vantezzen/launchroom/daemon/internal/health"
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/sealed"
 	"github.com/vantezzen/launchroom/daemon/internal/secret"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
@@ -85,7 +86,7 @@ func eventKinds(evs []state.WorkloadEvent) []state.WorkloadEventKind {
 
 func containerOf(t *testing.T, h *harness, id state.WorkloadID) docker.Container {
 	t.Helper()
-	cs, err := h.d.ListContainers(t.Context(), map[string]string{docker.LabelWorkload: string(id)})
+	cs, err := h.d.ListContainers(t.Context(), map[string]string{names.LabelWorkload: string(id)})
 	if err != nil || len(cs) != 1 {
 		t.Fatalf("containers of %s: %v %v", id, cs, err)
 	}
@@ -127,7 +128,7 @@ func TestLifecycleCrashLoop(t *testing.T) {
 		finished := clk.now()
 		clk.advance(time.Second)
 		h.d.Update(c.ID, func(c *docker.Container) {
-			c.State, c.Running, c.Restarting, c.ExitCode = "running", true, false, 1
+			c.State, c.ExitCode = "running", 1
 			c.FinishedAt, c.StartedAt, c.RestartCount = finished, clk.now(), restart
 		})
 		if !h.r.Watch(ctx) {
@@ -151,12 +152,12 @@ func TestLifecycleCrashLoop(t *testing.T) {
 		t.Fatalf("issue %+v", st.Issue)
 	}
 	// Seen while Docker waits to restart it: the exit code is known.
-	h.d.Update(c.ID, func(c *docker.Container) { c.State, c.Restarting, c.ExitCode = "restarting", true, 1 })
+	h.d.Update(c.ID, func(c *docker.Container) { c.State, c.ExitCode = "restarting", 1 })
 	h.r.Watch(ctx)
 	if st := phaseOf(h.r, wlA); st.Issue == nil || st.Issue.ExitCode == nil || *st.Issue.ExitCode != 1 {
 		t.Fatalf("issue while restarting %+v", st.Issue)
 	}
-	h.d.Update(c.ID, func(c *docker.Container) { c.State, c.Restarting, c.ExitCode = "running", false, 0 })
+	h.d.Update(c.ID, func(c *docker.Container) { c.State, c.ExitCode = "running", 0 })
 
 	// Running steadily for a minute after the restarts: no longer a loop.
 	clk.advance(2 * time.Minute)

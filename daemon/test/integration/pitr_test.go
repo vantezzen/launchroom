@@ -15,6 +15,7 @@ import (
 
 	"github.com/vantezzen/launchroom/daemon/internal/backup"
 	"github.com/vantezzen/launchroom/daemon/internal/docker"
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/policy"
 	"github.com/vantezzen/launchroom/daemon/internal/secret"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
@@ -79,9 +80,9 @@ func (p *pitrEnv) serviceVolume(ctx context.Context, t *testing.T) (state.Volume
 	id := state.VolumeID(randomID("vol"))
 	name := "lr-v_" + strings.ToLower(randomID("x")[2:14])
 	labels := docker.ManagedLabels(string(p.serverID))
-	labels[docker.LabelVolume] = string(id)
-	labels[docker.LabelService] = randomID("svc")
-	labels[docker.LabelEnvironment] = randomID("env")
+	labels[names.LabelVolume] = string(id)
+	labels[names.LabelService] = randomID("svc")
+	labels[names.LabelEnvironment] = randomID("env")
 	if err := p.engine.CreateVolume(ctx, docker.VolumeCreate{Name: name, Labels: labels}); err != nil {
 		t.Fatal(err)
 	}
@@ -99,7 +100,6 @@ const (
 var archivingArgs = []string{"postgres", "-c", "archive_mode=on", "-c", "archive_library=basic_archive",
 	"-c", "basic_archive.archive_directory=" + pgArchive, "-c", "archive_timeout=10"}
 
-// runPostgres starts a Postgres workload container on a volume.
 func (p *pitrEnv) runPostgres(ctx context.Context, t *testing.T, wl state.WorkloadID, volume, password string) string {
 	t.Helper()
 	if err := p.engine.PullImage(ctx, postgresImage); err != nil {
@@ -107,9 +107,9 @@ func (p *pitrEnv) runPostgres(ctx context.Context, t *testing.T, wl state.Worklo
 	}
 	env := map[string]secret.Secret{"POSTGRES_USER": "app", "POSTGRES_DB": "app", "POSTGRES_PASSWORD": secret.Secret(password)}
 	labels := docker.ManagedLabels(string(p.serverID))
-	labels[docker.LabelWorkload] = string(wl)
+	labels[names.LabelWorkload] = string(wl)
 	id, err := fixtureEngine(t, p.serverID).CreateContainer(ctx, &docker.ContainerCreate{
-		Name: docker.ContainerName(wl),
+		Name: names.WorkloadContainer(wl),
 		Config: &container.Config{Image: postgresImage, Labels: labels, Cmd: archivingArgs,
 			Env: []string{"POSTGRES_USER=app", "POSTGRES_DB=app", "POSTGRES_PASSWORD=" + password}},
 		HostConfig: &container.HostConfig{Mounts: []mount.Mount{{Type: mount.TypeVolume, Source: volume, Target: pgMount}}},
@@ -281,7 +281,7 @@ func TestPointInTimeRecoveryRoundTrip(t *testing.T) {
 		t.Fatalf("shipping after the restore: %+v %v", res, err)
 	}
 	// No replay container or helper is left behind.
-	if cs, _ := p.engine.ListContainers(ctx, map[string]string{docker.LabelHelper: "replay"}); len(cs) != 0 {
+	if cs, _ := p.engine.ListContainers(ctx, map[string]string{names.LabelHelper: "replay"}); len(cs) != 0 {
 		t.Fatalf("%d replay containers left", len(cs))
 	}
 
@@ -322,12 +322,12 @@ func TestPointInTimeRecoveryRoundTrip(t *testing.T) {
 		t.Fatal("pg_amcheck did not run")
 	}
 	// Throwaway containers and volumes are gone.
-	if cs, _ := p.engine.ListContainers(ctx, map[string]string{docker.LabelHelper: "verify"}); len(cs) != 0 {
+	if cs, _ := p.engine.ListContainers(ctx, map[string]string{names.LabelHelper: "verify"}); len(cs) != 0 {
 		t.Fatalf("%d verification containers left", len(cs))
 	}
 	vols, _ := p.engine.ListVolumes(ctx)
 	for _, v := range vols {
-		if v.Labels[docker.LabelHelper] == "verify" {
+		if v.Labels[names.LabelHelper] == "verify" {
 			t.Fatalf("verification volume %s left", v.Name)
 		}
 	}
@@ -340,10 +340,12 @@ func TestVerifyRedisMySQLAndVolume(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
 	defer cancel()
 
-	// Redis.
 	rwl := state.WorkloadID(randomID("wl"))
 	rid := p.run(ctx, t, rwl, redisImage, map[string]secret.Secret{"REDIS_PASSWORD": "redis-pw-123456"}, []string{"redis-server", "--requirepass", "redis-pw-123456"})
-	time.Sleep(2 * time.Second)
+	eventuallyWithin(t, time.Minute, "redis answering", func() bool {
+		out, code := p.exec(ctx, t, rid, []string{"redis-cli", "PING"}, "REDISCLI_AUTH=redis-pw-123456")
+		return code == 0 && out == "PONG"
+	})
 	for _, k := range []string{"a", "b", "c"} {
 		if _, code := p.exec(ctx, t, rid, []string{"redis-cli", "SET", k, "1"}, "REDISCLI_AUTH=redis-pw-123456"); code != 0 {
 			t.Fatal("redis SET failed")
@@ -363,7 +365,6 @@ func TestVerifyRedisMySQLAndVolume(t *testing.T) {
 		t.Fatalf("redis verification %+v", rres)
 	}
 
-	// MySQL.
 	if err := p.engine.PullImage(ctx, mysqlImage); err != nil {
 		t.Fatal(err)
 	}
@@ -395,7 +396,6 @@ func TestVerifyRedisMySQLAndVolume(t *testing.T) {
 		t.Fatalf("mysql verification %+v", mres)
 	}
 
-	// Volume.
 	volID, volName := p.serviceVolume(ctx, t)
 	hid := volumeHelper(ctx, t, p.env, volName, false)
 	if err := p.engine.StreamToContainer(ctx, hid, "/", tarOf(t, tarFile{name: "data/uploads/a.txt", content: "hello", mode: 0o644}, tarFile{name: "data/b.txt", content: "world!", mode: 0o644})); err != nil {

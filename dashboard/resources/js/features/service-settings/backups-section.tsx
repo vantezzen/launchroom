@@ -30,5 +30,5 @@ export function BackupsSection({ context }: { context: SettingsContext }) {
 
 /** Backups exist for databases and services with a volume (docs/14 §2). */
 export function hasBackups(node: App.Data.Canvas.CanvasNodeData): boolean {
-    return node.kind === 'database' || node.volume !== null;
+    return node.capabilities.stateful || node.volume !== null;
 }

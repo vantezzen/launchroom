@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace App\Enums\Security;
 
+use App\Enums\Attributes\SharedFacts;
+
 /**
  * Severity of an advisory group (docs/22 §4.5): the GHSA label, else the
  * highest CVSS v3 base score, else unknown.
  */
+#[SharedFacts('rank', 'isHighOrCritical')]
 enum Severity: string
 {
     case Critical = 'critical';
@@ -62,7 +65,7 @@ enum Severity: string
             self::High => 'High',
             self::Medium => 'Medium',
             self::Low => 'Low',
-            self::Unknown => 'Unknown severity',
+            self::Unknown => 'No severity',
         };
     }
 }

@@ -8,9 +8,10 @@ use App\Enums\Git\WebhookDeliveryStatus;
 use App\Jobs\Git\RefreshInstallationRepositoriesJob;
 use App\Models\Git\GitHubApp;
 use App\Models\Git\GitHubInstallation;
-use App\Services\GitHub\Dto\InstallationInfo;
-use App\Services\GitHub\Dto\RepositoryInfo;
-use App\Services\GitHub\JsonObject;
+use App\Services\Git\Providers\GitHub\Dto\InstallationInfo;
+use App\Services\Git\Providers\GitHub\Dto\RepositoryInfo;
+use App\Services\Git\Providers\GitHub\GitHubRepositoryCache;
+use App\Support\Json\JsonObject;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -23,7 +24,7 @@ final readonly class HandleInstallationEvent
 {
     public function __construct(
         private SyncGitHubInstallation $syncInstallation,
-        private SyncInstallationRepositories $syncRepositories,
+        private GitHubRepositoryCache $repositoryCache,
     ) {}
 
     public function handle(GitHubApp $app, string $event, ?string $action, JsonObject $payload): WebhookDeliveryStatus
@@ -45,14 +46,14 @@ final readonly class HandleInstallationEvent
 
             if ($event === 'installation') {
                 // `created` lists the accessible repositories (id, name, private).
-                $this->syncRepositories->handle($installation, $this->repositories($payload, 'repositories'));
+                $this->repositoryCache->sync($installation, $this->repositories($payload, 'repositories'));
             } else {
                 $removed = array_map(
                     static fn (JsonObject $repository): int => $repository->int('id'),
                     $payload->objects('repositories_removed'),
                 );
 
-                $this->syncRepositories->handle($installation, $this->repositories($payload, 'repositories_added'), $removed);
+                $this->repositoryCache->sync($installation, $this->repositories($payload, 'repositories_added'), $removed);
             }
 
             return $installation;

@@ -30,4 +30,20 @@ trait HasTransitions
     {
         return $this->allowedTransitions() === [];
     }
+
+    /**
+     * @return list<self>
+     */
+    public static function terminal(): array
+    {
+        return [...array_filter(self::cases(), static fn (self $status): bool => $status->isTerminal())];
+    }
+
+    /**
+     * @return list<self>
+     */
+    public static function nonTerminal(): array
+    {
+        return [...array_filter(self::cases(), static fn (self $status): bool => ! $status->isTerminal())];
+    }
 }

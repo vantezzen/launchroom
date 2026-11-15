@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-use App\Services\GitHub\AppJwt;
+use App\Services\Git\Providers\GitHub\AppJwt;
 use Tests\Support\GitHubFake;
 
 /**

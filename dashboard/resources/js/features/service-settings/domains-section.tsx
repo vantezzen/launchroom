@@ -10,7 +10,7 @@ import {
     Plus,
     RefreshCw,
 } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useEffectEvent, useRef, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
 import InputError from '@/components/input-error';
 import { ConfirmPopover } from '@/components/patterns/confirm-popover';
@@ -36,12 +36,14 @@ import {
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { deviceKind, deviceStatus } from '@/features/servers/format';
+import { grammar } from '@/types/grammar.generated';
 import { ServerStatus } from '@/features/servers/server-status';
 import { cn } from '@/lib/utils';
 import domainRoutes from '@/routes/projects/domains';
-import { CopyButton } from './general-section';
 import { SettingsPage, useSettingsPage } from './section';
 import type { SettingsContext } from './settings-context';
+import { CopyButton } from '@/components/copy-button';
+import { schedulePoll, useLiveProps } from '@/hooks/use-live-props';
 
 type Domain = App.Data.Canvas.DomainData;
 type Step = { state: StatusState; title: string; detail?: ReactNode };
@@ -358,7 +360,7 @@ function cnameRecommended(domain: Domain): boolean {
 }
 
 /** "Add this record" / "Add one of these" for the setup headings. */
-export function dnsRecordsHint(domain: Domain): string {
+function dnsRecordsHint(domain: Domain): string {
     if (cnameRecommended(domain)) {
         return 'Add the CNAME record at your DNS provider, or the A records below it.';
     }
@@ -548,25 +550,21 @@ function useAutoCheck(domain: Domain, route: string[], enabled: boolean) {
         );
     };
 
+    const autoCheck = useEffectEvent(() => check(true));
+
     useEffect(() => {
         if (!on) {
             return;
         }
 
-        const interval = window.setInterval(() => {
-            if (
-                document.visibilityState !== 'visible' ||
-                count.current >= AUTO_CHECKS
-            ) {
+        return schedulePoll(() => {
+            if (count.current >= AUTO_CHECKS) {
                 return;
             }
 
             count.current++;
-            check(true);
+            autoCheck();
         }, AUTO_CHECK_MS);
-
-        return () => window.clearInterval(interval);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [on, domain.id]);
 
     return {
@@ -887,7 +885,7 @@ function hostnameHint(
 ): string | null {
     const value = hostname.trim().toLowerCase();
 
-    if (!/^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(value)) {
+    if (!grammar.hostname.test(value)) {
         return null;
     }
 
@@ -933,13 +931,16 @@ function AddDomainDialog({
     const auto = useAutoCheckFor(domain, context, open && added !== null);
     const ok = domain?.verification?.status === 'ok';
 
+    const resetForm = useEffectEvent(() => {
+        setAdded(null);
+        form.reset();
+        form.clearErrors();
+    });
+
     useEffect(() => {
         if (!open) {
-            setAdded(null);
-            form.reset();
-            form.clearErrors();
+            resetForm();
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [open]);
 
     const submit = (event: FormEvent) => {
@@ -1120,19 +1121,14 @@ function useAutoCheckFor(
         );
     };
 
+    const autoCheck = useEffectEvent(() => check(true));
+
     useEffect(() => {
         if (!enabled || !id || done) {
             return;
         }
 
-        const interval = window.setInterval(() => {
-            if (document.visibilityState === 'visible') {
-                check(true);
-            }
-        }, AUTO_CHECK_MS);
-
-        return () => window.clearInterval(interval);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+        return schedulePoll(autoCheck, AUTO_CHECK_MS);
     }, [enabled, id, done]);
 
     return { checking, check: () => check(true) };
@@ -1156,15 +1152,10 @@ export function DomainsSection({ context }: { context: SettingsContext }) {
                 domain.certificate.status === 'pending'),
     );
 
-    useEffect(() => {
-        if (!active || !waitingForCertificate) return;
-        const timer = window.setInterval(() => {
-            if (document.visibilityState === 'visible') {
-                router.reload({ only: ['panel'] });
-            }
-        }, 5000);
-        return () => window.clearInterval(timer);
-    }, [active, waitingForCertificate]);
+    useLiveProps(['panel'], {
+        while: active && waitingForCertificate,
+        everyMs: 5000,
+    });
     const [adding, setAdding] = useState(false);
     const port = settings.deploy.port ?? settings.detected?.port ?? null;
     const domains = settings.domains.filter(

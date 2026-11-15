@@ -6,6 +6,7 @@ namespace App\Services\Sessions;
 
 use App\Models\DaemonTask;
 use App\Models\Sessions\InteractiveSession;
+use Illuminate\Support\Facades\Gate;
 
 /**
  * Re-authorizes open sessions on every heartbeat (docs/03 §11.3): the
@@ -39,7 +40,7 @@ final readonly class SessionGate
 
         $user->forgetTeamRoles();
 
-        return $user->hasTeamPermission($session->team_id, $session->kind->permission())
+        return Gate::forUser($user)->allows('use', $session)
             && $this->targets->stillPlaced($session->serviceInstance, $session->workload_id, $session->server_id);
     }
 }

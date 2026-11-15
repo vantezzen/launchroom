@@ -7,6 +7,7 @@ namespace App\Support\Canvas;
 use App\Data\Services\DatabaseSource;
 use App\Data\Services\GitSource;
 use App\Data\Services\ImageSource;
+use App\Enums\Git\GitProviderKind;
 use App\Enums\ServiceKind;
 use App\Models\Service;
 use App\Support\Images\ImageReference;
@@ -132,9 +133,9 @@ final class ServiceGlyph
     private static function providerGlyph(GitSource $source): string
     {
         return match ($source->provider) {
-            GitSource::PROVIDER_GITLAB => 'gitlab',
-            GitSource::PROVIDER_GITEA => 'gitea',
-            GitSource::PROVIDER_GIT => $source->isUnconnectedPlainGit() ? 'github' : 'git',
+            GitProviderKind::GitLab => 'gitlab',
+            GitProviderKind::Gitea => 'gitea',
+            GitProviderKind::Git => 'git',
             default => 'github',
         };
     }

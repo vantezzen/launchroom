@@ -29,7 +29,6 @@ const (
 	manifestMaxDepth = 3
 )
 
-// inspectSkipDirs are never descended into.
 var inspectSkipDirs = map[string]bool{
 	".git": true, "node_modules": true, "vendor": true, ".venv": true, "venv": true,
 	"__pycache__": true, "target": true, "dist": true, "build": true, ".next": true,
@@ -48,7 +47,6 @@ var deniedPrefixes = []string{
 
 var deniedSuffixes = []string{".pem", ".key", ".p12", ".pfx", ".crt", ".jks", ".keystore", ".tfvars", ".tfstate"}
 
-// deniedName reports whether a path component must never be listed or read.
 func deniedName(name string) bool {
 	n := strings.ToLower(name)
 	if deniedExact[n] {
@@ -71,7 +69,6 @@ func deniedName(name string) bool {
 	return false
 }
 
-// deniedPath applies deniedName to every component.
 func deniedPath(p string) bool {
 	for c := range strings.SplitSeq(p, "/") {
 		if deniedName(c) {
@@ -208,7 +205,6 @@ func Inspect(dir string) (*state.RepoInspection, error) {
 		return nil, walkErr
 	}
 
-	// Shallow files first, then manifests > configs > readme > entries.
 	slices.SortStableFunc(candidates, func(a, b string) int {
 		da, db := strings.Count(a, "/"), strings.Count(b, "/")
 		if da != db {
@@ -248,8 +244,6 @@ func Inspect(dir string) (*state.RepoInspection, error) {
 	return out, nil
 }
 
-// readText reads at most limit bytes of a regular UTF-8 text file without
-// NUL bytes, cut at a rune boundary.
 func readText(root *os.Root, p string, limit int) (string, bool, bool) {
 	if deniedPath(p) {
 		return "", false, false

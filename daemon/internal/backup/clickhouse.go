@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/vantezzen/launchroom/daemon/internal/dbengine"
 	"github.com/vantezzen/launchroom/daemon/internal/docker"
 	"github.com/vantezzen/launchroom/daemon/internal/secret"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
@@ -37,8 +38,7 @@ const ClickHouseFile = "clickhouse.zip"
 const (
 	// clickhouseData is the data directory (the volume's mount path in the
 	// official image; the dashboard driver mounts the volume there).
-	clickhouseData = "/var/lib/clickhouse"
-	// clickhouseBackupDB is the database's name inside every backup.
+	clickhouseData     = "/var/lib/clickhouse"
 	clickhouseBackupDB = "launchroom"
 )
 
@@ -47,19 +47,15 @@ var reBackupName = regexp.MustCompile(`^launchroom-[0-9a-f]{12}\.zip$`)
 type clickhouseConn struct{ user, db string }
 
 func clickhouseFrom(env map[string]secret.Secret) (clickhouseConn, []string, error) {
-	user, err := ident(env, "default", "CLICKHOUSE_USER")
+	l, err := dbengine.LoginOf(state.EngineClickHouse, env)
 	if err != nil {
 		return clickhouseConn{}, nil, err
 	}
-	db, err := ident(env, "default", "CLICKHOUSE_DATABASE", "CLICKHOUSE_DB")
-	if err != nil {
-		return clickhouseConn{}, nil, err
+	execEnv := []string{"CLICKHOUSE_USER=" + l.User}
+	if l.Password != "" {
+		execEnv = append(execEnv, "CLICKHOUSE_PASSWORD="+l.Password)
 	}
-	execEnv := []string{"CLICKHOUSE_USER=" + user}
-	if pw := env["CLICKHOUSE_PASSWORD"]; !pw.IsZero() {
-		execEnv = append(execEnv, "CLICKHOUSE_PASSWORD="+pw.Reveal())
-	}
-	return clickhouseConn{user: user, db: db}, execEnv, nil
+	return clickhouseConn{user: l.User, db: l.Database}, execEnv, nil
 }
 
 // clickhouseQuery runs one statement with clickhouse-client inside the
@@ -90,7 +86,6 @@ func removeBackupFile(ctx context.Context, ex docker.Execer, id, name string) {
 	_, _ = ex.ExecStream(rctx, id, docker.ExecOptions{Argv: []string{"rm", "-f", backupFile(name)}})
 }
 
-// clickhouseDump writes a native backup of the workload's database to w.
 func (e *Engine) clickhouseDump(ctx context.Context, id string, env map[string]secret.Secret, w io.Writer) error {
 	if e.o.Runtime == nil {
 		return fmt.Errorf("backup: clickhouse backups need the archive API: %w", ErrUnsupported)
@@ -126,7 +121,7 @@ func untarOne(src io.Reader, name string, w io.Writer) error {
 			return err
 		}
 		if hdr.Typeflag != tar.TypeReg || path.Clean(hdr.Name) != name || found {
-			return fmt.Errorf("backup: unexpected entry %q in the clickhouse backup", clip(hdr.Name, 64))
+			return fmt.Errorf("backup: unexpected entry %q in the clickhouse backup", state.Clip(hdr.Name, 64))
 		}
 		found = true
 		if _, err := io.CopyN(w, tr, hdr.Size); err != nil {

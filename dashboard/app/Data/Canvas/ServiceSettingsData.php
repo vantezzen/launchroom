@@ -6,7 +6,9 @@ namespace App\Data\Canvas;
 
 use App\Data\ConfigAsCode\ManagedByFileData;
 use App\Data\Dockerfiles\DockerfileGenerationPanelData;
+use App\Data\Forms\NumberRangeData;
 use App\Data\Services\BuildSettings;
+use App\Data\Services\DeployLimitsData;
 use App\Data\Services\DeploySettings;
 use App\Data\Services\ScalingSettings;
 use Spatie\LaravelData\Data;
@@ -31,7 +33,9 @@ final class ServiceSettingsData extends Data
         public string $defaultRailpackVersion,
         public BuildSettings $build,
         public DeploySettings $deploy,
+        public DeployLimitsData $deployLimits,
         public ScalingSettings $scaling,
+        public NumberRangeData $replicasRange,
         public bool $enabled,
         public array $domains,
         /** Hostname on the environment network (the service slug). */

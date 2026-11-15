@@ -6,7 +6,6 @@ namespace App\Services\Deployments;
 
 use App\Data\Protocol\V1\AppliedPreset;
 use App\Data\Protocol\V1\BuildSummary;
-use App\Data\Services\ServicePlanData;
 use App\Enums\ServiceKind;
 use App\Models\Deployment;
 use App\Models\ServiceInstance;
@@ -49,7 +48,7 @@ final class ReleaseStep
 
         $instance = ServiceInstance::query()->whereKey($deployment->service_instance_id)->first(['id', 'plan']);
 
-        return $instance instanceof ServiceInstance && self::likely(ServicePlanData::forInstance($instance)?->summary);
+        return $instance instanceof ServiceInstance && self::likely($instance->plan?->summary);
     }
 
     private static function likely(?BuildSummary $summary): bool

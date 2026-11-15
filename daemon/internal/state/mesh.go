@@ -109,7 +109,7 @@ type MeshStatus struct {
 	// Message explains starting, needs_login and error states (secret-free).
 	Message string `json:"message,omitzero" jsonschema:"maxLength=1024"`
 	// Peers are the other servers this client knows (at most 256).
-	Peers []MeshPeer `json:"peers,omitzero" jsonschema:"nullable"`
+	Peers []MeshPeer `json:"peers,omitzero" jsonschema:"nullable,maxItems=256"`
 	// CheckedAt is when the client was last asked (daemon clock).
 	CheckedAt time.Time `json:"checkedAt"`
 }

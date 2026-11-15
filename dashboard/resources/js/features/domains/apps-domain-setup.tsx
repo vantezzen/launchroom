@@ -2,6 +2,7 @@ import { router } from '@inertiajs/react';
 import { Globe, Zap } from 'lucide-react';
 import type { FormEvent, ReactNode } from 'react';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { schedulePoll } from '@/hooks/use-live-props';
 import InputError from '@/components/input-error';
 import { ChoiceTiles } from '@/components/patterns/choice-tiles';
 import { Status } from '@/components/status';
@@ -9,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
-import { requestJson, RequestFailed } from '@/features/projects/http';
+import { requestJson, RequestFailed } from '@/lib/http';
 import { cn } from '@/lib/utils';
 import onboardingRoutes from '@/routes/onboarding';
 import {
@@ -62,13 +63,7 @@ function useDnsWatch(domain: string) {
             return;
         }
 
-        const timer = window.setInterval(() => {
-            if (document.visibilityState === 'visible') {
-                void run();
-            }
-        }, DNS_POLL_MS);
-
-        return () => window.clearInterval(timer);
+        return schedulePoll(() => void run(), DNS_POLL_MS);
     }, [result?.status, run]);
 
     return { result, error, checking, run };

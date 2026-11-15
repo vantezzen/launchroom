@@ -7,6 +7,7 @@ use App\Enums\TeamRole;
 use App\Models\Server;
 use App\Models\Team;
 use App\Queries\ServerHealth;
+use Illuminate\Support\Facades\DB;
 use Tests\Support\FakeDaemon;
 use Tests\Support\ProtocolSchemas;
 
@@ -63,11 +64,11 @@ test('the Go health report fixture is accepted and stored normalized', function 
     $server = $this->server->refresh();
     expect($server->host_status_at)->not->toBeNull()
         ->and($server->daemon_version)->toBe('0.4.0')
-        ->and($server->host_status['dockerVersion'])->toBe('29.0.1')
-        ->and($server->host_status['health']['inotify'])->toEqual(['maxUserWatches' => 524288, 'maxUserInstances' => 128, 'maxQueuedEvents' => 16384])
-        ->and($server->host_status['health']['load']['load1'])->toBe(0.42)
-        ->and($server->host_status['health']['cleanup'])->toMatchArray(['trigger' => 'schedule', 'removedImages' => 4, 'reclaimedMb' => 830])
-        ->and($server->host_status['health'])->not->toHaveKey('unexpected');
+        ->and($server->host_status?->dockerVersion)->toBe('29.0.1')
+        ->and($server->host_status?->health?->inotify?->toArray())->toEqual(['maxUserWatches' => 524288, 'maxUserInstances' => 128, 'maxQueuedEvents' => 16384])
+        ->and($server->host_status?->health?->load?->load1)->toBe(0.42)
+        ->and($server->host_status?->health?->cleanup?->toArray())->toMatchArray(['trigger' => 'schedule', 'removedImages' => 4, 'reclaimedMb' => 830])
+        ->and(DB::table('servers')->where('id', $server->id)->value('host_status'))->not->toContain('unexpected');
 });
 
 test('invalid health facts are rejected', function (): void {
@@ -136,7 +137,7 @@ test('reports without health keep working and leave stored facts alone', functio
 
     $this->daemon->send($this, 'POST', '/daemon/v1/reports', $body)->assertNoContent();
 
-    expect($this->server->refresh()->host_status['health']['memory']['availableMb'])->toBe(6000);
+    expect($this->server->refresh()->host_status?->health?->memory?->availableMb)->toBe(6000);
 });
 
 test('the server page shows the health checks', function (): void {

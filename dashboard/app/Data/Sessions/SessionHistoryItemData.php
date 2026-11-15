@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Data\Sessions;
 
 use App\Enums\Sessions\InteractiveSessionKind;
-use App\Enums\Sessions\InteractiveSessionStatus;
+use App\Enums\TaskBackedAccessStatus;
 use Spatie\LaravelData\Data;
 
 /**
@@ -16,7 +16,7 @@ final class SessionHistoryItemData extends Data
     public function __construct(
         public string $id,
         public InteractiveSessionKind $kind,
-        public InteractiveSessionStatus $status,
+        public TaskBackedAccessStatus $status,
         public string $userName,
         public bool $isMine,
         public string $replicaLabel,

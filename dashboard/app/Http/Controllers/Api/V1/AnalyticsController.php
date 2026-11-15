@@ -10,7 +10,7 @@ use App\Data\Api\AnalyticsQuery;
 use App\Http\Api\ApiOperation;
 use App\Http\Api\ApiResponse;
 use App\Http\Controllers\Controller;
-use App\Http\Controllers\Projects\ProjectAnalyticsController;
+use App\Http\Routing\RouteScope;
 use App\Models\Environment;
 use App\Models\Project;
 use App\Models\Service;
@@ -45,17 +45,15 @@ final class AnalyticsController extends Controller
     {
         Gate::authorize('view', $environment);
 
-        [$instances, $names] = ProjectAnalyticsController::selection($environment, null);
-
-        return ApiResponse::item($analytics->handle($instances, $names, $query->range));
+        return ApiResponse::item($analytics->for($environment, null, $query->range));
     }
 
     #[ApiOperation(id: 'getServiceAnalytics', summary: 'Request analytics of one service in an environment', tag: 'Analytics', response: AnalyticsData::class, query: AnalyticsQuery::class, description: self::DESCRIPTION)]
     public function service(Environment $environment, Service $service, AnalyticsQuery $query, RequestAnalytics $analytics): JsonResponse
     {
-        $instance = $this->instance($environment, $service);
+        $instance = RouteScope::instanceIn($environment, $service);
         Gate::authorize('view', $instance);
 
-        return ApiResponse::item($analytics->handle([$instance->id], [$instance->id => ['id' => $service->public_id, 'name' => $service->name]], $query->range));
+        return ApiResponse::item($analytics->for($environment, $instance, $query->range));
     }
 }

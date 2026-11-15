@@ -31,7 +31,7 @@ final class ResetDashboardDomainCommand extends Command
 
         $moved = $reset->handle(AuditActor::system(), forgetOld: (bool) $this->option('forget-old'));
 
-        foreach (Server::query()->where('is_control_plane', true)->whereNull('revoked_at')->get() as $server) {
+        foreach (Server::query()->controlPlane()->get() as $server) {
             try {
                 $render->handle($server);
             } catch (Throwable $e) {

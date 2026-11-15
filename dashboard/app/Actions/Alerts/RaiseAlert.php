@@ -8,13 +8,12 @@ use App\Data\Alerts\AlertSignal;
 use App\Enums\Alerts\AlertDeliveryEvent;
 use App\Enums\Alerts\AlertRule;
 use App\Enums\Alerts\AlertStatus;
+use App\Events\CanvasChanged;
 use App\Models\Alerts\Alert;
 use App\Models\Environment;
 use App\Models\Project;
 use App\Models\Server;
 use App\Models\ServiceInstance;
-use App\Services\Alerts\AlertChanged;
-use App\Services\Alerts\AlertNotifier;
 use App\Services\Alerts\AlertRuleSettings;
 use App\Support\Links;
 use Carbon\CarbonImmutable;
@@ -41,7 +40,7 @@ final readonly class RaiseAlert
 {
     public function __construct(
         private AlertRuleSettings $rules,
-        private AlertNotifier $notifier,
+        private QueueAlertDeliveries $deliveries,
     ) {}
 
     public function handle(AlertSignal $signal): ?Alert
@@ -107,7 +106,7 @@ final readonly class RaiseAlert
         });
 
         if ($changed) {
-            AlertChanged::broadcastFor($alert);
+            CanvasChanged::forEnvironment($alert->environment_id);
         }
 
         return $alert;
@@ -139,6 +138,8 @@ final readonly class RaiseAlert
             'service_instance_id' => $signal->serviceInstance?->id,
             'server_id' => $signal->server?->id,
             'facts' => $signal->facts,
+            'kind' => $signal->kind,
+            'value' => $signal->value,
             'last_seen_at' => $now,
         ]);
 
@@ -149,7 +150,7 @@ final readonly class RaiseAlert
 
     private function notify(Alert $alert, AlertDeliveryEvent $event, CarbonImmutable $now): void
     {
-        if ($this->notifier->queue($alert, $event) > 0) {
+        if ($this->deliveries->handle($alert, $event) > 0) {
             $alert->notified_at = $now;
             $alert->save();
         }

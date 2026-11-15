@@ -47,13 +47,7 @@ final readonly class ApproveCliLogin
             $name = 'CLI'.($request->client_hostname !== null ? ' on '.$request->client_hostname : '');
             $new = $this->createToken->handle($user, $team, $name, $input->abilityList(), $input->expiresInDays, ApiTokenClient::Cli, $actor);
 
-            $request->transitionTo(CliLoginStatus::Approved, [
-                'user_id' => $user->id,
-                'team_id' => $team->id,
-                'personal_access_token_id' => $new->token->id,
-                'token_ciphertext' => Crypt::encryptString($new->plainText),
-                'decided_at' => now(),
-            ]);
+            $request->approve($user, $team, $new->token->id, Crypt::encryptString($new->plainText));
 
             $this->audit->handle(new AuditEntryData(
                 action: AuditAction::CliLoginApproved,

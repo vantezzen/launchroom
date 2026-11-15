@@ -31,7 +31,7 @@ final readonly class VerifyDomain
 
         $result = $this->check->hostname($domain->hostname, $this->edges->addresses($domain->team_id));
 
-        $domain->forceFill(['verification' => $result->toArray()])->save();
+        $domain->forceFill(['verification' => $result])->save();
 
         return $result;
     }

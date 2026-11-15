@@ -1,5 +1,5 @@
-import { Head, Link, router } from '@inertiajs/react';
-import { useEffect, useState } from 'react';
+import { Head, Link } from '@inertiajs/react';
+import { useState } from 'react';
 import { ConfirmAction } from '@/components/confirm-action';
 import { DeviceImage, DEVICE_LABEL } from '@/components/devices/device-image';
 import { LiveWait } from '@/components/patterns/live-wait';
@@ -17,12 +17,12 @@ import { deviceKind, deviceStatus, specParts } from '@/features/servers/format';
 import { RemovePendingButton } from '@/features/servers/remove-pending';
 import { roleLabels } from '@/features/servers/server-status';
 import { approve, create, index, show } from '@/routes/servers';
+import { useLiveProps } from '@/hooks/use-live-props';
 
 type Props = {
     enrollment: App.Data.Servers.EnrollmentData;
-    joinToken: string | null;
+    command: string | null;
     controlPlaneUrl: string;
-    controlPlaneKey: string;
     machine: string | null;
     canApprove: boolean;
     canCancel: boolean;
@@ -113,36 +113,25 @@ function Connected({
  */
 export default function Enrollment({
     enrollment,
-    joinToken,
+    command: sentCommand,
     controlPlaneUrl,
-    controlPlaneKey,
     machine,
     canApprove,
     canCancel,
 }: Props) {
-    // The token is only sent on the first view; keep it for this page's lifetime.
-    const [token] = useState(joinToken);
+    // The join token is only sent on the first view; keep the command for this page's lifetime.
+    const [command] = useState(sentCommand);
     const server = enrollment.server;
     const waiting =
         (server === null && !enrollment.expired) ||
         server?.status === 'pending_approval';
     const picked = findMachine(machine);
 
-    useEffect(() => {
-        if (!waiting) {
-            return;
-        }
+    useLiveProps(['enrollment', 'canApprove'], {
+        while: waiting,
+        everyMs: POLL_MS,
+    });
 
-        const timer = window.setInterval(() => {
-            router.reload({ only: ['enrollment', 'canApprove'] });
-        }, POLL_MS);
-
-        return () => window.clearInterval(timer);
-    }, [waiting]);
-
-    const command = token
-        ? `curl -fsSL ${controlPlaneUrl}/install/server.sh | LR_JOIN_TOKEN=${token} LR_CP_KEY=${controlPlaneKey} LR_CONTROL_PLANE_URL=${controlPlaneUrl} sh`
-        : null;
     const expires = new Date(enrollment.expiresAt).toLocaleTimeString([], {
         hour: '2-digit',
         minute: '2-digit',

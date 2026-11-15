@@ -7,6 +7,7 @@ namespace App\Data\Specs;
 use App\Data\Attributes\Promotion;
 use App\Enums\PromotionClass;
 use App\Enums\VariableExposure;
+use App\Enums\VariableLayer;
 use App\Enums\VariableType;
 use Spatie\LaravelData\Data;
 
@@ -18,10 +19,6 @@ use Spatie\LaravelData\Data;
  */
 final class VariableSpec extends Data
 {
-    public const string LAYER_ENVIRONMENT = 'environment';
-
-    public const string LAYER_BRANCH = 'branch';
-
     /**
      * @param  list<string>  $references  `svc.KEY`, `shared.KEY` or `KEY` (same scope)
      */
@@ -37,8 +34,7 @@ final class VariableSpec extends Data
         public VariableExposure $exposure,
         #[Promotion(PromotionClass::Never)]
         public string $ciphertext,
-        /** `environment` or `branch` (a preview branch override; wins over environment). */
-        public string $layer = self::LAYER_ENVIRONMENT,
+        public VariableLayer $layer = VariableLayer::Environment,
         public bool $generated = false,
         public array $references = [],
         public ?string $connectionId = null,

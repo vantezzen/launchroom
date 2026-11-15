@@ -8,7 +8,9 @@ use App\Data\Protocol\V1\Report;
 use App\Data\Protocol\V1\SystemContainer;
 use App\Data\Protocol\V1\SystemSpec;
 use App\Data\Protocol\V1\TailscaleSpec;
-use App\Support\Servers\MeshStatusFacts;
+use App\Data\Servers\MeshReportData;
+use App\Data\Servers\MeshReportPeerData;
+use App\Enums\Mesh\MeshClientState;
 use Carbon\CarbonImmutable;
 use Tests\Support\ProtocolSchemas;
 
@@ -45,9 +47,9 @@ test('the Go mesh report fixture decodes and normalizes', function (): void {
 
     expect($report->host?->mesh)->toBeArray();
 
-    $facts = MeshStatusFacts::fromProtocol((array) $report->host?->mesh);
+    $facts = MeshReportData::fromProtocol((array) $report->host?->mesh);
 
-    expect($facts['state'])->toBe('connected')
-        ->and($facts['ipv4'])->toBe('100.64.0.2')
-        ->and(array_column($facts['peers'], 'connection'))->toBe(['direct', 'relay', 'idle']);
+    expect($facts->state)->toBe(MeshClientState::Connected)
+        ->and($facts->ipv4)->toBe('100.64.0.2')
+        ->and(array_map(static fn (MeshReportPeerData $peer): string => $peer->connection->value, $facts->peers))->toBe(['direct', 'relay', 'idle']);
 });

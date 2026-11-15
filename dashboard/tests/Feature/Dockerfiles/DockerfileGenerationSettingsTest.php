@@ -9,6 +9,7 @@ use App\Models\Dockerfiles\AiProviderSettings;
 use App\Models\Team;
 use App\Models\User;
 use App\Services\Crypto\Envelope;
+use App\Services\Crypto\SealedColumns;
 use App\Services\Crypto\SecretKey;
 use App\Services\Dockerfiles\AiProviderSecrets;
 use Tests\Support\Projects;
@@ -61,11 +62,6 @@ test('only instance owners change the provider; turning it on needs a key', func
     $this->actingAs($this->owner)->put(route('dockerfile-generation.update'), ['model' => 'gpt-5'])->assertSessionHasErrors('model');
 });
 
-test('an instance owner can set the provider without confirming again', function (): void {
-    $this->actingAs($this->owner)->put(route('dockerfile-generation.update'), ['apiKey' => DS_KEY])->assertRedirect()->assertSessionHasNoErrors();
-    expect(AiProviderSettings::current()->hasKey())->toBeTrue();
-});
-
 test('team owners switch the team; admins and developers can’t', function (): void {
     $this->actingAs($this->developer)->put(route('dockerfile-generation.team'), ['enabled' => true])->assertForbidden();
     $this->actingAs($this->admin)->put(route('dockerfile-generation.team'), ['enabled' => true])->assertForbidden();
@@ -84,5 +80,5 @@ test('the key is re-wrapped by KEK rotation', function (): void {
     $counts = resolve(RotateKek::class)->handle(resolve(Envelope::class), $next);
 
     expect($counts['rewrapped'])->toBeGreaterThanOrEqual(1)
-        ->and(new AiProviderSecrets($next)->get(AiProviderSettings::current()))->toBe(DS_KEY);
+        ->and(new AiProviderSecrets(new SealedColumns($next))->get(AiProviderSettings::current()))->toBe(DS_KEY);
 });

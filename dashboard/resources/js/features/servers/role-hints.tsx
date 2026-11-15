@@ -1,6 +1,6 @@
 import { Lightbulb, TriangleAlert } from 'lucide-react';
-import { LearnMore, useDocsUrl } from '@/features/settings/settings-card';
 import { cn } from '@/lib/utils';
+import { LearnMore, useDocsUrl } from '@/components/settings/settings-card';
 
 type Hint = App.Data.Servers.RoleHintData;
 

@@ -3,7 +3,7 @@
 # a user matching the host UID/GID: generated files written into daemon/ and
 # protocol/ stay owned by the developer, and the pre-created cache directories
 # give the named cache volumes the right ownership on first mount.
-ARG GO_IMAGE=golang:1.27
+ARG GO_IMAGE
 FROM ${GO_IMAGE}
 
 ARG UID=1000

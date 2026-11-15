@@ -25,8 +25,6 @@ import (
 	"archive/tar"
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -42,31 +40,22 @@ import (
 	"github.com/moby/moby/api/types/mount"
 
 	"github.com/vantezzen/launchroom/daemon/internal/docker"
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/policy"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
 
-// Fixed host-side names of the build system objects.
 const (
-	ContainerName = "lr-system-buildkit"
-	NetworkName   = "lr-system-build"
-	StateVolume   = "lr-system-buildkit-state"
 	// RegistryHostname is how buildkitd reaches the registry (gateway forwarder).
 	RegistryHostname = "registry.launchroom.internal"
 	// RegistryPort is the forwarder port on the gateway.
 	RegistryPort = 5000
 
-	// AppArmorProfile is the host profile the installers load on hosts with
-	// kernel.apparmor_restrict_unprivileged_userns=1 (D58): unconfined plus
-	// userns, attached to nothing by path.
-	AppArmorProfile = "launchroom-buildkit"
-	// appArmorUnconfined is the AppArmor setting everywhere else.
 	appArmorUnconfined = "unconfined"
 
 	configDir  = "/home/user/.config/buildkit"
 	configPath = configDir + "/buildkitd.toml"
 	stateDir   = "/home/user/.local/share/buildkit"
-	specVer    = "buildkitd-v2"
 )
 
 // DefaultSubnet is the build network (docs/05 §7); configurable per daemon.
@@ -130,8 +119,7 @@ type Manager struct {
 
 	mu      sync.Mutex
 	running string // container id when the current spec is running
-	// res are the resources of the current spec.
-	res Resources
+	res     Resources
 	// platforms is what the container platformsOf names can build (D53).
 	platforms   []state.Platform
 	platformsOf string
@@ -141,12 +129,12 @@ type Manager struct {
 	enabled bool
 	syncErr error
 	// profile is the AppArmor profile of the running container ("" = none
-	// yet); profileMissing is when starting with AppArmorProfile last
+	// yet); profileMissing is when starting with names.BuildkitAppArmorProfile last
 	// failed because the host has not loaded it (zero = not known missing).
 	profile        string
 	profileMissing time.Time
-	// noIOWeight is set once the engine refused the I/O weight (no io
-	// cgroup controller, as in nested Docker): builds go without it.
+	// noIOWeight is set once runc refused the I/O weight (ensureWeighted):
+	// builds go without it.
 	noIOWeight bool
 
 	// connect dials buildkitd in container id (tests replace it).
@@ -231,7 +219,6 @@ func (m *Manager) Gateway() netip.Addr { return m.o.Subnet.Addr().Next() }
 // RegistryHost is the registry host:port buildkitd pushes to and pulls from.
 func RegistryHost() string { return fmt.Sprintf("%s:%d", RegistryHostname, RegistryPort) }
 
-// sameContainer: a and b give the same container spec.
 func sameContainer(a, b Resources) bool {
 	return a.MemoryMB == b.MemoryMB && a.SwapMB == b.SwapMB && a.CPUs == b.CPUs && a.CPUShares == b.CPUShares &&
 		a.BlkioWeight == b.BlkioWeight && a.OOMScoreAdj == b.OOMScoreAdj && a.Parallelism == b.Parallelism
@@ -279,32 +266,38 @@ func (m *Manager) config(res Resources) []byte {
 }
 
 // SpecHash identifies the built-in container spec and config for an image
-// and AppArmor profile ("unconfined" or AppArmorProfile).
+// and AppArmor profile ("unconfined" or names.BuildkitAppArmorProfile).
 func (m *Manager) SpecHash(image state.ImageRef, appArmor string) string {
 	return m.specHash(image, appArmor, m.Resources())
 }
 
 func (m *Manager) specHash(image state.ImageRef, appArmor string, res Resources) string {
-	sum := sha256.New()
-	_, _ = fmt.Fprintf(sum, "%s|%s|%s|%v|%d|%d|%d|%d|%d|", specVer, image, m.o.Subnet, res.CPUs, res.MemoryMB, res.SwapMB,
-		res.CPUShares, res.BlkioWeight, res.OOMScoreAdj)
-	if appArmor != appArmorUnconfined {
-		_, _ = fmt.Fprintf(sum, "apparmor=%s|", appArmor)
+	return m.system(image, appArmor, res).Hash()
+}
+
+// system is the buildkitd system container; its config file (installed
+// after create) and the build network's subnet count towards the hash.
+func (m *Manager) system(image state.ImageRef, appArmor string, res Resources) docker.SystemContainer {
+	cfg := m.config(res)
+	return docker.SystemContainer{
+		Component: names.SystemBuildkit, Spec: m.containerSpec(image, appArmor, res),
+		Extra:   []string{m.o.Subnet.String(), string(cfg)},
+		Volumes: []string{names.BuildkitStateVolume}, Pull: true, StopGrace: 30 * time.Second,
+		Install: func(ctx context.Context, id string) error {
+			return m.o.Ops.CopyToContainer(ctx, id, "/", configArchive(cfg))
+		},
 	}
-	sum.Write(m.config(res))
-	return hex.EncodeToString(sum.Sum(nil)[:16])
 }
 
 // ContainerSpec is the built-in container spec of the system buildkitd
-// with an AppArmor profile ("unconfined" or AppArmorProfile).
+// with an AppArmor profile ("unconfined" or names.BuildkitAppArmorProfile).
 func (m *Manager) ContainerSpec(image state.ImageRef, appArmor string) *docker.ContainerCreate {
 	return m.containerSpec(image, appArmor, m.Resources())
 }
 
 func (m *Manager) containerSpec(image state.ImageRef, appArmor string, r Resources) *docker.ContainerCreate {
 	labels := docker.ManagedLabels(m.o.ServerID)
-	labels[docker.LabelSystem] = policy.SystemBuildkit
-	labels[docker.LabelSpecHash] = m.specHash(image, appArmor, r)
+	labels[names.LabelSystem] = names.SystemBuildkit
 	pids := int64(32768)
 	// Builds lose every contest for the host (docs/04 §5.2): a hard memory
 	// limit (plus some swap), a low CPU and block I/O weight, a CPU cap on
@@ -318,39 +311,35 @@ func (m *Manager) containerSpec(image state.ImageRef, appArmor string, r Resourc
 	if r.CPUs > 0 {
 		res.NanoCPUs = int64(r.CPUs * 1e9)
 	}
+	hc := policy.BaseHostConfig()
+	hc.NetworkMode = names.BuildkitNetwork
+	hc.RestartPolicy = container.RestartPolicy{Name: container.RestartPolicyUnlessStopped}
+	// Exceptions for rootless BuildKit, which sets up its own user namespace
+	// (docs/04 §5): Docker's default capabilities, and seccomp and AppArmor
+	// relaxed only as far as that needs: AppArmor is unconfined, or the
+	// launchroom-buildkit profile (unconfined plus userns) where the host
+	// restricts user namespaces (D58). No --privileged, no added
+	// capabilities, no host namespaces.
+	hc.CapDrop = nil
+	hc.SecurityOpt = []string{"seccomp=unconfined", "apparmor=" + appArmor}
+	// systempaths=unconfined: no masked or read-only /proc and /sys paths
+	// (the Engine API form of the CLI option), so it can mount its own /proc.
+	hc.MaskedPaths, hc.ReadonlyPaths = []string{}, []string{}
+	hc.ExtraHosts = []string{RegistryHostname + ":" + m.Gateway().String()}
+	hc.Mounts = []mount.Mount{{Type: mount.TypeVolume, Source: names.BuildkitStateVolume, Target: stateDir}}
+	hc.Resources = res
+	// The kernel's OOM killer picks build processes first; build steps
+	// inherit the score and can't lower it.
+	hc.OomScoreAdj = r.OOMScoreAdj
 	return &docker.ContainerCreate{
-		Name: ContainerName,
+		Name: names.BuildkitContainer,
 		Config: &container.Config{
 			Image: string(image),
 			// The image entrypoint is `rootlesskit buildkitd`; these are buildkitd flags.
 			Cmd:    []string{"--config", configPath, "--oci-worker-net=host"},
 			Labels: labels,
 		},
-		HostConfig: &container.HostConfig{
-			NetworkMode:   NetworkName,
-			RestartPolicy: container.RestartPolicy{Name: container.RestartPolicyUnlessStopped},
-			// Rootless BuildKit needs to set up its own user namespace; these
-			// options relax only the filters that prevent that (docs/04 §5):
-			// AppArmor is unconfined, or the launchroom-buildkit profile
-			// (unconfined plus userns) where the host restricts user
-			// namespaces (D58). No --privileged, no added capabilities, no
-			// host namespaces.
-			SecurityOpt: []string{"seccomp=unconfined", "apparmor=" + appArmor},
-			// systempaths=unconfined: no masked or read-only /proc and /sys paths
-			// (the Engine API form of the CLI option), so it can mount its own /proc.
-			MaskedPaths:   []string{},
-			ReadonlyPaths: []string{},
-			ExtraHosts:    []string{RegistryHostname + ":" + m.Gateway().String()},
-			LogConfig: container.LogConfig{
-				Type:   policy.LogDriver,
-				Config: map[string]string{"max-size": policy.LogMaxSize, "max-file": policy.LogMaxFile},
-			},
-			Mounts:    []mount.Mount{{Type: mount.TypeVolume, Source: StateVolume, Target: stateDir}},
-			Resources: res,
-			// The kernel's OOM killer picks build processes first; build
-			// steps inherit the score and can't lower it.
-			OomScoreAdj: r.OOMScoreAdj,
-		},
+		HostConfig: hc,
 	}
 }
 
@@ -372,7 +361,7 @@ func (m *Manager) Sync(ctx context.Context, sys state.SystemContainer) error {
 }
 
 func (m *Manager) sync(ctx context.Context, image state.ImageRef) (string, error) {
-	if err := policy.CheckSystemImage(policy.SystemBuildkit, image, m.o.Policy); err != nil {
+	if err := policy.CheckSystemImage(names.SystemBuildkit, image, m.o.Policy); err != nil {
 		return "", err
 	}
 	if err := m.ensureNetwork(ctx); err != nil {
@@ -409,13 +398,13 @@ func (m *Manager) Platforms(ctx context.Context) []state.Platform {
 	if err != nil {
 		return nil
 	}
-	var names []string
+	var platforms []string
 	for _, w := range workers {
 		for _, p := range w.Platforms {
-			names = append(names, p.OS+"/"+p.Architecture)
+			platforms = append(platforms, p.OS+"/"+p.Architecture)
 		}
 	}
-	out := BuildPlatforms(names)
+	out := BuildPlatforms(platforms)
 	m.mu.Lock()
 	if m.running == id {
 		m.platforms, m.platformsOf = out, id
@@ -427,9 +416,9 @@ func (m *Manager) Platforms(ctx context.Context) []state.Platform {
 // BuildPlatforms keeps the launchroom platforms among BuildKit's worker
 // platforms ("linux/amd64", "linux/arm64"; variants and other
 // architectures are dropped), sorted and without duplicates.
-func BuildPlatforms(names []string) []state.Platform {
+func BuildPlatforms(list []string) []state.Platform {
 	var out []state.Platform
-	for _, n := range names {
+	for _, n := range list {
 		p := state.Platform(strings.ToLower(n))
 		if p.Validate() == nil && !slices.Contains(out, p) {
 			out = append(out, p)
@@ -447,7 +436,7 @@ func (m *Manager) Enabled() bool {
 }
 
 func (m *Manager) list(ctx context.Context) ([]docker.Container, error) {
-	return m.o.Docker.ListContainers(ctx, map[string]string{docker.LabelSystem: policy.SystemBuildkit})
+	return m.o.Docker.ListContainers(ctx, map[string]string{names.LabelSystem: names.SystemBuildkit})
 }
 
 func (m *Manager) remove(ctx context.Context) error {
@@ -457,7 +446,7 @@ func (m *Manager) remove(ctx context.Context) error {
 	}
 	var errs []error
 	for _, c := range cs {
-		if c.Running {
+		if c.Running() {
 			errs = append(errs, m.o.Docker.StopContainer(ctx, c.ID, 10*time.Second))
 		}
 		errs = append(errs, m.o.Docker.RemoveContainer(ctx, c.ID))
@@ -471,84 +460,31 @@ func (m *Manager) ensureNetwork(ctx context.Context) error {
 		return err
 	}
 	for _, n := range ns {
-		if n.Name != NetworkName {
+		if n.Name != names.BuildkitNetwork {
 			continue
 		}
 		if len(n.Subnets) == 1 && n.Subnets[0] == m.o.Subnet {
 			return nil
 		}
-		return fmt.Errorf("buildkitd: network %s exists with subnet %v, want %s (remove it or change LR_BUILD_SUBNET)", NetworkName, n.Subnets, m.o.Subnet)
+		return fmt.Errorf("buildkitd: network %s exists with subnet %v, want %s (remove it or change LR_BUILD_SUBNET)", names.BuildkitNetwork, n.Subnets, m.o.Subnet)
 	}
 	labels := docker.ManagedLabels(m.o.ServerID)
-	labels[docker.LabelSystem] = policy.SystemBuildkit
-	labels[docker.LabelNetwork] = "system-build"
-	_, err = m.o.Docker.CreateNetwork(ctx, docker.NetworkCreate{Name: NetworkName, Subnet: m.o.Subnet, Labels: labels})
+	labels[names.LabelSystem] = names.SystemBuildkit
+	labels[names.LabelNetwork] = "system-build"
+	_, err = m.o.Docker.CreateNetwork(ctx, docker.NetworkCreate{Name: names.BuildkitNetwork, Subnet: m.o.Subnet, Labels: labels})
 	return err
 }
 
 func (m *Manager) ensureContainer(ctx context.Context, image state.ImageRef, appArmor string) (string, error) {
-	res := m.Resources()
-	hash := m.specHash(image, appArmor, res)
-	cs, err := m.list(ctx)
+	current, _, err := m.system(image, appArmor, m.Resources()).Ensure(ctx, m.o.Docker, m.o.Log)
 	if err != nil {
 		return "", err
 	}
-	var current *docker.Container
-	for i := range cs {
-		c := cs[i]
-		if current == nil && c.Name == ContainerName && c.Labels[docker.LabelSpecHash] == hash {
-			current = &cs[i]
-			continue
-		}
-		m.o.Log.Info("replacing system buildkitd container", "container", c.Name)
-		if c.Running {
-			_ = m.o.Docker.StopContainer(ctx, c.ID, 30*time.Second)
-		}
-		if err := m.o.Docker.RemoveContainer(ctx, c.ID); err != nil {
-			return "", err
-		}
-	}
-	if current == nil {
-		labels := docker.ManagedLabels(m.o.ServerID)
-		labels[docker.LabelVolume] = "system-" + StateVolume
-		labels[docker.LabelSystem] = policy.SystemBuildkit
-		if err := m.o.Docker.CreateVolume(ctx, docker.VolumeCreate{Name: StateVolume, Labels: labels}); err != nil {
-			return "", err
-		}
-		present, err := m.o.Docker.ImagePresent(ctx, string(image))
-		if err != nil {
-			return "", err
-		}
-		if !present {
-			m.o.Log.Info("pulling system buildkitd image", "image", image)
-			if err := m.o.Docker.PullImage(ctx, string(image)); err != nil {
-				return "", err
-			}
-		}
-		id, err := m.o.Docker.CreateContainer(ctx, m.containerSpec(image, appArmor, res))
-		if err != nil {
-			return "", err
-		}
-		if err := m.o.Ops.CopyToContainer(ctx, id, "/", configArchive(m.config(res))); err != nil {
-			_ = m.o.Docker.RemoveContainer(ctx, id)
-			return "", fmt.Errorf("buildkitd: install config: %w", err)
-		}
-		c, err := m.o.Docker.InspectContainer(ctx, id)
-		if err != nil {
-			return "", err
-		}
-		current = &c
-	}
-	if current.Restarting && current.RestartCount >= crashRestarts {
+	if current.Restarting() && current.RestartCount >= crashRestarts {
 		// Docker's restart policy keeps it going; builds wait for it and
 		// fail with its diagnosis (WaitClient) when it never comes up.
 		m.o.Log.Warn("system buildkitd keeps restarting", "restarts", current.RestartCount,
 			"exitCode", current.ExitCode, "oomKilled", current.OOMKilled)
-	}
-	if !current.Running {
-		if err := m.o.Docker.StartContainer(ctx, current.ID); err != nil {
-			return "", err
-		}
 	}
 	return current.ID, nil
 }
@@ -609,10 +545,14 @@ func (m *Manager) dial(ctx context.Context, id string) (*bkclient.Client, error)
 	}
 }
 
-// ensureWeighted converges the container, dropping the I/O weight when the
-// engine can't apply it: a host without the io cgroup controller (nested
-// Docker, some VPS kernels) refuses to start a container that sets one, and
-// a lower build priority is not worth having no builds.
+// ensureWeighted converges the container, dropping the I/O weight when runc
+// can't apply it: without the io cgroup controller (nested Docker) or
+// without a weight file in it (io.weight needs io.cost, io.bfq.weight the
+// BFQ scheduler; some VPS kernels have neither). launchroomd can't probe
+// this up front: it sees its own container's cgroup namespace, not the
+// one buildkitd gets, and Docker's info API no longer reports blkio weight
+// support. Only starting the container shows it, and a lower build
+// priority is not worth having no builds.
 func (m *Manager) ensureWeighted(ctx context.Context, image state.ImageRef, profile string) (string, error) {
 	id, err := m.ensureContainer(ctx, image, profile)
 	if err == nil || !ioWeightRefused(err) {

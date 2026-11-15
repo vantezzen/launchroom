@@ -37,7 +37,7 @@ EDGE1_PORT="${LR_DEV_HTTPS_PORT:-8443}"
 EDGE2_PORT="${LR_DEV_HTTPS_PORT_2:-8444}"
 CP_SERVICES="dashboard horizon reverb scheduler vite headscale zot valkey postgres"
 
-dc() { docker compose --project-directory dev --env-file dev/.env -f dev/compose.yml -f dev/compose.multi.yml "$@"; }
+dc() { sh dev/bin/compose.sh -f dev/compose.multi.yml "$@"; }
 art() { dc exec -T dashboard php artisan "$@"; }
 now_ms() { dc exec -T loadgen date +%s%3N; }
 log() { printf '%s  %s\n' "$(date +%H:%M:%S)" "$*" | tee -a "$OUT/steps.log"; }

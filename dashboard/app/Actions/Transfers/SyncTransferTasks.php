@@ -7,22 +7,24 @@ namespace App\Actions\Transfers;
 use App\Actions\Audit\RecordAuditEvent;
 use App\Data\Audit\AuditActor;
 use App\Data\Audit\AuditEntryData;
+use App\Data\Protocol\V1\DataExportResult;
 use App\Enums\AuditAction;
 use App\Enums\DaemonTaskStatus;
 use App\Enums\DaemonTaskType;
+use App\Enums\HoldKind;
 use App\Enums\Transfers\DataSubject;
 use App\Enums\Transfers\ExportRunStatus;
 use App\Enums\Transfers\ImportRunStatus;
 use App\Enums\Transfers\TransferStatus;
-use App\Events\NodeStateInvalidated;
+use App\Events\Transfers\ExportRunFinished;
+use App\Events\Transfers\ImportRunFinished;
 use App\Models\DaemonTask;
 use App\Models\ServiceInstance;
 use App\Models\Transfers\DataExportRun;
 use App\Models\Transfers\DataImportRun;
 use App\Models\Transfers\DataTransfer;
-use App\Services\Backups\DataHolds;
-use App\Services\Backups\RestoreHolds;
-use App\Services\Transfers\ImportHolds;
+use App\Services\Holds\Holds;
+use App\Services\Holds\ImportHolds;
 use App\Services\Transfers\TransferStore;
 use Illuminate\Support\Facades\DB;
 use Throwable;
@@ -87,17 +89,18 @@ final readonly class SyncTransferTasks
             }
 
             $held = ImportHolds::heldBy($run);
+            $imported = $task->status === DaemonTaskStatus::Succeeded ? $task->result?->dataImport : null;
 
             if ($task->status === DaemonTaskStatus::Succeeded) {
-                /** @var array<string, mixed> $result */
-                $result = is_array($task->result['dataImport'] ?? null) ? $task->result['dataImport'] : [];
-                $run->result = $result;
+                $run->result = $imported;
                 $run->transitionTo(ImportRunStatus::Succeeded);
             } elseif ($task->status === DaemonTaskStatus::Failed || $task->status === DaemonTaskStatus::Cancelled) {
                 $run->transitionTo(ImportRunStatus::Failed, $task->error ?? 'The import task '.$task->status->value.'.');
             } else {
                 return null;
             }
+
+            event(new ImportRunFinished($run->id, $run->team_id));
 
             // The file stays for a retry until it expires.
             if ($run->transfer_id !== null) {
@@ -116,23 +119,14 @@ final readonly class SyncTransferTasks
                 meta: array_filter([
                     'import' => $run->public_id,
                     'outcome' => $run->status->value,
-                    'tables' => is_int($run->result['tables'] ?? null) ? $run->result['tables'] : null,
-                    'files' => is_int($run->result['files'] ?? null) ? $run->result['files'] : null,
-                    'sizeBytes' => is_int($run->result['sizeBytes'] ?? null) ? $run->result['sizeBytes'] : null,
-                    'durationMs' => is_int($run->result['durationMs'] ?? null) ? $run->result['durationMs'] : null,
+                    'tables' => is_int($imported?->tables) ? $imported->tables : null,
+                    'files' => is_int($imported?->files) ? $imported->files : null,
+                    'sizeBytes' => is_int($imported?->sizeBytes) ? $imported->sizeBytes : null,
+                    'durationMs' => $imported?->durationMs,
                 ], static fn (mixed $value): bool => $value !== null),
             ));
 
-            DataHolds::advanceDeployments($held);
-            $servers = RestoreHolds::serverIds($held);
-
-            if ($run->subject === DataSubject::Volume && $task->server_id !== null) {
-                $servers[] = $task->server_id;
-            }
-
-            if ($servers !== []) {
-                event(new NodeStateInvalidated(array_values(array_unique($servers))));
-            }
+            Holds::changed(HoldKind::Import, $held, ImportHolds::alsoServers($run));
 
             return $run->subject === DataSubject::Database ? $run->serviceInstance : null;
         });
@@ -156,6 +150,7 @@ final readonly class SyncTransferTasks
 
             if ($task->status === DaemonTaskStatus::Failed || $task->status === DaemonTaskStatus::Cancelled || ! $transfer instanceof DataTransfer) {
                 $run->transitionTo(ExportRunStatus::Failed, $task->error ?? 'The export task '.$task->status->value.'.');
+                event(new ExportRunFinished($run->id, $run->team_id));
 
                 return $transfer;
             }
@@ -164,26 +159,27 @@ final readonly class SyncTransferTasks
                 return null;
             }
 
-            /** @var array<string, mixed> $result */
-            $result = is_array($task->result['dataExport'] ?? null) ? $task->result['dataExport'] : [];
-            $error = $this->verify($transfer, $result);
+            $result = $task->result?->dataExport;
+            $error = $result instanceof DataExportResult ? $this->verify($transfer, $result) : 'The export arrived incomplete. Start it again.';
 
-            if ($error !== null) {
+            if ($error !== null || ! $result instanceof DataExportResult) {
                 $run->transitionTo(ExportRunStatus::Failed, $error);
+                event(new ExportRunFinished($run->id, $run->team_id));
 
                 return $transfer;
             }
 
             $transfer->forceFill([
-                'chunk_count' => is_int($result['chunks'] ?? null) ? $result['chunks'] : 0,
-                'size_bytes' => is_int($result['sizeBytes'] ?? null) ? $result['sizeBytes'] : 0,
-                'digest' => is_string($result['sha256'] ?? null) ? strtolower($result['sha256']) : null,
-                'format' => is_string($result['format'] ?? null) ? $result['format'] : null,
-                'compressed' => ($result['compressed'] ?? false) === true,
+                'chunk_count' => $result->chunks,
+                'size_bytes' => $result->sizeBytes,
+                'digest' => strtolower($result->sha256),
+                'format' => $result->format,
+                'compressed' => $result->compressed === true,
                 'expires_at' => now()->addMinutes(config()->integer('launchroom.transfers.download_ttl_minutes')),
             ]);
             $transfer->transitionTo(TransferStatus::Ready);
             $run->transitionTo(ExportRunStatus::Ready);
+            event(new ExportRunFinished($run->id, $run->team_id));
 
             return null;
         });
@@ -199,14 +195,12 @@ final readonly class SyncTransferTasks
 
     /**
      * Why the received chunks don't match what launchroomd reported, or null.
-     *
-     * @param  array<string, mixed>  $result
      */
-    private function verify(DataTransfer $transfer, array $result): ?string
+    private function verify(DataTransfer $transfer, DataExportResult $result): ?string
     {
-        $chunks = is_int($result['chunks'] ?? null) ? $result['chunks'] : -1;
-        $size = is_int($result['sizeBytes'] ?? null) ? $result['sizeBytes'] : -1;
-        $sha256 = is_string($result['sha256'] ?? null) ? $result['sha256'] : '';
+        $chunks = $result->chunks;
+        $size = $result->sizeBytes;
+        $sha256 = $result->sha256;
 
         if ($chunks < 0 || $size < 0 || count($transfer->receivedChunks()) !== $chunks) {
             return 'The export arrived incomplete. Start it again.';

@@ -9,14 +9,13 @@ use App\Data\Specs\DomainSpec;
 use App\Data\Specs\EnvironmentSpec;
 use App\Data\Specs\ServiceSpec;
 use App\Enums\ActorType;
-use App\Enums\ServerRole;
-use App\Enums\ServerStatus;
+use App\Events\CanvasChanged;
 use App\Events\NodeStateInvalidated;
+use App\Jobs\Security\EvaluateSecurityFindingsJob;
 use App\Models\Domain;
 use App\Models\Environment;
-use App\Models\EnvironmentRevision;
-use App\Models\Server;
 use App\Models\ServiceInstance;
+use App\Services\Environments\EnvironmentRevisions;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -59,31 +58,12 @@ final readonly class ApplyDomainRoutes
             $spec = clone $base;
             $spec->services = [...$base->services, $serviceId => $service];
 
-            $max = EnvironmentRevision::query()->where('environment_id', $environment->id)->max('number');
-            $revision = EnvironmentRevision::query()->create([
-                'team_id' => $environment->team_id,
-                'environment_id' => $environment->id,
-                'number' => (is_numeric($max) ? (int) $max : 0) + 1,
-                'spec' => $spec,
-                'message' => mb_substr($message, 0, 500),
-                'created_by' => $actor->type === ActorType::User ? $actor->id : null,
-                'created_at' => now(),
-            ]);
+            EnvironmentRevisions::apply($environment, $spec, $message, $actor->type === ActorType::User ? $actor->id : null);
 
-            $environment->forceFill(['last_applied_revision_id' => $revision->id])->save();
-
-            /** @var list<int> $edges */
-            $edges = Server::query()
-                ->where('team_id', $environment->team_id)
-                ->whereIn('status', [ServerStatus::Online->value, ServerStatus::Unreachable->value, ServerStatus::Offline->value])
-                ->whereJsonContains('roles', ServerRole::Edge->value)
-                ->pluck('id')
-                ->all();
-
-            if ($edges !== []) {
-                // ShouldDispatchAfterCommit: rendered once the revision is visible.
-                event(new NodeStateInvalidated($edges));
-            }
+            NodeStateInvalidated::edges($environment->team_id);
+            CanvasChanged::forInstance($instance);
+            // Findings mark components reachable through a public domain (docs/22 §5.5).
+            dispatch(new EvaluateSecurityFindingsJob($environment->team_id))->afterCommit();
 
             return true;
         });

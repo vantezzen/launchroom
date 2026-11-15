@@ -7,10 +7,11 @@ namespace App\Actions\Sessions;
 use App\Actions\Audit\RecordAuditEvent;
 use App\Data\Audit\AuditActor;
 use App\Data\Audit\AuditEntryData;
+use App\Data\Protocol\V1\SessionCommandResult;
 use App\Enums\DaemonTaskStatus;
 use App\Enums\Sessions\DatabaseQueryStatus;
-use App\Enums\Sessions\InteractiveSessionStatus;
 use App\Enums\Sessions\SessionEndReason;
+use App\Enums\TaskBackedAccessStatus;
 use App\Models\DaemonTask;
 use App\Models\Sessions\DatabaseQuery;
 use App\Models\Sessions\InteractiveSession;
@@ -45,8 +46,8 @@ final readonly class FinishSession
                 return;
             }
 
-            $result = is_array($task->result['session'] ?? null) ? $task->result['session'] : [];
-            $reason = SessionEndReason::tryFrom(is_string($result['endReason'] ?? null) ? $result['endReason'] : '')
+            $result = $task->result?->session;
+            $reason = $result->endReason
                 ?? match ($task->status) {
                     DaemonTaskStatus::Cancelled => $session->ended_by_id !== null ? SessionEndReason::Closed : SessionEndReason::Ended,
                     default => SessionEndReason::Error,
@@ -57,21 +58,21 @@ final readonly class FinishSession
             }
 
             $endedAt = CarbonImmutable::now();
-            $startedAt = $this->time($result['startedAt'] ?? null);
-            $exitCode = is_int($result['exitCode'] ?? null) ? $result['exitCode'] : null;
+            $startedAt = $this->time($result?->startedAt);
+            $exitCode = is_int($result?->exitCode) ? $result->exitCode : null;
 
             $session->forceFill([
                 'started_at' => $startedAt ?? $session->started_at,
                 'ended_at' => $endedAt,
                 'end_reason' => $reason,
                 'exit_code' => $exitCode,
-                'bytes_in' => is_int($result['bytesIn'] ?? null) ? $result['bytesIn'] : 0,
-                'bytes_out' => is_int($result['bytesOut'] ?? null) ? $result['bytesOut'] : 0,
+                'bytes_in' => $result->bytesIn ?? 0,
+                'bytes_out' => $result->bytesOut ?? 0,
                 'session_key' => null,
             ]);
-            $session->transitionTo(InteractiveSessionStatus::Ended);
+            $session->transitionTo(TaskBackedAccessStatus::Ended);
 
-            $this->recordCommands($session, is_array($result['commands'] ?? null) ? $result['commands'] : []);
+            $this->recordCommands($session, is_array($result?->commands) ? $result->commands : []);
 
             if ($session->started_at === null || in_array($reason, [SessionEndReason::Error, SessionEndReason::Refused, SessionEndReason::NeverConnected], true)) {
                 // Why a session never started is otherwise only in the task (docs/03 §11.4).
@@ -113,8 +114,8 @@ final readonly class FinishSession
         $byOp = [];
 
         foreach ($commands as $command) {
-            if (is_array($command) && is_string($command['op'] ?? null)) {
-                $byOp[$command['op']] = $command;
+            if ($command instanceof SessionCommandResult) {
+                $byOp[$command->op] = $command;
             }
         }
 
@@ -124,14 +125,13 @@ final readonly class FinishSession
             ->get()
             ->each(static function (DatabaseQuery $query) use ($byOp): void {
                 $outcome = $byOp[$query->op_id] ?? null;
-                $status = is_array($outcome) ? DatabaseQueryStatus::tryFrom(is_string($outcome['status'] ?? null) ? $outcome['status'] : '') : null;
 
                 // Never answered: the session ended before the command ran.
                 $query->finish(
-                    $status ?? DatabaseQueryStatus::Error,
-                    is_array($outcome) && ($outcome['truncated'] ?? false) === true,
-                    is_array($outcome) && is_int($outcome['rows'] ?? null) ? $outcome['rows'] : null,
-                    is_array($outcome) && is_int($outcome['durationMs'] ?? null) ? $outcome['durationMs'] : null,
+                    ($outcome instanceof SessionCommandResult ? DatabaseQueryStatus::tryFrom($outcome->status) : null) ?? DatabaseQueryStatus::Error,
+                    $outcome?->truncated === true,
+                    $outcome?->rows,
+                    $outcome?->durationMs,
                 );
             });
     }

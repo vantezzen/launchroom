@@ -11,6 +11,7 @@ use App\Services\Http\Exceptions\UnsafeUrl;
 use App\Services\Http\SafeHttpClient;
 use App\Support\Hostname;
 use App\Support\Ingress\OvhSignature;
+use App\Support\S3\SigV4;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Response;
 use SensitiveParameter;
@@ -194,22 +195,11 @@ final readonly class DnsProviderVerifier
      */
     private function route53Get(string $path, array $query, string $accessKeyId, #[SensitiveParameter] string $secretAccessKey): Response
     {
-        ksort($query);
-        $canonicalQuery = implode('&', array_map(static fn (string $k, string $v): string => rawurlencode($k).'='.rawurlencode($v), array_keys($query), $query));
         $host = parse_url(self::ROUTE53_API, PHP_URL_HOST);
-        $amzDate = now()->utc()->format('Ymd\THis\Z');
-        $date = substr($amzDate, 0, 8);
-        $scope = "{$date}/us-east-1/route53/aws4_request";
-        $canonical = implode("\n", ['GET', $path, $canonicalQuery, "host:{$host}", "x-amz-date:{$amzDate}", '', 'host;x-amz-date', hash('sha256', '')]);
-        $toSign = implode("\n", ['AWS4-HMAC-SHA256', $amzDate, $scope, hash('sha256', $canonical)]);
-        $key = hash_hmac('sha256', 'aws4_request', hash_hmac('sha256', 'route53', hash_hmac('sha256', 'us-east-1', hash_hmac('sha256', $date, 'AWS4'.$secretAccessKey, true), true), true), true);
-        $signature = hash_hmac('sha256', $toSign, $key);
+        $headers = SigV4::sign('GET', $host, $path, $query, [], hash('sha256', ''), 'us-east-1', $accessKeyId, $secretAccessKey, now(), 'route53');
 
         // The query is part of the URL exactly as signed.
-        return $this->http->request('GET', 'https://'.$host.$path.'?'.$canonicalQuery, null, [
-            'X-Amz-Date' => $amzDate,
-            'Authorization' => "AWS4-HMAC-SHA256 Credential={$accessKeyId}/{$scope}, SignedHeaders=host;x-amz-date, Signature={$signature}",
-        ]);
+        return $this->http->request('GET', 'https://'.$host.SigV4::canonicalPath($path).($query === [] ? '' : '?'.SigV4::canonicalQuery($query)), null, $headers);
     }
 
     private function digitalOcean(#[SensitiveParameter] string $token, string $domain): DnsProviderCheckData
@@ -386,7 +376,6 @@ final readonly class DnsProviderVerifier
         return $this->result(false, "The netcup account has no DNS zone for {$domain}.");
     }
 
-    /** A string field of a JSON response, lowercased; '' when absent or not a string. */
     private function jsonString(Response $response, string $key): string
     {
         $value = $response->json($key);

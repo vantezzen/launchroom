@@ -6,7 +6,7 @@ namespace App\Services\Deployments;
 
 use App\Models\Deployment;
 use App\Services\Crypto\ProjectKeyring;
-use App\Support\Variables\SecretTaint;
+use App\Services\Variables\SpecVariableResolver;
 use Illuminate\Support\Facades\Log;
 use SensitiveParameter;
 use Throwable;
@@ -34,6 +34,7 @@ final class DeploymentLogMasker
 
     public function __construct(
         private readonly ProjectKeyring $keyring,
+        private readonly SpecVariableResolver $resolver,
     ) {}
 
     public function mask(int $deploymentId, string $text): string
@@ -70,7 +71,7 @@ final class DeploymentLogMasker
 
         $values = [];
 
-        foreach (SecretTaint::fromSpec($deployment->revision->spec)->taintedKeys($service->slug) as $key) {
+        foreach ($this->resolver->taint($deployment->environment->project, $deployment->revision->spec)->taintedKeys($service->slug) as $key) {
             if (isset($env[$key])) {
                 $values[] = $env[$key];
             }

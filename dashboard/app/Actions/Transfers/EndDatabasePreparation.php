@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Transfers;
 
+use App\Enums\DeploymentFailureClass;
 use App\Enums\DeploymentStatus;
 use App\Enums\WorkloadRole;
 use App\Events\NodeStateInvalidated;
@@ -59,25 +60,17 @@ final readonly class EndDatabasePreparation
             if ($deployment->status->canTransitionTo(DeploymentStatus::Cancelled)) {
                 $deployment->transitionTo(DeploymentStatus::Cancelled);
             } else {
-                $deployment->transitionTo(DeploymentStatus::Failed, message: 'Stopped before it finished starting.');
+                $deployment->fail(DeploymentFailureClass::RuntimeError, 'Stopped before it finished starting.');
             }
 
-            $next = Deployment::query()
-                ->where('service_instance_id', $instance->id)
-                ->where('status', DeploymentStatus::Queued->value)
-                ->orderBy('id')
-                ->value('id');
-
-            return is_int($next) ? $next : null;
+            return Deployment::nextQueuedId($instance->id);
         });
 
         if ($next === false) {
             return false;
         }
 
-        if ($servers !== []) {
-            event(new NodeStateInvalidated($servers));
-        }
+        NodeStateInvalidated::servers($servers);
 
         if ($next !== null) {
             dispatch(new AdvanceDeploymentJob($next))->afterCommit();

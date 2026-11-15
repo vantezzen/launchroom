@@ -1,6 +1,8 @@
 package state
 
-import "time"
+import (
+	"time"
+)
 
 // Limits of backup results.
 const (

@@ -15,14 +15,13 @@ use App\Data\Api\DeployEnvironmentResultData;
 use App\Data\Api\DeploymentResource;
 use App\Data\Api\ListDeploymentsQuery;
 use App\Enums\DeploymentTrigger;
-use App\Events\CanvasChanged;
 use App\Http\Api\ApiOperation;
 use App\Http\Api\ApiResponse;
 use App\Http\Api\Cursor;
 use App\Http\Controllers\Controller;
+use App\Http\Routing\RouteScope;
 use App\Models\Deployment;
 use App\Models\Environment;
-use App\Models\Service;
 use App\Models\User;
 use App\Queries\Api\ApiResources;
 use App\Queries\Api\EnvironmentDeployments;
@@ -44,9 +43,7 @@ final class DeploymentController extends Controller
     {
         Gate::authorize('view', $environment);
 
-        $service = $query->service === null
-            ? null
-            : Service::query()->where('project_id', $environment->project_id)->where('public_id', $query->service)->firstOrFail();
+        $service = $query->service === null ? null : RouteScope::service($environment, $query->service);
 
         [$page, $next] = $deployments->page($environment, $service, Cursor::decode($query->cursor), $query->limit);
 
@@ -56,15 +53,13 @@ final class DeploymentController extends Controller
     #[ApiOperation(id: 'createDeployment', summary: 'Deploy a commit of a service (or redeploy it)', tag: 'Deployments', response: DeploymentResource::class, request: CreateDeploymentInput::class, status: 202, description: 'Git services deploy `sha`, else the head of branch `ref`, else the head of their tracked branch, with the environment\'s last deployed configuration (staged changes stay staged). `redeploy: true` deploys the current commit again.')]
     public function store(Request $request, Environment $environment, CreateDeploymentInput $input, #[CurrentUser] User $user, DeployRef $deployRef, RedeployService $redeploy, ApiResources $resources): JsonResponse
     {
-        $service = Service::query()->where('project_id', $environment->project_id)->where('public_id', $input->service)->firstOrFail();
-        $instance = $this->instance($environment, $service);
+        $service = RouteScope::service($environment, $input->service);
+        $instance = RouteScope::editable(RouteScope::instanceIn($environment, $service));
         Gate::authorize('deploy', $environment);
 
         $deployment = $input->redeploy
             ? $redeploy->handle($instance, null, $user, $this->auditActor($request, $user))
             : $deployRef->handle($instance, $input->ref, $input->sha, $user, $this->auditActor($request, $user));
-
-        broadcast(new CanvasChanged($environment->public_id));
 
         return ApiResponse::item($resources->deployment($deployment), 202);
     }
@@ -74,9 +69,7 @@ final class DeploymentController extends Controller
     {
         Gate::authorize('deploy', $environment);
 
-        $message = $input->message === null ? null : trim($input->message);
-        $result = $deploy->handle($environment, $user, $this->auditActor($request, $user), $message === '' ? null : $message, DeploymentTrigger::Api, holdTraffic: $input->stage);
-        broadcast(new CanvasChanged($environment->public_id));
+        $result = $deploy->handle($environment, $user, $this->auditActor($request, $user), $input->revisionMessage(), DeploymentTrigger::Api, holdTraffic: $input->stage);
 
         return ApiResponse::item(new DeployEnvironmentResultData(
             revision: $result->revision->number,

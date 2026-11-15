@@ -31,7 +31,6 @@ test('jwt() signs an HS256 token whose signature verifies with the secret', func
     expect($header)->toBe(['alg' => 'HS256', 'typ' => 'JWT'])
         ->and($payload)->toBe(['role' => 'anon', 'iss' => 'supabase', 'iat' => 1_800_000_000, 'exp' => 1_800_000_000 + GeneratedValues::JWT_LIFETIME_SECONDS])
         ->and(hash_equals(hash_hmac('sha256', $signingInput, $secret, true), $signature))->toBeTrue()
-        // Another secret doesn't verify it.
         ->and(hash_equals(hash_hmac('sha256', $signingInput, $secret.'x', true), $signature))->toBeFalse()
         ->and($signed)->not->toContain('=');
 });

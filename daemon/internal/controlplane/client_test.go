@@ -288,7 +288,6 @@ func TestTasksReportsLogs(t *testing.T) {
 	c := clientFor(t, id, srv.URL, string(serverID), identity.KeySet{kid: f.pub()})
 	lease := fixture(t, "task-lease.build.json")
 
-	// Lease.
 	f.set(func(*http.Request, []byte) reply { return reply{status: 200, body: lease} })
 	tasks, err := c.LeaseTasks(t.Context(), &state.LeaseRequest{TypeMeta: state.NewTypeMeta(state.KindLeaseRequest), Max: 1, Types: []state.TaskType{state.TaskBuild}})
 	if err != nil {
@@ -305,7 +304,6 @@ func TestTasksReportsLogs(t *testing.T) {
 		t.Fatalf("unsigned lease accepted: %v", err)
 	}
 
-	// Heartbeat.
 	f.set(func(*http.Request, []byte) reply {
 		return reply{status: 200, body: `{"apiVersion":"launchroom.vantezzen.io/v1","kind":"TaskHeartbeatResult","leaseExpiresAt":"2026-10-17T12:02:00Z","cancel":true}`}
 	})
@@ -329,7 +327,6 @@ func TestTasksReportsLogs(t *testing.T) {
 		t.Fatalf("idempotency key = %q", got.header.Get("Idempotency-Key"))
 	}
 
-	// Report.
 	now := time.Now().UTC()
 	rep := &state.Report{TypeMeta: state.NewTypeMeta(state.KindReport), ServerID: serverID, ObservedAt: now, Seq: 1, Full: true,
 		Workloads: []state.WorkloadStatus{{ID: "wl_01J9Z8X7W6V5T4S3R2Q1P0N9N7", Phase: state.PhaseHealthy, ObservedAt: now}}}

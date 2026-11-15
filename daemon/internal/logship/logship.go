@@ -30,10 +30,10 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unicode/utf8"
 
 	"github.com/vantezzen/launchroom/daemon/internal/atomicfile"
 	"github.com/vantezzen/launchroom/daemon/internal/docker"
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
 
@@ -44,7 +44,6 @@ const (
 	DefaultBurst      = 2000
 	batchLines        = 500
 	maxBuffered       = 5000
-	maxLineText       = 16384
 	retryMin          = 2 * time.Second
 	retryMax          = time.Minute
 )
@@ -299,26 +298,15 @@ func (f *follower) loop(ctx context.Context) {
 // stream follows the workload's running container from the cursor until the
 // stream ends (container stopped or replaced) or ctx is done.
 func (f *follower) stream(ctx context.Context) error {
-	cs, err := f.m.opts.Docker.ListContainers(ctx, map[string]string{docker.LabelWorkload: string(f.id)})
+	cs, err := f.m.opts.Docker.ListContainers(ctx, map[string]string{names.LabelWorkload: string(f.id)})
 	if err != nil {
 		return err
 	}
-	var target *docker.Container
-	for i := range cs {
-		if cs[i].Labels[docker.LabelSystem] == "" && cs[i].Running {
-			target = &cs[i]
-			break
-		}
-	}
-	if target == nil && f.limit > 0 {
-		// Startup output: a container that crashed at start (or waits for
-		// Docker to restart it) still has the lines it printed.
-		for i := range cs {
-			if cs[i].Labels[docker.LabelSystem] == "" {
-				target = &cs[i]
-				break
-			}
-		}
+	target := docker.PickWorkload(cs, f.id)
+	// Startup output (a limit is set): a container that crashed at start, or
+	// waits for Docker to restart it, still has the lines it printed.
+	if target != nil && !target.Running() && f.limit <= 0 {
+		target = nil
 	}
 	if target == nil {
 		return errors.New("no running container")
@@ -359,7 +347,7 @@ func (f *follower) add(l docker.LogLine) {
 		return
 	}
 	f.taken++
-	line := state.LogLine{Time: l.Time.UTC(), Stream: state.StreamStdout, Text: sanitize(l.Text), Step: f.step}
+	line := state.LogLine{Time: l.Time.UTC(), Stream: state.StreamStdout, Text: state.Clip(l.Text, state.MaxLogLineLen), Step: f.step}
 	if l.Stream == "stderr" {
 		line.Stream = state.StreamStderr
 	}
@@ -373,7 +361,6 @@ func (f *follower) add(l docker.LogLine) {
 	f.cur.Time = line.Time
 }
 
-// take consumes one token of the rate limit.
 func (f *follower) take() bool {
 	now := f.m.opts.Now()
 	f.tokens = min(float64(f.m.opts.Burst), f.tokens+now.Sub(f.last).Seconds()*float64(f.m.opts.Rate))
@@ -439,17 +426,4 @@ func (f *follower) save(c cursor) {
 	if err := atomicfile.Write(f.m.cursorPath(f.id), data, 0o600); err != nil {
 		f.m.opts.Log.Debug("runtime log cursor not saved", "workload", f.id, "err", err)
 	}
-}
-
-// sanitize makes a line valid UTF-8 and caps it at the protocol limit.
-func sanitize(s string) string {
-	s = strings.ToValidUTF8(s, "�")
-	if len(s) <= maxLineText {
-		return s
-	}
-	cut := maxLineText
-	for cut > 0 && !utf8.RuneStart(s[cut]) {
-		cut--
-	}
-	return s[:cut]
 }

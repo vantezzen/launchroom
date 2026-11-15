@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 namespace App\Data\Previews;
 
-use App\Enums\Previews\PreviewProvider;
+use App\Enums\Git\GitProviderKind;
+use App\Enums\Git\PullRequestAction;
 use App\Events\Git\PullRequestEventReceived;
 use Spatie\LaravelData\Data;
 
@@ -24,11 +25,11 @@ final class PullRequestData extends Data
      * @param  list<string>|null  $changedFiles
      */
     public function __construct(
-        public PreviewProvider $provider,
+        public GitProviderKind $provider,
         public ?int $installationId,
         public int $repositoryId,
         public string $repositoryName,
-        public string $action,
+        public PullRequestAction $action,
         public int $number,
         public string $title,
         public string $headSha,
@@ -51,7 +52,7 @@ final class PullRequestData extends Data
     public static function fromEvent(PullRequestEventReceived $event, string $repositoryName, ?array $changedFiles): self
     {
         return new self(
-            provider: PreviewProvider::fromGitProvider($event->installation->gitProvider()),
+            provider: $event->installation->gitProvider(),
             installationId: $event->installation->id,
             repositoryId: $event->repositoryId,
             repositoryName: $repositoryName,
@@ -75,15 +76,12 @@ final class PullRequestData extends Data
 
     public function isClose(): bool
     {
-        return $this->action === 'closed';
+        return $this->action === PullRequestAction::Closed;
     }
 
-    /**
-     * Events that carry new code or reopen the PR.
-     */
     public function isCodeEvent(): bool
     {
-        return in_array($this->action, ['opened', 'reopened', 'synchronize'], true);
+        return $this->action->isCodeEvent();
     }
 
     /**

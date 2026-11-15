@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Data\Deployments\ContainerExitData;
+use App\Data\Deployments\ProbeProgressData;
+use App\Data\Deployments\PullProgressData;
+use App\Data\Deployments\WorkloadIssueData;
 use App\Enums\ProbeState;
 use App\Enums\WorkloadPhase;
 use App\Enums\WorkloadRole;
@@ -32,13 +36,13 @@ use Illuminate\Support\Carbon;
  * @property ProbeState|null $health
  * @property string|null $container_id
  * @property string|null $message
- * @property array{stage: string, downloaded: int, total: int, updatedAt?: string}|null $pull in-flight image pull while `pulling` (docs/04 §11 "Pulls")
+ * @property PullProgressData|null $pull in-flight image pull while `pulling` (docs/04 §11 "Pulls")
  * @property int $restart_count
  * @property Carbon|null $observed_at
- * @property array{attempts?: int, failures?: int, lastError?: string, checkedAt?: string}|null $probe health check progress (D68)
- * @property array{kind: string, since: string, port?: int, listening?: list<int>, exitCode?: int, oomKilled?: bool, restarts?: int}|null $issue clearly wrong (crash loop, port mismatch; D68)
- * @property array{at: string, code: int|null, oomKilled: bool, output: list<array{time: string, stream: string, text: string}>}|null $last_exit the container's last exit (D68)
- * @property int|null $mesh_port mesh-published port on its server's mesh IP (App\Services\NodeStates\MeshUpstreams)
+ * @property ProbeProgressData|null $probe health check progress and launchroomd's port hint (D68)
+ * @property WorkloadIssueData|null $issue clearly wrong (crash loop, port mismatch; D68)
+ * @property ContainerExitData|null $last_exit the container's last exit (D68)
+ * @property int|null $mesh_port mesh-published port on its server's mesh IP (App\Actions\Mesh\AllocateMeshPorts)
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property-read Deployment $deployment
@@ -96,10 +100,10 @@ final class Placement extends Model
             'health' => ProbeState::class,
             'restart_count' => 'integer',
             'observed_at' => 'datetime',
-            'pull' => 'array',
-            'probe' => 'array',
-            'issue' => 'array',
-            'last_exit' => 'array',
+            'pull' => PullProgressData::class,
+            'probe' => ProbeProgressData::class,
+            'issue' => WorkloadIssueData::class,
+            'last_exit' => ContainerExitData::class,
         ];
     }
 }

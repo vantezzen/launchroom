@@ -6,12 +6,12 @@ namespace App\Actions\Blueprints;
 
 use App\Data\Audit\AuditActor;
 use App\Data\Templates\UseTemplateData;
+use App\Drivers\DatabaseEngines\DatabaseEngines;
 use App\Exceptions\DomainRuleViolation;
 use App\Models\Environment;
 use App\Models\Project;
 use App\Models\Service;
 use App\Models\User;
-use App\Services\Blueprints\EngineVersions;
 use App\Support\Templates\TemplateCompiler;
 use App\Support\Templates\TemplateDefinition;
 use App\Support\Templates\TemplateInvalid;
@@ -23,7 +23,7 @@ use App\Support\Templates\TemplateInvalid;
 final readonly class AddTemplateToEnvironment
 {
     public function __construct(
-        private EngineVersions $engines,
+        private DatabaseEngines $engines,
         private ApplyBlueprint $apply,
     ) {}
 
@@ -43,7 +43,7 @@ final readonly class AddTemplateToEnvironment
         }
 
         try {
-            $translation = TemplateCompiler::compile($template, $data->inputs, $this->engines->all(), $data->repository !== null, $project->name);
+            $translation = TemplateCompiler::compile($template, $data->inputs, $this->engines, $data->repository !== null, $project->name);
         } catch (TemplateInvalid $e) {
             throw DomainRuleViolation::on($e->field ?? 'template', $e->problems[0] ?? $e->getMessage());
         }

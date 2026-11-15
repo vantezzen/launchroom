@@ -10,7 +10,7 @@
 //   - the BuildKit cache by age and size (never everything);
 //   - one-off task containers (lr-run-*) left behind by a daemon crash.
 //
-// Volumes are never pruned (Dokploy lost data that way). Removal is never
+// Volumes are never pruned (that loses user data). Removal is never
 // forced: Docker itself refuses to delete an image a container uses.
 package cleanup
 
@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/vantezzen/launchroom/daemon/internal/docker"
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
 
@@ -134,11 +135,7 @@ func (c *Cleaner) Run(ctx context.Context, trigger state.CleanupTrigger) state.C
 		}
 	}
 	if err := errors.Join(errs...); err != nil && ctx.Err() == nil {
-		msg := err.Error()
-		if len(msg) > 1024 {
-			msg = msg[:1024]
-		}
-		res.Error = msg
+		res.Error = state.Clip(err.Error(), 1024)
 	}
 	c.o.Log.Info("cleanup finished", "trigger", trigger, "removedImages", res.RemovedImages,
 		"removedContainers", res.RemovedContainers, "reclaimedMb", res.ReclaimedMB, "err", res.Error)
@@ -156,11 +153,11 @@ func (c *Cleaner) removeLeftovers(ctx context.Context) (int, error) {
 	removed := 0
 	var errs []error
 	for _, ct := range list {
-		if ct.Labels[docker.LabelTask] == "" || !strings.HasPrefix(ct.Name, "lr-run-") {
+		if ct.Labels[names.LabelTask] == "" || !strings.HasPrefix(ct.Name, names.RunOncePrefix) {
 			continue
 		}
 		switch ct.State {
-		case "exited", "dead", "created":
+		case docker.StateExited, docker.StateDead, docker.StateCreated:
 		default:
 			continue // running, restarting, paused, removing: not a leftover (yet)
 		}
@@ -251,7 +248,6 @@ func allUnder(refs []string, prefix string) bool {
 	return true
 }
 
-// repository strips the digest or tag from a reference.
 func repository(ref string) string {
 	if i := strings.Index(ref, "@"); i >= 0 {
 		return ref[:i]

@@ -7,7 +7,9 @@ namespace App\Http\Controllers\Backups;
 use App\Actions\Backups\ConfirmRecoveryKit;
 use App\Actions\Backups\DownloadRecoveryKit;
 use App\Actions\Backups\SetRecoveryPassphrase;
+use App\Data\Backups\RecoveryPassphraseData;
 use App\Http\Controllers\Controller;
+use App\Http\Toast;
 use App\Models\Backups\BackupDestination;
 use App\Models\User;
 use Illuminate\Container\Attributes\CurrentUser;
@@ -21,17 +23,15 @@ use Symfony\Component\HttpFoundation\Response;
  */
 final class RecoveryKitController extends Controller
 {
-    public function passphrase(Request $request, #[CurrentUser] User $user, SetRecoveryPassphrase $set): RedirectResponse
+    public function passphrase(Request $request, RecoveryPassphraseData $data, #[CurrentUser] User $user, SetRecoveryPassphrase $set): RedirectResponse
     {
         Gate::authorize('manageInstance', BackupDestination::class);
 
-        $request->validate([
-            'passphrase' => ['required', 'string', 'min:12', 'max:1024', 'confirmed'],
-        ]);
+        $set->handle($data->passphrase, $this->auditActor($request, $user));
 
-        $set->handle($request->string('passphrase')->toString(), $this->auditActor($request, $user));
+        Toast::success('Recovery passphrase saved. Download the recovery kit next.');
 
-        return back()->with('success', 'Recovery passphrase saved. Download the recovery kit next.');
+        return back();
     }
 
     public function download(Request $request, #[CurrentUser] User $user, DownloadRecoveryKit $download): Response
@@ -54,6 +54,8 @@ final class RecoveryKitController extends Controller
 
         $confirm->handle($this->auditActor($request, $user));
 
-        return back()->with('success', 'Recovery kit confirmed.');
+        Toast::success('Recovery kit confirmed.');
+
+        return back();
     }
 }

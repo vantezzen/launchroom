@@ -4,6 +4,8 @@ import (
 	"errors"
 	"io/fs"
 	"log/slog"
+	"os"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -250,26 +252,10 @@ func TestAllowedLocalUpstreams(t *testing.T) {
 	}
 }
 
-func TestLoadDataTransfers(t *testing.T) {
-	base := map[string]string{EnvControlPlaneURL: "https://dash.example.com"}
-	cfg, err := Load(nil, envOf(base), noFile)
-	if err != nil || !cfg.DataTransfers {
-		t.Fatalf("default: %v %v", cfg.DataTransfers, err)
-	}
-	base[EnvDataTransfers] = "off"
-	if cfg, err = Load(nil, envOf(base), noFile); err != nil || cfg.DataTransfers {
-		t.Fatalf("off: %v %v", cfg.DataTransfers, err)
-	}
-	base[EnvDataTransfers] = "maybe"
-	if _, err = Load(nil, envOf(base), noFile); err == nil {
-		t.Fatal("invalid value accepted")
-	}
-}
-
 func TestLoadPublicIP(t *testing.T) {
 	base := map[string]string{EnvControlPlaneURL: "https://dash.example.com"}
 	cfg, err := Load(nil, envOf(base), noFile)
-	if err != nil || cfg.PublicIPDetectOff || cfg.PublicIPs != nil {
+	if err != nil || cfg.PublicIPs != nil {
 		t.Fatalf("defaults: %+v %v", cfg.PublicIPs, err)
 	}
 	with := func(k, v string) map[string]string {
@@ -277,18 +263,12 @@ func TestLoadPublicIP(t *testing.T) {
 		m[k] = v
 		return m
 	}
-	cfg, err = Load(nil, envOf(with(EnvPublicIPDetect, "OFF")), noFile)
-	if err != nil || !cfg.PublicIPDetectOff {
-		t.Fatalf("off: %v", err)
-	}
 	cfg, err = Load(nil, envOf(with(EnvPublicIPs, "93.184.216.34,2a01:4f8::1")), noFile)
 	if err != nil || cfg.PublicIPs == nil || cfg.PublicIPs.IPv4 != "93.184.216.34" || cfg.PublicIPs.IPv6 != "2a01:4f8::1" {
 		t.Fatalf("configured: %+v %v", cfg.PublicIPs, err)
 	}
-	for k, v := range map[string]string{EnvPublicIPDetect: "maybe", EnvPublicIPs: "172.18.0.1"} {
-		if _, err := Load(nil, envOf(with(k, v)), noFile); err == nil || !strings.Contains(err.Error(), k) {
-			t.Errorf("%s=%s: %v", k, v, err)
-		}
+	if _, err := Load(nil, envOf(with(EnvPublicIPs, "172.18.0.1")), noFile); err == nil || !strings.Contains(err.Error(), EnvPublicIPs) {
+		t.Errorf("private address accepted: %v", err)
 	}
 }
 
@@ -324,5 +304,81 @@ func TestRemoteAccessKinds(t *testing.T) {
 	}
 	if cfg.RemoteAccessAllowed("ssh") || cfg.RemoteAccessAllowed("database") || !cfg.RemoteAccessAllowed("volume") {
 		t.Error("LR_INTERACTIVE_SESSIONS=off: only volume access stays")
+	}
+}
+
+func TestRemoteAccessPorts(t *testing.T) {
+	base := map[string]string{EnvControlPlaneURL: "https://dash.example.com"}
+	cfg, err := Load(nil, envOf(base), noFile)
+	if err != nil || cfg.RemoteAccessPorts != DefaultRemoteAccessPorts {
+		t.Fatalf("default: %+v %v", cfg.RemoteAccessPorts, err)
+	}
+	base[EnvRemoteAccessPorts] = " 41000-41099 "
+	if cfg, err = Load(nil, envOf(base), noFile); err != nil || cfg.RemoteAccessPorts != (PortRange{Lo: 41000, Hi: 41099}) {
+		t.Fatalf("set: %+v %v", cfg.RemoteAccessPorts, err)
+	}
+	for _, bad := range []string{"80-90", "41000", "41099-41000", "40000-41000", "a-b"} {
+		base[EnvRemoteAccessPorts] = bad
+		if _, err := Load(nil, envOf(base), noFile); err == nil || !strings.Contains(err.Error(), EnvRemoteAccessPorts) {
+			t.Errorf("%q accepted: %v", bad, err)
+		}
+	}
+}
+
+// Every switch is on by default, off with "off" and refuses anything else.
+func TestLoadSwitches(t *testing.T) {
+	for name, off := range map[string]func(Config) bool{
+		EnvLinkProbe:          func(c Config) bool { return c.LinkProbeOff },
+		EnvControlPlaneFollow: func(c Config) bool { return c.ControlPlaneFollowOff },
+		EnvPublicIPDetect:     func(c Config) bool { return c.PublicIPDetectOff },
+		EnvDataTransfers:      func(c Config) bool { return !c.DataTransfers },
+	} {
+		for v, want := range map[string]bool{"": false, "on": false, "ON": false, "off": true, "Off": true} {
+			cfg, err := Load(nil, envOf(map[string]string{EnvControlPlaneURL: "https://dash.example.com", name: v}), noFile)
+			if err != nil || off(cfg) != want {
+				t.Errorf("%s=%q: off=%v err=%v", name, v, off(cfg), err)
+			}
+		}
+		if _, err := Load(nil, envOf(map[string]string{EnvControlPlaneURL: "https://dash.example.com", name: "maybe"}), noFile); err == nil {
+			t.Errorf("%s=maybe accepted", name)
+		}
+	}
+}
+
+// daemon/README.md is the reference of launchroomd's environment: every
+// variable config reads is listed there.
+func TestEnvDocumented(t *testing.T) {
+	readme, err := os.ReadFile("../../README.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var src []byte
+	for _, f := range []string{"config.go", "guard.go"} {
+		b, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		src = append(src, b...)
+	}
+	for _, m := range regexp.MustCompile(`"(LR_[A-Z0-9_]+)"`).FindAllStringSubmatch(string(src), -1) {
+		if !strings.Contains(string(readme), "`"+m[1]+"`") && !strings.Contains(string(readme), m[1]+"`") {
+			t.Errorf("%s is not documented in daemon/README.md", m[1])
+		}
+	}
+}
+
+func TestLoadGuard(t *testing.T) {
+	g, err := LoadGuard(envOf(map[string]string{}))
+	if err != nil || g.Upstream != DefaultGuardUpstream || g.Listen != DefaultGuardListen || g.InteractiveSessions != "on" || g.LogLevel != slog.LevelInfo {
+		t.Fatalf("defaults: %+v %v", g, err)
+	}
+	g, err = LoadGuard(envOf(map[string]string{EnvInteractiveSessions: "DATA", EnvGuardRootlessKitAPI: "/run/rk.sock", EnvSystemImageDigests: "caddy=sha256:" + strings.Repeat("a", 64)}))
+	if err != nil || g.InteractiveSessions != "data" || g.RootlessKitAPI != "/run/rk.sock" || len(g.SystemImageDigests["caddy"]) != 1 {
+		t.Fatalf("set: %+v %v", g, err)
+	}
+	for k, v := range map[string]string{EnvInteractiveSessions: "maybe", EnvSystemImageDigests: "caddy=latest", EnvLogLevel: "loud"} {
+		if _, err := LoadGuard(envOf(map[string]string{k: v})); err == nil {
+			t.Errorf("%s=%q accepted", k, v)
+		}
 	}
 }

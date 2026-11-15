@@ -7,12 +7,12 @@ namespace App\Actions\Security;
 use App\Data\Protocol\V1\IngressStatus;
 use App\Data\Protocol\V1\Report;
 use App\Data\Protocol\V1\WafStatus;
+use App\Data\Security\WafReportData;
 use App\Models\Server;
 use App\Queries\RouteOwners;
 use App\Support\Security\WafSamples;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
-use Spatie\LaravelData\Optional;
 
 /**
  * The web firewall part of an edge's report (docs/22 §6.5–6.6, docs/03
@@ -47,20 +47,7 @@ final readonly class RecordWafReport
 
     private function status(Server $server, WafStatus $waf): void
     {
-        $now = CarbonImmutable::now()->toIso8601ZuluString();
-        $previous = $server->waf_status;
-        $since = $previous !== null && $previous['state'] === $waf->state ? $previous['since'] : $now;
-
-        $server->forceFill(['waf_status' => array_filter([
-            'state' => $waf->state,
-            'since' => $since,
-            'engine' => $waf->engine instanceof Optional ? null : $waf->engine,
-            'ruleSet' => $waf->ruleSet instanceof Optional ? null : $waf->ruleSet,
-            'routes' => $waf->routes,
-            'droppedRecords' => $waf->droppedRecords instanceof Optional ? null : $waf->droppedRecords,
-            'message' => $waf->message instanceof Optional ? null : mb_substr($waf->message, 0, 1024),
-            'reportedAt' => $now,
-        ], static fn (mixed $value): bool => $value !== null)])->save();
+        $server->forceFill(['waf_status' => WafReportData::fromProtocol($waf, $server->waf_status, CarbonImmutable::now()->toIso8601ZuluString())])->save();
     }
 
     /**

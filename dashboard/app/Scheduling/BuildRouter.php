@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Scheduling;
 
+use App\Support\ServerPlatform;
+
 /**
  * Chooses where a build runs (docs/04 §5). Pure, unit-tested.
  *
@@ -31,7 +33,7 @@ final class BuildRouter
      *
      * @throws BuildRoutingFailed
      */
-    public static function platform(array $runtimePlatforms, array $builders, ?string $current = null, string $fallback = 'linux/amd64'): string
+    public static function platform(array $runtimePlatforms, array $builders, ?string $current = null, string $fallback = ServerPlatform::DEFAULT): string
     {
         $buildable = [];
 

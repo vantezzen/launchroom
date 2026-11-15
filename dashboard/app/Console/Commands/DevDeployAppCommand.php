@@ -10,16 +10,16 @@ use App\Actions\Projects\CreateProject;
 use App\Actions\Projects\DeleteProject;
 use App\Actions\Services\CreateService;
 use App\Actions\Services\UpdateServiceSettings;
+use App\Console\InstanceOwner;
 use App\Data\Audit\AuditActor;
 use App\Data\Projects\CreateProjectData;
 use App\Data\Projects\DeleteProjectData;
 use App\Data\Services\CreateServiceData;
-use App\Data\Services\GitSource;
 use App\Data\Services\UpdateServiceSettingsData;
 use App\Enums\Backups\DeletionOutcome;
 use App\Enums\ConnectionMode;
 use App\Enums\ConnectionStyle;
-use App\Enums\ServerStatus;
+use App\Enums\Git\GitProviderKind;
 use App\Enums\ServiceKind;
 use App\Models\Deployment;
 use App\Models\Domain;
@@ -27,7 +27,6 @@ use App\Models\Project;
 use App\Models\Server;
 use App\Models\Service;
 use App\Models\Team;
-use App\Models\User;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -60,14 +59,14 @@ final class DevDeployAppCommand extends Command
             return self::FAILURE;
         }
 
-        $owner = User::query()->where('is_instance_owner', true)->orderBy('id')->first();
-        $team = $owner->currentTeam ?? Team::query()->orderBy('id')->first();
+        $owner = InstanceOwner::first();
+        $team = InstanceOwner::teamOrFirst();
         $name = $this->option('name');
         $fixture = $this->option('fixture');
         $branch = $this->option('branch');
         $gitUrl = $this->option('git-url');
 
-        if ($team === null) {
+        if (! $team instanceof Team) {
             $this->components->error('No team found. Finish /setup first.');
 
             return self::FAILURE;
@@ -111,7 +110,7 @@ final class DevDeployAppCommand extends Command
             'kind' => ServiceKind::App,
             'source' => [
                 'type' => 'git',
-                'provider' => GitSource::PROVIDER_GIT,
+                'provider' => GitProviderKind::Git->value,
                 'repositoryId' => 0,
                 'fullName' => 'fixtures/'.$fixture,
                 'cloneUrl' => rtrim($gitUrl, '/').'/'.$fixture.'.git',
@@ -190,7 +189,7 @@ final class DevDeployAppCommand extends Command
         foreach (array_filter(array_map(trim(...), explode(',', $option))) as $ref) {
             $server = Server::query()
                 ->where('team_id', $team->id)
-                ->where('status', '!=', ServerStatus::Revoked->value)
+                ->notRevoked()
                 ->where(static fn (Builder $q): Builder => $q->where('public_id', $ref)->orWhere('name', $ref))
                 ->orderByDesc('id')
                 ->first();

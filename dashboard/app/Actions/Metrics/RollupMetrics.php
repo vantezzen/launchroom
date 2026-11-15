@@ -139,9 +139,6 @@ final readonly class RollupMetrics
         return $deleted;
     }
 
-    /**
-     * The UTC bucket of `at` at the target resolution.
-     */
     private function bucket(int $resolution): string
     {
         return $resolution === self::DAY

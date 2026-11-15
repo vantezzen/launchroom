@@ -15,16 +15,17 @@ use App\Data\Security\WafRuleData;
 use App\Data\Security\WafSeriesData;
 use App\Data\Security\WafServiceCountData;
 use App\Enums\AnalyticsRange;
-use App\Enums\DaemonFeature;
 use App\Enums\EnvironmentKind;
+use App\Enums\NodeStateField;
 use App\Enums\Security\WafCategory;
+use App\Enums\Security\WafEdgeState;
 use App\Enums\Security\WafMode;
-use App\Enums\ServerRole;
-use App\Enums\ServerStatus;
 use App\Models\Server;
 use App\Models\Team;
 use App\Queries\DeployMarkers;
+use App\Services\NodeStates\FeatureGate;
 use App\Support\Metrics\Cast;
+use App\Support\Protocol\Limits;
 use App\Support\Security\CrsRules;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Query\Builder;
@@ -281,7 +282,7 @@ final readonly class WafOverview
                 detected: $stats[$id]['detected'] ?? 0,
                 categories: array_map(static fn (string|int $c): string => WafCategory::tryFrom((string) $c)?->label() ?? 'Other', array_slice(array_keys($cats), 0, 2)),
                 topPath: array_key_first($paths) ?? null,
-                settingsUrl: "/p/{$ref->projectId}/{$ref->environmentId}/s/{$ref->id}/firewall",
+                settingsUrl: route('security.firewall.update', ['project' => $ref->projectId, 'environment' => $ref->environmentId, 'service' => $ref->id], false),
             );
         }
 
@@ -307,12 +308,12 @@ final readonly class WafOverview
 
         $out = [];
 
-        foreach (Server::query()->where('team_id', $teamId)->whereIn('status', [ServerStatus::Online->value, ServerStatus::Unreachable->value])->whereJsonContains('roles', ServerRole::Edge->value)->orderBy('name')->get() as $server) {
-            $state = $server->waf_status['state'] ?? null;
+        foreach (Server::query()->where('team_id', $teamId)->reachableEdges()->orderBy('name')->get() as $server) {
+            $state = $server->waf_status?->state;
 
-            if ($state === 'error') {
-                $out[] = new WafEdgeProblemData($server->name, $server->public_id, 'error', $server->waf_status['message'] ?? null);
-            } elseif ($state === 'unsupported' || ! $server->supportsDaemonFeature(DaemonFeature::Waf)) {
+            if ($state === WafEdgeState::Error) {
+                $out[] = new WafEdgeProblemData($server->name, $server->public_id, 'error', $server->waf_status->message);
+            } elseif ($state === WafEdgeState::Unsupported || ! FeatureGate::accepts($server, NodeStateField::RouteWaf)) {
                 $out[] = new WafEdgeProblemData($server->name, $server->public_id, 'unsupported', null);
             }
         }
@@ -323,9 +324,9 @@ final readonly class WafOverview
     private function ruleSet(int $teamId): ?string
     {
         foreach (Server::query()->where('team_id', $teamId)->whereNotNull('waf_status')->get() as $server) {
-            $label = $server->waf_status['ruleSet'] ?? null;
+            $label = $server->waf_status?->ruleSet;
 
-            if (is_string($label)) {
+            if ($label !== null) {
                 return $label;
             }
         }
@@ -424,7 +425,7 @@ final readonly class WafOverview
         $rule = null;
 
         foreach ($rules as $candidate) {
-            if ($candidate >= 911000 && $candidate <= 944999) {
+            if ($candidate >= Limits::WAF_EXCLUDABLE_MIN && $candidate <= Limits::WAF_EXCLUDABLE_MAX) {
                 $rule = $candidate;
 
                 break;

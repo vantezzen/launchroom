@@ -7,7 +7,6 @@ import { MetaLine } from '@/components/patterns/meta-line';
 import { SidePanel, SheetSection } from '@/components/patterns/sheet';
 import { Stepper } from '@/components/patterns/stepper';
 import { RunStrip } from '@/components/steps/run-strip';
-import { relativeTime } from '@/components/time-ago';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -21,9 +20,9 @@ import {
 import { Spinner } from '@/components/ui/spinner';
 import { Switch } from '@/components/ui/switch';
 import { BackupHealthStatus } from '@/features/backups/backup-health';
-import { formatBytes } from '@/features/backups/format';
-import { SettingsCard, SettingsRow } from '@/features/settings/settings-card';
 import { update } from '@/routes/backups/schedules';
+import { relativeTime, formatBytes } from '@/lib/format';
+import { SettingsCard, SettingsRow } from '@/components/settings/settings-card';
 
 type Schedule = App.Data.Backups.BackupScheduleData;
 type Protection = App.Data.Backups.BackupProtectionData;
@@ -111,7 +110,7 @@ export function parseCron(cron: string): Picked {
     return base;
 }
 
-export function toCron(picked: Picked, custom: string): string {
+function toCron(picked: Picked, custom: string): string {
     const [hour, minute] = picked.time.split(':').map(Number);
 
     switch (picked.frequency) {
@@ -128,18 +127,19 @@ export function toCron(picked: Picked, custom: string): string {
     }
 }
 
-const retentionFields: [keyof App.Data.Backups.RetentionData, string][] = [
-    ['keepDaily', 'Daily'],
-    ['keepWeekly', 'Weekly'],
-    ['keepMonthly', 'Monthly'],
-    ['keepHourly', 'Hourly'],
-];
+const retentionFields: [keyof App.Data.Backups.RetentionLimitsData, string][] =
+    [
+        ['keepDaily', 'Daily'],
+        ['keepWeekly', 'Weekly'],
+        ['keepMonthly', 'Monthly'],
+        ['keepHourly', 'Hourly'],
+    ];
 
 /**
  * Edit a schedule as a picker (docs/design/flows.md §14): how often, at
  * what time (UTC), how many snapshots to keep; raw cron only under Custom.
  */
-export function ScheduleSheet({
+function ScheduleSheet({
     schedule,
     open,
     onOpenChange,
@@ -367,8 +367,8 @@ export function ScheduleSheet({
                                 key={field}
                                 label={label}
                                 value={form.data.retention[field]}
-                                min={0}
-                                max={1000}
+                                min={schedule.retentionLimits[field].min}
+                                max={schedule.retentionLimits[field].max}
                                 disabled={!schedule.canManage}
                                 onChange={(value) =>
                                     form.setData('retention', {

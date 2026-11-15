@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Services\Registry;
 
 use App\Services\Crypto\Exceptions\InvalidKeyFile;
+use App\Support\Files\SecureFile;
+use App\Support\Files\SecureFileFailed;
 use OpenSSLAsymmetricKey;
 
 /**
@@ -41,36 +43,19 @@ final class RegistryTokenKeyFile
      */
     public static function create(string $privatePath, string $publicPath): RegistryTokenKey
     {
-        $directory = dirname($privatePath);
-
-        if (! is_dir($directory) && ! @mkdir($directory, 0700, true) && ! is_dir($directory)) {
-            throw InvalidKeyFile::notWritable($privatePath);
-        }
-
-        // 'x' fails if the file exists, atomically.
-        $handle = @fopen($privatePath, 'x');
-
-        if ($handle === false) {
-            throw file_exists($privatePath) ? InvalidKeyFile::alreadyExists($privatePath) : InvalidKeyFile::notWritable($privatePath);
-        }
-
-        chmod($privatePath, 0600);
-
         $key = openssl_pkey_new(['private_key_type' => OPENSSL_KEYTYPE_EC, 'curve_name' => 'prime256v1']);
         $pem = null;
-        $exported = $key instanceof OpenSSLAsymmetricKey && openssl_pkey_export($key, $pem);
 
-        if (! $exported || ! is_string($pem) || fwrite($handle, $pem) === false) {
-            fclose($handle);
-            @unlink($privatePath);
-
+        if (! $key instanceof OpenSSLAsymmetricKey || ! openssl_pkey_export($key, $pem) || ! is_string($pem)) {
             throw InvalidKeyFile::notWritable($privatePath);
         }
 
-        fclose($handle);
-        chmod($privatePath, 0400);
+        try {
+            SecureFile::createExclusive($privatePath, $pem);
+        } catch (SecureFileFailed $e) {
+            throw $e->exists ? InvalidKeyFile::alreadyExists($privatePath) : InvalidKeyFile::notWritable($privatePath);
+        }
 
-        /** @var OpenSSLAsymmetricKey $key */
         $registryKey = self::fromKey($key, $privatePath);
         self::writePublic($registryKey, $publicPath);
 

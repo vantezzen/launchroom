@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Data\Projects;
 
+use App\Support\Protocol\Grammar;
 use Spatie\LaravelData\Attributes\Validation\Between;
 use Spatie\LaravelData\Attributes\Validation\Max;
 use Spatie\LaravelData\Attributes\Validation\Min;
@@ -21,7 +22,7 @@ final class ImportAppData extends Data
     public function __construct(
         #[Min(1), Max(63)]
         public string $name,
-        #[Max(1024), Regex('/^(?:[A-Za-z0-9_.@+=,-]+(?:\/[A-Za-z0-9_.@+=,-]+)*)?$/D')]
+        #[Max(1024), Regex('#^(?:'.Grammar::REL_PATH_BODY.')?$#D')]
         public ?string $rootDirectory = null,
         #[Between(1, 65535)]
         public ?int $port = null,

@@ -4,13 +4,12 @@ declare(strict_types=1);
 
 namespace App\Data\Transfers;
 
-use App\Services\Transfers\DatabasePreparations;
 use Spatie\LaravelData\Data;
 use Spatie\TypeScriptTransformer\Attributes\LiteralTypeScriptType;
 
 /**
  * A database that was never deployed, for an import before its first deploy
- * ({@see DatabasePreparations}, docs/14 §12.9).
+ * (DatabasePreparations, docs/14 §12.9).
  */
 final class DatabasePreparationData extends Data
 {

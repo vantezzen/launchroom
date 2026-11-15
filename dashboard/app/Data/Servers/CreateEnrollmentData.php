@@ -6,12 +6,16 @@ namespace App\Data\Servers;
 
 use App\Enums\ServerRole;
 use Illuminate\Validation\Rule;
+use Spatie\LaravelData\Attributes\Validation\In;
 use Spatie\LaravelData\Attributes\Validation\Max;
 use Spatie\LaravelData\Attributes\Validation\Regex;
 use Spatie\LaravelData\Data;
 
 final class CreateEnrollmentData extends Data
 {
+    /** "What kind of machine is it?" tiles of the add-server wizard; only shapes copy and the waiting picture. */
+    public const array MACHINES = ['cloud', 'dedicated', 'home', 'mac', 'board'];
+
     /**
      * @param  list<string>  $roles
      */
@@ -20,6 +24,8 @@ final class CreateEnrollmentData extends Data
         // Display only; host-side names are generated from ids (docs/09 R3).
         #[Max(64), Regex('/^[\pL\pN ._-]+$/u')]
         public ?string $name = null,
+        #[In(self::MACHINES)]
+        public ?string $machine = null,
     ) {}
 
     /**

@@ -4,8 +4,9 @@ declare(strict_types=1);
 
 namespace App\Models\Registry;
 
+use App\Contracts\Crypto\SealedRow;
+use App\Models\Concerns\HasSealedSecret;
 use App\Models\User;
-use App\Services\Registry\RegistryStorageSecrets;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Attributes\Table;
@@ -13,11 +14,12 @@ use Illuminate\Database\Eloquent\Attributes\WithoutIncrementing;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
+use InvalidArgumentException;
 
 /**
  * Zot's storage on an S3-compatible bucket (docs/14 §9.11). Singleton
  * (id = 1); no row = local storage on the control-plane disk. The
- * credentials are only ever read through {@see RegistryStorageSecrets}.
+ * credentials are only ever read through App\Services\Crypto\SealedColumns.
  *
  * @property int $id
  * @property string $endpoint
@@ -38,8 +40,10 @@ use Illuminate\Support\Carbon;
 #[Hidden(['wrapped_dek', 'kek_id', 'credentials'])]
 #[Table(name: 'registry_storage')]
 #[WithoutIncrementing]
-final class RegistryStorage extends Model
+final class RegistryStorage extends Model implements SealedRow
 {
+    use HasSealedSecret;
+
     public const int ID = 1;
 
     /** @var array<string, mixed> */
@@ -71,5 +75,18 @@ final class RegistryStorage extends Model
             'force_path_style' => 'boolean',
             'allow_private_network' => 'boolean',
         ];
+    }
+
+    public function sealWrapContext(): string
+    {
+        return 'registry_storage:instance';
+    }
+
+    public function sealAssociatedData(string $column): string
+    {
+        return match ($column) {
+            'credentials' => 'registry_storage|instance|credentials',
+            default => throw new InvalidArgumentException("{$column} is not a sealed column."),
+        };
     }
 }

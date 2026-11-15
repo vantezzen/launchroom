@@ -8,13 +8,13 @@ use App\Actions\Promotions\PromoteAndDeploy;
 use App\Actions\Promotions\PromoteChanges;
 use App\Data\Promotions\PromoteChangesData;
 use App\Enums\EnvironmentKind;
-use App\Events\CanvasChanged;
 use App\Http\Controllers\Controller;
-use App\Http\Controllers\Deployments\ScopesProjectRoutes;
-use App\Http\Controllers\Projects\ProjectScope;
+use App\Http\Routing\RouteScope;
+use App\Http\Toast;
 use App\Models\Environment;
 use App\Models\Project;
 use App\Models\User;
+use App\Queries\ProjectShell;
 use App\Queries\PromotionComparison;
 use App\Queries\PromotionEnvironmentCards;
 use App\Support\PublicId;
@@ -31,15 +31,12 @@ use Inertia\Response;
  */
 final class PromotionController extends Controller
 {
-    use ScopesProjectRoutes;
-
     public function show(Request $request, Project $project, PromotionComparison $comparison, PromotionEnvironmentCards $cards): Response
     {
         Gate::authorize('view', $project);
 
         $environments = $project->environments()
-            ->orderByRaw("case kind when 'production' then 0 when 'persistent' then 1 else 2 end")
-            ->orderBy('name')
+            ->inDisplayOrder()
             ->get();
 
         $from = $this->pick(array_values($environments->all()), $request->query('from'))
@@ -52,11 +49,10 @@ final class PromotionController extends Controller
         $to?->setRelation('project', $project);
 
         return Inertia::render('projects/promote', [
-            ...ProjectScope::shellProps($project, $from),
+            ...ProjectShell::props($project, $from),
             'comparison' => $from instanceof Environment && $to instanceof Environment && $from->id !== $to->id
                 ? $comparison->get($project, $from, $to)
                 : null,
-            // Environment cards and "Promote and deploy".
             'cards' => $from instanceof Environment && $to instanceof Environment && $from->id !== $to->id
                 ? ['from' => $cards->card($from), 'to' => $cards->card($to)]
                 : null,
@@ -71,35 +67,32 @@ final class PromotionController extends Controller
     public function store(Request $request, Project $project, PromoteChangesData $data, #[CurrentUser] User $user, PromoteChanges $promote, PromoteAndDeploy $promoteAndDeploy): RedirectResponse
     {
         Gate::authorize('view', $project);
-        $request->validate(['deploy' => ['sometimes', 'boolean']]);
         $from = $project->environments()->where('public_id', $data->from)->first();
         $to = $project->environments()->where('public_id', $data->to)->first();
         abort_unless($from instanceof Environment && $to instanceof Environment, 404);
         Gate::authorize('view', $from);
         Gate::authorize('promote', $to);
 
-        if ($request->boolean('deploy')) {
+        if ($data->deploy) {
             Gate::authorize('deploy', $to);
 
             [$promotion, $result] = $promoteAndDeploy->handle($project, $to, $data, $user, $this->auditActor($request, $user));
-            broadcast(new CanvasChanged($to->public_id));
 
             $count = count($promotion->items) + count($promotion->images);
             $services = count($result->deployments);
-            Inertia::flash('toast', ['type' => 'success', 'message' => "Promoted {$count} ".($count === 1 ? 'change' : 'changes')." from {$from->name}. "
-                .($services === 0 ? "{$to->name} is up to date." : "Deploying {$services} ".($services === 1 ? 'service' : 'services')." in {$to->name}.")]);
+            Toast::success("Promoted {$count} ".($count === 1 ? 'change' : 'changes')." from {$from->name}. "
+                .($services === 0 ? "{$to->name} is up to date." : "Deploying {$services} ".($services === 1 ? 'service' : 'services')." in {$to->name}."));
 
             return to_route('deployments.project', ['project' => $project->public_id, 'environment' => $to->public_id]);
         }
 
         $promotion = $promote->handle($project, $data, $user, $this->auditActor($request, $user));
-        broadcast(new CanvasChanged($to->public_id));
 
         $count = count($promotion->items);
         $images = count($promotion->images);
-        Inertia::flash('toast', ['type' => 'success', 'message' => "Staged {$count} ".($count === 1 ? 'change' : 'changes')
+        Toast::success("Staged {$count} ".($count === 1 ? 'change' : 'changes')
             .($images > 0 ? " and {$images} ".($images === 1 ? 'image' : 'images') : '')
-            ." from {$from->name} in {$to->name}. Review and apply them."]);
+            ." from {$from->name} in {$to->name}. Review and apply them.");
 
         return to_route('staged-changes.show', [$project->public_id, $to->public_id]);
     }
@@ -110,7 +103,7 @@ final class PromotionController extends Controller
      */
     public function hint(Project $project, Environment $environment, PromotionComparison $comparison): JsonResponse
     {
-        $this->scopeEnvironment($project, $environment);
+        RouteScope::environment($project, $environment);
         Gate::authorize('view', $environment);
 
         $production = $project->production()->first();

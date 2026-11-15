@@ -55,7 +55,7 @@ func validResult(t *testing.T, cs []state.InventoryComponent, truncated bool) {
 		Image:    "127.0.0.1:5000/apps/svc_01j9z8x7w6v5t4s3r2q1p0n9n2@sha256:4b5e57f6eb2f42b9039b3d1e13929295f231749c510cbe341cd68036d9af97e2",
 		Platform: "linux/amd64", Generator: build.SBOMGenerator, Components: cs, Truncated: truncated,
 	}
-	done := state.TaskCompletion{TypeMeta: state.NewTypeMeta(state.KindTaskCompletion), Attempt: 1, Outcome: state.OutcomeSucceeded, Inventory: res}
+	done := state.TaskCompletion{TypeMeta: state.NewTypeMeta(state.KindTaskCompletion), Attempt: 1, Outcome: state.OutcomeSucceeded, TaskResults: state.TaskResults{Inventory: res}}
 	if err := done.Validate(); err != nil {
 		t.Fatalf("completion invalid: %v", err)
 	}

@@ -9,13 +9,12 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
-	"net/url"
 	"slices"
-	"strings"
 	"time"
 
-	"github.com/vantezzen/launchroom/daemon/internal/build"
 	"github.com/vantezzen/launchroom/daemon/internal/docker"
+	"github.com/vantezzen/launchroom/daemon/internal/health"
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/policy"
 	"github.com/vantezzen/launchroom/daemon/internal/registry"
 	"github.com/vantezzen/launchroom/daemon/internal/sealed"
@@ -32,21 +31,19 @@ type RunOnceOptions struct {
 	Policy     policy.Config
 	// Forget drops cached registry tokens of a finished task (optional).
 	Forget func(state.TaskID)
-	// Isolate makes sure the network isolation covers the task's network
-	// before the container starts (firewall.Manager.Sync); nil = none.
-	Isolate func(ctx context.Context) error
 	// PollEvery is how often the container state is checked (default 500 ms).
 	PollEvery time.Duration
-	// Holds keeps the task's network from being removed by the reconciler
-	// while the task uses it (shared with reconcile.Options.Holds; nil = none).
-	Holds *docker.NetworkHolds
+	// Networks ensures and holds the task's environment network, so the
+	// reconciler does not remove it while the task uses it (shared with
+	// reconcile.Options.Networks; nil: one of its own).
+	Networks *docker.Networks
 	// Probe checks a start-check target (spec.probe, docs/20 §5): nil error
 	// when addr accepts TCP connections and, with a path, answers HTTP below
 	// 500 (the status is returned). Default: DefaultStartProbe.
 	Probe func(ctx context.Context, addr netip.AddrPort, path string) (int, error)
-	// Ports lists the TCP ports the process with this host pid listens on
-	// (optional; health.ProcScanner in production).
-	Ports func(pid int) []int
+	// Ports finds the TCP ports a container listens on (nil = none; the
+	// reconciler's scanner in production).
+	Ports health.PortScanner
 }
 
 // DefaultStartProbe dials addr from the host network namespace (images need
@@ -96,9 +93,6 @@ var startProbeClient = &http.Client{
 // cancelled or times out.
 const runOnceStopGrace = 10 * time.Second
 
-// RunOnceContainerName is the generated name of a task's one-off container.
-func RunOnceContainerName(id state.TaskID) string { return "lr-run-" + state.LowerID(id) }
-
 // RunOnceHandler returns the handler for "run_once" tasks (release and seed
 // commands, docs/03 §7): a one-off container from the deployment image,
 // attached to the environment network, with the sealed env, the argv from the
@@ -115,17 +109,20 @@ func RunOnceHandler(o RunOnceOptions) Handler {
 	if o.Probe == nil {
 		o.Probe = DefaultStartProbe
 	}
-	return func(ctx context.Context, t state.Task) (Result, error) {
+	if o.Networks == nil {
+		o.Networks = docker.NewNetworks(o.Docker, o.ServerID)
+	}
+	return func(ctx context.Context, t state.Task) (state.TaskResults, error) {
 		spec, ok := t.Spec.(*state.RunOnceSpec)
 		if !ok {
-			return Result{}, errors.New("run_once handler got a non-run_once spec")
+			return state.TaskResults{}, errors.New("run_once handler got a non-run_once spec")
 		}
 		if o.Forget != nil {
 			defer o.Forget(t.ID)
 		}
 		env, err := sealed.OpenTaskEnv(spec.Env, o.SealingKey, o.ServerID, t.ID)
 		if err != nil {
-			return Result{}, fmt.Errorf("run_once env: %w", err)
+			return state.TaskResults{}, fmt.Errorf("run_once env: %w", err)
 		}
 		ctx, cancel := context.WithTimeout(ctx, spec.Timeout.Std())
 		defer cancel()
@@ -133,30 +130,28 @@ func RunOnceHandler(o RunOnceOptions) Handler {
 
 		logs := newStepShipper(ctx, o.Client, state.LogSource{Kind: state.LogSourceTask, ID: string(t.ID)}, t.Attempt)
 		defer logs.Close()
-		r := &oneOff{o: o, task: t.ID, logs: logs, mask: build.NewMasker(maskValues(env, spec.MaskEnv)...)}
+		r := &oneOff{o: o, task: t.ID, logs: logs, mask: secret.NewMasker(secret.MaskValues(env, spec.MaskEnv)...)}
 
 		// A retried attempt may find the container of an earlier one.
 		if err := r.removeLeftovers(ctx); err != nil {
-			return Result{}, err
+			return state.TaskResults{}, err
+		}
+		if err := policy.CheckNetworkName(spec.Network.Name); err != nil {
+			return state.TaskResults{}, fmt.Errorf("run_once: %w", err)
 		}
 		// Held until the container is gone (deferred first, so released last).
-		defer o.Holds.Hold(string(spec.Network.Name))()
-		if err := r.ensureNetwork(ctx, spec.Network); err != nil {
-			return Result{}, err
+		release, err := o.Networks.Hold(ctx, spec.Network)
+		if err != nil {
+			return state.TaskResults{}, fmt.Errorf("run_once: %w", err)
 		}
-		if o.Isolate != nil {
-			if err := o.Isolate(ctx); err != nil {
-				return Result{}, fmt.Errorf("run_once: %w", err)
-			}
-		}
+		defer release()
 		if err := r.ensureImage(ctx, spec.Image); err != nil {
-			return Result{}, err
+			return state.TaskResults{}, err
 		}
-		workload := state.WorkloadID("wl_" + strings.TrimPrefix(string(t.ID), "tsk_"))
 		cc, err := docker.BuildContainer(docker.WorkloadInput{
-			ServerID: o.ServerID,
+			ServerID: o.ServerID, Task: t.ID,
 			Spec: state.WorkloadSpec{
-				ID: workload, Service: spec.Service, Environment: spec.Environment, Deployment: spec.Deployment,
+				Service: spec.Service, Environment: spec.Environment, Deployment: spec.Deployment,
 				Image: spec.Image, Command: spec.Command, Args: spec.Args, Env: spec.Env,
 				Resources: spec.Resources, Networks: []state.NetworkAttachment{{Network: spec.Network.ID, Aliases: []state.Slug{}}},
 				Restart: state.RestartNo, Role: state.RoleServing,
@@ -165,36 +160,32 @@ func RunOnceHandler(o RunOnceOptions) Handler {
 			Networks: map[state.NetworkID]state.HostName{spec.Network.ID: spec.Network.Name},
 		}, o.Policy)
 		if err != nil {
-			return Result{}, fmt.Errorf("run_once container: %w", err)
+			return state.TaskResults{}, fmt.Errorf("run_once container: %w", err)
 		}
-		cc.Name = RunOnceContainerName(t.ID)
-		delete(cc.Config.Labels, docker.LabelWorkload)
-		cc.Config.Labels[docker.LabelTask] = string(t.ID)
 
 		started := time.Now()
 		logs.Line("run", state.StreamSystem, "Starting one-off container") //nolint:contextcheck // logs ship on the shipper's own context
-		id, err := docker.CreateWithNetworkRetry(ctx, func() (string, error) { return o.Docker.CreateContainer(ctx, cc) },
-			func(ctx context.Context) error { return r.ensureNetwork(ctx, spec.Network) })
+		id, err := o.Networks.CreateContainer(ctx, cc, []state.NetworkSpec{spec.Network})
 		if err != nil {
-			return Result{}, fmt.Errorf("run_once create: %w", err)
+			return state.TaskResults{}, fmt.Errorf("run_once create: %w", err)
 		}
 		defer r.remove(ctx, id)
 		if err := o.Docker.StartContainer(ctx, id); err != nil {
-			return Result{}, fmt.Errorf("run_once start: %w", err)
+			return state.TaskResults{}, fmt.Errorf("run_once start: %w", err)
 		}
 		if spec.Probe != nil {
 			exit, outcome, err := r.probe(ctx, id, spec)
 			if err != nil {
-				return Result{}, err
+				return state.TaskResults{}, err
 			}
-			return Result{RunOnce: &state.RunOnceResult{ExitCode: exit, DurationMs: time.Since(started).Milliseconds(), Probe: outcome}}, nil
+			return state.TaskResults{RunOnce: &state.RunOnceResult{ExitCode: exit, DurationMs: time.Since(started).Milliseconds(), Probe: outcome}}, nil
 		}
 		exit, err := r.wait(ctx, id)
 		if err != nil {
-			return Result{}, err
+			return state.TaskResults{}, err
 		}
 		logs.Line("run", state.StreamSystem, fmt.Sprintf("Exited with code %d", exit)) //nolint:contextcheck // see above
-		return Result{RunOnce: &state.RunOnceResult{ExitCode: exit, DurationMs: time.Since(started).Milliseconds()}}, nil
+		return state.TaskResults{RunOnce: &state.RunOnceResult{ExitCode: exit, DurationMs: time.Since(started).Milliseconds()}}, nil
 	}
 }
 
@@ -202,32 +193,11 @@ type oneOff struct {
 	o    RunOnceOptions
 	task state.TaskID
 	logs *stepShipper
-	mask *build.Masker
-}
-
-// maskValues returns the values to mask for names: each value, plus the
-// password of a URL-shaped value (a DSN such as postgres://app:pw@db/app
-// leaks its password on its own in many error messages).
-func maskValues(env map[string]secret.Secret, names []state.EnvName) []string {
-	var out []string
-	for _, n := range names {
-		v, ok := env[string(n)]
-		if !ok {
-			continue
-		}
-		raw := v.Reveal()
-		out = append(out, raw)
-		if u, err := url.Parse(raw); err == nil && u.User != nil {
-			if pw, set := u.User.Password(); set {
-				out = append(out, pw)
-			}
-		}
-	}
-	return out
+	mask *secret.Masker
 }
 
 func (r *oneOff) removeLeftovers(ctx context.Context) error {
-	cs, err := r.o.Docker.ListContainers(ctx, map[string]string{docker.LabelTask: string(r.task)})
+	cs, err := r.o.Docker.ListContainers(ctx, map[string]string{names.LabelTask: string(r.task)})
 	if err != nil {
 		return fmt.Errorf("run_once: list containers: %w", err)
 	}
@@ -237,50 +207,6 @@ func (r *oneOff) removeLeftovers(ctx context.Context) error {
 		}
 	}
 	return nil
-}
-
-// ensureNetwork creates the environment network when this server has none of
-// that name yet (same name, subnet and labels the reconciler uses).
-func (r *oneOff) ensureNetwork(ctx context.Context, n state.NetworkSpec) error {
-	if err := policy.CheckNetworkName(n.Name); err != nil {
-		return fmt.Errorf("run_once: %w", err)
-	}
-	if ok, err := r.networkExists(ctx, n); err != nil || ok {
-		return err
-	}
-	prefix, err := netip.ParsePrefix(string(n.Subnet))
-	if err != nil {
-		return fmt.Errorf("run_once: network subnet: %w", err)
-	}
-	labels := docker.ManagedLabels(string(r.o.ServerID))
-	labels[docker.LabelNetwork] = string(n.ID)
-	if _, err := r.o.Docker.CreateNetwork(ctx, docker.NetworkCreate{Name: string(n.Name), Subnet: prefix, Labels: labels}); err != nil {
-		// Created concurrently (the reconciler converging the same
-		// environment)? Then it exists now: verify instead of failing.
-		if ok, lerr := r.networkExists(ctx, n); lerr == nil && ok {
-			return nil
-		}
-		return fmt.Errorf("run_once: create network: %w", err)
-	}
-	return nil
-}
-
-// networkExists reports whether n exists; a network of that name that
-// belongs to another environment is an error.
-func (r *oneOff) networkExists(ctx context.Context, n state.NetworkSpec) (bool, error) {
-	nets, err := r.o.Docker.ListNetworks(ctx)
-	if err != nil {
-		return false, fmt.Errorf("run_once: list networks: %w", err)
-	}
-	for _, have := range nets {
-		if have.Name == string(n.Name) {
-			if have.Labels[docker.LabelNetwork] != string(n.ID) {
-				return false, fmt.Errorf("run_once: network %s belongs to another environment", n.Name)
-			}
-			return true, nil
-		}
-	}
-	return false, nil
 }
 
 func (r *oneOff) ensureImage(ctx context.Context, ref state.ImageRef) error {
@@ -341,7 +267,7 @@ func (r *oneOff) probe(ctx context.Context, id string, spec *state.RunOnceSpec) 
 			return 0, nil, fmt.Errorf("run_once: inspect: %w", err)
 		}
 		elapsed := time.Since(start).Milliseconds()
-		if !c.Running && !c.Restarting && c.State != "created" {
+		if !c.Running() && c.State != docker.StateCreated {
 			select {
 			case <-logsDone:
 			case <-time.After(2 * time.Second):
@@ -350,7 +276,7 @@ func (r *oneOff) probe(ctx context.Context, id string, spec *state.RunOnceSpec) 
 			r.logs.Line("run", state.StreamSystem, fmt.Sprintf("Exited with code %d before listening on port %d", c.ExitCode, port)) //nolint:contextcheck // see above
 			return c.ExitCode, &state.ProbeOutcome{Exited: true, AfterMs: elapsed}, nil
 		}
-		if ip, ok := c.Networks[string(spec.Network.Name)]; ok && ip.IsValid() && c.Running {
+		if ip, ok := c.Networks[string(spec.Network.Name)]; ok && ip.IsValid() && c.Running() {
 			status, perr := r.o.Probe(ctx, netip.AddrPortFrom(ip, uint16(port)), string(p.Path)) //nolint:gosec // port validated 1-65535
 			if perr == nil {
 				r.logs.Line("run", state.StreamSystem, fmt.Sprintf("Port %d answered after %.1fs", port, float64(elapsed)/1000)) //nolint:contextcheck // see above
@@ -361,11 +287,15 @@ func (r *oneOff) probe(ctx context.Context, id string, spec *state.RunOnceSpec) 
 		}
 		if time.Now().After(deadline) {
 			out := &state.ProbeOutcome{AfterMs: elapsed}
+			var listening []int
 			if r.o.Ports != nil && c.Pid > 0 {
-				for _, lp := range r.o.Ports(c.Pid) {
-					if lp > 0 && lp < 65536 && len(out.ListeningPorts) < 16 && !slices.Contains(out.ListeningPorts, state.Port(lp)) {
-						out.ListeningPorts = append(out.ListeningPorts, state.Port(lp))
-					}
+				if ls, err := r.o.Ports.Listeners(c.Pid); err == nil {
+					listening = health.Ports(ls)
+				}
+			}
+			for _, lp := range listening {
+				if lp > 0 && lp < 65536 && len(out.ListeningPorts) < 16 && !slices.Contains(out.ListeningPorts, state.Port(lp)) {
+					out.ListeningPorts = append(out.ListeningPorts, state.Port(lp))
 				}
 			}
 			r.logs.Line("run", state.StreamSystem, fmt.Sprintf("Nothing answered on port %d within %s", port, p.Within.Std())) //nolint:contextcheck // see above
@@ -438,7 +368,7 @@ func (r *oneOff) wait(ctx context.Context, id string) (int, error) {
 			}
 			return 0, fmt.Errorf("run_once: inspect: %w", err)
 		}
-		if c.Running || c.Restarting || c.State == "created" {
+		if c.Running() || c.State == docker.StateCreated {
 			continue
 		}
 		// Give the log stream a moment to deliver the last lines.

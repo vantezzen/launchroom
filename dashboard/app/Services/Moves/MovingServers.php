@@ -23,7 +23,7 @@ final class MovingServers
     {
         /** @var array<int, int> $map */
         $map = ServerMove::query()
-            ->whereIn('status', ServerMoveStatus::values([ServerMoveStatus::Running, ServerMoveStatus::Ready]))
+            ->whereIn('status', ServerMoveStatus::values(ServerMoveStatus::underway()))
             ->when($teamId !== null, static fn ($query) => $query->where('team_id', $teamId))
             ->pluck('target_server_id', 'source_server_id')
             ->map(static fn (mixed $id): int => is_numeric($id) ? (int) $id : 0)
@@ -36,7 +36,7 @@ final class MovingServers
     {
         return ServerMove::query()
             ->where('source_server_id', $serverId)
-            ->whereIn('status', ServerMoveStatus::values([ServerMoveStatus::Running, ServerMoveStatus::Ready]))
+            ->whereIn('status', ServerMoveStatus::values(ServerMoveStatus::underway()))
             ->exists();
     }
 }

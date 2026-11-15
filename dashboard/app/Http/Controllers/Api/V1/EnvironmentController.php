@@ -9,6 +9,7 @@ use App\Data\Api\ServiceResource;
 use App\Http\Api\ApiOperation;
 use App\Http\Api\ApiResponse;
 use App\Http\Controllers\Controller;
+use App\Http\Routing\RouteScope;
 use App\Models\Environment;
 use App\Models\Service;
 use App\Models\ServiceInstance;
@@ -48,7 +49,7 @@ final class EnvironmentController extends Controller
     #[ApiOperation(id: 'getService', summary: 'One service in an environment', tag: 'Services', response: ServiceResource::class)]
     public function service(Environment $environment, Service $service, ApiResources $resources): JsonResponse
     {
-        $instance = $this->instance($environment, $service);
+        $instance = RouteScope::instanceIn($environment, $service);
         Gate::authorize('view', $instance);
 
         return ApiResponse::item($resources->service($instance));

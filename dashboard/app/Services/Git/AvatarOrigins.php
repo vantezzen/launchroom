@@ -14,8 +14,8 @@ use Illuminate\Support\Facades\Cache;
 /**
  * Hosts commit author avatars may come from, for the CSP's `img-src`
  * (docs/19 §7): GitHub's avatar host, Gravatar, and the https origins of
- * active GitLab/Gitea connections. Cached; connections forget the cache when
- * they change.
+ * active GitLab/Gitea connections. Cached until a connection becomes active,
+ * leaves active or is deleted (GitConnectionsChanged).
  */
 final class AvatarOrigins
 {
@@ -30,7 +30,7 @@ final class AvatarOrigins
             $origins = [];
 
             $connections = GitConnection::query()
-                ->whereIn('provider', [GitProviderKind::GitLab->value, GitProviderKind::Gitea->value])
+                ->whereIn('provider', GitProviderKind::apiConnections())
                 ->where('status', GitConnectionStatus::Active->value)
                 ->pluck('base_url');
 
@@ -46,6 +46,24 @@ final class AvatarOrigins
         });
 
         return ['https://'.GitHubAvatar::HOST, 'https://'.ProviderAvatar::GRAVATAR_HOST, ...$origins];
+    }
+
+    /**
+     * $url when it is an https URL on one of {@see all()}, else null. Stored
+     * avatars were checked by their provider when parsed; this keeps a row
+     * written before a connection went away out of the page.
+     */
+    public static function allowed(?string $url): ?string
+    {
+        $parts = $url === null ? false : parse_url($url);
+
+        if (! is_array($parts) || ($parts['scheme'] ?? null) !== 'https' || ! isset($parts['host'])) {
+            return null;
+        }
+
+        $origin = 'https://'.strtolower($parts['host']).(isset($parts['port']) ? ':'.$parts['port'] : '');
+
+        return in_array($origin, self::all(), true) ? $url : null;
     }
 
     public static function forget(): void

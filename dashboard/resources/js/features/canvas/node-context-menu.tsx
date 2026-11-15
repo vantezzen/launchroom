@@ -13,7 +13,7 @@ import {
     PopoverAnchor,
     PopoverContent,
 } from '@/components/ui/popover';
-import { LIFECYCLE_CONSEQUENCE } from '@/features/service-panel/lifecycle';
+import { LIFECYCLE_CONSEQUENCE } from '@/features/service-lifecycle/lifecycle';
 
 export type NodeMenuAction =
     | 'open'

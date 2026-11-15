@@ -4,12 +4,11 @@ declare(strict_types=1);
 
 namespace App\Data\Audit;
 
-use App\Actions\Audit\RecordAuditEvent;
 use App\Enums\AuditAction;
 use Spatie\LaravelData\Data;
 
 /**
- * Input for {@see RecordAuditEvent}. `meta` must never
+ * Input for RecordAuditEvent. `meta` must never
  * contain secret values (docs/09 R16): ids, roles, names, fingerprints only.
  */
 final class AuditEntryData extends Data

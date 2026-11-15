@@ -9,7 +9,16 @@ use App\Data\Logs\LogEntryData;
 use App\Data\Logs\LogExplorerPageData;
 use App\Data\Logs\LogQueryData;
 use App\Data\Metrics\DeployMarkerData;
+use App\Data\Protocol\V1\Tasks\AccessSpec;
+use App\Data\Protocol\V1\Tasks\DbExportSpec;
+use App\Data\Protocol\V1\Tasks\DbImportSpec;
+use App\Data\Protocol\V1\Tasks\InspectContainerSpec;
+use App\Data\Protocol\V1\Tasks\LogsSpec;
+use App\Data\Protocol\V1\Tasks\SessionSpec;
+use App\Enums\LogLineLevel;
+use App\Enums\LogLineSource;
 use App\Enums\LogSourceKind;
+use App\Enums\LogStream;
 use App\Models\DaemonTask;
 use App\Models\Deployment;
 use App\Models\Environment;
@@ -24,6 +33,7 @@ use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
+use InvalidArgumentException;
 
 /**
  * The log explorer's search (docs/08 §12, direction.md §9.8): every stored
@@ -283,7 +293,8 @@ final class LogSearch
             return null;
         }
 
-        $in = $search->positive('level') === [] ? LogLevel::LEVELS : array_intersect(LogLevel::LEVELS, $search->positive('level'));
+        $levels = array_map(static fn (LogLineLevel $level): string => $level->value, LogLineLevel::cases());
+        $in = $search->positive('level') === [] ? $levels : array_intersect($levels, $search->positive('level'));
 
         return array_values(array_diff($in, $search->negative('level')));
     }
@@ -307,7 +318,7 @@ final class LogSearch
         $servers = Server::query()->where('team_id', $scope->teamId)->whereIn('id', $pluck('server_id'))->get(['id', 'public_id', 'name'])->keyBy('id');
         $environments = $scope->kind === 'environment' ? collect() : Environment::query()->where('team_id', $scope->teamId)->whereIn('id', $pluck('environment_id'))->pluck('name', 'id');
         $projects = $scope->kind === 'team' ? Project::query()->where('team_id', $scope->teamId)->whereIn('id', $pluck('project_id'))->pluck('name', 'id') : collect();
-        $tasks = DaemonTask::query()->where('team_id', $scope->teamId)->whereIn('id', $pluck('daemon_task_id'))->get(['id', 'spec'])->keyBy('id');
+        $tasks = DaemonTask::query()->where('team_id', $scope->teamId)->whereIn('id', $pluck('daemon_task_id'))->get(['id', 'type', 'spec'])->keyBy('id');
 
         $workloadOf = static function (array $row) use ($tasks): ?string {
             if ($row['source_kind'] === 'workload') {
@@ -315,9 +326,18 @@ final class LogSearch
             }
 
             $task = is_int($row['daemon_task_id'] ?? null) ? $tasks->get($row['daemon_task_id']) : null;
-            $workload = $task instanceof DaemonTask ? ($task->spec->workload ?? null) : null;
 
-            return is_string($workload) ? $workload : null;
+            try {
+                $spec = $task?->taskSpec();
+            } catch (InvalidArgumentException) {
+                return null;
+            }
+
+            return match (true) {
+                $spec instanceof LogsSpec, $spec instanceof AccessSpec, $spec instanceof SessionSpec, $spec instanceof InspectContainerSpec,
+                $spec instanceof DbImportSpec, $spec instanceof DbExportSpec => $spec->workload,
+                default => null,
+            };
         };
         $workloads = array_values(array_unique(array_filter(array_map($workloadOf, $rows), is_string(...))));
         $slots = $workloads === [] ? collect() : Placement::query()->where('team_id', $scope->teamId)->whereIn('workload_id', $workloads)->pluck('slot', 'workload_id');
@@ -328,7 +348,7 @@ final class LogSearch
             /** @var array<string, mixed> $line */
             $line = json_decode($row['line'], true, 8, JSON_THROW_ON_ERROR);
             $text = is_string($line['text'] ?? null) ? $line['text'] : '';
-            $stream = is_string($line['stream'] ?? null) ? $line['stream'] : 'stdout';
+            $stream = is_string($line['stream'] ?? null) ? LogStream::tryFrom($line['stream']) : null;
             $deployment = $row['deployment_id'] === null ? null : $deployments->get($row['deployment_id']);
             $service = $row['service_id'] === null ? null : $services->get($row['service_id']);
             $workload = $workloadOf($row);
@@ -340,15 +360,15 @@ final class LogSearch
             $entries[] = new LogEntryData(
                 id: $row['chunk_id'].'-'.($row['ord'] - 1),
                 time: is_string($line['time'] ?? null) ? $line['time'] : '',
-                level: LogLevel::of($line),
-                source: ! $row['runtime'] && $row['source_kind'] === LogSourceKind::Task->value ? 'build' : 'runtime',
+                level: LogLineLevel::from(LogLevel::of($line)),
+                source: ! $row['runtime'] && $row['source_kind'] === LogSourceKind::Task->value ? LogLineSource::Build : LogLineSource::Runtime,
                 service: $service instanceof Service ? $service->name : 'launchroom',
                 serviceId: $service instanceof Service ? $service->public_id : null,
                 replica: is_int($slot) ? (string) ($slot + 1) : null,
                 server: $server instanceof Server ? $server->name : null,
                 deployment: $deployment instanceof Deployment ? ($deployment->commit_sha !== null ? substr($deployment->commit_sha, 0, 7) : $deployment->public_id) : null,
                 deploymentId: $deployment instanceof Deployment ? $deployment->public_id : null,
-                stream: in_array($stream, ['stdout', 'stderr', 'system'], true) ? $stream : 'stdout',
+                stream: $stream ?? LogStream::Stdout,
                 message: mb_substr($text, 0, 8000),
                 environment: is_string($environment) ? $environment : null,
                 project: is_string($project) ? $project : null,
@@ -360,8 +380,6 @@ final class LogSearch
     }
 
     /**
-     * Deploy markers of the scope in the window (App\Queries\DeployMarkers).
-     *
      * @return list<DeployMarkerData>
      */
     private function markers(LogScope $scope, LogQueryData $query, CarbonImmutable $from, CarbonImmutable $to): array

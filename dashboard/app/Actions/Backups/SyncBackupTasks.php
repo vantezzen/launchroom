@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Backups;
 
+use App\Data\Backups\BackupVerificationCheckData;
 use App\Enums\Backups\BackupRunStatus;
 use App\Enums\Backups\BackupSubject;
 use App\Enums\Backups\DestinationStatus;
@@ -11,14 +12,16 @@ use App\Enums\Backups\RestoreRunStatus;
 use App\Enums\Backups\VerificationStatus;
 use App\Enums\DaemonTaskStatus;
 use App\Enums\DaemonTaskType;
-use App\Events\NodeStateInvalidated;
+use App\Enums\HoldKind;
+use App\Events\Backups\BackupRunFinished;
+use App\Events\Backups\RestoreRunFinished;
 use App\Models\Backups\BackupRun;
 use App\Models\Backups\BackupVerification;
 use App\Models\Backups\RestoreRun;
 use App\Models\DaemonTask;
-use App\Services\Backups\DataHolds;
-use App\Services\Backups\RestoreHolds;
 use App\Services\Backups\SnapshotCache;
+use App\Services\Holds\Holds;
+use App\Services\Holds\RestoreHolds;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 
@@ -45,9 +48,9 @@ final readonly class SyncBackupTasks
         }
 
         $taskIds = [
-            ...BackupRun::query()->whereIn('status', [BackupRunStatus::Pending->value, BackupRunStatus::Running->value])->whereNotNull('daemon_task_id')->pluck('daemon_task_id')->all(),
+            ...BackupRun::query()->whereIn('status', BackupRunStatus::nonTerminal())->whereNotNull('daemon_task_id')->pluck('daemon_task_id')->all(),
             ...RestoreRun::query()->where('status', RestoreRunStatus::Restoring->value)->whereNotNull('daemon_task_id')->pluck('daemon_task_id')->all(),
-            ...BackupVerification::query()->whereIn('status', [VerificationStatus::Pending->value, VerificationStatus::Running->value])->whereNotNull('daemon_task_id')->pluck('daemon_task_id')->all(),
+            ...BackupVerification::query()->whereIn('status', VerificationStatus::nonTerminal())->whereNotNull('daemon_task_id')->pluck('daemon_task_id')->all(),
         ];
 
         foreach (DaemonTask::query()->whereIn('id', $taskIds)->get() as $daemonTask) {
@@ -82,22 +85,23 @@ final readonly class SyncBackupTasks
             }
 
             if ($task->status === DaemonTaskStatus::Succeeded) {
-                $result = is_array($task->result['backup'] ?? null) ? $task->result['backup'] : [];
-                $snapshot = is_string($result['snapshotId'] ?? null) ? $result['snapshotId'] : null;
+                $result = $task->result?->backup;
 
-                if ($snapshot === null) {
+                if ($result === null) {
                     $run->transitionTo(BackupRunStatus::Failed, 'The server reported success without a snapshot id.');
+                    event(new BackupRunFinished($run->id, $run->team_id));
 
                     return;
                 }
 
                 $run->forceFill([
-                    'snapshot_id' => $snapshot,
-                    'size_bytes' => is_int($result['sizeBytes'] ?? null) ? $result['sizeBytes'] : null,
-                    'added_bytes' => is_int($result['addedBytes'] ?? null) ? $result['addedBytes'] : null,
-                    'duration_ms' => is_int($result['durationMs'] ?? null) ? $result['durationMs'] : null,
+                    'snapshot_id' => $result->snapshotId,
+                    'size_bytes' => $result->sizeBytes,
+                    'added_bytes' => is_int($result->addedBytes) ? $result->addedBytes : null,
+                    'duration_ms' => $result->durationMs,
                 ]);
                 $run->transitionTo(BackupRunStatus::Succeeded);
+                event(new BackupRunFinished($run->id, $run->team_id));
                 $run->destination()->first()?->markChecked(DestinationStatus::Ok);
 
                 return;
@@ -105,6 +109,7 @@ final readonly class SyncBackupTasks
 
             if ($task->status === DaemonTaskStatus::Failed || $task->status === DaemonTaskStatus::Cancelled) {
                 $run->transitionTo(BackupRunStatus::Failed, $task->error ?? 'The backup task '.$task->status->value.'.');
+                event(new BackupRunFinished($run->id, $run->team_id));
             }
         });
     }
@@ -122,10 +127,10 @@ final readonly class SyncBackupTasks
             $held = RestoreHolds::heldBy($run);
 
             if ($task->status === DaemonTaskStatus::Succeeded) {
-                $result = is_array($task->result['restore'] ?? null) ? $task->result['restore'] : [];
+                $result = $task->result?->restore;
                 $run->forceFill([
-                    'size_bytes' => is_int($result['sizeBytes'] ?? null) ? $result['sizeBytes'] : null,
-                    'restored_to' => is_string($result['restoredTo'] ?? null) ? CarbonImmutable::parse($result['restoredTo']) : null,
+                    'size_bytes' => $result?->sizeBytes,
+                    'restored_to' => is_string($result?->restoredTo) ? CarbonImmutable::parse($result->restoredTo) : null,
                 ]);
                 $run->transitionTo(RestoreRunStatus::Succeeded);
             } elseif ($task->status === DaemonTaskStatus::Failed || $task->status === DaemonTaskStatus::Cancelled) {
@@ -134,17 +139,11 @@ final readonly class SyncBackupTasks
                 return;
             }
 
+            event(new RestoreRunFinished($run->id, $run->team_id));
+
             // A finished restore releases the held services (and their queued deployments).
-            DataHolds::advanceDeployments($held);
-            $servers = RestoreHolds::serverIds($held);
-
-            if (($run->subject === BackupSubject::Volume || $run->subject === BackupSubject::BaseBackup) && $task->server_id !== null) {
-                $servers[] = $task->server_id;
-            }
-
-            if ($servers !== []) {
-                event(new NodeStateInvalidated(array_values(array_unique($servers))));
-            }
+            $volumeServer = ($run->subject === BackupSubject::Volume || $run->subject === BackupSubject::BaseBackup) && $task->server_id !== null ? [$task->server_id] : [];
+            Holds::changed(HoldKind::Restore, $held, $volumeServer);
         });
     }
 
@@ -164,34 +163,28 @@ final readonly class SyncBackupTasks
             }
 
             if ($task->status === DaemonTaskStatus::Succeeded) {
-                $result = is_array($task->result['verify'] ?? null) ? $task->result['verify'] : [];
+                $result = $task->result?->verify;
                 $checks = [];
 
-                foreach (is_array($result['checks'] ?? null) ? $result['checks'] : [] as $check) {
-                    if (is_array($check) && is_string($check['name'] ?? null)) {
-                        $checks[] = array_filter([
-                            'name' => $check['name'],
-                            'passed' => ($check['passed'] ?? false) === true,
-                            'detail' => is_string($check['detail'] ?? null) ? mb_substr($check['detail'], 0, 512) : null,
-                        ], static fn (mixed $value): bool => $value !== null);
-                    }
+                foreach ($result->checks ?? [] as $check) {
+                    $checks[] = new BackupVerificationCheckData($check['name'], $check['passed'], isset($check['detail']) ? mb_substr($check['detail'], 0, 512) : null);
                 }
 
-                $int = static fn (string $key): ?int => is_int($result[$key] ?? null) ? $result[$key] : null;
+                $int = static fn (mixed $value): ?int => is_int($value) ? $value : null;
                 $verification->forceFill([
                     'checks' => $checks,
-                    'tables' => $int('tables'),
-                    'rows' => $int('rows'),
-                    'files' => $int('files'),
-                    'bytes' => $int('bytes'),
-                    'duration_ms' => $int('durationMs'),
-                    'restored_to' => is_string($result['restoredTo'] ?? null) ? CarbonImmutable::parse($result['restoredTo']) : null,
+                    'tables' => $int($result?->tables),
+                    'rows' => $int($result?->rows),
+                    'files' => $int($result?->files),
+                    'bytes' => $int($result?->bytes),
+                    'duration_ms' => $result?->durationMs,
+                    'restored_to' => is_string($result?->restoredTo) ? CarbonImmutable::parse($result->restoredTo) : null,
                 ]);
-                $passed = ($result['passed'] ?? false) === true;
-                $failed = array_values(array_filter($checks, static fn (array $check): bool => ! $check['passed']));
+                $passed = $result?->passed === true;
+                $failed = array_values(array_filter($checks, static fn (BackupVerificationCheckData $check): bool => ! $check->passed));
                 $verification->transitionTo(
                     $passed ? VerificationStatus::Passed : VerificationStatus::Failed,
-                    $passed ? null : (isset($failed[0]) ? $failed[0]['name'].': '.($failed[0]['detail'] ?? 'failed') : 'A check failed.'),
+                    $passed ? null : (isset($failed[0]) ? $failed[0]->name.': '.($failed[0]->detail ?? 'failed') : 'A check failed.'),
                 );
 
                 return;

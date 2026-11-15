@@ -7,12 +7,12 @@ namespace App\Queries\Security;
 use App\Data\Security\ClientCertificatesOverviewData;
 use App\Data\Security\ServerCertificateReadinessData;
 use App\Enums\ClientCertificateMode;
-use App\Enums\DaemonFeature;
-use App\Enums\ServerStatus;
+use App\Enums\NodeStateField;
 use App\Models\DaemonClientCa;
 use App\Models\InstanceSettings;
 use App\Models\Server;
 use App\Models\ServerClientCertificate;
+use App\Services\NodeStates\FeatureGate;
 use Carbon\CarbonInterface;
 
 /**
@@ -31,7 +31,7 @@ final readonly class ClientCertificatesOverview
 
         $servers = Server::query()
             ->with('team:id,name')
-            ->where('status', '!=', ServerStatus::Revoked->value)
+            ->notRevoked()
             ->orderByDesc('is_control_plane')
             ->orderBy('name')
             ->get();
@@ -103,11 +103,11 @@ final readonly class ClientCertificatesOverview
             return 'control_plane';
         }
 
-        if (! $server->supportsDaemonFeature(DaemonFeature::ClientCertificates)) {
+        if (! FeatureGate::accepts($server, NodeStateField::RouteClientAuth)) {
             return 'update';
         }
 
-        if (in_array($server->status, [ServerStatus::Offline, ServerStatus::Unreachable], true)) {
+        if ($server->status->isDown()) {
             return 'offline';
         }
 

@@ -9,7 +9,7 @@ use App\Data\Audit\AuditActor;
 use App\Data\Audit\AuditEntryData;
 use App\Data\Services\AddVolumeData;
 use App\Enums\AuditAction;
-use App\Enums\ServiceKind;
+use App\Events\CanvasChanged;
 use App\Exceptions\DomainRuleViolation;
 use App\Models\ServiceInstance;
 use App\Models\Volume;
@@ -44,7 +44,7 @@ final readonly class AddServiceVolume
         return DB::transaction(function () use ($instance, $path, $actor): Volume {
             $instance = ServiceInstance::query()->whereKey($instance->id)->with(['service', 'volumes', 'environment.lastAppliedRevision'])->lockForUpdate()->firstOrFail();
 
-            if (! in_array($instance->service->kind, [ServiceKind::App, ServiceKind::Image], true)) {
+            if (! $instance->service->kind->ownsVolumes()) {
                 throw DomainRuleViolation::on('mountPath', 'Volumes can be added to app and image services. Databases already have theirs.');
             }
 
@@ -75,6 +75,7 @@ final readonly class AddServiceVolume
                 subjectId: $instance->service->public_id,
                 meta: ['volume' => $volume->public_id, 'mountPath' => $path, 'instance' => $instance->public_id],
             ));
+            CanvasChanged::forInstance($instance);
 
             return $volume;
         });

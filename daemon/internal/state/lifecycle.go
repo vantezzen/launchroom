@@ -1,6 +1,8 @@
 package state
 
-import "time"
+import (
+	"time"
+)
 
 // ---- Container lifecycle (D68, docs/04 §8.1, docs/15 §6) ----
 //
@@ -141,11 +143,10 @@ type WorkloadIssueKind string
 const (
 	// IssueCrashLoop: the container keeps exiting (Docker restarted it at least 3 times).
 	IssueCrashLoop WorkloadIssueKind = "crash_loop"
-	// IssueLoopbackOnly: the app listens on the expected port, but only on
-	// 127.0.0.1/::1, so nothing outside the container reaches it.
-	IssueLoopbackOnly WorkloadIssueKind = "loopback_only"
-	// IssueWrongPort: the app listens on other ports, not the expected one.
-	IssueWrongPort WorkloadIssueKind = "wrong_port"
+	// Port issues are the port hints that fail a rollout right away, under
+	// the same code (the dashboard maps one to the other).
+	IssueLoopbackOnly WorkloadIssueKind = WorkloadIssueKind(PortHintLoopbackOnly)
+	IssueWrongPort    WorkloadIssueKind = WorkloadIssueKind(PortHintWrongPort)
 )
 
 var workloadIssueKinds = []string{string(IssueCrashLoop), string(IssueLoopbackOnly), string(IssueWrongPort)}

@@ -7,7 +7,6 @@ namespace App\Actions\Backups;
 use App\Data\Audit\AuditActor;
 use App\Enums\Backups\DeletionOutcome;
 use App\Enums\Backups\DeletionRequestStatus;
-use App\Exceptions\DomainRuleViolation;
 use App\Models\Backups\DeletionRequest;
 use App\Services\Backups\FinalBackups;
 use Illuminate\Support\Facades\DB;
@@ -50,10 +49,10 @@ final readonly class AdvanceDeletions
                 });
 
                 if ($request instanceof DeletionRequest && $request->status->allowsDeletion() && $request->subject_type !== DeletionRequest::SERVICE_INSTANCE) {
-                    $advanced += $this->continue->handle($request, AuditActor::system()) instanceof DeletionOutcome ? 1 : 0;
+                    $outcome = $this->continue->handle($request, AuditActor::system());
+                    // Busy: another backup runs; the next tick tries again.
+                    $advanced += $outcome instanceof DeletionOutcome && $outcome !== DeletionOutcome::Busy ? 1 : 0;
                 }
-            } catch (DomainRuleViolation) {
-                // Not now (e.g. another backup runs); the next tick tries again.
             } catch (Throwable $e) {
                 report($e);
             }

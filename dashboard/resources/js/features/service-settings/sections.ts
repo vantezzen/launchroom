@@ -24,23 +24,9 @@ import type {
 import { hasBackups } from './backups-section';
 import type { SettingsContext } from './settings-context';
 
-export type SectionId =
-    | 'general'
-    | 'source'
-    | 'variables'
-    | 'build'
-    | 'deploy'
-    | 'schedule'
-    | 'domains'
-    | 'networking'
-    | 'firewall'
-    | 'scaling'
-    | 'volumes'
-    | 'backups'
-    | 'advanced'
-    | 'danger';
+export type SectionId = App.Enums.ServiceSettingsSection;
 
-export type SectionPage = SettingsNavPage<SectionId>;
+type SectionPage = SettingsNavPage<SectionId>;
 
 /**
  * A group of pages in the sidebar (`SettingsShell`): General at the top and
@@ -56,8 +42,7 @@ export type SettingsArea = SettingsNavGroup<SectionId>;
 export function settingsAreas(context: SettingsContext): SettingsArea[] {
     const { node, settings, canUpdate, canDelete } = context;
     const kind = node.kind;
-    const web = kind === 'app' || kind === 'image';
-    const listens = kind !== 'worker' && kind !== 'cron';
+    const { web, listens } = node.capabilities;
     const sourceIcon =
         settings.source.type === 'database'
             ? Database

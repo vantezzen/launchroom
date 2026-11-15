@@ -13,7 +13,7 @@ use App\Enums\Mesh\MeshCredentialPurpose;
 use App\Enums\Mesh\MeshMode;
 use App\Events\NodeStateInvalidated;
 use App\Models\InstanceSettings;
-use App\Queries\MeshServers;
+use App\Models\Server;
 use App\Services\Mesh\MeshSecrets;
 use Illuminate\Support\Facades\DB;
 
@@ -50,7 +50,7 @@ final readonly class UseOwnTailscale
 
             if ($previous !== $data->loginServer) {
                 // Addresses from another tailnet are meaningless now.
-                MeshServers::query()->update(['mesh_ip' => null, 'mesh_ipv6' => null, 'mesh_node_id' => null]);
+                Server::query()->meshMembers()->update(['mesh_ip' => null, 'mesh_ipv6' => null, 'mesh_node_id' => null]);
             }
 
             $this->audit->handle(new AuditEntryData(
@@ -59,7 +59,7 @@ final readonly class UseOwnTailscale
                 meta: ['login_server' => $data->loginServer],
             ));
 
-            event(new NodeStateInvalidated(MeshServers::ids()));
+            NodeStateInvalidated::mesh();
         });
     }
 }

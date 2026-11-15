@@ -14,6 +14,7 @@ import {
     PasskeySignIn,
 } from '@/features/auth/auth-frame';
 import { store } from '@/routes/password/confirm';
+import { noLayout } from '@/lib/pages';
 
 export default function ConfirmPassword() {
     return (
@@ -67,3 +68,5 @@ export default function ConfirmPassword() {
         </AuthFrame>
     );
 }
+
+ConfirmPassword.layout = noLayout;

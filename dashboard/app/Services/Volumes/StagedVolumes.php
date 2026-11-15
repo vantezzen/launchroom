@@ -100,9 +100,9 @@ final class StagedVolumes
         $moving = array_values(array_map(static fn (MoveItemStatus $status): string => $status->value, array_filter(MoveItemStatus::cases(), static fn (MoveItemStatus $status): bool => $status->isActive())));
 
         return match (true) {
-            BackupRun::query()->where('volume_id', $volume->id)->whereIn('status', [BackupRunStatus::Pending->value, BackupRunStatus::Running->value])->exists() => 'A backup of this volume is running. Try again once it has finished.',
-            RestoreRun::query()->where('volume_id', $volume->id)->whereIn('status', [RestoreRunStatus::WaitingForSafetyBackup->value, RestoreRunStatus::WaitingForTarget->value, RestoreRunStatus::Restoring->value])->exists() => 'A restore into this volume is running. Try again once it has finished.',
-            DataImportRun::query()->where('volume_id', $volume->id)->whereIn('status', [ImportRunStatus::WaitingForSafetyBackup->value, ImportRunStatus::Holding->value, ImportRunStatus::Importing->value])->exists() => 'An import into this volume is running. Try again once it has finished.',
+            BackupRun::query()->where('volume_id', $volume->id)->whereIn('status', BackupRunStatus::nonTerminal())->exists() => 'A backup of this volume is running. Try again once it has finished.',
+            RestoreRun::query()->where('volume_id', $volume->id)->whereIn('status', RestoreRunStatus::nonTerminal())->exists() => 'A restore into this volume is running. Try again once it has finished.',
+            DataImportRun::query()->where('volume_id', $volume->id)->whereIn('status', ImportRunStatus::nonTerminal())->exists() => 'An import into this volume is running. Try again once it has finished.',
             DataExportRun::query()->where('volume_id', $volume->id)->where('status', ExportRunStatus::Preparing->value)->exists() => 'A download of this volume is being prepared. Try again once it is ready.',
             ServerMoveItem::query()->where('service_instance_id', $volume->service_instance_id)->where('kind', MoveItemKind::Files->value)->whereIn('status', $moving)->exists() => 'This service is moving to another server. Try again once the move has finished.',
             default => null,

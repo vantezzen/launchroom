@@ -16,11 +16,11 @@ import {
     DialogTitle,
 } from '@/components/ui/dialog';
 import { Spinner } from '@/components/ui/spinner';
-import { SettingsCard, SettingsRow } from '@/features/settings/settings-card';
 import { reissue, update } from '@/routes/client-certificates';
+import { SettingsCard, SettingsRow } from '@/components/settings/settings-card';
 
 type Overview = App.Data.Security.ClientCertificatesOverviewData;
-type Mode = 'off' | 'verify' | 'require';
+type Mode = App.Enums.ClientCertificateMode;
 
 const states: Record<
     string,

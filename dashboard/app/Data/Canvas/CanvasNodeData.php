@@ -6,6 +6,7 @@ namespace App\Data\Canvas;
 
 use App\Data\Alerts\OpenAlertData;
 use App\Data\Backups\ServiceBackupStatusData;
+use App\Enums\AnalyticsView;
 use App\Enums\ChangeEffect;
 use App\Enums\ServiceKind;
 use Spatie\LaravelData\Data;
@@ -22,6 +23,7 @@ final class CanvasNodeData extends Data
         public string $name,
         public string $slug,
         public ServiceKind $kind,
+        public ServiceCapabilitiesData $capabilities,
         /** Glyph key: an engine, framework or source ("postgres", "laravel", "github", "docker"). */
         public string $logo,
         /** What it runs: "PostgreSQL 18", "nginx:1.27", "acme/shop". */
@@ -53,5 +55,7 @@ final class CanvasNodeData extends Data
          * @var list<OpenAlertData>
          */
         public array $openAlerts = [],
+        /** The view the service's Analytics links open (AnalyticsView::forService). */
+        public AnalyticsView $analyticsView = AnalyticsView::Resources,
     ) {}
 }

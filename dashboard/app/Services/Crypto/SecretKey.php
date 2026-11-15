@@ -4,14 +4,14 @@ declare(strict_types=1);
 
 namespace App\Services\Crypto;
 
-use App\Services\Crypto\Exceptions\DecryptionFailed;
+use App\Exceptions\DecryptionFailed;
 use InvalidArgumentException;
 use LogicException;
 use SensitiveParameter;
 
 /**
  * A 256-bit symmetric key for XChaCha20-Poly1305 (IETF) authenticated
- * encryption. Used both as the KEK and as per-project DEKs.
+ * encryption. Used both as the KEK and as data keys (DEKs).
  *
  * Never serializable, never printed: `var_dump`, exceptions and queue
  * payloads only ever see "[redacted]".

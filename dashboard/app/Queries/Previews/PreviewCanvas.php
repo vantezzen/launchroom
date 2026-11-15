@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Queries\Previews;
 
 use App\Data\Previews\PreviewCanvasData;
+use App\Data\Previews\PreviewDatabaseStateData;
 use App\Data\Previews\PreviewEdgeBadgeData;
 use App\Enums\DeploymentStatus;
 use App\Enums\EnvironmentKind;
@@ -55,8 +56,7 @@ final class PreviewCanvas
 
         // Databases that would be shared or cloned but are new and empty
         // instead (fork previews, docs/09 R20; production data not allowed).
-        $states = is_array($preview->data['databases'] ?? null) ? $preview->data['databases'] : [];
-        $downgraded = array_filter($states, static fn (mixed $state): bool => is_array($state) && is_string($state['downgradedFrom'] ?? null));
+        $downgraded = array_filter($preview->data->databases, static fn (PreviewDatabaseStateData $state): bool => $state->downgradedFrom instanceof PreviewStrategy);
 
         if ($downgraded !== []) {
             $names = [];
@@ -66,8 +66,8 @@ final class PreviewCanvas
             }
 
             foreach ($downgraded as $serviceId => $state) {
-                if (is_string($serviceId) && isset($names[$serviceId])) {
-                    $label = ($state['downgradeReason'] ?? null) === 'production' ? 'new and empty (production data not allowed)' : 'new and empty (fork: no base data)';
+                if (isset($names[$serviceId])) {
+                    $label = $state->downgradeReason === 'production' ? 'new and empty (production data not allowed)' : 'new and empty (fork: no base data)';
                     $badges[] = new PreviewEdgeBadgeData($serviceId, $names[$serviceId], $label, 'neutral');
                 }
             }
@@ -76,10 +76,9 @@ final class PreviewCanvas
         $settings = PreviewSettings::forProject($environment->project);
         $statuses = Deployment::query()
             ->where('environment_id', $environment->id)
-            ->whereNotIn('status', [DeploymentStatus::Superseded->value, DeploymentStatus::Cancelled->value])
+            ->currentPerInstance()
             ->orderByDesc('id')
             ->get(['id', 'service_instance_id', 'status'])
-            ->unique('service_instance_id')
             ->pluck('status');
 
         return new PreviewCanvasData(
@@ -89,7 +88,6 @@ final class PreviewCanvas
             headRef: $preview->head_ref,
             baseName: $base,
             status: $preview->status,
-            statusLabel: $preview->status->label(),
             health: match (true) {
                 $statuses->contains(DeploymentStatus::Failed) => 'failed',
                 $statuses->isEmpty() => 'stopped',

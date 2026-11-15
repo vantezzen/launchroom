@@ -18,9 +18,22 @@ final class OpaqueToken
 {
     public const int BYTES = 32;
 
-    public static function generate(string $prefix): string
+    /** The part after the prefix, unanchored (route constraints, `#[Regex]`). */
+    public const string BODY = '[A-Za-z0-9_-]{43}';
+
+    public static function generate(string $prefix = ''): string
     {
         return $prefix.rtrim(strtr(base64_encode(random_bytes(self::BYTES)), '+/', '-_'), '=');
+    }
+
+    public static function pattern(string $prefix = ''): string
+    {
+        return '/^'.preg_quote($prefix, '/').self::BODY.'$/D';
+    }
+
+    public static function isWellFormed(#[SensitiveParameter] string $token, string $prefix = ''): bool
+    {
+        return preg_match(self::pattern($prefix), $token) === 1;
     }
 
     public static function hash(#[SensitiveParameter] string $token): string

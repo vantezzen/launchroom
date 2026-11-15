@@ -5,8 +5,8 @@ import { MetaLine } from '@/components/patterns/meta-line';
 import { Section } from '@/components/patterns/section';
 import { StatusIcon } from '@/components/status';
 import { Skeleton } from '@/components/ui/skeleton';
-import { relativeTime } from '@/components/time-ago';
-import { formatLatency, formatRate } from '@/features/servers/link-format';
+import { formatLinkSpeed } from '@/features/servers/link-format';
+import { formatLatency, relativeTime } from '@/lib/format';
 import { MeshStatus, pathLabels } from '@/features/servers/mesh-status';
 import { show } from '@/routes/servers';
 
@@ -88,7 +88,7 @@ function Rates({ peer, serverName }: { peer: Peer; serverName: string }) {
                     <span className="sr-only">
                         {name} to {serverName}:
                     </span>
-                    {formatRate(q.downloadMbps)}
+                    {formatLinkSpeed(q.downloadMbps)}
                 </span>
             )}
             {q.uploadMbps !== null && (
@@ -103,7 +103,7 @@ function Rates({ peer, serverName }: { peer: Peer; serverName: string }) {
                     <span className="sr-only">
                         {serverName} to {name}:
                     </span>
-                    {formatRate(q.uploadMbps)}
+                    {formatLinkSpeed(q.uploadMbps)}
                 </span>
             )}
         </span>

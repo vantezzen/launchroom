@@ -5,15 +5,14 @@ declare(strict_types=1);
 namespace App\Http\Middleware;
 
 use App\Data\Backups\RecoveryKitStatusData;
+use App\Data\Inertia\AuthData;
+use App\Data\Inertia\InstanceMoveData;
+use App\Data\Inertia\SharedPropsData;
 use App\Data\Instance\OnboardingProgressData;
 use App\Data\Instance\RealtimeConfigData;
 use App\Data\Servers\ControlPlaneLoadData;
 use App\Data\Teams\TeamContextData;
 use App\Data\Teams\TeamData;
-use App\Enums\Permission;
-use App\Enums\Security\FindingLevel;
-use App\Enums\Security\SecurityFindingStatus;
-use App\Models\InstanceSettings;
 use App\Models\Security\SecurityFinding;
 use App\Models\Team;
 use App\Models\User;
@@ -28,13 +27,6 @@ use Inertia\Middleware;
 
 final class HandleInertiaRequests extends Middleware
 {
-    /**
-     * The root template that's loaded on the first page visit.
-     *
-     * @see https://inertiajs.com/server-side-setup#root-template
-     *
-     * @var string
-     */
     protected $rootView = 'app';
 
     public function __construct(
@@ -42,56 +34,32 @@ final class HandleInertiaRequests extends Middleware
     ) {}
 
     /**
-     * Determines the current asset version.
-     *
-     * @see https://inertiajs.com/asset-versioning
-     */
-    public function version(Request $request): ?string
-    {
-        return parent::version($request);
-    }
-
-    /**
-     * Define the props that are shared by default.
-     *
-     * @see https://inertiajs.com/shared-data
+     * The keys and value types are {@see SharedPropsData}; closures keep partial reloads from computing them.
      *
      * @return array<string, mixed>
      */
     public function share(Request $request): array
     {
+        $user = $request->user();
+        $signedIn = $user instanceof User;
+
         return [
             ...parent::share($request),
-            'name' => config('app.name'),
-            'auth' => [
-                'user' => $request->user(),
-            ],
-            // Base URL of the public docs for "Learn more" links (docs/21).
+            'name' => config()->string('app.name'),
+            'auth' => AuthData::for($user),
             'docsUrl' => DocsUrl::base(),
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
-            'teams' => fn (): ?TeamContextData => $this->teamContext($request->user()),
-            // The sidebar footer's "launchroom vX.Y.Z" (signed-in users only).
-            'version' => fn (): ?string => $request->user() instanceof User ? config()->string('launchroom.version') : null,
-            // Persistent "save your recovery kit" warning, instance owners only (docs/14 §4).
-            'recoveryKit' => fn (): ?RecoveryKitStatusData => RecoveryKitStatusData::forUser($request->user()),
-            // Recovery mode after `install.sh --restore` (docs/14 §5.2): a banner for instance owners.
-            'recoveryMode' => fn (): bool => $request->user() instanceof User && $request->user()->is_instance_owner && RecoveryMode::active(),
-            // Moving launchroom to a new server (docs/14 §13.4): writes are paused
-            // during the hand-over (everyone sees it); after a move instance owners
-            // see the checklist banner.
-            'instanceMove' => fn (): ?array => $request->user() instanceof User ? $this->instanceMove($request->user()) : null,
-            // Reverb client settings at runtime (public values only), signed-in users only.
-            'realtime' => fn (): ?RealtimeConfigData => $request->user() instanceof User ? RealtimeConfigData::current() : null,
-            // "Get started" in the sidebar until the first-run checklist is done (instance owners).
-            'onboardingProgress' => fn (): ?OnboardingProgressData => $this->onboarding->progressFor($request->user()),
-            // Quiet dot on Settings in the sidebar when a release is ready (instance owners, cached check only).
-            // Calm "heavy load" notice in the sidebar for people who manage the
-            // control-plane server (docs/08 §4); one cache read per page.
-            'controlPlaneLoad' => fn (): ?ControlPlaneLoadData => resolve(ControlPlaneLoad::class)->forUser($request->user()),
-            // The Security entry's badge: open "Action needed" findings of the current team (docs/22 §9.1).
-            'securityActionNeeded' => fn (): int => $this->securityActionNeeded($request->user()),
-            'updateAvailable' => fn (): bool => $request->user() instanceof User
-                && $request->user()->is_instance_owner
+            'teams' => fn (): ?TeamContextData => $this->teamContext($user),
+            'version' => fn (): ?string => $signedIn ? config()->string('launchroom.version') : null,
+            'recoveryKit' => fn (): ?RecoveryKitStatusData => RecoveryKitStatusData::forUser($user),
+            'recoveryMode' => fn (): bool => $signedIn && $user->is_instance_owner && RecoveryMode::active(),
+            'instanceMove' => fn (): ?InstanceMoveData => $signedIn ? InstanceMoveData::for($user) : null,
+            'realtime' => fn (): ?RealtimeConfigData => $signedIn ? RealtimeConfigData::current() : null,
+            'onboardingProgress' => fn (): ?OnboardingProgressData => $this->onboarding->progressFor($user),
+            'controlPlaneLoad' => fn (): ?ControlPlaneLoadData => resolve(ControlPlaneLoad::class)->forUser($user),
+            'securityActionNeeded' => fn (): int => $this->securityActionNeeded($user),
+            'updateAvailable' => fn (): bool => $signedIn
+                && $user->is_instance_owner
                 && resolve(ReleaseChecker::class)->cached()->available !== null,
         ];
     }
@@ -100,31 +68,18 @@ final class HandleInertiaRequests extends Middleware
     {
         $teamId = $user instanceof User ? ($user->getAttributes()['current_team_id'] ?? null) : null;
 
-        if (! $user instanceof User || ! is_int($teamId) || ! $user->hasTeamPermission($teamId, Permission::View)) {
+        if (! $user instanceof User || ! is_int($teamId) || ! Gate::forUser($user)->allows('viewAny', [SecurityFinding::class, $teamId])) {
             return 0;
         }
 
         return SecurityFinding::query()
             ->where('team_id', $teamId)
-            ->where('status', SecurityFindingStatus::Open->value)
-            ->where('level', FindingLevel::ActionNeeded->value)
+            ->actionNeeded()
             ->count();
     }
 
     /**
-     * @return array{frozen: bool, checklist: bool}|null
-     */
-    private function instanceMove(User $user): ?array
-    {
-        $settings = InstanceSettings::current();
-        $frozen = $settings->frozen_at !== null;
-        $checklist = $user->is_instance_owner && $settings->move_checklist !== null;
-
-        return $frozen || $checklist ? ['frozen' => $frozen, 'checklist' => $checklist] : null;
-    }
-
-    /**
-     * The team switcher and the current team's permissions. UI hints only:
+     * The team switcher and what the user may do in the current team. UI hints only:
      * every action re-authorizes on the server.
      */
     private function teamContext(mixed $user): ?TeamContextData
@@ -135,6 +90,7 @@ final class HandleInertiaRequests extends Middleware
 
         $teams = $user->teams()->orderBy('name')->get();
         $current = null;
+        $currentTeam = null;
         $all = [];
 
         foreach ($teams as $team) {
@@ -143,9 +99,17 @@ final class HandleInertiaRequests extends Middleware
 
             if ($team->id === $user->current_team_id) {
                 $current = $data;
+                $currentTeam = $team;
             }
         }
 
-        return new TeamContextData($current, $all, $current?->role?->permissions() ?? [], Gate::forUser($user)->allows('create', Team::class));
+        $gate = Gate::forUser($user);
+
+        return new TeamContextData(
+            $current,
+            $all,
+            canCreateTeam: $gate->allows('create', Team::class),
+            canSearchLogs: $currentTeam instanceof Team && $gate->allows('searchLogs', $currentTeam),
+        );
     }
 }

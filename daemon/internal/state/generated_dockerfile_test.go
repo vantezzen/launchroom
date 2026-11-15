@@ -54,7 +54,7 @@ func TestGeneratedDockerfileSpecs(t *testing.T) {
 	}
 
 	completion := func(ins *RepoInspection, probe *ProbeOutcome) *TaskCompletion {
-		c := &TaskCompletion{TypeMeta: NewTypeMeta(KindTaskCompletion), Attempt: 1, Outcome: OutcomeSucceeded, Inspection: ins}
+		c := &TaskCompletion{TypeMeta: NewTypeMeta(KindTaskCompletion), Attempt: 1, Outcome: OutcomeSucceeded, TaskResults: TaskResults{Inspection: ins}}
 		if probe != nil {
 			c.RunOnce = &RunOnceResult{ExitCode: 0, DurationMs: 10, Probe: probe}
 		}

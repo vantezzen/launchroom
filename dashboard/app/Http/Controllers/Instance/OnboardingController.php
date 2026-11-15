@@ -9,8 +9,15 @@ use App\Actions\Instance\DismissTwoFactorRecommendation;
 use App\Actions\Instance\SetAppsDomain;
 use App\Actions\Instance\UpdateOnboarding;
 use App\Data\Git\ManifestRedirectData;
+use App\Data\Inertia\ToastData;
+use App\Data\Instance\AppsDomainData;
+use App\Data\Instance\ConfirmAppsDomainData;
+use App\Data\Instance\UpdateOnboardingData;
+use App\Data\Instance\WildcardCheckData;
+use App\Enums\Domains\DnsCheckStatus;
+use App\Enums\ToastType;
 use App\Http\Controllers\Controller;
-use App\Http\Controllers\Git\GitSettingsController;
+use App\Http\Toast;
 use App\Models\User;
 use App\Queries\OnboardingChecklist;
 use App\Services\Dns\DnsCheck;
@@ -22,7 +29,6 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
-use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -39,7 +45,7 @@ final class OnboardingController extends Controller
         $onboarding = $checklist->for($user);
         // "Connect GitHub" runs inline: the manifest started here is posted
         // to GitHub from this page (GitHubReturnTo), like Settings → Git does.
-        $manifest = ManifestRedirectData::fromSession($request->session()->get(GitSettingsController::MANIFEST_FLASH_KEY));
+        $manifest = ManifestRedirectData::fromSession($request->session()->get(ManifestRedirectData::SESSION_KEY));
 
         return Inertia::render('onboarding', [
             'onboarding' => $onboarding,
@@ -52,23 +58,13 @@ final class OnboardingController extends Controller
     /**
      * Skip / un-skip a step, dismiss / reopen the checklist.
      */
-    public function update(Request $request, UpdateOnboarding $updateOnboarding): RedirectResponse
+    public function update(UpdateOnboardingData $data, UpdateOnboarding $updateOnboarding): RedirectResponse
     {
         Gate::authorize('manageInstance');
 
-        $request->validate([
-            'dismissed' => ['sometimes', 'boolean'],
-            'skip' => ['sometimes', 'nullable', 'string', Rule::in(OnboardingChecklist::SKIPPABLE)],
-            'unskip' => ['sometimes', 'nullable', 'string', Rule::in(OnboardingChecklist::SKIPPABLE)],
-        ]);
+        $updateOnboarding->handle($data->dismissed, $data->skip, $data->unskip);
 
-        $updateOnboarding->handle(
-            $request->has('dismissed') ? $request->boolean('dismissed') : null,
-            $request->filled('skip') ? $request->string('skip')->toString() : null,
-            $request->filled('unskip') ? $request->string('unskip')->toString() : null,
-        );
-
-        return $request->boolean('dismissed') ? to_route('projects.index') : back();
+        return $data->dismissed === true ? to_route('projects.index') : back();
     }
 
     /**
@@ -83,21 +79,15 @@ final class OnboardingController extends Controller
         return back();
     }
 
-    /**
-     * Set or clear the platform domain (`apps_domain`).
-     */
-    public function domain(Request $request, #[CurrentUser] User $user, SetAppsDomain $setAppsDomain): RedirectResponse
+    public function domain(Request $request, AppsDomainData $data, #[CurrentUser] User $user, SetAppsDomain $setAppsDomain): RedirectResponse
     {
         Gate::authorize('manageInstance');
 
-        $request->validate(['appsDomain' => ['present', 'nullable', 'string', 'max:253']]);
-        $domain = $request->filled('appsDomain') ? $request->string('appsDomain')->toString() : null;
+        $settings = $setAppsDomain->handle($data->appsDomain, $this->auditActor($request, $user));
 
-        $settings = $setAppsDomain->handle($domain, $this->auditActor($request, $user));
-
-        Inertia::flash('toast', ['type' => 'success', 'message' => $settings->apps_domain === null
+        Toast::success($settings->apps_domain === null
             ? 'Platform domain removed. New services get sslip.io addresses.'
-            : "Saved {$settings->apps_domain}. Create the DNS record below."]);
+            : "Saved {$settings->apps_domain}. Create the DNS record below.");
 
         return back();
     }
@@ -106,17 +96,15 @@ final class OnboardingController extends Controller
      * "Continue" / "Continue anyway" on the address step: re-checks DNS and
      * marks the step done (docs/08 §3.1).
      */
-    public function confirmDomain(Request $request, ConfirmAppsDomain $confirm): RedirectResponse
+    public function confirmDomain(ConfirmAppsDomainData $data, ConfirmAppsDomain $confirm): RedirectResponse
     {
         Gate::authorize('manageInstance');
 
-        $request->validate(['anyway' => ['sometimes', 'boolean']]);
+        $result = $confirm->handle($data->anyway);
 
-        $result = $confirm->handle($request->boolean('anyway'));
-
-        Inertia::flash('toast', $result->status === 'ok'
-            ? ['type' => 'success', 'message' => 'DNS verified. Your apps get addresses under this domain.']
-            : ['type' => 'success', 'message' => 'Saved. Apps become reachable once the DNS record points at your server.']);
+        Toast::show($result->status === DnsCheckStatus::Ok
+            ? new ToastData(ToastType::Success, 'DNS verified. Your apps get addresses under this domain.')
+            : new ToastData(ToastType::Success, 'Saved. Apps become reachable once the DNS record points at your server.'));
 
         return back();
     }
@@ -125,12 +113,11 @@ final class OnboardingController extends Controller
      * Live DNS check of `*.domain` against the edge servers (JSON), with an
      * HTTP reachability check when the records point elsewhere (proxies).
      */
-    public function check(Request $request, DnsCheck $check, EdgeAddresses $edges): JsonResponse
+    public function check(WildcardCheckData $data, DnsCheck $check, EdgeAddresses $edges): JsonResponse
     {
         Gate::authorize('manageInstance');
 
-        $request->validate(['domain' => ['required', 'string', 'max:240']]);
-        $domain = Hostname::normalize(preg_replace('/^\*\./', '', $request->string('domain')->trim()->toString()) ?? '');
+        $domain = $data->hostname();
 
         abort_unless(Hostname::isValid($domain) && ! Hostname::isLocal($domain), 422, 'Enter a domain such as apps.example.com.');
 

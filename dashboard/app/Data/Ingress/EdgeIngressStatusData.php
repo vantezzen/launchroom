@@ -33,19 +33,18 @@ final class EdgeIngressStatusData extends Data
 
     public static function fromServer(Server $server): self
     {
-        $status = $server->ingress_status ?? [];
-        $storage = is_array($status['storage'] ?? null) ? $status['storage'] : [];
+        $status = $server->ingress_status;
 
         return new self(
             id: $server->public_id,
             name: $server->name,
             // Where DNS must point: never a private or Docker address (docs/05 §5).
             publicIpv4: ServerAddress::ipv4($server->public_ipv4),
-            state: is_string($status['state'] ?? null) ? $status['state'] : null,
-            routes: is_int($status['routes'] ?? null) ? $status['routes'] : null,
-            storage: is_string($storage['state'] ?? null) ? $storage['state'] : null,
-            mirrored: is_int($storage['mirrored'] ?? null) ? $storage['mirrored'] : null,
-            message: is_string($storage['message'] ?? null) ? $storage['message'] : null,
+            state: $status?->state,
+            routes: $status?->routes,
+            storage: $status?->storage?->state,
+            mirrored: $status?->storage?->mirrored,
+            message: $status?->storage?->message,
             reportedAt: $server->ingress_status_at?->toIso8601ZuluString(),
             controlPlane: $server->is_control_plane,
             shared: $server->isSharedEdge(),

@@ -15,6 +15,8 @@ import (
 	"github.com/google/nftables/userdata"
 	"github.com/mdlayher/netlink"
 	"golang.org/x/sys/unix"
+
+	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
 
 // netlinkReadBuffer is the receive buffer asked for (the kernel caps it at
@@ -211,11 +213,7 @@ func (netlinkBackend) Remove() error {
 }
 
 func comment(r Rule) []byte {
-	s := r.String()
-	if len(s) > 250 {
-		s = s[:250]
-	}
-	return userdata.AppendString(nil, userdata.TypeComment, s)
+	return userdata.AppendString(nil, userdata.TypeComment, state.Clip(r.String(), 250))
 }
 
 func ifname(name string) []byte {

@@ -9,23 +9,28 @@ use App\Data\Audit\AuditActor;
 use App\Data\Audit\AuditEntryData;
 use App\Enums\AuditAction;
 use App\Models\InstanceSettings;
+use App\Queries\MoveChecklist;
 use Illuminate\Support\Facades\DB;
 
 /**
  * Closes the checklist the new dashboard shows after a move (docs/14
- * §13.4), noting what was left open (audited).
+ * §13.4), auditing the steps still open, as freshly checked here.
  */
 final readonly class FinishMoveChecklist
 {
     public function __construct(
         private RecordAuditEvent $audit,
+        private MoveChecklist $checklist,
     ) {}
 
-    /**
-     * @param  list<string>  $open
-     */
-    public function handle(array $open, AuditActor $actor): void
+    public function handle(AuditActor $actor): void
     {
+        if (InstanceSettings::current()->move_checklist === null) {
+            return;
+        }
+
+        $open = $this->checklist->get(check: true)->openSteps;
+
         DB::transaction(function () use ($open, $actor): void {
             $settings = InstanceSettings::lockedForUpdate();
             $state = $settings->move_checklist;
@@ -41,7 +46,7 @@ final readonly class FinishMoveChecklist
                 actor: $actor,
                 subjectType: 'instance',
                 subjectId: 'instance',
-                meta: array_filter(['move' => $state['moveId'] ?? null, 'open' => array_slice($open, 0, 10)]),
+                meta: array_filter(['move' => $state->moveId, 'open' => $open]),
             ));
         });
     }

@@ -4,11 +4,17 @@ declare(strict_types=1);
 
 namespace App\Models\Dockerfiles;
 
+use App\Data\Dockerfiles\DockerfileAttemptRecordData;
+use App\Data\Dockerfiles\DockerfileDetectedData;
+use App\Data\Dockerfiles\DockerfileFileSentData;
+use App\Data\Dockerfiles\RepositoryContextData;
+use App\Enums\Contracts\HasTransitionTable;
 use App\Enums\Dockerfiles\DockerfileConfidence;
 use App\Enums\Dockerfiles\DockerfileGenerationStatus;
 use App\Enums\Dockerfiles\DockerfileGenerationTrigger;
 use App\Models\Concerns\BelongsToTeam;
 use App\Models\Concerns\HasPublicId;
+use App\Models\Concerns\HasStatusTransitions;
 use App\Models\DaemonTask;
 use App\Models\Service;
 use App\Models\ServiceInstance;
@@ -18,6 +24,7 @@ use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
+use Spatie\LaravelData\DataCollection;
 
 /**
  * One "Generate a Dockerfile" run (docs/20 §5).
@@ -43,10 +50,10 @@ use Illuminate\Support\Carbon;
  * @property int|null $plan_task_id
  * @property int|null $build_task_id
  * @property int|null $run_task_id
- * @property array{tree: list<string>, treeTruncated: bool, files: list<array{path: string, content: string, truncated: bool}>}|null $context
- * @property list<array{path: string, bytes: int, truncated: bool}>|null $files_sent
- * @property array<string, mixed>|null $detected plan summary + plan error the model sees
- * @property list<array<string, mixed>>|null $attempts
+ * @property RepositoryContextData|null $context
+ * @property DataCollection<int, DockerfileFileSentData>|null $files_sent
+ * @property DockerfileDetectedData|null $detected plan summary + plan error the model sees
+ * @property DataCollection<int, DockerfileAttemptRecordData>|null $attempts
  * @property string|null $dockerfile
  * @property int|null $port
  * @property string|null $start_command
@@ -73,6 +80,9 @@ final class DockerfileGeneration extends Model
 {
     use BelongsToTeam, HasPublicId;
 
+    /** @use HasStatusTransitions<DockerfileGenerationStatus> */
+    use HasStatusTransitions;
+
     /** @var array<string, mixed> */
     protected $attributes = [
         'status' => 'reading',
@@ -87,20 +97,16 @@ final class DockerfileGeneration extends Model
     }
 
     /**
-     * The only way the status changes (docs/10 §2.2 rule 3). Open sheets
-     * poll the generation, so nothing is broadcast.
+     * @param  DockerfileGenerationStatus  $from
+     * @param  DockerfileGenerationStatus  $to
      */
-    public function transitionTo(DockerfileGenerationStatus $to): void
+    protected function recordTransition(HasTransitionTable $from, HasTransitionTable $to, ?string $note): void
     {
-        $this->status->assertCanTransitionTo($to);
-        $this->status = $to;
         $this->forceFill(['step_started_at' => now()]);
 
         if ($to->isTerminal()) {
             $this->forceFill(['finished_at' => now()]);
         }
-
-        $this->save();
     }
 
     /**
@@ -145,10 +151,10 @@ final class DockerfileGeneration extends Model
             'status' => DockerfileGenerationStatus::class,
             'attempt' => 'integer',
             'max_attempts' => 'integer',
-            'context' => 'encrypted:array',
-            'files_sent' => 'array',
-            'detected' => 'array',
-            'attempts' => 'array',
+            'context' => RepositoryContextData::class.':encrypted',
+            'files_sent' => DataCollection::class.':'.DockerfileFileSentData::class,
+            'detected' => DockerfileDetectedData::class,
+            'attempts' => DataCollection::class.':'.DockerfileAttemptRecordData::class,
             'port' => 'integer',
             'confidence' => DockerfileConfidence::class,
             'input_tokens' => 'integer',

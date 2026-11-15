@@ -23,7 +23,7 @@ use App\Http\Controllers\Api\V1\TransferController;
 use App\Http\Controllers\Api\V1\VariableController;
 use App\Http\Middleware\IdempotentRequest;
 use App\Http\Middleware\RequireTokenAbility;
-use App\Support\PublicId;
+use App\Support\Transfers\DownloadToken;
 use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Support\Facades\Route;
 
@@ -50,19 +50,6 @@ Route::middleware(SubstituteBindings::class)->group(function () use ($ability): 
         ->name('api.cli.sessions.token');
 
     Route::middleware(['auth:sanctum', 'throttle:api'])
-        ->where([
-            'project' => PublicId::routePattern('prj'),
-            'environment' => PublicId::routePattern('env'),
-            'service' => PublicId::routePattern('svc'),
-            'deployment' => PublicId::routePattern('dpl'),
-            'variable' => PublicId::routePattern('var'),
-            'domain' => PublicId::routePattern('dom'),
-            'server' => PublicId::routePattern('srv'),
-            'transfer' => PublicId::routePattern('dtr'),
-            'import' => PublicId::routePattern('imp'),
-            'export' => PublicId::routePattern('exp'),
-            'finding' => PublicId::routePattern('fnd'),
-        ])
         ->name('api.')
         ->group(function () use ($ability): void {
             Route::get('me', MeController::class)->name('me');
@@ -131,7 +118,7 @@ Route::middleware(SubstituteBindings::class)->group(function () use ($ability): 
                 Route::put('transfers/{transfer}/chunks/{index}', [TransferController::class, 'chunk'])->whereNumber('index')->middleware('throttle:transfer-chunks')->name('transfers.chunks');
                 Route::get('imports/{import}', [ImportController::class, 'show'])->name('imports.show');
                 Route::get('exports/{export}', [ExportController::class, 'show'])->name('exports.show');
-                Route::get('downloads/{token}', DownloadController::class)->where('token', 'lr_dl_[A-Za-z0-9_-]{43}')->name('downloads.show');
+                Route::get('downloads/{token}', DownloadController::class)->where('token', DownloadToken::ROUTE_PATTERN)->name('downloads.show');
 
                 Route::middleware(['throttle:api-write', IdempotentRequest::class])->group(function (): void {
                     Route::post('environments/{environment}/services/{service}/transfers', [TransferController::class, 'store'])->name('transfers.store');

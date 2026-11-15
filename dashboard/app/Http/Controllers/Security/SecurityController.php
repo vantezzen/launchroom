@@ -9,12 +9,13 @@ use App\Data\Api\AnalyticsQuery;
 use App\Data\Security\InventorySearchData;
 use App\Data\Security\SecurityPageData;
 use App\Http\Controllers\Controller;
-use App\Http\Controllers\Teams\TeamSettingsController;
+use App\Http\Routing\CurrentTeam;
 use App\Models\Security\SecurityFinding;
+use App\Models\Team;
 use App\Models\User;
 use App\Queries\Security\InventorySearch;
 use App\Queries\Security\SecurityOverview;
-use App\Support\Security\SecurityScope;
+use App\Queries\Security\SecurityScope;
 use Illuminate\Container\Attributes\CurrentUser;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -32,9 +33,8 @@ use Inertia\Response;
  */
 final class SecurityController extends Controller
 {
-    public function show(Request $request, #[CurrentUser] User $user): Response
+    public function show(Request $request, #[CurrentTeam] Team $team): Response
     {
-        $team = TeamSettingsController::currentTeam($user);
         Gate::authorize('viewAny', [SecurityFinding::class, $team]);
 
         $scope = SecurityScope::resolve($team, $request->query('project'), $request->query('service'));
@@ -49,9 +49,8 @@ final class SecurityController extends Controller
         ]);
     }
 
-    public function inventory(Request $request, #[CurrentUser] User $user): Response
+    public function inventory(Request $request, #[CurrentTeam] Team $team): Response
     {
-        $team = TeamSettingsController::currentTeam($user);
         Gate::authorize('viewAny', [SecurityFinding::class, $team]);
         $query = $request->query('q');
 
@@ -67,9 +66,8 @@ final class SecurityController extends Controller
      * `?project=prj_…` or `?service=svc_…` narrows every section; an id
      * that isn't the team's is a 404.
      */
-    public function data(Request $request, AnalyticsQuery $query, #[CurrentUser] User $user, SecurityOverview $overview): SecurityPageData
+    public function data(Request $request, AnalyticsQuery $query, #[CurrentUser] User $user, SecurityOverview $overview, #[CurrentTeam] Team $team): SecurityPageData
     {
-        $team = TeamSettingsController::currentTeam($user);
         Gate::authorize('viewAny', [SecurityFinding::class, $team]);
 
         $project = $request->query('project');
@@ -80,18 +78,16 @@ final class SecurityController extends Controller
         return $overview->handle($team, $user, $query->range, $scope);
     }
 
-    public function search(Request $request, #[CurrentUser] User $user, InventorySearch $search): InventorySearchData
+    public function search(Request $request, InventorySearch $search, #[CurrentTeam] Team $team): InventorySearchData
     {
-        $team = TeamSettingsController::currentTeam($user);
         Gate::authorize('viewAny', [SecurityFinding::class, $team]);
         $query = $request->query('q');
 
         return $search->handle($team, is_string($query) ? $query : '');
     }
 
-    public function check(#[CurrentUser] User $user, CheckNow $check): JsonResponse
+    public function check(CheckNow $check, #[CurrentTeam] Team $team): JsonResponse
     {
-        $team = TeamSettingsController::currentTeam($user);
         Gate::authorize('checkNow', [SecurityFinding::class, $team]);
         $check->handle();
 

@@ -34,8 +34,6 @@ final class ProjectBackupFootprint
     }
 
     /**
-     * The same for one environment (deleting an environment).
-     *
      * @return array{servicesWithBackups: int, inFlight: bool}
      */
     public function forEnvironment(Environment $environment): array
@@ -73,11 +71,11 @@ final class ProjectBackupFootprint
 
         $inFlight = BackupRun::query()
             ->whereIn('service_instance_id', $instanceIds)
-            ->whereIn('status', [BackupRunStatus::Pending->value, BackupRunStatus::Running->value])
+            ->whereIn('status', BackupRunStatus::nonTerminal())
             ->exists()
             || RestoreRun::query()
                 ->where(static fn (Builder $query) => $query->whereIn('source_service_instance_id', $instanceIds)->orWhereIn('target_service_instance_id', $instanceIds))
-                ->whereNotIn('status', [RestoreRunStatus::Succeeded->value, RestoreRunStatus::Failed->value])
+                ->whereIn('status', RestoreRunStatus::nonTerminal())
                 ->exists();
 
         return [

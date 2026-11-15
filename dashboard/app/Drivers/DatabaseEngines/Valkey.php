@@ -13,11 +13,6 @@ final readonly class Valkey extends RedisCompatible
         return DatabaseEngine::Valkey;
     }
 
-    public function defaultVersion(): string
-    {
-        return '8';
-    }
-
     public function entrypoint(): array
     {
         // The image's ENTRYPOINT is `tini -- docker-entrypoint.sh`: tini as

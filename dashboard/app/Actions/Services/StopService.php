@@ -9,6 +9,7 @@ use App\Data\Audit\AuditActor;
 use App\Data\Audit\AuditEntryData;
 use App\Enums\AuditAction;
 use App\Enums\DeploymentStatus;
+use App\Events\CanvasChanged;
 use App\Events\NodeStateInvalidated;
 use App\Exceptions\DomainRuleViolation;
 use App\Jobs\AdvanceDeploymentJob;
@@ -83,7 +84,7 @@ final readonly class StopService
 
                 $advance = [...$advance, ...Deployment::query()
                     ->where('service_instance_id', $target->id)
-                    ->whereIn('status', DeploymentStatus::values([DeploymentStatus::Queued, ...DeploymentStatus::inFlight()]))
+                    ->unfinished()
                     ->pluck('id')
                     ->all()];
                 $names[] = $target->service->public_id;
@@ -102,14 +103,15 @@ final readonly class StopService
         });
 
         // Their servers stop the containers; the edges answer "stopped".
-        /** @var list<int> $servers */
-        event(new NodeStateInvalidated(array_values(array_unique([...$servers, ...ServiceProcesses::edges($instance->team_id)]))));
+        NodeStateInvalidated::edges($instance->team_id, $servers);
 
         foreach ($advance as $id) {
             if (is_int($id)) {
                 dispatch(new AdvanceDeploymentJob($id));
             }
         }
+
+        CanvasChanged::forInstance($instance);
 
         return $stopped;
     }
@@ -118,7 +120,7 @@ final readonly class StopService
     {
         return Deployment::query()
             ->where('service_instance_id', $instance->id)
-            ->whereIn('status', DeploymentStatus::values([DeploymentStatus::Queued, ...DeploymentStatus::inFlight()]))
+            ->unfinished()
             ->exists();
     }
 }

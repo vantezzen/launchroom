@@ -6,11 +6,13 @@ namespace App\Queries;
 
 use App\Contracts\Git\OpensPullRequests;
 use App\Data\Dockerfiles\DockerfileAttemptData;
-use App\Data\Dockerfiles\DockerfileFileSentData;
+use App\Data\Dockerfiles\DockerfileAttemptRecordData;
 use App\Data\Dockerfiles\DockerfileGenerationData;
 use App\Data\Dockerfiles\DockerfileGenerationPanelData;
 use App\Data\Services\GitSource;
 use App\Enums\Dockerfiles\DockerfileGenerationStatus;
+use App\Enums\ServicePlanStatus;
+use App\Enums\TaskFailureClass;
 use App\Models\Dockerfiles\AiProviderSettings;
 use App\Models\Dockerfiles\DockerfileGeneration;
 use App\Models\ServiceInstance;
@@ -44,8 +46,6 @@ final readonly class DockerfileGenerationView
             ->latest('id')
             ->first();
 
-        $plan = $instance->plan ?? [];
-
         return new DockerfileGenerationPanelData(
             available: $reason === null,
             reason: $reason,
@@ -57,7 +57,7 @@ final readonly class DockerfileGenerationView
                 DockerfileGenerationGate::TEAM_OFF => $user->can('update', $team),
                 default => false,
             },
-            planFailed: ($plan['status'] ?? null) === 'failed' && ($plan['failureClass'] ?? null) === 'plan_error',
+            planFailed: $instance->plan?->status === ServicePlanStatus::Failed && $instance->plan->failureClass === TaskFailureClass::PlanError->value,
             latest: $latest instanceof DockerfileGeneration ? $this->generation($latest, $user) : null,
         );
     }
@@ -67,20 +67,20 @@ final readonly class DockerfileGenerationView
         $generation->loadMissing(['serviceInstance', 'service']);
         $instance = $generation->serviceInstance;
         $source = $generation->service->source;
-        $attempts = $generation->attempts ?? [];
-        $drafts = array_values(array_filter($attempts, static fn (array $a): bool => is_string($a['dockerfile'] ?? null)));
-        $previous = count($drafts) >= 2 ? $drafts[count($drafts) - 2]['dockerfile'] : null;
-        $last = $attempts === [] ? [] : $attempts[count($attempts) - 1];
+        $attempts = array_values($generation->attempts?->items() ?? []);
+        $drafts = array_values(array_filter($attempts, static fn (DockerfileAttemptRecordData $a): bool => $a->dockerfile !== null));
+        $previous = count($drafts) >= 2 ? $drafts[count($drafts) - 2]->dockerfile : null;
+        $last = $attempts === [] ? null : $attempts[count($attempts) - 1];
         $canUpdate = Gate::forUser($user)->allows('update', $instance);
         $verified = $generation->status === DockerfileGenerationStatus::Verified;
         $context = $generation->context;
 
         $provider = null;
 
-        if ($source instanceof GitSource && ! $source->isUnconnectedPlainGit()) {
+        if ($source instanceof GitSource) {
             try {
                 $git = $this->providers->forSource($source);
-                $provider = $git instanceof OpensPullRequests ? $source->kind()->label() : null;
+                $provider = $git instanceof OpensPullRequests ? $source->provider->label() : null;
             } catch (Throwable) {
                 $provider = null;
             }
@@ -95,21 +95,21 @@ final readonly class DockerfileGenerationView
             maxAttempts: $generation->max_attempts,
             commitSha: $generation->commit_sha,
             branch: $generation->branch,
-            dockerfile: $generation->dockerfile ?? (is_string($last['dockerfile'] ?? null) ? $last['dockerfile'] : null),
-            previousDockerfile: is_string($previous) ? $previous : null,
+            dockerfile: $generation->dockerfile ?? $last?->dockerfile,
+            previousDockerfile: $previous,
             port: $generation->port,
             startCommand: $generation->start_command,
             explanation: $generation->explanation,
             confidence: $generation->confidence,
             error: $generation->error,
-            attempts: array_map(static fn (array $a): DockerfileAttemptData => new DockerfileAttemptData(
-                n: is_int($a['n'] ?? null) ? $a['n'] : 0,
-                outcome: is_string($a['outcome'] ?? null) ? $a['outcome'] : null,
-                message: is_string($a['message'] ?? null) ? mb_substr($a['message'], 0, 1200) : null,
-                lint: array_values(array_filter(is_array($a['lint'] ?? null) ? $a['lint'] : [], static fn (mixed $p): bool => is_array($p) && is_int($p['line'] ?? null) && is_string($p['message'] ?? null))),
+            attempts: array_map(static fn (DockerfileAttemptRecordData $a): DockerfileAttemptData => new DockerfileAttemptData(
+                n: $a->n,
+                outcome: $a->outcome,
+                message: $a->message === null ? null : mb_substr($a->message, 0, 1200),
+                lint: $a->lint,
             ), $attempts),
-            filesSent: array_map(static fn (array $file): DockerfileFileSentData => new DockerfileFileSentData($file['path'], $file['bytes'], $file['truncated']), $generation->files_sent ?? []),
-            filesListed: is_array($context) ? count($context['tree']) : 0,
+            filesSent: array_values($generation->files_sent?->items() ?? []),
+            filesListed: $context === null ? 0 : count($context->tree),
             inputTokens: $generation->input_tokens,
             outputTokens: $generation->output_tokens,
             costUsd: self::cost($generation->model, $generation->input_tokens, $generation->output_tokens),
@@ -148,13 +148,16 @@ final readonly class DockerfileGenerationView
     }
 
     /**
-     * @param  list<array<string, mixed>>  $attempts
+     * @param  list<DockerfileAttemptRecordData>  $attempts
+     * @param  'buildMs'|'startedAfterMs'  $key
      */
     private function lastInt(array $attempts, string $key): ?int
     {
         foreach (array_reverse($attempts) as $attempt) {
-            if (is_int($attempt[$key] ?? null)) {
-                return $attempt[$key];
+            $value = $key === 'buildMs' ? $attempt->buildMs : $attempt->startedAfterMs;
+
+            if ($value !== null) {
+                return $value;
             }
         }
 

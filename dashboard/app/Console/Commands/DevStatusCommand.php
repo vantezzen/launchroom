@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Enums\ServerRole;
-use App\Enums\ServerStatus;
 use App\Models\Deployment;
 use App\Models\Placement;
 use App\Models\Server;
@@ -73,7 +72,7 @@ final class DevStatusCommand extends Command
             return self::SUCCESS;
         }
 
-        $team = Server::query()->where('team_id', $instance->team_id)->where('status', '!=', ServerStatus::Revoked->value)->orderBy('id')->get();
+        $team = Server::query()->where('team_id', $instance->team_id)->notRevoked()->orderBy('id')->get();
         $servers = $team->pluck('name', 'id')->all();
 
         $deployments = Deployment::query()

@@ -35,7 +35,7 @@ final readonly class AbortHandover
         return DB::transaction(function () use ($move, $reason, $actor): ControlPlaneMove {
             $move = ControlPlaneMove::query()->whereKey($move->id)->lockForUpdate()->firstOrFail();
 
-            if (! in_array($move->status, [ControlPlaneMoveStatus::HandingOver, ControlPlaneMoveStatus::HandoverReady], true)) {
+            if (! in_array($move->status, ControlPlaneMoveStatus::handingOver(), true)) {
                 throw DomainRuleViolation::conflict('No hand-over is in progress.');
             }
 

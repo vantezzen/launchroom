@@ -213,7 +213,11 @@ func (a *App) whoamiCmd() *cobra.Command {
 				_, _ = fmt.Fprintf(w, "Team       %s (%s)\n", me.Team.Name, me.Team.Role)
 				_, _ = fmt.Fprintf(w, "Dashboard  %s\n", s.URL)
 				_, _ = fmt.Fprintf(w, "Token      %s · %s\n", me.Token.Name, strings.Join(me.Token.Abilities, ", "))
-				_, _ = fmt.Fprintf(w, "Expires    %s\n", shortTime(me.Token.ExpiresAt))
+				expires := "never"
+				if me.Token.ExpiresAt != nil {
+					expires = shortTime(*me.Token.ExpiresAt)
+				}
+				_, _ = fmt.Fprintf(w, "Expires    %s\n", expires)
 			})
 		},
 	}

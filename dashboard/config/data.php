@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Data\Attributes\UnknownCodeRuleInferrer;
 use Illuminate\Contracts\Support\Arrayable;
 use Spatie\LaravelData\Casts\DateTimeInterfaceCast;
 use Spatie\LaravelData\Casts\EnumCast;
@@ -82,6 +83,7 @@ return [
         RequiredRuleInferrer::class,
         BuiltInTypesRuleInferrer::class,
         AttributesRuleInferrer::class,
+        UnknownCodeRuleInferrer::class,
     ],
 
     /*

@@ -6,11 +6,8 @@ import { useMeasuredWidth } from '@/components/charts/use-measure';
 import { DeviceImage } from '@/components/devices/device-image';
 import { Status, serverStatus } from '@/components/status';
 import { deviceKind, deviceStatus } from '@/features/servers/format';
-import {
-    formatLatency,
-    formatRate,
-    linkLabel,
-} from '@/features/servers/link-format';
+import { formatLinkSpeed, linkLabel } from '@/features/servers/link-format';
+import { formatLatency } from '@/lib/format';
 import { roleIcons, roleTitles } from '@/features/servers/server-status';
 import { cn } from '@/lib/utils';
 import { show } from '@/routes/servers';
@@ -189,7 +186,7 @@ export function FleetTopology({
                     : null,
                 ...link.speeds.map(
                     (speed) =>
-                        `${nameOf(speed.from)} to ${nameOf(speed.to)} ${formatRate(speed.mbps)}`,
+                        `${nameOf(speed.from)} to ${nameOf(speed.to)} ${formatLinkSpeed(speed.mbps)}`,
                 ),
             ]
                 .filter(Boolean)

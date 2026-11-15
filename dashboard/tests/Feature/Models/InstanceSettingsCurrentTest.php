@@ -29,13 +29,13 @@ test('a saved copy replaces the shared one', function (): void {
         ->and(InstanceSettings::current()->apps_domain)->toBe('apps.example.test');
 });
 
-test('forgetting the shared copy reads a query builder write', function (): void {
-    InstanceSettings::current();
-    InstanceSettings::query()->whereKey(InstanceSettings::ID)->update(['apps_domain' => 'raw.example.test']);
+test('the generated instance id is visible to the shared copy', function (): void {
+    expect(InstanceSettings::current()->instance_id)->toBeNull();
 
-    InstanceSettings::forgetCurrent();
+    $id = InstanceSettings::instanceId();
 
-    expect(InstanceSettings::current()->apps_domain)->toBe('raw.example.test');
+    expect(InstanceSettings::current()->instance_id)->toBe($id)
+        ->and(InstanceSettings::instanceId())->toBe($id);
 });
 
 test('a queued job reads the row again', function (): void {

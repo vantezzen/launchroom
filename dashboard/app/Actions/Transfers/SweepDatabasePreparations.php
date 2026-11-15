@@ -4,12 +4,11 @@ declare(strict_types=1);
 
 namespace App\Actions\Transfers;
 
-use App\Enums\DeploymentStatus;
+use App\Enums\DeploymentPurpose;
 use App\Enums\Transfers\ImportRunStatus;
 use App\Models\Deployment;
 use App\Models\Transfers\DataImportRun;
 use App\Services\Transfers\DatabasePreparations;
-use Carbon\CarbonImmutable;
 use Throwable;
 
 /**
@@ -27,8 +26,8 @@ final readonly class SweepDatabasePreparations
     {
         $ended = 0;
         $preparations = Deployment::query()
-            ->whereIn('status', DeploymentStatus::values([DeploymentStatus::Queued, ...DeploymentStatus::inFlight()]))
-            ->whereNotNull('plan->'.DatabasePreparations::KEY)
+            ->unfinished()
+            ->withPurpose(DeploymentPurpose::PrepareImport)
             ->with('serviceInstance')
             ->get();
 
@@ -57,13 +56,10 @@ final readonly class SweepDatabasePreparations
 
         $imported = DataImportRun::query()
             ->where('service_instance_id', $instance->id)
-            ->whereIn('status', [ImportRunStatus::Succeeded->value, ImportRunStatus::Failed->value, ImportRunStatus::Cancelled->value])
+            ->whereIn('status', ImportRunStatus::terminal())
             ->where('created_at', '>=', $deployment->created_at)
             ->exists();
 
-        $lease = $deployment->plan[DatabasePreparations::KEY] ?? null;
-        $until = is_array($lease) ? ($lease['until'] ?? null) : null;
-
-        return $imported || ! is_string($until) || CarbonImmutable::parse($until)->isPast();
+        return $imported || $deployment->prepared_until === null || $deployment->prepared_until->isPast();
     }
 }

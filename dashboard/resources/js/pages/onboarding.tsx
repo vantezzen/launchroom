@@ -1,7 +1,7 @@
 import { Head, Link, router } from '@inertiajs/react';
 import { Check } from 'lucide-react';
 import type { FormEvent, ReactNode } from 'react';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import InputError from '@/components/input-error';
 import { Logo } from '@/components/logo';
 import { LiveWait } from '@/components/patterns/live-wait';
@@ -21,8 +21,8 @@ import {
     ServerDevice,
     serverFacts,
 } from '@/features/onboarding/server-summary';
-import { ProgressRing, StepCard } from '@/features/onboarding/step-card';
-import type { GuidedStepStatus } from '@/features/onboarding/step-card';
+import { DoneRing, StepCard } from '@/components/steps/step-card';
+import type { GuidedStepStatus } from '@/components/steps/step-card';
 import { TwoFactorRecommendation } from '@/features/onboarding/two-factor-recommendation';
 import { SmallServerHint } from '@/features/servers/small-server-hint';
 import { cn } from '@/lib/utils';
@@ -34,6 +34,8 @@ import {
     importMethod as importProject,
     index as projects,
 } from '@/routes/projects';
+import { plural } from '@/lib/format';
+import { useLiveProps } from '@/hooks/use-live-props';
 
 type Onboarding = App.Data.Instance.OnboardingData;
 type Step = App.Data.Instance.OnboardingStepData;
@@ -43,17 +45,6 @@ function update(data: Record<string, string | boolean>) {
         preserveScroll: true,
         preserveState: true,
     });
-}
-
-/** The free sslip.io wildcard for this server ("*.203-0-113-7.sslip.io"). */
-function freeWildcard(data: Onboarding): string | null {
-    return data.sslipExample
-        ? `*.${data.sslipExample.split('.').slice(1).join('.')}`
-        : null;
-}
-
-function plural(count: number, one: string, many: string): string {
-    return `${count} ${count === 1 ? one : many}`;
 }
 
 type StepView = {
@@ -313,7 +304,7 @@ function DomainBody({ data, step }: { data: Onboarding; step: Step }) {
                       ? [data.serverAddress]
                       : []
             }
-            freeWildcard={freeWildcard(data)}
+            freeWildcard={data.freeWildcard}
             dashboardHost={data.dashboardHost}
             usingFree={step.status === 'skipped'}
             freeAction={
@@ -329,7 +320,7 @@ function DomainBody({ data, step }: { data: Onboarding; step: Step }) {
 }
 
 function domainView(data: Onboarding, step: Step): StepView {
-    const free = freeWildcard(data);
+    const free = data.freeWildcard;
     const body = <DomainBody data={data} step={step} />;
 
     if (step.status === 'done') {
@@ -553,21 +544,12 @@ export default function OnboardingPage({
     const serverName = onboarding.server?.name;
 
     // "Waiting for this server" updates by itself.
-    useEffect(() => {
-        if (!waitingForServer) {
-            return;
-        }
+    useLiveProps(['onboarding'], { while: waitingForServer, everyMs: 5000 });
 
-        const interval = window.setInterval(() => {
-            if (document.visibilityState === 'visible') {
-                router.reload({ only: ['onboarding'] });
-            }
-        }, 5000);
-
-        return () => window.clearInterval(interval);
-    }, [waitingForServer]);
-
-    const views: Record<string, (step: Step) => StepView> = {
+    const views: Record<
+        App.Enums.Instance.OnboardingStep,
+        (step: Step) => StepView
+    > = {
         server: (step) => serverView(onboarding, step),
         github: (step) =>
             githubView(
@@ -618,7 +600,7 @@ export default function OnboardingPage({
                                 : `${remaining} steps left. Nothing here is urgent.`
                     }
                     actions={
-                        <ProgressRing
+                        <DoneRing
                             done={progress.done}
                             total={progress.total}
                             size={64}

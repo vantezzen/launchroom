@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Data\Promotions;
 
+use App\Support\Variables\VariableKey;
 use Spatie\LaravelData\Attributes\Validation\Max;
 use Spatie\LaravelData\Data;
 
@@ -17,7 +18,7 @@ final class PromoteItemInput extends Data
     public function __construct(
         #[Max(1024)]
         public string $path,
-        #[Max(131072)]
+        #[Max(VariableKey::MAX_VALUE_BYTES)]
         public ?string $value = null,
         public bool $copyValue = false,
     ) {}

@@ -1,0 +1,67 @@
+/**
+ * Every Inertia page component (`resources/js/pages`), so code that names a
+ * page (warm-ups, layout checks) is type-checked. `pages.test.ts` keeps the
+ * list equal to the files.
+ */
+export const PAGE_NAMES = [
+    'activity',
+    'analytics',
+    'auth/confirm-password',
+    'auth/forgot-password',
+    'auth/login',
+    'auth/reset-password',
+    'auth/two-factor-challenge',
+    'auth/verify-email',
+    'cli/login',
+    'dev/design',
+    'dev/visuals',
+    'docs/api',
+    'invitations/show',
+    'logs',
+    'moved',
+    'onboarding',
+    'projects/activity',
+    'projects/analytics',
+    'projects/canvas',
+    'projects/changes',
+    'projects/deployments/index',
+    'projects/deployments/show',
+    'projects/index',
+    'projects/logs',
+    'projects/new',
+    'projects/new-compose',
+    'projects/previews',
+    'projects/promote',
+    'projects/settings',
+    'projects/templates',
+    'recovery',
+    'security',
+    'security/finding',
+    'servers/create',
+    'servers/enrollment',
+    'servers/index',
+    'servers/move',
+    'servers/replace',
+    'servers/show',
+    'settings/api-tokens',
+    'settings/appearance',
+    'settings/backups',
+    'settings/dashboard-domain',
+    'settings/dockerfile-generation',
+    'settings/git',
+    'settings/instance-security',
+    'settings/move',
+    'settings/network',
+    'settings/notifications',
+    'settings/profile',
+    'settings/registry',
+    'settings/security',
+    'settings/team',
+    'settings/updates',
+    'setup',
+] as const;
+
+export type PageName = (typeof PAGE_NAMES)[number];
+
+/** The layout of pages that draw their own frame (signed-out pages): none. */
+export const noLayout: [] = [];

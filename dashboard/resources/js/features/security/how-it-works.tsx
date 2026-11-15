@@ -5,7 +5,7 @@ import {
     DialogDescription,
     DialogTitle,
 } from '@/components/ui/dialog';
-import { useDocsUrl } from '@/features/settings/settings-card';
+import { useDocsUrl } from '@/components/settings/settings-card';
 
 /**
  * "How it works" (docs/22 §9.7): the page's only explanation, two or

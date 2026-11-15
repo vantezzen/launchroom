@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace App\Models\Backups;
 
 use App\Enums\Backups\DeletionRequestStatus;
+use App\Enums\Contracts\HasTransitionTable;
 use App\Models\Concerns\BelongsToTeam;
 use App\Models\Concerns\HasPublicId;
+use App\Models\Concerns\HasStatusTransitions;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Collection;
@@ -44,6 +46,9 @@ final class DeletionRequest extends Model
 {
     use BelongsToTeam, HasPublicId;
 
+    /** @use HasStatusTransitions<DeletionRequestStatus> */
+    use HasStatusTransitions;
+
     public const string PROJECT = 'project';
 
     public const string ENVIRONMENT = 'environment';
@@ -61,33 +66,27 @@ final class DeletionRequest extends Model
         return 'del';
     }
 
-    /**
-     * The open request of a subject, if any (locked when asked).
-     */
     public static function openFor(string $type, int $id, bool $lock = false): ?self
     {
         $query = self::query()
             ->where('subject_type', $type)
             ->where('subject_id', $id)
-            ->whereNotIn('status', [DeletionRequestStatus::Completed->value, DeletionRequestStatus::Cancelled->value]);
+            ->whereIn('status', DeletionRequestStatus::nonTerminal());
 
         return ($lock ? $query->lockForUpdate() : $query)->first();
     }
 
     /**
-     * The only way a request's status changes (docs/10 §2.2 rule 3).
+     * @param  DeletionRequestStatus  $from
+     * @param  DeletionRequestStatus  $to
      */
-    public function transitionTo(DeletionRequestStatus $to, ?string $error = null): void
+    protected function recordTransition(HasTransitionTable $from, HasTransitionTable $to, ?string $note): void
     {
-        $this->status->assertCanTransitionTo($to);
-        $this->status = $to;
-        $this->error = $error === null ? null : mb_substr($error, 0, 2048);
+        $this->error = $note;
 
         if ($to === DeletionRequestStatus::Completed) {
             $this->forceFill(['completed_at' => now()]);
         }
-
-        $this->save();
     }
 
     /**

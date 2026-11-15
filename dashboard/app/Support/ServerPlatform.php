@@ -13,11 +13,21 @@ use App\Models\Server;
  */
 final class ServerPlatform
 {
+    public const string AMD64 = 'linux/amd64';
+
+    public const string ARM64 = 'linux/arm64';
+
+    /** Every platform of the protocol (report.json HostRuntime.buildPlatforms). */
+    public const array ALL = [self::AMD64, self::ARM64];
+
+    /** Where a build goes when nothing says otherwise. */
+    public const string DEFAULT = self::AMD64;
+
     public static function of(Server $server): ?string
     {
         return match (strtolower($server->facts->arch ?? '')) {
-            'amd64', 'x86_64', 'x86-64' => 'linux/amd64',
-            'arm64', 'aarch64' => 'linux/arm64',
+            'amd64', 'x86_64', 'x86-64' => self::AMD64,
+            'arm64', 'aarch64' => self::ARM64,
             default => null,
         };
     }

@@ -1,27 +1,20 @@
-import { Head, router } from '@inertiajs/react';
+import { Head } from '@inertiajs/react';
 import { useEffect } from 'react';
 import { useConnection } from '@/components/reconnect-banner';
-import { Status } from '@/components/status';
-import type { StatusState } from '@/components/status';
+import { presented, Status } from '@/components/status';
 import { TimeAgo } from '@/components/time-ago';
-import { SettingsCard, SettingsRow } from '@/features/settings/settings-card';
 import { ServerVersions } from '@/features/updates/server-versions';
 import { UpdatePreferences } from '@/features/updates/update-preferences';
 import { UpdateAttention, UpdateHero } from '@/features/updates/update-status';
 import type { UpdatesPageProps } from '@/features/updates/update-status';
+import { schedulePoll } from '@/hooks/use-live-props';
 import { checkConnection, connectionState } from '@/lib/connection';
-import { index as settingsHome } from '@/routes/settings';
-import { edit } from '@/routes/updates';
+import { liveReload } from '@/lib/live-reload';
+import { SettingsCard, SettingsRow } from '@/components/settings/settings-card';
+import SettingsLayout from '@/features/settings/settings-layout';
+import { vocabulary } from '@/lib/vocabulary';
 
-const outcome: Record<App.Enums.Updates.ControlPlaneUpdateStatus, StatusState> =
-    {
-        pending: 'progress',
-        backing_up: 'progress',
-        updating: 'progress',
-        succeeded: 'active',
-        failed: 'failed',
-        rolled_back: 'warning',
-    };
+const outcome = presented(vocabulary.Updates.ControlPlaneUpdateStatus);
 
 function History({
     history,
@@ -51,8 +44,8 @@ function History({
                     }
                 >
                     <Status
-                        state={outcome[update.status]}
-                        label={update.statusLabel}
+                        state={outcome[update.status].state}
+                        label={outcome[update.status].label}
                     />
                 </SettingsRow>
             ))}
@@ -78,29 +71,23 @@ export default function UpdateSettings(props: UpdatesPageProps) {
             return;
         }
 
-        const timer = window.setInterval(() => {
-            if (document.visibilityState !== 'visible') {
-                return;
-            }
-
+        return schedulePoll(() => {
             const wasOnline = connectionState() === 'online';
 
             void checkConnection().then((reachable) => {
                 // Coming back online refreshes the page by itself.
                 if (reachable && wasOnline) {
-                    router.reload();
+                    liveReload([]);
                 }
             });
         }, 3000);
-
-        return () => window.clearInterval(timer);
     }, [props.running]);
 
     const update = props.controlPlaneUpdate;
     const attention =
         update !== null &&
         !props.running &&
-        (update.status === 'failed' || update.status === 'rolled_back');
+        vocabulary.Updates.ControlPlaneUpdateStatus[update.status].isFailed;
 
     return (
         <>
@@ -146,12 +133,4 @@ export default function UpdateSettings(props: UpdatesPageProps) {
     );
 }
 
-UpdateSettings.layout = {
-    breadcrumbs: [
-        { title: 'Settings', href: settingsHome() },
-        {
-            title: 'Updates',
-            href: edit(),
-        },
-    ],
-};
+UpdateSettings.layout = SettingsLayout;

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Data\Previews;
 
 use App\Data\Canvas\EnvironmentData;
+use App\Data\Forms\NumberRangeData;
 use App\Enums\Previews\ForkPolicy;
 use Spatie\LaravelData\Data;
 
@@ -25,7 +26,9 @@ final class PreviewSettingsData extends Data
         public ?string $targetBranches,
         public ?string $requiredLabel,
         public int $maxConcurrent,
+        public NumberRangeData $maxConcurrentRange,
         public int $expiryDays,
+        public NumberRangeData $expiryDaysRange,
         public ForkPolicy $forkPolicy,
         public bool $protection,
         public bool $allowProductionClone,

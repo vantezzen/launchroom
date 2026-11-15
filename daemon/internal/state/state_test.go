@@ -342,8 +342,6 @@ func TestEnrollRequestRevealsTokenOnlyOnWire(t *testing.T) {
 	}
 }
 
-// ---- store ----
-
 type keyVerifier struct {
 	pub ed25519.PublicKey
 }

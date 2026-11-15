@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Data\Protocol\V1;
 
+use App\Support\Protocol\Grammar;
 use Spatie\LaravelData\Attributes\Validation\Max;
 use Spatie\LaravelData\Attributes\Validation\Min;
 use Spatie\LaravelData\Attributes\Validation\Regex;
@@ -20,12 +21,12 @@ final class BuildResult extends Data
      * @param  list<string>|null  $attestations
      */
     public function __construct(
-        #[Max(512), Regex('/^(?:localhost|[a-z0-9-]+(?:\.[a-z0-9-]+)+|[a-z0-9-]+(?:\.[a-z0-9-]+)*:[0-9]{1,5})(?:\/[a-z0-9]+(?:(?:\.|_|__|-+)[a-z0-9]+)*)+@sha256:[a-f0-9]{64}$/D')]
+        #[Max(512), Regex(Grammar::IMAGE_REF)]
         public string $image,
         #[Min(0)]
         public int $durationMs,
         public ?BuildSummary $summary = null,
-        #[Regex('/^[a-f0-9]{64}$/D')]
+        #[Regex(Grammar::HEX64)]
         public ?string $secretsHash = null,
         public ?array $attestations = null,
     ) {}

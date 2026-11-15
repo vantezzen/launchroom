@@ -6,6 +6,7 @@ namespace App\Services\Instance;
 
 use App\Data\Domains\DnsCheckData;
 use App\Data\Instance\DashboardProbeData;
+use App\Enums\Domains\DnsCheckStatus;
 use App\Enums\ServerRole;
 use App\Models\Server;
 use App\Services\Dns\DnsCheck;
@@ -27,8 +28,6 @@ final readonly class DashboardDomainChecks
     ) {}
 
     /**
-     * The records to create: A/AAAA to the control-plane server.
-     *
      * @return list<array{string, string}> [type, address]
      */
     public function records(): array
@@ -66,7 +65,7 @@ final readonly class DashboardDomainChecks
     {
         if (Hostname::isLocal($hostname)) {
             return new DnsCheckData(
-                status: 'ok',
+                status: DnsCheckStatus::Ok,
                 hostname: $hostname,
                 addresses: [],
                 expected: [],
@@ -94,6 +93,6 @@ final readonly class DashboardDomainChecks
 
     private function controlPlane(): ?Server
     {
-        return Server::query()->where('is_control_plane', true)->whereNull('revoked_at')->orderBy('id')->first();
+        return Server::currentControlPlane();
     }
 }

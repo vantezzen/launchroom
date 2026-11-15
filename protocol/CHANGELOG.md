@@ -4,6 +4,14 @@ All changes to launchroomd ↔ dashboard contract. Format: one section per proto
 
 ## v1 (unreleased)
 
+### Vocabulary and unknown codes (2026-11-15, D76)
+
+No schema change for existing fields.
+
+- `vocabulary.json` also lists the grammars `snapshotId`, `walSegment`, `backupTag`, `label`, `factText`, `wafLabel`, `joinToken`, `ed25519Key`, `x25519Key`, `socketId`, `sshFingerprint`, the limit `healthDurationSeconds`, and `hintCodes` (the codes of `TaskFailure.hints[].code`, Go `state.HintCode`).
+- Explanation codes are read leniently by the dashboard: an unknown `WorkloadStatus.portHint`, `session.failure`/`access.failure`, `WorkloadEvent.reason` or `HostCapability.reason` reads as none, an unknown `TaskFailure.class` as `internal_error` (docs/03 §10).
+- `SelfUpdateResult.rolledBackTo` (never released) is gone: after a rollback `fromVersion` runs again.
+
 ### Shared volumes (2026-11-13, D73)
 
 Additive. New daemon feature `sharedVolumes`; the dashboard renders the field, and the workloads that need it, only for servers that announce it.

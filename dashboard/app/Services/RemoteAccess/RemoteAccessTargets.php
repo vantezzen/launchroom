@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace App\Services\RemoteAccess;
 
-use App\Data\Services\DatabaseSource;
+use App\Drivers\DatabaseEngines\DatabaseEngines;
 use App\Enums\DatabaseEngine;
 use App\Enums\RemoteAccess\RemoteAccessKind;
-use App\Enums\ServerStatus;
+use App\Enums\RemoteAccess\RemoteAccessProtocol;
 use App\Enums\WorkloadPhase;
 use App\Enums\WorkloadRole;
 use App\Models\Placement;
@@ -25,11 +25,9 @@ use Illuminate\Support\Collection;
  */
 final readonly class RemoteAccessTargets
 {
-    /** Engines with temporary access (docs/09 R39). */
-    public const array ENGINES = [DatabaseEngine::Postgres, DatabaseEngine::Redis, DatabaseEngine::Valkey];
-
     public function __construct(
         private SessionTargets $sessions,
+        private DatabaseEngines $engines,
     ) {}
 
     /**
@@ -42,14 +40,6 @@ final readonly class RemoteAccessTargets
             ->values();
     }
 
-    public function database(ServiceInstance $instance): ?DatabaseSource
-    {
-        return $this->sessions->database($instance);
-    }
-
-    /**
-     * The database's serving replica, if launchroomd there supports database access.
-     */
     public function databaseReplica(ServiceInstance $instance): ?Placement
     {
         $placement = DatabaseWorkloads::servingPlacement($instance);
@@ -79,8 +69,7 @@ final readonly class RemoteAccessTargets
             ->with('server:id,public_id,name,status,team_id,daemon_features,public_ipv4,public_ipv6')
             ->orderBy('slot')
             ->get()
-            ->first(static fn (Placement $placement): bool => $placement->server->status->isApproved()
-                && $placement->server->status !== ServerStatus::Offline
+            ->first(static fn (Placement $placement): bool => $placement->server->status->isReachable()
                 && $placement->server->supportsDaemonFeature(RemoteAccessKind::Volume->feature()));
     }
 
@@ -110,16 +99,12 @@ final readonly class RemoteAccessTargets
      */
     private function volumePhases(): array
     {
-        return array_map(static fn (WorkloadPhase $phase): string => $phase->value, [...SessionTargets::RUNNING, WorkloadPhase::Exited, WorkloadPhase::Failed]);
+        return array_map(static fn (WorkloadPhase $phase): string => $phase->value, [...WorkloadPhase::running(), WorkloadPhase::Exited, WorkloadPhase::Failed]);
     }
 
-    public static function engineSupported(DatabaseEngine $engine): bool
+    /** Engines with temporary access (docs/09 R39). */
+    public function engineSupported(DatabaseEngine $engine): bool
     {
-        return in_array($engine, self::ENGINES, true);
-    }
-
-    public function stillPlaced(ServiceInstance $instance, string $workloadId, int $serverId): bool
-    {
-        return $this->sessions->stillPlaced($instance, $workloadId, $serverId);
+        return $this->engines->for($engine)->remoteAccess() instanceof RemoteAccessProtocol;
     }
 }

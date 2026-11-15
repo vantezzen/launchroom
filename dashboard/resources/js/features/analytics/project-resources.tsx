@@ -1,7 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { ChevronRight } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { formatBytes } from '@/components/charts/format';
 import { Sparkline } from '@/components/charts/sparkline';
 import { TimeSeriesChart } from '@/components/charts/time-series-chart';
 import type { TimeSeries } from '@/components/charts/time-series-chart';
@@ -13,27 +12,26 @@ import {
     AnalyticsHeader,
     useAnalyticsService,
 } from '@/features/analytics/analytics-header';
-import {
-    delta,
-    deployMarkers,
-    formatBandwidth,
-    formatCores,
-    formatMemory,
-    formatMs,
-    points,
-} from '@/features/metrics/format';
+import { delta, deployMarkers, points } from '@/features/metrics/format';
 import { MetricCard } from '@/features/metrics/metric-card';
 import type { MetricCardRow } from '@/features/metrics/metric-card';
-import { requestJson } from '@/features/projects/http';
+import { requestJson } from '@/lib/http';
 import { useObserveScope } from '@/hooks/use-observe-scope';
 import { logsDrill } from '@/lib/links';
 import {
-    RANGE_SECONDS,
+    rangeSeconds,
     RANGE_SETS,
     rangeOptions,
     rangeWords,
 } from '@/lib/observe-scope';
 import { metrics as metricsRoute } from '@/routes/projects';
+import {
+    formatBandwidth,
+    formatBytes,
+    formatCores,
+    formatLatency,
+    formatMemory,
+} from '@/lib/format';
 
 type Metrics = App.Data.Metrics.ProjectMetricsData;
 type Usage = App.Data.Metrics.ServiceUsageSeriesData;
@@ -161,7 +159,7 @@ export function ProjectResources({
         picked && (hasTraffic || picked === 'cpu' || picked === 'memory')
             ? picked
             : 'cpu';
-    const seconds = RANGE_SECONDS[range];
+    const seconds = rangeSeconds(range) ?? 0;
 
     const rows = (
         list: Usage[],
@@ -265,7 +263,7 @@ export function ProjectResources({
                       label: 'Latency p95',
                       value:
                           traffic.totals.p95Ms != null
-                              ? formatMs(traffic.totals.p95Ms)
+                              ? formatLatency(traffic.totals.p95Ms)
                               : null,
                       delta: delta(
                           traffic.totals.p95Ms,
@@ -278,7 +276,7 @@ export function ProjectResources({
                           (s) => s.requests?.p95Ms ?? [],
                           (s) =>
                               s.requests?.totals.p95Ms != null
-                                  ? formatMs(s.requests.totals.p95Ms)
+                                  ? formatLatency(s.requests.totals.p95Ms)
                                   : '–',
                       ),
                   },
@@ -360,7 +358,7 @@ export function ProjectResources({
                             points: points(traffic?.p95Ms ?? [], times),
                         },
                     ],
-                    format: formatMs,
+                    format: formatLatency,
                 };
             case 'bandwidth':
                 return {
@@ -506,7 +504,7 @@ function ServiceRows({
                     const facts = [
                         cpu !== null ? `CPU ${formatCores(cpu)}` : null,
                         mem !== null ? formatMemory(mem) : null,
-                        p95 !== null ? `p95 ${formatMs(p95)}` : null,
+                        p95 !== null ? `p95 ${formatLatency(p95)}` : null,
                     ];
                     const hasFacts = facts.some(Boolean);
 

@@ -55,8 +55,6 @@ final readonly class RollupRequestAnalytics
     }
 
     /**
-     * Days each resolution is kept.
-     *
      * @return array<int, float>
      */
     private function retention(): array

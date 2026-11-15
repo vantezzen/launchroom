@@ -1,5 +1,5 @@
 import { DeviceImage } from '@/components/devices/device-image';
-import type { DeviceStatus } from '@/components/devices/device-image';
+import { deviceStatus } from '@/features/servers/format';
 
 type Server = App.Data.Servers.ServerData;
 
@@ -34,23 +34,6 @@ export function serverFacts(server: Server): string[] {
     return facts;
 }
 
-export function deviceStatus(server: Server | null): DeviceStatus {
-    if (server === null) {
-        return 'pending';
-    }
-
-    switch (server.status) {
-        case 'online':
-            return 'online';
-        case 'unreachable':
-            return 'unreachable';
-        case 'pending_approval':
-            return 'pending';
-        default:
-            return 'offline';
-    }
-}
-
 /** The server's render with its status LED (pending silhouette without a server). */
 export function ServerDevice({
     server,
@@ -64,7 +47,7 @@ export function ServerDevice({
     return (
         <DeviceImage
             device={server?.device?.kind ?? 'unknown'}
-            status={deviceStatus(server)}
+            status={server === null ? 'pending' : deviceStatus(server.status)}
             size={size}
             className={className}
         />

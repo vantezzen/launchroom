@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace App\Data\Variables;
 
+use App\Data\Attributes\PublicIdOf;
 use App\Enums\VariableExposure;
 use App\Enums\VariableType;
+use App\Support\Variables\VariableKey;
 use Spatie\LaravelData\Attributes\Validation\Max;
 use Spatie\LaravelData\Attributes\Validation\Regex;
 use Spatie\LaravelData\Data;
@@ -21,9 +23,9 @@ final class VariableUpdate extends Data
      * @param  list<VariableTargetData>|Optional  $targets
      */
     public function __construct(
-        #[Regex('/^[A-Za-z_][A-Za-z0-9_]{0,255}$/D')]
+        #[Regex(VariableKey::PATTERN)]
         public string|Optional $key = new Optional,
-        #[Max(131072)]
+        #[Max(VariableKey::MAX_VALUE_BYTES)]
         public string|Optional $value = new Optional,
         public VariableType|Optional $type = new Optional,
         public array|Optional $targets = new Optional,
@@ -32,7 +34,7 @@ final class VariableUpdate extends Data
          * Apply the edit to this environment only: a row that also targets
          * other environments is split (docs/06 §3.1 "when values diverge").
          */
-        #[Regex('/^env_[0-7][0-9A-HJKMNP-TV-Z]{25}$/D')]
+        #[PublicIdOf('env')]
         public string|Optional $onlyEnvironment = new Optional,
     ) {}
 

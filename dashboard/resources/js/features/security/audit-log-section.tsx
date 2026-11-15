@@ -9,8 +9,8 @@ import { Button } from '@/components/ui/button';
 import { AddAuditSink } from '@/features/security/add-audit-sink';
 import { AuditSinkRow } from '@/features/security/audit-sink-row';
 import { AuditVerificationLine } from '@/features/security/audit-verification-line';
-import { SettingsCard, SettingsRow } from '@/features/settings/settings-card';
 import { store as verify } from '@/routes/audit-verification';
+import { SettingsCard, SettingsRow } from '@/components/settings/settings-card';
 
 type Kind = App.Enums.Audit.AuditSinkKind;
 

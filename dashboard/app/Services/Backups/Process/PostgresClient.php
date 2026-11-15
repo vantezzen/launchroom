@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Backups\Process;
 
+use App\Support\Protocol\Grammar;
 use InvalidArgumentException;
 use SensitiveParameter;
 use Symfony\Component\Process\Process;
@@ -34,9 +35,6 @@ final readonly class PostgresClient
         }
     }
 
-    /**
-     * The dashboard's own connection (config database.connections.<name>).
-     */
     public static function fromConnection(string $connection): self
     {
         $config = config()->array("database.connections.{$connection}");
@@ -60,10 +58,6 @@ final readonly class PostgresClient
         ], null, $this->env());
     }
 
-    /**
-     * Restores a custom-format dump read from stdin into $database
-     * (dropping objects that exist; single transaction, stop on error).
-     */
     public function restore(string $database): Process
     {
         return new Process([
@@ -118,9 +112,7 @@ final readonly class PostgresClient
     }
 
     /**
-     * Restores a custom-format dump given as plaintext pieces into $database
-     * (`pg_restore --clean --if-exists --single-transaction`), pulling the
-     * next piece only when pg_restore's stdin takes more.
+     * Pulls the next plaintext piece only when pg_restore's stdin takes more.
      *
      * @param  iterable<string>  $chunks
      * @return int bytes restored
@@ -158,7 +150,7 @@ final readonly class PostgresClient
 
     public static function database(string $database): string
     {
-        if (preg_match('/^[A-Za-z0-9_]{1,63}$/D', $database) !== 1) {
+        if (preg_match(Grammar::DATABASE_IDENT, $database) !== 1) {
             throw new InvalidArgumentException('Database names are 1–63 letters, digits and underscores.');
         }
 

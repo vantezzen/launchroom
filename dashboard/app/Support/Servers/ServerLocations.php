@@ -90,10 +90,10 @@ final class ServerLocations
 
     public static function for(Server $server): ?LocationData
     {
-        $stored = self::stored($server->location);
+        $pinned = $server->location;
 
-        if ($stored instanceof LocationData) {
-            return $stored;
+        if ($pinned !== null) {
+            return new LocationData($pinned->label, $pinned->latitude, $pinned->longitude, $pinned->countryCode, LocationData::SOURCE_USER, true);
         }
 
         $labels = $server->labels;
@@ -171,20 +171,6 @@ final class ServerLocations
         $country = preg_match('/^[A-Z]{2}$/', $location['country_code']) === 1 ? $location['country_code'] : null;
 
         return new LocationData($city, round($location['latitude'], 2), round($location['longitude'], 2), $country, LocationData::SOURCE_TIMEZONE, false);
-    }
-
-    /**
-     * @param  array<array-key, mixed>|null  $location  `servers.location`
-     */
-    private static function stored(?array $location): ?LocationData
-    {
-        if ($location === null || ! is_string($location['label'] ?? null) || ! is_numeric($location['latitude'] ?? null) || ! is_numeric($location['longitude'] ?? null)) {
-            return null;
-        }
-
-        $country = $location['countryCode'] ?? null;
-
-        return new LocationData($location['label'], (float) $location['latitude'], (float) $location['longitude'], is_string($country) ? $country : null, LocationData::SOURCE_USER, true);
     }
 
     private static function fromRegion(string $code): LocationData

@@ -16,6 +16,7 @@ import (
 	"github.com/moby/moby/api/types/network"
 
 	"github.com/vantezzen/launchroom/daemon/internal/docker"
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/policy"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
@@ -29,7 +30,7 @@ type RuntimeDocker interface {
 	docker.VolumeOps
 }
 
-// Helper purposes (docker.LabelHelper) of throwaway containers and volumes.
+// Helper purposes (names.LabelHelper) of throwaway containers and volumes.
 const (
 	helperReplay = "replay"
 	helperVerify = "verify"
@@ -118,7 +119,7 @@ func ImportContainer(serverID string, image state.ImageRef, network string, res 
 
 func throwawayContainer(serverID string, t throwaway, pol policy.Config) (*docker.ContainerCreate, error) {
 	labels := docker.ManagedLabels(serverID)
-	labels[docker.LabelHelper] = t.purpose
+	labels[names.LabelHelper] = t.purpose
 	memory := int64(t.resources.MemoryMB) * 1024 * 1024
 	pids := int64(t.resources.Pids)
 	initProcess := false
@@ -145,19 +146,12 @@ func throwawayContainer(serverID string, t throwaway, pol policy.Config) (*docke
 	if t.volume != "" {
 		mounts = []mount.Mount{{Type: mount.TypeVolume, Source: t.volume, Target: string(t.mountPath)}}
 	}
-	hc := &container.HostConfig{
-		NetworkMode: networkMode,
-		LogConfig:   container.LogConfig{Type: policy.LogDriver, Config: map[string]string{"max-size": policy.LogMaxSize, "max-file": policy.LogMaxFile}},
-		CapDrop:     []string{"ALL"},
-		CapAdd:      caps,
-		SecurityOpt: []string{policy.NoNewPrivileges},
-		Init:        &initProcess,
-		Resources: container.Resources{
-			NanoCPUs: int64(t.resources.CPUs * 1e9), Memory: memory, MemorySwap: memory, PidsLimit: &pids,
-			// Below workloads (default 1024) when the CPU is contended.
-			CPUShares: 256,
-		},
-		Mounts: mounts,
+	hc := policy.BaseHostConfig()
+	hc.NetworkMode, hc.CapAdd, hc.Init, hc.Mounts = networkMode, caps, &initProcess, mounts
+	hc.Resources = container.Resources{
+		NanoCPUs: int64(t.resources.CPUs * 1e9), Memory: memory, MemorySwap: memory, PidsLimit: &pids,
+		// Below workloads (default 1024) when the CPU is contended.
+		CPUShares: 256,
 	}
 	if err := policy.CheckContainer(cfg, hc, pol); err != nil {
 		return nil, fmt.Errorf("backup: throwaway container violates the policy floor (bug): %w", err)
@@ -169,7 +163,7 @@ func throwawayContainer(serverID string, t throwaway, pol policy.Config) (*docke
 // an earlier replay or verification that was interrupted. Heavy backup work
 // runs one at a time per server, so none is in use.
 func (e *Engine) sweepThrowaways(ctx context.Context, purpose string) {
-	cs, err := e.o.Runtime.ListContainers(ctx, map[string]string{docker.LabelHelper: purpose})
+	cs, err := e.o.Runtime.ListContainers(ctx, map[string]string{names.LabelHelper: purpose})
 	if err == nil {
 		for _, c := range cs {
 			_ = e.o.Runtime.RemoveContainer(ctx, c.ID)
@@ -183,20 +177,18 @@ func (e *Engine) sweepThrowaways(ctx context.Context, purpose string) {
 		return
 	}
 	for _, v := range vols {
-		if v.Labels[docker.LabelHelper] == helperVerify {
+		if v.Labels[names.LabelHelper] == helperVerify {
 			_ = e.o.Runtime.RemoveVolume(ctx, v.Name)
 		}
 	}
 }
 
-// removeQuietly removes a throwaway container after use.
 func (e *Engine) removeQuietly(ctx context.Context, id string) {
 	rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer cancel()
 	_ = e.o.Runtime.RemoveContainer(rctx, id)
 }
 
-// execIn runs argv in a throwaway container and returns its stdout.
 func (e *Engine) execIn(ctx context.Context, id string, stdin io.Reader, env []string, argv ...string) (string, docker.ExecResult, error) {
 	var out strings.Builder
 	res, err := e.o.Runtime.ExecStream(ctx, id, docker.ExecOptions{Argv: argv, Env: env, Stdin: stdin, Stdout: &limitedWriter{w: &out, n: 64 << 10}})
@@ -209,7 +201,6 @@ func (e *Engine) lastLogLines(ctx context.Context, id string, n int) string {
 	return firstLines(e.logTail(ctx, id, n))
 }
 
-// logTail returns the last n log lines of a container.
 func (e *Engine) logTail(ctx context.Context, id string, n int) string {
 	lctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()
@@ -228,7 +219,7 @@ func (e *Engine) running(ctx context.Context, id, what string) error {
 	if err != nil {
 		return err
 	}
-	if c.Running || c.State == "created" || c.Restarting {
+	if c.Running() || c.State == docker.StateCreated {
 		return nil
 	}
 	return fmt.Errorf("backup: %s stopped (exit code %d): %s", what, c.ExitCode, e.lastLogLines(ctx, id, 20))
@@ -253,7 +244,6 @@ func (e *Engine) stopThrowaway(ctx context.Context, id string) error {
 	return nil
 }
 
-// limitedWriter keeps at most n bytes.
 type limitedWriter struct {
 	w io.Writer
 	n int

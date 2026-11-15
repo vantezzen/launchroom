@@ -36,8 +36,6 @@ final readonly class ProcessOutcome
     }
 
     /**
-     * Replaces secret values (raw, base64 and URL-encoded) with "***".
-     *
      * @param  list<string>  $secrets
      */
     public static function mask(string $text, array $secrets): string

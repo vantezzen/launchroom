@@ -22,16 +22,17 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
-import { CopyButton } from '@/features/deployment-detail/overview-card';
-import { shortSha } from '@/features/deployments/format';
+import config from '@/routes/projects/config';
+import { ConfigProblem } from './config-problem';
+import { shortSha, plural } from '@/lib/format';
 import {
     LearnMore,
     SettingsCard,
     SettingsRow,
     useDocsUrl,
-} from '@/features/settings/settings-card';
-import config from '@/routes/projects/config';
-import { ConfigProblem, fileLineUrl } from './config-problem';
+} from '@/components/settings/settings-card';
+import { CopyButton } from '@/components/copy-button';
+import { vocabulary } from '@/lib/vocabulary';
 
 type Page = App.Data.ConfigAsCode.ConfigFilePageData;
 type Row = App.Data.ConfigAsCode.ConfigFileEnvironmentData;
@@ -40,20 +41,18 @@ const AUTO = 'auto';
 
 function Status({ row }: { row: Row }) {
     const status = row.status;
-    const [Icon, tone, label] =
-        status === null
-            ? [CircleDashed, 'text-muted-foreground', 'Not read yet']
+    const [Icon, tone] =
+        status === null || status === 'missing'
+            ? [CircleDashed, 'text-muted-foreground']
             : status === 'invalid'
-              ? [CircleX, 'text-status-error', 'Has problems']
-              : status === 'missing'
-                ? [CircleDashed, 'text-muted-foreground', 'No file yet']
-                : status === 'staged'
-                  ? [CircleDashed, 'text-signal', 'Changes staged']
-                  : [
-                        CircleCheck,
-                        'text-status-ok',
-                        status === 'applied' ? 'Applied' : 'Up to date',
-                    ];
+              ? [CircleX, 'text-status-error']
+              : status === 'staged'
+                ? [CircleDashed, 'text-signal']
+                : [CircleCheck, 'text-status-ok'];
+    const label =
+        status === null
+            ? 'Not read yet'
+            : vocabulary.ConfigAsCode.ConfigFileStatus[status].label;
 
     return (
         <span className={`inline-flex items-center gap-1.5 type-label ${tone}`}>
@@ -61,10 +60,6 @@ function Status({ row }: { row: Row }) {
             {label}
         </span>
     );
-}
-
-function plural(count: number, word: string): string {
-    return `${count} ${word}${count === 1 ? '' : 's'}`;
 }
 
 function EnvironmentRow({
@@ -169,12 +164,7 @@ function EnvironmentRow({
                             <ConfigProblem
                                 problem={problem}
                                 path={path}
-                                href={fileLineUrl(
-                                    repository,
-                                    row.commitSha,
-                                    path,
-                                    problem.line,
-                                )}
+                                href={problem.href}
                             />
                         </li>
                     ))}
@@ -253,7 +243,8 @@ export function ConfigFileSettings({
                         </code>
                         <CopyButton
                             value={schemaLine}
-                            label="Copy the $schema line"
+                            label="the $schema line"
+                            size="xs"
                         />
                     </span>
                 }

@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Sessions;
 
 use App\Enums\DaemonTaskStatus;
-use App\Enums\Sessions\InteractiveSessionStatus;
+use App\Enums\TaskBackedAccessStatus;
 use App\Models\DaemonTask;
 use App\Models\Sessions\InteractiveSession;
 
@@ -27,7 +27,7 @@ final readonly class SweepSessions
     public function handle(): void
     {
         InteractiveSession::query()
-            ->where('status', InteractiveSessionStatus::Pending->value)
+            ->where('status', TaskBackedAccessStatus::Pending->value)
             ->where('created_at', '<', now()->subSeconds(self::PICKUP_SECONDS))
             ->limit(200)
             ->get()
@@ -36,9 +36,9 @@ final readonly class SweepSessions
         DaemonTask::query()
             ->whereIn('id', InteractiveSession::query()
                 ->select('daemon_task_id')
-                ->whereIn('status', [InteractiveSessionStatus::Pending->value, InteractiveSessionStatus::Open->value])
+                ->whereIn('status', TaskBackedAccessStatus::nonTerminal())
                 ->whereNotNull('daemon_task_id'))
-            ->whereIn('status', [DaemonTaskStatus::Succeeded->value, DaemonTaskStatus::Failed->value, DaemonTaskStatus::Cancelled->value])
+            ->whereIn('status', DaemonTaskStatus::terminal())
             ->limit(200)
             ->get()
             ->each(fn (DaemonTask $task) => $this->finish->handle($task));

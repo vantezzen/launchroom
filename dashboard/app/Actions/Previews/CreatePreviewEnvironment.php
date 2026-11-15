@@ -4,9 +4,10 @@ declare(strict_types=1);
 
 namespace App\Actions\Previews;
 
+use App\Actions\Environments\AllocateEnvironmentSubnet;
 use App\Actions\Environments\CopyEnvironmentIntent;
 use App\Data\Environments\CopyEnvironmentOptions;
-use App\Data\Services\ScalingSettings;
+use App\Data\Previews\PreviewDatabaseStateData;
 use App\Enums\DomainKind;
 use App\Enums\EnvironmentKind;
 use App\Enums\PreviewStrategy;
@@ -20,7 +21,7 @@ use App\Models\ServiceInstance;
 use App\Models\Variable;
 use App\Models\Volume;
 use App\Services\Previews\PreviewUrls;
-use App\Services\Projects\EnvironmentSubnets;
+use App\Support\Previews\PreviewLimits;
 use Illuminate\Contracts\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
 
@@ -49,7 +50,7 @@ use Illuminate\Support\Facades\DB;
 final readonly class CreatePreviewEnvironment
 {
     public function __construct(
-        private EnvironmentSubnets $subnets,
+        private AllocateEnvironmentSubnet $subnets,
         private CopyEnvironmentIntent $copyIntent,
         private PreviewUrls $urls,
     ) {}
@@ -64,7 +65,7 @@ final readonly class CreatePreviewEnvironment
             }
 
             // A leftover environment with this slug (e.g. a teardown that
-            // failed half-way) is replaced.
+            // failed half-way) keeps it; this one gets a suffix.
             $slug = $preview->slug();
 
             $environment = Environment::query()->create([
@@ -78,7 +79,7 @@ final readonly class CreatePreviewEnvironment
                 'pr_head_sha' => $preview->head_sha,
                 'pr_head_ref' => $preview->head_ref,
                 'secrets_withheld' => $preview->is_fork,
-                'network_subnet' => $this->subnets->allocate(),
+                'network_subnet' => $this->subnets->handle(),
             ]);
             $environment->setRelation('project', $project);
 
@@ -104,28 +105,14 @@ final readonly class CreatePreviewEnvironment
                     continue;
                 }
 
-                $scaling = $instance->scaling;
-
                 $instance->forceFill([
-                    // Resource caps (docs/06 §5): one replica per service and
-                    // at most `previews.max_cpus` CPU; memory and placement
-                    // constraints as the base (an app needing 1 GB still gets
-                    // it). Only servers allowing previews host them (scheduler).
-                    'scaling' => new ScalingSettings(
-                        min(1, $scaling->replicas),
-                        min($scaling->cpus, config()->float('launchroom.previews.max_cpus')),
-                        $scaling->memoryMb,
-                        $scaling->placementLabels,
-                        $scaling->strategy,
-                        $scaling->allowServers,
-                        $scaling->denyServers,
-                    ),
+                    'scaling' => PreviewLimits::cap($instance->scaling),
                     'preview_clone_source_id' => $template->preview_clone_source_id,
                     'preview_sanitize_command' => $template->preview_sanitize_command,
                 ])->save();
 
                 if ($this->downgrade($preview, $base, $template)) {
-                    $downgraded[$template->service->public_id] = ['strategy' => PreviewStrategy::NewEmpty->value, 'downgradedFrom' => $template->preview_strategy?->value, 'downgradeReason' => $preview->is_fork ? 'fork' : 'production'];
+                    $downgraded[$template->service->public_id] = new PreviewDatabaseStateData(strategy: PreviewStrategy::NewEmpty, downgradedFrom: $template->preview_strategy, downgradeReason: $preview->is_fork ? 'fork' : 'production');
                     $instance->forceFill([
                         'preview_strategy' => PreviewStrategy::NewEmpty,
                         'preview_clone_source_id' => null,
@@ -140,10 +127,9 @@ final readonly class CreatePreviewEnvironment
                 $this->addBranchAlias($instance, $preview);
             }
 
-            $data = $preview->data;
             $preview->forceFill([
                 'environment_id' => $environment->id,
-                'data' => [...$data, 'databases' => [...(is_array($data['databases'] ?? null) ? $data['databases'] : []), ...$downgraded]],
+                'data' => $preview->data->changed(['databases' => [...$preview->data->databases, ...$downgraded]]),
             ])->save();
 
             return $environment;

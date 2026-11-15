@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace App\Actions\Dockerfiles;
 
 use App\Contracts\DockerfileModel;
+use App\Data\Dockerfiles\DockerfileAttemptRecordData;
+use App\Data\Dockerfiles\DockerfileDetectedData;
+use App\Data\Dockerfiles\RepositoryContextData;
 use App\Data\Services\GitSource;
 use App\Data\Specs\EnvironmentSpec;
 use App\Data\Specs\ServiceSpec;
@@ -16,13 +19,13 @@ use App\Queries\CurrentEnvironmentSpec;
 use App\Services\Builds\BuildTasks;
 use App\Services\Dockerfiles\DockerfileAttempts;
 use App\Services\Dockerfiles\DockerfilePinner;
+use App\Services\Variables\SpecVariableResolver;
 use App\Support\BuildKey;
 use App\Support\Dockerfiles\DockerfileDraft;
 use App\Support\Dockerfiles\DockerfileLinter;
 use App\Support\Dockerfiles\DockerfilePrompt;
 use App\Support\Dockerfiles\DockerfilePromptBuilder;
 use App\Support\PublicId;
-use App\Support\Variables\SecretTaint;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -40,6 +43,7 @@ final readonly class DraftDockerfile
         private DockerfileAttempts $attempts,
         private BuildTasks $tasks,
         private CurrentEnvironmentSpec $currentSpec,
+        private SpecVariableResolver $variables,
     ) {}
 
     /**
@@ -56,19 +60,19 @@ final readonly class DraftDockerfile
 
             [$environment, $service] = $this->specs($generation);
             $source = $generation->service->source;
-            $previous = array_values(array_filter($generation->attempts ?? [], static fn (array $attempt): bool => is_string($attempt['dockerfile'] ?? null)));
+            $attempts = array_values($generation->attempts?->items() ?? []);
+            $previous = array_values(array_filter($attempts, static fn (DockerfileAttemptRecordData $attempt): bool => $attempt->dockerfile !== null));
 
             $generation->attempt++;
-            $generation->attempts = [...($generation->attempts ?? []), ['n' => $generation->attempt, 'startedAt' => now()->toIso8601ZuluString()]];
-            $generation->forceFill(['step_started_at' => now()]);
+            $generation->forceFill(['attempts' => [...$attempts, new DockerfileAttemptRecordData(n: $generation->attempt, startedAt: now()->toIso8601ZuluString())], 'step_started_at' => now()]);
             $generation->save();
 
             $prompt = new DockerfilePrompt(
                 system: DockerfilePromptBuilder::SYSTEM,
                 user: DockerfilePromptBuilder::user(
                     $source instanceof GitSource ? $source->rootDirectory : '',
-                    $generation->context ?? ['tree' => [], 'treeTruncated' => false, 'files' => []],
-                    $generation->detected ?? [],
+                    $generation->context ?? new RepositoryContextData,
+                    $generation->detected ?? new DockerfileDetectedData,
                     $service === null ? [] : BuildKey::buildScopedKeys($environment, $service),
                     array_slice($previous, -2),
                 ),
@@ -122,7 +126,7 @@ final readonly class DraftDockerfile
                 $draft->dockerfile,
                 $draft->port,
                 $service === null ? [] : BuildKey::buildScopedKeys($environment, $service),
-                $service === null ? [] : SecretTaint::fromSpec($environment)->taintedKeys($service->slug),
+                $service === null ? [] : $this->variables->taint($generation->serviceInstance->environment->project, $environment)->taintedKeys($service->slug),
             );
 
             $this->attempts->record($generation, [

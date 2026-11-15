@@ -166,13 +166,11 @@ test('rollups fold three days of minutes into 10-minute and daily rows and reten
         // 1-minute rows older than 48 h are gone (the last run was at day 3 00:00).
         ->and(DB::table('server_metric_samples')->where('resolution', 1)->min('at'))->toStartWith('2026-10-18');
 
-    // Idempotent: running again changes nothing.
     $before = DB::table('server_metric_samples')->where('resolution', 10)->count();
     resolve(RollupMetrics::class)->handle($start->addDays(3));
 
     expect(DB::table('server_metric_samples')->where('resolution', 10)->count())->toBe($before);
 
-    // A year later everything is pruned.
     resolve(RollupMetrics::class)->handle($start->addDays(400));
 
     expect(DB::table('server_metric_samples')->count())->toBe(0)

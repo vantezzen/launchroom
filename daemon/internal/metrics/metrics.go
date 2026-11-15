@@ -42,8 +42,6 @@ type Options struct {
 	ProcRoot string
 	// Disk returns the filesystem to report (nil: no disk metrics).
 	Disk func(ctx context.Context) (state.FilesystemUsage, bool)
-	// SkipInterface reports interfaces left out of the network totals (default SkipInterface).
-	SkipInterface func(name string) bool
 	// Containers and Stats read workload usage (nil: no workload metrics).
 	Containers Containers
 	Stats      docker.StatsOps
@@ -76,9 +74,6 @@ type Collector struct {
 func New(o Options) *Collector {
 	if o.ProcRoot == "" {
 		o.ProcRoot = "/proc"
-	}
-	if o.SkipInterface == nil {
-		o.SkipInterface = SkipInterface
 	}
 	if o.Interval <= 0 {
 		o.Interval = DefaultInterval
@@ -159,8 +154,6 @@ func (c *Collector) Ack(m *state.ReportMetrics) {
 	c.host = slices.DeleteFunc(c.host, func(s state.HostMetricSample) bool { return hostSent[s.At.Unix()] })
 	c.workloads = slices.DeleteFunc(c.workloads, func(s state.WorkloadMetricSample) bool { return wlSent[key{s.Workload, s.At.Unix()}] })
 }
-
-// ---- aggregation ----
 
 type hostAcc struct {
 	minute                      time.Time

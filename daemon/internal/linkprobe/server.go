@@ -14,7 +14,6 @@ import (
 	"time"
 )
 
-// Server limits.
 const (
 	maxConns        = 16
 	helloTimeout    = 3 * time.Second

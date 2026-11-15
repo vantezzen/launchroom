@@ -68,9 +68,8 @@ type DjangoFacts struct {
 	// Project is the package containing settings.py ("mysite").
 	Project string
 	// WSGI and ASGI are WSGI_APPLICATION / ASGI_APPLICATION ("mysite.wsgi.application").
-	WSGI string
-	ASGI string
-	// StaticRoot reports whether STATIC_ROOT is set.
+	WSGI       string
+	ASGI       string
 	StaticRoot bool
 }
 
@@ -95,7 +94,6 @@ const (
 	maxScanDepth   = 3
 )
 
-// probed are the files whose presence presets look at.
 var probed = []string{
 	"package.json", "package-lock.json", "pnpm-lock.yaml", "yarn.lock", "bun.lockb", "bun.lock",
 	"composer.json", "artisan", "manage.py", "requirements.txt", "pyproject.toml", "Pipfile", "uv.lock", "poetry.lock",
@@ -196,8 +194,17 @@ var (
 	rePipfileDep = regexp.MustCompile(`^\s*["']?([A-Za-z0-9][A-Za-z0-9._-]*)["']?\s*=`)
 )
 
+var rePEP503 = regexp.MustCompile(`[-_.]+`)
+
+// PythonName normalises a Python package name (PEP 503: runs of "-", "_"
+// and "." become one "-", lower case), so "Django_Rest.Framework" and
+// "django-rest-framework" are the same package.
+func PythonName(n string) string {
+	return strings.ToLower(rePEP503.ReplaceAllString(strings.TrimSpace(n), "-"))
+}
+
 func addPyDep(f *Facts, name, extras string) {
-	n := strings.ToLower(strings.ReplaceAll(name, "_", "-"))
+	n := PythonName(name)
 	f.PythonDeps[n] = true
 	for _, e := range strings.Split(extras, ",") {
 		if e = strings.TrimSpace(strings.ToLower(e)); e != "" && !slices.Contains(f.PythonExtras[n], e) {
@@ -350,8 +357,6 @@ var (
 	skippedDirs = []string{"node_modules", "vendor", ".git", ".next", "dist", "build", ".venv", "venv", "__pycache__", "storage", ".nuxt", ".svelte-kit", "coverage"}
 )
 
-// scanSources walks source files (bounded depth and count) for env references
-// and hard-coded listen ports.
 func scanSources(fsys fs.FS, f *Facts) {
 	refs := map[string]bool{}
 	files := 0

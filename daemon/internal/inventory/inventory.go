@@ -72,10 +72,10 @@ type Options struct {
 
 // Handler returns the handler for "inventory" tasks.
 func Handler(o Options) tasks.Handler {
-	return func(ctx context.Context, t state.Task) (tasks.Result, error) {
+	return func(ctx context.Context, t state.Task) (state.TaskResults, error) {
 		spec, ok := t.Spec.(*state.InventorySpec)
 		if !ok {
-			return tasks.Result{}, errors.New("inventory handler got another spec")
+			return state.TaskResults{}, errors.New("inventory handler got another spec")
 		}
 		if o.Forget != nil {
 			defer o.Forget(t.ID)
@@ -85,12 +85,12 @@ func Handler(o Options) tasks.Handler {
 			var err error
 			if src.CloneToken != nil {
 				if token, err = sealed.OpenTaskToken(*src.CloneToken, o.SealingKey, o.ServerID, t.ID, state.PurposeClone); err != nil {
-					return tasks.Result{}, fmt.Errorf("clone token: %w", err)
+					return state.TaskResults{}, fmt.Errorf("clone token: %w", err)
 				}
 			}
 			if src.SSHKey != nil {
 				if key, err = sealed.OpenTaskToken(*src.SSHKey, o.SealingKey, o.ServerID, t.ID, state.PurposeSSHKey); err != nil {
-					return tasks.Result{}, fmt.Errorf("deploy key: %w", err)
+					return state.TaskResults{}, fmt.Errorf("deploy key: %w", err)
 				}
 			}
 		}
@@ -99,15 +99,15 @@ func Handler(o Options) tasks.Handler {
 			case o.Slots <- struct{}{}:
 				defer func() { <-o.Slots }()
 			case <-ctx.Done():
-				return tasks.Result{}, ctx.Err()
+				return state.TaskResults{}, ctx.Err()
 			}
 		}
 		res, err := Run(ctx, o, t.ID, spec, token, key)
 		if err != nil {
 			// Clone credentials never reach an error message.
-			return tasks.Result{}, errors.New(build.NewMasker(token.Reveal(), key.Reveal()).Mask(err.Error()))
+			return state.TaskResults{}, errors.New(secret.NewMasker(token.Reveal(), key.Reveal()).Mask(err.Error()))
 		}
-		return tasks.Result{Inventory: res}, nil
+		return state.TaskResults{Inventory: res}, nil
 	}
 }
 
@@ -120,7 +120,7 @@ func Run(ctx context.Context, o Options, task state.TaskID, spec *state.Inventor
 		o.Log = slog.New(slog.DiscardHandler)
 	}
 	if o.PublicRegistry == "" {
-		o.PublicRegistry = "127.0.0.1:5000"
+		o.PublicRegistry = state.RegistryAddress
 	}
 	start := o.Now()
 	if err := os.MkdirAll(o.WorkDir, 0o700); err != nil {
@@ -185,7 +185,7 @@ func Run(ctx context.Context, o Options, task state.TaskID, spec *state.Inventor
 func analyzeSource(ctx context.Context, o Options, src *state.InventorySource, dir string, token, sshKey secret.Secret, notes *[]string) *sourceFacts {
 	app, err := build.Checkout(ctx, dir, src.Repo, src.RootDir, token, sshKey, o.InsecureGitHosts)
 	if err != nil {
-		o.Log.Warn("inventory: source not analysed", "err", build.NewMasker(token.Reveal(), sshKey.Reveal()).Mask(err.Error()))
+		o.Log.Warn("inventory: source not analysed", "err", secret.NewMasker(token.Reveal(), sshKey.Reveal()).Mask(err.Error()))
 		*notes = append(*notes, "The repository couldn't be cloned, so language packages have an unknown scope")
 		return nil
 	}
@@ -353,9 +353,7 @@ func clipNotes(notes []string) []string {
 		if len(out) == state.MaxInventoryNotes {
 			break
 		}
-		if len(n) > 256 {
-			n = n[:253] + "..."
-		}
+		n = state.Shorten(n, 253)
 		out = append(out, n)
 	}
 	return out
@@ -365,7 +363,7 @@ func clipNotes(notes []string) []string {
 // limit is 16 MiB) by cutting components from the end of the display order.
 func fitCompletion(res *state.InventoryResult) {
 	for {
-		b, err := json.Marshal(state.TaskCompletion{TypeMeta: state.NewTypeMeta(state.KindTaskCompletion), Attempt: 1, Outcome: state.OutcomeSucceeded, Inventory: res})
+		b, err := json.Marshal(state.TaskCompletion{TypeMeta: state.NewTypeMeta(state.KindTaskCompletion), Attempt: 1, Outcome: state.OutcomeSucceeded, TaskResults: state.TaskResults{Inventory: res}})
 		if err != nil || len(b) <= maxCompletionBytes || len(res.Components) == 0 {
 			return
 		}

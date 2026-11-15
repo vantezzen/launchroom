@@ -1,17 +1,14 @@
-// Package docker is the daemon's thin layer over the Docker Engine API.
-//
-// For now it holds the pure conversion from a validated WorkloadSpec to the
-// Engine API container-create configuration, with the policy floor applied
-// before and after (docs/03 §8). The Engine API client wrapper used by the
-// reconciler (docs/10 §4) will live here too; it must only ever touch objects
-// labelled launchroom.managed=true.
+// Package docker is the daemon's thin layer over the Docker Engine API: the
+// Engine client used by the reconciler (docs/10 §4), which only ever touches
+// objects labelled launchroom.managed=true, and the pure conversion from a
+// validated WorkloadSpec to the container-create configuration, with the
+// policy floor applied before and after (docs/03 §8).
 package docker
 
 import (
 	"errors"
 	"fmt"
 	"net/netip"
-	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -21,23 +18,11 @@ import (
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/api/types/network"
 
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/policy"
 	"github.com/vantezzen/launchroom/daemon/internal/secret"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
-
-// Labels set on every launchroom-managed object. The reconciler only ever
-// lists, changes or removes objects carrying LabelManaged=true.
-const (
-	LabelManaged     = "launchroom.managed"
-	LabelServer      = "launchroom.server"
-	LabelWorkload    = "launchroom.workload"
-	LabelService     = "launchroom.service"
-	LabelEnvironment = "launchroom.environment"
-	LabelDeployment  = "launchroom.deployment"
-)
-
-var envKeyPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]{0,255}$`)
 
 // WorkloadInput is everything needed to build one container. Env holds the
 // decrypted environment; it never leaves memory except via the Engine API.
@@ -48,6 +33,10 @@ type WorkloadInput struct {
 	// Networks and Volumes resolve protocol ids to host-side names from the NodeState.
 	Networks map[state.NetworkID]state.HostName
 	Volumes  map[state.VolumeID]state.HostName
+	// Task makes the container the one-off container of a run_once task:
+	// named and labelled for the task instead of a workload (Spec.ID is
+	// unused), so the reconciler never treats it as one.
+	Task state.TaskID
 	// MeshIP is this server's mesh address; required if Spec.PublishOnMesh is set.
 	MeshIP netip.Addr
 }
@@ -63,9 +52,6 @@ type ContainerCreate struct {
 	Files []state.ConfigFile
 }
 
-// ContainerName is the generated host-side container name for a workload.
-func ContainerName(id state.WorkloadID) string { return "lr-" + strings.ToLower(string(id)) }
-
 // BuildContainer converts a validated WorkloadSpec into container-create
 // options with the hardened defaults. It enforces policy.Check on the input
 // and policy.CheckContainer on the output and fails if either rejects.
@@ -74,7 +60,13 @@ func BuildContainer(in WorkloadInput, pc policy.Config) (*ContainerCreate, error
 	if err := in.ServerID.Validate(); err != nil {
 		return nil, err
 	}
-	if err := spec.ID.Validate(); err != nil {
+	name := names.WorkloadContainer(spec.ID)
+	if in.Task != "" {
+		if err := in.Task.Validate(); err != nil {
+			return nil, err
+		}
+		name = names.RunOnceContainer(in.Task)
+	} else if err := spec.ID.Validate(); err != nil {
 		return nil, err
 	}
 	if err := policy.Check(spec, pc); err != nil {
@@ -92,32 +84,29 @@ func BuildContainer(in WorkloadInput, pc policy.Config) (*ContainerCreate, error
 		Cmd:        slices.Clone(spec.Args),
 		Env:        env,
 		Labels: map[string]string{
-			LabelManaged:     "true",
-			LabelServer:      string(in.ServerID),
-			LabelWorkload:    string(spec.ID),
-			LabelService:     string(spec.Service),
-			LabelEnvironment: string(spec.Environment),
-			LabelDeployment:  string(spec.Deployment),
+			names.LabelManaged:     "true",
+			names.LabelServer:      string(in.ServerID),
+			names.LabelService:     string(spec.Service),
+			names.LabelEnvironment: string(spec.Environment),
+			names.LabelDeployment:  string(spec.Deployment),
 		},
+	}
+	if in.Task != "" {
+		cfg.Labels[names.LabelTask] = string(in.Task)
+	} else {
+		cfg.Labels[names.LabelWorkload] = string(spec.ID)
 	}
 
 	pids := int64(spec.Resources.Pids)
 	memory := int64(spec.Resources.MemoryMB) * 1024 * 1024
-	hc := &container.HostConfig{
-		LogConfig: container.LogConfig{
-			Type:   policy.LogDriver,
-			Config: map[string]string{"max-size": policy.LogMaxSize, "max-file": policy.LogMaxFile},
-		},
-		RestartPolicy: container.RestartPolicy{Name: container.RestartPolicyMode(spec.Restart)},
-		CapDrop:       []string{"ALL"},
-		SecurityOpt:   []string{policy.NoNewPrivileges},
-		Init:          ptr(true),
-		Resources: container.Resources{
-			NanoCPUs:   int64(spec.Resources.CPUs * 1e9),
-			Memory:     memory,
-			MemorySwap: memory, // no swap beyond the memory limit
-			PidsLimit:  &pids,
-		},
+	hc := policy.BaseHostConfig()
+	hc.RestartPolicy = container.RestartPolicy{Name: container.RestartPolicyMode(spec.Restart)}
+	hc.Init = ptr(true)
+	hc.Resources = container.Resources{
+		NanoCPUs:   int64(spec.Resources.CPUs * 1e9),
+		Memory:     memory,
+		MemorySwap: memory, // no swap beyond the memory limit
+		PidsLimit:  &pids,
 	}
 	for _, c := range spec.Capabilities {
 		hc.CapAdd = append(hc.CapAdd, string(c))
@@ -183,7 +172,7 @@ func BuildContainer(in WorkloadInput, pc policy.Config) (*ContainerCreate, error
 	if err := policy.CheckContainer(cfg, hc, pc); err != nil {
 		return nil, fmt.Errorf("docker: generated config violates the policy floor (bug): %w", err)
 	}
-	return &ContainerCreate{Name: ContainerName(spec.ID), Config: cfg, HostConfig: hc, Networking: nc, Files: slices.Clone(spec.Files)}, nil
+	return &ContainerCreate{Name: name, Config: cfg, HostConfig: hc, Networking: nc, Files: slices.Clone(spec.Files)}, nil
 }
 
 // buildEnv renders KEY=value pairs sorted by key, rejecting keys that are not
@@ -197,7 +186,7 @@ func buildEnv(env map[string]secret.Secret) ([]string, error) {
 	out := make([]string, 0, len(keys))
 	var errs []error
 	for _, k := range keys {
-		if !envKeyPattern.MatchString(k) {
+		if !state.IsEnvName(k) {
 			errs = append(errs, fmt.Errorf("docker: invalid env key %q", k))
 			continue
 		}

@@ -5,10 +5,13 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Moves;
 
 use App\Actions\Moves\AbortHandover;
-use App\Actions\Moves\AdvanceControlPlaneMoves;
+use App\Actions\Moves\CheckInMoveReceiver;
 use App\Actions\Moves\ClaimControlPlaneMove;
 use App\Actions\Moves\CompleteHandover;
 use App\Data\Audit\AuditActor;
+use App\Data\Moves\AbortHandoverData;
+use App\Data\Moves\ClaimMoveData;
+use App\Data\Moves\CompleteHandoverData;
 use App\Enums\Moves\ControlPlaneMoveStatus;
 use App\Http\Controllers\Controller;
 use App\Models\Moves\ControlPlaneMove;
@@ -16,7 +19,6 @@ use App\Models\Server;
 use App\Services\Crypto\Signer;
 use App\Services\Moves\HandoverStore;
 use App\Services\Moves\MoveToken;
-use App\Support\PublicId;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -32,54 +34,24 @@ use Illuminate\Http\Response;
  */
 final class MoveReceiverController extends Controller
 {
-    public function claim(Request $request, ClaimControlPlaneMove $claim): JsonResponse
+    public function claim(Request $request, ClaimMoveData $data, ClaimControlPlaneMove $claim): JsonResponse
     {
-        $request->validate([
-            'move' => ['required', 'string', 'regex:'.PublicId::regex('cpm')],
-            'secret' => ['required', 'string', 'regex:/^[A-Za-z0-9_-]{43}$/'],
-            'publicKey' => ['required', 'string', 'max:64'],
-            'hostname' => ['required', 'string', 'max:64', 'regex:/^[A-Za-z0-9._-]+$/'],
-            'arch' => ['required', 'string', 'max:16', 'regex:/^[a-z0-9_]+$/'],
-            'version' => ['nullable', 'string', 'max:32', 'regex:/^[A-Za-z0-9.+-]+$/'],
-        ]);
-
-        $move = ControlPlaneMove::query()->where('public_id', $request->string('move')->toString())->first();
+        $move = ControlPlaneMove::query()->where('public_id', $data->move)->first();
         abort_unless($move instanceof ControlPlaneMove, 403, 'This move token is not valid.');
 
-        $move = $claim->handle(
-            $move,
-            $request->string('secret')->toString(),
-            $request->string('publicKey')->toString(),
-            [
-                'hostname' => $request->string('hostname')->toString(),
-                'arch' => $request->string('arch')->toString(),
-                'version' => $request->filled('version') ? $request->string('version')->toString() : null,
-            ],
-            $request->ip(),
-        );
-
-        return $this->answer($move);
+        return $this->answer($claim->handle($move, $data, $request->ip()));
     }
 
-    public function show(Request $request, string $move, AdvanceControlPlaneMoves $advance): JsonResponse
+    public function show(Request $request, string $controlPlaneMove, CheckInMoveReceiver $checkIn): JsonResponse
     {
-        $found = $this->authenticate($request, $move);
-        $found->forceFill(['receiver_seen_at' => now()])->save();
-
-        // Joining → joined as soon as its launchroomd enrolled.
-        if ($found->status === ControlPlaneMoveStatus::Joining) {
-            $advance->handle();
-            $found->refresh();
-        }
-
-        return $this->answer($found);
+        return $this->answer($checkIn->handle($this->authenticate($request, $controlPlaneMove)));
     }
 
-    public function chunk(Request $request, string $move, int $index, HandoverStore $store): Response
+    public function chunk(Request $request, string $controlPlaneMove, int $index, HandoverStore $store): Response
     {
-        $found = $this->authenticate($request, $move);
+        $found = $this->authenticate($request, $controlPlaneMove);
         abort_unless($found->status === ControlPlaneMoveStatus::HandoverReady, 409, 'No hand-over is ready.');
-        $chunks = $found->handover['database']['chunks'] ?? 0;
+        $chunks = $found->handover->database->chunks ?? 0;
         abort_unless($index < $chunks, 422, 'chunk index out of range');
         $body = $store->read($found->public_id, $index);
         abort_if($body === null, 410);
@@ -87,9 +59,9 @@ final class MoveReceiverController extends Controller
         return new Response($body, 200, ['Content-Type' => 'application/octet-stream', 'Cache-Control' => 'no-store']);
     }
 
-    public function keys(Request $request, string $move, HandoverStore $store): Response
+    public function keys(Request $request, string $controlPlaneMove, HandoverStore $store): Response
     {
-        $found = $this->authenticate($request, $move);
+        $found = $this->authenticate($request, $controlPlaneMove);
         abort_unless($found->status === ControlPlaneMoveStatus::HandoverReady, 409, 'No hand-over is ready.');
         $body = $store->readKeys($found->public_id);
         abort_if($body === null, 410);
@@ -97,20 +69,20 @@ final class MoveReceiverController extends Controller
         return new Response($body, 200, ['Content-Type' => 'application/octet-stream', 'Cache-Control' => 'no-store']);
     }
 
-    public function complete(Request $request, string $move, CompleteHandover $complete): JsonResponse
+    public function complete(Request $request, string $controlPlaneMove, CompleteHandover $complete): JsonResponse
     {
-        $found = $this->authenticate($request, $move);
-        $request->validate(['url' => ['required', 'string', 'max:255']]);
+        $found = $this->authenticate($request, $controlPlaneMove);
+        $data = CompleteHandoverData::validateAndCreate($request->all());
 
-        return $this->answer($complete->handle($found, $request->string('url')->toString()));
+        return $this->answer($complete->handle($found, $data->url));
     }
 
-    public function abort(Request $request, string $move, AbortHandover $abort): JsonResponse
+    public function abort(Request $request, string $controlPlaneMove, AbortHandover $abort): JsonResponse
     {
-        $found = $this->authenticate($request, $move);
-        $request->validate(['reason' => ['nullable', 'string', 'max:500']]);
+        $found = $this->authenticate($request, $controlPlaneMove);
+        $data = AbortHandoverData::validateAndCreate($request->all());
 
-        return $this->answer($abort->handle($found, $request->filled('reason') ? $request->string('reason')->toString() : 'the new server reported a failure', AuditActor::system()));
+        return $this->answer($abort->handle($found, $data->reason ?? 'the new server reported a failure', AuditActor::system()));
     }
 
     private function authenticate(Request $request, string $publicId): ControlPlaneMove

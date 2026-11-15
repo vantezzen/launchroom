@@ -1,28 +1,12 @@
 import { X } from 'lucide-react';
-import { formatBytes } from '@/features/backups/format';
 import { cn } from '@/lib/utils';
+import { formatBytes, formatMs } from '@/lib/format';
+
+function formatDuration(ms: number | null): string {
+    return ms === null ? '—' : formatMs(ms);
+}
 
 type Point = App.Data.Backups.BackupTrendPointData;
-
-export function formatDuration(ms: number | null): string {
-    if (ms === null) {
-        return '—';
-    }
-
-    if (ms < 1000) {
-        return '< 1 s';
-    }
-
-    const seconds = Math.round(ms / 1000);
-
-    if (seconds < 90) {
-        return `${seconds} s`;
-    }
-
-    const minutes = Math.round(seconds / 60);
-
-    return minutes < 90 ? `${minutes} min` : `${Math.round(minutes / 60)} h`;
-}
 
 function median(values: number[]): number | null {
     if (values.length === 0) {

@@ -6,6 +6,7 @@ namespace App\Data\Variables;
 
 use App\Enums\VariableExposure;
 use App\Enums\VariableType;
+use App\Support\Variables\VariableKey;
 use Spatie\LaravelData\Attributes\Validation\Max;
 use Spatie\LaravelData\Attributes\Validation\Min;
 use Spatie\LaravelData\Attributes\Validation\Regex;
@@ -21,9 +22,9 @@ final class VariableInput extends Data
      * @param  list<VariableTargetData>  $targets
      */
     public function __construct(
-        #[Regex('/^[A-Za-z_][A-Za-z0-9_]{0,255}$/D')]
+        #[Regex(VariableKey::PATTERN)]
         public string $key,
-        #[Max(131072)]
+        #[Max(VariableKey::MAX_VALUE_BYTES)]
         public string $value,
         public VariableType $type,
         #[Min(1)]

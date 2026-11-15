@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Alerts;
 
+use App\Data\Alerts\ResolvedRule;
 use App\Enums\Alerts\AlertRule;
 use App\Models\Alerts\AlertRuleSetting;
 

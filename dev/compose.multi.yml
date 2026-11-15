@@ -31,107 +31,43 @@ services:
       - headscale:/data/headscale:ro
 
   server-2:
-    image: launchroom-dev-dind:dev
-    pull_policy: never
-    build:
-      context: ./dind
-      args:
-        UID: ${LR_DEV_UID:-1000}
-        GID: ${LR_DEV_GID:-1000}
-      labels:
-        launchroom.dev: "true"
-    labels:
-      launchroom.dev: "true"
+    extends:
+      file: compose.server.yml
+      service: fake-server
     hostname: server-2
-    privileged: true
-    restart: unless-stopped
     environment:
       LR_DEV_SERVER_NAME: server-2
-      LR_SYSTEM_IMAGE_DIGESTS: ${LR_DEV_SYSTEM_IMAGE_DIGESTS:-}
       # Pretend host time zone (suggests a location for the server map).
       LR_HOST_TIMEZONE: Europe/Helsinki
-      # Dev never asks IP echo services (fake servers have no public address).
-      LR_PUBLIC_IP_DETECT: "off"
-      LR_CONTROL_PLANE_URL: http://dashboard:8000
-      LR_CP_KEY: ${LR_DEV_CP_KEY:-}
-      LR_JOIN_TOKEN_FILE: /data/join-token
-      # Alternative to LR_CP_KEY (a file in the data volume); if both are set they must match.
-      LR_CP_KEY_FILE: /data/cp-key
-      # Redirects point at the host-mapped HTTPS port (apps on https://<name>.localhost:8443).
-      LR_INGRESS_HTTPS_PORT: "${LR_DEV_HTTPS_PORT:-8443}"
-      LR_DOCKERD_ARGS: ${LR_DEV_DOCKERD_ARGS:-}
       # No LR_REGISTRY_UPSTREAM: server-2 pulls from Zot through the mesh
       # (127.0.0.1:5000 → server-1's mesh IP:5000 → zot:5000, docs/05 §6).
-      LR_MESH_INSECURE_LOGIN_HOSTS: headscale
-      LR_BUILD_INSECURE_GIT_HOSTS: git-fixtures,forgejo
-      # The dev S3 target (profile "backups") speaks plain http (docs/14 §3).
-      LR_BACKUP_INSECURE_HOSTS: versitygw
-      LR_FIREWALL: ${LR_DEV_FIREWALL:-enforce}
     volumes:
       - server-2-docker:/var/lib/docker
       - server-2-data:/data
-      - daemon-bin:/opt/launchroom/bin:ro
     ports:
       # server-2's Caddy when it has the edge role (multi-edge dev).
       - 127.0.0.1:${LR_DEV_HTTP_PORT_2:-8081}:80
       - 127.0.0.1:${LR_DEV_HTTPS_PORT_2:-8444}:443
-    healthcheck:
-      test: ["CMD", "docker", "info"]
-      interval: 10s
-      timeout: 5s
-      start_period: 30s
-      retries: 6
 
   server-3:
-    image: launchroom-dev-dind:dev
-    pull_policy: never
-    build:
-      context: ./dind
-      args:
-        UID: ${LR_DEV_UID:-1000}
-        GID: ${LR_DEV_GID:-1000}
-      labels:
-        launchroom.dev: "true"
-    labels:
-      launchroom.dev: "true"
+    extends:
+      file: compose.server.yml
+      service: fake-server
     hostname: server-3
-    privileged: true
-    restart: unless-stopped
     depends_on: [nat-router]
     networks:
       home:
         ipv4_address: 10.213.77.10
     environment:
       LR_DEV_SERVER_NAME: server-3
-      LR_SYSTEM_IMAGE_DIGESTS: ${LR_DEV_SYSTEM_IMAGE_DIGESTS:-}
-      # Pretend host time zone (suggests a location for the server map).
       LR_HOST_TIMEZONE: America/New_York
-      # Dev never asks IP echo services (fake servers have no public address).
-      LR_PUBLIC_IP_DETECT: "off"
       # Behind the NAT router: default route and DNS through it (dind entrypoint).
+      # Pushes and pulls go to Zot through the mesh (127.0.0.1:5000 → server-1).
       LR_DEV_GATEWAY: 10.213.77.254
       LR_DEV_NAMESERVER: 10.213.77.254
-      LR_CONTROL_PLANE_URL: http://dashboard:8000
-      LR_CP_KEY: ${LR_DEV_CP_KEY:-}
-      LR_JOIN_TOKEN_FILE: /data/join-token
-      LR_CP_KEY_FILE: /data/cp-key
-      LR_INGRESS_HTTPS_PORT: "${LR_DEV_HTTPS_PORT:-8443}"
-      LR_DOCKERD_ARGS: ${LR_DEV_DOCKERD_ARGS:-}
-      # Pushes and pulls go to Zot through the mesh (127.0.0.1:5000 → server-1).
-      LR_MESH_INSECURE_LOGIN_HOSTS: headscale
-      LR_BUILD_INSECURE_GIT_HOSTS: git-fixtures,forgejo
-      LR_BACKUP_INSECURE_HOSTS: versitygw
-      LR_FIREWALL: ${LR_DEV_FIREWALL:-enforce}
     volumes:
       - server-3-docker:/var/lib/docker
       - server-3-data:/data
-      - daemon-bin:/opt/launchroom/bin:ro
-    healthcheck:
-      test: ["CMD", "docker", "info"]
-      interval: 10s
-      timeout: 5s
-      start_period: 30s
-      retries: 6
 
   # server-3's "home router" (dev/nat-router): not privileged, NET_ADMIN only.
   nat-router:
@@ -177,8 +113,7 @@ services:
   # dashboard manages it over the API (http://headscale/api/v1); `make
   # up-multi` hands it the first API key (launchroom:mesh:bootstrap-key).
   headscale:
-    # v0.29.5, multi-arch index digest (same pin as deploy/control-plane/images.env).
-    image: docker.io/headscale/headscale@sha256:780ed2f9e85719a2211277433f2c8afb45105d0d25031949a6848a485f9e216d
+    image: ${LR_HEADSCALE_IMAGE:?run through make or dev/bin/compose.sh (deploy/control-plane/images.env)}
     labels:
       launchroom.dev: "true"
     restart: unless-stopped

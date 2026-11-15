@@ -39,7 +39,7 @@ final class BackupOverview
 
         $runs = BackupRun::query()
             ->whereIn('schedule_id', array_map(static fn (BackupSchedule $schedule): int => $schedule->id, $schedules))
-            ->whereIn('status', [BackupRunStatus::Succeeded->value, BackupRunStatus::Failed->value])
+            ->whereIn('status', BackupRunStatus::terminal())
             ->where('created_at', '>=', $since)
             ->orderBy('id')
             ->get(['id', 'schedule_id', 'status', 'size_bytes', 'created_at', 'finished_at']);

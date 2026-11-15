@@ -10,6 +10,7 @@ use App\Data\Audit\AuditActor;
 use App\Data\Protocol\ProtocolJson;
 use App\Data\Protocol\V1\Task;
 use App\Data\Protocol\V1\TaskLease;
+use App\Data\Variables\VariableTargetRow;
 use App\Enums\AuditAction;
 use App\Enums\Backups\BackupReason;
 use App\Enums\Backups\BackupRunStatus;
@@ -30,8 +31,10 @@ use App\Models\Service;
 use App\Models\ServiceInstance;
 use App\Models\Variable;
 use App\Models\Volume;
-use App\Services\Backups\BackupStatuses;
+use App\Queries\Backups\BackupStatuses;
+use App\Services\Tasks\TaskSecrets;
 use App\Services\Variables\VariableStore;
+use App\Support\Refusal;
 use Tests\Support\Backups;
 use Tests\Support\Projects;
 use Tests\Support\ProtocolSchemas;
@@ -92,9 +95,9 @@ test('a volume backup is a pinned, schema-valid volume task with sealed credenti
         ->and($runs[0]->volume_id)->toBe($this->volume->id);
 
     $task = VolumeServices::lease($this->server);
-    expect(ProtocolSchemas::errors('task-lease', ProtocolJson::encode(new TaskLease([Task::fromTask($task)]))))->toBe([]);
+    expect(ProtocolSchemas::errors('task-lease', ProtocolJson::encode(new TaskLease([Task::fromTask($task, resolve(TaskSecrets::class)->materialize($task, $this->server))]))))->toBe([]);
 
-    $spec = json_decode(json_encode($task->spec, JSON_THROW_ON_ERROR), true, 32, JSON_THROW_ON_ERROR);
+    $spec = resolve(TaskSecrets::class)->materialize($task, $this->server)->toProtocol();
     expect($spec['kind'])->toBe('volume')
         ->and($spec['target'])->toBe(['volume' => $this->volume->public_id, 'consistency' => 'live'])
         ->and($spec['tags'])->toContain('kind:volume', 'volume:'.$this->volume->public_id, 'service:'.$this->svc->service->public_id, 'reason:manual')
@@ -162,7 +165,7 @@ test('restoring into the service takes a safety snapshot, holds the service whil
     expect(Projects::nodeState($this->server->refresh())['workloads'] ?? [])->toBe([]);
 
     $task = VolumeServices::lease($this->server, DaemonTaskType::Restore);
-    $spec = json_decode(json_encode($task->spec, JSON_THROW_ON_ERROR), true, 32, JSON_THROW_ON_ERROR);
+    $spec = resolve(TaskSecrets::class)->materialize($task, $this->server)->toProtocol();
     expect($spec['kind'])->toBe('volume')
         ->and($spec['mode'])->toBe('in_place')
         ->and($spec['snapshot'])->toBe(str_repeat('b2', 32))
@@ -178,7 +181,7 @@ test('restoring into the service takes a safety snapshot, holds the service whil
 test('restoring as a new service copies the service with its settings, variables and volume paths', function (): void {
     Backups::destination($this->team, $this->owner);
     $project = $this->svc->environment->project;
-    resolve(VariableStore::class)->create($project, $this->svc->service, 'UPLOAD_LIMIT', '10m', VariableType::Config, [['environment_id' => $this->svc->environment_id, 'all_previews' => false, 'branch_pattern' => null]]);
+    resolve(VariableStore::class)->copy($project, $this->svc->service, 'UPLOAD_LIMIT', '10m', VariableType::Config, [VariableTargetRow::environment($this->svc->environment_id)]);
     resolve(DeployEnvironment::class)->handle($this->svc->environment, null, AuditActor::system());
     Projects::report($this->server);
     Projects::report($this->server);
@@ -218,8 +221,9 @@ test('database volumes are never file-copied; services without data have nothing
 
     $project = Projects::create($this->team, 'plain');
     $plain = ServiceInstance::query()->where('service_id', Projects::image($project, 'web')->id)->sole();
-    expect(fn () => resolve(StartServiceBackup::class)->handle($plain, BackupReason::Manual, $this->owner, AuditActor::user($this->owner)))
-        ->toThrow(DomainRuleViolation::class, 'This service has no data to back up');
+    $refusal = resolve(StartServiceBackup::class)->handle($plain, BackupReason::Manual, $this->owner, AuditActor::user($this->owner));
+    expect($refusal)->toBeInstanceOf(Refusal::class)
+        ->and($refusal->message)->toContain('This service has no data to back up');
 
     $this->actingAs($this->owner)
         ->get(route('projects.services.section', [$project, $project->production()->sole(), Service::query()->where('project_id', $project->id)->sole(), 'backups']))

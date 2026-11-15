@@ -20,6 +20,7 @@ import (
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
 
@@ -29,21 +30,11 @@ const (
 	LogMaxSize         = "10m"
 	LogMaxFile         = "3"
 	NoNewPrivileges    = "no-new-privileges:true"
-	DefaultRegistry    = "127.0.0.1:5000/"
+	DefaultRegistry    = state.RegistryAddress + "/"
 	capabilityDropAll  = "ALL"
 	defaultMaxCPUs     = 64
 	defaultMaxMemoryMB = 256 * 1024
 	defaultMaxPids     = 32768
-)
-
-// System components whose images the dashboard may choose (NodeState.system).
-const (
-	SystemCaddy     = "caddy"
-	SystemBuildkit  = "buildkit"
-	SystemTailscale = "tailscale"
-	// SystemFiles is the SFTP helper of volume access (D67): busybox's file
-	// tools in a container that mounts one volume, no network, no shell exec.
-	SystemFiles = "files"
 )
 
 // DefaultSystemImageDigests pins the image digests the daemon accepts for its
@@ -96,16 +87,15 @@ func systemImageDigests(caddyDigest string) map[string][]string {
 		caddy = caddyDigest
 	}
 	return map[string][]string{
-		SystemCaddy:    {caddy},
-		SystemBuildkit: {BuildkitImageDigest},
+		names.SystemCaddy:    {caddy},
+		names.SystemBuildkit: {BuildkitImageDigest},
 		// The mesh client runs with the host network, NET_ADMIN and /dev/net/tun.
-		SystemTailscale: {TailscaleImageDigest},
+		names.SystemTailscale: {TailscaleImageDigest},
 		// The volume SFTP helper: no network, no capabilities, read-only root.
-		SystemFiles: {FilesImageDigest},
+		names.SystemFiles: {FilesImageDigest},
 	}
 }
 
-// isDigest reports whether s is "sha256:" followed by 64 lowercase hex digits.
 func isDigest(s string) bool {
 	hexPart, ok := strings.CutPrefix(s, "sha256:")
 	if !ok || len(hexPart) != 64 {
@@ -181,28 +171,18 @@ func DefaultConfig() Config {
 	}
 }
 
-// Host-side name prefixes (docs/09 R3). The dashboard generates lr-e_<hash>
-// environment networks and lr-v_<hash> per-service volumes; lr-system-* are
-// the daemon's own objects (Caddy data, BuildKit state and network) and are
-// never part of a NodeState.
-const (
-	NetworkPrefix = "lr-e_"
-	VolumePrefix  = "lr-v_"
-	SystemPrefix  = "lr-system-"
-)
-
 // CheckNetworkName allows only environment network names in a NodeState.
 func CheckNetworkName(name state.HostName) error {
-	if !strings.HasPrefix(string(name), NetworkPrefix) {
-		return violation("networks", "network %s is not an environment network (%s…)", name, NetworkPrefix)
+	if !strings.HasPrefix(string(name), names.NetworkPrefix) {
+		return violation("networks", "network %s is not an environment network (%s…)", name, names.NetworkPrefix)
 	}
 	return nil
 }
 
 // CheckVolumeName allows only per-service workload volume names in a NodeState.
 func CheckVolumeName(name state.HostName) error {
-	if !strings.HasPrefix(string(name), VolumePrefix) {
-		return violation("mounts", "volume %s is not a workload volume (%s…); system volumes are never mountable", name, VolumePrefix)
+	if !strings.HasPrefix(string(name), names.VolumePrefix) {
+		return violation("mounts", "volume %s is not a workload volume (%s…); system volumes are never mountable", name, names.VolumePrefix)
 	}
 	return nil
 }
@@ -397,12 +377,23 @@ func CheckImage(ref state.ImageRef, cfg Config) error {
 	return violation("image", "%s is not from an allowed registry (%s)", ref.Repository(), strings.Join(cfg.AllowedRegistries, ", "))
 }
 
-// unconfinedSecurityOpts disable seccomp/AppArmor/SELinux confinement.
 var unconfinedSecurityOpts = []string{
 	"seccomp=unconfined", "seccomp:unconfined",
 	"apparmor=unconfined", "apparmor:unconfined",
 	"label=disable", "label:disable",
 	"systempaths=unconfined",
+}
+
+// BaseHostConfig is the hardening every container launchroomd creates starts
+// from: rotated json-file logs, every capability dropped and
+// no-new-privileges. Producers add what they need and state each exception;
+// dockerd-guard checks the result per container class.
+func BaseHostConfig() *container.HostConfig {
+	return &container.HostConfig{
+		LogConfig:   container.LogConfig{Type: LogDriver, Config: map[string]string{"max-size": LogMaxSize, "max-file": LogMaxFile}},
+		CapDrop:     []string{capabilityDropAll},
+		SecurityOpt: []string{NoNewPrivileges},
+	}
 }
 
 // CheckContainer validates the final container-create configuration.
@@ -420,7 +411,6 @@ func CheckContainer(cfg *container.Config, hc *container.HostConfig, pc Config) 
 		add("privileged", "privileged containers are not allowed")
 	}
 
-	// Namespaces: only private ones.
 	if nm := string(hc.NetworkMode); nm == "host" || strings.HasPrefix(nm, "container:") {
 		add("namespaces", "network mode %q is not allowed", nm)
 	}
@@ -443,7 +433,6 @@ func CheckContainer(cfg *container.Config, hc *container.HostConfig, pc Config) 
 		add("namespaces", "custom cgroups are not allowed")
 	}
 
-	// Devices and host filesystem.
 	if len(hc.Devices) > 0 || len(hc.DeviceRequests) > 0 || len(hc.DeviceCgroupRules) > 0 {
 		add("devices", "devices are not allowed")
 	}
@@ -475,7 +464,6 @@ func CheckContainer(cfg *container.Config, hc *container.HostConfig, pc Config) 
 		add("host", "disabling the OOM killer is not allowed")
 	}
 
-	// Capabilities and security options.
 	if !slices.Contains(hc.CapDrop, capabilityDropAll) {
 		add("capabilities", "cap-drop ALL is required")
 	}
@@ -520,7 +508,6 @@ func CheckContainer(cfg *container.Config, hc *container.HostConfig, pc Config) 
 		add("defaults", "memory, cpu and pids limits are required")
 	}
 
-	// Ports: never on all interfaces.
 	if hc.PublishAllPorts {
 		add("ports", "publish-all is not allowed")
 	}

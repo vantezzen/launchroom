@@ -159,7 +159,7 @@ func classifyAgent(token string) int {
 	switch strings.ToLower(strings.TrimSpace(token)) {
 	case "":
 		return agentOther
-	case "mozilla":
+	case agentBrowserToken:
 		return agentBrowser
 	default:
 		return agentBot

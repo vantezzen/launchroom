@@ -35,29 +35,17 @@ import { SecretsPolicy } from '@/features/environments/secrets-policy';
 import { LogRetentionSettings } from '@/features/logs/log-retention-settings';
 import { PreviewSettingsSection } from '@/features/previews/preview-settings-section';
 import { ProjectIconRow } from '@/features/projects/project-icon-row';
-import type { ProjectShellProps } from '@/features/projects/types';
-import { SettingsCard, SettingsRow } from '@/features/settings/settings-card';
 import { destroy, settings } from '@/routes/projects';
 import { update } from '@/routes/projects/settings';
+import { plural } from '@/lib/format';
+import { SettingsCard, SettingsRow } from '@/components/settings/settings-card';
+import ProjectLayout from '@/features/app-shell/project-layout';
 
-type Deletion = {
-    servicesWithBackups: number;
-    inFlight: boolean;
-    services: number;
-    environments: number;
-    pending: App.Data.Backups.DeletionRequestData | null;
-    canSkipFinalBackup: boolean;
-};
+type Deletion = App.Data.Projects.ProjectDeletionData;
 
-type Section =
-    | 'general'
-    | 'environments'
-    | 'previews'
-    | 'config-file'
-    | 'logs'
-    | 'danger';
+type Section = App.Enums.ProjectSettingsSection;
 
-type Props = ProjectShellProps & {
+type Props = App.Data.Canvas.ProjectShellPropsData & {
     section: Section;
     /** `/p/{project}/settings` without a section: the list on phones. */
     index: boolean;
@@ -274,10 +262,6 @@ const descriptions: Partial<Record<Section, string>> = {
     'config-file': 'Read settings from launchroom.json in your repository.',
     danger: 'Deleting a project can’t be undone.',
 };
-
-function plural(count: number, one: string, many: string): string {
-    return `${count} ${count === 1 ? one : many}`;
-}
 
 function DeleteProjectDialog({
     project,
@@ -621,3 +605,5 @@ export default function ProjectSettings({
         </>
     );
 }
+
+ProjectSettings.layout = ProjectLayout;

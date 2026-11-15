@@ -6,6 +6,7 @@ namespace App\Enums\Previews;
 
 use App\Enums\Concerns\HasTransitions;
 use App\Enums\Contracts\HasTransitionTable;
+use App\Enums\StatusTone;
 
 /**
  * Lifecycle of a pull request's preview (docs/06 §5).
@@ -45,16 +46,13 @@ enum PreviewStatus: string implements HasTransitionTable
     {
         $open = [self::Skipped, self::AwaitingApproval, self::Queued, self::Preparing, self::Running, self::Failed];
 
+        // Every status may be entered again: a PR event re-applies it with a new reason.
         return match ($this) {
             // Open previews move freely as PR events, approvals and data
             // preparation arrive; they end closed (PR closed/merged) or expired.
-            self::Skipped, self::AwaitingApproval, self::Queued, self::Preparing, self::Running, self::Failed => [
-                ...array_values(array_filter($open, fn (self $status): bool => $status !== $this)),
-                self::Closed,
-                self::Expired,
-            ],
+            self::Skipped, self::AwaitingApproval, self::Queued, self::Preparing, self::Running, self::Failed => [...$open, self::Closed, self::Expired],
             // Reopened pull requests start over.
-            self::Closed, self::Expired => [self::Skipped, self::AwaitingApproval, self::Queued, self::Preparing],
+            self::Closed, self::Expired => [$this, self::Skipped, self::AwaitingApproval, self::Queued, self::Preparing],
         };
     }
 
@@ -77,6 +75,17 @@ enum PreviewStatus: string implements HasTransitionTable
             self::Failed => 'Failed',
             self::Closed => 'Closed',
             self::Expired => 'Expired',
+        };
+    }
+
+    public function tone(): StatusTone
+    {
+        return match ($this) {
+            self::AwaitingApproval => StatusTone::Staged,
+            self::Queued, self::Preparing => StatusTone::Progress,
+            self::Running => StatusTone::Active,
+            self::Failed => StatusTone::Failed,
+            self::Skipped, self::Closed, self::Expired => StatusTone::Idle,
         };
     }
 }

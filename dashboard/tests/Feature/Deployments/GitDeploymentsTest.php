@@ -14,17 +14,18 @@ use App\Data\Git\TrackedRef;
 use App\Data\Protocol\V1\LeaseRequest;
 use App\Data\Protocol\V1\TaskCompletion;
 use App\Data\Services\CreateServiceData;
+use App\Enums\DeploymentPurpose;
 use App\Enums\DeploymentStatus;
 use App\Enums\DeploymentTrigger;
 use App\Enums\Git\DeploymentReportState;
 use App\Enums\Git\GitEventSource;
+use App\Enums\Git\PullRequestAction;
 use App\Enums\ServiceKind;
+use App\Events\DeploymentQueued;
 use App\Events\Git\GitPushReceived;
 use App\Events\Git\PullRequestEventReceived;
 use App\Exceptions\DomainRuleViolation;
 use App\Jobs\Git\ReportDeploymentStatusJob;
-use App\Listeners\Git\DeployOnGitPush;
-use App\Listeners\Git\ReportDeploymentToGitHub;
 use App\Models\DaemonTask;
 use App\Models\Deployment;
 use App\Models\Environment;
@@ -32,6 +33,8 @@ use App\Models\Git\GitHubInstallation;
 use App\Models\Service;
 use App\Models\ServiceInstance;
 use App\Models\Team;
+use App\Services\Git\Feedback\DeploymentFeedback;
+use App\Support\Git\WatchPaths;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Tests\Support\GitHubFake;
@@ -80,7 +83,7 @@ test('GitHub sources resolve the branch head and clone with a token sealed at le
         ->and(json_encode($task))->not->toContain('ghs_clone_token');
 
     $leased = resolve(LeaseTasks::class)->handle($this->server, LeaseRequest::from(['apiVersion' => 'launchroom.vantezzen.io/v1', 'kind' => 'LeaseRequest', 'max' => 4, 'types' => ['build']]));
-    $token = json_decode((string) sodium_crypto_box_seal_open((string) base64_decode($leased[0]->spec->cloneToken->sealed, true), $this->keypair), true);
+    $token = json_decode((string) sodium_crypto_box_seal_open((string) base64_decode($leased[0]->spec->inputs->cloneToken->sealed, true), $this->keypair), true);
 
     expect($token)->toBe(['serverId' => $this->server->public_id, 'taskId' => $task->public_id, 'purpose' => 'clone', 'token' => 'ghs_clone_token']);
 });
@@ -125,7 +128,7 @@ test('pushes are matched by installation, repository, branch, watch paths and pa
 });
 
 test('watch paths: prefixes and globs, unknown file lists always deploy', function (?array $files, bool $deploys): void {
-    expect(DeployOnGitPush::watched(['apps/web', 'packages/*/src/**'], '', $files))->toBe($deploys);
+    expect(WatchPaths::matches(['apps/web', 'packages/*/src/**'], $files))->toBe($deploys);
 })->with([
     'unknown' => [null, true],
     'prefix' => [['apps/web/a.ts'], true],
@@ -152,10 +155,10 @@ test('deployment status changes are reported to GitHub with the state mapping', 
         GD_SHA_2.':in_progress',
     ]);
 
-    expect(ReportDeploymentToGitHub::state(DeploymentStatus::Routing))->toBe(DeploymentReportState::InProgress)
-        ->and(ReportDeploymentToGitHub::state(DeploymentStatus::Active))->toBe(DeploymentReportState::Success)
-        ->and(ReportDeploymentToGitHub::state(DeploymentStatus::Failed))->toBe(DeploymentReportState::Failure)
-        ->and(ReportDeploymentToGitHub::state(DeploymentStatus::Superseded))->toBe(DeploymentReportState::Cancelled);
+    expect(DeploymentReportState::forStatus(DeploymentStatus::Routing))->toBe(DeploymentReportState::InProgress)
+        ->and(DeploymentReportState::forStatus(DeploymentStatus::Active))->toBe(DeploymentReportState::Success)
+        ->and(DeploymentReportState::forStatus(DeploymentStatus::Failed))->toBe(DeploymentReportState::Failure)
+        ->and(DeploymentReportState::forStatus(DeploymentStatus::Superseded))->toBe(DeploymentReportState::Cancelled);
 });
 
 test('image and database services are never reported', function (): void {
@@ -165,6 +168,20 @@ test('image and database services are never reported', function (): void {
 
     Queue::assertPushed(ReportDeploymentStatusJob::class, fn (ReportDeploymentStatusJob $job): bool => $job->report->serviceName === 'web');
     Queue::assertNotPushed(ReportDeploymentStatusJob::class, fn (ReportDeploymentStatusJob $job): bool => $job->report->serviceName !== 'web');
+});
+
+test('a deployment that never goes live (a prebuild for a server move) is never reported', function (): void {
+    resolve(DeployEnvironment::class)->handle($this->production, null, AuditActor::system());
+    $deployment = Deployment::query()->latest('id')->firstOrFail();
+    $deployment->forceFill(['purpose' => DeploymentPurpose::Prebuild, 'status' => DeploymentStatus::Queued])->save();
+    Queue::fake();
+
+    event(new DeploymentQueued($deployment->id));
+    $deployment->transitionTo(DeploymentStatus::Building);
+    $deployment->transitionTo(DeploymentStatus::Superseded);
+
+    expect(resolve(DeploymentFeedback::class)->report($deployment, DeploymentReportState::InProgress))->toBeNull();
+    Queue::assertNotPushed(ReportDeploymentStatusJob::class);
 });
 
 test('tracked refs come from live GitHub-sourced instances and their trigger branches', function (): void {
@@ -177,7 +194,7 @@ test('pull request events are ignored until previews exist', function (): void {
     resolve(DeployEnvironment::class)->handle($this->production, null, AuditActor::system());
     $before = Deployment::query()->count();
 
-    event(new PullRequestEventReceived($this->installation, 555, 'opened', 7, 'Feature', GD_SHA_2, 'feature', 'main', 555, 555, false, 'ada', null, false, false, []));
+    event(new PullRequestEventReceived($this->installation, 555, PullRequestAction::Opened, 7, 'Feature', GD_SHA_2, 'feature', 'main', 555, 555, false, 'ada', null, false, false, []));
 
     expect(Deployment::query()->count())->toBe($before);
 });

@@ -64,8 +64,8 @@ launchroomd dials out to the dashboard, verifies and persists the signed NodeSta
 | `LR_LOG_LEVEL` | `--log-level` | `info` | |
 | `DOCKER_HOST` | | Docker client default | Engine endpoint; installs set dockerd-guard's socket `unix:///run/launchroom/docker.sock` |
 | `LR_INGRESS_ASK_ADDR` | `--ingress-ask-addr` | `127.0.0.1:2021` | loopback address of the on-demand TLS ask endpoint |
-| `LR_INGRESS_ACCESS_LOG_ADDR` | | `127.0.0.1:2022` | loopback listener for the edge Caddy's access log (request metrics) |
-| `LR_INGRESS_WAF_LOG_ADDR` | | `127.0.0.1:2023` | loopback listener for the web firewall's audit records (firewall events, docs/22 §6.5) |
+| `LR_INGRESS_ACCESS_LOG_ADDR` | `--ingress-access-log-addr` | `127.0.0.1:2022` | loopback listener for the edge Caddy's access log (request metrics) |
+| `LR_INGRESS_WAF_LOG_ADDR` | `--ingress-waf-log-addr` | `127.0.0.1:2023` | loopback listener for the web firewall's audit records (firewall events, docs/22 §6.5) |
 | `LR_INGRESS_HTTPS_PORT` | `--ingress-https-port` | `443` | public HTTPS port used in HTTP→HTTPS redirects (dev: `8443`) |
 | `LR_ALLOWED_LOCAL_UPSTREAMS` | | | `ip:port` route upstreams allowed besides the mesh range, e.g. the dashboard's `127.0.0.1:8000` on the control-plane host |
 | `LR_CERT_STORAGE_ALLOW` | | | `ip:port` shared certificate storage allowed besides the mesh range |
@@ -85,7 +85,27 @@ launchroomd dials out to the dashboard, verifies and persists the signed NodeSta
 | `LR_AMBASSADOR_SUBNET` | | `10.232.1.0/24` | the ambassador's own network |
 | `LR_LINK_PROBE` | | `on` | `off`: no link probe listener and no measurements, whatever the NodeState says |
 | `LR_INTERACTIVE_SESSIONS` | | `on` | `on`, `console`, `data` or `off` (local policy for D35 sessions) |
+| `LR_DATA_TRANSFERS` | | `on` | `off`: no data imports or exports here (D55) |
+| `LR_REMOTE_ACCESS` | | `on` | `on`, `off` or a list of `ssh`, `database`, `volume` (temporary remote access, docs/09 R39) |
+| `LR_REMOTE_ACCESS_PORTS` | | `40100-40199` | `lo-hi` port range of temporary remote access (1024 or above, at most 1000 ports) |
+| `LR_PUBLIC_IP_DETECT` | | `on` | `off`: never ask IP echo services for this server's public address |
+| `LR_PUBLIC_IPS` | | | the public addresses instead of detecting them: at most one IPv4 and one IPv6, comma-separated |
 | `LR_HOST_TIMEZONE` | | | host time zone recorded by the installer; informational |
+| `LR_HOST_OS` | | | `darwin` on a Mac, recorded by the installer (Docker runs in a Linux VM there, D53); informational |
+| `LR_HOST_MODEL` | | | machine model recorded by the installer; display only |
+
+On/off switches accept `on` or `off` in any case; anything else refuses to start.
+
+### dockerd-guard
+
+dockerd-guard reads its own environment through `internal/config` (`config.LoadGuard`), from the install's `.env`, never from launchroomd. It shares `LR_SYSTEM_IMAGE_DIGESTS`, `LR_INTERACTIVE_SESSIONS` and `LR_LOG_LEVEL` with launchroomd and parses them the same way.
+
+| Env | Default | Notes |
+|---|---|---|
+| `LR_GUARD_UPSTREAM` | `/var/run/docker.sock` | the Docker socket the guard owns |
+| `LR_GUARD_LISTEN` | `/run/launchroom/docker.sock` | the socket launchroomd talks to |
+| `LR_GUARD_ALLOWED_REGISTRIES` | | extra workload registries, `host:port/` comma-separated (default: the local registry only) |
+| `LR_GUARD_ROOTLESSKIT_API` | | RootlessKit's API socket on rootless hosts (edge ports) |
 
 ## Building and testing
 

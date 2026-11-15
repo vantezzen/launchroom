@@ -1,6 +1,8 @@
 package state
 
-import "regexp"
+import (
+	"regexp"
+)
 
 // ---- Daemon features (capability gating) ----
 //
@@ -88,9 +90,8 @@ const (
 	FeatureRemoteAccessVolume DaemonFeature = "remoteAccessVolume"
 )
 
-// Security center features (docs/22, docs/03 §13). Defined with the
-// contract; launchroomd adds them to SupportedFeatures once it implements
-// them (the waf feature only when its pinned Caddy has the firewall module).
+// Security center features (docs/22, docs/03 §13). The waf feature is
+// announced only when the pinned Caddy has the firewall module.
 const (
 	// FeatureInventory: the "inventory" task.
 	FeatureInventory DaemonFeature = "inventory"
@@ -114,10 +115,11 @@ const FeaturePhpExtensions DaemonFeature = "phpExtensions"
 // §8). Older daemons refuse the field (strict decoding).
 const FeatureSharedVolumes DaemonFeature = "sharedVolumes"
 
-// SupportedFeatures is what this launchroomd announces in every report.
+// SupportedFeatures is what this launchroomd announces in every report;
+// conditional features (sessions, access, data transfer, waf) are added by
+// the components that check their local policy or capability.
 var SupportedFeatures = []DaemonFeature{FeatureDNSProviders, FeatureLinkProbe, FeatureShipLogs, FeaturePointInTime, FeatureVerifyRestore, FeatureStopSpec, FeatureGitProviders, FeatureControlPlaneURL, FeatureCronSchedule, FeatureGeneratedDockerfile, FeatureClientCertificates, FeatureMongoClickHouse, FeaturePreparedVolumes, FeatureRequestAnalytics, FeatureContainerInspection, FeatureInventory, FeatureConfigFiles, FeatureServiceStop, FeaturePhpExtensions, FeatureSharedVolumes}
 
-// maxFeatures bounds Report.host.features.
 const maxFeatures = 64
 
 var reDaemonFeature = regexp.MustCompile(`^[a-z][A-Za-z0-9]{0,31}$`)

@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Data\Canvas;
 
 use App\Enums\DatabaseEngine;
+use App\Enums\Git\GitProviderKind;
+use App\Enums\ServiceSourceType;
 use Spatie\LaravelData\Data;
 
 /**
@@ -16,8 +18,7 @@ final class ServiceSourceData extends Data
      * @param  list<string>  $versions  available engine versions
      */
     public function __construct(
-        /** `git`, `image` or `database`. */
-        public string $type,
+        public ServiceSourceType $type,
         public ?string $repository = null,
         public ?string $rootDirectory = null,
         /** Effective branch in this environment. */
@@ -31,7 +32,6 @@ final class ServiceSourceData extends Data
         public array $versions = [],
         /** Name of the parent app of a worker or cron. */
         public ?string $parentName = null,
-        /** Git sources: `github`, `gitlab`, `gitea` or `git` (docs/19). */
-        public ?string $provider = null,
+        public ?GitProviderKind $provider = null,
     ) {}
 }

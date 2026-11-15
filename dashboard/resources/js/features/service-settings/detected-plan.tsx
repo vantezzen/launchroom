@@ -10,20 +10,14 @@ import {
 } from '@/components/ui/dialog';
 import { useClipboard } from '@/hooks/use-clipboard';
 import { cn } from '@/lib/utils';
+import { vocabulary } from '@/lib/vocabulary';
 
 type Plan = App.Data.Canvas.DetectedPlanData;
-
-const builderLabels: Record<string, string> = {
-    explicit: 'as configured',
-    dockerfile_detected: 'from your Dockerfile',
-    preset: 'with a launchroom preset',
-    railpack: 'with Railpack',
-};
 
 /**
  * "Next.js", "pnpm 9.12", "Node 22.11 (from .nvmrc)", "port 3000".
  */
-export function planHeadline(plan: Plan): string[] {
+function planHeadline(plan: Plan): string[] {
     return [
         plan.framework &&
             [plan.framework, plan.frameworkVersion].filter(Boolean).join(' '),
@@ -252,8 +246,11 @@ export function DetectedPlan({
                         Built{' '}
                         {plan.builder === 'dockerfile'
                             ? 'from a Dockerfile'
-                            : (builderLabels[plan.builderReason ?? ''] ??
-                              'with Railpack')}
+                            : plan.builderReason
+                              ? vocabulary.Builds.BuilderReason[
+                                    plan.builderReason
+                                ].label
+                              : 'with Railpack'}
                         {plan.railpackVersion &&
                             plan.builder === 'railpack' &&
                             ` (Railpack ${plan.railpackVersion})`}

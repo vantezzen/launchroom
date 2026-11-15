@@ -14,10 +14,11 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/vantezzen/launchroom/cli/internal/api"
-	"github.com/vantezzen/launchroom/cli/internal/config"
 	"github.com/vantezzen/launchroom/cli/internal/dotenv"
 	"github.com/vantezzen/launchroom/cli/internal/exitcode"
+	"github.com/vantezzen/launchroom/cli/internal/fsutil"
 	"github.com/vantezzen/launchroom/cli/internal/gitignore"
+	"github.com/vantezzen/launchroom/cli/internal/text"
 )
 
 func (a *App) envCmd() *cobra.Command {
@@ -65,7 +66,7 @@ func (a *App) envLsCmd() *cobra.Command {
 					if v.Value != nil {
 						value = *v.Value
 						if len(value) > 60 {
-							value = value[:57] + "…"
+							value = text.Clip(value, 57) + "…"
 						}
 					}
 					note := ""
@@ -246,7 +247,7 @@ func (a *App) envPullCmd() *cobra.Command {
 				return err
 			}
 			header := fmt.Sprintf("Pulled by launchroom from %s / %s.\nContains secrets: never commit this file.", t.Service.Name, t.Environment.Name)
-			if err := config.WriteFileAtomic(file, []byte(dotenv.Render(env.Variables, header)), 0o600); err != nil {
+			if err := fsutil.WriteFileAtomic(file, []byte(dotenv.Render(env.Variables, header)), 0o600); err != nil {
 				return err
 			}
 			warnings := []string{}

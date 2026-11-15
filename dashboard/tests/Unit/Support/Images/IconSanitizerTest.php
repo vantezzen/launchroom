@@ -49,7 +49,6 @@ test('PNGs are re-encoded: metadata and trailing bytes are dropped', function ()
         ->and($icon->bytes)->not->toContain('script')
         ->and($icon->bytes)->not->toContain('tEXt')
         ->and(str_ends_with($icon->bytes, iconChunk('IEND', '')))->toBeTrue()
-        // What we wrote decodes to the same pixels.
         ->and(Png::normalize($icon->bytes)['width'])->toBe(2);
 });
 

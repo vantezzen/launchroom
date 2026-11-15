@@ -24,9 +24,11 @@ import (
 
 	"github.com/moby/moby/api/types/container"
 
+	"github.com/vantezzen/launchroom/daemon/internal/config"
 	"github.com/vantezzen/launchroom/daemon/internal/docker"
 	"github.com/vantezzen/launchroom/daemon/internal/docker/dockerfake"
 	"github.com/vantezzen/launchroom/daemon/internal/firewall"
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/sealed"
 	"github.com/vantezzen/launchroom/daemon/internal/secret"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
@@ -99,9 +101,9 @@ func newHarness(t *testing.T) *harness {
 		t.Fatal(err)
 	}
 	labels := docker.ManagedLabels(string(testServer))
-	labels[docker.LabelWorkload] = string(testWorkload)
+	labels[names.LabelWorkload] = string(testWorkload)
 	h.d.AddImage("postgres@sha256:x")
-	id, err := h.d.CreateContainer(context.Background(), &docker.ContainerCreate{Name: docker.ContainerName(testWorkload), Config: &container.Config{Image: "postgres@sha256:x", Labels: labels}})
+	id, err := h.d.CreateContainer(context.Background(), &docker.ContainerCreate{Name: names.WorkloadContainer(testWorkload), Config: &container.Config{Image: "postgres@sha256:x", Labels: labels}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +136,7 @@ func newHarness(t *testing.T) *harness {
 		c.Networks = map[string]netip.Addr{"lr-e_0123456789abcdef": h.upAddr.Addr()}
 	})
 	h.mgr = NewManager(ManagerOptions{
-		Ports: PortRange{Lo: 41000, Hi: 41099}, DataDir: h.dataDir,
+		Ports: config.PortRange{Lo: 41000, Hi: 41099}, DataDir: h.dataDir,
 		SyncFirewall:     func(context.Context) error { h.syncs.Add(1); h.rules <- h.mgr.Rules(); return nil },
 		FirewallEnforced: func() bool { return true },
 		Listen: func(ctx context.Context, port uint16) (net.Listener, error) {
@@ -184,8 +186,8 @@ func (h *harness) task(t *testing.T, kind state.AccessKind) state.Task {
 	return state.Task{ID: id, Type: state.TaskAccess, Attempt: 1, Deadline: h.clk.now().Add(2 * time.Hour), Spec: spec}
 }
 
-func runHandler(ctx context.Context, h tasks.Handler, t state.Task) (chan tasks.Result, chan error) {
-	res, errc := make(chan tasks.Result, 1), make(chan error, 1)
+func runHandler(ctx context.Context, h tasks.Handler, t state.Task) (chan state.TaskResults, chan error) {
+	res, errc := make(chan state.TaskResults, 1), make(chan error, 1)
 	go func() {
 		r, err := h(ctx, t)
 		res <- r
@@ -194,7 +196,6 @@ func runHandler(ctx context.Context, h tasks.Handler, t state.Task) (chan tasks.
 	return res, errc
 }
 
-// waitRules waits for a firewall sync with n rules.
 func waitRules(t *testing.T, h *harness, n int) []firewall.AccessRule {
 	t.Helper()
 	timeout := time.After(10 * time.Second)
@@ -246,7 +247,6 @@ func startup(params map[string]string) []byte {
 
 func itoa(n int) string { return strconv.Itoa(n) }
 
-// probe reads the access status the handler reports with heartbeats.
 type probe struct{ *tasks.HandlerProbe }
 
 func (p probe) wait(t *testing.T) *state.AccessStatus {
@@ -329,7 +329,7 @@ func TestDatabaseAccessLifecycle(t *testing.T) {
 	_ = c.Close()
 
 	// Idle: no traffic for longer than the idle timeout ends it.
-	var r tasks.Result
+	var r state.TaskResults
 	for done := false; !done; {
 		h.clk.add(16 * time.Minute)
 		select {

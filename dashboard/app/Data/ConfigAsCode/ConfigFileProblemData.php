@@ -25,6 +25,8 @@ final class ConfigFileProblemData extends Data
         public ?string $path = null,
         public ?string $hint = null,
         public array $excerpt = [],
+        /** The file at the read commit, at this line, on the repository's host (set when shown). */
+        public ?string $href = null,
     ) {}
 
     public function where(): string

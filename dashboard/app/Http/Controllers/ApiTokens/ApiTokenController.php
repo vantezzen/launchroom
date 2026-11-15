@@ -12,9 +12,11 @@ use App\Data\Api\CreatedApiTokenData;
 use App\Enums\ApiTokenClient;
 use App\Exceptions\DomainRuleViolation;
 use App\Http\Controllers\Controller;
+use App\Http\Toast;
 use App\Models\ApiToken;
 use App\Models\User;
 use App\Queries\Api\ApiTokenOptions;
+use App\Support\InstallCommands;
 use Illuminate\Container\Attributes\CurrentUser;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -37,8 +39,9 @@ final class ApiTokenController extends Controller
             'tokens' => $options->tokens($user),
             'teamOptions' => $options->teams($user),
             'lifetimes' => ApiTokenOptions::lifetimes(),
+            'defaultLifetime' => ApiTokenOptions::defaultLifetime(),
             'apiUrl' => url('/api/v1'),
-            'cliInstall' => 'curl -fsSL https://github.com/vantezzen/launchroom/releases/latest/download/cli.sh | sh',
+            'cliInstall' => InstallCommands::cli(),
         ]);
     }
 
@@ -59,7 +62,7 @@ final class ApiTokenController extends Controller
         Gate::authorize('delete', $apiToken);
 
         $revoke->handle($apiToken, $this->auditActor($request, $user));
-        Inertia::flash('toast', ['type' => 'success', 'message' => "{$apiToken->name} revoked. Requests that use it are refused from now on."]);
+        Toast::success("{$apiToken->name} revoked. Requests that use it are refused from now on.");
 
         return back();
     }

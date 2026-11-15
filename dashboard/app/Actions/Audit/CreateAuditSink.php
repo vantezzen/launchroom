@@ -14,8 +14,8 @@ use App\Jobs\Audit\DeliverAuditSinkJob;
 use App\Models\AuditSink;
 use App\Models\InstanceSettings;
 use App\Models\User;
-use App\Services\Audit\AuditSinkSecrets;
 use App\Services\Audit\AuditSinkSettings;
+use App\Services\Crypto\SealedColumns;
 use App\Support\PublicId;
 use Illuminate\Support\Facades\DB;
 
@@ -30,7 +30,7 @@ final readonly class CreateAuditSink
 {
     public function __construct(
         private AuditSinkSettings $settings,
-        private AuditSinkSecrets $secrets,
+        private SealedColumns $sealed,
         private RecordAuditEvent $audit,
     ) {}
 
@@ -58,7 +58,7 @@ final readonly class CreateAuditSink
             $sink->public_id = PublicId::generate(AuditSink::publicIdPrefix());
 
             if ($settings['secret'] !== null) {
-                $this->secrets->seal($sink, $settings['secret']);
+                $this->sealed->sealJson($sink, 'secret', $settings['secret'], $this->sealed->newKey($sink));
             }
 
             $sink->save();

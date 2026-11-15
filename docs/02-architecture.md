@@ -87,7 +87,7 @@ Roles are chosen at enrollment (join token) and can be changed later on Servers 
 
 ## 3. Deployment flow (single server, happy path)
 
-1. GitHub push → webhook → `HandlePushEvent` job → finds service instances tracking that repo + branch (respecting watch paths) → creates a Deployment (status `queued`) using the current environment revision.
+1. GitHub push → webhook → `ProcessWebhookDeliveryJob` (parsed by `GitHubWebhooks`) → finds service instances tracking that repo + branch (respecting watch paths) → creates a Deployment (status `queued`) using the current environment revision.
 2. Orchestrator creates a `build` task. The scheduler picks a build-capable server (sticky per service for cache locality).
 3. The build daemon leases the task. It clones (installation token, shallow, exact SHA), detects and plans (Dockerfile / preset + Railpack), builds with BuildKit, and pushes `registry/apps/<service-uuid>:<deployment-ulid>`. Logs stream in batches. It reports the image digest.
 4. If the service has a release command (e.g. `php artisan migrate --force`), a `run_once` task runs it in a one-off container from the new image on a runtime server, with the resolved env. Failure stops the deployment and the old version keeps serving.
@@ -166,7 +166,7 @@ Stateful services never move on their own. Moving them is a request: **Move to a
 
 ### 6.1 Rescheduling
 
-Code: `App\Actions\Servers\RescheduleDeadServers`, `App\Services\Deployments\Rescheduler`; runs with `launchroom:servers:check-liveness` every 15 s.
+Code: `App\Actions\Servers\RescheduleDeadServers` (with `EvacuateDeadServer` and `ClearResolvedPlacementIssues`); runs with `launchroom:servers:check-liveness` every 15 s.
 
 - **Thresholds**: the server *status* keeps its hysteresis (`unreachable` after 75 s, `offline` after 300 s without a request, [03](03-daemon-protocol.md) §9.6); "dead for scheduling" is a separate threshold, `launchroom.scheduling.node_dead_after_seconds` = **90 s** since `last_seen_at`. With the 15 s tick, replicas move 90–105 s after the last contact, while the server is still `unreachable`. Measured in dev (server-2 stopped): unreachable after 80 s, replicas re-placed after 95 s, healthy on server-1 after 104 s, 0 of 120 requests failed through server-1's edge.
 - **Guard**: replicas only move once the liveness check has run continuously for the threshold (a gap of more than 2 minutes between runs restarts the watch), so a control plane coming back from an outage first lets every server check in instead of evacuating them all.

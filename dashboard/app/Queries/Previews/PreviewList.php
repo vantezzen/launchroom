@@ -10,7 +10,7 @@ use App\Data\Previews\PreviewLinkData;
 use App\Data\Previews\PreviewUrlData;
 use App\Data\Previews\ShareLinkData;
 use App\Enums\DeploymentStatus;
-use App\Enums\Previews\PreviewProvider;
+use App\Enums\Git\GitProviderKind;
 use App\Enums\PreviewStrategy;
 use App\Models\Deployment;
 use App\Models\Previews\Preview;
@@ -48,10 +48,9 @@ final readonly class PreviewList
         $environmentIds = $previews->pluck('environment_id')->filter()->values()->all();
         $deployments = Deployment::query()
             ->whereIn('environment_id', $environmentIds)
-            ->whereNotIn('status', [DeploymentStatus::Superseded->value, DeploymentStatus::Cancelled->value])
+            ->currentPerInstance()
             ->orderByDesc('id')
             ->get(['id', 'environment_id', 'service_instance_id', 'status'])
-            ->unique('service_instance_id')
             ->groupBy('environment_id');
         $instances = ServiceInstance::query()
             ->whereIn('environment_id', $environmentIds)
@@ -82,8 +81,7 @@ final readonly class PreviewList
                     continue;
                 }
 
-                $states = $preview->data['databases'] ?? [];
-                $state = is_array($states) ? ($states[$instance->service->public_id] ?? null) : null;
+                $state = $preview->data->databases[$instance->service->public_id] ?? null;
                 $source = match ($instance->preview_strategy) {
                     PreviewStrategy::Clone => $instance->previewCloneSource === null ? null : $instance->previewCloneSource->environment->name.' / '.$instance->previewCloneSource->service->name,
                     PreviewStrategy::Share => $environment?->baseEnvironment?->name,
@@ -92,11 +90,11 @@ final readonly class PreviewList
                 $databases[] = new PreviewDatabaseData(
                     $instance->service->name,
                     $instance->preview_strategy,
-                    is_array($state) && is_string($state['state'] ?? null) ? $state['state'] : null,
-                    is_array($state) && is_string($state['message'] ?? null) ? $state['message'] : null,
+                    $state?->state,
+                    $state?->message,
                     $source,
-                    is_array($state) && is_string($state['downgradedFrom'] ?? null) ? PreviewStrategy::tryFrom($state['downgradedFrom']) : null,
-                    is_array($state) && is_string($state['downgradeReason'] ?? null) ? $state['downgradeReason'] : null,
+                    $state?->downgradedFrom,
+                    $state?->downgradeReason,
                 );
             }
 
@@ -109,10 +107,10 @@ final readonly class PreviewList
                 author: $preview->author_login,
                 repository: $preview->repository_name,
                 pullRequestUrl: match (true) {
-                    $preview->provider === PreviewProvider::GitHub && $preview->installation !== null => rtrim($preview->installation->app->web_url, '/').'/'.$preview->repository_name.'/pull/'.$preview->pr_number,
+                    $preview->provider === GitProviderKind::GitHub && $preview->installation !== null => rtrim($preview->installation->app->web_url, '/').'/'.$preview->repository_name.'/pull/'.$preview->pr_number,
                     // GitLab merge requests and Gitea/Forgejo pull requests (docs/19).
-                    $preview->provider === PreviewProvider::GitLab && $preview->gitConnection !== null => $preview->gitConnection->origin().'/'.$preview->repository_name.'/-/merge_requests/'.$preview->pr_number,
-                    $preview->provider === PreviewProvider::Gitea && $preview->gitConnection !== null => $preview->gitConnection->origin().'/'.$preview->repository_name.'/pulls/'.$preview->pr_number,
+                    $preview->provider === GitProviderKind::GitLab && $preview->gitConnection !== null => $preview->gitConnection->origin().'/'.$preview->repository_name.'/-/merge_requests/'.$preview->pr_number,
+                    $preview->provider === GitProviderKind::Gitea && $preview->gitConnection !== null => $preview->gitConnection->origin().'/'.$preview->repository_name.'/pulls/'.$preview->pr_number,
                     default => null,
                 },
                 headRef: $preview->head_ref,
@@ -121,7 +119,6 @@ final readonly class PreviewList
                 headCommit: $preview->head_sha,
                 isFork: $preview->is_fork,
                 status: $preview->status,
-                statusLabel: $preview->status->label(),
                 statusReason: $preview->status_reason,
                 environmentId: $environment?->public_id,
                 health: match (true) {

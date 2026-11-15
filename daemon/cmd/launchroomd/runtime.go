@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/ecdh"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net"
 	"net/netip"
@@ -17,6 +18,7 @@ import (
 	"time"
 
 	bkclient "github.com/moby/buildkit/client"
+	mobyclient "github.com/moby/moby/client"
 
 	"github.com/vantezzen/launchroom/daemon/internal/access"
 	"github.com/vantezzen/launchroom/daemon/internal/ambassadord"
@@ -39,6 +41,7 @@ import (
 	"github.com/vantezzen/launchroom/daemon/internal/logship"
 	"github.com/vantezzen/launchroom/daemon/internal/mesh"
 	"github.com/vantezzen/launchroom/daemon/internal/metrics"
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/nudge"
 	"github.com/vantezzen/launchroom/daemon/internal/policy"
 	"github.com/vantezzen/launchroom/daemon/internal/publicip"
@@ -72,13 +75,18 @@ type daemonRuntime struct {
 	store    *state.Store
 	docker   docker.Client
 	monitor  *health.Monitor
-	rec      *reconcile.Reconciler
-	ask      *caddy.Ask
-	log      *slog.Logger
-	now      func() time.Time
+	// ports finds the ports a container listens on (workloads, run_once).
+	ports health.PortScanner
+	rec   *reconcile.Reconciler
+	ask   *caddy.Ask
+	log   *slog.Logger
+	now   func() time.Time
 
 	// contactOnce marks this process running and resumes a pending self-update (selfupdate.go).
 	contactOnce sync.Once
+	// updateDocker is the self-update Docker client (selfupdate.go).
+	updateAPIOnce sync.Once
+	updateDocker  *mobyclient.Client
 
 	reconcileKick chan struct{}
 	reportKick    chan struct{}
@@ -121,14 +129,15 @@ type daemonRuntime struct {
 	access *access.Manager
 	// hostRT is rootless Docker / dockerd-guard and the edge ports (D49).
 	hostRT hostRuntime
+	// featureSources are the optional subsystems' features, each asked at
+	// every report (their local policy or host support can change).
+	featureSources []func() []state.DaemonFeature
 
 	// Mesh client and the control-plane host's mesh-side registry forwarder (docs/05 §2, §6).
-	mesh        *mesh.Manager
-	meshFwd     *registry.Forwarder
-	meshFwdStop context.CancelFunc
+	mesh            *mesh.Manager
+	meshRegListener meshListener
 	// Certificate storage on the mesh (control-plane host, docs/05 §5).
-	certFwd     *registry.Forwarder
-	certFwdStop context.CancelFunc
+	certListener meshListener
 	// ambassador runs lr-system-ambassador (docs/05 §3).
 	ambassador    *ambassadord.Manager
 	meshRefusedMu sync.Mutex
@@ -136,10 +145,9 @@ type daemonRuntime struct {
 
 	// Private-network link measurements (docs/05 §2.1): the prober, the
 	// server answering peers' probes and its listener on the mesh IP.
-	links    *linkprobe.Prober
-	linkSrv  *linkprobe.Server
-	linkAddr string
-	linkStop context.CancelFunc
+	links        *linkprobe.Prober
+	linkSrv      *linkprobe.Server
+	linkListener meshListener
 
 	// ingress runs the edge Caddy; it also reads certificate state (docs/05 §5).
 	ingress *caddy.Manager
@@ -153,13 +161,13 @@ type daemonRuntime struct {
 	// publicIP detects the server's public addresses (Report.host.publicAddresses).
 	publicIP *publicip.Detector
 	// registryCheck checks that this server reaches the image registry (Report.host.registry).
-	registryCheck *registryChecker
+	registryCheck *registry.ReachChecker
 
 	// rejected is the latest NodeState the daemon refused (Report.stateRejected).
 	rejected atomic.Pointer[state.Rejection]
-	// netHolds keeps environment networks of running one-off tasks from
-	// being removed by the reconciler (shared by both).
-	netHolds docker.NetworkHolds
+	// networks creates, holds and removes environment networks (shared by
+	// the reconciler and run_once tasks).
+	networks *docker.Networks
 	// logship ships runtime logs of workloads with shipLogs (runtime log retention).
 	logship *logship.Manager
 	// backupEngine runs backup tasks; walArchive ships WAL of workloads with
@@ -177,6 +185,9 @@ func newRuntime(ctx context.Context, cfg config.Config, id *identity.Identity, s
 	}
 	if rt.now == nil {
 		rt.now = time.Now
+	}
+	if rt.ports = d.ports; rt.ports == nil {
+		rt.ports = health.ProcScanner{}
 	}
 	// Report sequence numbers must keep increasing across restarts (the
 	// dashboard drops older ones), so they start from the clock.
@@ -232,7 +243,7 @@ func newRuntime(ctx context.Context, cfg config.Config, id *identity.Identity, s
 		Off: cfg.PublicIPDetectOff, Configured: cfg.PublicIPs, OnChange: rt.kickReport, Now: rt.now,
 		Log: log.With("component", "publicip"),
 	})
-	rt.registryCheck = newRegistryChecker(rt.now, rt.kickReport)
+	rt.registryCheck = registry.NewReachChecker(rt.now, rt.kickReport)
 	rt.traffic = traffic.New(traffic.Options{OnMinute: rt.kickReport, Now: rt.now, Log: log.With("component", "traffic")})
 	rt.waf = waf.New(waf.Options{OnWindow: rt.kickReport, Now: rt.now, Log: log.With("component", "waf")})
 	ingress := caddy.NewManager(caddy.ManagerOptions{
@@ -260,29 +271,34 @@ func newRuntime(ctx context.Context, cfg config.Config, id *identity.Identity, s
 			ReachabilityDial:   reachabilityDial(cfg.AskAddr),
 		},
 	})
-	am, err := newAccessManager(rt, cfg.RemoteAccessPorts)
-	if err != nil {
-		return nil, err
-	}
-	rt.access = am
+	rt.access = newAccessManager(rt)
+	rt.addFeatures(rt.accessFeatures)
 	rt.firewall = firewall.New(firewall.Options{
 		Mode: firewall.Mode(cfg.Firewall), Backend: d.firewall, Networks: dc.ListNetworks,
-		BuildNetwork: buildkitd.NetworkName, BuildGateway: cfg.BuildSubnet.Addr().Next(), RegistryPort: buildkitd.RegistryPort,
+		BuildNetwork: names.BuildkitNetwork, BuildGateway: cfg.BuildSubnet.Addr().Next(), RegistryPort: buildkitd.RegistryPort,
 		AllowPrivate: cfg.FirewallAllowPrivate, MeshInterface: mesh.Interface, Log: log.With("component", "firewall"), Now: rt.now,
-		AmbassadorNetwork: ambassadord.NetworkName, Mesh: rt.meshRules, Access: rt.access.Rules,
+		AmbassadorNetwork: names.AmbassadorNetwork, Mesh: rt.meshRules, Access: rt.access.Rules,
 	})
+	// Docker itself refuses to put a container on a launchroom network while
+	// the firewall can't cover it (fail closed, docs/05 §1).
+	isolator, ok := dc.(docker.Isolator)
+	if !ok {
+		return nil, errors.New("the Docker client cannot enforce network isolation")
+	}
+	isolator.SetIsolation(rt.firewall.Sync)
+	rt.networks = docker.NewNetworks(dc, serverID)
 	rt.ingress = ingress
+	rt.addFeatures(ingress.Features)
 	rt.monitor = health.NewMonitor(ctx, health.MonitorOptions{OnChange: rt.kickReconcile, OnProbe: rt.kickReport})
 	rt.sealingKey = priv
 	rt.rec = reconcile.New(reconcile.Options{
-		ServerID: serverID, Docker: dc, Policy: pol, Health: rt.monitor, Ports: d.ports, Ingress: ingress,
-		EnvHashKey: reconcile.EnvHashKey(priv.Bytes()),
+		ServerID: serverID, Docker: dc, Policy: pol, Health: rt.monitor, Ports: rt.ports, Ingress: ingress,
+		EnvHashKey: docker.EnvHashKey(priv.Bytes()),
 		OpenEnv: func(s *state.WorkloadSpec) (map[string]secret.Secret, error) {
 			return sealed.OpenWorkloadEnv(s.Env, priv, serverID, s.ID)
 		},
 		OnProgress: rt.kickReport,
 		OnPullDone: rt.kickReconcile,
-		Isolate:    rt.firewall.Sync,
 		MeshIP:     rt.meshIP,
 		BeforeNetworkRemove: func(ctx context.Context, network string) error {
 			if rt.ambassador == nil {
@@ -290,8 +306,8 @@ func newRuntime(ctx context.Context, cfg config.Config, id *identity.Identity, s
 			}
 			return rt.ambassador.Detach(ctx, network)
 		},
-		Holds: &rt.netHolds,
-		Log:   log.With("component", "reconcile"),
+		Networks: rt.networks,
+		Log:      log.With("component", "reconcile"),
 	})
 	rt.logship = logship.New(logship.Options{
 		Docker: dc, Client: client, Dir: filepath.Join(cfg.DataDir, "logship"), Log: log.With("component", "logship"), Now: rt.now,
@@ -371,7 +387,7 @@ func (rt *daemonRuntime) measureBuildHost(ctx context.Context) buildkitd.HostFac
 	h.SwapMB = int(m.SwapTotalMB)
 	inUse := int(m.TotalMB - m.AvailableMB)
 	if stats, ok := rt.docker.(docker.StatsOps); ok {
-		if cs, err := rt.docker.ListContainers(ictx, map[string]string{docker.LabelSystem: policy.SystemBuildkit}); err == nil {
+		if cs, err := rt.docker.ListContainers(ictx, map[string]string{names.LabelSystem: names.SystemBuildkit}); err == nil {
 			for _, c := range cs {
 				if st, err := stats.ContainerStats(ictx, c.ID); err == nil && st.HasMemory {
 					inUse -= int(st.MemUsedBytes >> 20)
@@ -405,7 +421,6 @@ func (rt *daemonRuntime) meshIP() netip.Addr {
 	return ip
 }
 
-// localAddr reports whether ip is assigned to an interface of this network namespace.
 func localAddr(ip netip.Addr) bool {
 	addrs, err := net.InterfaceAddrs()
 	if err != nil {
@@ -437,7 +452,7 @@ func (rt *daemonRuntime) syncSystem(ctx context.Context, ns *state.NodeState) {
 	_ = rt.firewall.Sync(ctx)
 	if !rt.buildkit.Enabled() {
 		rt.setBuildPlatforms(nil)
-		rt.setBuilds(buildsCapability(ns.System.Buildkit.Enabled, rt.buildkit.Userns(), false, rt.buildkit.Resources()))
+		rt.setBuilds(buildkitd.Capability(ns.System.Buildkit.Enabled, rt.buildkit.Userns(), false, rt.buildkit.Resources()))
 		return
 	}
 	// What this builder can build, emulated platforms included (D53);
@@ -448,7 +463,7 @@ func (rt *daemonRuntime) syncSystem(ctx context.Context, ns *state.NodeState) {
 		rt.setBuildPlatforms(p)
 	}
 	cancel()
-	rt.setBuilds(buildsCapability(true, rt.buildkit.Userns(), p != nil, rt.buildkit.Resources()))
+	rt.setBuilds(buildkitd.Capability(true, rt.buildkit.Userns(), p != nil, rt.buildkit.Resources()))
 	buildUp := upstream
 	if buildUp == "" {
 		buildUp = registry.DefaultAddress // Zot itself listens on 127.0.0.1:5000 (control-plane host)
@@ -477,7 +492,6 @@ func (rt *daemonRuntime) syncRegistry(ctx context.Context, ns *state.NodeState) 
 	return upstream
 }
 
-// serveForwarder binds and serves f in the background; it reports whether the bind worked.
 func (rt *daemonRuntime) serveForwarder(ctx context.Context, f *registry.Forwarder, name string) bool {
 	var lc net.ListenConfig
 	l, err := lc.Listen(ctx, "tcp", f.Addr())
@@ -492,6 +506,19 @@ func (rt *daemonRuntime) serveForwarder(ctx context.Context, f *registry.Forward
 		}
 	}()
 	return true
+}
+
+func (rt *daemonRuntime) addFeatures(f func() []state.DaemonFeature) {
+	rt.featureSources = append(rt.featureSources, f)
+}
+
+// features is SupportedFeatures plus what the optional subsystems offer now.
+func (rt *daemonRuntime) features() []state.DaemonFeature {
+	out := slices.Clone(state.SupportedFeatures)
+	for _, f := range rt.featureSources {
+		out = append(out, f()...)
+	}
+	return out
 }
 
 func (rt *daemonRuntime) kickReconcile() { notify(rt.reconcileKick) }
@@ -599,7 +626,7 @@ func (rt *daemonRuntime) run(ctx context.Context, syncState func(context.Context
 	}
 	start(func() { rt.runtimeLoop(ctx) })
 	start(func() { rt.watchLoop(ctx) })
-	start(func() { rt.registryCheck.run(ctx) })
+	start(func() { rt.registryCheck.Run(ctx) })
 	rt.kickReconcile()
 
 	err := syncState(ctx)
@@ -647,7 +674,7 @@ func (rt *daemonRuntime) reconcileLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-rt.reconcileKick:
-		case <-time.After(jitter(reconcileInterval)):
+		case <-time.After(controlplane.Jitter(reconcileInterval)):
 		}
 		cur := rt.store.Current()
 		if cur == nil {
@@ -658,6 +685,9 @@ func (rt *daemonRuntime) reconcileLoop(ctx context.Context) {
 		rt.traffic.SetRoutes(cur.State.Routes)
 		rt.waf.SetRoutes(cur.State.Routes)
 		rt.syncRegistry(ctx, cur.State)
+		// Repair drift (rules flushed or edited by something else) every
+		// pass; containers joining a network check it again themselves.
+		_ = rt.firewall.Sync(ctx)
 		if err := rt.rec.Reconcile(ctx, cur.State); err != nil && ctx.Err() == nil {
 			rt.log.Warn("reconcile pass incomplete", "version", cur.State.Version, "err", err)
 		}
@@ -698,7 +728,6 @@ func (rt *daemonRuntime) watchLoop(ctx context.Context) {
 	}
 }
 
-// watchInterval is how often starting workloads are looked at.
 const watchInterval = 2 * time.Second
 
 // scheduleLoop starts scheduled workloads (cron services) at every due
@@ -852,7 +881,6 @@ const (
 	buildkitQueryTimeout = 2 * time.Minute
 )
 
-// setupHealth prepares the host health collector and the disk cleaner.
 func (rt *daemonRuntime) setupHealth(dc docker.Client) {
 	host, _ := dc.(docker.HostOps)
 	rt.cleaner = cleanup.New(cleanup.Options{
@@ -865,28 +893,9 @@ func (rt *daemonRuntime) setupHealth(dc docker.Client) {
 	})
 	stats, _ := dc.(docker.StatsOps)
 	rt.metrics = metrics.New(metrics.Options{
-		Disk: metricsDisk(host, rt.cfg.DataDir), Containers: dc, Stats: stats,
+		Disk: hostinfo.DockerDisk(host, rt.cfg.DataDir), Containers: dc, Stats: stats,
 		OnMinute: rt.kickReport, Now: rt.now, Log: rt.log.With("component", "metrics"),
 	})
-}
-
-// metricsDisk returns the filesystem metrics report: Docker's root dir when
-// launchroomd can see it (cached), else the data dir (like diskPressure).
-func metricsDisk(host docker.HostOps, dataDir string) func(ctx context.Context) (state.FilesystemUsage, bool) {
-	var root string
-	return func(ctx context.Context) (state.FilesystemUsage, bool) {
-		if root == "" && host != nil {
-			if r, err := host.RootDir(ctx); err == nil && filepath.IsAbs(r) {
-				root = r
-			}
-		}
-		if root != "" {
-			if fs, ok := hostinfo.Filesystem(root); ok {
-				return fs, true
-			}
-		}
-		return hostinfo.Filesystem(dataDir)
-	}
 }
 
 // collectHardware refreshes the hardware facts (at start and with every
@@ -985,7 +994,7 @@ func (rt *daemonRuntime) buildCacheMB(ctx context.Context) (int64, bool) {
 // healthLoop collects host health every few minutes and runs the disk
 // cleanup on schedule (daily) and under disk pressure (≥ 85 % used).
 func (rt *daemonRuntime) healthLoop(ctx context.Context) {
-	nextCleanup := rt.now().Add(jitter(cleanupFirstAfter))
+	nextCleanup := rt.now().Add(controlplane.Jitter(cleanupFirstAfter))
 	var lastCleanup time.Time
 	wait := 10 * time.Second // first snapshot soon after start
 	rt.collectHardware(ctx)
@@ -993,7 +1002,7 @@ func (rt *daemonRuntime) healthLoop(ctx context.Context) {
 		if sleep(ctx, wait) != nil {
 			return
 		}
-		wait = jitter(healthInterval)
+		wait = controlplane.Jitter(healthInterval)
 		rt.collectHardware(ctx)
 		h := rt.collectHealth(ctx)
 		now := rt.now()
@@ -1001,7 +1010,7 @@ func (rt *daemonRuntime) healthLoop(ctx context.Context) {
 		switch {
 		case !now.Before(nextCleanup):
 			trigger = state.CleanupScheduled
-			nextCleanup = now.Add(jitter(cleanupInterval))
+			nextCleanup = now.Add(controlplane.Jitter(cleanupInterval))
 		case diskPressure(h) && now.Sub(lastCleanup) >= cleanupPressureGap:
 			trigger = state.CleanupDiskPressure
 		}
@@ -1038,28 +1047,21 @@ func diskPressure(h *state.HostHealth) bool {
 	return fs != nil && fs.TotalMB > 0 && (fs.TotalMB-fs.FreeMB)*100 >= diskPressurePercent*fs.TotalMB
 }
 
-// handlers are the task types this daemon runs.
 func (rt *daemonRuntime) handlers() map[state.TaskType]tasks.Handler {
 	h := map[state.TaskType]tasks.Handler{
-		state.TaskLogs: tasks.LogsHandler(rt.docker, rt.client),
+		state.TaskLogs: logship.TaskHandler(rt.docker, rt.client),
 		state.TaskRunOnce: tasks.RunOnceHandler(tasks.RunOnceOptions{
 			ServerID: rt.serverID, SealingKey: rt.sealingKey, Docker: rt.docker, Client: rt.client,
-			Policy: rt.policy, Forget: rt.tokens.Forget, Isolate: rt.firewall.Sync, Holds: &rt.netHolds,
-			Ports: func(pid int) []int {
-				ls, err := health.ProcScanner{}.Listeners(pid)
-				if err != nil {
-					return nil
-				}
-				return health.Ports(ls)
-			},
+			Policy: rt.policy, Forget: rt.tokens.Forget, Networks: rt.networks,
+			Ports: rt.ports,
 		}),
 	}
 	if rt.builder != nil {
-		h[state.TaskBuild] = tasks.BuildHandler(tasks.BuildOptions{
+		h[state.TaskBuild] = build.Handler(build.HandlerOptions{
 			ServerID: rt.serverID, SealingKey: rt.sealingKey, Builder: rt.builder, Client: rt.client,
 			Slots: rt.buildSlots, Forget: rt.tokens.Forget,
 		})
-		h[state.TaskPlan] = tasks.BuildHandler(tasks.BuildOptions{
+		h[state.TaskPlan] = build.Handler(build.HandlerOptions{
 			ServerID: rt.serverID, SealingKey: rt.sealingKey, Builder: rt.builder, Client: rt.client,
 			Slots: rt.planSlots, Forget: rt.tokens.Forget,
 		})
@@ -1090,12 +1092,7 @@ func (rt *daemonRuntime) workloadSpec(id state.WorkloadID) *state.WorkloadSpec {
 	if cur == nil {
 		return nil
 	}
-	for i := range cur.State.Workloads {
-		if w := cur.State.Workloads[i]; w.ID == id {
-			return &w
-		}
-	}
-	return nil
+	return cur.State.Workload(id)
 }
 
 // forwardAuthOrigins are the origins protected routes may use for forward auth

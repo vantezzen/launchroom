@@ -5,13 +5,14 @@ declare(strict_types=1);
 namespace App\Actions\Moves;
 
 use App\Actions\Audit\RecordAuditEvent;
+use App\Actions\Servers\RetireServer;
 use App\Data\Audit\AuditActor;
 use App\Data\Audit\AuditEntryData;
 use App\Enums\AuditAction;
 use App\Enums\Moves\ServerMoveStatus;
 use App\Exceptions\DomainRuleViolation;
 use App\Models\Moves\ServerMove;
-use App\Services\Moves\ServerRetirement;
+use App\Support\Refusal;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -24,20 +25,24 @@ use Illuminate\Support\Facades\DB;
  * way "Replace server" retires a dead one. Its launchroomd fetches that
  * state and stops what it ran; afterwards its key is refused.
  *
- * {@see ServerRetirement} also retires the old control-plane server when
+ * {@see RetireServer} also retires the old control-plane server when
  * the new dashboard takes over (docs/14 §13.4).
  */
 final readonly class RetireMovedServer
 {
     public function __construct(
-        private ServerRetirement $retirement,
+        private RetireServer $retire,
         private RecordAuditEvent $audit,
     ) {}
 
-    public function handle(ServerMove $move, AuditActor $actor): ServerMove
+    public function handle(ServerMove $move, string $confirmation, AuditActor $actor): ServerMove
     {
-        return DB::transaction(function () use ($move, $actor): ServerMove {
+        return DB::transaction(function () use ($move, $confirmation, $actor): ServerMove {
             $move = ServerMove::query()->whereKey($move->id)->with(['source', 'target'])->lockForUpdate()->firstOrFail();
+
+            if (! hash_equals($move->source->name, $confirmation)) {
+                throw DomainRuleViolation::on('confirmation', "Type {$move->source->name} to confirm.");
+            }
 
             if ($move->control_plane) {
                 throw DomainRuleViolation::conflict('The dashboard’s server is retired when the new one takes over (Settings → Move launchroom).');
@@ -47,7 +52,7 @@ final readonly class RetireMovedServer
                 throw DomainRuleViolation::conflict('Retire the server once every service runs on '.$move->target->name.'.');
             }
 
-            $this->retirement->retire($move->source, $move->target, $actor);
+            Refusal::orThrow($this->retire->handle($move->source, $move->target, $actor));
             $move->transitionTo(ServerMoveStatus::Completed);
 
             $this->audit->handle(new AuditEntryData(

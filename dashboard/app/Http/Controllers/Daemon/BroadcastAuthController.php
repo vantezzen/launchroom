@@ -4,10 +4,11 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Daemon;
 
+use App\Broadcasting\Channel;
 use App\Data\Protocol\V1\BroadcastAuth;
 use App\Data\Protocol\V1\BroadcastAuthRequest;
 use App\Enums\DaemonTaskStatus;
-use App\Enums\Sessions\InteractiveSessionStatus;
+use App\Enums\TaskBackedAccessStatus;
 use App\Http\Controllers\Controller;
 use App\Http\Daemon\ProtocolPayload;
 use App\Http\Daemon\ProtocolResponse;
@@ -15,7 +16,6 @@ use App\Http\Middleware\AuthenticateDaemon;
 use App\Models\Server;
 use App\Models\Sessions\InteractiveSession;
 use App\Services\Daemon\DaemonNudger;
-use App\Support\PublicId;
 use Illuminate\Contracts\Database\Query\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -40,7 +40,7 @@ final class BroadcastAuthController extends Controller
 
         $payload = ProtocolPayload::decode($request, BroadcastAuthRequest::class);
 
-        if (! hash_equals('private-'.DaemonNudger::channel($server->public_id), $payload->channel) && ! $this->holdsSession($server, $payload->channel)) {
+        if (! hash_equals(Channel::Daemon->wire($server->public_id), $payload->channel) && ! $this->holdsSession($server, $payload->channel)) {
             return new JsonResponse(['error' => 'a daemon may only join its own channel'], 403);
         }
 
@@ -59,14 +59,16 @@ final class BroadcastAuthController extends Controller
      */
     private function holdsSession(Server $server, string $channel): bool
     {
-        if (preg_match('/^private-session\.(ses_'.PublicId::ULID_PATTERN.')$/D', $channel, $match) !== 1) {
+        $session = Channel::sessionFromWire($channel);
+
+        if ($session === null) {
             return false;
         }
 
         return InteractiveSession::query()
-            ->where('public_id', $match[1])
+            ->where('public_id', $session)
             ->where('server_id', $server->id)
-            ->where('status', InteractiveSessionStatus::Open->value)
+            ->where('status', TaskBackedAccessStatus::Open->value)
             ->whereHas('daemonTask', static fn (Builder $query) => $query
                 ->where('server_id', $server->id)
                 ->where('status', DaemonTaskStatus::Leased->value))

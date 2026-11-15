@@ -9,36 +9,32 @@ use App\Actions\Git\AddPublicRepository;
 use App\Actions\Git\CheckPublicRepository;
 use App\Actions\Projects\ImportRepository;
 use App\Contracts\Git\SourceRepository;
-use App\Contracts\PlanPreviewer;
-use App\Data\Canvas\DatabaseEngineOptionData;
+use App\Data\Git\PlanPreviewInputData;
 use App\Data\Git\PublicRepositoryUrlData;
+use App\Data\Git\RepositoryBranchData;
 use App\Data\Projects\ImportRepositoryData;
 use App\Drivers\DatabaseEngines\DatabaseEngines;
-use App\Enums\DatabaseEngine;
 use App\Enums\DeploymentTrigger;
 use App\Enums\Git\GitConnectionStatus;
-use App\Enums\ServerRole;
-use App\Enums\ServerStatus;
 use App\Exceptions\DomainRuleViolation;
+use App\Exceptions\Git\GitProviderRequestFailed;
+use App\Exceptions\Git\RepositoryFileUnavailable;
 use App\Exceptions\UnresolvedReferences;
 use App\Http\Controllers\Controller;
-use App\Http\Controllers\Teams\TeamSettingsController;
+use App\Http\Routing\CurrentTeam;
+use App\Http\Toast;
 use App\Models\Git\GitConnection;
 use App\Models\Git\GitHubApp;
 use App\Models\Project;
 use App\Models\Server;
 use App\Models\Team;
 use App\Models\User;
-use App\Services\Git\Exceptions\GitConnectionUnusable;
-use App\Services\Git\Exceptions\GitProviderRequestFailed;
-use App\Services\Git\Exceptions\RepositoryFileUnavailable;
+use App\Services\Canvas\PlanPreviewer;
 use App\Services\Git\GitProviders;
-use App\Services\GitHub\Exceptions\GitHubRequestFailed;
+use App\Services\Git\Providers\GitHub\Exceptions\GitHubRequestFailed;
 use App\Services\Projects\RepositoryInspector;
 use App\Services\Templates\TemplateCatalog;
-use App\Support\Git\GitRef;
 use App\Support\Templates\TemplateCompiler;
-use Closure;
 use Illuminate\Container\Attributes\CurrentUser;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -58,9 +54,8 @@ final class ImportController extends Controller
         private readonly GitProviders $providers,
     ) {}
 
-    public function create(#[CurrentUser] User $user, DatabaseEngines $engines, TemplateCatalog $catalog): Response
+    public function create(DatabaseEngines $engines, TemplateCatalog $catalog, #[CurrentTeam] Team $team): Response
     {
-        $team = TeamSettingsController::currentTeam($user);
         Gate::authorize('create', [Project::class, $team]);
 
         $app = GitHubApp::query()->where('team_id', $team->id)->oldest('id')->first();
@@ -83,11 +78,7 @@ final class ImportController extends Controller
             'templates' => $catalog->summaries(),
             'categories' => TemplateCompiler::CATEGORIES,
             'buildServerOnline' => $this->hasBuildServer($team),
-            'engines' => array_map(static function (DatabaseEngine $engine) use ($engines): DatabaseEngineOptionData {
-                $driver = $engines->for($engine);
-
-                return new DatabaseEngineOptionData($engine, $engine->label(), $driver->versions(), $driver->defaultVersion(), $engine->tagline());
-            }, DatabaseEngine::cases()),
+            'engines' => $engines->options(),
         ]);
     }
 
@@ -95,9 +86,8 @@ final class ImportController extends Controller
      * "Paste a Git URL" (docs/19 §4.3): grammar, branches over smart HTTP and
      * the matching template. Nothing is stored.
      */
-    public function checkUrl(Request $request, #[CurrentUser] User $user, CheckPublicRepository $check): JsonResponse
+    public function checkUrl(Request $request, CheckPublicRepository $check, #[CurrentTeam] Team $team): JsonResponse
     {
-        $team = TeamSettingsController::currentTeam($user);
         Gate::authorize('create', [Project::class, $team]);
         $data = PublicRepositoryUrlData::validateAndCreate(['url' => $request->query('url')]);
 
@@ -108,9 +98,8 @@ final class ImportController extends Controller
      * Continue with a pasted public repository: the picker row the import
      * flow goes on with (a plain git connection, reused per URL).
      */
-    public function addUrl(Request $request, PublicRepositoryUrlData $data, #[CurrentUser] User $user, AddPublicRepository $add): JsonResponse
+    public function addUrl(Request $request, PublicRepositoryUrlData $data, #[CurrentUser] User $user, AddPublicRepository $add, #[CurrentTeam] Team $team): JsonResponse
     {
-        $team = TeamSettingsController::currentTeam($user);
         Gate::authorize('create', [Project::class, $team]);
         Gate::authorize('addPublic', [GitConnection::class, $team]);
 
@@ -122,49 +111,42 @@ final class ImportController extends Controller
     /**
      * The apps of a repository branch and the databases they probably use.
      */
-    public function inspect(Request $request, #[CurrentUser] User $user, RepositoryInspector $inspector): JsonResponse
+    public function inspect(RepositoryBranchData $data, RepositoryInspector $inspector, #[CurrentTeam] Team $team): JsonResponse
     {
-        $team = TeamSettingsController::currentTeam($user);
         Gate::authorize('create', [Project::class, $team]);
-        [$repository, $branch] = $this->repository($request, $team);
+        $repository = $this->repository($data->repository, $team);
+        $branch = $data->branch;
 
         try {
             return new JsonResponse($inspector->inspect($repository, $branch));
-        } catch (GitHubRequestFailed $e) {
-            return new JsonResponse(['message' => $e->status === 404
-                ? "GitHub doesn’t know the branch {$branch}."
-                : 'GitHub didn’t answer. Try again in a moment.'], $e->status === 404 ? 422 : 502);
-        } catch (GitProviderRequestFailed $e) {
-            return new JsonResponse(['message' => $e->isNotFound()
-                ? "The repository has no branch {$branch}."
-                : 'The git server didn’t answer. Try again in a moment.'], $e->isNotFound() ? 422 : 502);
-        } catch (RepositoryFileUnavailable|GitConnectionUnusable $e) {
-            return new JsonResponse(['message' => $e->getMessage()], 502);
+        } catch (RepositoryFileUnavailable $e) {
+            $cause = $e->getPrevious();
+
+            return match (true) {
+                $cause instanceof GitHubRequestFailed => new JsonResponse(['message' => $cause->isNotFound()
+                    ? "GitHub doesn’t know the branch {$branch}."
+                    : 'GitHub didn’t answer. Try again in a moment.'], $cause->isNotFound() ? 422 : 502),
+                $cause instanceof GitProviderRequestFailed => new JsonResponse(['message' => $cause->isNotFound()
+                    ? "The repository has no branch {$branch}."
+                    : 'The git server didn’t answer. Try again in a moment.'], $cause->isNotFound() ? 422 : 502),
+                default => new JsonResponse(['message' => $e->getMessage()], 502),
+            };
         }
     }
 
     /**
      * "We detected…" per app, before the project exists (polled while pending).
      */
-    public function planPreview(Request $request, #[CurrentUser] User $user, PlanPreviewer $previewer): JsonResponse
+    public function planPreview(PlanPreviewInputData $data, PlanPreviewer $previewer, #[CurrentTeam] Team $team): JsonResponse
     {
-        $team = TeamSettingsController::currentTeam($user);
         Gate::authorize('create', [Project::class, $team]);
-        [$repository, $branch] = $this->repository($request, $team);
-        $request->validate([
-            'rootDirectory' => ['nullable', 'string', 'max:1024', 'regex:/^(?:[A-Za-z0-9_.@+=,-]+(?:\/[A-Za-z0-9_.@+=,-]+)*)?$/D'],
-            'retry' => ['sometimes', 'boolean'],
-        ]);
+        $repository = $this->repository($data->repository, $team);
 
-        return new JsonResponse($previewer->previewForTeam($repository->repositoryTeamId(), $repository, $branch, $request->string('rootDirectory')->toString(), $request->boolean('retry')));
+        return new JsonResponse($previewer->previewForTeam($repository->repositoryTeamId(), $repository, $data->branch, $data->rootDirectory ?? '', $data->retry));
     }
 
-    /**
-     * Creates the project and optionally starts its first deployment.
-     */
-    public function store(Request $request, ImportRepositoryData $data, #[CurrentUser] User $user, ImportRepository $import, DeployEnvironment $deploy): RedirectResponse
+    public function store(Request $request, ImportRepositoryData $data, #[CurrentUser] User $user, ImportRepository $import, DeployEnvironment $deploy, #[CurrentTeam] Team $team): RedirectResponse
     {
-        $team = TeamSettingsController::currentTeam($user);
         Gate::authorize('create', [Project::class, $team]);
 
         $actor = $this->auditActor($request, $user);
@@ -172,39 +154,27 @@ final class ImportController extends Controller
         $production = $project->production()->sole();
 
         if (! $data->deploy) {
-            Inertia::flash('toast', ['type' => 'success', 'message' => "{$project->name} is ready. Set its variables, then deploy."]);
+            Toast::success("{$project->name} is ready. Set its variables, then deploy.");
         } elseif (Gate::allows('deploy', $production)) {
             try {
                 $deploy->handle($production, $user, $actor, 'Imported from '.$this->repositoryName($data->repository, $team), DeploymentTrigger::Config);
-                Inertia::flash('toast', ['type' => 'success', 'message' => "{$project->name} is deploying."]);
+                Toast::success("{$project->name} is deploying.");
             } catch (DomainRuleViolation|UnresolvedReferences $e) {
-                Inertia::flash('toast', ['type' => 'warning', 'message' => "{$project->name} is ready but didn’t deploy: {$e->getMessage()}"]);
+                Toast::warning("{$project->name} is ready but didn’t deploy: {$e->getMessage()}");
             }
         }
 
         return to_route('projects.canvas', [$project, $production]);
     }
 
-    /**
-     * @return array{0: SourceRepository, 1: string}
-     */
-    private function repository(Request $request, Team $team): array
+    private function repository(string $publicId, Team $team): SourceRepository
     {
-        $request->validate([
-            'repository' => ['required', 'string', 'regex:'.GitProviders::REPOSITORY_ID_PATTERN],
-            'branch' => ['required', 'string', 'max:255', static function (string $attribute, mixed $value, Closure $fail): void {
-                if (! is_string($value) || ! GitRef::isValid('refs/heads/'.$value)) {
-                    $fail('Enter a valid branch name.');
-                }
-            }],
-        ]);
-
-        $repository = $this->providers->repository($team, $request->string('repository')->toString());
+        $repository = $this->providers->repository($team, $publicId);
 
         abort_if(! $repository instanceof SourceRepository, 404);
         Gate::authorize('view', $repository);
 
-        return [$repository, $request->string('branch')->toString()];
+        return $repository;
     }
 
     private function repositoryName(string $publicId, Team $team): string
@@ -216,8 +186,7 @@ final class ImportController extends Controller
     {
         return Server::query()
             ->where('team_id', $team->id)
-            ->where('status', ServerStatus::Online->value)
-            ->whereJsonContains('roles', ServerRole::Build->value)
+            ->onlineBuilders()
             ->exists();
     }
 }

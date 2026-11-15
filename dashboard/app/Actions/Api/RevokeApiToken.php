@@ -11,9 +11,6 @@ use App\Enums\AuditAction;
 use App\Models\ApiToken;
 use Illuminate\Support\Facades\DB;
 
-/**
- * Revokes (deletes) a token: the next request with it is 401. Audited.
- */
 final readonly class RevokeApiToken
 {
     public function __construct(

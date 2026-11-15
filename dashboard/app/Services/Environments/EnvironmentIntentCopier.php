@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Environments;
 
+use App\Data\Variables\VariableTargetRow;
 use App\Enums\Backups\VolumeConsistency;
 use App\Models\CanvasLayout;
 use App\Models\Environment;
@@ -46,14 +47,7 @@ final readonly class EnvironmentIntentCopier
         $existing = ServiceInstance::query()->where('environment_id', $to->id)->where('service_id', $from->service_id)->first();
 
         if ($existing instanceof ServiceInstance) {
-            $existing->forceFill([
-                'removed_at' => null,
-                'enabled' => $from->enabled,
-                'branch_override' => $from->branch_override,
-                'build' => $from->build,
-                'deploy' => $from->deploy,
-                'scaling' => $from->scaling,
-            ])->save();
+            $existing->forceFill(['removed_at' => null, ...$from->copyableSettings()])->save();
             $instance = $existing;
         } else {
             $instance = $this->provisioner->provision($from->service, $to, $from, actor: $actor);
@@ -112,21 +106,21 @@ final readonly class EnvironmentIntentCopier
 
         $source->loadMissing('service');
 
-        return $this->variables->create(
+        return $this->variables->copy(
             $project,
             $source->service,
             $source->key,
             $value,
             $source->type,
-            [['environment_id' => $to->id, 'all_previews' => false, 'branch_pattern' => null]],
+            [VariableTargetRow::environment($to->id)],
             $source->exposure_override,
             actor: $actor,
         );
     }
 
     /**
-     * Whether a non-connection row of this key and service already applies
-     * to $environment directly (it would overlap).
+     * The non-connection row of this key and service that already targets
+     * $environment directly (a copy would overlap it).
      */
     public function existing(Environment $environment, ?int $serviceId, string $key): ?Variable
     {

@@ -204,8 +204,6 @@ func DefaultPort(provider string) int {
 	}
 }
 
-// ---- version helpers ----
-
 // majorMinor parses the leading "major.minor" of a version range like "^16.2.1".
 func majorMinor(v string) (major, minor int, ok bool) {
 	v = strings.TrimLeft(strings.TrimSpace(v), "^~>=<v ")

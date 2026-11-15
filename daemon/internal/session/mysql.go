@@ -8,6 +8,7 @@ import (
 	"io"
 	"strconv"
 
+	"github.com/vantezzen/launchroom/daemon/internal/dbengine"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
 
@@ -19,20 +20,12 @@ type mysql struct {
 	user, db string
 }
 
-func newMySQL(env envMap, ex execer, container, bin string, mariadb bool) (*mysql, error) {
-	user, err := ident(env, "", "MYSQL_USER", "MARIADB_USER")
+func newMySQL(env envMap, ex execer, container string, engine state.DatabaseEngine) (*mysql, error) {
+	l, err := dbengine.LoginOf(engine, env)
 	if err != nil {
 		return nil, err
 	}
-	db, err := ident(env, "", "MYSQL_DATABASE", "MARIADB_DATABASE")
-	if err != nil {
-		return nil, err
-	}
-	pw, err := password(env, "MYSQL_PASSWORD", "MARIADB_PASSWORD")
-	if err != nil {
-		return nil, err
-	}
-	return &mysql{p: newProc(ex, container, "MYSQL_PWD="+pw), bin: bin, mariadb: mariadb, user: user, db: db}, nil
+	return &mysql{p: newProc(ex, container, "MYSQL_PWD="+l.Password), bin: dbengine.Client(engine), mariadb: engine == state.EngineMariaDB, user: l.User, db: l.Database}, nil
 }
 
 // initCommand sets the statement timeout and (read-only mode) a read-only session.

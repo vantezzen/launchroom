@@ -1,22 +1,13 @@
-import { Circle, Hammer, Minus, Plus, RotateCw, Waypoints } from 'lucide-react';
-import type { ReactNode } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
-import { effectLabel } from './use-staged-changes';
-
-const effectIcons: Record<App.Enums.ChangeEffect, ReactNode> = {
-    new: <Plus aria-hidden="true" />,
-    remove: <Minus aria-hidden="true" />,
-    rebuild: <Hammer aria-hidden="true" />,
-    restart: <RotateCw aria-hidden="true" />,
-    route: <Waypoints aria-hidden="true" />,
-    none: <Circle aria-hidden="true" />,
-};
+import { EFFECTS } from './effects';
 
 /**
  * What a change needs when deployed (docs/06 §4): icon plus label.
  */
 export function EffectBadge({ effect }: { effect: App.Enums.ChangeEffect }) {
+    const { icon: Icon, label } = EFFECTS[effect];
+
     return (
         <Badge
             variant="outline"
@@ -25,8 +16,8 @@ export function EffectBadge({ effect }: { effect: App.Enums.ChangeEffect }) {
                 effect === 'remove' && 'text-status-error',
             )}
         >
-            {effectIcons[effect]}
-            {effectLabel(effect)}
+            <Icon aria-hidden="true" />
+            {label}
         </Badge>
     );
 }

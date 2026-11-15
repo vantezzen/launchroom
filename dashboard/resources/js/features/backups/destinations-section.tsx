@@ -20,8 +20,9 @@ import {
 } from '@/components/ui/popover';
 import { DestinationForm } from '@/features/backups/destination-form';
 import { DestinationStatus } from '@/features/backups/destination-status';
-import { formatBytes, storageProvider } from '@/features/backups/format';
+import { storageProvider } from '@/features/backups/format';
 import { destroy, test } from '@/routes/backups/destinations';
+import { formatBytes } from '@/lib/format';
 
 type Destination = App.Data.Backups.BackupDestinationData;
 type Usage = App.Data.Backups.DestinationUsageData;
@@ -108,7 +109,7 @@ function UsageDonut({ usage }: { usage: Usage }) {
  * it holds on the right. Test is the one visible action; edit and remove
  * live behind `⋯` (remove confirmed in a popover).
  */
-export function DestinationCard({
+function DestinationCard({
     destination,
     usage,
     badge,

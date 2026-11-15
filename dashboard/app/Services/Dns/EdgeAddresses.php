@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace App\Services\Dns;
 
-use App\Enums\ServerRole;
-use App\Enums\ServerStatus;
 use App\Models\Server;
 use App\Support\Network\ServerAddress;
 
@@ -22,8 +20,7 @@ final class EdgeAddresses
     {
         $edges = Server::query()
             ->when($teamId !== null, static fn ($query) => $query->where('team_id', $teamId))
-            ->whereIn('status', [ServerStatus::Online->value, ServerStatus::Unreachable->value])
-            ->whereJsonContains('roles', ServerRole::Edge->value)
+            ->reachableEdges()
             ->orderByDesc('is_control_plane')
             ->orderBy('id')
             ->get(['public_ipv4', 'public_ipv6']);

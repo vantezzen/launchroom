@@ -8,7 +8,7 @@ import {
     History,
     TriangleAlert,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { PillTabs } from '@/components/patterns/pill-tabs';
 import type { PillTab } from '@/components/patterns/pill-tabs';
 import { TopBar } from '@/components/patterns/top-bar';
@@ -23,24 +23,22 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { usePaletteIndex } from '@/features/command-palette/command-palette';
 import { AutoDeployPausedBanner } from '@/features/projects/auto-deploy-paused-banner';
-import { requestJson } from '@/features/projects/http';
+import { requestJson } from '@/lib/http';
 import {
     environmentSwitchHref,
     projectSwitchHref,
 } from '@/features/projects/switch-targets';
-import type { ProjectShellProps } from '@/features/projects/types';
 import { StagedChangesPill } from '@/features/staged-changes/staged-changes-pill';
 import { useLocationSearch } from '@/hooks/use-observe-scope';
-import { readScope, withScope } from '@/lib/observe-scope';
+import { analyticsHref, logsHref } from '@/lib/links';
+import { liveReload } from '@/lib/live-reload';
+import { readScope } from '@/lib/observe-scope';
 import { project as projectDeployments } from '@/routes/deployments';
 import {
     activity,
-    analyticsPage as projectAnalytics,
     canvas,
     index,
-    logs as projectLogs,
     previews as projectPreviews,
     settings,
     show,
@@ -223,7 +221,9 @@ function ProjectTabs({
  * in the sidebar is the main feed).
  */
 export function ProjectTopBar() {
-    const page = usePage<ProjectShellProps & { nodes?: unknown[] }>();
+    const page = usePage<
+        App.Data.Canvas.ProjectShellPropsData & { nodes?: unknown[] }
+    >();
     const {
         project,
         environment,
@@ -231,6 +231,7 @@ export function ProjectTopBar() {
         projects,
         abilities,
         edgeOverview,
+        projectStatuses,
     } = page.props;
     const onCanvas = page.component === 'projects/canvas';
     const [switcherOpen, setSwitcherOpen] = useState(false);
@@ -264,18 +265,20 @@ export function ProjectTopBar() {
             ? [
                   {
                       label: 'Logs',
-                      href: withScope(
-                          projectLogs([project.id, environmentId]).url,
-                          carried,
-                      ),
+                      href: logsHref({
+                          project: project.id,
+                          environment: environmentId,
+                          ...carried,
+                      }),
                       active: page.component === 'projects/logs',
                   },
                   {
                       label: 'Analytics',
-                      href: withScope(
-                          projectAnalytics([project.id, environmentId]).url,
-                          carried,
-                      ),
+                      href: analyticsHref({
+                          project: project.id,
+                          environment: environmentId,
+                          ...carried,
+                      }),
                       active: page.component === 'projects/analytics',
                   },
               ]
@@ -295,6 +298,7 @@ export function ProjectTopBar() {
 
     const projectItems = (
         <>
+            <LoadProjectStatuses loaded={projectStatuses !== undefined} />
             <DropdownMenuLabel className="type-small text-muted-foreground">
                 Projects
             </DropdownMenuLabel>
@@ -308,8 +312,11 @@ export function ProjectTopBar() {
                     <ProjectIcon name={item.name} iconUrl={item.iconUrl} />
                     <span className="flex-1 truncate">{item.name}</span>
                     <ProjectStatus
-                        project={item.id}
-                        environment={environment?.id ?? null}
+                        status={
+                            projectStatuses?.find(
+                                (entry) => entry.projectId === item.id,
+                            )?.status
+                        }
                     />
                     {item.id === project.id && (
                         <Check
@@ -550,22 +557,14 @@ export function ProjectTopBar() {
 
 /**
  * A project's status in the switcher (production's, or this environment's
- * for the current project). Mounted only while the menu is open, so the
- * palette index it shares with ⌘K loads on open, not with every page.
+ * for the current project).
  */
 function ProjectStatus({
-    project,
-    environment,
+    status,
 }: {
-    project: string;
-    environment: string | null;
+    status: App.Data.Canvas.NodeStatusData | undefined;
 }) {
-    const { data } = usePaletteIndex(environment, true);
-    const status = data?.projects.find(
-        (item) => item.id === project,
-    )?.nodeStatus;
-
-    if (!status || status.label === 'No services') {
+    if (!status || status.reason === 'no_services') {
         return null;
     }
 
@@ -576,6 +575,17 @@ function ProjectStatus({
             className="max-w-32 shrink-0 truncate type-small text-muted-foreground"
         />
     );
+}
+
+/** Loads the switcher's statuses when the project menu opens (an optional prop). */
+function LoadProjectStatuses({ loaded }: { loaded: boolean }) {
+    useEffect(() => {
+        if (!loaded) {
+            liveReload(['projectStatuses']);
+        }
+    }, [loaded]);
+
+    return null;
 }
 
 /**

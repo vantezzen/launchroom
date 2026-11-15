@@ -41,7 +41,7 @@ final readonly class StartBaseBackup
             $inFlight = BackupRun::query()
                 ->where('service_instance_id', $instance->id)
                 ->where('subject', BackupSubject::BaseBackup->value)
-                ->whereIn('status', [BackupRunStatus::Pending->value, BackupRunStatus::Running->value])
+                ->whereIn('status', BackupRunStatus::nonTerminal())
                 ->first();
 
             if ($inFlight instanceof BackupRun) {

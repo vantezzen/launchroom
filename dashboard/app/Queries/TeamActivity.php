@@ -21,6 +21,7 @@ use App\Models\Project;
 use App\Models\Server;
 use App\Models\Service;
 use App\Models\User;
+use App\Support\Links;
 use Carbon\CarbonInterval;
 use Illuminate\Support\Collection;
 
@@ -148,7 +149,7 @@ final class TeamActivity
             $statuses = array_map(static fn (Deployment $d): DeploymentStatus => $d->status, $group);
             $status = match (true) {
                 in_array(DeploymentStatus::Failed, $statuses, true) => 'failed',
-                array_any($statuses, static fn (DeploymentStatus $s): bool => ! in_array($s, [DeploymentStatus::Active, DeploymentStatus::Superseded, DeploymentStatus::Failed, DeploymentStatus::Cancelled, DeploymentStatus::Ready], true)) => 'deploying',
+                array_any($statuses, static fn (DeploymentStatus $s): bool => ! $s->isSettled()) => 'deploying',
                 in_array(DeploymentStatus::Ready, $statuses, true) => 'ready',
                 array_all($statuses, static fn (DeploymentStatus $s): bool => $s === DeploymentStatus::Cancelled) => 'cancelled',
                 default => 'live',
@@ -169,8 +170,8 @@ final class TeamActivity
                 environmentId: $environment->public_id,
                 environmentName: $environment->name,
                 href: count($group) === 1
-                    ? "/p/{$project->public_id}/{$environment->public_id}/d/{$head->public_id}"
-                    : "/p/{$project->public_id}/deployments?environment={$environment->public_id}",
+                    ? Links::deployment($head)
+                    : Links::deployments($environment),
                 projectId: $project->public_id,
                 projectName: $project->name,
                 status: $status,
@@ -221,7 +222,7 @@ final class TeamActivity
                 detail: $images > 0 ? "Also promoted {$images} ".($images === 1 ? 'image' : 'images').'.' : null,
                 environmentId: $to?->public_id,
                 environmentName: $to?->name,
-                href: $project instanceof Project && $to instanceof Environment ? "/p/{$project->public_id}/{$to->public_id}" : null,
+                href: $to instanceof Environment ? Links::environment($to) : null,
                 projectId: $project?->public_id,
                 projectName: $project?->name,
             );
@@ -283,9 +284,9 @@ final class TeamActivity
             }
 
             [$kind, $title, $href] = match ($event->action) {
-                AuditAction::ProjectCreated => ['project', 'created the project '.$project->name, "/p/{$project->public_id}"],
-                AuditAction::ServiceCreated => ['service', 'added '.$this->name($services->get((string) $event->subject_id), 'a service').' to '.$project->name, "/p/{$project->public_id}"],
-                AuditAction::ServerApproved => ['server', 'connected the server '.$this->name($servers->get((string) $event->subject_id), 'a server'), $event->subject_id !== null ? "/servers/{$event->subject_id}" : null],
+                AuditAction::ProjectCreated => ['project', 'created the project '.$project->name, Links::project($project)],
+                AuditAction::ServiceCreated => ['service', 'added '.$this->name($services->get((string) $event->subject_id), 'a service').' to '.$project->name, Links::project($project)],
+                AuditAction::ServerApproved => ['server', 'connected the server '.$this->name($servers->get((string) $event->subject_id), 'a server'), $event->subject_id !== null ? Links::serverAt($event->subject_id) : null],
                 default => ['member', 'joined the team', null],
             };
 

@@ -15,11 +15,11 @@ use Illuminate\Support\Facades\Gate;
 
 final class RetiredVolumeController extends Controller
 {
-    public function confirm(Request $request, Server $server, string $volume, #[CurrentUser] User $user, ConfirmVolumeDeletion $confirm): RedirectResponse
+    public function confirm(Request $request, Server $server, string $retiredVolume, #[CurrentUser] User $user, ConfirmVolumeDeletion $confirm): RedirectResponse
     {
         Gate::authorize('confirmVolumeDeletion', $server);
 
-        $confirm->handle($server, $volume, $user, $this->auditActor($request, $user));
+        $confirm->handle($server, $retiredVolume, $user, $this->auditActor($request, $user));
 
         return back();
     }

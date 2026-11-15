@@ -4,12 +4,15 @@ declare(strict_types=1);
 
 namespace App\Services\Alerts\Senders;
 
+use App\Data\Alerts\AlertMessage;
 use App\Enums\Alerts\AlertDeliveryEvent;
 use App\Enums\Alerts\AlertSeverity;
 use App\Models\Alerts\AlertChannel;
-use App\Services\Alerts\AlertChannelSecrets;
-use App\Services\Alerts\AlertMessage;
+use App\Services\Alerts\ChannelSecret;
 use App\Services\Alerts\DeliveryFailed;
+use App\Services\Crypto\SealedColumns;
+use App\Services\Http\Exceptions\WebhookPostFailed;
+use App\Services\Http\SignedWebhookPoster;
 use App\Support\Alerts\ChannelUrls;
 
 /**
@@ -19,19 +22,23 @@ use App\Support\Alerts\ChannelUrls;
 final readonly class DiscordSender implements AlertSender
 {
     public function __construct(
-        private AlertChannelSecrets $secrets,
-        private HttpPost $post,
+        private SealedColumns $sealed,
+        private SignedWebhookPoster $poster,
     ) {}
 
     public function send(AlertChannel $channel, AlertMessage $message, string $deliveryId): void
     {
-        $url = $this->secrets->reveal($channel)->url;
+        $url = ChannelSecret::of($this->sealed->revealJson($channel, 'secret'))->url;
 
         if (! ChannelUrls::isDiscord($url)) {
             throw DeliveryFailed::because('This is not a Discord webhook address.');
         }
 
-        $this->post->send($url, json_encode(self::payload($message), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
+        try {
+            $this->poster->postUnsigned($url, json_encode(self::payload($message), JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
+        } catch (WebhookPostFailed $e) {
+            throw DeliveryFailed::from($e);
+        }
     }
 
     /**

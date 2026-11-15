@@ -14,11 +14,12 @@ use App\Exceptions\DomainRuleViolation;
 use App\Models\Git\GitConnection;
 use App\Models\Git\GitOAuthState;
 use App\Models\User;
+use App\Services\Crypto\SealedColumns;
 use App\Services\Git\GitConnectionAccounts;
-use App\Services\Git\GitConnectionSecrets;
 use App\Services\Git\GitConnectionTokens;
 use App\Services\Git\GitProviderApi;
-use App\Services\GitHub\JsonObject;
+use App\Services\Git\GitProviders;
+use App\Support\Json\JsonObject;
 use Illuminate\Support\Facades\DB;
 use SensitiveParameter;
 use Throwable;
@@ -33,10 +34,11 @@ use Throwable;
 final readonly class CompleteGitProviderConnection
 {
     public function __construct(
-        private GitConnectionSecrets $secrets,
+        private SealedColumns $sealed,
         private GitConnectionTokens $tokens,
         private GitProviderApi $api,
         private RecordAuditEvent $audit,
+        private GitProviders $providers,
     ) {}
 
     /**
@@ -60,12 +62,12 @@ final readonly class CompleteGitProviderConnection
         $label = $connection->server_kind->label();
 
         try {
-            $response = $this->tokens->client($connection)->postForm(GitConnectionTokens::tokenUrl($connection), [
+            $response = $this->tokens->client($connection)->postForm($this->providers->api($connection->provider)->oauthTokenUrl($connection), [
                 'grant_type' => 'authorization_code',
                 'code' => $code,
                 'redirect_uri' => route('git.oauth.callback'),
                 'client_id' => (string) $connection->oauth_client_id,
-                'client_secret' => (string) $this->secrets->get($connection, 'oauth_client_secret'),
+                'client_secret' => (string) $this->sealed->reveal($connection, 'oauth_client_secret'),
                 'code_verifier' => $pending->code_verifier,
             ], ['Accept' => 'application/json']);
             $tokens = $response->successful() ? JsonObject::decode($response->body()) : null;
@@ -85,7 +87,7 @@ final readonly class CompleteGitProviderConnection
             throw DomainRuleViolation::on('git', "{$label} signed you in but didn’t return your account. Try again.");
         }
 
-        GitConnectionAccounts::apply($connection, $account);
+        $this->providers->api($connection->provider)->applyAccount($connection, $account);
 
         return DB::transaction(function () use ($connection, $actor): GitConnection {
             $existing = GitConnectionAccounts::existing($connection);
@@ -93,7 +95,7 @@ final readonly class CompleteGitProviderConnection
             if ($existing instanceof GitConnection) {
                 // Signing in again: keep the existing row (services point at it).
                 foreach (['oauth_client_secret', 'access_token', 'refresh_token'] as $field) {
-                    $this->secrets->put($existing, $field, $this->secrets->get($connection, $field));
+                    $this->sealed->seal($existing, $field, $this->sealed->reveal($connection, $field));
                 }
 
                 $existing->forceFill(['oauth_client_id' => $connection->oauth_client_id, 'token_expires_at' => $connection->token_expires_at, 'auth_method' => $connection->auth_method]);

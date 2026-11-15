@@ -8,7 +8,6 @@ use App\Enums\Backups\BackupSubject;
 use App\Enums\ServerStatus;
 use App\Exceptions\DomainRuleViolation;
 use App\Models\Backups\BackupDestination;
-use App\Models\Backups\BackupSchedule;
 use App\Models\DaemonTask;
 use App\Models\Server;
 use App\Models\ServiceInstance;
@@ -33,8 +32,7 @@ final readonly class RefreshSnapshots
 
     public function handle(ServiceInstance $instance): DaemonTask
     {
-        $destination = BackupSchedule::query()->where('service_instance_id', $instance->id)->first()?->destination()->first()
-            ?? BackupDestination::defaultFor($instance->team_id);
+        $destination = BackupDestination::forService($instance);
 
         if (! $destination instanceof BackupDestination) {
             throw DomainRuleViolation::on('destination', 'Add a backup destination in Settings → Backups first.');

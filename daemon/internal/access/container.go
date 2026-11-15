@@ -31,7 +31,6 @@ type Container interface {
 	EnvRunner
 }
 
-// dockerContainer is Container over the Engine.
 type dockerContainer struct {
 	d  Docker
 	id string

@@ -10,7 +10,7 @@ export type StatDelta = {
     tone?: 'good' | 'bad' | 'neutral';
 };
 
-export type StatTileProps = {
+type StatTileProps = {
     label: string;
     /** Current value as display text ("34", "5.1"); null → "–". */
     value: string | null;

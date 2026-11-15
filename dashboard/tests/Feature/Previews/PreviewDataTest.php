@@ -78,7 +78,7 @@ function pdInstance(Project $project, string $slug): ServiceInstance
 test('clone sources: the picker shows backup sizes; the size guard and the production toggle refuse sources', function (): void {
     [$team, , , $project] = PreviewFlow::project();
     $target = pdInstance($project, 'postgres');
-    $replica = Projects::postgres($project, 'analytics');
+    Projects::postgres($project, 'analytics');
     $source = pdInstance($project, 'analytics');
     pdBackup($team, $source, 600 * 1024 * 1024);
     $settings = PreviewSettings::forProject($project);
@@ -103,14 +103,12 @@ test('clone sources: the picker shows backup sizes; the size guard and the produ
 
     expect($updated->preview_strategy)->toBe(PreviewStrategy::Clone)
         ->and($updated->preview_clone_source_id)->toBe($source->id)
-        ->and($updated->preview_sanitize_command)->toBe(['psql', '-c', 'UPDATE users SET email = id || \'@example.com\''])
-        ->and($replica->kind->isStateful())->toBeTrue();
+        ->and($updated->preview_sanitize_command)->toBe(['psql', '-c', 'UPDATE users SET email = id || \'@example.com\'']);
 
     // A database without a backup can't be a source.
-    $other = Projects::postgres($project, 'cache-db');
+    Projects::postgres($project, 'cache-db');
     expect(fn () => resolve(UpdatePreviewStrategy::class)->handle($target, new PreviewStrategyInput(PreviewStrategy::Clone, pdInstance($project, 'cache-db')->public_id), AuditActor::system()))
-        ->toThrow(DomainRuleViolation::class, 'no successful backup')
-        ->and($other->id)->toBeInt();
+        ->toThrow(DomainRuleViolation::class, 'no successful backup');
 });
 
 test('clone: the preview database is restored from the source’s latest backup and sanitized before the apps deploy', function (): void {
@@ -127,7 +125,7 @@ test('clone: the preview database is restored from the source’s latest backup 
     $previewDb = ServiceInstance::query()->where('environment_id', $preview->environment_id)->where('service_id', $postgres->service_id)->sole();
 
     expect($preview->status)->toBe(PreviewStatus::Preparing)
-        ->and($preview->data['databases'][$postgres->service->public_id]['state'])->toBe('restoring')
+        ->and($preview->data->databases[$postgres->service->public_id]->state)->toBe('restoring')
         ->and($restore->source_service_instance_id)->toBe($postgres->id)
         ->and($restore->target_service_instance_id)->toBe($previewDb->id)
         ->and($restore->snapshot_id)->toBe($backup->snapshot_id)
@@ -144,7 +142,7 @@ test('clone: the preview database is restored from the source’s latest backup 
     $spec = json_decode(json_encode($sanitize->spec, JSON_THROW_ON_ERROR), true);
     $dbDeployment = Deployment::query()->whereKey($previewDb->active_deployment_id)->sole();
 
-    expect($preview->refresh()->data['databases'][$postgres->service->public_id]['state'])->toBe('sanitizing')
+    expect($preview->refresh()->data->databases[$postgres->service->public_id]->state)->toBe('sanitizing')
         ->and($sanitize->server_id)->toBe($server->id)
         ->and($spec['image'])->toBe($dbDeployment->image)
         ->and([...($spec['command'] ?? []), ...($spec['args'] ?? [])])->toBe(['psql', '-c', 'DELETE FROM sessions'])
@@ -162,7 +160,7 @@ test('clone: the preview database is restored from the source’s latest backup 
     PreviewFlow::run($server);
 
     expect($preview->refresh()->status)->toBe(PreviewStatus::Running)
-        ->and($preview->data['databases'][$postgres->service->public_id]['state'])->toBe('ready')
+        ->and($preview->data->databases[$postgres->service->public_id]->state)->toBe('ready')
         ->and(Deployment::query()->where('environment_id', $preview->environment_id)->whereHas('serviceInstance', static fn (Builder $query) => $query->where('service_id', $web->id))->latest('id')->first()?->status)->toBe(DeploymentStatus::Active);
 });
 
@@ -230,7 +228,7 @@ test('closing a preview while its clone restores waits and retries on the next t
     PreviewFlow::event($project, 'closed');
     expect($preview->refresh()->environment_id)->not->toBeNull()
         ->and($preview->status_reason)->toContain('waits')
-        ->and($preview->data['pendingClose']['to'] ?? null)->toBe('closed');
+        ->and($preview->data->pendingClose?->to)->toBe(PreviewStatus::Closed);
 
     $restore->transitionTo(RestoreRunStatus::Succeeded);
     resolve(AdvancePreviews::class)->handle();
@@ -259,7 +257,7 @@ test('fork previews never share the base database: a new empty one, no base cred
         ->and($previewDb->preview_strategy)->toBe(PreviewStrategy::NewEmpty)
         ->and(Deployment::query()->where('service_instance_id', $previewDb->id)->exists())->toBeTrue()
         ->and($preview->environment?->lastAppliedRevision?->spec->sharedServices)->toBe([])
-        ->and($preview->data['databases'][$postgres->service->public_id]['downgradedFrom'])->toBe('share')
+        ->and($preview->data->databases[$postgres->service->public_id]->downgradedFrom)->toBe(PreviewStrategy::Share)
         ->and($forkUrl)->not->toBe($baseUrl)
         ->and($forkUrl)->not->toContain((string) parse_url($baseUrl, PHP_URL_PASS));
 
@@ -308,12 +306,12 @@ test('fork previews never receive a clone: the database starts new and empty, no
         ->and($previewDb->preview_strategy)->toBe(PreviewStrategy::NewEmpty)
         ->and($previewDb->preview_clone_source_id)->toBeNull()
         ->and($preview->refresh()->status)->toBe(PreviewStatus::Running)
-        ->and($preview->data['databases'][$postgres->service->public_id]['downgradedFrom'])->toBe('clone')
+        ->and($preview->data->databases[$postgres->service->public_id]->downgradedFrom)->toBe(PreviewStrategy::Clone)
         ->and(Deployment::query()->where('environment_id', $preview->environment_id)->whereHas('serviceInstance', static fn (Builder $query) => $query->where('service_id', $web->id))->latest('id')->first()?->status)->toBe(DeploymentStatus::Active);
 });
 
 test('sharing a production database with previews needs the owner/admin production toggle, also when the preview is created', function (): void {
-    [, $server, , $project, $production] = PreviewFlow::project();
+    [, $server, , $project] = PreviewFlow::project();
     $postgres = pdInstance($project, 'postgres');
 
     expect(fn () => resolve(UpdatePreviewStrategy::class)->handle($postgres, new PreviewStrategyInput(PreviewStrategy::Share), AuditActor::system()))
@@ -332,6 +330,5 @@ test('sharing a production database with previews needs the owner/admin producti
     expect($previewDb->enabled)->toBeTrue()
         ->and($previewDb->preview_strategy)->toBe(PreviewStrategy::NewEmpty)
         ->and($preview->refresh()->environment?->lastAppliedRevision?->spec->sharedServices)->toBe([])
-        ->and($preview->data['databases'][$postgres->service->public_id]['downgradeReason'])->toBe('production')
-        ->and($production->kind->value)->toBe('production');
+        ->and($preview->data->databases[$postgres->service->public_id]->downgradeReason)->toBe('production');
 });

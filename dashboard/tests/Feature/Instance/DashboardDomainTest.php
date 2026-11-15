@@ -10,6 +10,7 @@ use App\Data\Protocol\V1\Report;
 use App\Enums\ActorType;
 use App\Enums\AuditAction;
 use App\Enums\DashboardDomainStatus;
+use App\Enums\Domains\DnsCheckStatus;
 use App\Enums\ServerRole;
 use App\Enums\TeamRole;
 use App\Models\AuditEvent;
@@ -164,21 +165,21 @@ test('the checks wait for DNS, then route the name, test HTTPS and make the chan
     $change = ddStart($this->owner, 'https://Dash.Example.com/')->refresh();
     expect($change->hostname)->toBe('dash.example.com')
         ->and($change->status)->toBe(DashboardDomainStatus::Pending)
-        ->and($change->dns['status'])->toBe('missing')
+        ->and($change->dns?->status)->toBe(DnsCheckStatus::Missing)
         ->and(resolve(DashboardRoute::class)->hosts())->toBe(['1-2-3-4.sslip.io']);
     Http::assertNothingSent();
 
     FakeDns::set('dash.example.com', ['9.9.9.9']);
     $this->actingAs($this->owner)->post(route('dashboard-domain.check'))->assertRedirect();
-    expect($change->refresh()->dns['status'])->toBe('mismatch')
+    expect($change->refresh()->dns?->status)->toBe(DnsCheckStatus::Mismatch)
         ->and($change->status)->toBe(DashboardDomainStatus::Pending);
 
     FakeDns::set('dash.example.com', ['1.2.3.4']);
     $this->actingAs($this->owner)->post(route('dashboard-domain.check'))->assertRedirect();
 
     expect($change->refresh()->status)->toBe(DashboardDomainStatus::Ready)
-        ->and($change->probe['ok'])->toBeTrue()
-        ->and($change->probe['via'])->toBe('1.2.3.4')
+        ->and($change->probe?->ok)->toBeTrue()
+        ->and($change->probe?->via)->toBe('1.2.3.4')
         ->and(InstanceSettings::current()->dashboard_pending_host)->toBe('dash.example.com');
 
     // The test request is pinned to the main server and asks the probe path.
@@ -207,8 +208,8 @@ test('an answer that isn’t this dashboard never passes the HTTPS test', functi
     $change = ddStart($this->owner)->refresh();
 
     expect($change->status)->toBe(DashboardDomainStatus::Pending)
-        ->and($change->probe['ok'])->toBeFalse()
-        ->and($change->probe['message'])->toBe('Something else answered at this address, not this dashboard.');
+        ->and($change->probe?->ok)->toBeFalse()
+        ->and($change->probe?->message)->toBe('Something else answered at this address, not this dashboard.');
 
     $this->actingAs($this->owner)
         ->post(route('dashboard-domain.activate'))
@@ -241,7 +242,7 @@ test('switching makes the domain canonical, keeps the old origin and tells every
     $settings = InstanceSettings::current();
     expect($settings->dashboard_url)->toBe('https://dash.example.com')
         ->and($settings->dashboard_pending_host)->toBeNull()
-        ->and($settings->dashboard_legacy_urls[0]['url'])->toBe('https://1-2-3-4.sslip.io')
+        ->and($settings->dashboard_legacy_urls?->toArray()[0]['url'])->toBe('https://1-2-3-4.sslip.io')
         ->and(DashboardDomainChange::active()?->hostname)->toBe('dash.example.com')
         ->and(AuditEvent::query()->where('action', AuditAction::DashboardDomainSwitched->value)->sole()->meta)
         ->toMatchArray(['from' => 'https://1-2-3-4.sslip.io', 'to' => 'https://dash.example.com']);
@@ -313,7 +314,7 @@ test('switching back returns to the previous origin; the domain keeps forwarding
 
     $settings = InstanceSettings::current();
     expect($settings->dashboard_url)->toBeNull()
-        ->and(array_column($settings->dashboard_legacy_urls ?? [], 'url'))->toBe(['https://dash.example.com'])
+        ->and(array_column($settings->dashboard_legacy_urls?->toArray() ?? [], 'url'))->toBe(['https://dash.example.com'])
         ->and(DashboardDomainChange::query()->sole()->status)->toBe(DashboardDomainStatus::Reverted)
         ->and(AuditEvent::query()->where('action', AuditAction::DashboardDomainReverted->value)->count())->toBe(1);
 
@@ -391,7 +392,7 @@ test('reports record which address launchroomd uses, and preview forward auth fo
     expect(resolve(DashboardOrigin::class)->forServer($remote->refresh()))->toBe('https://1-2-3-4.sslip.io');
 
     $report(['state' => 'adopted', 'configured' => 'https://1-2-3-4.sslip.io', 'adopted' => 'https://dash.example.com', 'active' => 'https://dash.example.com']);
-    expect($remote->refresh()->daemon_control_plane)->toMatchArray(['state' => 'adopted', 'adopted' => 'https://dash.example.com'])
+    expect($remote->refresh()->daemon_control_plane?->toArray())->toMatchArray(['state' => 'adopted', 'adopted' => 'https://dash.example.com'])
         ->and(resolve(DashboardOrigin::class)->forServer($remote))->toBe('https://dash.example.com');
 
     // A URL that isn't one of the dashboard's origins never becomes a forward-auth target.

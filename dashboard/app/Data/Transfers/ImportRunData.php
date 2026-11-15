@@ -7,11 +7,7 @@ namespace App\Data\Transfers;
 use App\Enums\Transfers\DataSubject;
 use App\Enums\Transfers\ImportRunStatus;
 use App\Enums\Transfers\ImportSourceKind;
-use App\Models\ServiceInstance;
 use App\Models\Transfers\DataImportRun;
-use App\Services\Backups\HoldBlocker;
-use App\Services\Backups\RestoreHolds;
-use App\Services\Transfers\ImportHolds;
 use Spatie\LaravelData\Data;
 
 /**
@@ -39,6 +35,8 @@ final class ImportRunData extends Data
         public ?string $createdAt,
         public ?string $startedAt,
         public ?string $finishedAt,
+        /** It ended (succeeded, failed or cancelled). */
+        public bool $finished,
         /** Whether a safety snapshot was taken first. */
         public bool $safetySnapshot = false,
         /** The transfer the file came from (to try again without uploading). */
@@ -49,11 +47,13 @@ final class ImportRunData extends Data
         public ?string $waitingOn = null,
     ) {}
 
-    public static function fromRun(DataImportRun $run): self
+    /**
+     * @param  list<string>  $waitingFor  while holding: the held services that still run
+     */
+    public static function fromRun(DataImportRun $run, array $waitingFor = [], ?string $waitingOn = null): self
     {
         $run->loadMissing(['volume', 'daemonTask', 'transfer']);
         $task = $run->daemonTask;
-        $running = $run->status === ImportRunStatus::Holding ? RestoreHolds::running(ImportHolds::heldBy($run)) : [];
 
         return new self(
             $run->public_id,
@@ -70,24 +70,11 @@ final class ImportRunData extends Data
             $run->created_at?->toIso8601String(),
             $run->started_at?->toIso8601String(),
             $run->finished_at?->toIso8601String(),
+            $run->status->isTerminal(),
             $run->safety_backup_run_id !== null,
             $run->transfer?->public_id,
-            self::names($running),
-            HoldBlocker::describe($running),
+            $waitingFor,
+            $waitingOn,
         );
-    }
-
-    /**
-     * @param  list<int>  $running
-     * @return list<string>
-     */
-    private static function names(array $running): array
-    {
-        /** @var list<string> $names */
-        $names = $running === [] ? [] : ServiceInstance::query()->whereKey($running)->with('service')->get()
-            ->map(static fn (ServiceInstance $instance): string => $instance->service->name)
-            ->unique()->sort()->values()->all();
-
-        return $names;
     }
 }

@@ -1,3 +1,4 @@
+import { vocabulary } from '@/lib/vocabulary';
 import { Link, router } from '@inertiajs/react';
 import { MapPin } from 'lucide-react';
 import { useState } from 'react';
@@ -10,8 +11,6 @@ import { Button } from '@/components/ui/button';
 import {
     deviceKind,
     deviceStatus,
-    shortAge,
-    shortDuration,
     specParts,
     serverAlerts,
 } from '@/features/servers/format';
@@ -19,6 +18,7 @@ import { RoleChipLabel } from '@/features/servers/server-status';
 import { useNow } from '@/hooks/use-now';
 import { tab } from '@/routes/servers';
 import { update as updateAppearance } from '@/routes/servers/appearance';
+import { shortAge, shortDuration } from '@/lib/format';
 
 type Server = App.Data.Servers.ServerDetailData;
 
@@ -105,7 +105,7 @@ function LocationPrompt({ server }: { server: Server }) {
  */
 export function ServerHero({ server }: { server: Server }) {
     const { state, label } = serverStatus[server.status];
-    const down = server.status === 'unreachable' || server.status === 'offline';
+    const down = vocabulary.ServerStatus[server.status].isDown;
     const now = useNow(down && server.lastSeenAt !== null, 10_000);
     const since = down ? shortDuration(server.lastSeenAt, now) : null;
     const specs = specParts(server.specs);

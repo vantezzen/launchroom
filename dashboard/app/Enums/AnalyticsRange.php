@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Enums;
 
+use App\Enums\Concerns\HasRangeLength;
+
 /**
  * Time ranges of the request analytics (docs/15 §5.4): the last 24 hours
  * and 7 days in hourly buckets, the last 30 days in daily buckets (from the
@@ -11,18 +13,11 @@ namespace App\Enums;
  */
 enum AnalyticsRange: string
 {
+    use HasRangeLength;
+
     case Day = '24h';
     case Week = '7d';
     case Month = '30d';
-
-    public function seconds(): int
-    {
-        return match ($this) {
-            self::Day => 86_400,
-            self::Week => 7 * 86_400,
-            self::Month => 30 * 86_400,
-        };
-    }
 
     public function bucketSeconds(): int
     {

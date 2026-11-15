@@ -7,7 +7,7 @@ type Token struct {
 	ID         string   `json:"id"`
 	Name       string   `json:"name"`
 	Abilities  []string `json:"abilities"`
-	ExpiresAt  string   `json:"expiresAt"`
+	ExpiresAt  *string  `json:"expiresAt"`
 	LastUsedAt *string  `json:"lastUsedAt"`
 	Client     string   `json:"client"`
 }
@@ -72,8 +72,8 @@ type Commit struct {
 
 // Failure explains a failed deployment.
 type Failure struct {
-	Class   string `json:"class"`
-	Message string `json:"message"`
+	Class   *string `json:"class"`
+	Message *string `json:"message"`
 }
 
 // Deployment is one deployment of a service in an environment.
@@ -95,8 +95,15 @@ type Deployment struct {
 
 // Failed reports whether a finished deployment did not go live.
 func (d Deployment) Failed() bool {
-	return d.Status == "failed" || d.Status == "cancelled"
+	return d.Finished && (d.Status == DeploymentStatusFailed || d.Status == DeploymentStatusCancelled)
 }
+
+// Service statuses besides the deployment statuses (ServiceResource.status).
+const (
+	ServiceStatusLive        = "live"
+	ServiceStatusStopped     = "stopped"
+	ServiceStatusNotDeployed = "not_deployed"
+)
 
 // Service is a service in one environment.
 type Service struct {
@@ -137,6 +144,24 @@ type LogLine struct {
 	Text    string  `json:"text"`
 	Section string  `json:"section"`
 	Step    *string `json:"step"`
+}
+
+// DeploymentLinesEvent is the `lines` event of a deployment's log stream.
+type DeploymentLinesEvent struct {
+	Lines  []LogLine `json:"lines"`
+	Cursor int       `json:"cursor"`
+}
+
+// DeploymentStatusEvent is the `status` event of a deployment's log stream.
+type DeploymentStatusEvent struct {
+	Status   string `json:"status"`
+	Finished bool   `json:"finished"`
+}
+
+// EnvironmentLinesEvent is the `lines` event of an environment's log stream.
+type EnvironmentLinesEvent struct {
+	Entries []LogEntry `json:"entries"`
+	Cursor  int        `json:"cursor"`
 }
 
 // LogEntry is one line of an environment's logs.

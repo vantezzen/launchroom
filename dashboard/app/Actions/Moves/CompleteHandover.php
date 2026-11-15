@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Moves;
 
 use App\Actions\Audit\RecordAuditEvent;
+use App\Actions\Servers\RetireServer;
 use App\Data\Audit\AuditActor;
 use App\Data\Audit\AuditEntryData;
 use App\Enums\AuditAction;
@@ -15,7 +16,7 @@ use App\Models\Moves\ControlPlaneMove;
 use App\Models\Server;
 use App\Services\Moves\HandoverStore;
 use App\Services\Moves\InstanceFreeze;
-use App\Services\Moves\ServerRetirement;
+use App\Support\Refusal;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -31,7 +32,7 @@ final readonly class CompleteHandover
 {
     public function __construct(
         private HandoverStore $store,
-        private ServerRetirement $retirement,
+        private RetireServer $retire,
         private RecordAuditEvent $audit,
     ) {}
 
@@ -62,11 +63,11 @@ final readonly class CompleteHandover
             $target = $move->target_server_id === null ? null : Server::query()->find($move->target_server_id);
 
             if ($source instanceof Server && $target instanceof Server && $source->status !== ServerStatus::Revoked) {
-                try {
-                    $this->retirement->retire($source, $target, AuditActor::system());
-                } catch (DomainRuleViolation $e) {
+                $refusal = $this->retire->handle($source, $target, AuditActor::system());
+
+                if ($refusal instanceof Refusal) {
                     // Something still runs here (it moved meanwhile?): keep serving it.
-                    report($e);
+                    report($refusal->violation());
                 }
             }
 

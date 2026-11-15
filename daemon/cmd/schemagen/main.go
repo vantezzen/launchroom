@@ -19,6 +19,7 @@ import (
 
 	"github.com/invopop/jsonschema"
 
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/policy"
 	"github.com/vantezzen/launchroom/daemon/internal/secret"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
@@ -29,44 +30,7 @@ const (
 	schemaBase = "https://launchroom.vantezzen.io/schema/v1/"
 )
 
-// document is one generated schema file.
-type document struct {
-	file  string
-	kind  string // "" for documents without TypeMeta
-	value any
-	title string
-}
-
 func isTask(v any) bool { _, ok := v.(*state.Task); return ok }
-
-func documents() []document {
-	return []document{
-		{"node-state.json", state.KindNodeState, &state.NodeState{}, "NodeState: signed desired state of one server"},
-		{"task.json", "", &state.Task{}, "Task: a leased unit of work with a typed spec"},
-		{"lease-request.json", state.KindLeaseRequest, &state.LeaseRequest{}, "LeaseRequest: POST /daemon/v1/tasks/lease body"},
-		{"task-lease.json", state.KindTaskLease, &state.TaskLease{}, "TaskLease: signed response to a lease request"},
-		{"task-heartbeat.json", state.KindHeartbeat, &state.TaskHeartbeat{}, "TaskHeartbeat: POST /daemon/v1/tasks/{id}/heartbeat body"},
-		{"task-heartbeat-result.json", state.KindHeartbeatResult, &state.TaskHeartbeatResult{}, "TaskHeartbeatResult: signed response to a heartbeat"},
-		{"task-completion.json", state.KindTaskCompletion, &state.TaskCompletion{}, "TaskCompletion: POST /daemon/v1/tasks/{id}/complete body"},
-		{"enroll-request.json", state.KindEnrollRequest, &state.EnrollRequest{}, "EnrollRequest: POST /daemon/v1/enroll body"},
-		{"enroll-response.json", state.KindEnrollResponse, &state.EnrollResponse{}, "EnrollResponse: signed response to an enrollment"},
-		{"report.json", state.KindReport, &state.Report{}, "Report: POST /daemon/v1/reports body"},
-		{"log-batch.json", state.KindLogBatch, &state.LogBatch{}, "LogBatch: POST /daemon/v1/logs body"},
-		{"workload-env.json", "", &state.WorkloadEnv{}, "WorkloadEnv: plaintext sealed into NodeState workloads[].env.sealed (crypto_box_seal)"},
-		{"registry-token-request.json", state.KindRegistryTokenRequest, &state.RegistryTokenRequest{}, "RegistryTokenRequest: POST /daemon/v1/registry-token body"},
-		{"registry-token.json", state.KindRegistryToken, &state.RegistryToken{}, "RegistryToken: signed response with a short-lived registry bearer token"},
-		{"task-token.json", "", &state.TaskToken{}, "TaskToken: plaintext sealed into task credentials such as build cloneToken (crypto_box_seal)"},
-		{"task-env.json", "", &state.TaskEnv{}, "TaskEnv: plaintext sealed into build/plan task env (crypto_box_seal)"},
-		{"mesh-auth-key.json", "", &state.MeshAuthKey{}, "MeshAuthKey: plaintext sealed into NodeState system.tailscale.authKey (crypto_box_seal)"},
-		{"ingress-secret.json", "", &state.IngressSecret{}, "IngressSecret: plaintext sealed into NodeState ingress credentials (crypto_box_seal)"},
-		{"daemon-config.json", state.KindDaemonConfig, &state.DaemonConfig{}, "DaemonConfig: signed response to GET /daemon/v1/config"},
-		{"broadcast-auth-request.json", state.KindBroadcastAuthRequest, &state.BroadcastAuthRequest{}, "BroadcastAuthRequest: POST /daemon/v1/broadcasting/auth body"},
-		{"broadcast-auth.json", state.KindBroadcastAuth, &state.BroadcastAuth{}, "BroadcastAuth: signed Pusher channel authorization for the daemon's private channel"},
-		{"client-certificate-request.json", state.KindClientCertificateRequest, &state.ClientCertificateRequest{}, "ClientCertificateRequest: POST /daemon/v1/client-certificate body (mTLS, D50)"},
-		{"client-certificate.json", state.KindClientCertificate, &state.ClientCertificate{}, "ClientCertificate: signed response with the server's client certificate (mTLS, D50)"},
-		{"session-command.json", state.KindSessionCommand, &state.SessionCommand{}, "SessionCommand: signed dashboard command on a session channel (Pusher server event payload)"},
-	}
-}
 
 func main() {
 	out := flag.String("out", "../protocol/schema/v1", "output directory")
@@ -104,32 +68,51 @@ func Generate(moduleRoot string) (map[string][]byte, error) {
 	}
 
 	out := make(map[string][]byte)
-	for _, d := range documents() {
-		s := r.Reflect(d.value)
-		s.ID = jsonschema.ID(schemaBase + d.file)
-		s.Title = d.title
-		if d.kind != "" {
+	for _, d := range state.Documents() {
+		s := r.Reflect(d.Value)
+		s.ID = jsonschema.ID(schemaBase + d.File)
+		s.Title = d.Title
+		if d.Kind != "" {
 			setConst(s, "apiVersion", state.APIVersion)
-			setConst(s, "kind", d.kind)
+			setConst(s, "kind", d.Kind)
 		}
-		if err := patchTaskUnion(r, s, isTask(d.value)); err != nil {
+		if err := patchTaskUnion(r, s, isTask(d.Value)); err != nil {
 			return nil, err
 		}
 		patchRouteUpstream(s)
 		patchMapKeys(s)
 		data, err := marshal(s)
 		if err != nil {
-			return nil, fmt.Errorf("%s: %w", d.file, err)
+			return nil, fmt.Errorf("%s: %w", d.File, err)
 		}
-		out[d.file] = data
+		out[d.File] = data
 	}
 	caps, err := capabilityAllowList()
 	if err != nil {
 		return nil, err
 	}
 	out[capabilityAllowListFile] = caps
+	vocab, err := json.MarshalIndent(vocabulary(), "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	out[vocabularyFile] = append(vocab, '\n')
 	return out, nil
 }
+
+// vocabulary is state's vocabulary plus the host-side facts other packages
+// own: the generated network/volume name prefixes and the mesh range.
+func vocabulary() state.Vocabulary {
+	v := state.ProtocolVocabulary()
+	v.Constants["networkPrefix"] = names.NetworkPrefix
+	v.Constants["volumePrefix"] = names.VolumePrefix
+	v.Constants["meshRange"] = policy.MeshRange.String()
+	return v
+}
+
+// vocabularyFile holds the grammars, limits, features and the field/task →
+// feature table the dashboard checks against (state.Vocabulary).
+const vocabularyFile = "vocabulary.json"
 
 // capabilityAllowListFile is the policy floor's default capability
 // allow-list (docs/03 §8) as a schema of one grantable capability. The

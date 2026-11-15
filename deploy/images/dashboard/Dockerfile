@@ -36,9 +36,7 @@ FROM ${COMPOSER_IMAGE} AS composer
 FROM ${NODE_IMAGE} AS node
 FROM --platform=$BUILDPLATFORM ${NODE_IMAGE} AS node-build
 
-# ---------------------------------------------------------------------------
 # base: FrankenPHP + PHP extensions + Caddyfile. Shared by every target.
-# ---------------------------------------------------------------------------
 FROM ${FRANKENPHP_IMAGE} AS base
 
 ARG PHP_EXTENSIONS
@@ -97,9 +95,7 @@ HEALTHCHECK --interval=10s --timeout=3s --start-period=20s --retries=3 \
 
 CMD ["frankenphp", "run", "--config", "/etc/frankenphp/Caddyfile"]
 
-# ---------------------------------------------------------------------------
 # dev: tooling, host-matching user, no app code.
-# ---------------------------------------------------------------------------
 FROM base AS dev
 
 ARG UID=1000
@@ -130,10 +126,8 @@ ENV COMPOSER_HOME=/home/launchroom/.composer \
 
 USER launchroom
 
-# ---------------------------------------------------------------------------
 # build-php: base's PHP (same image, extensions and php.ini overrides) on the
 # BUILD platform, for the platform-independent build stages below.
-# ---------------------------------------------------------------------------
 FROM --platform=$BUILDPLATFORM ${FRANKENPHP_IMAGE} AS build-php
 
 ARG PHP_EXTENSIONS
@@ -141,10 +135,8 @@ RUN install-php-extensions $PHP_EXTENSIONS
 COPY deploy/images/dashboard/php.ini "$PHP_INI_DIR/conf.d/zz-launchroom.ini"
 WORKDIR /var/www/html
 
-# ---------------------------------------------------------------------------
 # vendor: production composer dependencies + optimized autoloader (pure PHP,
 # platform-independent; built natively).
-# ---------------------------------------------------------------------------
 FROM build-php AS vendor
 
 COPY --from=composer /usr/bin/composer /usr/local/bin/composer
@@ -158,10 +150,8 @@ RUN mkdir -p storage/framework/cache/data storage/framework/sessions storage/fra
         storage/app/public storage/logs bootstrap/cache \
     && composer dump-autoload --no-dev --optimize --no-interaction
 
-# ---------------------------------------------------------------------------
 # assets: Vite build (platform-independent JS/CSS; built natively). Needs PHP
 # too: the wayfinder Vite plugin runs artisan.
-# ---------------------------------------------------------------------------
 FROM vendor AS assets
 
 COPY --from=node-build /usr/local/bin/node /usr/local/bin/node
@@ -172,9 +162,6 @@ RUN --mount=type=cache,target=/root/.npm \
     npm ci --no-audit --no-fund \
     && npm run build
 
-# ---------------------------------------------------------------------------
-# production
-# ---------------------------------------------------------------------------
 FROM base AS production
 
 ARG UID=1000

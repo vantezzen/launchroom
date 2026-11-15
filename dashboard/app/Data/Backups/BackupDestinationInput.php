@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Data\Backups;
 
+use App\Support\S3\S3Location;
 use SensitiveParameter;
 use Spatie\LaravelData\Attributes\Validation\Max;
 use Spatie\LaravelData\Attributes\Validation\Min;
@@ -26,7 +27,7 @@ final class BackupDestinationInput extends Data
         public string $bucket,
         #[Max(32)]
         public ?string $region = null,
-        #[Max(256)]
+        #[Max(S3Location::PREFIX_MAX)]
         public string $prefix = '',
         #[Max(256), SensitiveParameter]
         public ?string $accessKeyId = null,

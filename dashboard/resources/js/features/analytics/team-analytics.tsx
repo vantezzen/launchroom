@@ -2,7 +2,6 @@ import { Link } from '@inertiajs/react';
 import { useQuery } from '@tanstack/react-query';
 import { ChartColumnStacked, ChevronRight } from 'lucide-react';
 import { useMemo } from 'react';
-import { formatCompact } from '@/components/charts/format';
 import { Sparkline } from '@/components/charts/sparkline';
 import { StackedBars } from '@/components/charts/stacked-bars';
 import { StatTile } from '@/components/charts/stat-tile';
@@ -11,20 +10,16 @@ import { EmptyState } from '@/components/patterns/empty-state';
 import { MetaLine } from '@/components/patterns/meta-line';
 import { PageHeader } from '@/components/patterns/page';
 import { Section } from '@/components/patterns/section';
-import { formatShare, projectSeries, share } from '@/features/analytics/shape';
-import { delta, formatErrorRate } from '@/features/metrics/format';
-import { requestJson } from '@/features/projects/http';
+import { projectSeries, share } from '@/features/analytics/shape';
+import { delta } from '@/features/metrics/format';
+import { requestJson } from '@/lib/http';
+import { analyticsHref } from '@/lib/links';
 import { useObserveScope } from '@/hooks/use-observe-scope';
-import {
-    RANGE_SETS,
-    rangeOptions,
-    rangeWords,
-    withScope,
-} from '@/lib/observe-scope';
+import { RANGE_SETS, rangeOptions, rangeWords } from '@/lib/observe-scope';
 import { cn } from '@/lib/utils';
 import { data as dataRoute } from '@/routes/analytics';
-import { analyticsPage } from '@/routes/projects';
 import { index as securityRoute } from '@/routes/security';
+import { formatCompact, formatShare } from '@/lib/format';
 
 type Team = App.Data.Analytics.TeamAnalyticsData;
 type Project = App.Data.Analytics.AnalyticsProjectData;
@@ -38,7 +33,9 @@ const card =
 /** The drill-down link of a project: its production Analytics tab, same range. */
 function projectHref(project: Project, range: Range): string | null {
     return project.environmentId
-        ? withScope(analyticsPage([project.id, project.environmentId]).url, {
+        ? analyticsHref({
+              project: project.id,
+              environment: project.environmentId,
               range,
           })
         : null;
@@ -145,7 +142,7 @@ function Overview({
                     label="Server errors"
                     value={
                         totals.errorRatePct !== null
-                            ? formatErrorRate(totals.errorRatePct)
+                            ? formatShare(totals.errorRatePct)
                             : null
                     }
                     delta={delta(
@@ -301,7 +298,7 @@ function ProjectRow({
         formatShare(share(project.requests, total) ?? 0),
         change ? `${change.label} vs. previous period` : null,
         project.errorRatePct
-            ? `${formatErrorRate(project.errorRatePct)} errors`
+            ? `${formatShare(project.errorRatePct)} errors`
             : null,
         project.blocked > 0
             ? `${formatCompact(project.blocked)} blocked`

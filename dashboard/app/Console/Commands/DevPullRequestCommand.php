@@ -7,7 +7,8 @@ namespace App\Console\Commands;
 use App\Actions\Previews\SyncPullRequest;
 use App\Data\Previews\PullRequestData;
 use App\Data\Services\GitSource;
-use App\Enums\Previews\PreviewProvider;
+use App\Enums\Git\GitProviderKind;
+use App\Enums\Git\PullRequestAction;
 use App\Exceptions\GitHeadUnavailable;
 use App\Models\Environment;
 use App\Models\Project;
@@ -43,7 +44,7 @@ use Illuminate\Console\Command;
 #[Description('Local dev only: simulate a pull request event for preview environments')]
 final class DevPullRequestCommand extends Command
 {
-    private const array ACTIONS = ['open' => 'opened', 'sync' => 'synchronize', 'reopen' => 'reopened', 'close' => 'closed', 'merge' => 'closed', 'label' => 'labeled'];
+    private const array ACTIONS = ['open' => PullRequestAction::Opened, 'sync' => PullRequestAction::Synchronize, 'reopen' => PullRequestAction::Reopened, 'close' => PullRequestAction::Closed, 'merge' => PullRequestAction::Closed, 'label' => PullRequestAction::Labeled];
 
     public function handle(GitHeads $heads, SyncPullRequest $sync): int
     {
@@ -99,7 +100,7 @@ final class DevPullRequestCommand extends Command
         $number = $this->text('number');
 
         $preview = $sync->handle($project, new PullRequestData(
-            provider: PreviewProvider::Git,
+            provider: GitProviderKind::Git,
             installationId: null,
             repositoryId: $source->repositoryId,
             repositoryName: $source->fullName,

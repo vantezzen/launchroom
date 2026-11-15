@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace App\Enums;
 
+use App\Enums\Attributes\SharedFacts;
+
 /**
  * Team membership roles and the role matrix (docs/09 R9). This is the only
  * place that maps roles to permissions.
  */
+#[SharedFacts('summary', 'takesGrants')]
 enum TeamRole: string
 {
     case Owner = 'owner';
@@ -35,7 +38,7 @@ enum TeamRole: string
      */
     public function acceptsGrant(Permission $permission): bool
     {
-        return $this === self::Developer && $permission->isGrantable();
+        return $this->takesGrants() && $permission->isGrantable();
     }
 
     public function rank(): int
@@ -51,6 +54,23 @@ enum TeamRole: string
     public function label(): string
     {
         return ucfirst($this->value);
+    }
+
+    /** What the role can do, in one line (docs/09 §2). */
+    public function summary(): string
+    {
+        return match ($this) {
+            self::Owner => 'Full access, including team settings',
+            self::Admin => 'Manages servers, members, backups and projects',
+            self::Developer => 'Deploys and edits projects',
+            self::Viewer => 'Can view everything but not change it',
+        };
+    }
+
+    /** Console and Data access are granted per member of this role (docs/09 R33). */
+    public function takesGrants(): bool
+    {
+        return $this === self::Developer;
     }
 
     /**

@@ -89,7 +89,6 @@ func (f *Follower) refusal() string {
 	return ""
 }
 
-// sameAsConfigured reports whether origin is the configured URL's origin.
 func (f *Follower) sameAsConfigured(origin state.ControlPlaneOrigin) bool {
 	u, err := origin.URL()
 	if err != nil {
@@ -289,8 +288,6 @@ func (f *Follower) Status() *state.ControlPlaneStatus {
 	default:
 		st.State = state.ControlPlaneAdopted
 	}
-	if len(st.Message) > 512 {
-		st.Message = st.Message[:512]
-	}
+	st.Message = state.Clip(st.Message, 512)
 	return st
 }

@@ -4,18 +4,32 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Data\Ingress\IngressReportData;
+use App\Data\Security\WafReportData;
+use App\Data\Servers\ControlPlaneUrlReportData;
+use App\Data\Servers\Host\HostStatusData;
 use App\Data\Servers\HostFactsData;
+use App\Data\Servers\MeshReportData;
+use App\Data\Servers\PinnedLocationData;
+use App\Data\Servers\RenderErrorData;
 use App\Data\Servers\ServerRuntimeData;
+use App\Data\Servers\StateRejectionData;
+use App\Enums\Contracts\HasTransitionTable;
 use App\Enums\DaemonFeature;
 use App\Enums\DeviceKind;
 use App\Enums\ServerRole;
 use App\Enums\ServerStatus;
 use App\Events\ServerStatusChanged;
+use App\Exceptions\DomainRuleViolation;
 use App\Models\Concerns\BelongsToTeam;
 use App\Models\Concerns\HasPublicId;
+use App\Models\Concerns\HasStatusTransitions;
+use Carbon\CarbonImmutable;
 use Database\Factories\ServerFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
+use Illuminate\Database\Eloquent\Attributes\Scope;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Casts\AsEnumCollection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -50,19 +64,19 @@ use Illuminate\Support\Collection;
  * @property list<string> $mesh_auth_key_ids Headscale pre-auth key ids issued to this server (newest last): its node's identity
  * @property Carbon|null $shared_edge_approved_at an instance owner admitted this edge to the install-wide certificate storage and DNS-01 credentials (docs/05 §5)
  * @property int|null $shared_edge_approved_by
- * @property array{state: string, ipv4: string|null, ipv6: string|null, message: string|null, checkedAt: string|null, peers: list<array{ipv4: string, online: bool, connection: string, relay: string|null, lastHandshake: string|null}>}|null $mesh_status latest Report.host.mesh (App\Support\Servers\MeshStatusFacts)
+ * @property MeshReportData|null $mesh_status
  * @property Carbon|null $mesh_status_at
  * @property int $desired_version
  * @property int $observed_version
  * @property int $last_report_seq
  * @property Carbon|null $last_report_at
- * @property array<string, mixed>|null $host_status latest Report.host (App\Support\Servers\HostStatusFacts)
+ * @property HostStatusData|null $host_status latest Report.host
  * @property Carbon|null $host_status_at
- * @property array{state?: string, routes?: int, storage?: array{state: string, mirrored: int, message?: string}}|null $ingress_status latest Report.ingress summary (App\Actions\Servers\RecordCertificates)
+ * @property IngressReportData|null $ingress_status
  * @property Carbon|null $ingress_status_at
- * @property array{state: string, since: string, engine?: string, ruleSet?: string, routes: int, droppedRecords?: int, message?: string, reportedAt: string}|null $waf_status latest Report.ingress.waf (docs/03 §13.4) and since when its state holds
- * @property array{message: string, problems: list<string>, deployments: list<string>, at: string}|null $render_error the latest NodeState render failed validation (the previous version stays published)
- * @property array{version: int, error: string, rejectedAt: string}|null $state_rejection the daemon refused a NodeState (Report.stateRejected)
+ * @property WafReportData|null $waf_status
+ * @property RenderErrorData|null $render_error
+ * @property StateRejectionData|null $state_rejection
  * @property Carbon|null $last_seen_at
  * @property Carbon|null $enrolled_at
  * @property Carbon|null $approved_at
@@ -71,10 +85,10 @@ use Illuminate\Support\Collection;
  * @property int|null $replaced_by_server_id the server that replaced this dead one (docs/14 §5.3)
  * @property Carbon|null $replaced_at
  * @property DeviceKind|null $device_override the device the user picked ("Looks like"); null = detected
- * @property array{label: string, latitude: float, longitude: float, countryCode: string|null}|null $location the location the user confirmed or entered
+ * @property PinnedLocationData|null $location
  * @property bool $measure_links measure private-network links to its peers (docs/05 §2.1; per-server opt-out)
  * @property list<string>|null $daemon_features optional protocol features its launchroomd understands (Report.host.features, docs/03 §10)
- * @property array{configured?: string, adopted?: string, active?: string, state: string, message?: string, reportedAt: string}|null $daemon_control_plane which dashboard URL launchroomd uses (Report.host.controlPlane, docs/05 §4.1)
+ * @property ControlPlaneUrlReportData|null $daemon_control_plane
  * @property ServerRuntimeData|null $runtime how Docker runs and what launchroomd can do there (Report.host.runtime, D49); null until reported
  * @property Carbon|null $client_certificate_seen_at last signed request with a verified client certificate of this server (docs/03 §4.3)
  * @property Carbon|null $client_certificate_missing_at last signed request without one while the instance checks certificates
@@ -96,6 +110,9 @@ final class Server extends Model
 
     /** @use HasFactory<ServerFactory> */
     use HasFactory;
+
+    /** @use HasStatusTransitions<ServerStatus> */
+    use HasStatusTransitions;
 
     /** @var array<string, mixed> */
     protected $attributes = [
@@ -125,16 +142,11 @@ final class Server extends Model
     }
 
     /**
-     * The only way a server's status changes (docs/10 §2.2 rule 3).
+     * @param  ServerStatus  $from
+     * @param  ServerStatus  $to
      */
-    public function transitionTo(ServerStatus $to): void
+    protected function transitioned(HasTransitionTable $from, HasTransitionTable $to): void
     {
-        $from = $this->status;
-        $from->assertCanTransitionTo($to);
-
-        $this->status = $to;
-        $this->save();
-
         event(new ServerStatusChanged($this->id, $from, $to));
     }
 
@@ -148,9 +160,173 @@ final class Server extends Model
         return in_array($feature->value, $this->daemon_features ?? [], true);
     }
 
+    /**
+     * Memory for scheduling: the latest report first, the enrollment facts
+     * otherwise; null when unknown (no capacity check).
+     */
+    public function memoryMb(): ?int
+    {
+        return $this->host_status?->reportedMemoryMb() ?? $this->facts->memoryMb;
+    }
+
+    public function cpus(): ?int
+    {
+        return $this->host_status?->reportedCpus() ?? $this->facts->cpus;
+    }
+
+    /**
+     * @return array{int, CarbonImmutable}|null
+     */
+    public function availableMemory(): ?array
+    {
+        return $this->host_status?->availableMemory($this->host_status_at);
+    }
+
     public function hasRole(ServerRole $role): bool
     {
         return $this->roles->contains($role);
+    }
+
+    /**
+     * @param  Builder<self>  $query
+     */
+    #[Scope]
+    protected function approved(Builder $query): void
+    {
+        $query->whereIn('status', ServerStatus::approved());
+    }
+
+    /**
+     * @param  Builder<self>  $query
+     */
+    #[Scope]
+    protected function reachable(Builder $query): void
+    {
+        $query->whereIn('status', ServerStatus::reachable());
+    }
+
+    /**
+     * @param  Builder<self>  $query
+     */
+    #[Scope]
+    protected function online(Builder $query): void
+    {
+        $query->where('status', ServerStatus::Online);
+    }
+
+    /**
+     * @param  Builder<self>  $query
+     */
+    #[Scope]
+    protected function withRole(Builder $query, ServerRole $role): void
+    {
+        $query->whereJsonContains('roles', $role->value);
+    }
+
+    /**
+     * The edges routes are rendered for: every approved edge, offline ones
+     * included, so a server that comes back serves its routes at once.
+     *
+     * @param  Builder<self>  $query
+     */
+    #[Scope]
+    protected function edges(Builder $query): void
+    {
+        $query->approved()->withRole(ServerRole::Edge);
+    }
+
+    /**
+     * The servers that belong in the mesh: approved and not revoked, across
+     * all teams of the instance (one install = one tailnet, docs/05 §2).
+     *
+     * @param  Builder<self>  $query
+     */
+    #[Scope]
+    protected function meshMembers(Builder $query): void
+    {
+        $query->whereNull('revoked_at')->approved();
+    }
+
+    /**
+     * The edges traffic may be pointed at now (online, or only missing
+     * heartbeats): what DNS records and pages suggest. Offline edges keep
+     * their routes ({@see self::edges()}) but aren't suggested.
+     *
+     * @param  Builder<self>  $query
+     */
+    #[Scope]
+    protected function reachableEdges(Builder $query): void
+    {
+        $query->reachable()->withRole(ServerRole::Edge);
+    }
+
+    /**
+     * @param  Builder<self>  $query
+     */
+    #[Scope]
+    protected function onlineBuilders(Builder $query): void
+    {
+        $query->online()->withRole(ServerRole::Build);
+    }
+
+    /**
+     * Servers whose trust wasn't removed. RevokeServer sets both the status
+     * and `revoked_at`; either one counts as revoked, so rows written by
+     * older code or tests that set only one never pass as trusted.
+     *
+     * @param  Builder<self>  $query
+     */
+    #[Scope]
+    protected function notRevoked(Builder $query): void
+    {
+        $query->whereIn('status', ServerStatus::nonTerminal())->whereNull('revoked_at');
+    }
+
+    /**
+     * The control-plane server, the one running the dashboard (docs/14 §5).
+     * Rule: flagged `is_control_plane` and not revoked. At most one server
+     * holds the flag outside a hand-over transaction: revoking, retiring or
+     * recovering away from a server clears it, and {@see self::currentControlPlane()}
+     * takes the newest one if a takeover is mid-way.
+     *
+     * @param  Builder<self>  $query
+     */
+    #[Scope]
+    protected function controlPlane(Builder $query): void
+    {
+        $query->where('is_control_plane', true)->notRevoked();
+    }
+
+    public static function currentControlPlane(): ?self
+    {
+        return self::query()->controlPlane()->latest('id')->first();
+    }
+
+    /**
+     * Servers "Replace server" applies to (docs/14 §5.3): down and not the
+     * control plane (that one is recovered with `launchroom:restore`).
+     *
+     * @param  Builder<self>  $query
+     */
+    #[Scope]
+    protected function replaceable(Builder $query): void
+    {
+        $query->where('is_control_plane', false)->whereIn('status', ServerStatus::down());
+    }
+
+    public function isReplaceable(): bool
+    {
+        return ! $this->is_control_plane && $this->status->isDown();
+    }
+
+    /**
+     * The online server of this server's team that a move or replacement
+     * picked, refused on `$field` otherwise.
+     */
+    public function onlineTeammate(string $publicId, string $field): self
+    {
+        return self::query()->where('team_id', $this->team_id)->where('public_id', $publicId)->online()->first()
+            ?? throw DomainRuleViolation::on($field, 'Pick an online server of this team.');
     }
 
     /**
@@ -220,15 +396,15 @@ final class Server extends Model
             'observed_version' => 'integer',
             'last_report_seq' => 'integer',
             'last_report_at' => 'datetime',
-            'host_status' => 'array',
-            'ingress_status' => 'array',
-            'waf_status' => 'array',
+            'host_status' => HostStatusData::class,
+            'ingress_status' => IngressReportData::class,
+            'waf_status' => WafReportData::class,
             'ingress_status_at' => 'datetime',
             'host_status_at' => 'datetime',
-            'mesh_status' => 'array',
+            'mesh_status' => MeshReportData::class,
             'mesh_status_at' => 'datetime',
-            'render_error' => 'array',
-            'state_rejection' => 'array',
+            'render_error' => RenderErrorData::class,
+            'state_rejection' => StateRejectionData::class,
             'last_seen_at' => 'datetime',
             'enrolled_at' => 'datetime',
             'approved_at' => 'datetime',
@@ -240,10 +416,10 @@ final class Server extends Model
             'shared_edge_approved_at' => 'datetime',
             'mesh_auth_key_ids' => 'array',
             'device_override' => DeviceKind::class,
-            'location' => 'array',
+            'location' => PinnedLocationData::class,
             'measure_links' => 'boolean',
             'daemon_features' => 'array',
-            'daemon_control_plane' => 'array',
+            'daemon_control_plane' => ControlPlaneUrlReportData::class,
             'runtime' => ServerRuntimeData::class,
         ];
     }

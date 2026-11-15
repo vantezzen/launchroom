@@ -34,11 +34,11 @@
     },
     "session": {
       "type": "string",
-      "pattern": "^ses_[0-9A-HJKMNP-TV-Z]{26}$"
+      "pattern": "^ses_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
     },
     "op": {
       "type": "string",
-      "pattern": "^op_[0-9A-HJKMNP-TV-Z]{26}$"
+      "pattern": "^op_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
     },
     "issuedAt": {
       "type": "string",

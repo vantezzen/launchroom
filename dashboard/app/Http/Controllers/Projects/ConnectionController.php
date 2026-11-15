@@ -7,8 +7,9 @@ namespace App\Http\Controllers\Projects;
 use App\Actions\Connections\CreateConnection;
 use App\Actions\Connections\DeleteConnection;
 use App\Data\Canvas\CreateConnectionData;
-use App\Events\CanvasChanged;
 use App\Http\Controllers\Controller;
+use App\Http\Routing\RouteScope;
+use App\Http\Toast;
 use App\Models\Connection;
 use App\Models\Environment;
 use App\Models\Project;
@@ -20,7 +21,6 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
-use Inertia\Inertia;
 
 /**
  * Canvas edges: the Connect popover's preview, creating and deleting
@@ -31,7 +31,7 @@ final class ConnectionController extends Controller
     public function preview(Request $request, Project $project, Environment $environment, ConnectionPreview $preview): JsonResponse
     {
         Gate::authorize('create', [Connection::class, $project]);
-        ProjectScope::environment($project, $environment);
+        RouteScope::environment($project, $environment);
 
         $data = CreateConnectionData::validateAndCreate([
             'from' => $request->query('from'),
@@ -53,27 +53,25 @@ final class ConnectionController extends Controller
     public function store(Request $request, Project $project, Environment $environment, CreateConnectionData $data, #[CurrentUser] User $user, CreateConnection $createConnection): RedirectResponse
     {
         Gate::authorize('create', [Connection::class, $project]);
-        ProjectScope::environment($project, $environment);
+        RouteScope::environment($project, $environment);
 
         [$from, $to] = $this->services($project, $data);
         $createConnection->handle($from, $to, $data->mode, $data->style, $user, $this->auditActor($request, $user));
 
-        broadcast(new CanvasChanged($environment->public_id))->toOthers();
-        Inertia::flash('toast', ['type' => 'success', 'message' => "Connected {$from->name} to {$to->name}. Deploy to inject the variables."]);
+        Toast::success("Connected {$from->name} to {$to->name}. Deploy to inject the variables.");
 
         return back();
     }
 
     public function destroy(Request $request, Project $project, Environment $environment, Connection $connection, #[CurrentUser] User $user, DeleteConnection $deleteConnection): RedirectResponse
     {
-        ProjectScope::environment($project, $environment);
-        ProjectScope::connection($project, $connection);
+        RouteScope::environment($project, $environment);
+        RouteScope::connection($project, $connection);
         Gate::authorize('delete', $connection);
 
         $deleteConnection->handle($connection, $this->auditActor($request, $user));
 
-        broadcast(new CanvasChanged($environment->public_id))->toOthers();
-        Inertia::flash('toast', ['type' => 'success', 'message' => 'Connection removed with its variables. Deploy to apply it.']);
+        Toast::success('Connection removed with its variables. Deploy to apply it.');
 
         return back();
     }

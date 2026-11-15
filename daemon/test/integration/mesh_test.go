@@ -24,6 +24,7 @@ import (
 
 	"github.com/vantezzen/launchroom/daemon/internal/docker"
 	"github.com/vantezzen/launchroom/daemon/internal/mesh"
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/policy"
 	"github.com/vantezzen/launchroom/daemon/internal/secret"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
@@ -256,7 +257,7 @@ func TestMeshJoinAndACL(t *testing.T) {
 
 	// A runtime peer in its own network namespace with its own tailscale0.
 	labels := maps.Clone(docker.ManagedLabels(string(m.serverID)))
-	labels[docker.LabelNetwork] = "itest-mesh"
+	labels[names.LabelNetwork] = "itest-mesh"
 	// Other tests (links, xnet) use the same name; a leftover is removed first.
 	if old, err := m.api.NetworkInspect(ctx, "lr-itest-mesh", client.NetworkInspectOptions{}); err == nil {
 		for id := range old.Network.Containers {
@@ -313,8 +314,8 @@ func TestMeshJoinAndACL(t *testing.T) {
 	t.Logf("mesh status: %+v", st.Peers)
 
 	// A restarted client keeps its identity (state volume) and needs no key.
-	cs, err := m.engine.ListContainers(ctx, map[string]string{docker.LabelSystem: policy.SystemTailscale})
-	if err != nil || len(cs) != 1 || cs[0].Name != mesh.ContainerName {
+	cs, err := m.engine.ListContainers(ctx, map[string]string{names.LabelSystem: names.SystemTailscale})
+	if err != nil || len(cs) != 1 || cs[0].Name != names.TailscaleContainer {
 		t.Fatalf("mesh client container: %v %v", cs, err)
 	}
 	if err := m.engine.StopContainer(ctx, cs[0].ID, 10*time.Second); err != nil {

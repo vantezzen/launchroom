@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Data\Protocol\V1;
 
-use Spatie\LaravelData\Attributes\Validation\In;
+use App\Enums\ProbeState;
 use Spatie\LaravelData\Attributes\Validation\Max;
 use Spatie\LaravelData\Attributes\Validation\Min;
 use Spatie\LaravelData\Attributes\Validation\Regex;
@@ -17,8 +17,7 @@ use Spatie\LaravelData\Optional;
 final class ProbeStatus extends Data
 {
     public function __construct(
-        #[In(['starting', 'passing', 'failing'])]
-        public string $state,
+        public ProbeState $state,
         #[Min(0)]
         public int $consecutiveFailures,
         #[Max(1024)]

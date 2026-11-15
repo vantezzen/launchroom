@@ -5,14 +5,14 @@ declare(strict_types=1);
 namespace App\Services\Audit;
 
 use App\Enums\Audit\AuditSinkKind;
+use App\Exceptions\DecryptionFailed;
 use App\Models\AuditEvent;
 use App\Models\AuditSink;
+use App\Models\InstanceSettings;
 use App\Services\Audit\Transports\AuditSinkTransport;
 use App\Services\Audit\Transports\S3Transport;
 use App\Services\Audit\Transports\SyslogTransport;
 use App\Services\Audit\Transports\WebhookTransport;
-use App\Services\Backups\SnapshotTags;
-use App\Services\Crypto\Exceptions\DecryptionFailed;
 use Illuminate\Contracts\Container\Container;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
@@ -54,7 +54,7 @@ final readonly class AuditForwarder
      */
     public function deliver(int $sinkId, bool $force = false): void
     {
-        $lock = Cache::lock("lr:audit-sink:{$sinkId}", 120);
+        $lock = Cache::lock("launchroom:audit-sink:{$sinkId}", 120);
 
         if (! $lock->get()) {
             return;
@@ -87,7 +87,7 @@ final readonly class AuditForwarder
                     return;
                 }
 
-                if (! $this->send($sink, AuditBatch::of($events, SnapshotTags::instanceId()))) {
+                if (! $this->send($sink, AuditBatch::of($events, InstanceSettings::instanceId()))) {
                     return;
                 }
 
@@ -98,9 +98,6 @@ final readonly class AuditForwarder
         }
     }
 
-    /**
-     * Pending entries after the cursor (for "behind by").
-     */
     public function behind(AuditSink $sink): int
     {
         return AuditEvent::query()->where('id', '>', $sink->cursor_event_id)->count();

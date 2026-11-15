@@ -2,7 +2,6 @@ import { Link } from '@inertiajs/react';
 import { useState } from 'react';
 import type { ReactNode } from 'react';
 import { TimeRangeSelect } from '@/components/charts/time-range-select';
-import type { TimeRangeOption } from '@/components/charts/time-range-select';
 import { PageHeader } from '@/components/patterns/page';
 import { PillTabs } from '@/components/patterns/pill-tabs';
 import {
@@ -16,7 +15,7 @@ import { useLocationSearch } from '@/hooks/use-observe-scope';
 import type { ObserveScopeState } from '@/hooks/use-observe-scope';
 import { analyticsHref } from '@/lib/links';
 import { rangeWords, readScope } from '@/lib/observe-scope';
-import type { ObserveRange } from '@/lib/observe-scope';
+import type { ObserveRange, TimeRangeOption } from '@/lib/observe-scope';
 import { index as teamAnalytics } from '@/routes/analytics';
 
 type Service = App.Data.Metrics.MetricsServiceData;

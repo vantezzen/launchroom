@@ -20,7 +20,7 @@ import {
 } from '@/components/ui/select';
 import { importMethod } from '@/routes/variables';
 import { preview as previewRoute } from '@/routes/variables/import';
-import { api } from './api';
+import { requestJson } from '@/lib/http';
 
 type Preview = App.Data.Variables.ImportPreviewData;
 type Entry = App.Data.Variables.ImportPreviewEntryData;
@@ -70,7 +70,7 @@ export function ImportDialog({
 
         const controller = new AbortController();
         const timer = window.setTimeout(() => {
-            api<Preview>(
+            requestJson<Preview>(
                 'post',
                 previewRoute(urls).url,
                 { content },
@@ -119,7 +119,7 @@ export function ImportDialog({
         setError(null);
 
         try {
-            const result = await api<App.Data.Variables.ImportResult>(
+            const result = await requestJson<App.Data.Variables.ImportResult>(
                 'post',
                 importMethod(urls).url,
                 {

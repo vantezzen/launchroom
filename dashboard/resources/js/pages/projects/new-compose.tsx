@@ -1,6 +1,6 @@
 import { Head, router } from '@inertiajs/react';
 import { FileUp, KeyRound, TriangleAlert } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Logo } from '@/components/logo';
 import { MetaLine } from '@/components/patterns/meta-line';
@@ -20,8 +20,10 @@ import {
 } from '@/features/blueprints/blueprint-canvas';
 import { NewProjectTabs } from '@/features/blueprints/new-project-tabs';
 import { NoteList } from '@/features/blueprints/note-list';
-import { plural } from '@/features/canvas/format';
-import { requestJson, RequestFailed } from '@/features/projects/http';
+import {
+    failureMessage,
+    useComposePreview,
+} from '@/features/new-project/queries';
 import { RepositoryField } from '@/features/templates/repository-field';
 import type { RepositoryChoice } from '@/features/templates/repository-field';
 import { cn } from '@/lib/utils';
@@ -30,7 +32,8 @@ import {
     importMethod,
     index as projectsIndex,
 } from '@/routes/projects';
-import { preview as previewRoute, store } from '@/routes/projects/compose';
+import { store } from '@/routes/projects/compose';
+import { formatBytes, plural } from '@/lib/format';
 
 type Preview = App.Data.Blueprints.ComposePreviewData;
 type ServicePreview = App.Data.Blueprints.BlueprintServicePreviewData;
@@ -59,7 +62,7 @@ volumes:
  * from a repository; the preview shows the canvas it becomes and what
  * happened to every line; then name it and deploy.
  */
-export default function ImportCompose() {
+export default function ImportCompose({ maxBytes }: { maxBytes: number }) {
     const [source, setSource] = useState<'paste' | 'repository'>('paste');
     const [compose, setCompose] = useState('');
     const [fileName, setFileName] = useState<string | null>(null);
@@ -71,9 +74,7 @@ export default function ImportCompose() {
         Record<string, 'managed' | 'container'>
     >({});
     const [convertBindMounts, setConvertBindMounts] = useState(true);
-    const [preview, setPreview] = useState<Preview | null>(null);
-    const [loading, setLoading] = useState(false);
-    const [failure, setFailure] = useState<string | null>(null);
+    const [fileFailure, setFileFailure] = useState<string | null>(null);
     const [name, setName] = useState('');
     const [nameTouched, setNameTouched] = useState(false);
     const [selected, setSelected] = useState<string | null>(null);
@@ -114,70 +115,39 @@ export default function ImportCompose() {
         [source, compose, repository, env, files, databases, convertBindMounts],
     );
 
-    useEffect(() => {
-        if (!ready) {
-            setPreview(null);
+    const previewQuery = useComposePreview(payload, ready);
+    const preview = ready ? (previewQuery.data ?? null) : null;
+    const loading = ready && previewQuery.isFetching;
+    const failure =
+        fileFailure ??
+        (ready
+            ? failureMessage(
+                  previewQuery.error,
+                  'The preview didn’t load. Try again.',
+              )
+            : null);
 
-            return;
+    // A new answer clears an upload's error and names the project until the user types a name.
+    const [namedFrom, setNamedFrom] = useState<Preview | null>(null);
+
+    if (preview && preview !== namedFrom) {
+        setNamedFrom(preview);
+        setFileFailure(null);
+
+        if (!nameTouched && preview.suggestedName) {
+            setName(preview.suggestedName);
         }
-
-        const controller = new AbortController();
-        const timer = window.setTimeout(() => {
-            setLoading(true);
-            requestJson<Preview>(
-                'post',
-                previewRoute().url,
-                payload,
-                controller.signal,
-            )
-                .then((data) => {
-                    setPreview(data);
-                    setFailure(null);
-
-                    if (!nameTouched && data.suggestedName) {
-                        // No `name:` in the file: its first public service names it.
-                        const first =
-                            data.preview?.services.find(
-                                (service) => service.public,
-                            ) ?? data.preview?.services[0];
-                        setName(
-                            data.suggestedName === 'compose'
-                                ? (first?.name ?? '')
-                                : data.suggestedName,
-                        );
-                    }
-                })
-                .catch((cause: unknown) => {
-                    if (!controller.signal.aborted) {
-                        setFailure(
-                            cause instanceof RequestFailed
-                                ? cause.message
-                                : 'The preview didn’t load. Try again.',
-                        );
-                    }
-                })
-                .finally(() => {
-                    if (!controller.signal.aborted) {
-                        setLoading(false);
-                    }
-                });
-        }, 500);
-
-        return () => {
-            controller.abort();
-            window.clearTimeout(timer);
-        };
-        // nameTouched only decides whether to fill the name.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [payload, ready]);
+    }
 
     const read = (file: File | undefined) => {
         if (!file) {
             return;
         }
 
-        if (file.size > 256 * 1024) {
-            setFailure(`${file.name} is larger than 256 KB.`);
+        if (file.size > maxBytes) {
+            setFileFailure(
+                `${file.name} is larger than ${formatBytes(maxBytes)}.`,
+            );
 
             return;
         }
@@ -418,7 +388,7 @@ export default function ImportCompose() {
                                     >
                                         <TriangleAlert
                                             aria-label="Not imported"
-                                            className="text-status-warning mt-0.5 size-3.5 shrink-0"
+                                            className="mt-0.5 size-3.5 shrink-0 text-status-progress"
                                         />
                                         <span className="min-w-0 flex-1 type-small">
                                             <span className="type-mono-small">
@@ -643,7 +613,7 @@ function Callout({ children }: { children: ReactNode }) {
         <div className="flex items-start gap-3 rounded-xl border bg-card p-4">
             <TriangleAlert
                 aria-hidden="true"
-                className="text-status-warning mt-0.5 size-4 shrink-0"
+                className="mt-0.5 size-4 shrink-0 text-status-progress"
             />
             <p className="type-body">{children}</p>
         </div>
@@ -720,7 +690,7 @@ function ServiceCard({
                     options={[
                         {
                             value: 'managed',
-                            title: `Managed ${engine === 'mysql' ? 'MySQL' : engine === 'postgres' ? 'PostgreSQL' : engine === 'redis' ? 'Redis' : 'Valkey'}`,
+                            title: `Managed ${service.choice?.engineLabel ?? engine}`,
                             description:
                                 'Recommended: generated credentials, backups and clean stops.',
                         },

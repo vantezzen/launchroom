@@ -24,11 +24,18 @@ launchroom is a self-hosted PaaS (Vercel/Railway UX on your own servers). **The 
 ## Dashboard conventions (summary of docs/10 §2)
 - Thin controllers: authorize → validated Data/FormRequest → one Action → Inertia response.
 - `app/Actions/{Domain}`: `final` classes, single public `handle()`, typed Data in/out, mutations in `DB::transaction`, events `afterCommit`.
-- `app/Data/{Domain}`: spatie/laravel-data for inputs, props, JSON casts, protocol docs; TS types are generated — never hand-edit `resources/js/types/generated.d.ts`.
+- `app/Data/{Domain}`: spatie/laravel-data for inputs, props, JSON casts, protocol docs.
+- Layers (docs/10 §2.1, arch tests): Support, Enums, Data and Models never use Services, Queries, Actions or Jobs; Services never call Actions. Frontend: `lib/` ← `hooks/`, `components/` ← `features/` ← `pages/` (docs/10 §3, lint rule).
 - Status enums own their transition tables; status changes only via the transition method.
 - Jobs: pass IDs, re-scope, idempotent, explicit tries/backoff/timeout.
 - No global helper files, no `env()` outside `config/`, no behaviour flags stored in data.
 - Tests: Pest (feature + policy matrix + arch tests). PHPStan max must stay green.
+
+## Generated files and owners (edit the owner, then regenerate)
+- `make gen-types`: `resources/js/types/generated.d.ts`, `types/vocabulary.generated.ts` (enum labels/tones), `types/grammar.generated.ts` and `App\Support\Protocol\Grammar`/`Limits` (from `protocol/schema/v1/vocabulary.json`).
+- `make gen-protocol`: `protocol/schema/v1/*.json` from the Go types, then copies them into `site/public/schema` (the site's `sync-public.mjs`; CI fails on stale copies, so commit both). `make gen-openapi`: the API document. `make gen-cli`: `cli/internal/api/enums_gen.go` from the OpenAPI document.
+- `make gen-installers`: the installers' shared regions from `deploy/install/lib`.
+- Pins: runtime images in `deploy/control-plane/images.env`, build/test/dev tools in `deploy/pins.env`; `make lint-deploy` (check-pins) fails on a copy that differs.
 
 ## launchroomd conventions (summary of docs/10 §4)
 - `context.Context` + timeouts everywhere; `log/slog` JSON; secrets typed with redacting `LogValue`.

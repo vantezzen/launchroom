@@ -29,21 +29,4 @@ final class DashboardProbeData extends Data
     {
         return new self(false, $message, $via, now()->toIso8601ZuluString());
     }
-
-    /**
-     * @param  array<mixed>|null  $stored  `dashboard_domain_changes.probe`
-     */
-    public static function fromStored(?array $stored): ?self
-    {
-        if (! is_array($stored) || ! is_bool($stored['ok'] ?? null) || ! is_string($stored['checkedAt'] ?? null)) {
-            return null;
-        }
-
-        return new self(
-            ok: $stored['ok'],
-            message: is_string($stored['message'] ?? null) ? $stored['message'] : '',
-            via: is_string($stored['via'] ?? null) ? $stored['via'] : null,
-            checkedAt: $stored['checkedAt'],
-        );
-    }
 }

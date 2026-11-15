@@ -12,6 +12,7 @@ import (
 
 	"github.com/vantezzen/launchroom/daemon/internal/docker"
 	"github.com/vantezzen/launchroom/daemon/internal/docker/dockerfake"
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
 
@@ -68,7 +69,7 @@ func (f *fakeCP) seqs() []uint64 {
 func running(t *testing.T, d *dockerfake.Fake) string {
 	t.Helper()
 	labels := docker.ManagedLabels(srvID)
-	labels[docker.LabelWorkload] = string(wl)
+	labels[names.LabelWorkload] = string(wl)
 	d.AddImage("img")
 	id, err := d.CreateContainer(t.Context(), &docker.ContainerCreate{Name: "lr-x", Config: &container.Config{Image: "img", Labels: labels}})
 	if err != nil {
@@ -110,7 +111,7 @@ func TestShipsContinuouslyAndResumesFromCursor(t *testing.T) {
 	m.Sync(t.Context(), nodeState(true))
 	waitFor(t, "all lines", func() bool { return len(cp.lines()) == 1201 })
 	last := cp.lines()[1200]
-	if last.Stream != state.StreamStderr || len(last.Text) > maxLineText {
+	if last.Stream != state.StreamStderr || len(last.Text) > state.MaxLogLineLen {
 		t.Fatalf("last line %v %d", last.Stream, len(last.Text))
 	}
 	seqs := cp.seqs()

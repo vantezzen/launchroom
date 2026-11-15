@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace App\Services\Deployments;
 
+use App\Data\Deployments\WorkloadIssueData;
 use App\Data\Services\HealthcheckSettings;
 use App\Enums\DeploymentFailureClass;
+use App\Enums\Mesh\MeshPath;
+use App\Enums\PortHint;
 use App\Enums\ServerStatus;
 use App\Enums\WorkloadPhase;
 use App\Models\Placement;
@@ -54,19 +57,19 @@ final readonly class RolloutStatus
         foreach ($this->placements as $placement) {
             $pull = $placement->pull;
 
-            if ($placement->phase !== WorkloadPhase::Pulling || $pull === null || ! isset($pull['updatedAt'])) {
+            if ($placement->phase !== WorkloadPhase::Pulling || $pull === null || $pull->updatedAt === null) {
                 continue;
             }
 
-            $updated = CarbonImmutable::parse($pull['updatedAt']);
+            $updated = CarbonImmutable::parse($pull->updatedAt);
 
             // Unpacking and an upstream image's mirror sync have no byte progress.
-            $watched = $pull['stage'] === 'downloading' || ($pull['stage'] === 'mirroring' && $built);
+            $watched = $pull->stage === 'downloading' || ($pull->stage === 'mirroring' && $built);
 
             if ($watched && $updated->addSeconds($seconds)->isPast()) {
                 $server = $this->servers()->get($placement->server_id);
                 $name = $server instanceof Server ? $server->name : 'The server';
-                $got = $pull['total'] > 0 ? ' ('.PullProgressMessage::bytes($pull['downloaded']).' of '.PullProgressMessage::bytes($pull['total']).' so far)' : '';
+                $got = $pull->total > 0 ? ' ('.PullProgressMessage::bytes($pull->downloaded).' of '.PullProgressMessage::bytes($pull->total).' so far)' : '';
 
                 return "{$name} couldn't download the image {$this->path($server)}: no data for ".self::duration($seconds)."{$got}. Check the server's private network connection on its page, then deploy again.";
             }
@@ -88,7 +91,7 @@ final readonly class RolloutStatus
         $latest = null;
 
         foreach ($this->placements as $placement) {
-            if ($placement->phase === WorkloadPhase::Pulling && ($placement->pull['stage'] ?? null) === 'mirroring' && $placement->observed_at !== null) {
+            if ($placement->phase === WorkloadPhase::Pulling && $placement->pull?->stage === 'mirroring' && $placement->observed_at !== null) {
                 $at = CarbonImmutable::instance($placement->observed_at);
                 $latest = ! $latest instanceof CarbonImmutable || $at->greaterThan($latest) ? $at : $latest;
             }
@@ -97,32 +100,18 @@ final readonly class RolloutStatus
         return $latest;
     }
 
-    /**
-     * Where a server downloads images from, in words: "from the main
-     * server's registry over the private network (the connection is
-     * relayed)", or "from this server's registry".
-     */
     private function path(?Server $server): string
     {
         if (! $server instanceof Server || $server->is_control_plane) {
             return 'from its registry';
         }
 
-        $main = Server::query()->where('team_id', $server->team_id)->where('is_control_plane', true)->first();
-        $relayed = false;
-
-        foreach ($server->mesh_status['peers'] ?? [] as $peer) {
-            if ($main instanceof Server && $peer['ipv4'] === $main->mesh_ip) {
-                $relayed = $peer['connection'] === 'relay';
-            }
-        }
+        $main = Server::query()->where('team_id', $server->team_id)->controlPlane()->latest('id')->first();
+        $relayed = $main instanceof Server && $server->mesh_status?->peer($main->mesh_ip)?->connection === MeshPath::Relay;
 
         return 'from '.($main instanceof Server ? $main->name : 'the main server')."'s registry over the private network".($relayed ? ' (the connection is relayed, not direct)' : '');
     }
 
-    /**
-     * The Roll out step's current sub-step (null: nothing to say).
-     */
     public function rollout(): ?string
     {
         $servers = $this->servers();
@@ -163,9 +152,6 @@ final readonly class RolloutStatus
         return null;
     }
 
-    /**
-     * Why the Roll out step didn't finish in time.
-     */
     public function rolloutTimeout(int $seconds): string
     {
         $servers = $this->servers();
@@ -187,9 +173,9 @@ final readonly class RolloutStatus
             }
 
             if ($placement->phase === WorkloadPhase::Pulling) {
-                $pull = is_array($placement->pull) ? $placement->pull : null;
-                $got = $pull !== null && $pull['total'] > 0
-                    ? ' ('.PullProgressMessage::bytes($pull['downloaded']).' of '.PullProgressMessage::bytes($pull['total']).')'
+                $pull = $placement->pull;
+                $got = $pull !== null && $pull->total > 0
+                    ? ' ('.PullProgressMessage::bytes($pull->downloaded).' of '.PullProgressMessage::bytes($pull->total).')'
                     : '';
 
                 return "{$server->name} was still downloading the image {$this->path($server)} after {$within}{$got}. Raise the Roll out timeout in Settings → Deploy for a large image, or check the server's private network connection.";
@@ -201,9 +187,6 @@ final readonly class RolloutStatus
         return "The new version didn't start within {$within}.";
     }
 
-    /**
-     * The Health check step's current sub-step.
-     */
     public function health(): ?string
     {
         $probe = LifecycleLines::probeLabel($this->port, $this->healthcheck);
@@ -229,8 +212,8 @@ final readonly class RolloutStatus
                 return $prefix.'Waiting until the container has been running for 10 seconds';
             }
 
-            $attempts = is_int($placement->probe['attempts'] ?? null) ? $placement->probe['attempts'] : 0;
-            $error = is_string($placement->probe['lastError'] ?? null) ? $placement->probe['lastError'] : null;
+            $attempts = $placement->probe->attempts ?? 0;
+            $error = $placement->probe?->lastError;
 
             return $prefix."Waiting for {$probe} to answer".match (true) {
                 $attempts > 0 && $error !== null => " (attempt {$attempts}: {$error})",
@@ -242,9 +225,6 @@ final readonly class RolloutStatus
         return null;
     }
 
-    /**
-     * Why the Health check step didn't pass in time.
-     */
     public function healthTimeout(int $seconds, ?Placement $unhealthy): string
     {
         $within = self::duration($seconds);
@@ -254,51 +234,95 @@ final readonly class RolloutStatus
         }
 
         $probe = LifecycleLines::probeLabel($this->port, $this->healthcheck);
-        $attempts = is_int($unhealthy->probe['attempts'] ?? null) ? $unhealthy->probe['attempts'] : 0;
-        $error = is_string($unhealthy->probe['lastError'] ?? null) ? $unhealthy->probe['lastError'] : null;
+        $attempts = $unhealthy->probe->attempts ?? 0;
+        $error = $unhealthy->probe?->lastError;
 
         $message = $probe === null
             ? "The container didn't keep running within {$within}."
             : "The container never became healthy within {$within}: {$probe} ".($error === null ? "didn't answer" : "kept failing ({$error}").($attempts > 0 ? ($error === null ? " after {$attempts} attempts" : ", {$attempts} attempts)") : ($error === null ? '' : ')')).'.';
 
-        if ($unhealthy->message !== null && str_contains($unhealthy->message, 'the app ')) {
-            // launchroomd's port hint ("the app does not listen on any TCP port (expected 8000)").
-            $hint = trim((string) strstr($unhealthy->message, 'the app '));
-            $message .= ' '.ucfirst($hint).'.';
+        $hint = $this->portHint($unhealthy);
+
+        if ($hint !== null) {
+            $message .= ' '.$hint['hint']->fact($hint['port'], $hint['listening']);
         }
 
         return $message.$this->output($unhealthy);
     }
 
     /**
-     * A fail-fast failure from launchroomd's issue on a placement.
+     * launchroomd's port hint for a replica: from its fail-fast issue, else
+     * from its probe (report.json WorkloadStatus.portHint).
      *
+     * @return array{hint: PortHint, listening: list<int>, port: int|null}|null
+     */
+    public function portHint(?Placement $placement): ?array
+    {
+        if (! $placement instanceof Placement) {
+            return null;
+        }
+
+        $issue = $placement->issue;
+        $issueHint = $issue?->kind->portHint();
+
+        if ($issue !== null && $issueHint instanceof PortHint) {
+            return [
+                'hint' => $issueHint,
+                'listening' => $issue->listening,
+                'port' => $issue->port ?? $this->port,
+            ];
+        }
+
+        $hint = $placement->probe?->portHint;
+
+        return $hint === null ? null : [
+            'hint' => $hint,
+            'listening' => $placement->probe->listening ?? [],
+            'port' => $this->port,
+        ];
+    }
+
+    /**
+     * The port hint as a failed step's meta, for FailureCatalogue.
+     *
+     * @return array{portHint?: string, listening?: list<int>, port?: int}
+     */
+    public function failureMeta(?Placement $placement): array
+    {
+        $hint = $this->portHint($placement);
+
+        return $hint === null ? [] : array_filter([
+            'portHint' => $hint['hint']->value,
+            'listening' => $hint['listening'],
+            'port' => $hint['port'],
+        ], static fn (mixed $value): bool => $value !== null && $value !== []);
+    }
+
+    /**
      * @return array{DeploymentFailureClass, string}|null
      */
     public function issue(Placement $placement): ?array
     {
         $issue = $placement->issue;
 
-        if (! is_array($issue)) {
+        if ($issue === null) {
             return null;
         }
 
-        $expected = is_int($issue['port'] ?? null) ? $issue['port'] : $this->port;
-        $listening = array_values(array_filter($issue['listening'] ?? [], is_int(...)));
+        $hint = $issue->kind->portHint();
 
-        return match ($issue['kind']) {
-            'crash_loop' => [DeploymentFailureClass::RuntimeError, $this->crashLoop($placement, $issue)],
-            'loopback_only' => [DeploymentFailureClass::PortMismatch,
-                "The container never became healthy: it listens on 127.0.0.1:{$expected}, so nothing outside the container reaches it. launchroom expects it on 0.0.0.0:{$expected} (\$PORT). Make it bind to 0.0.0.0, for example with --host 0.0.0.0."],
-            'wrong_port' => [DeploymentFailureClass::PortMismatch,
-                'The app listens on '.$this->list($listening).", not {$expected}, where launchroom sends traffic. Set the service port to ".($listening[0] ?? $expected).' in Settings → Deploy, or make the app listen on $PORT.'],
-            default => null,
-        };
+        if (! $hint instanceof PortHint) {
+            return [DeploymentFailureClass::RuntimeError, $this->crashLoop($placement, $issue)];
+        }
+
+        $expected = $issue->port ?? $this->port;
+        $fact = 'The container never became healthy. '.$hint->fact($expected, $issue->listening);
+
+        return [DeploymentFailureClass::PortMismatch, $hint === PortHint::LoopbackOnly
+            ? $fact." launchroom expects it on 0.0.0.0:{$expected} (\$PORT). Make it bind to 0.0.0.0, for example with --host 0.0.0.0."
+            : $fact.' Set the service port to '.($issue->listening[0] ?? $expected).' in Settings → Deploy, or make the app listen on $PORT.'];
     }
 
-    /**
-     * A placement that stopped before it became healthy.
-     */
     public function stopped(Placement $placement): string
     {
         $exit = $placement->last_exit;
@@ -311,8 +335,8 @@ final readonly class RolloutStatus
             // create error, a pull failure): its reason, as it reported it.
             $placement->phase === WorkloadPhase::Failed && $placement->message !== null && $placement->message !== '' => "{$name} couldn't run the container: {$placement->message}",
             $placement->phase === WorkloadPhase::Removed => "launchroom removed the container before it became healthy{$this->removedBecause($placement)}.",
-            is_array($exit) && $exit['oomKilled'] => 'Out of memory: the container was killed before it became healthy. Raise its memory limit in Settings → Scaling.',
-            is_array($exit) && is_int($exit['code']) => "The container exited with code {$exit['code']} before it became healthy.",
+            $exit !== null && $exit->oomKilled => 'Out of memory: the container was killed before it became healthy. Raise its memory limit in Settings → Scaling.',
+            $exit !== null && $exit->code !== null => "The container exited with code {$exit->code} before it became healthy.",
             $placement->message !== null && $placement->message !== '' => $placement->message,
             default => "The container {$placement->phase->value} before it became healthy.",
         };
@@ -320,15 +344,12 @@ final readonly class RolloutStatus
         return $message.$this->output($placement);
     }
 
-    /**
-     * @param  array<string, mixed>  $issue
-     */
-    private function crashLoop(Placement $placement, array $issue): string
+    private function crashLoop(Placement $placement, WorkloadIssueData $issue): string
     {
-        $restarts = is_int($issue['restarts'] ?? null) ? $issue['restarts'] : $placement->restart_count;
-        $code = is_int($issue['exitCode'] ?? null) ? $issue['exitCode'] : null;
+        $restarts = $issue->restarts ?? $placement->restart_count;
+        $code = $issue->exitCode;
 
-        $message = ($issue['oomKilled'] ?? false) === true
+        $message = $issue->oomKilled
             ? "The container keeps running out of memory: it was killed {$restarts} times. Raise its memory limit in Settings → Scaling."
             : 'The container keeps crashing: it exited'.($code === null ? '' : " with code {$code}")." and was restarted {$restarts} times.";
 
@@ -340,13 +361,10 @@ final readonly class RolloutStatus
         return $placement->message !== null && $placement->message !== '' ? " ({$placement->message})" : '';
     }
 
-    /**
-     * The container's last output lines, quoted after a failure.
-     */
     private function output(Placement $placement): string
     {
         $exit = $placement->last_exit;
-        $lines = is_array($exit) ? array_slice($exit['output'], -self::OUTPUT_LINES) : [];
+        $lines = $exit !== null ? array_slice($exit->output, -self::OUTPUT_LINES) : [];
 
         if ($lines === []) {
             return '';
@@ -373,17 +391,8 @@ final readonly class RolloutStatus
         return $at instanceof CarbonInterface ? CarbonImmutable::instance($at)->diffForHumans(['short' => false, 'parts' => 1]) : 'never';
     }
 
-    /** "5 minutes", "90 seconds". */
     public static function duration(int $seconds): string
     {
         return $seconds >= 120 && $seconds % 60 === 0 ? intdiv($seconds, 60).' minutes' : "{$seconds} seconds";
-    }
-
-    /**
-     * @param  list<int>  $ports
-     */
-    private function list(array $ports): string
-    {
-        return $ports === [] ? 'other ports' : implode(', ', $ports);
     }
 }

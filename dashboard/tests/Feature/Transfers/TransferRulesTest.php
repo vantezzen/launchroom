@@ -3,7 +3,10 @@
 declare(strict_types=1);
 
 use App\Actions\Transfers\SweepTransfers;
+use App\Drivers\DatabaseEngines\DatabaseEngines;
+use App\Drivers\DatabaseEngines\DumpImport;
 use App\Enums\DaemonFeature;
+use App\Enums\DatabaseEngine;
 use App\Enums\Permission;
 use App\Enums\TeamRole;
 use App\Enums\Transfers\ExportRunStatus;
@@ -44,13 +47,14 @@ test('only owners and admins may import and export', function (TeamRole $role, b
 ]);
 
 test('connection URLs are checked by engine and labelled without credentials', function (): void {
-    $url = SourceUrl::parse('postgresql://app:pw@db.example.com:6432/umami?sslmode=require', 'postgres');
+    $import = static fn (DatabaseEngine $engine): DumpImport => resolve(DatabaseEngines::class)->for($engine)->importFormat() ?? throw new LogicException;
+    $url = SourceUrl::parse('postgresql://app:pw@db.example.com:6432/umami?sslmode=require', $import(DatabaseEngine::Postgres));
     expect($url->label)->toBe('postgresql://db.example.com:6432/umami')
         ->and($url->host)->toBe('db.example.com')
-        ->and(SourceUrl::parse('mongodb+srv://u:p@cluster0.example.net/app', 'mongodb')->label)->toBe('mongodb+srv://cluster0.example.net/app');
+        ->and(SourceUrl::parse('mongodb+srv://u:p@cluster0.example.net/app', $import(DatabaseEngine::MongoDb))->label)->toBe('mongodb+srv://cluster0.example.net/app');
 
     foreach ([['postgres://u:p@db.example.com', 'postgres'], ['mysql://u:p@db.example.com/app', 'postgres'], ["postgres://u:p@db.example.com/app\nx", 'postgres'], ['postgres:///app', 'postgres']] as [$bad, $engine]) {
-        expect(fn (): SourceUrl => SourceUrl::parse($bad, $engine))->toThrow(DomainRuleViolation::class);
+        expect(fn (): SourceUrl => SourceUrl::parse($bad, $import(DatabaseEngine::from($engine))))->toThrow(DomainRuleViolation::class);
     }
 });
 

@@ -164,7 +164,7 @@ test('focused previews: unchanged services deploy the base commit and reuse its 
     expect(pvDeployment($environment, $web)?->commit_sha)->toBe(PreviewFlow::SHA_PR_1)
         ->and(pvDeployment($environment, $api)?->commit_sha)->toBe($baseApi?->commit_sha)
         ->and(pvDeployment($environment, $api)?->image)->toBe($baseApi?->image)
-        ->and(pvDeployment($environment, $api)?->plan['reusedFrom'] ?? null)->toBe($baseApi?->public_id)
+        ->and(pvDeployment($environment, $api)?->plan?->reusedFrom)->toBe($baseApi?->public_id)
         // Only web was built.
         ->and(DaemonTask::query()->where('type', 'build')->count())->toBe($builds + 1);
 
@@ -258,7 +258,7 @@ test('the seed command runs once after the first deploy of the preview app', fun
 });
 
 test('a database that keeps failing to start fails the preview after three attempts', function (): void {
-    [, $server, , $project, , $postgres] = PreviewFlow::project();
+    [, $server, , $project] = PreviewFlow::project();
     $preview = PreviewFlow::event($project);
 
     for ($i = 0; $i < 3; $i++) {
@@ -269,6 +269,5 @@ test('a database that keeps failing to start fails the preview after three attem
 
     expect($preview->refresh()->status)->toBe(PreviewStatus::Failed)
         ->and($preview->status_reason)->toContain('postgres did not start')
-        ->and(Deployment::query()->where('environment_id', $preview->environment_id)->where('status', 'failed')->count())->toBe(3)
-        ->and($postgres->id)->toBeInt();
+        ->and(Deployment::query()->where('environment_id', $preview->environment_id)->where('status', 'failed')->count())->toBe(3);
 });

@@ -9,6 +9,7 @@ use App\Data\Audit\AuditActor;
 use App\Data\Audit\AuditEntryData;
 use App\Data\Services\AttachVolumeData;
 use App\Enums\AuditAction;
+use App\Events\CanvasChanged;
 use App\Exceptions\DomainRuleViolation;
 use App\Models\ServiceInstance;
 use App\Models\Volume;
@@ -74,6 +75,7 @@ final readonly class AttachServiceVolume
                 subjectId: $instance->service->public_id,
                 meta: ['volume' => $volume->public_id, 'mountPath' => $path, 'instance' => $instance->public_id],
             ));
+            CanvasChanged::forInstance($instance);
 
             return $mount;
         });

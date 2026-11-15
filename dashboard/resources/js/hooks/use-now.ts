@@ -78,8 +78,3 @@ export function useNow(active: boolean = true, every: number = 1000): number {
 
     return useSyncExternalStore(active ? subscribe : idle, snapshot, snapshot);
 }
-
-/** For tests: the number of subscribed timers and whether the interval runs. */
-export function tickerState(): { listeners: number; running: boolean } {
-    return { listeners: listeners.size, running: timer !== null };
-}

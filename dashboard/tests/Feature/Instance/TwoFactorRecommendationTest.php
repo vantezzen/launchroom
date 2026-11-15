@@ -41,7 +41,7 @@ test('"Not now" hides the recommendation for that owner only', function (): void
 
     // Dismissing twice keeps one entry.
     $this->actingAs($owner)->post(route('onboarding.two-factor.dismiss'));
-    expect(InstanceSettings::current()->onboarding['twoFactorDismissed'])->toBe([$owner->id]);
+    expect(InstanceSettings::current()->onboarding?->twoFactorDismissed)->toBe([$owner->id]);
 });
 
 test('only instance owners can dismiss it', function (): void {

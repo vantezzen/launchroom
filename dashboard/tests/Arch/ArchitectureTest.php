@@ -92,6 +92,10 @@ arch('models are final')
     ->classes()
     ->toBeFinal();
 
+arch('controllers leave side effects to the actions they call (docs/10 §2.1)')
+    ->expect('App\Http\Controllers')
+    ->not->toUse(['App\Events\CanvasChanged', 'App\Events\NodeStateInvalidated', 'App\Jobs\Domains\VerifyDomainJob', 'broadcast']);
+
 arch('controllers do not query through the DB facade or query builder')
     ->expect('App\Http\Controllers')
     ->not->toUse(['Illuminate\Support\Facades\DB', 'Illuminate\Database\Query\Builder', 'Illuminate\Database\Eloquent\Builder']);
@@ -100,6 +104,14 @@ arch('enums are backed enums')
     ->expect('App\Enums')
     ->enums()
     ->toBeStringBackedEnums();
+
+arch('stable layers never depend on use cases, read models or jobs (docs/10 §2.1)')
+    ->expect(['App\Support', 'App\Enums', 'App\Data', 'App\Models'])
+    ->not->toUse(['App\Services', 'App\Queries', 'App\Actions', 'App\Jobs']);
+
+arch('services never call actions (docs/10 §2.1)')
+    ->expect('App\Services')
+    ->not->toUse('App\Actions');
 
 arch('support utilities are framework-agnostic')
     ->expect('App\Support')
@@ -122,10 +134,11 @@ arch('outbound HTTP to user-influenced URLs goes through SafeHttpClient')
         'App\Services\Crypto\KeyFile',
         'App\Services\Crypto\SigningKeyFile',
         'App\Services\Registry\RegistryTokenKeyFile',
+        // Secret files are created at local paths, never URLs.
+        'App\Support\Files\SecureFile',
         // Control-plane backup key bundle and the restore CLI: local key
         // files, recovery kit and passphrase files given by the operator.
         'App\Services\Backups\ControlPlaneKeyBundle',
-        'App\Services\Backups\RestoredKeyFiles',
         'App\Console\Commands\Backups\RestoreControlPlaneCommand',
         // The registry (Zot) config file, a local path from config (docs/14 §9.11).
         'App\Services\Registry\ZotConfigFile',

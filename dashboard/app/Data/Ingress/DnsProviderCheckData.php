@@ -20,16 +20,4 @@ final class DnsProviderCheckData extends Data
         public ?string $zone,
         public string $checkedAt,
     ) {}
-
-    /**
-     * @param  array<mixed>|null  $stored
-     */
-    public static function fromStored(?array $stored): ?self
-    {
-        if (! is_array($stored) || ! is_bool($stored['ok'] ?? null) || ! is_string($stored['message'] ?? null) || ! is_string($stored['checkedAt'] ?? null)) {
-            return null;
-        }
-
-        return new self($stored['ok'], $stored['message'], is_string($stored['zone'] ?? null) ? $stored['zone'] : null, $stored['checkedAt']);
-    }
 }

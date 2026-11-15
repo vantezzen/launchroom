@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace App\Actions\Audit;
 
 use App\Data\Audit\AuditChainVerification;
+use App\Data\Security\AuditVerificationData;
 use App\Enums\Audit\AuditChainProblem;
 use App\Models\AuditCheckpoint;
 use App\Models\AuditEvent;
+use App\Models\InstanceSettings;
 use App\Services\Crypto\ControlPlaneKeys;
 use App\Support\AuditChain;
 use App\Support\Crypto\PublicKeyFormat;
@@ -28,7 +30,18 @@ final readonly class VerifyAuditChain
         private ControlPlaneKeys $keys,
     ) {}
 
+    /**
+     * Records the outcome for the UI ("Audit log verified ✓ up to <time>").
+     */
     public function handle(bool $fromCheckpoint = false): AuditChainVerification
+    {
+        $result = $this->verify($fromCheckpoint);
+        InstanceSettings::current()->forceFill(['audit_verification' => AuditVerificationData::fromResult($result)])->save();
+
+        return $result;
+    }
+
+    private function verify(bool $fromCheckpoint): AuditChainVerification
     {
         $trusted = [];
 

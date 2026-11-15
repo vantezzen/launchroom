@@ -3,7 +3,7 @@ import { useId } from 'react';
 import type { ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 
-export type OptionCard<T extends string> = {
+type OptionCard<T extends string> = {
     value: T;
     title: string;
     /** One sentence: what this mode means, including its consequence. */

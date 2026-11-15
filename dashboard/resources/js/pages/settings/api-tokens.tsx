@@ -11,7 +11,6 @@ import { MetaLine } from '@/components/patterns/meta-line';
 import { TimeAgo } from '@/components/time-ago';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
 import {
     Dialog,
     DialogClose,
@@ -23,28 +22,31 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
-import { api } from '@/features/variables/api';
+import { requestJson } from '@/lib/http';
+import { apiDocs } from '@/routes';
+import { destroy, store } from '@/routes/api-tokens';
 import {
     SettingsBody,
     SettingsCard,
     SettingsRow,
-} from '@/features/settings/settings-card';
-import { apiDocs } from '@/routes';
-import { destroy, store } from '@/routes/api-tokens';
+} from '@/components/settings/settings-card';
+import {
+    AbilityFields,
+    defaultAbilities,
+    lifetimeLabel,
+} from '@/features/api-tokens/ability-fields';
+import SettingsLayout from '@/features/settings/settings-layout';
 
 type Props = {
     tokens: App.Data.Api.ApiTokenData[];
     teamOptions: App.Data.Api.ApiTeamOptionData[];
     lifetimes: number[];
+    defaultLifetime: number;
     apiUrl: string;
     cliInstall: string;
 };
 
 const DAY = 24 * 60 * 60 * 1000;
-
-function lifetimeLabel(days: number): string {
-    return days === 365 ? '1 year' : `${days} days`;
-}
 
 function expiryLine(expiresAt: string | null): {
     text: string;
@@ -75,6 +77,7 @@ export default function ApiTokens({
     tokens,
     teamOptions: teams,
     lifetimes,
+    defaultLifetime,
     apiUrl,
     cliInstall,
 }: Props) {
@@ -159,6 +162,7 @@ export default function ApiTokens({
                     onOpenChange={setCreating}
                     team={team}
                     lifetimes={lifetimes}
+                    defaultLifetime={defaultLifetime}
                     apiUrl={apiUrl}
                 />
             )}
@@ -259,24 +263,19 @@ function CreateTokenDialog({
     onOpenChange,
     team,
     lifetimes,
+    defaultLifetime,
     apiUrl,
 }: {
     open: boolean;
     onOpenChange: (open: boolean) => void;
     team: App.Data.Api.ApiTeamOptionData;
     lifetimes: number[];
+    defaultLifetime: number;
     apiUrl: string;
 }) {
-    const defaults = team.abilities
-        .filter(
-            (option) =>
-                option.available && option.default && option.value !== 'read',
-        )
-        .map((option) => option.value);
+    const defaults = defaultAbilities(team);
     const [name, setName] = useState('');
-    const [days, setDays] = useState(
-        String(lifetimes.includes(90) ? 90 : lifetimes[0]),
-    );
+    const [days, setDays] = useState(String(defaultLifetime));
     const [abilities, setAbilities] =
         useState<App.Enums.ApiAbility[]>(defaults);
     const [error, setError] = useState<string | null>(null);
@@ -303,26 +302,19 @@ function CreateTokenDialog({
         }
     };
 
-    const toggle = (ability: App.Enums.ApiAbility, on: boolean) =>
-        setAbilities((current) =>
-            on
-                ? [...current, ability]
-                : current.filter((entry) => entry !== ability),
-        );
-
     const submit = async (event: FormEvent) => {
         event.preventDefault();
         setBusy(true);
         setError(null);
 
         try {
-            const result = await api<App.Data.Api.CreatedApiTokenData>(
+            const result = await requestJson<App.Data.Api.CreatedApiTokenData>(
                 'post',
                 store().url,
                 {
                     name: name.trim() === '' ? 'API token' : name.trim(),
                     expiresInDays: Number(days),
-                    abilities: ['read', ...abilities],
+                    abilities,
                 },
             );
             setCreated(result);
@@ -404,56 +396,14 @@ function CreateTokenDialog({
                             />
                         </div>
 
-                        <fieldset className="flex flex-col gap-3">
-                            <legend className="mb-3 type-label">It can</legend>
-                            {team.abilities.map((option) => {
-                                const id = `ability-${option.value}`;
-                                const always = option.value === 'read';
-
-                                return (
-                                    <div
-                                        key={option.value}
-                                        className="flex items-start gap-3"
-                                    >
-                                        <Checkbox
-                                            id={id}
-                                            checked={
-                                                always ||
-                                                abilities.includes(option.value)
-                                            }
-                                            disabled={
-                                                always || !option.available
-                                            }
-                                            onCheckedChange={(checked) =>
-                                                toggle(
-                                                    option.value,
-                                                    checked === true,
-                                                )
-                                            }
-                                            className="mt-0.5"
-                                        />
-                                        <label
-                                            htmlFor={id}
-                                            className="flex flex-col gap-0.5"
-                                        >
-                                            <span className="type-body font-medium">
-                                                {option.label}
-                                                {!option.available && (
-                                                    <span className="font-normal text-muted-foreground">
-                                                        {' '}
-                                                        (not available with your
-                                                        role)
-                                                    </span>
-                                                )}
-                                            </span>
-                                            <span className="type-small text-muted-foreground">
-                                                {option.description}
-                                            </span>
-                                        </label>
-                                    </div>
-                                );
-                            })}
-                        </fieldset>
+                        <AbilityFields
+                            legend="It can"
+                            idPrefix="ability"
+                            team={team}
+                            value={abilities}
+                            onChange={setAbilities}
+                            explainUnavailable
+                        />
 
                         <InputError message={error ?? undefined} />
 
@@ -474,3 +424,5 @@ function CreateTokenDialog({
         </Dialog>
     );
 }
+
+ApiTokens.layout = SettingsLayout;

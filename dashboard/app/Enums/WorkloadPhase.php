@@ -29,6 +29,32 @@ enum WorkloadPhase: string
     }
 
     /**
+     * @return list<self>
+     */
+    public static function starting(): array
+    {
+        return [self::Pending, self::Pulling, self::Starting];
+    }
+
+    /**
+     * A container runs, healthy or not (a console or log tail can reach it).
+     *
+     * @return list<self>
+     */
+    public static function running(): array
+    {
+        return [self::Starting, self::Running, self::Healthy, self::Unhealthy];
+    }
+
+    /**
+     * @return list<self>
+     */
+    public static function serving(): array
+    {
+        return [self::Running, self::Healthy];
+    }
+
+    /**
      * The workload is gone or stopped: no container serves anymore.
      */
     public function isStopped(): bool

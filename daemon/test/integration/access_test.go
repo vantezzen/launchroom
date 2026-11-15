@@ -24,6 +24,7 @@ import (
 
 	"github.com/vantezzen/launchroom/daemon/internal/access"
 	"github.com/vantezzen/launchroom/daemon/internal/docker"
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/sealed"
 	"github.com/vantezzen/launchroom/daemon/internal/secret"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
@@ -57,7 +58,7 @@ func TestTemporaryAccess(t *testing.T) {
 	mgr := access.NewManager(access.ManagerOptions{DataDir: t.TempDir()})
 	pgEnv := map[string]secret.Secret{"POSTGRES_USER": "app", "POSTGRES_DB": "app", "POSTGRES_PASSWORD": "pw-session-123456"}
 
-	run := func(t *testing.T, spec *state.AccessSpec, password string, env map[string]secret.Secret) (*state.AccessStatus, context.CancelFunc, chan tasks.Result) {
+	run := func(t *testing.T, spec *state.AccessSpec, password string, env map[string]secret.Secret) (*state.AccessStatus, context.CancelFunc, chan state.TaskResults) {
 		t.Helper()
 		task := state.TaskID(randomID("tsk"))
 		if password != "" {
@@ -79,7 +80,7 @@ func TestTemporaryAccess(t *testing.T) {
 		})
 		actx, stop := context.WithCancel(ctx)
 		hctx, probe := tasks.HandlerContext(actx)
-		done := make(chan tasks.Result, 1)
+		done := make(chan state.TaskResults, 1)
 		go func() {
 			r, err := h(hctx, state.Task{ID: task, Type: state.TaskAccess, Attempt: 1, Deadline: time.Now().Add(10 * time.Minute), Spec: spec})
 			if err != nil {
@@ -145,7 +146,7 @@ func TestTemporaryAccess(t *testing.T) {
 			}
 		}
 		// The file is in the container, written as the container's user.
-		cs, _ := s.engine.ListContainers(ctx, map[string]string{docker.LabelWorkload: string(wl)})
+		cs, _ := s.engine.ListContainers(ctx, map[string]string{names.LabelWorkload: string(wl)})
 		var buf strings.Builder
 		if _, err := s.engine.ExecStream(ctx, cs[0].ID, docker.ExecOptions{Argv: []string{"cat", "/srv/up.txt"}, Stdout: &buf}); err != nil || buf.String() != "payload-12345\n" {
 			t.Fatalf("file in the container: %q %v", buf.String(), err)
@@ -165,7 +166,7 @@ func TestTemporaryAccess(t *testing.T) {
 		}
 		wl := s.start(ctx, t, postgresImage, kv, nil)
 		waitPG(ctx, t, s.engine, wl)
-		cs, _ := s.engine.ListContainers(ctx, map[string]string{docker.LabelWorkload: string(wl)})
+		cs, _ := s.engine.ListContainers(ctx, map[string]string{names.LabelWorkload: string(wl)})
 		db := cs[0].ID
 		psqlAsApp := func(sql string) string {
 			var b strings.Builder
@@ -253,7 +254,7 @@ func TestVolumeAccessSFTP(t *testing.T) {
 	volName := "lr-v_" + hex.EncodeToString([]byte(access.RandomName(8)))
 	svc, env := state.ServiceID(randomID("svc")), state.EnvironmentID(randomID("env"))
 	vl := docker.ManagedLabels(string(s.serverID))
-	vl[docker.LabelVolume], vl[docker.LabelService], vl[docker.LabelEnvironment] = string(volID), string(svc), string(env)
+	vl[names.LabelVolume], vl[names.LabelService], vl[names.LabelEnvironment] = string(volID), string(svc), string(env)
 	if err := fx.CreateVolume(ctx, docker.VolumeCreate{Name: volName, Labels: vl}); err != nil {
 		t.Fatal(err)
 	}
@@ -262,7 +263,7 @@ func TestVolumeAccessSFTP(t *testing.T) {
 	}
 	wl := state.WorkloadID(randomID("wl"))
 	labels := docker.ManagedLabels(string(s.serverID))
-	labels[docker.LabelWorkload] = string(wl)
+	labels[names.LabelWorkload] = string(wl)
 	setup, err := fx.CreateContainer(ctx, &docker.ContainerCreate{
 		Name: "lr-itest-chown-" + access.RandomName(6), Config: &container.Config{Image: busyboxImage, Labels: docker.ManagedLabels(string(s.serverID)), Cmd: []string{"chown", "1000:1000", "/app/data"}},
 		HostConfig: &container.HostConfig{Mounts: []mount.Mount{{Type: mount.TypeVolume, Source: volName, Target: "/app/data"}}},
@@ -275,7 +276,7 @@ func TestVolumeAccessSFTP(t *testing.T) {
 	}
 	waitExited(ctx, t, api, setup)
 	svcID, err := fx.CreateContainer(ctx, &docker.ContainerCreate{
-		Name:       docker.ContainerName(wl),
+		Name:       names.WorkloadContainer(wl),
 		Config:     &container.Config{Image: busyboxImage, Labels: labels, User: "1000:1000", Cmd: []string{"sleep", "3600"}},
 		HostConfig: &container.HostConfig{Mounts: []mount.Mount{{Type: mount.TypeVolume, Source: volName, Target: "/app/data"}}},
 	})
@@ -304,7 +305,7 @@ func TestVolumeAccessSFTP(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	open := func(t *testing.T, writes bool) (*state.AccessStatus, string, context.CancelFunc, chan tasks.Result) {
+	open := func(t *testing.T, writes bool) (*state.AccessStatus, string, context.CancelFunc, chan state.TaskResults) {
 		t.Helper()
 		user := "lr-" + access.RandomName(10)
 		spec := &state.AccessSpec{
@@ -318,7 +319,7 @@ func TestVolumeAccessSFTP(t *testing.T) {
 		}
 		actx, stop := context.WithCancel(ctx)
 		hctx, probe := tasks.HandlerContext(actx)
-		done := make(chan tasks.Result, 1)
+		done := make(chan state.TaskResults, 1)
 		go func() {
 			r, err := h(hctx, state.Task{ID: state.TaskID(randomID("tsk")), Type: state.TaskAccess, Attempt: 1, Deadline: time.Now().Add(10 * time.Minute), Spec: spec})
 			if err != nil {
@@ -381,7 +382,7 @@ func TestVolumeAccessSFTP(t *testing.T) {
 		}
 		helpers := func() int {
 			f := client.Filters{}
-			f.Add("label", docker.LabelHelper+"="+access.HelperKind)
+			f.Add("label", names.LabelHelper+"="+names.HelperAccess)
 			cs, err := api.ContainerList(ctx, client.ContainerListOptions{All: true, Filters: f})
 			if err != nil {
 				t.Fatal(err)
@@ -421,7 +422,6 @@ func TestVolumeAccessSFTP(t *testing.T) {
 	})
 }
 
-// waitExited waits until a container has stopped.
 func waitExited(ctx context.Context, t *testing.T, api *client.Client, id string) {
 	t.Helper()
 	w := api.ContainerWait(ctx, id, client.ContainerWaitOptions{Condition: container.WaitConditionNotRunning})

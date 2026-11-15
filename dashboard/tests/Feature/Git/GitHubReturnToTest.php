@@ -2,8 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Data\Git\ManifestRedirectData;
 use App\Enums\TeamRole;
-use App\Http\Controllers\Git\GitSettingsController;
 use App\Models\Team;
 use Illuminate\Support\Facades\Http;
 use Tests\Support\GitHubFake;
@@ -44,7 +44,7 @@ test('connecting GitHub from onboarding comes back to onboarding', function (): 
         ->post(route('git.github.manifest.store'), ['returnTo' => 'onboarding'])
         ->assertRedirect(route('onboarding.show'));
 
-    $redirect = session(GitSettingsController::MANIFEST_FLASH_KEY);
+    $redirect = session(ManifestRedirectData::SESSION_KEY);
     parse_str((string) parse_url($redirect['action'], PHP_URL_QUERY), $query);
 
     // Onboarding posts the manifest to GitHub itself (inline step).

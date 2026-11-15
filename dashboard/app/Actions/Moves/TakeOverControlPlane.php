@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace App\Actions\Moves;
 
 use App\Actions\Audit\RecordAuditEvent;
+use App\Actions\Servers\RetireServer;
 use App\Data\Audit\AuditActor;
 use App\Data\Audit\AuditEntryData;
+use App\Data\Moves\MoveChecklistStateData;
 use App\Enums\AuditAction;
 use App\Enums\Moves\ControlPlaneMoveStatus;
 use App\Enums\Moves\ServerMoveStatus;
@@ -19,7 +21,7 @@ use App\Models\Moves\ServerMove;
 use App\Models\Server;
 use App\Queries\MissingImages;
 use App\Services\Instance\DashboardOrigin;
-use App\Services\Moves\ServerRetirement;
+use App\Support\Refusal;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -37,13 +39,11 @@ use Illuminate\Support\Facades\DB;
  *   pulling (running containers keep their local copies);
  * - a new recovery kit is asked for when the dashboard's address changed;
  * - the post-move checklist opens (DNS, images, other servers, the old machine).
- *
- * @return array{move: string, server: string, previous: string, missingImages: int}
  */
 final readonly class TakeOverControlPlane
 {
     public function __construct(
-        private ServerRetirement $retirement,
+        private RetireServer $retire,
         private MissingImages $images,
         private DashboardOrigin $origin,
         private RecordAuditEvent $audit,
@@ -56,7 +56,7 @@ final readonly class TakeOverControlPlane
     {
         $result = DB::transaction(function () use ($actor): array {
             $move = ControlPlaneMove::query()
-                ->whereIn('status', [ControlPlaneMoveStatus::HandingOver->value, ControlPlaneMoveStatus::HandoverReady->value])
+                ->whereIn('status', ControlPlaneMoveStatus::handingOver())
                 ->latest('id')
                 ->lockForUpdate()
                 ->first();
@@ -73,7 +73,7 @@ final readonly class TakeOverControlPlane
             }
 
             $new->forceFill(['is_control_plane' => true])->save();
-            $this->retirement->retire($old, $new, $actor);
+            Refusal::orThrow($this->retire->handle($old, $new, $actor));
 
             $serverMove = $move->server_move_id === null ? null : ServerMove::query()->whereKey($move->server_move_id)->lockForUpdate()->first();
 
@@ -81,7 +81,7 @@ final readonly class TakeOverControlPlane
                 $serverMove->transitionTo(ServerMoveStatus::Completed);
             }
 
-            $previousUrl = $move->handover['canonicalUrl'] ?? null;
+            $previousUrl = $move->handover?->canonicalUrl;
             $move->handed_over_at = now();
             $move->new_url = $this->origin->canonical();
             $move->sealed_join_token = null;
@@ -94,13 +94,13 @@ final readonly class TakeOverControlPlane
                 'frozen_at' => null,
                 'frozen_reason' => null,
                 'moved_to' => null,
-                'move_checklist' => [
-                    'startedAt' => now()->toIso8601String(),
-                    'moveId' => $move->public_id,
-                    'previousServerId' => $old->id,
-                    'previousUrl' => is_string($previousUrl) ? $previousUrl : null,
-                    'newServerId' => $new->id,
-                ],
+                'move_checklist' => new MoveChecklistStateData(
+                    startedAt: now()->toIso8601String(),
+                    moveId: $move->public_id,
+                    previousServerId: $old->id,
+                    previousUrl: is_string($previousUrl) ? $previousUrl : null,
+                    newServerId: $new->id,
+                ),
                 // The kit names the dashboard's address: a new one goes with a new kit.
                 'recovery_kit_confirmed_at' => $changed ? null : $settings->recovery_kit_confirmed_at,
             ])->save();
@@ -114,7 +114,7 @@ final readonly class TakeOverControlPlane
                 meta: array_filter(['move' => $move->public_id, 'server' => $new->public_id, 'previous' => $old->public_id, 'url' => $move->new_url, 'urlChanged' => $changed]),
             ));
 
-            event(new NodeStateInvalidated(array_values(Server::query()->whereNull('revoked_at')->pluck('id')->map(static fn (mixed $id): int => is_numeric($id) ? (int) $id : 0)->all())));
+            event(new NodeStateInvalidated(array_values(Server::query()->notRevoked()->pluck('id')->map(static fn (mixed $id): int => is_numeric($id) ? (int) $id : 0)->all())));
 
             return ['move' => $move->public_id, 'server' => $new->public_id, 'previous' => $old->public_id];
         });

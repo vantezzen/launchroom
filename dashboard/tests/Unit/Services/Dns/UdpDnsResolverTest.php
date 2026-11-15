@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Enums\Domains\DnsLookupStatus;
 use App\Services\Dns\UdpDnsResolver;
 
 function dnsName(string $name): string
@@ -66,6 +67,6 @@ test('pointer loops do not hang the parser', function (): void {
 test('invalid hostnames are never sent to a resolver', function (): void {
     config(['launchroom.dns.resolvers' => ['192.0.2.1']]);
 
-    expect((new UdpDnsResolver)->lookup('not a host')->status)->toBe('error')
-        ->and((new UdpDnsResolver)->lookup('http://169.254.169.254/')->status)->toBe('error');
+    expect((new UdpDnsResolver)->lookup('not a host')->status)->toBe(DnsLookupStatus::Error)
+        ->and((new UdpDnsResolver)->lookup('http://169.254.169.254/')->status)->toBe(DnsLookupStatus::Error);
 });

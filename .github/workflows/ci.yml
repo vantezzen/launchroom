@@ -1,9 +1,8 @@
 name: ci
 
-# Every check of the repo in one workflow (replaces tests.yml and
-# next-adapter.yml): dashboard, launchroomd, protocol schemas, install
-# scripts, the Next.js adapter, the website, the workflows themselves and
-# dependency audits.
+# Every check of the repo in one workflow: dashboard, launchroomd, protocol
+# schemas, install scripts, the Next.js adapter, the website, the workflows
+# themselves and dependency audits.
 # Releases: release.yml (tag v<VERSION>).
 #
 # The expensive jobs only run when their inputs changed (job `changes`);
@@ -71,11 +70,14 @@ jobs:
           # The dashboard tests read the protocol schemas/fixtures and the
           # daemon installer, its compose file and the Zot config template.
           area dashboard 'dashboard/|protocol/|deploy/install/server\.sh$|deploy/daemon/|deploy/images/zot/'
-          area daemon 'daemon/|protocol/'
-          area cli 'cli/'
+          # The next-adapter tests compare the vendored copy with the package source.
+          area daemon 'daemon/|protocol/|packages/next-adapter/'
+          # The CLI's models and enums are checked against the API's OpenAPI
+          # document; its dotenv and config-file tests read shared vectors.
+          area cli 'cli/|dashboard/resources/api/openapi\.json$|protocol/fixtures/cli/'
           area next-adapter 'packages/next-adapter/|daemon/internal/build/nextadapter/'
           # prebuild copies the installer and the JSON Schemas into site/public.
-          area site 'site/|deploy/install/install\.sh$|protocol/schema/|dashboard/resources/schema/'
+          area site 'site/|deploy/install/install\.sh$|protocol/schema/|dashboard/resources/schema/|dashboard/public/images/devices/'
           cat "$GITHUB_OUTPUT"
 
   # Pint, Rector, PHPStan, vp check, tsc, generated TS types and the asset
@@ -410,23 +412,14 @@ jobs:
         with:
           persist-credentials: false
 
-      # Same image and flags as `make lint-deploy`.
-      - name: shellcheck
-        run: |
-          docker run --rm -v "$PWD/deploy:/mnt:ro" -w /mnt \
-            koalaman/shellcheck:v0.11.0@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d \
-            -s sh -x install/install.sh install/server.sh control-plane/launchroom test/e2e-install.sh release/build-bundle.sh release/check-pinned-images.sh
+      # shellcheck, the installers' shared regions (deploy/install/lib), pin
+      # copies (deploy/pins.env, images.env) and digest-pinned release
+      # Dockerfiles (docs/09 R31).
+      - name: Lint
+        run: make lint-deploy
 
-      # docs/09 R31: release Dockerfiles pull base images and the frontend by digest only.
-      - name: Base images pinned by digest
-        run: sh deploy/release/check-pinned-images.sh
-
-      - name: sh -n
-        run: |
-          for f in deploy/install/install.sh deploy/install/server.sh deploy/control-plane/launchroom \
-            deploy/test/e2e-install.sh deploy/release/build-bundle.sh deploy/release/check-pinned-images.sh; do
-            sh -n "$f"
-          done
+      - name: Installer unit tests
+        run: make test-server-sh test-install-sh test-cli-sh
 
       - name: Bundle builds with digest pins
         run: |
@@ -439,6 +432,7 @@ jobs:
             --out "$RUNNER_TEMP/bundle"
           tar -tzf "$RUNNER_TEMP/bundle/launchroom-deploy.tar.gz"
           grep -qx "LR_CADDY_IMAGE=ghcr.io/vantezzen/launchroom-caddy@sha256:$zero" "$RUNNER_TEMP/bundle/images.env"
+          grep -q '"path": "install/install.sh", "mode": "0755"' "$RUNNER_TEMP/bundle/manifest.json"
 
   next-adapter:
     needs: changes
@@ -521,14 +515,14 @@ jobs:
       - name: Build
         run: npm run build
 
-      # prebuild refreshed public/install and public/schema from the repo; the
-      # committed copies (served when only site/ is deployed) must match.
-      - name: Committed installer and schema copies are current
+      # prebuild refreshed public/install, public/schema and public/devices from
+      # the repo; the committed copies (served when only site/ is deployed) must match.
+      - name: Committed installer, schema and device art copies are current
         run: |
-          stale=$(git status --porcelain -- public/install public/schema)
+          stale=$(git status --porcelain -- public/install public/schema public/devices)
           if [ -n "$stale" ]; then
             echo "$stale"
-            echo "::error::site/public/install or site/public/schema is out of date: run make site-build and commit the copies"
+            echo "::error::site/public/install, site/public/schema or site/public/devices is out of date: run make site-build and commit the copies"
             exit 1
           fi
 
@@ -541,11 +535,8 @@ jobs:
         with:
           persist-credentials: false
 
-      # Same image as `make lint-workflows`.
       - name: actionlint
-        run: |
-          docker run --rm -v "$PWD:/repo:ro" -w /repo \
-            rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 -color
+        run: make lint-workflows
 
   audit:
     runs-on: ubuntu-latest

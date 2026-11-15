@@ -9,11 +9,11 @@ use App\Enums\Git\GitAuthMethod;
 use App\Enums\Git\GitConnectionStatus;
 use App\Enums\Git\GitProviderKind;
 use App\Enums\Git\GitServerKind;
+use App\Exceptions\Git\GitConnectionUnusable;
 use App\Models\Git\GitConnection;
 use App\Models\Git\GitRepository;
 use App\Models\Team;
-use App\Services\Git\Exceptions\GitConnectionUnusable;
-use App\Services\Git\GitConnectionSecrets;
+use App\Services\Crypto\SealedColumns;
 use App\Services\Git\Ssh\DeployKey;
 use App\Support\Git\HostKey;
 use App\Support\Git\SshUrl;
@@ -37,7 +37,6 @@ final class GitProviderFake
 
     public const string TOKEN = 'glpat-test-token';
 
-    /** A real ed25519 host key blob (`ssh-ed25519 AAAA…`), 32 zero-ish bytes are fine for parsing. */
     public static function hostKey(string $seed = 'host'): HostKey
     {
         $public = sodium_crypto_sign_publickey(sodium_crypto_sign_seed_keypair(hash('sha256', $seed, true)));
@@ -52,7 +51,7 @@ final class GitProviderFake
 
     public static function connection(Team $team, GitProviderKind $provider = GitProviderKind::GitLab, GitConnectionStatus $status = GitConnectionStatus::Active, GitAuthMethod $method = GitAuthMethod::Token, int $accountId = 7): GitConnection
     {
-        $secrets = resolve(GitConnectionSecrets::class);
+        $sealed = resolve(SealedColumns::class);
         $base = match ($provider) {
             GitProviderKind::GitLab => self::GITLAB,
             GitProviderKind::Gitea => self::GITEA,
@@ -75,20 +74,20 @@ final class GitProviderFake
             'oauth_client_id' => $method === GitAuthMethod::OAuth ? 'client-id' : null,
         ]);
         $connection->public_id = PublicId::generate('gic');
-        $secrets->initialize($connection);
+        $sealed->seal($connection, 'webhook_secret', bin2hex(random_bytes(32)), $sealed->newKey($connection));
 
         if ($provider === GitProviderKind::Git) {
             $key = DeployKey::generate('test');
             $connection->ssh_public_key = $key['publicKey'];
             $connection->host_keys = [self::hostKey()->toArray()];
             $connection->host_keys_confirmed_at = now();
-            $secrets->put($connection, 'ssh_private_key', $key['secretKey']);
+            $sealed->seal($connection, 'ssh_private_key', $key['secretKey']);
         } else {
-            $secrets->put($connection, 'access_token', self::TOKEN);
+            $sealed->seal($connection, 'access_token', self::TOKEN);
 
             if ($method === GitAuthMethod::OAuth) {
-                $secrets->put($connection, 'refresh_token', 'refresh-1');
-                $secrets->put($connection, 'oauth_client_secret', 'client-secret');
+                $sealed->seal($connection, 'refresh_token', 'refresh-1');
+                $sealed->seal($connection, 'oauth_client_secret', 'client-secret');
             }
         }
 
@@ -123,7 +122,7 @@ final class GitProviderFake
 
     public static function secret(GitConnection $connection): string
     {
-        return resolve(GitConnectionSecrets::class)->webhookSecret($connection);
+        return (string) resolve(SealedColumns::class)->reveal($connection, 'webhook_secret');
     }
 
     /**

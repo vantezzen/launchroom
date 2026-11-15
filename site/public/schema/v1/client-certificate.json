@@ -12,7 +12,7 @@
     },
     "serverId": {
       "type": "string",
-      "pattern": "^srv_[0-9A-HJKMNP-TV-Z]{26}$"
+      "pattern": "^srv_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
     },
     "certificate": {
       "type": "string",

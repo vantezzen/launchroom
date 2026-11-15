@@ -25,7 +25,7 @@ const FEATURED = [
     'supabase',
 ];
 
-export type NewProjectStartProps = {
+type NewProjectStartProps = {
     providers: string[];
     installUrl: string | null;
     githubConnected: boolean;

@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Enums\Domains\DnsCheckStatus;
 use App\Enums\ServerRole;
 use App\Enums\TeamRole;
 use App\Models\Domain;
@@ -130,7 +131,7 @@ test('a quiet DNS check updates the result without a toast', function (): void {
     $this->actingAs($this->developer)->get(route('projects.services.section', [$this->project, $this->production, $this->web, 'domains']))->assertOk();
 
     $this->actingAs($this->developer)->post($url.'?quiet=1')->assertRedirect()->assertSessionMissing('inertia.flash_data');
-    expect($domain->refresh()->verification['status'])->toBe('ok');
+    expect($domain->refresh()->verification?->status)->toBe(DnsCheckStatus::Ok);
 
     $this->actingAs($this->viewer)->post($url.'?quiet=1')->assertForbidden();
 });

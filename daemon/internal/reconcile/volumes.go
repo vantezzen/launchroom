@@ -62,7 +62,7 @@ func (r *Reconciler) deleteVolumes(ctx context.Context, ns *state.NodeState) err
 	for _, d := range pending {
 		res := state.VolumeDeletionResult{ID: d.ID, Name: d.Name, At: r.o.Now().UTC()}
 		res.Outcome, res.Message = r.deleteVolume(ctx, d, have, cs, declared)
-		res.Message = clip(res.Message, maxMessage)
+		res.Message = state.Clip(res.Message, state.MaxStatusLen)
 		switch res.Outcome {
 		case state.VolumeDeleted:
 			r.o.Log.Info("volume deleted on request", "volume", d.Name, "id", d.ID, "service", d.Service, "environment", d.Environment)
@@ -92,20 +92,12 @@ func (r *Reconciler) deleteVolume(ctx context.Context, d state.VolumeDeletion, h
 	if !ok {
 		return state.VolumeAbsent, ""
 	}
-	l := v.Labels
-	switch {
-	case l[docker.LabelSystem] != "":
-		return state.VolumeRefused, "the volume belongs to a launchroom system container"
-	case l[docker.LabelVolume] != string(d.ID):
-		return state.VolumeRefused, fmt.Sprintf("the volume's id label is %q, not %s", l[docker.LabelVolume], d.ID)
-	case l[docker.LabelService] != string(d.Service) || l[docker.LabelEnvironment] != string(d.Environment):
-		return state.VolumeRefused, "the volume's service or environment labels do not match the request"
+	if err := docker.CheckServiceVolume(v, d.ID, docker.VolumeOwner{Service: d.Service, Environment: d.Environment, Exact: true}); err != nil {
+		return state.VolumeRefused, err.Error()
 	}
 	var users []string
-	for _, c := range cs {
-		if slices.Contains(c.Volumes, string(d.Name)) {
-			users = append(users, c.Name)
-		}
+	for _, c := range docker.VolumeUsers(cs, string(d.Name)) {
+		users = append(users, c.Name)
 	}
 	if len(users) > 0 {
 		slices.Sort(users)

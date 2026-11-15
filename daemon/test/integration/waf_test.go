@@ -23,6 +23,7 @@ import (
 
 	"github.com/vantezzen/launchroom/daemon/internal/docker"
 	"github.com/vantezzen/launchroom/daemon/internal/ingress/caddy"
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/policy"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 	"github.com/vantezzen/launchroom/daemon/internal/traffic"
@@ -62,7 +63,7 @@ func setupWafEdge(t *testing.T) *wafEdge {
 		t.Skipf("%s is not loaded into this Docker daemon (run `make caddy-image` before `make test-daemon-integration`): %v", localCaddyImage, err)
 	}
 	_, digest, _ := strings.Cut(insp.RepoDigests[0], "@")
-	guardAllowSystemDigest(t, policy.SystemCaddy, digest)
+	guardAllowSystemDigest(t, names.SystemCaddy, digest)
 
 	offset := &atomic.Int64{}
 	col := waf.New(waf.Options{Now: func() time.Time { return time.Now().Add(time.Duration(offset.Load())) }})
@@ -81,7 +82,7 @@ func setupWafEdge(t *testing.T) *wafEdge {
 		}
 	}()
 	e := setupEdge(t, caddy.Options{AccessLogAddress: wafAccessAddr}, nil, nil, func(mo *caddy.ManagerOptions, pol *policy.Config) {
-		pol.SystemImageDigests[policy.SystemCaddy] = append(pol.SystemImageDigests[policy.SystemCaddy], digest)
+		pol.SystemImageDigests[names.SystemCaddy] = append(pol.SystemImageDigests[names.SystemCaddy], digest)
 		mo.WafLogAddress = wafLogAddr
 		mo.WafDropped = col.Dropped
 	})
@@ -293,7 +294,7 @@ func TestWafBlocksAndReports(t *testing.T) {
 
 func caddyLogs(t *testing.T, e *env) string {
 	t.Helper()
-	cs, err := e.engine.ListContainers(t.Context(), map[string]string{docker.LabelSystem: policy.SystemCaddy})
+	cs, err := e.engine.ListContainers(t.Context(), map[string]string{names.LabelSystem: names.SystemCaddy})
 	if err != nil || len(cs) == 0 {
 		t.Fatalf("caddy container: %v", err)
 	}
@@ -489,7 +490,7 @@ func TestWafPerformance(t *testing.T) {
 
 func caddyContainer(t *testing.T, e *env) string {
 	t.Helper()
-	cs, err := e.engine.ListContainers(t.Context(), map[string]string{docker.LabelSystem: policy.SystemCaddy})
+	cs, err := e.engine.ListContainers(t.Context(), map[string]string{names.LabelSystem: names.SystemCaddy})
 	if err != nil || len(cs) == 0 {
 		t.Fatalf("caddy container: %v", err)
 	}

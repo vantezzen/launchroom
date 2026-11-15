@@ -1,5 +1,6 @@
 import { Head } from '@inertiajs/react';
 import { AuthFrame } from '@/features/auth/auth-frame';
+import { noLayout } from '@/lib/pages';
 
 /**
  * Shown on the old dashboard after launchroom moved to a new server
@@ -24,3 +25,5 @@ export default function Moved({ movedTo }: { movedTo: string }) {
         </>
     );
 }
+
+Moved.layout = noLayout;

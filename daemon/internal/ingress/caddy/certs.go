@@ -60,10 +60,7 @@ func cleanError(s string) string {
 	if s == "" {
 		s = "certificate could not be obtained"
 	}
-	if len(s) > 1024 {
-		s = s[:1021] + "..."
-	}
-	return s
+	return state.Shorten(s, 1021)
 }
 
 // CertificateStatuses derives the certificate state of every routed host

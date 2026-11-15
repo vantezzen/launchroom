@@ -11,9 +11,9 @@ use Override;
 
 /**
  * `throttle:N,M` with one budget per route. Laravel keys these limits by the
- * user (or IP) alone, so every `throttle:…` route shared one counter: typing
- * in a console (120/min) used up the budget of creating an API token
- * (10/min). Each limit now counts the requests to its own route, which is
+ * user (or IP) alone, so every `throttle:…` route would share one counter:
+ * typing in a console (120/min) would use up the budget of creating an API
+ * token (10/min). Each limit counts the requests to its own route, which is
  * what the numbers in routes/ mean (docs/09 R10). Named limiters
  * (`throttle:secret-reveal`) keep their own keys.
  */

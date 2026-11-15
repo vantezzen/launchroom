@@ -6,6 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
 import { AuthFrame } from '@/features/auth/auth-frame';
 import { update } from '@/routes/password';
+import { noLayout } from '@/lib/pages';
 
 type Props = {
     token: string;
@@ -74,3 +75,5 @@ export default function ResetPassword({ token, email, passwordRules }: Props) {
         </AuthFrame>
     );
 }
+
+ResetPassword.layout = noLayout;

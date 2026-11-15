@@ -20,21 +20,18 @@ use App\Enums\Transfers\TransferPurpose;
 use App\Exceptions\DomainRuleViolation;
 use App\Models\Backups\BackupDestination;
 use App\Models\Backups\BackupRun;
-use App\Models\Backups\BackupSchedule;
 use App\Models\Placement;
 use App\Models\Server;
 use App\Models\ServiceInstance;
 use App\Models\Transfers\DataExportRun;
-use App\Models\Transfers\DataTransfer;
 use App\Models\User;
 use App\Models\Volume;
 use App\Services\Backups\DatabaseWorkloads;
 use App\Services\Backups\SnapshotCache;
 use App\Services\Backups\SnapshotTags;
 use App\Services\Transfers\ImportTarget;
-use App\Services\Transfers\TransferStore;
+use App\Services\Transfers\TransferRuns;
 use App\Services\Transfers\TransferTasks;
-use App\Support\PublicId;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -47,7 +44,7 @@ use Illuminate\Support\Facades\DB;
 final readonly class StartExport
 {
     public function __construct(
-        private TransferStore $store,
+        private TransferRuns $runs,
         private TransferTasks $tasks,
         private SnapshotCache $snapshots,
         private RecordAuditEvent $audit,
@@ -74,8 +71,7 @@ final readonly class StartExport
         }
 
         if ($source === ExportSource::Snapshot) {
-            $destination = BackupSchedule::query()->where('service_instance_id', $instance->id)->first()?->destination()->first()
-                ?? BackupDestination::defaultFor($instance->team_id);
+            $destination = BackupDestination::forService($instance);
 
             if (! $destination instanceof BackupDestination) {
                 throw DomainRuleViolation::on('destination', 'This service has no backup destination.');
@@ -92,41 +88,13 @@ final readonly class StartExport
             }
 
             $purpose = $target->subject === DataSubject::Volume ? TransferPurpose::VolumeExport : TransferPurpose::DatabaseExport;
-            $fileName = $target->exportFileName();
-            $transfer = new DataTransfer([
-                'team_id' => $instance->team_id,
-                'service_instance_id' => $instance->id,
-                'volume_id' => $volume?->id,
-                'direction' => $purpose->direction(),
-                'purpose' => $purpose,
-                'file_name' => $fileName,
-                'size_bytes' => 0,
-                'chunk_bytes' => config()->integer('launchroom.transfers.chunk_bytes'),
-                'chunk_count' => 0,
-                'created_by' => $user->id,
-                'expires_at' => now()->addSeconds(config()->integer('launchroom.transfers.task_timeout_seconds'))->addMinutes(config()->integer('launchroom.transfers.download_ttl_minutes')),
-            ]);
-            $transfer->public_id = PublicId::generate(DataTransfer::publicIdPrefix());
-            $this->store->initialise($transfer);
-            $transfer->save();
+            $transfer = $this->runs->outgoing($instance, $volume, $purpose, $target->exportFileName(), $user, now()->addSeconds(config()->integer('launchroom.transfers.task_timeout_seconds'))->addMinutes(config()->integer('launchroom.transfers.download_ttl_minutes')));
 
             $task = $target->subject === DataSubject::Volume
                 ? $this->tasks->exportVolume($server, $instance->team_id, $source === ExportSource::Live ? $volume?->public_id : null, $volume?->backup_consistency->value, $snapshot, $destination, $transfer)
                 : $this->tasks->exportDatabase($server, $instance->team_id, $target->engine(), $source === ExportSource::Live ? $this->placement($instance)->workload_id : null, $snapshot, $destination, $transfer);
 
-            $run = new DataExportRun([
-                'team_id' => $instance->team_id,
-                'service_instance_id' => $instance->id,
-                'subject' => $target->subject,
-                'volume_id' => $volume?->id,
-                'source' => $source,
-                'snapshot_id' => $snapshot,
-                'transfer_id' => $transfer->id,
-                'actor_id' => $user->id,
-                'file_name' => $fileName,
-            ]);
-            $run->daemon_task_id = $task->id;
-            $run->save();
+            $run = $this->runs->export($instance, $target->subject, $volume, $source, $snapshot, $transfer, $task->id, $user);
 
             $this->audit->handle(new AuditEntryData(
                 action: AuditAction::DataExportStarted,

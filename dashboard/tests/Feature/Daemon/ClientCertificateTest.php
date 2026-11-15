@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\Crypto\RotateKek;
+use App\Actions\Security\SetClientCertificateMode;
 use App\Actions\Servers\RenderNodeState;
 use App\Actions\Servers\RevokeServer;
 use App\Data\Audit\AuditActor;
@@ -20,7 +21,6 @@ use App\Models\Team;
 use App\Models\User;
 use App\Queries\Security\ClientCertificatesOverview;
 use App\Services\Crypto\Envelope;
-use App\Services\Crypto\ResponseSignature;
 use App\Services\Crypto\SecretKey;
 use App\Services\Crypto\Signer;
 use App\Services\Daemon\ClientCertificateAuthority;
@@ -29,6 +29,7 @@ use App\Services\NodeStates\DashboardRoute;
 use Inertia\Testing\AssertableInertia;
 use Tests\Support\FakeDaemon;
 use Tests\Support\ProtocolSchemas;
+use Tests\Support\ResponseSignature;
 use Tests\TestCase;
 
 /*
@@ -62,12 +63,14 @@ function certServer(string $seed, array $attributes = []): Server
 
 function setCertificateMode(ClientCertificateMode $mode): void
 {
+    // As SetClientCertificateMode does: the edge secret exists once certificates are checked.
+    if ($mode->checks()) {
+        resolve(DaemonEdgeSecret::class)->provision();
+    }
+
     InstanceSettings::current()->forceFill(['daemon_client_certificates' => $mode])->save();
 }
 
-/**
- * Issues a certificate for $server through the endpoint and returns its row.
- */
 function issueThrough(TestCase $test, FakeDaemon $daemon, array $headers = []): ServerClientCertificate
 {
     [$publicKey] = daemonTlsKey();
@@ -397,7 +400,8 @@ test('only instance owners see or change server certificates', function (TeamRol
 
     $this->actingAs($member)->get(route('instance-security.edit'))->assertForbidden();
     $this->actingAs($member)->put(route('client-certificates.update'), ['mode' => 'verify'])->assertForbidden();
-    $this->actingAs($member)->post(route('client-certificates.reissue', $server->public_id))->assertForbidden();
+    // `{serverId}` binds for instance owners only, like `{auditSink}`.
+    $this->actingAs($member)->post(route('client-certificates.reissue', $server->public_id))->assertNotFound();
 
     expect(InstanceSettings::current()->daemon_client_certificates)->toBeNull();
 })->with(['team owner' => [TeamRole::Owner], 'admin' => [TeamRole::Admin], 'developer' => [TeamRole::Developer]]);
@@ -424,4 +428,16 @@ test('rotating the KEK re-wraps the CA key, which still signs', function (): voi
     issueThrough($this, new FakeDaemon($seed)->as(certServer($seed)->public_id));
 
     expect(DaemonClientCa::query()->sole()->kek_id)->toBe($next->kekId());
+});
+
+test('switching certificates on creates the edge secret once; switching off keeps it', function (): void {
+    expect(resolve(DaemonEdgeSecret::class)->current())->toBeNull();
+
+    resolve(SetClientCertificateMode::class)->handle(ClientCertificateMode::Verify, AuditActor::system());
+    $secret = resolve(DaemonEdgeSecret::class)->current();
+    resolve(SetClientCertificateMode::class)->handle(ClientCertificateMode::Off, AuditActor::system());
+    resolve(SetClientCertificateMode::class)->handle(ClientCertificateMode::Verify, AuditActor::system());
+
+    expect($secret)->toStartWith(DaemonEdgeSecret::PREFIX)
+        ->and(resolve(DaemonEdgeSecret::class)->current())->toBe($secret);
 });

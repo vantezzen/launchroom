@@ -4,8 +4,7 @@ declare(strict_types=1);
 
 namespace App\Jobs\Moves;
 
-use App\Actions\Moves\AdvanceControlPlaneMoves;
-use App\Actions\Moves\AdvanceServerMoves;
+use App\Actions\Moves\AdvanceMoves;
 use Illuminate\Contracts\Queue\ShouldBeUniqueUntilProcessing;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -30,9 +29,8 @@ final class AdvanceServerMovesJob implements ShouldBeUniqueUntilProcessing, Shou
         $this->afterCommit();
     }
 
-    public function handle(AdvanceServerMoves $moves, AdvanceControlPlaneMoves $controlPlane): void
+    public function handle(AdvanceMoves $moves): void
     {
         $moves->handle();
-        $controlPlane->handle();
     }
 }

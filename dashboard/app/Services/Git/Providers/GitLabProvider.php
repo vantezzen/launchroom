@@ -7,16 +7,25 @@ namespace App\Services\Git\Providers;
 use App\Data\Git\CommitData;
 use App\Data\Git\FilePullRequest;
 use App\Data\Git\GitBranchData;
+use App\Data\Git\PushPayload;
 use App\Data\Git\RepositoryRef;
 use App\Data\Git\RepositoryTree;
 use App\Enums\Git\DeploymentReportState;
 use App\Enums\Git\GitProviderKind;
+use App\Enums\Git\GitServerKind;
+use App\Enums\Git\PullRequestAction;
+use App\Events\Git\PullRequestEventReceived;
+use App\Exceptions\DomainRuleViolation;
+use App\Exceptions\Git\GitProviderRequestFailed;
 use App\Models\Git\GitConnection;
 use App\Models\Git\GitRepository;
-use App\Services\Git\Exceptions\GitProviderRequestFailed;
-use App\Services\GitHub\JsonObject;
+use App\Support\Git\GitRef;
 use App\Support\Git\GitWebPath;
+use App\Support\Git\ProviderAvatar;
+use App\Support\Git\PushedFiles;
+use App\Support\Json\JsonObject;
 use Illuminate\Http\Client\Response;
+use SensitiveParameter;
 use Throwable;
 
 /**
@@ -38,6 +47,180 @@ final class GitLabProvider extends ApiGitProvider
     public function webhookUrl(GitConnection $connection): string
     {
         return self::deliveryUrl(route('git.webhooks.gitlab', ['connection' => $connection->public_id]));
+    }
+
+    protected function apiPath(): string
+    {
+        return '/api/v4';
+    }
+
+    protected function oauthTokenPath(): string
+    {
+        return '/oauth/token';
+    }
+
+    protected function oauthAuthorizePath(): string
+    {
+        return '/oauth/authorize';
+    }
+
+    protected function oauthScope(): string
+    {
+        return 'api';
+    }
+
+    protected function accountLogin(JsonObject $account): ?string
+    {
+        return $account->stringOrNull('username');
+    }
+
+    public function probeUrl(string $origin): string
+    {
+        return $this->apiRoot($origin).'/projects?per_page=1';
+    }
+
+    public function recognize(Response $response, string $origin): GitServerKind
+    {
+        if (! in_array($response->status(), [200, 401, 403], true) || ($response->header('X-Gitlab-Meta') === '' && ! is_array($response->json()))) {
+            throw DomainRuleViolation::on('baseUrl', "{$origin} doesn’t look like a GitLab server.");
+        }
+
+        return GitServerKind::GitLab;
+    }
+
+    /**
+     * GitLab sends the secret itself in `X-Gitlab-Token`.
+     */
+    protected function signatureMatches(string $rawBody, string $signature, #[SensitiveParameter] string $secret): bool
+    {
+        return hash_equals($secret, $signature);
+    }
+
+    public function webhookEvent(?string $header): ?string
+    {
+        $event = $header ?? '';
+
+        return match ($event) {
+            'Push Hook' => 'push',
+            'Tag Push Hook' => 'tag_push',
+            'Merge Request Hook' => 'merge_request',
+            default => preg_match('/^[A-Za-z ]{1,64}$/D', $event) === 1 ? strtolower(str_replace(' ', '_', $event)) : null,
+        };
+    }
+
+    public function webhookSummary(JsonObject $payload): array
+    {
+        return [$payload->objectOrNull('project')?->intOrNull('id'), $payload->objectOrNull('object_attributes')?->stringOrNull('action')];
+    }
+
+    public function parseWebhook(GitConnection $connection, string $event, JsonObject $payload): PushPayload|PullRequestEventReceived|null
+    {
+        return match ($event) {
+            'push', 'tag_push' => $this->push($connection, $payload),
+            'merge_request' => $this->mergeRequest($connection, $payload),
+            default => null,
+        };
+    }
+
+    private function project(GitConnection $connection, JsonObject $payload): GitRepository
+    {
+        $project = $payload->object('project');
+
+        return $this->rememberDelivered($connection, $project->int('id'), $project->string('path_with_namespace'), $project->stringOrNull('default_branch'), $project->intOrNull('visibility_level') !== 20);
+    }
+
+    private function push(GitConnection $connection, JsonObject $payload): PushPayload
+    {
+        $repository = $this->project($connection, $payload);
+        $commits = $payload->objects('commits');
+        $after = $payload->string('after');
+        $head = null;
+
+        foreach ($commits as $commit) {
+            if ($commit->stringOrNull('id') === $after) {
+                $head = $commit;
+            }
+        }
+
+        $author = $head?->objectOrNull('author');
+
+        return new PushPayload($repository->external_id, $payload->string('ref'), $payload->string('before'), $after, new CommitData(
+            sha: $after,
+            message: $head?->stringOrNull('message') ?? '',
+            authorName: $author?->stringOrNull('name') ?? $payload->stringOrNull('user_name'),
+            authorEmail: $author?->stringOrNull('email'),
+            authorLogin: $payload->stringOrNull('user_username'),
+            authorAvatarUrl: ProviderAvatar::url($payload->stringOrNull('user_avatar'), $connection->origin()),
+        ), PushedFiles::of($commits, $payload->intOrNull('total_commits_count')), false);
+    }
+
+    private function mergeRequest(GitConnection $connection, JsonObject $payload): ?PullRequestEventReceived
+    {
+        $repository = $this->project($connection, $payload);
+        $mr = $payload->object('object_attributes');
+        $targetId = $mr->int('target_project_id');
+        $sourceId = $mr->intOrNull('source_project_id');
+        $headSha = $mr->objectOrNull('last_commit')?->stringOrNull('id') ?? '';
+
+        if ($targetId !== $repository->external_id || ! GitRef::isSha($headSha)) {
+            return null;
+        }
+
+        $state = $mr->stringOrNull('state');
+        $action = match ($mr->stringOrNull('action')) {
+            'open' => PullRequestAction::Opened,
+            'reopen' => PullRequestAction::Reopened,
+            'update' => $mr->stringOrNull('oldrev') !== null ? PullRequestAction::Synchronize : PullRequestAction::Edited,
+            'close', 'merge' => PullRequestAction::Closed,
+            default => null,
+        };
+
+        if ($action === null) {
+            return null;
+        }
+
+        $user = $payload->objectOrNull('user');
+        $labels = array_map(static fn (JsonObject $label): string => $label->string('title'), $payload->objects('labels'));
+        $isFork = $sourceId !== $targetId;
+
+        // Approval by label (docs/09 R20): `preview` newly applied by someone with write access.
+        $label = null;
+        $changes = $payload->objectOrNull('changes')?->objectOrNull('labels');
+
+        if ($action === PullRequestAction::Edited && $changes instanceof JsonObject) {
+            $before = array_map(static fn (JsonObject $l): string => $l->string('title'), $changes->objects('previous'));
+            $after = array_map(static fn (JsonObject $l): string => $l->string('title'), $changes->objects('current'));
+
+            if (in_array('preview', $after, true) && ! in_array('preview', $before, true)) {
+                $action = PullRequestAction::Labeled;
+                $label = 'preview';
+            }
+        }
+
+        $sender = $user?->stringOrNull('username');
+        $authorId = (string) ($mr->intOrNull('author_id') ?? 0);
+
+        return new PullRequestEventReceived(
+            $connection,
+            $repository->external_id,
+            $action,
+            $mr->int('iid'),
+            $mr->stringOrNull('title') ?? '',
+            $headSha,
+            $mr->string('source_branch'),
+            $mr->string('target_branch'),
+            $sourceId,
+            $targetId,
+            $isFork,
+            mb_substr($sender ?? 'unknown', 0, 100),
+            $isFork && $action->isCodeEvent() ? $this->authorPermission($connection, $repository, $authorId) : null,
+            $mr->bool('draft') || $mr->bool('work_in_progress'),
+            $state === 'merged' || $mr->stringOrNull('action') === 'merge',
+            $labels,
+            $label,
+            $label !== null ? $sender : null,
+            $isFork && $label !== null ? $this->authorPermission($connection, $repository, (string) ($user?->intOrNull('id') ?? 0)) : null,
+        );
     }
 
     protected function searchRequest(string $search): array
@@ -184,6 +367,15 @@ final class GitLabProvider extends ApiGitProvider
         $row = $this->row($repository);
 
         return $row instanceof GitRepository ? $row->gitConnection->origin().'/'.$row->full_name.($branch === null ? '' : '/-/tree/'.GitWebPath::branch($branch)) : null;
+    }
+
+    public function fileUrl(RepositoryRef $repository, string $path, string $ref, ?int $line = null): ?string
+    {
+        $row = $this->row($repository);
+
+        return $row instanceof GitRepository
+            ? $row->gitConnection->origin().'/'.$row->full_name.'/-/blob/'.GitWebPath::branch($ref).'/'.GitWebPath::path($path).($line === null ? '' : "#L{$line}")
+            : null;
     }
 
     protected function statusRequest(GitRepository $repository, string $sha, string $context, string $state, string $description, ?string $url): array

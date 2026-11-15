@@ -4,7 +4,12 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Data\Domains\DnsCheckData;
+use App\Data\Instance\DashboardCertificateData;
+use App\Data\Instance\DashboardProbeData;
+use App\Enums\Contracts\HasTransitionTable;
 use App\Enums\DashboardDomainStatus;
+use App\Models\Concerns\HasStatusTransitions;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -20,9 +25,9 @@ use Illuminate\Support\Carbon;
  * @property DashboardDomainStatus $status
  * @property string $previous_url the canonical origin when the change started
  * @property int|null $requested_by
- * @property array{status: string, hostname: string, addresses: list<string>, expected: list<string>, cname: string|null, message: string, checkedAt: string}|null $dns
- * @property array{state: string, issuer?: string|null, notAfter?: string|null, lastError?: string|null, reportedAt: string}|null $certificate
- * @property array{ok: bool, message: string, via?: string|null, checkedAt: string}|null $probe
+ * @property DnsCheckData|null $dns
+ * @property DashboardCertificateData|null $certificate
+ * @property DashboardProbeData|null $probe
  * @property Carbon|null $checked_at
  * @property Carbon|null $ready_at
  * @property Carbon|null $switched_at
@@ -36,6 +41,9 @@ use Illuminate\Support\Carbon;
 #[Fillable(['hostname', 'previous_url', 'requested_by'])]
 final class DashboardDomainChange extends Model
 {
+    /** @use HasStatusTransitions<DashboardDomainStatus> */
+    use HasStatusTransitions;
+
     /** @var array<string, mixed> */
     protected $attributes = [
         'status' => 'pending',
@@ -60,21 +68,17 @@ final class DashboardDomainChange extends Model
     }
 
     /**
-     * The only way a change's status moves (docs/10 §2.2 rule 3).
+     * @param  DashboardDomainStatus  $from
+     * @param  DashboardDomainStatus  $to
      */
-    public function transitionTo(DashboardDomainStatus $to, ?string $reason = null): void
+    protected function recordTransition(HasTransitionTable $from, HasTransitionTable $to, ?string $note): void
     {
-        $this->status->assertCanTransitionTo($to);
-        $this->status = $to;
-
         match ($to) {
             DashboardDomainStatus::Ready => $this->forceFill(['ready_at' => now()]),
             DashboardDomainStatus::Pending => $this->forceFill(['ready_at' => null]),
             DashboardDomainStatus::Active => $this->forceFill(['switched_at' => now()]),
-            DashboardDomainStatus::Cancelled, DashboardDomainStatus::Reverted => $this->forceFill(['ended_at' => now(), 'ended_reason' => $reason]),
+            DashboardDomainStatus::Cancelled, DashboardDomainStatus::Reverted => $this->forceFill(['ended_at' => now(), 'ended_reason' => $note]),
         };
-
-        $this->save();
     }
 
     /**
@@ -92,9 +96,9 @@ final class DashboardDomainChange extends Model
     {
         return [
             'status' => DashboardDomainStatus::class,
-            'dns' => 'array',
-            'certificate' => 'array',
-            'probe' => 'array',
+            'dns' => DnsCheckData::class,
+            'certificate' => DashboardCertificateData::class,
+            'probe' => DashboardProbeData::class,
             'checked_at' => 'datetime',
             'ready_at' => 'datetime',
             'switched_at' => 'datetime',

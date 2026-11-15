@@ -27,7 +27,6 @@ import (
 // errUnsafeImport marks an archive launchroom refuses to extract.
 var errUnsafeImport = errors.New("the archive can't be imported")
 
-// archiveOptions configure the conversion.
 type archiveOptions struct {
 	// Strip drops leading path components (tar --strip-components).
 	Strip int
@@ -41,7 +40,6 @@ type archiveOptions struct {
 	MaxBytes int64
 }
 
-// archiveStats count what was converted.
 type archiveStats struct {
 	Files, Bytes, Skipped int64
 	Format                state.DataFormat
@@ -75,7 +73,6 @@ func refuse(format string, args ...any) error {
 	return fmt.Errorf("%w: %s", errUnsafeImport, fmt.Sprintf(format, args...))
 }
 
-// convertArchive converts the archive at path into dst.
 func convertArchive(dst io.Writer, path string, o archiveOptions) (archiveStats, error) {
 	f, err := os.Open(path) //nolint:gosec // generated path inside the data dir
 	if err != nil {
@@ -124,7 +121,7 @@ func convertArchive(dst io.Writer, path string, o archiveOptions) (archiveStats,
 	// with the complete set (the dry run before any extraction does this).
 	for name := range c.symlinks {
 		if !c.inside(name) {
-			return c.stats, refuse("the symlink %q points outside the archive", clip(name, 96))
+			return c.stats, refuse("the symlink %q points outside the archive", state.Clip(name, 96))
 		}
 	}
 	return c.stats, c.tw.Close()
@@ -198,11 +195,11 @@ func (c *converter) cleanName(raw string) (string, error) {
 		return "", refuse("an entry name contains a NUL byte")
 	}
 	if strings.HasPrefix(name, "/") {
-		return "", refuse("%q has an absolute path", clip(raw, 96))
+		return "", refuse("%q has an absolute path", state.Clip(raw, 96))
 	}
 	for _, part := range strings.Split(name, "/") {
 		if part == ".." {
-			return "", refuse("%q leaves the archive (..)", clip(raw, 96))
+			return "", refuse("%q leaves the archive (..)", state.Clip(raw, 96))
 		}
 	}
 	name = strings.TrimSuffix(path.Clean("./"+name), "/")
@@ -217,7 +214,7 @@ func (c *converter) cleanName(raw string) (string, error) {
 	// Nothing may be written through a symlink of the archive.
 	for p := path.Dir(name); p != "."; p = path.Dir(p) {
 		if _, ok := c.symlinks[p]; ok {
-			return "", refuse("%q is inside the symlink %q", clip(raw, 96), clip(p, 96))
+			return "", refuse("%q is inside the symlink %q", state.Clip(raw, 96), state.Clip(p, 96))
 		}
 	}
 	return name, nil
@@ -246,7 +243,7 @@ func (c *converter) add(e *archiveEntry) error {
 		return err
 	}
 	if _, ok := c.symlinks[name]; ok {
-		return refuse("%q replaces a symlink of the archive", clip(e.name, 96))
+		return refuse("%q replaces a symlink of the archive", state.Clip(e.name, 96))
 	}
 	hdr := &tar.Header{Name: "data/" + name, Mode: e.mode & 0o1777, ModTime: e.mtime, Format: tar.FormatPAX}
 	hdr.Uid, hdr.Gid = c.owner(e)
@@ -262,20 +259,20 @@ func (c *converter) add(e *archiveEntry) error {
 	case tar.TypeSymlink:
 		t := e.link
 		if t == "" || strings.HasPrefix(t, "/") || strings.ContainsRune(t, 0) {
-			return refuse("the symlink %q points to %q (absolute or empty)", clip(e.name, 96), clip(t, 96))
+			return refuse("the symlink %q points to %q (absolute or empty)", state.Clip(e.name, 96), state.Clip(t, 96))
 		}
 		if c.dirs[name] || c.files[name] {
-			return refuse("the symlink %q replaces a folder or file of the archive", clip(e.name, 96))
+			return refuse("the symlink %q replaces a folder or file of the archive", state.Clip(e.name, 96))
 		}
 		c.symlinks[name] = t
 		if !c.inside(name) {
-			return refuse("the symlink %q points outside the archive", clip(e.name, 96))
+			return refuse("the symlink %q points outside the archive", state.Clip(e.name, 96))
 		}
 		hdr.Typeflag, hdr.Linkname = tar.TypeSymlink, t
 	case tar.TypeLink:
 		target, err := c.cleanName(e.link)
 		if err != nil || target == "" || !c.files[target] {
-			return refuse("the hard link %q doesn't point to an earlier file of the archive", clip(e.name, 96))
+			return refuse("the hard link %q doesn't point to an earlier file of the archive", state.Clip(e.name, 96))
 		}
 		hdr.Typeflag, hdr.Linkname = tar.TypeLink, "data/"+target
 		c.files[name] = true
@@ -285,7 +282,7 @@ func (c *converter) add(e *archiveEntry) error {
 	case tar.TypeXGlobalHeader:
 		return nil
 	default:
-		return refuse("%q is a device node or special file (type %q)", clip(e.name, 96), string(e.typ))
+		return refuse("%q is a device node or special file (type %q)", state.Clip(e.name, 96), string(e.typ))
 	}
 	if err := c.parents(name); err != nil {
 		return err
@@ -301,7 +298,7 @@ func (c *converter) add(e *archiveEntry) error {
 	}
 	if hdr.Typeflag == tar.TypeReg {
 		if _, err := io.CopyN(c.tw, e.body, e.size); err != nil {
-			return fmt.Errorf("reading %q from the archive: %w", clip(e.name, 96), err)
+			return fmt.Errorf("reading %q from the archive: %w", state.Clip(e.name, 96), err)
 		}
 	}
 	c.stats.Files++
@@ -344,7 +341,7 @@ func (c *converter) zip(r io.ReaderAt, size int64) error {
 			b, err := io.ReadAll(io.LimitReader(rc, 4097))
 			_ = rc.Close()
 			if err != nil || len(b) > 4096 {
-				return refuse("the symlink %q is unreadable", clip(f.Name, 96))
+				return refuse("the symlink %q is unreadable", state.Clip(f.Name, 96))
 			}
 			e.link, e.mode = string(b), 0o777
 		case m.IsDir() || strings.HasSuffix(name, "/"):
@@ -366,7 +363,7 @@ func (c *converter) zip(r io.ReaderAt, size int64) error {
 		if e.typ == tar.TypeReg {
 			rc, err := f.Open()
 			if err != nil {
-				return fmt.Errorf("reading %q from the zip archive: %w", clip(f.Name, 96), err)
+				return fmt.Errorf("reading %q from the zip archive: %w", state.Clip(f.Name, 96), err)
 			}
 			e.body = rc
 			err = c.add(e)

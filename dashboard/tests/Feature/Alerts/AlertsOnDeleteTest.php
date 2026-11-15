@@ -103,7 +103,6 @@ test('a project with an alert on one of its services can be deleted; the alert r
         ->and($alert->resolved_at)->not->toBeNull()
         ->and([$alert->project_id, $alert->environment_id, $alert->service_instance_id])->toBe([null, null, null])
         ->and($alert->title)->toBe('postgres is unhealthy')
-        // Past alerts keep how they ended.
         ->and($past->refresh()->resolve_reason)->toBe('It recovered.')
         ->and([$past->project_id, $past->environment_id, $past->service_instance_id])->toBe([null, null, null]);
 })->with([
@@ -130,7 +129,6 @@ test('an environment with an alert on one of its services can be deleted; the al
         ->and($alert->resolve_reason)->toBe('The environment was deleted.')
         ->and([$alert->environment_id, $alert->service_instance_id])->toBe([null, null])
         ->and($alert->project_id)->toBe(in_array('project_id', $keys, true) ? $project->id : null)
-        // Other projects' alerts are untouched.
         ->and($elsewhere->refresh()->status)->toBe(AlertStatus::Firing)
         ->and($elsewhere->service_instance_id)->toBe($production[2]->id);
 })->with([

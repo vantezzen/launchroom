@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Queries;
 
 use App\Enums\ServerRole;
-use App\Enums\ServerStatus;
 use App\Models\Server;
 use App\Support\Semver;
 
@@ -26,7 +25,7 @@ final class FleetUpdateCandidates
     {
         $servers = Server::query()
             ->where('is_control_plane', false)
-            ->whereNotIn('status', [ServerStatus::Revoked->value, ServerStatus::PendingApproval->value])
+            ->approved()
             ->orderBy('id')
             ->get()
             ->filter(static fn (Server $server): bool => $server->daemon_version === null

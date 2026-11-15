@@ -12,7 +12,7 @@ import type { IncomingPayload, OutgoingPayload } from './frames';
 
 type Realtime = App.Data.Instance.RealtimeConfigData | null | undefined;
 
-export type SessionEvents = {
+type SessionEvents = {
     /** launchroomd is on the channel (the hello went out). */
     onReady?: () => void;
     onStarted?: (shell: string | null) => void;

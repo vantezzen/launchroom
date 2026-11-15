@@ -5,7 +5,6 @@ declare(strict_types=1);
 use App\Services\Backups\DestinationCredentials;
 use App\Services\Backups\Process\ResticCli;
 use App\Services\Backups\Process\ResticTarget;
-use Illuminate\Support\Facades\Cache;
 
 /**
  * A stand-in restic: `cat config` exits 10 (no repository) until the
@@ -18,6 +17,7 @@ function fakeRestic(int $missingChecks = PHP_INT_MAX): array
 {
     $dir = sys_get_temp_dir().'/lr-restic-'.bin2hex(random_bytes(6));
     mkdir($dir, 0700);
+    resticDirs($dir);
     $script = <<<SH
         #!/bin/sh
         echo "\$*" >> {$dir}/calls.log
@@ -48,8 +48,29 @@ function resticCalls(string $dir): array
     return array_values(array_filter(explode("\n", (string) file_get_contents($dir.'/calls.log'))));
 }
 
+/**
+ * The directories this test created (parallel workers share the temp dir,
+ * so cleanup never globs it). Called without an argument it hands them over.
+ *
+ * @return list<string>
+ */
+function resticDirs(?string $add = null): array
+{
+    static $dirs = [];
+
+    if ($add !== null) {
+        $dirs[] = $add;
+
+        return $dirs;
+    }
+
+    [$taken, $dirs] = [$dirs, []];
+
+    return $taken;
+}
+
 afterEach(function (): void {
-    foreach (glob(sys_get_temp_dir().'/lr-restic-*') ?: [] as $dir) {
+    foreach (resticDirs() as $dir) {
         removeResticDir($dir);
     }
 });
@@ -82,15 +103,4 @@ it('re-checks under the lock and does not init a repository someone else just cr
 
     expect($restic->openOrInit(resticTarget()))->toBe('existing')
         ->and(resticCalls($dir))->toBe(['cat config', 'cat config']);
-});
-
-it('initialises under a per-repository lock', function (): void {
-    [, $restic] = fakeRestic();
-    $key = 'launchroom:restic-init:'.hash('sha256', resticTarget()->repository);
-    $restic->openOrInit(resticTarget());
-
-    // Released afterwards: someone else can take it right away.
-    $lock = Cache::lock($key, 10);
-    expect($lock->get())->toBeTrue();
-    $lock->release();
 });

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Data\Previews;
 
+use App\Support\Protocol\Grammar;
 use Spatie\LaravelData\Attributes\Validation\Regex;
 use Spatie\LaravelData\Data;
 
@@ -14,7 +15,7 @@ use Spatie\LaravelData\Data;
 final class ApprovePreviewInput extends Data
 {
     public function __construct(
-        #[Regex('/^[0-9a-f]{40}([0-9a-f]{24})?$/D')]
+        #[Regex(Grammar::GIT_SHA)]
         public string $headSha,
     ) {}
 }

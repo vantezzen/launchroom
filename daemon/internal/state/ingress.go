@@ -157,7 +157,6 @@ var dnsCredentialKeys = map[DNSProvider][]string{
 // DNSCredentialKeys returns the value names a provider's credentials hold.
 func DNSCredentialKeys(p DNSProvider) []string { return slices.Clone(dnsCredentialKeys[p]) }
 
-// allDNSCredentialKeys is every value name any provider uses (sorted).
 func allDNSCredentialKeys() []string {
 	var out []string
 	for _, keys := range dnsCredentialKeys {
@@ -228,8 +227,6 @@ func (LoadBalancing) ProtocolSchema() ScalarSchema { return enumSchema(loadBalan
 func (v LoadBalancing) Validate() error {
 	return checkEnum("load balancing", string(v), loadBalancings)
 }
-
-// ---- Sealed ingress credentials ----
 
 // IngressSecretPurpose binds an IngressSecret to one field.
 type IngressSecretPurpose string
@@ -432,5 +429,4 @@ func (s *IngressStatus) validateCerts(e *errs) {
 	}
 }
 
-// maxCertificates bounds Report.ingress.certificates.
 const maxCertificates = 4096

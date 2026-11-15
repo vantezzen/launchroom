@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Support\ConfigAsCode\JsonDocument;
 use App\Support\ConfigAsCode\JsonSyntaxError;
+use Tests\Support\ProtocolSchemas;
 
 function jdError(string $json): JsonSyntaxError
 {
@@ -75,4 +76,11 @@ test('it refuses documents that are too large or too deep', function (): void {
 
 test('a byte order mark is skipped', function (): void {
     expect(JsonDocument::parse("\u{FEFF}{\"a\": 1}")->toArray())->toBe(['a' => 1]);
+});
+
+test('the size limit is the one the CLI checks locally', function (): void {
+    // protocol/fixtures/cli/config-file.json is read by cli/internal/configfile too.
+    $fixture = json_decode((string) file_get_contents(ProtocolSchemas::root().'/fixtures/cli/config-file.json'), true, flags: JSON_THROW_ON_ERROR);
+
+    expect(JsonDocument::MAX_BYTES)->toBe($fixture['maxBytes']);
 });

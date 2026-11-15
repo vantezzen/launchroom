@@ -46,7 +46,6 @@ test('every page carries a nonce-based CSP and the security headers (M3)', funct
         expect($tag)->toContain('nonce="'.$nonce[1].'"');
     }
 
-    // A fresh nonce per request.
     expect($this->get(route('login'))->headers->get('Content-Security-Policy'))->not->toContain($nonce[1]);
 });
 

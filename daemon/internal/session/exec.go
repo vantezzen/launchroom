@@ -4,46 +4,17 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
-	"regexp"
 	"strings"
 
-	"github.com/vantezzen/launchroom/daemon/internal/build"
 	"github.com/vantezzen/launchroom/daemon/internal/docker"
 	"github.com/vantezzen/launchroom/daemon/internal/secret"
+	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
 
 type (
 	envMap = map[string]secret.Secret
 	execer = docker.Execer
 )
-
-// reDBIdent is the grammar for database and user names taken from a
-// workload's env before they go into argv (the same as backups).
-var reDBIdent = regexp.MustCompile(`^[A-Za-z0-9_]{1,63}$`)
-
-func ident(env envMap, def string, names ...string) (string, error) {
-	v := def
-	for _, n := range names {
-		if s := env[n]; !s.IsZero() {
-			v = s.Reveal()
-			break
-		}
-	}
-	if !reDBIdent.MatchString(v) {
-		return "", fmt.Errorf("%s in the database env is not a valid identifier", names[0])
-	}
-	return v, nil
-}
-
-func password(env envMap, names ...string) (string, error) {
-	for _, n := range names {
-		if s := env[n]; !s.IsZero() {
-			return s.Reveal(), nil
-		}
-	}
-	return "", fmt.Errorf("the database env has no %s", names[0])
-}
 
 // errStop ends reading a client's output at the limit.
 var errStop = errors.New("session: output limit reached")
@@ -82,7 +53,7 @@ type proc struct {
 	ex        execer
 	container string
 	env       []string
-	mask      *build.Masker
+	mask      *secret.Masker
 }
 
 func newProc(ex execer, container string, env ...string) proc {
@@ -92,7 +63,7 @@ func newProc(ex execer, container string, env ...string) proc {
 			vals = append(vals, v)
 		}
 	}
-	return proc{ex: ex, container: container, env: env, mask: build.NewMasker(vals...)}
+	return proc{ex: ex, container: container, env: env, mask: secret.NewMasker(vals...)}
 }
 
 type procResult struct {
@@ -129,10 +100,7 @@ func (p proc) message(stderr string) string {
 			strings.HasPrefix(l, "Received exception from server") {
 			continue
 		}
-		if len(l) > 500 {
-			l = l[:500]
-		}
-		return p.mask.Mask(l)
+		return p.mask.Mask(state.Clip(l, 500))
 	}
 	return ""
 }

@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Enums\Git\GitConnectionStatus;
 use App\Enums\Git\GitEventSource;
 use App\Enums\Git\GitProviderKind;
+use App\Enums\Git\PullRequestAction;
 use App\Enums\Git\WebhookDeliveryStatus;
 use App\Enums\TeamRole;
 use App\Events\Git\GitPushReceived;
@@ -13,7 +14,7 @@ use App\Jobs\Git\PollConnectionNowJob;
 use App\Models\Git\GitRepository;
 use App\Models\Git\WebhookDelivery;
 use App\Models\Team;
-use App\Support\Git\ConnectionWebhookSignature;
+use App\Services\Git\GitProviders;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
@@ -201,7 +202,7 @@ test('a GitLab merge request becomes a PullRequestEventReceived with GitLab’s 
     GitProviderFake::gitlabWebhook($this, $this->gitlab, 'Merge Request Hook', glabMergeRequest('update', extra: ['object_attributes' => ['oldrev' => PW_A]]))->assertStatus(202);
 
     Event::assertDispatched(PullRequestEventReceived::class, fn (PullRequestEventReceived $event): bool => $event->installation->is($this->gitlab)
-        && $event->action === 'synchronize'
+        && $event->action === PullRequestAction::Synchronize
         && $event->number === 7
         && $event->headSha === PW_B
         && $event->headRef === 'feature'
@@ -229,7 +230,7 @@ test('a merged GitLab merge request closes; approvals and other actions map', fu
     GitProviderFake::gitlabWebhook($this, $this->gitlab, 'Merge Request Hook', glabMergeRequest('approved'));
 
     Event::assertDispatchedTimes(PullRequestEventReceived::class, 1);
-    Event::assertDispatched(PullRequestEventReceived::class, fn (PullRequestEventReceived $event): bool => $event->action === 'closed' && $event->merged);
+    Event::assertDispatched(PullRequestEventReceived::class, fn (PullRequestEventReceived $event): bool => $event->action === PullRequestAction::Closed && $event->merged);
 });
 
 test('a Gitea/Forgejo push is verified by the HMAC of the raw body and normalized', function (string $header): void {
@@ -256,8 +257,8 @@ test('a Gitea pull request syncs; forks are detected by repository id and the pe
     GitProviderFake::giteaWebhook($this, $this->gitea, 'pull_request_sync', fgPullRequest('synchronized'));
     GitProviderFake::giteaWebhook($this, $this->gitea, 'pull_request', fgPullRequest('opened', headRepo: 99));
 
-    Event::assertDispatched(PullRequestEventReceived::class, fn (PullRequestEventReceived $event): bool => $event->action === 'synchronize' && ! $event->isFork && $event->number === 3);
-    Event::assertDispatched(PullRequestEventReceived::class, fn (PullRequestEventReceived $event): bool => $event->action === 'opened' && $event->isFork && $event->authorPermission === 'read');
+    Event::assertDispatched(PullRequestEventReceived::class, fn (PullRequestEventReceived $event): bool => $event->action === PullRequestAction::Synchronize && ! $event->isFork && $event->number === 3);
+    Event::assertDispatched(PullRequestEventReceived::class, fn (PullRequestEventReceived $event): bool => $event->action === PullRequestAction::Opened && $event->isFork && $event->authorPermission === 'read');
 });
 
 test('the generic git webhook verifies its HMAC and polls the repository now', function (): void {
@@ -273,7 +274,9 @@ test('the generic git webhook verifies its HMAC and polls the repository now', f
 });
 
 test('signature checks fail closed for empty secrets and headers', function (GitProviderKind $provider): void {
-    expect(ConnectionWebhookSignature::isValid($provider, '{}', '', 'secret'))->toBeFalse()
-        ->and(ConnectionWebhookSignature::isValid($provider, '{}', 'x', ''))->toBeFalse()
-        ->and(ConnectionWebhookSignature::isValid(GitProviderKind::GitHub, '{}', 'x', 'x'))->toBeFalse();
+    $connections = resolve(GitProviders::class)->connection($provider);
+
+    expect($connections->verifyWebhook('{}', '', 'secret'))->toBeFalse()
+        ->and($connections->verifyWebhook('{}', 'x', ''))->toBeFalse()
+        ->and(fn () => resolve(GitProviders::class)->connection(GitProviderKind::GitHub))->toThrow(LogicException::class);
 })->with([GitProviderKind::GitLab, GitProviderKind::Gitea, GitProviderKind::Git]);

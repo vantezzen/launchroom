@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/vantezzen/launchroom/daemon/internal/docker"
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
 
@@ -27,7 +28,6 @@ import (
 // container can't run either, at most every reprobeAfter, so loading the
 // profile later takes effect without restarting launchroomd.
 
-// reprobeAfter bounds how often a missing profile is tried again.
 const reprobeAfter = 2 * time.Minute
 
 // Userns is how buildkitd gets its user namespace on this host.
@@ -37,13 +37,12 @@ type Userns string
 const (
 	// UsernsOpen: the host does not restrict user namespaces (or has no AppArmor).
 	UsernsOpen Userns = "open"
-	// UsernsProfile: restricted, and buildkitd runs with AppArmorProfile.
+	// UsernsProfile: restricted, and buildkitd runs with names.BuildkitAppArmorProfile.
 	UsernsProfile Userns = "profile"
-	// UsernsBlocked: restricted, and the host has not loaded AppArmorProfile.
+	// UsernsBlocked: restricted, and the host has not loaded names.BuildkitAppArmorProfile.
 	UsernsBlocked Userns = "restricted"
 )
 
-// restricted: AppArmor is on and restricts unprivileged user namespaces.
 func (m *Manager) restricted() bool {
 	return readTrim(m.o.UsernsSysctl) == "1" && strings.EqualFold(readTrim(m.o.AppArmorEnabled), "Y")
 }
@@ -61,7 +60,7 @@ func (m *Manager) Userns() Userns {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	switch {
-	case m.profile == AppArmorProfile:
+	case m.profile == names.BuildkitAppArmorProfile:
 		return UsernsProfile
 	case !m.profileMissing.IsZero() && m.restricted():
 		return UsernsBlocked
@@ -78,14 +77,14 @@ func (m *Manager) ensureProfiled(ctx context.Context, image state.ImageRef) (str
 	}
 	profile := m.wantProfile(cs, image)
 	id, err := m.ensureWeighted(ctx, image, profile)
-	if err != nil && profile == AppArmorProfile && appArmorRefused(err) {
-		m.o.Log.Warn("AppArmor profile "+AppArmorProfile+" is not loaded on this host; builds need it while kernel.apparmor_restrict_unprivileged_userns=1 (re-run the installer)", "err", err)
+	if err != nil && profile == names.BuildkitAppArmorProfile && appArmorRefused(err) {
+		m.o.Log.Warn("AppArmor profile "+names.BuildkitAppArmorProfile+" is not loaded on this host; builds need it while kernel.apparmor_restrict_unprivileged_userns=1 (re-run the installer)", "err", err)
 		m.mu.Lock()
 		m.profileMissing = time.Now()
 		m.mu.Unlock()
 		profile = appArmorUnconfined
 		id, err = m.ensureWeighted(ctx, image, profile)
-	} else if err == nil && profile == AppArmorProfile {
+	} else if err == nil && profile == names.BuildkitAppArmorProfile {
 		m.mu.Lock()
 		m.profileMissing = time.Time{}
 		m.mu.Unlock()
@@ -100,7 +99,7 @@ func (m *Manager) ensureProfiled(ctx context.Context, image state.ImageRef) (str
 }
 
 // wantProfile picks the profile for this pass: unconfined on hosts without
-// the restriction; on restricted hosts AppArmorProfile, unless it was
+// the restriction; on restricted hosts names.BuildkitAppArmorProfile, unless it was
 // missing recently and the unconfined container is running fine.
 func (m *Manager) wantProfile(cs []docker.Container, image state.ImageRef) string {
 	if !m.restricted() {
@@ -110,13 +109,13 @@ func (m *Manager) wantProfile(cs []docker.Container, image state.ImageRef) strin
 	missing := m.profileMissing
 	m.mu.Unlock()
 	if missing.IsZero() {
-		return AppArmorProfile
+		return names.BuildkitAppArmorProfile
 	}
 	hash := m.SpecHash(image, appArmorUnconfined)
 	for _, c := range cs {
-		if c.Name == ContainerName && c.Labels[docker.LabelSpecHash] == hash {
-			if (c.Restarting || !c.Running) && time.Since(missing) >= reprobeAfter {
-				return AppArmorProfile // it can't run unconfined either: try again
+		if c.Name == names.BuildkitContainer && c.Labels[names.LabelSpecHash] == hash {
+			if (c.Restarting() || !c.Running()) && time.Since(missing) >= reprobeAfter {
+				return names.BuildkitAppArmorProfile // it can't run unconfined either: try again
 			}
 			return appArmorUnconfined
 		}

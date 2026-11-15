@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Data\Security;
 
 use App\Enums\Security\WafMode;
+use App\Support\Protocol\Limits;
 use Spatie\LaravelData\Attributes\Validation\In;
 use Spatie\LaravelData\Data;
 use Spatie\LaravelData\Optional;
@@ -19,7 +20,7 @@ final class SetWafSettingsData extends Data
         public WafMode|Optional $mode = new Optional,
         #[In([1, 2])]
         public int|Optional $paranoia = new Optional,
-        #[In([32, 128, 1024])]
+        #[In(Limits::WAF_INSPECT_BODY_KIB)]
         public int|Optional $inspectBodyKiB = new Optional,
     ) {}
 }

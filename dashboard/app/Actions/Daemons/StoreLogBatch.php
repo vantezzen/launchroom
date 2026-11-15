@@ -19,7 +19,7 @@ use App\Models\Server;
 use App\Services\Deployments\DeploymentLogMasker;
 use App\Services\Deployments\RetiredWorkloads;
 use App\Support\Deployments\LogSections;
-use App\Support\Logs\LogLevel;
+use App\Support\Logs\LogChunkRow;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -79,10 +79,9 @@ final readonly class StoreLogBatch
             $section = $startup ? $this->section($deploymentId) : null;
 
             $lines = array_map(function (LogLine $line) use ($deploymentId, $section): array {
+                /** @var array<string, mixed> $data */
                 $data = $line->toArray();
-                $text = $deploymentId !== null ? $this->masker->mask($deploymentId, $line->text) : $line->text;
-                $data['text'] = $text;
-                $data['level'] = LogLevel::guess($text);
+                $data['text'] = $deploymentId !== null ? $this->masker->mask($deploymentId, $line->text) : $line->text;
 
                 if ($section !== null) {
                     $data['step'] = $section;
@@ -91,27 +90,17 @@ final readonly class StoreLogBatch
                 return $data;
             }, $chunk->lines);
 
-            $scope = $deploymentId === null ? null : ($scopes[$deploymentId] ??= $this->scope($deploymentId));
-            $json = json_encode($lines, JSON_THROW_ON_ERROR);
-
-            $rows[] = [
-                'team_id' => $server->team_id,
-                'server_id' => $server->id,
-                'daemon_task_id' => $taskId,
-                'deployment_id' => $deploymentId,
-                'source_kind' => $chunk->source->kind->value,
-                'source_id' => $chunk->source->id,
-                'seq' => $chunk->seq,
-                'lines' => $json,
-                'project_id' => $scope['project_id'] ?? null,
-                'environment_id' => $scope['environment_id'] ?? null,
-                'service_id' => $scope['service_id'] ?? null,
-                'runtime' => $tail || ($chunk->source->kind === LogSourceKind::Workload && $section === null),
-                'line_count' => count($lines),
-                'error_count' => count(array_filter($lines, static fn (array $line): bool => $line['level'] === 'error')),
-                'bytes' => strlen($json),
-                'created_at' => now(),
-            ];
+            $rows[] = LogChunkRow::build(
+                $server->team_id,
+                $server->id,
+                $chunk->source->kind,
+                $chunk->source->id,
+                $chunk->seq,
+                $lines,
+                $tail || ($chunk->source->kind === LogSourceKind::Workload && $section === null),
+                $deploymentId === null ? null : ($scopes[$deploymentId] ??= $this->scope($deploymentId)),
+                $taskId,
+            );
             $stored[] = $chunk;
         }
 
@@ -166,10 +155,8 @@ final readonly class StoreLogBatch
 
     /**
      * Project, environment and service of a deployment (search scope).
-     *
-     * @return array{project_id: int, environment_id: int, service_id: int}|null
      */
-    private function scope(int $deploymentId): ?array
+    private function scope(int $deploymentId): LogChunkRow
     {
         $row = DB::table('deployments')
             ->join('service_instances', 'service_instances.id', '=', 'deployments.service_instance_id')
@@ -177,11 +164,9 @@ final readonly class StoreLogBatch
             ->where('deployments.id', $deploymentId)
             ->first(['services.project_id', 'deployments.environment_id', 'services.id as service_id']);
 
-        if ($row === null || ! is_numeric($row->project_id) || ! is_numeric($row->environment_id) || ! is_numeric($row->service_id)) {
-            return null;
-        }
+        $id = static fn (mixed $value): int => is_numeric($value) ? (int) $value : 0;
 
-        return ['project_id' => (int) $row->project_id, 'environment_id' => (int) $row->environment_id, 'service_id' => (int) $row->service_id];
+        return new LogChunkRow($deploymentId, $id($row?->project_id), $id($row?->environment_id), $id($row?->service_id));
     }
 
     private function deploymentOnServer(Server $server, string $publicId): ?int

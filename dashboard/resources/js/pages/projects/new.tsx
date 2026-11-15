@@ -1,7 +1,8 @@
 import { Head, Link, router } from '@inertiajs/react';
 import { Check, GitBranch } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useEffectEvent, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
+import { toast } from 'sonner';
 import { Logo } from '@/components/logo';
 import { MetaLine } from '@/components/patterns/meta-line';
 import { Page, PageHeader } from '@/components/patterns/page';
@@ -26,18 +27,20 @@ import { repositoryLogo } from '@/features/git/providers';
 import { DatabasePicker } from '@/features/new-project/database-picker';
 import type { DatabaseChoice } from '@/features/new-project/database-picker';
 import { NewProjectStart } from '@/features/new-project/new-project-start';
-import { plural } from '@/features/canvas/format';
-import { requestJson, RequestFailed } from '@/features/projects/http';
+import {
+    failureMessage,
+    useRepositoryBranches,
+    useRepositoryById,
+    useRepositoryInspection,
+} from '@/features/new-project/queries';
 import { usePlanPreview } from '@/features/add-service/use-plan-preview';
 import { cn } from '@/lib/utils';
-import {
-    branches as branchesRoute,
-    index as repositoriesRoute,
-} from '@/routes/git/repositories';
 import { edit as gitSettings } from '@/routes/git';
 import { importMethod, index as projectsIndex } from '@/routes/projects';
-import { inspect, planPreview, store } from '@/routes/projects/import';
+import { planPreview, store } from '@/routes/projects/import';
 import { index as serversIndex } from '@/routes/servers';
+import { plural } from '@/lib/format';
+import { slugFrom } from '@/lib/slug';
 
 type Repository = App.Data.Git.GitRepositoryData;
 type Inspection = App.Data.Projects.RepositoryInspectionData;
@@ -64,22 +67,6 @@ type AppChoice = {
     selected: boolean;
 };
 
-/** Variables a connection injects, so `.env.example` keys can be marked as covered. */
-const PROVIDED: Record<string, RegExp> = {
-    postgres: /^(DATABASE_URL|DB_|PG|POSTGRES_)/,
-    mysql: /^(DATABASE_URL|DB_|MYSQL_)/,
-    redis: /^(REDIS_|CACHE_|QUEUE_)/,
-    valkey: /^(REDIS_|VALKEY_|CACHE_|QUEUE_)/,
-};
-
-function slugName(value: string): string {
-    return value
-        .toLowerCase()
-        .replace(/[^a-z0-9-]+/g, '-')
-        .replace(/^-+|-+$/g, '')
-        .slice(0, 63);
-}
-
 function query(): URLSearchParams {
     return new URLSearchParams(window.location.search);
 }
@@ -102,10 +89,6 @@ function remember(repository: string | null, branch: string | null): void {
         `${window.location.pathname}${search ? `?${search}` : ''}`,
     );
 }
-
-/* ------------------------------------------------------------------ */
-/* Step 2: what we found                                               */
-/* ------------------------------------------------------------------ */
 
 function DetectionFailed({
     message,
@@ -169,6 +152,7 @@ function AppCard({
     choice,
     multiple,
     databases,
+    engines,
     buildServerOnline,
     error,
     skipped,
@@ -182,6 +166,7 @@ function AppCard({
     choice: AppChoice;
     multiple: boolean;
     databases: DatabaseChoice[];
+    engines: Engine[];
     buildServerOnline: boolean;
     error?: string;
     /** Suggested processes the user unchecked. */
@@ -211,10 +196,10 @@ function AppCard({
     const plan = preview?.plan ?? null;
     const processes = preview?.suggestions?.processes ?? [];
 
+    const reportPlan = useEffectEvent(onPlan);
+
     useEffect(() => {
-        onPlan(app.rootDirectory, preview);
-        // onPlan is stable enough: keyed by root.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+        reportPlan(app.rootDirectory, preview);
     }, [preview, app.rootDirectory]);
 
     const covered = app.envKeys.filter((key) =>
@@ -222,7 +207,9 @@ function AppCard({
             (db) =>
                 db.selected &&
                 db.connectTo.includes(app.rootDirectory) &&
-                PROVIDED[db.engine]?.test(key),
+                engines
+                    .find((engine) => engine.engine === db.engine)
+                    ?.provides.includes(key),
         ),
     ).length;
 
@@ -394,10 +381,6 @@ function AppCard({
     );
 }
 
-/* ------------------------------------------------------------------ */
-/* Page                                                                */
-/* ------------------------------------------------------------------ */
-
 export default function ImportRepository({
     githubConnected,
     providers,
@@ -415,9 +398,6 @@ export default function ImportRepository({
         serverKind: string;
     } | null>(null);
     const [branch, setBranch] = useState<string>('');
-    const [branches, setBranches] = useState<string[] | null>(null);
-    const [inspection, setInspection] = useState<Inspection | null>(null);
-    const [inspectError, setInspectError] = useState<string | null>(null);
     const [apps, setApps] = useState<AppChoice[]>([]);
     const [databases, setDatabases] = useState<DatabaseChoice[]>([]);
     const [plans, setPlans] = useState<Record<string, Preview | null>>({});
@@ -427,34 +407,8 @@ export default function ImportRepository({
     const [name, setName] = useState('');
     const [errors, setErrors] = useState<Record<string, string>>({});
     const [deploying, setDeploying] = useState(false);
-    const [attempt, setAttempt] = useState(0);
 
-    // Back/reload keep the picked repository (`?repository=…&branch=…`).
-    useEffect(() => {
-        const params = query();
-        const id = params.get('repository');
-
-        if (!id) {
-            return;
-        }
-
-        requestJson<{ repositories: Repository[] }>(
-            'get',
-            repositoriesRoute().url,
-        )
-            .then((data) => {
-                const found = data.repositories.find((repo) => repo.id === id);
-
-                if (found) {
-                    pick(found, params.get('branch'));
-                }
-            })
-            .catch(() => undefined);
-        // Once on load.
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
-
-    const pick = (picked: Repository, pickedBranch?: string | null) => {
+    const choose = (picked: Repository, pickedBranch?: string | null) => {
         const nextBranch = pickedBranch || picked.defaultBranch || 'main';
         setRepository({
             id: picked.id,
@@ -463,79 +417,87 @@ export default function ImportRepository({
             serverKind: picked.serverKind,
         });
         setBranch(nextBranch);
-        setName(slugName(picked.fullName.split('/').pop() ?? 'project'));
-        remember(picked.id, nextBranch);
+        setName(slugFrom(picked.fullName.split('/').pop() ?? '', 'project'));
+
+        return nextBranch;
     };
 
-    // Branches for the switcher.
-    useEffect(() => {
-        if (!repository) {
-            return;
+    const pick = (picked: Repository, pickedBranch?: string | null) => {
+        remember(picked.id, choose(picked, pickedBranch));
+    };
+
+    // Back/reload keep the picked repository (`?repository=…&branch=…`).
+    const [restoring, setRestoring] = useState(() =>
+        typeof window === 'undefined'
+            ? null
+            : {
+                  repository: query().get('repository'),
+                  branch: query().get('branch'),
+              },
+    );
+    const restored = useRepositoryById(restoring?.repository ?? null);
+
+    if (restoring && (!restoring.repository || !restored.isPending)) {
+        setRestoring(null);
+
+        if (restored.data) {
+            choose(restored.data, restoring.branch);
         }
+    }
 
-        const controller = new AbortController();
-        setBranches(null);
-        requestJson<{ branches: { name: string }[] }>(
-            'get',
-            branchesRoute(repository.id).url,
-            undefined,
-            controller.signal,
-        )
-            .then((data) => setBranches(data.branches.map((b) => b.name)))
-            .catch(() => undefined);
+    const restoreError = failureMessage(
+        restored.error,
+        'The repository list didn’t load.',
+    );
 
-        return () => controller.abort();
-    }, [repository]);
-
-    // "We looked at your repo": apps and suggested databases.
     useEffect(() => {
-        if (!repository || !branch) {
-            return;
+        if (restoreError) {
+            toast.error(`Couldn’t reopen the repository. ${restoreError}`);
         }
+    }, [restoreError]);
 
-        const controller = new AbortController();
-        setInspection(null);
-        setInspectError(null);
+    const branchesQuery = useRepositoryBranches(repository?.id ?? null);
+    const branches = branchesQuery.data ?? null;
+    const branchesError = failureMessage(
+        branchesQuery.error,
+        'The branches didn’t load.',
+    );
+    const inspectionQuery = useRepositoryInspection(
+        repository?.id ?? null,
+        branch,
+    );
+    const inspection = inspectionQuery.data ?? null;
+    const inspectError = failureMessage(
+        inspectionQuery.error,
+        'Looking at the repository failed.',
+    );
+
+    // A new answer seeds the editable choices (apps, databases, plans).
+    const [seededFrom, setSeededFrom] = useState<Inspection | null>(null);
+
+    if (inspection && inspection !== seededFrom) {
+        const data = inspection;
+        setSeededFrom(data);
         setPlans({});
         setSkippedProcesses({});
-        requestJson<Inspection>(
-            'get',
-            inspect({ query: { repository: repository.id, branch } }).url,
-            undefined,
-            controller.signal,
-        )
-            .then((data) => {
-                setInspection(data);
-                setApps(
-                    data.apps.map((app) => ({
-                        rootDirectory: app.rootDirectory,
-                        name: slugName(app.name) || 'app',
-                        selected: app.selected,
-                    })),
-                );
-                setDatabases(
-                    data.databases.map((db) => ({
-                        key: db.engine,
-                        engine: db.engine,
-                        name: db.engine,
-                        reason: db.reason,
-                        connectTo: db.apps,
-                        selected: true,
-                    })),
-                );
-            })
-            .catch((failure: unknown) => {
-                if (!controller.signal.aborted) {
-                    setInspectError(
-                        failure instanceof RequestFailed
-                            ? failure.message
-                            : 'Looking at the repository failed.',
-                    );
-                }
-            });
-
-        return () => controller.abort();
-    }, [repository, branch, attempt]);
+        setApps(
+            data.apps.map((app) => ({
+                rootDirectory: app.rootDirectory,
+                name: slugFrom(app.name),
+                selected: app.selected,
+            })),
+        );
+        setDatabases(
+            data.databases.map((db) => ({
+                key: db.engine,
+                engine: db.engine,
+                name: db.engine,
+                reason: db.reason,
+                connectTo: db.apps,
+                selected: true,
+            })),
+        );
+    }
 
     // Databases the plan found in the code join the `.env.example` ones,
     // merged by engine (one database per engine, connected to every app
@@ -663,7 +625,7 @@ export default function ImportRepository({
 
     const reset = () => {
         setRepository(null);
-        setInspection(null);
+        setSeededFrom(null);
         setApps([]);
         setDatabases([]);
         remember(null, null);
@@ -755,6 +717,14 @@ export default function ImportRepository({
                                 <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
+                                {branchesError && (
+                                    <p
+                                        role="alert"
+                                        className="px-2 py-1.5 type-small text-status-error"
+                                    >
+                                        {branchesError}
+                                    </p>
+                                )}
                                 {(branches ?? [branch]).map((item) => (
                                     <SelectItem
                                         key={item}
@@ -776,7 +746,7 @@ export default function ImportRepository({
                             <Button
                                 variant="outline"
                                 size="sm"
-                                onClick={() => setAttempt((value) => value + 1)}
+                                onClick={() => void inspectionQuery.refetch()}
                             >
                                 Try again
                             </Button>
@@ -809,6 +779,7 @@ export default function ImportRepository({
                                     choice={apps[index]}
                                     multiple={inspection.apps.length > 1}
                                     databases={databases}
+                                    engines={engines}
                                     buildServerOnline={buildServerOnline}
                                     error={errorFor(
                                         selectedApps.indexOf(apps[index]),

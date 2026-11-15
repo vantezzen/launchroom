@@ -4,22 +4,22 @@ declare(strict_types=1);
 
 namespace App\Actions\Deployments;
 
+use App\Actions\Mesh\AllocateMeshPorts;
 use App\Actions\Servers\RenderNodeState;
 use App\Actions\Transfers\EndDatabasePreparation;
-use App\Contracts\BuildOrchestrator;
 use App\Contracts\ImageDigestResolver;
-use App\Contracts\ReleaseRunner;
 use App\Data\Deployments\StepOutcome;
+use App\Data\Holds\Hold;
 use App\Data\Services\ImageSource;
 use App\Data\Specs\ServiceSpec;
 use App\Enums\DeploymentFailureClass;
+use App\Enums\DeploymentPurpose;
 use App\Enums\DeploymentStatus;
 use App\Enums\DeploymentStepName;
 use App\Enums\DeploymentStepStatus;
-use App\Enums\ServerRole;
-use App\Enums\ServerStatus;
 use App\Enums\WorkloadPhase;
 use App\Enums\WorkloadRole;
+use App\Events\NodeStateInvalidated;
 use App\Exceptions\DesiredStateInvalid;
 use App\Exceptions\ImageResolutionFailed;
 use App\Jobs\AdvanceDeploymentJob;
@@ -28,17 +28,18 @@ use App\Models\DeploymentStep;
 use App\Models\Placement;
 use App\Models\Server;
 use App\Scheduling\PlacementFailed;
-use App\Services\Backups\DataHolds;
+use App\Services\Builds\BuildOrchestrator;
 use App\Services\Deployments\Placer;
+use App\Services\Deployments\ReleaseRunner;
 use App\Services\Deployments\RetiredWorkloads;
 use App\Services\Deployments\RolloutStatus;
-use App\Services\Moves\Prebuilds;
+use App\Services\Holds\Holds;
+use App\Services\Ingress\EdgeServers;
 use App\Services\NodeStates\MeshReadiness;
-use App\Services\Transfers\DatabasePreparations;
 use App\Support\Deployments\EffectiveDeploy;
 use App\Support\Deployments\PrefetchedInputs;
 use App\Support\Images\ImageReference;
-use App\Support\PublicId;
+use App\Support\Images\RegistryLayout;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Illuminate\Contracts\Database\Query\Builder;
@@ -84,7 +85,7 @@ use Throwable;
  *   edge server applied the new NodeState (or after a timeout).
  * - failure: new workloads are removed, the old version keeps serving (a
  *   stopped stateful predecessor is started again).
- * - holds (docs/14 §12.5, {@see DataHolds}): while an import or restore
+ * - holds (docs/14 §12.5, Holds): while an import or restore
  *   holds the instance, a queued deployment waits, and one that has started
  *   (building up to health checking) is cancelled with the reason and
  *   cleaned up like a failure. Ready and routing deployments are left alone.
@@ -114,6 +115,7 @@ final readonly class AdvanceDeployment
         private RenderNodeState $renderNodeState,
         private MeshReadiness $meshReadiness,
         private EndDatabasePreparation $endPreparation,
+        private AllocateMeshPorts $meshPorts,
     ) {}
 
     public function handle(int $deploymentId): void
@@ -143,22 +145,32 @@ final readonly class AdvanceDeployment
     {
         $prefetched = $this->prefetch($deploymentId);
 
-        $next = DB::transaction(function () use ($deploymentId, $prefetched): ?int {
+        $teamId = null;
+        $next = DB::transaction(function () use ($deploymentId, $prefetched, &$teamId): ?int {
             $deployment = Deployment::query()
                 ->whereKey($deploymentId)
                 ->with(['serviceInstance.service', 'environment.project', 'revision'])
                 ->lockForUpdate()
                 ->first();
 
-            if ($deployment === null || $deployment->status->isTerminal() || $deployment->status === DeploymentStatus::Active) {
+            if ($deployment === null || $deployment->status->isFinished()) {
                 return null;
             }
+
+            $teamId = $deployment->team_id;
 
             // Several steps can complete in one call (e.g. queued → rolling_out).
             for ($i = 0; $i < 8 && $this->step($deployment, $prefetched); $i++);
 
-            return $this->isFinished($deployment) ? $this->nextQueued($deployment) : null;
+            /** @var Deployment $deployment status changed by step() */
+            return $deployment->status->isFinished() ? Deployment::nextQueuedId($deployment->service_instance_id) : null;
         });
+
+        // Placements it created may need mesh ports; allocated after commit,
+        // outside the deployment's transaction (the allocation lock is global).
+        if ($teamId !== null) {
+            NodeStateInvalidated::servers($this->meshPorts->handle([$teamId]));
+        }
 
         if ($next !== null) {
             dispatch(new AdvanceDeploymentJob($next));
@@ -182,7 +194,7 @@ final readonly class AdvanceDeployment
         DB::transaction(function () use ($deploymentId, $e): void {
             $deployment = Deployment::query()->whereKey($deploymentId)->with(['serviceInstance.service', 'environment.project', 'revision'])->lockForUpdate()->first();
 
-            if ($deployment === null || $deployment->status->isTerminal() || $deployment->status === DeploymentStatus::Active || $deployment->status === DeploymentStatus::Routing) {
+            if ($deployment === null || $deployment->status->isFinished() || $deployment->status === DeploymentStatus::Routing) {
                 return;
             }
 
@@ -253,17 +265,17 @@ final readonly class AdvanceDeployment
         // An import or restore holds the service (docs/14 §12.5): its
         // workloads are out of the desired state, so a rollout can't finish.
         // The hold wins; a queued deployment waits for it instead (isBlocked).
-        if (in_array($deployment->status, [DeploymentStatus::Building, DeploymentStatus::Releasing, DeploymentStatus::RollingOut, DeploymentStatus::HealthChecking], true)) {
-            $hold = DataHolds::for($deployment->service_instance_id);
+        if (in_array($deployment->status, DeploymentStatus::starting(), true)) {
+            $hold = Holds::blocking($deployment->service_instance_id);
 
-            if ($hold !== null) {
-                return $this->end($deployment, DeploymentStatus::Cancelled, null, DataHolds::cancelMessage($hold));
+            if ($hold instanceof Hold) {
+                return $this->end($deployment, DeploymentStatus::Cancelled, null, $hold->cancelMessage());
             }
         }
 
         // A stopped service runs nothing (D68): its unfinished deployments
         // end (Start runs it again).
-        if ($deployment->serviceInstance->stopped_at !== null && in_array($deployment->status, [DeploymentStatus::Queued, DeploymentStatus::Building, DeploymentStatus::Releasing, DeploymentStatus::RollingOut, DeploymentStatus::HealthChecking, DeploymentStatus::Ready], true)) {
+        if ($deployment->serviceInstance->stopped_at !== null && in_array($deployment->status, DeploymentStatus::beforeTraffic(), true)) {
             return $this->end($deployment, DeploymentStatus::Cancelled, null, 'Not deployed: the service is stopped. Start it to run it again.');
         }
 
@@ -309,9 +321,7 @@ final readonly class AdvanceDeployment
             ->orderBy('id')
             ->first();
 
-        $message = $server?->render_error['message'] ?? null;
-
-        return is_string($message) ? $message : null;
+        return $server?->render_error?->message;
     }
 
     /**
@@ -333,8 +343,8 @@ final readonly class AdvanceDeployment
             $rejected = $server->state_rejection;
             $rendered = $versions[$server->id] ?? $versions[(string) $server->id] ?? 0;
 
-            if (is_array($rejected) && (int) $rejected['version'] >= $rendered) {
-                return "{$server->name} refused the new desired state, so it keeps running the previous version: ".$rejected['error'];
+            if ($rejected !== null && $rejected->version >= $rendered) {
+                return "{$server->name} refused the new desired state, so it keeps running the previous version: ".$rejected->error;
             }
         }
 
@@ -347,7 +357,7 @@ final readonly class AdvanceDeployment
      */
     private function isBlocked(Deployment $deployment): bool
     {
-        if (DataHolds::for($deployment->service_instance_id) !== null) {
+        if (Holds::blocking($deployment->service_instance_id) instanceof Hold) {
             return true;
         }
 
@@ -364,8 +374,8 @@ final readonly class AdvanceDeployment
     private function start(Deployment $deployment, ServiceSpec $spec, PrefetchedInputs $prefetched): bool
     {
         // A database running alone for an import (docs/14 §12.9) gives way
-        // to its first deploy once no import waits or runs.
-        if (! DatabasePreparations::is($deployment)) {
+        // to a deployment that goes live once no import waits or runs.
+        if ($deployment->purpose->goesLive()) {
             $this->endPreparation->handle($deployment->serviceInstance);
         }
 
@@ -399,7 +409,7 @@ final readonly class AdvanceDeployment
                 return $this->fail($deployment, DeploymentFailureClass::ConfigError, $e->getMessage());
             }
 
-            $deployment->forceFill(['image' => $pinned->mirrored(config()->string('launchroom.images.mirror_prefix'))])->save();
+            $deployment->forceFill(['image' => $pinned->mirrored(RegistryLayout::mirrorPrefix())])->save();
         }
 
         return $this->releaseOrRollOut($deployment, $spec);
@@ -426,10 +436,9 @@ final readonly class AdvanceDeployment
                 return $this->fail($deployment, DeploymentFailureClass::BuildError, 'The build finished without an image.');
             }
 
-            // A build for another platform ahead of a server move (docs/14
-            // §13.3): the image is kept for the move's deployment to reuse
-            // (same build key); nothing is rolled out.
-            if (Prebuilds::platform($deployment) !== null) {
+            // The image is kept for the move's deployment to reuse (same
+            // build key); nothing is rolled out.
+            if ($deployment->purpose === DeploymentPurpose::Prebuild) {
                 $deployment->transitionTo(DeploymentStatus::Superseded);
 
                 return true;
@@ -584,7 +593,7 @@ final readonly class AdvanceDeployment
 
             if ($failure !== null) {
                 [$class, $message] = $failure;
-                $this->finishStep($deployment, $step, DeploymentStepStatus::Failed, ['message' => $message]);
+                $this->finishStep($deployment, $step, DeploymentStepStatus::Failed, ['message' => $message, ...$status->failureMeta($placement)]);
 
                 return $this->fail($deployment, $class, $message);
             }
@@ -672,7 +681,7 @@ final readonly class AdvanceDeployment
         $this->stepMeta($deployment, DeploymentStepName::Health, ['slotStartedAt' => now()->toIso8601String(), 'placed' => $slot + 1]);
 
         // The edges route the healthy new replicas next to the old ones.
-        $versions = $this->render($this->ids([...$touched, ...$this->edgeServers($deployment->team_id)]), $deployment);
+        $versions = $this->render($this->ids([...$touched, ...EdgeServers::ids($deployment->team_id)]), $deployment);
         $this->stepMeta($deployment, DeploymentStepName::Rollout, [
             'versions' => (object) ($versions + (array) ($meta['versions'] ?? [])),
             'servers' => array_values(array_unique([...array_filter(is_array($meta['servers'] ?? null) ? $meta['servers'] : [], is_string(...)), ...$this->serverPublicIds([$serverId])])),
@@ -810,7 +819,7 @@ final readonly class AdvanceDeployment
         if ($started !== null && $started->copy()->addSeconds($deadline)->isPast()) {
             $unhealthy = $placements->first(static fn (Placement $placement): bool => $placement->phase !== WorkloadPhase::Healthy);
             $message = $status->healthTimeout($deadline, $unhealthy);
-            $this->finishStep($deployment, DeploymentStepName::Health, DeploymentStepStatus::Failed, ['message' => $message]);
+            $this->finishStep($deployment, DeploymentStepName::Health, DeploymentStepStatus::Failed, ['message' => $message, ...$status->failureMeta($unhealthy)]);
 
             return $this->fail($deployment, DeploymentFailureClass::HealthTimeout, $message);
         }
@@ -850,7 +859,10 @@ final readonly class AdvanceDeployment
                 'drain_until' => now()->addSeconds($spec->deploy->drainSeconds + config()->integer('launchroom.deployments.routing_timeout_seconds')),
             ]);
 
-            $edges = $this->edgeServers($deployment->team_id);
+            // Every edge gets the new routes (an offline one serves them when
+            // it is back); the step waits only for the online ones.
+            $edges = EdgeServers::ids($deployment->team_id);
+            $online = $this->ids(Server::query()->whereKey($edges)->online()->pluck('id')->all());
             $servers = $this->ids([
                 ...$deployment->placements()->pluck('server_id')->all(),
                 ...$previous->pluck('server_id')->all(),
@@ -860,7 +872,7 @@ final readonly class AdvanceDeployment
             $versions = [];
 
             foreach ($this->render($servers, $deployment) as $serverId => $version) {
-                if (in_array($serverId, $edges, true)) {
+                if (in_array($serverId, $online, true)) {
                     $versions[(string) $serverId] = $version;
                 }
             }
@@ -961,11 +973,11 @@ final readonly class AdvanceDeployment
             $this->finishStep($deployment, $step->name, $to === DeploymentStatus::Failed ? DeploymentStepStatus::Failed : DeploymentStepStatus::Skipped, ['message' => $message]);
         }
 
-        if ($to === DeploymentStatus::Failed) {
-            $deployment->transitionTo(DeploymentStatus::Failed, $class, $message);
+        if ($class instanceof DeploymentFailureClass) {
+            $deployment->fail($class, $message);
         } else {
             // Shown like a failure's summary, without a failure class.
-            $deployment->forceFill(['failure_message' => mb_substr($message, 0, 4000)]);
+            $deployment->forceFill(['failure_message' => mb_substr($message, 0, Deployment::FAILURE_MESSAGE_LIMIT)]);
             $deployment->transitionTo($to);
         }
 
@@ -983,7 +995,7 @@ final readonly class AdvanceDeployment
                 ->get();
 
             Placement::query()->whereKey($restore->modelKeys())->update(['role' => WorkloadRole::Serving->value, 'drain_until' => null]);
-            $servers = $this->ids([...$servers, ...$restore->pluck('server_id')->all(), ...$this->edgeServers($deployment->team_id)]);
+            $servers = $this->ids([...$servers, ...$restore->pluck('server_id')->all(), ...EdgeServers::ids($deployment->team_id)]);
         }
 
         $instance = $deployment->serviceInstance;
@@ -996,40 +1008,13 @@ final readonly class AdvanceDeployment
 
             foreach ($stopped as $placement) {
                 $servers[] = $placement->server_id;
-                $placement->delete();
-
-                Placement::query()->create([
-                    'team_id' => $placement->team_id,
-                    'service_instance_id' => $placement->service_instance_id,
-                    'deployment_id' => $placement->deployment_id,
-                    'server_id' => $placement->server_id,
-                    'slot' => $placement->slot,
-                    'workload_id' => PublicId::generate('wl'),
-                    'memory_mb' => $placement->memory_mb,
-                    'cpus' => $placement->cpus,
-                ]);
+                $this->placer->recreatePlacement($placement);
             }
         }
 
         $this->render($this->ids($servers));
 
         return true;
-    }
-
-    private function isFinished(Deployment $deployment): bool
-    {
-        return $deployment->status->isTerminal() || $deployment->status === DeploymentStatus::Active;
-    }
-
-    private function nextQueued(Deployment $deployment): ?int
-    {
-        $next = Deployment::query()
-            ->where('service_instance_id', $deployment->service_instance_id)
-            ->where('status', DeploymentStatus::Queued->value)
-            ->orderBy('id')
-            ->value('id');
-
-        return is_int($next) ? $next : null;
     }
 
     private function spec(Deployment $deployment): ?ServiceSpec
@@ -1074,30 +1059,12 @@ final readonly class AdvanceDeployment
     }
 
     /**
-     * Distinct integer ids.
-     *
      * @param  array<mixed>  $values
      * @return list<int>
      */
     private function ids(array $values): array
     {
         return array_values(array_unique(array_map(static fn (mixed $value): int => is_numeric($value) ? (int) $value : 0, $values)));
-    }
-
-    /**
-     * @return list<int>
-     */
-    private function edgeServers(int $teamId): array
-    {
-        /** @var list<int> $ids */
-        $ids = Server::query()
-            ->where('team_id', $teamId)
-            ->where('status', ServerStatus::Online->value)
-            ->whereJsonContains('roles', ServerRole::Edge->value)
-            ->pluck('id')
-            ->all();
-
-        return $ids;
     }
 
     /**

@@ -4,9 +4,13 @@ declare(strict_types=1);
 
 namespace App\Data\Canvas;
 
+use App\Data\Attributes\PublicIdOf;
+use App\Data\Services\DatabaseSource;
 use App\Enums\DatabaseEngine;
 use App\Enums\ServiceKind;
 use App\Support\Git\GitRef;
+use App\Support\Protocol\Grammar;
+use App\Support\PublicId;
 use Closure;
 use Spatie\LaravelData\Attributes\Validation\Max;
 use Spatie\LaravelData\Attributes\Validation\Min;
@@ -15,8 +19,7 @@ use Spatie\LaravelData\Data;
 
 /**
  * "Add service" from the canvas: one form for every kind. Which fields are
- * required depends on the kind; App\Actions\Services\CreateService enforces
- * the source/kind pairing.
+ * required depends on the kind; fields of other kinds are ignored.
  */
 final class AddServiceData extends Data
 {
@@ -29,20 +32,20 @@ final class AddServiceData extends Data
         public string $name,
         public ServiceKind $kind,
         /** Picker repository id (`ghr_…` GitHub, `gir_…` other providers) for app services. */
-        #[Regex('/^(?:ghr|gir)_[0-7][0-9A-HJKMNP-TV-Z]{25}$/D')]
+        #[PublicIdOf('ghr', 'gir')]
         public ?string $repository = null,
         #[Max(255)]
         public ?string $branch = null,
-        #[Regex('/^(?:[A-Za-z0-9_.@+=,-]+(?:\/[A-Za-z0-9_.@+=,-]+)*)?$/D'), Max(1024)]
+        #[Regex('#^(?:'.Grammar::REL_PATH_BODY.')?$#D'), Max(1024)]
         public ?string $rootDirectory = null,
         #[Max(512)]
         public ?string $image = null,
         #[Min(1), Max(65535)]
         public ?int $port = null,
         public ?DatabaseEngine $engine = null,
-        #[Regex('/^[0-9]{1,3}(?:\.[0-9]{1,3})?$/D')]
+        #[Regex(DatabaseSource::VERSION)]
         public ?string $version = null,
-        #[Regex('/^svc_[0-7][0-9A-HJKMNP-TV-Z]{25}$/D')]
+        #[PublicIdOf('svc')]
         public ?string $parentServiceId = null,
         public ?array $startCommand = null,
         public ?CanvasPositionData $position = null,
@@ -63,7 +66,7 @@ final class AddServiceData extends Data
             'startCommand' => ['nullable', 'array', 'min:1', 'max:256', 'required_if:kind,worker,cron'],
             'startCommand.*' => ['string', 'max:4096'],
             'connectTo' => ['nullable', 'array', 'max:20', 'prohibited_unless:kind,database'],
-            'connectTo.*' => ['string', 'distinct', 'regex:/^svc_[0-7][0-9A-HJKMNP-TV-Z]{25}$/D'],
+            'connectTo.*' => ['string', 'distinct', 'regex:'.PublicId::regex('svc')],
             'branch' => ['nullable', 'string', static function (string $attribute, mixed $value, Closure $fail): void {
                 if (is_string($value) && ! GitRef::isValid('refs/heads/'.$value)) {
                     $fail('Enter a valid branch name.');

@@ -1,10 +1,10 @@
 import { router } from '@inertiajs/react';
 import { queryOptions } from '@tanstack/react-query';
 import type { QueryClient } from '@tanstack/react-query';
-import { requestJson } from '@/features/projects/http';
+import { requestJson } from '@/lib/http';
 import { serviceDeploymentsUrl } from './deployment-actions';
 
-export type ServiceDeployments = App.Data.Deployments.ServiceDeploymentsData;
+type ServiceDeployments = App.Data.Deployments.ServiceDeploymentsData;
 
 export function serviceDeploymentsKey(environment: string, service: string) {
     return ['service-deployments', environment, service] as const;

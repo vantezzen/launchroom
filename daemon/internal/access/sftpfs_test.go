@@ -42,7 +42,6 @@ func TestCleanPathConfinesToTheContainer(t *testing.T) {
 	}
 }
 
-// sftpPair serves the FS over an in-memory pipe and returns a client.
 func sftpPair(t *testing.T, r Runner) *sftp.Client {
 	t.Helper()
 	a, b := net.Pipe()
@@ -180,9 +179,8 @@ func TestSFTPOverContainerTools(t *testing.T) {
 
 func TestSFTPWithoutToolsSaysSo(t *testing.T) {
 	r := runnerFunc(func([]string) (int, string) { return 127, `exec: "stat": executable file not found in $PATH` })
-	f := NewFS(context.Background(), r, nil)
-	_, err := f.stat("/", true)
-	if !errors.Is(err, errNoTools) {
+	c := sftpPair(t, r)
+	if _, err := c.Stat("/x"); err == nil || !strings.Contains(err.Error(), "no file tools") {
 		t.Fatalf("got %v", err)
 	}
 }

@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Data\Previews;
 
+use App\Data\Attributes\PublicIdOf;
 use App\Enums\PreviewStrategy;
 use Spatie\LaravelData\Attributes\Validation\Max;
-use Spatie\LaravelData\Attributes\Validation\Regex;
 use Spatie\LaravelData\Data;
 
 /**
@@ -21,7 +21,7 @@ final class PreviewStrategyInput extends Data
     public function __construct(
         public PreviewStrategy $strategy,
         /** The database to clone from (service instance public id). */
-        #[Regex('/^sin_[0-7][0-9A-HJKMNP-TV-Z]{25}$/D')]
+        #[PublicIdOf('sin')]
         public ?string $cloneSourceId = null,
         #[Max(64)]
         public ?array $sanitizeCommand = null,

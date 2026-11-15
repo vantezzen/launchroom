@@ -21,14 +21,15 @@ use App\Data\Transfers\Inputs\StartImportInput;
 use App\Data\Transfers\ServiceTransfersData;
 use App\Data\Transfers\TransferData;
 use App\Http\Controllers\Controller;
+use App\Http\Routing\RouteScope;
 use App\Models\Backups\BackupRun;
 use App\Models\ServiceInstance;
 use App\Models\Transfers\DataExportRun;
 use App\Models\Transfers\DataImportRun;
 use App\Models\Transfers\DataTransfer;
 use App\Models\User;
+use App\Queries\Transfers\ServiceTransfersView;
 use App\Services\Transfers\ImportInspections;
-use App\Services\Transfers\ServiceTransfersView;
 use Illuminate\Container\Attributes\CurrentUser;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -36,8 +37,7 @@ use Illuminate\Support\Facades\Gate;
 
 /**
  * JSON endpoints behind the Move data section of the Backups tab
- * (resources/js/features/data-transfer, docs/14 §12.6). Bindings are
- * team-scoped; every action authorizes.
+ * (resources/js/features/data-transfer, docs/14 §12.6).
  */
 final class ServiceTransfersController extends Controller
 {
@@ -80,7 +80,7 @@ final class ServiceTransfersController extends Controller
 
     public function cancelImport(Request $request, ServiceInstance $serviceInstance, DataImportRun $import, #[CurrentUser] User $user, CancelImport $cancel, ServiceTransfersView $view): ServiceTransfersData
     {
-        abort_unless($import->service_instance_id === $serviceInstance->id, 404);
+        $import = RouteScope::importRun($serviceInstance, $import);
         Gate::authorize('cancel', $import);
 
         $cancel->handle($import, $this->auditActor($request, $user));
@@ -124,7 +124,7 @@ final class ServiceTransfersController extends Controller
 
     public function link(Request $request, ServiceInstance $serviceInstance, DataExportRun $export, #[CurrentUser] User $user, CreateDownloadLink $link): DownloadLinkData
     {
-        abort_unless($export->service_instance_id === $serviceInstance->id, 404);
+        $export = RouteScope::exportRun($serviceInstance, $export);
         Gate::authorize('download', $export);
 
         ['token' => $token, 'expiresAt' => $expiresAt] = $link->handle($export, $user);

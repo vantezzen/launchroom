@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Enums\Moves;
 
+use App\Enums\Attributes\SharedFacts;
 use App\Enums\Concerns\HasTransitions;
 use App\Enums\Contracts\HasTransitionTable;
 
@@ -15,6 +16,7 @@ use App\Enums\Contracts\HasTransitionTable;
  * running | ready → cancelling (services that haven't started on the target
  * go back) → cancelled.
  */
+#[SharedFacts('isOpen', 'isAdvancing')]
 enum ServerMoveStatus: string implements HasTransitionTable
 {
     use HasTransitions;
@@ -49,6 +51,37 @@ enum ServerMoveStatus: string implements HasTransitionTable
     public function isOpen(): bool
     {
         return in_array($this, self::open(), true);
+    }
+
+    /**
+     * Neither ended nor being cancelled: the source drains, and the move can
+     * still be cancelled and its items retried.
+     *
+     * @return list<self>
+     */
+    public static function underway(): array
+    {
+        return [self::Running, self::Ready];
+    }
+
+    public function isUnderway(): bool
+    {
+        return in_array($this, self::underway(), true);
+    }
+
+    /**
+     * The move still has steps to take (AdvanceServerMoves works on it).
+     *
+     * @return list<self>
+     */
+    public static function advancing(): array
+    {
+        return [self::Running, self::Cancelling];
+    }
+
+    public function isAdvancing(): bool
+    {
+        return in_array($this, self::advancing(), true);
     }
 
     /**

@@ -7,6 +7,7 @@ namespace App\Services\Mesh;
 use App\Enums\ServerRole;
 use App\Models\Server;
 use App\Support\CanonicalJson;
+use App\Support\Network\Mesh;
 
 /**
  * Mesh identities and the ACL policy (docs/05 §2). Pure: no I/O.
@@ -39,16 +40,10 @@ final class MeshPolicy
 {
     public const string CONTROL_PLANE_TAG = 'tag:lr-cp';
 
-    public const string PUBLISHED_PORTS = '31000-32999';
+    public const string PUBLISHED_PORTS = Mesh::FIRST_PORT.'-'.Mesh::LAST_PORT;
 
-    /** Ports every server may reach on the control plane. */
-    public const array CONTROL_PLANE_PORTS = [443, 5000];
-
-    /** The shared certificate storage on the control plane (edges only). */
-    public const int CERT_STORAGE_PORT = 6379;
-
-    /** launchroomd's link probe listener on every server (docs/05 §2.1). */
-    public const int LINK_PROBE_PORT = 7400;
+    /** Ports every server may reach on the control plane: the daemon API/ingress and the registry. */
+    public const array CONTROL_PLANE_PORTS = [443, Mesh::REGISTRY_PORT];
 
     public static function roleTag(ServerRole $role): string
     {
@@ -56,8 +51,6 @@ final class MeshPolicy
     }
 
     /**
-     * The tags of a server's mesh node (sorted, unique).
-     *
      * @return list<string>
      */
     public static function tags(Server $server): array
@@ -124,7 +117,7 @@ final class MeshPolicy
                 [
                     'action' => 'accept',
                     'src' => [self::roleTag(ServerRole::Edge)],
-                    'dst' => [self::CONTROL_PLANE_TAG.':'.self::CERT_STORAGE_PORT],
+                    'dst' => [self::CONTROL_PLANE_TAG.':'.Mesh::CERT_STORAGE_PORT],
                 ],
                 [
                     'action' => 'accept',
@@ -139,7 +132,7 @@ final class MeshPolicy
                 [
                     'action' => 'accept',
                     'src' => $all,
-                    'dst' => array_map(static fn (string $tag): string => $tag.':'.self::LINK_PROBE_PORT, $all),
+                    'dst' => array_map(static fn (string $tag): string => $tag.':'.Mesh::LINK_PROBE_PORT, $all),
                 ],
             ],
         ];

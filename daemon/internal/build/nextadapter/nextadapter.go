@@ -11,6 +11,7 @@ import (
 	"crypto/sha256"
 	"embed"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"maps"
@@ -21,7 +22,21 @@ import (
 )
 
 // Version is the vendored package version (assets/package.json).
-const Version = "0.1.0"
+var Version = vendoredVersion()
+
+func vendoredVersion() string {
+	raw, err := assets.ReadFile("assets/package.json")
+	if err != nil {
+		panic("nextadapter: no vendored package.json: " + err.Error())
+	}
+	var pkg struct {
+		Version string `json:"version"`
+	}
+	if err := json.Unmarshal(raw, &pkg); err != nil || pkg.Version == "" {
+		panic("nextadapter: vendored package.json has no version")
+	}
+	return pkg.Version
+}
 
 // Dir is where the adapter lives inside the build container. It is outside
 // the app directory (/app), so it never reaches the runtime image.

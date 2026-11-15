@@ -40,9 +40,8 @@ use App\Services\Dockerfiles\AiProviderSecrets;
 use App\Support\Dockerfiles\DockerfileDraft;
 use App\Support\Dockerfiles\DockerfilePrompt;
 use App\Support\Images\ImageReference;
-use GuzzleHttp\Promise\PromiseInterface;
 use Illuminate\Support\Facades\Bus;
-use Illuminate\Support\Facades\Http;
+use Tests\Support\GitFixtures;
 use Tests\Support\Projects;
 use Tests\Support\ProtocolSchemas;
 
@@ -81,17 +80,10 @@ function dgDraft(string $dockerfile = DG_GOOD, int $port = 8080): DockerfileDraf
     return new DockerfileDraft($dockerfile, $port, 'httpd -f -p 8080 -h /www', 'Serves the www folder with busybox httpd.', DockerfileConfidence::High, 1200, 300);
 }
 
-function dgPkt(string $line): string
-{
-    return sprintf('%04x', strlen($line) + 4).$line;
-}
-
 beforeEach(function (): void {
     Projects::useTestKek();
     config(['launchroom.git.plain_sources' => true, 'launchroom.git.insecure_hosts' => ['git-fixtures']]);
-    Http::fake([
-        'http://git-fixtures:8080/*' => static fn (): PromiseInterface => Http::response(dgPkt("# service=git-upload-pack\n").'0000'.dgPkt(DG_SHA." HEAD\0multi_ack\n").dgPkt(DG_SHA." refs/heads/main\n").'0000'),
-    ]);
+    GitFixtures::fake(DG_SHA);
 
     app()->instance(ImageDigestResolver::class, new class implements ImageDigestResolver
     {
@@ -204,10 +196,10 @@ test('the whole flow: read, draft, lint, pin, build, start, verified, use', func
     $generation->refresh();
     expect($generation->status)->toBe(DockerfileGenerationStatus::Drafting)
         // Denied paths never stored or sent, credentials redacted.
-        ->and($generation->context['tree'])->toBe(['README.md', 'www/index.html'])
-        ->and(array_column($generation->context['files'], 'path'))->toBe(['README.md'])
-        ->and($generation->context['files'][0]['content'])->not->toContain('sk_live_abcdefghijklmnop')
-        ->and($generation->detected['error'])->toContain('railpack could not plan');
+        ->and($generation->context?->tree)->toBe(['README.md', 'www/index.html'])
+        ->and(array_column($generation->context->files ?? [], 'path'))->toBe(['README.md'])
+        ->and($generation->context?->files[0]['content'])->not->toContain('sk_live_abcdefghijklmnop')
+        ->and($generation->detected?->error)->toContain('railpack could not plan');
     Bus::assertDispatched(DraftDockerfileJob::class);
 
     dgDraftNow();
@@ -231,7 +223,7 @@ test('the whole flow: read, draft, lint, pin, build, start, verified, use', func
         ->and(isset($build->spec->builder->dockerfilePath))->toBeFalse()
         ->and($build->deployment_id)->toBeNull()
         // Build variables go by name only: no deployment snapshot is sealed.
-        ->and(array_keys($build->seal['env'] ?? ['names' => []]))->toBe(['names']);
+        ->and($build->seal?->env === null || ($build->seal->env->deployment === null && $build->seal->env->names !== null))->toBeTrue();
 
     dgLease($this->server);
     dgComplete($this->server, $build, ['outcome' => 'succeeded', 'build' => ['image' => '127.0.0.1:5000/apps/'.strtolower($this->service->public_id).'@'.DG_DIGEST, 'durationMs' => 21000]]);
@@ -243,7 +235,7 @@ test('the whole flow: read, draft, lint, pin, build, start, verified, use', func
         ->and($run->spec->probe->port)->toBe(8080)
         ->and($run->spec->probe->within)->toBe('90s')
         ->and(isset($run->spec->command))->toBeFalse()
-        ->and($run->seal)->toBe(['env' => ['values' => ['PORT' => '8080']]])
+        ->and($run->seal?->env?->values)->toBe(['PORT' => '8080'])
         ->and($run->server_id)->toBe($this->server->id);
 
     // The verification run's env is PORT only: no variables, no secrets.
@@ -275,11 +267,9 @@ test('the whole flow: read, draft, lint, pin, build, start, verified, use', func
 
     // The next deployment's build sends the stored Dockerfile inline.
     resolve(DeployEnvironment::class)->handle($this->production, $this->owner, AuditActor::system());
-    $deployBuild = DaemonTask::query()->where('type', DaemonTaskType::Build->value)->whereNotNull('deployment_id')->latest('id')->first();
+    $deployBuild = DaemonTask::query()->where('type', DaemonTaskType::Build->value)->whereNotNull('deployment_id')->latest('id')->sole();
 
-    if ($deployBuild instanceof DaemonTask) {
-        expect($deployBuild->spec->builder->dockerfile)->toBe($generation->dockerfile);
-    }
+    expect($deployBuild->spec->builder->dockerfile)->toBe($generation->dockerfile);
 });
 
 test('a failed build goes back to the model with the log tail, then fails after N repairs', function (): void {
@@ -345,12 +335,12 @@ test('lint refusals and unknown images are repaired without a build', function (
     $generation->refresh();
     expect($generation->status)->toBe(DockerfileGenerationStatus::Building)
         ->and($generation->attempt)->toBe(3)
-        ->and($generation->attempts[0]['outcome'])->toBe('lint')
-        ->and($generation->attempts[0]['message'])->toContain('not latest')
-        ->and($generation->attempts[0]['message'])->toContain('--network=host')
-        ->and($generation->attempts[0]['message'])->toContain('API_TOKEN')
-        ->and($generation->attempts[0]['message'])->toContain('VOLUME')
-        ->and($generation->attempts[1]['message'])->toContain('could not be found')
+        ->and($generation->attempts[0]?->outcome)->toBe('lint')
+        ->and($generation->attempts[0]?->message)->toContain('not latest')
+        ->and($generation->attempts[0]?->message)->toContain('--network=host')
+        ->and($generation->attempts[0]?->message)->toContain('API_TOKEN')
+        ->and($generation->attempts[0]?->message)->toContain('VOLUME')
+        ->and($generation->attempts[1]?->message)->toContain('could not be found')
         ->and(DaemonTask::query()->where('type', DaemonTaskType::Build->value)->count())->toBe(1);
 });
 

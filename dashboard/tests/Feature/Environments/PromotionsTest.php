@@ -342,7 +342,7 @@ test('"Also promote images" pins the source commit; the target deploy builds exa
 
     $promotion = prPromote($project, $staging, $production, images: [$app->public_id]);
 
-    expect($promotion->images[$app->public_id]['commitSha'])->toBe(str_repeat('a', 40));
+    expect($promotion->images[$app->public_id]?->commitSha)->toBe(str_repeat('a', 40));
 
     $result = resolve(DeployEnvironment::class)->handle($production, null, AuditActor::system());
 

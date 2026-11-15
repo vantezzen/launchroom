@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace App\Data\Security;
 
+use App\Enums\Security\FindingLevel;
+use App\Enums\Security\SecurityFindingStatus;
+use App\Enums\Security\Severity;
 use Spatie\LaravelData\Data;
 
 /**
@@ -21,8 +24,7 @@ final class FindingCardData extends Data
         public string $href,
         public string $advisory,
         public ?string $title,
-        /** `critical`, `high`, `medium`, `low` or `unknown`. */
-        public string $severity,
+        public Severity $severity,
         public ?float $cvss,
         public bool $knownExploited,
         public ?string $knownExploitedSince,
@@ -31,11 +33,9 @@ final class FindingCardData extends Data
         public string $package,
         public string $version,
         public ?string $fixedVersion,
-        /** `action_needed` or `worth_knowing`. */
-        public string $level,
+        public FindingLevel $level,
         public array $reasons,
-        /** `open` or `dismissed`. */
-        public string $status,
+        public SecurityFindingStatus $status,
         public string $firstSeenAt,
         public SecurityServiceRefData $service,
         public ?FindingInvestigationData $investigation,

@@ -27,8 +27,6 @@ final class InvestigationSummary
             return ['Checking the container now.'];
         }
 
-        $summary = $investigation->report['summary'] ?? [];
-
-        return is_array($summary) ? array_values(array_filter($summary, is_string(...))) : [];
+        return $investigation->report->summary ?? [];
     }
 }

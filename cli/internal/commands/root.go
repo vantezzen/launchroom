@@ -12,10 +12,10 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
-	"github.com/vantezzen/launchroom/cli/internal/api"
 	"github.com/vantezzen/launchroom/cli/internal/config"
 	"github.com/vantezzen/launchroom/cli/internal/exitcode"
 	"github.com/vantezzen/launchroom/cli/internal/output"
@@ -36,6 +36,8 @@ type App struct {
 	Hostname func() (string, error)
 	// RunCommand runs `launchroom run`'s child; tests replace it.
 	RunCommand func(ctx context.Context, argv []string, env []string, stdio Stdio) (int, error)
+	// Sleep waits between polls and retries (nil: real time).
+	Sleep func(context.Context, time.Duration) error
 
 	flags globalFlags
 	stdin *bufio.Reader
@@ -90,7 +92,30 @@ func (a *App) Root() *cobra.Command {
 		a.dbCmd(), a.volumeCmd(), a.securityCmd(), a.serviceCmd(),
 	)
 	root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error { return exitcode.New(exitcode.Usage, err) })
+	markRunErrors(root)
 	return root
+}
+
+// runError marks an error returned by a command's RunE. Every other error
+// Execute sees comes from cobra parsing the command line (unknown command,
+// wrong number of arguments, missing required flags): a usage error.
+type runError struct{ err error }
+
+func (e *runError) Error() string { return e.err.Error() }
+func (e *runError) Unwrap() error { return e.err }
+
+func markRunErrors(cmd *cobra.Command) {
+	if run := cmd.RunE; run != nil {
+		cmd.RunE = func(c *cobra.Command, args []string) error {
+			if err := run(c, args); err != nil {
+				return &runError{err}
+			}
+			return nil
+		}
+	}
+	for _, sub := range cmd.Commands() {
+		markRunErrors(sub)
+	}
 }
 
 // Execute runs the CLI with args and returns the process exit code.
@@ -124,28 +149,13 @@ func (a *App) Execute(ctx context.Context, args []string) int {
 		}
 		return exitcode.Interrupted
 	}
-	if isCobraUsage(err) {
+	var fromRun *runError
+	if !errors.As(err, &fromRun) && exitcode.Of(err) == exitcode.Error {
 		err = exitcode.New(exitcode.Usage, err)
 	}
 	return a.Printer.Fail(err)
 }
 
-func isCobraUsage(err error) bool {
-	var e *exitcode.Err
-	if errors.As(err, &e) {
-		return false
-	}
-	var a *api.Error
-	if errors.As(err, &a) {
-		return false
-	}
-	msg := err.Error()
-	return strings.HasPrefix(msg, "unknown command") || strings.HasPrefix(msg, "unknown flag") ||
-		strings.HasPrefix(msg, "accepts ") || strings.HasPrefix(msg, "requires at least") ||
-		strings.Contains(msg, "flag needs an argument") || strings.HasPrefix(msg, "invalid argument")
-}
-
-// readLine reads one line of input (prompts).
 func (a *App) readLine() (string, error) {
 	if a.stdin == nil {
 		a.stdin = bufio.NewReader(a.Stdin)

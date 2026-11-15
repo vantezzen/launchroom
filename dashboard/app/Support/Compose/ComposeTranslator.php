@@ -15,6 +15,8 @@ use App\Data\Blueprints\ServiceChoiceData;
 use App\Data\Blueprints\SkippedServiceData;
 use App\Data\Services\ConfigFile;
 use App\Data\Services\HealthcheckSettings;
+use App\Drivers\DatabaseEngines\ConnectionPart;
+use App\Drivers\DatabaseEngines\DatabaseEngineDriver;
 use App\Enums\Backups\VolumeConsistency;
 use App\Enums\BlueprintNoteKind as Note;
 use App\Enums\ConnectionStyle;
@@ -23,13 +25,17 @@ use App\Enums\HealthcheckType;
 use App\Enums\ServiceKind;
 use App\Enums\VariableExposure;
 use App\Enums\VariableType;
+use App\Enums\WorkloadCapability;
 use App\Support\Blueprints\BlueprintValidator;
 use App\Support\Canvas\ServiceGlyph;
 use App\Support\Connections\ProvidedVariables;
 use App\Support\Images\ImageReference;
+use App\Support\Protocol\Grammar;
 use App\Support\Services\ConfigFileRules;
+use App\Support\Services\VolumeMountRules;
 use App\Support\Slug;
 use App\Support\Variables\EnvFileParser;
+use App\Support\Variables\VariableKey;
 use InvalidArgumentException;
 use LogicException;
 
@@ -44,8 +50,8 @@ final class ComposeTranslator
 {
     public const int MAX_SERVICES = 50;
 
-    /** launchroomd's capability allow-list (docs/03 §8). */
-    public const array CAPABILITIES = BlueprintValidator::CAPABILITIES;
+    /** The project name when the file has no top-level `name:`. */
+    public const string UNNAMED = 'compose';
 
     /** Upstreams of the registry mirror (dev/zot, deploy/images/zot). */
     public const array REGISTRIES = ['docker.io', 'ghcr.io'];
@@ -138,49 +144,6 @@ final class ComposeTranslator
         6379 => 'Redis', 11211 => 'memcached', 27017 => 'MongoDB', 2222 => 'SSH',
     ];
 
-    /** Credentials of database images (docs/17 §2.3): role => [env names, export key]. */
-    private const array CREDENTIALS = [
-        'postgres' => [
-            'user' => [['POSTGRES_USER', 'POSTGRESQL_USERNAME'], 'PGUSER'],
-            'password' => [['POSTGRES_PASSWORD', 'POSTGRESQL_PASSWORD'], 'PGPASSWORD'],
-            'database' => [['POSTGRES_DB', 'POSTGRESQL_DATABASE'], 'PGDATABASE'],
-        ],
-        'mysql' => [
-            'user' => [['MYSQL_USER', 'MARIADB_USER'], 'MYSQL_USER'],
-            'password' => [['MYSQL_PASSWORD', 'MARIADB_PASSWORD', 'MYSQL_ROOT_PASSWORD', 'MARIADB_ROOT_PASSWORD'], 'MYSQL_PASSWORD'],
-            'database' => [['MYSQL_DATABASE', 'MARIADB_DATABASE'], 'MYSQL_DATABASE'],
-        ],
-        'redis' => [
-            'password' => [['REDIS_PASSWORD'], 'REDIS_PASSWORD'],
-        ],
-        'mongodb' => [
-            'user' => [['MONGO_INITDB_ROOT_USERNAME', 'MONGODB_ROOT_USER', 'MONGODB_USERNAME'], 'MONGOUSER'],
-            'password' => [['MONGO_INITDB_ROOT_PASSWORD', 'MONGODB_ROOT_PASSWORD', 'MONGODB_PASSWORD'], 'MONGOPASSWORD'],
-            'database' => [['MONGO_INITDB_DATABASE', 'MONGODB_DATABASE'], 'MONGODATABASE'],
-        ],
-        'clickhouse' => [
-            'user' => [['CLICKHOUSE_USER', 'CLICKHOUSE_ADMIN_USER'], 'CLICKHOUSE_USER'],
-            'password' => [['CLICKHOUSE_PASSWORD', 'CLICKHOUSE_ADMIN_PASSWORD'], 'CLICKHOUSE_PASSWORD'],
-            'database' => [['CLICKHOUSE_DB'], 'CLICKHOUSE_DATABASE'],
-        ],
-    ];
-
-    private const array USER_EXPORT = ['postgres' => 'PGUSER', 'mysql' => 'MYSQL_USER', 'redis' => 'REDIS_USER', 'mongodb' => 'MONGOUSER', 'clickhouse' => 'CLICKHOUSE_USER'];
-
-    private const array PASSWORD_EXPORT = ['postgres' => 'PGPASSWORD', 'mysql' => 'MYSQL_PASSWORD', 'redis' => 'REDIS_PASSWORD', 'mongodb' => 'MONGOPASSWORD', 'clickhouse' => 'CLICKHOUSE_PASSWORD'];
-
-    private const array DATABASE_EXPORT = ['postgres' => 'PGDATABASE', 'mysql' => 'MYSQL_DATABASE', 'redis' => 'REDIS_DATABASE', 'mongodb' => 'MONGODATABASE', 'clickhouse' => 'CLICKHOUSE_DATABASE'];
-
-    private const array HOST_EXPORT = ['postgres' => 'PGHOST', 'mysql' => 'MYSQLHOST', 'redis' => 'REDIS_HOST', 'mongodb' => 'MONGOHOST', 'clickhouse' => 'CLICKHOUSE_HOST'];
-
-    private const array PORT_EXPORT = ['postgres' => 'PGPORT', 'mysql' => 'MYSQLPORT', 'redis' => 'REDIS_PORT', 'mongodb' => 'MONGOPORT', 'clickhouse' => 'CLICKHOUSE_PORT'];
-
-    private const array ENGINE_PORTS = ['postgres' => 5432, 'mysql' => 3306, 'mariadb' => 3306, 'redis' => 6379, 'valkey' => 6379, 'mongodb' => 27017, 'clickhouse' => 8123];
-
-    private const string ENV_KEY = '/^[A-Za-z_][A-Za-z0-9_]{0,255}$/D';
-
-    private const string MOUNT_PATH = '/^\/[A-Za-z0-9._@+=,-]+(?:\/[A-Za-z0-9._@+=,-]+)*$/D';
-
     /** @var list<BlueprintNote> */
     private array $notes = [];
 
@@ -214,7 +177,7 @@ final class ComposeTranslator
     /**
      * @throws ComposeRejected
      */
-    public static function translate(string $yaml, TranslationOptions $options = new TranslationOptions): ComposeTranslation
+    public static function translate(string $yaml, TranslationOptions $options): ComposeTranslation
     {
         return self::translateData(ComposeYaml::parse($yaml), YamlLineIndex::of($yaml), $options);
     }
@@ -224,7 +187,7 @@ final class ComposeTranslator
      *
      * @throws ComposeRejected
      */
-    public static function translateData(array $data, YamlLineIndex $lines, TranslationOptions $options = new TranslationOptions): ComposeTranslation
+    public static function translateData(array $data, YamlLineIndex $lines, TranslationOptions $options): ComposeTranslation
     {
         return new self($options, $lines)->run($data);
     }
@@ -289,7 +252,7 @@ final class ComposeTranslator
 
         foreach ($this->drafts as $draft) {
             if ($draft->databaseImage !== null || $draft->bindMounts > 0) {
-                $choices[$draft->key] = new ServiceChoiceData($draft->composeName, $draft->databaseImage, $draft->databaseImage === null ? null : $draft->managed, $draft->bindMounts);
+                $choices[$draft->key] = new ServiceChoiceData($draft->composeName, $draft->databaseImage, $draft->databaseImage === null ? null : $draft->managed, $draft->bindMounts, $draft->databaseImage?->label());
             }
         }
 
@@ -297,10 +260,6 @@ final class ComposeTranslator
 
         return new ComposeTranslation($blueprint, $this->notes, $this->inputs($blueprint), array_values(array_unique($this->missingFiles)), $this->skipped, $choices);
     }
-
-    /* ------------------------------------------------------------------ */
-    /* Top level and service names */
-    /* ------------------------------------------------------------------ */
 
     /**
      * @param  array<array-key, mixed>  $data
@@ -449,10 +408,6 @@ final class ComposeTranslator
         }
     }
 
-    /* ------------------------------------------------------------------ */
-    /* What each service becomes */
-    /* ------------------------------------------------------------------ */
-
     private function classify(ServiceDraft $draft): void
     {
         $def = $draft->definition;
@@ -566,9 +521,9 @@ final class ComposeTranslator
         $draft->kind = ServiceKind::Database;
         $draft->managed = true;
         $draft->logo = $engine->value;
-        $versions = $this->options->engines[$engine->value]['versions'] ?? [];
-        $default = $this->options->engines[$engine->value]['default'] ?? ($versions[0] ?? '1');
-        $version = $default;
+        $driver = $this->options->engines->for($engine);
+        $versions = $driver->versions();
+        $version = $driver->defaultVersion();
 
         if ($requested !== null && $versions !== []) {
             if (in_array($requested, $versions, true)) {
@@ -705,7 +660,7 @@ final class ComposeTranslator
                 continue;
             }
 
-            if ($segment === '..' || preg_match('/^[A-Za-z0-9_.@+=,-]+$/D', $segment) !== 1) {
+            if ($segment === '..' || preg_match(Grammar::REL_PATH, $segment) !== 1) {
                 return null;
             }
 
@@ -757,10 +712,6 @@ final class ComposeTranslator
             }
         }
     }
-
-    /* ------------------------------------------------------------------ */
-    /* Fields */
-    /* ------------------------------------------------------------------ */
 
     private function fields(ServiceDraft $draft): void
     {
@@ -843,7 +794,7 @@ final class ComposeTranslator
 
         if ($draft->databaseImage instanceof DatabaseEngine && $draft->port === null) {
             // A database kept as a container: private, on its engine's port.
-            $draft->port = self::ENGINE_PORTS[$draft->databaseImage->value];
+            $draft->port = $this->options->engines->for($draft->databaseImage)->port();
         }
 
         if ($draft->kind === ServiceKind::Worker) {
@@ -1039,7 +990,7 @@ final class ComposeTranslator
                 $value = is_scalar($value) ? (string) $value : null;
                 $problems = $value === null ? ['It must be text.'] : ProvidedVariables::errors([(string) $key => $value]);
 
-                if ($problems !== [] || ! in_array($draft->kind, [ServiceKind::App, ServiceKind::Image], true) || count($draft->provides) >= ProvidedVariables::MAX) {
+                if ($problems !== [] || ! $draft->kind->isWeb() || count($draft->provides) >= ProvidedVariables::MAX) {
                     $draft->note(Note::Refused, "provides {$key}: ".($problems[0] ?? 'only app and image services provide variables, at most '.ProvidedVariables::MAX.'.'), "{$base}.{$key}", $this->lines->line("{$base}.{$key}"));
 
                     continue;
@@ -1092,10 +1043,6 @@ final class ComposeTranslator
             return null;
         }
     }
-
-    /* ------------------------------------------------------------------ */
-    /* Ports and health checks */
-    /* ------------------------------------------------------------------ */
 
     private function ports(ServiceDraft $draft): void
     {
@@ -1228,7 +1175,7 @@ final class ComposeTranslator
         $base = "services.{$draft->composeName}.healthcheck";
         $value = $draft->definition['healthcheck'] ?? null;
 
-        if (! in_array($draft->kind, [ServiceKind::App, ServiceKind::Image], true)) {
+        if (! $draft->kind->isWeb()) {
             if ($value !== null) {
                 $draft->note(Note::Ignored, 'Workers have no port to check, so launchroom watches the process.', $base, $this->lines->line($base));
             }
@@ -1387,10 +1334,6 @@ final class ComposeTranslator
         return null;
     }
 
-    /* ------------------------------------------------------------------ */
-    /* Variables */
-    /* ------------------------------------------------------------------ */
-
     private function environment(ServiceDraft $draft): void
     {
         $base = "services.{$draft->composeName}";
@@ -1433,7 +1376,7 @@ final class ComposeTranslator
             $line = $this->lines->line($entry['path']);
             $raw = $entry['raw'];
 
-            if (preg_match(self::ENV_KEY, $key) !== 1) {
+            if (! VariableKey::isValid($key)) {
                 $draft->note(Note::Refused, "{$key} isn’t a valid variable name.", $entry['path'], $line);
 
                 continue;
@@ -1626,7 +1569,7 @@ final class ComposeTranslator
                 continue;
             }
 
-            $engine = $database->database->engine === DatabaseEngine::Valkey ? 'redis' : $database->database->engine->value;
+            $engine = $this->options->engines->for($database->database->engine);
             $credentials = $this->credentials($database, $engine);
             $slug = $database->key;
 
@@ -1655,11 +1598,17 @@ final class ComposeTranslator
     /**
      * @return list<array{raw: string, resolved: string, export: string, role: string}>
      */
-    private function credentials(ServiceDraft $database, string $engine): array
+    private function credentials(ServiceDraft $database, DatabaseEngineDriver $engine): array
     {
         $credentials = [];
 
-        foreach (self::CREDENTIALS[$engine] ?? [] as $role => [$names, $export]) {
+        foreach ($engine->imageEnvAliases() as $role => $names) {
+            $export = $engine->exportedKey(ConnectionPart::from($role));
+
+            if ($export === null) {
+                continue;
+            }
+
             foreach ($names as $name) {
                 if (($database->rawEnv[$name] ?? '') !== '') {
                     $credentials[] = ['raw' => $database->rawEnv[$name], 'resolved' => $database->resolvedEnv[$name] ?? '', 'export' => $export, 'role' => $role];
@@ -1691,7 +1640,7 @@ final class ComposeTranslator
         return $credentials;
     }
 
-    private function databaseUrl(string $raw, string $resolved, ServiceDraft $database, string $engine): ?string
+    private function databaseUrl(string $raw, string $resolved, ServiceDraft $database, DatabaseEngineDriver $engine): ?string
     {
         foreach ([$raw, $resolved] as $candidate) {
             if (preg_match('~^([a-z][a-z0-9+.-]*)://(?:[^@/]*@)?([^:/?#@]+)(?::[^/?#]*)?(/[^?#]*)?(\?[^#]*)?$~iD', $candidate, $m) !== 1
@@ -1703,22 +1652,19 @@ final class ComposeTranslator
             $scheme = $m[1];
             $path = $m[3] ?? '';
             $query = $m[4] ?? '';
+            $ref = static fn (ConnectionPart $part): ?string => ($key = $engine->exportedKey($part)) === null ? null : "\${{{$slug}.{$key}}}";
+            $native = in_array(strtolower($scheme), $engine->nativeSchemes(), true) ? $ref(ConnectionPart::NativePort) : null;
+            $name = $ref(ConnectionPart::Database);
 
-            if ($engine === 'redis') {
-                return "{$scheme}://default:\${{{$slug}.REDIS_PASSWORD}}@\${{{$slug}.REDIS_HOST}}:\${{{$slug}.REDIS_PORT}}".(preg_match('#^/\d+$#', $path) === 1 ? $path : '').$query;
+            foreach ($engine->urlQuery() as $parameter => $value) {
+                if (preg_match('/(?:^\?|&)'.preg_quote($parameter, '/').'=/', $query) !== 1) {
+                    $query = ($query === '' ? '?' : $query.'&').$parameter.'='.$value;
+                }
             }
 
-            $port = self::PORT_EXPORT[$engine];
-
-            if ($engine === 'mongodb' && preg_match('/(?:^\?|&)authSource=/', $query) !== 1) {
-                // The generated user lives in the admin database.
-                $query = ($query === '' ? '?' : $query.'&').'authSource=admin';
-            } elseif ($engine === 'clickhouse' && preg_match('~^(?:clickhouse|tcp)$~i', $scheme) === 1) {
-                // The native protocol, not the HTTP interface.
-                $port = 'CLICKHOUSE_NATIVE_PORT';
-            }
-
-            return "{$scheme}://\${{{$slug}.".self::USER_EXPORT[$engine].'}}:${{'.$slug.'.'.self::PASSWORD_EXPORT[$engine].'}}@${{'.$slug.'.'.self::HOST_EXPORT[$engine].'}}:${{'.$slug.'.'.$port.'}}/${{'.$slug.'.'.self::DATABASE_EXPORT[$engine].'}}'.$query;
+            // Engines without users or named databases (Redis) keep the ACL default user and a numeric database.
+            return $scheme.'://'.($ref(ConnectionPart::User) ?? 'default').':'.$ref(ConnectionPart::Password).'@'.$ref(ConnectionPart::Host).':'.($native ?? $ref(ConnectionPart::Port))
+                .($name === null ? (preg_match('#^/\d+$#', $path) === 1 ? $path : '') : '/'.$name).$query;
         }
 
         return null;
@@ -1746,27 +1692,23 @@ final class ComposeTranslator
         return null;
     }
 
-    private function hostReference(string $resolved, ServiceDraft $database, string $engine): ?string
+    private function hostReference(string $resolved, ServiceDraft $database, DatabaseEngineDriver $engine): ?string
     {
         $value = strtolower($resolved);
         $slug = $database->key;
 
         foreach ($database->aliases as $alias) {
             if ($value === $alias) {
-                return "\${{{$slug}.".self::HOST_EXPORT[$engine].'}}';
+                return "\${{{$slug}.{$engine->exportedKey(ConnectionPart::Host)}}}";
             }
 
             if (preg_match('/^'.preg_quote($alias, '/').':\d+$/D', $value) === 1) {
-                return "\${{{$slug}.".self::HOST_EXPORT[$engine]."}}:\${{{$slug}.".self::PORT_EXPORT[$engine].'}}';
+                return "\${{{$slug}.{$engine->exportedKey(ConnectionPart::Host)}}}:\${{{$slug}.{$engine->exportedKey(ConnectionPart::Port)}}}";
             }
         }
 
         return null;
     }
-
-    /* ------------------------------------------------------------------ */
-    /* Commands, volumes, connections, resources */
-    /* ------------------------------------------------------------------ */
 
     /**
      * @return list<string>|null
@@ -1850,9 +1792,7 @@ final class ComposeTranslator
                 continue;
             }
 
-            if (preg_match(self::MOUNT_PATH, $target) !== 1 || strlen($target) > 255
-                || array_any(explode('/', $target), static fn (string $segment): bool => $segment === '.' || $segment === '..')
-                || array_any(['/proc', '/sys', '/dev', '/var/run/docker.sock', '/run/docker.sock'], static fn (string $forbidden): bool => $target === $forbidden || str_starts_with($target, $forbidden.'/'))) {
+            if (! VolumeMountRules::isMountable($target)) {
                 $draft->note(Note::Refused, "The mount path {$target} can’t be a volume.", $path, $line);
 
                 continue;
@@ -1992,7 +1932,7 @@ final class ComposeTranslator
                 continue;
             }
 
-            if ($target->kind === ServiceKind::Database || ($target->port !== null && in_array($target->kind, [ServiceKind::App, ServiceKind::Image], true))) {
+            if ($target->kind === ServiceKind::Database || ($target->port !== null && $target->kind->isWeb())) {
                 $draft->connections[$target->key] ??= ConnectionStyle::Url;
                 $draft->note(Note::Translated, $target->kind === ServiceKind::Database
                     ? "Connected to {$target->name} on the canvas (launchroom starts databases first)."
@@ -2031,14 +1971,14 @@ final class ComposeTranslator
             $name = strtoupper((string) preg_replace('/^CAP_/i', '', is_string($capability) ? trim($capability) : ''));
             $path = "{$base}.{$index}";
 
-            if (in_array($name, self::CAPABILITIES, true)) {
+            if (in_array($name, WorkloadCapability::values(), true)) {
                 $draft->capabilities[] = $name;
                 $draft->note(Note::Translated, "Capability {$name} is allowed.", $path, $this->lines->line($path));
 
                 continue;
             }
 
-            $draft->note(Note::Refused, "Capability {$name} is refused: services may only add ".implode(', ', self::CAPABILITIES).'.', $path, $this->lines->line($path));
+            $draft->note(Note::Refused, "Capability {$name} is refused: services may only add ".implode(', ', WorkloadCapability::values()).'.', $path, $this->lines->line($path));
         }
 
         $draft->capabilities = array_values(array_unique($draft->capabilities));
@@ -2157,18 +2097,14 @@ final class ComposeTranslator
         $draft->note(Note::Translated, "Memory limit {$draft->scaling->memoryMb} MB.", $path, $this->lines->line($path));
     }
 
-    /* ------------------------------------------------------------------ */
-    /* Project-level output */
-    /* ------------------------------------------------------------------ */
-
     /**
      * @param  array<array-key, mixed>  $data
      */
     private function projectName(array $data): string
     {
-        $name = $this->options->name ?? (is_string($data['name'] ?? null) ? $data['name'] : null) ?? 'compose';
+        $name = $this->options->name ?? (is_string($data['name'] ?? null) ? $data['name'] : null) ?? self::UNNAMED;
 
-        return mb_substr(trim($name) === '' ? 'compose' : trim($name), 0, 100);
+        return mb_substr(trim($name) === '' ? self::UNNAMED : trim($name), 0, 100);
     }
 
     /**

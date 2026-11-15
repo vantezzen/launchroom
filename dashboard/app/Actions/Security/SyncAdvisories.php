@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Security;
 
+use App\Data\Security\AdvisoryCursorData;
 use App\Enums\Security\AdvisoryFeed;
 use App\Jobs\Security\EvaluateSecurityFindingsJob;
 use App\Models\Security\AdvisoryFeedState;
@@ -63,7 +64,7 @@ final readonly class SyncAdvisories
         $now = CarbonImmutable::now();
         $fresh = $now->subHours(max(1, config()->integer('launchroom.security.osv_refresh_hours', 6)));
         $feed->forceFill(['last_attempt_at' => $now])->save();
-        $cursor = ! $only instanceof ImageInventory && ! $force && is_array($feed->cursor['after'] ?? null) ? $feed->cursor['after'] : null;
+        $cursor = ! $only instanceof ImageInventory && ! $force ? $feed->cursor?->after : null;
         $asked = 0;
         $records = 0;
 
@@ -82,7 +83,7 @@ final readonly class SyncAdvisories
                 $cursor = [$last['ecosystem'], $last['name'], $last['version']];
 
                 if (! $only instanceof ImageInventory) {
-                    $feed->forceFill(['cursor' => ['after' => $cursor]])->save();
+                    $feed->forceFill(['cursor' => new AdvisoryCursorData($cursor)])->save();
                 }
             }
         } catch (FeedUnavailable $e) {

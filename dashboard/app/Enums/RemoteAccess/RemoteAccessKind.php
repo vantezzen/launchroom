@@ -5,13 +5,14 @@ declare(strict_types=1);
 namespace App\Enums\RemoteAccess;
 
 use App\Enums\AuditAction;
+use App\Enums\Contracts\TaskBackedAccessKind;
 use App\Enums\DaemonFeature;
 use App\Enums\Permission;
 
 /**
  * What a temporary access opens (D61, D67, docs/03 §12).
  */
-enum RemoteAccessKind: string
+enum RemoteAccessKind: string implements TaskBackedAccessKind
 {
     /** SSH and SFTP into one replica's container. */
     case Ssh = 'ssh';

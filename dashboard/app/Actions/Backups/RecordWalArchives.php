@@ -8,6 +8,7 @@ use App\Enums\Backups\WalArchiveState;
 use App\Models\Backups\WalArchive;
 use App\Models\Placement;
 use App\Models\Server;
+use App\Support\Protocol\Grammar;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 
@@ -47,7 +48,7 @@ final readonly class RecordWalArchives
                 }
 
                 $archived = $this->time($status['lastArchivedAt'] ?? null);
-                $segment = is_string($status['lastSegment'] ?? null) && preg_match('/^[0-9A-F]{24}$/D', $status['lastSegment']) === 1 ? $status['lastSegment'] : null;
+                $segment = is_string($status['lastSegment'] ?? null) && preg_match(Grammar::WAL_SEGMENT, $status['lastSegment']) === 1 ? $status['lastSegment'] : null;
                 $message = is_string($status['message'] ?? null) ? mb_substr($status['message'], 0, 1024) : null;
 
                 $archive->forceFill([

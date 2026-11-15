@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Support;
 
+use App\Support\Protocol\Grammar;
+
 /**
  * Hostnames for routes (docs/05 §5): RFC 1123, lowercase, labels ≤ 63 chars,
  * no underscores (Let's Encrypt refuses them), total ≤ 253, no numeric TLD
@@ -12,7 +14,7 @@ namespace App\Support;
  */
 final class Hostname
 {
-    public const string PATTERN = '/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/D';
+    public const string PATTERN = Grammar::HOSTNAME;
 
     /**
      * The top-level label must not be all digits: that rejects IP literals

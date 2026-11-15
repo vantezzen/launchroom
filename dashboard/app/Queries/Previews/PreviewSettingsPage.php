@@ -5,12 +5,13 @@ declare(strict_types=1);
 namespace App\Queries\Previews;
 
 use App\Data\Canvas\EnvironmentData;
+use App\Data\Forms\NumberRangeData;
 use App\Data\Previews\CloneCandidateData;
 use App\Data\Previews\PreviewServiceData;
 use App\Data\Previews\PreviewSettingsData;
+use App\Data\Previews\PreviewSettingsInput;
 use App\Data\Services\DatabaseSource;
 use App\Enums\EnvironmentKind;
-use App\Enums\Permission;
 use App\Enums\PreviewStrategy;
 use App\Models\Environment;
 use App\Models\Previews\PreviewSettings;
@@ -19,6 +20,7 @@ use App\Models\ServiceInstance;
 use App\Models\User;
 use App\Services\Previews\PreviewDatabases;
 use App\Services\Previews\PreviewGate;
+use Illuminate\Support\Facades\Gate;
 
 /**
  * Props of project settings → Previews.
@@ -81,7 +83,9 @@ final readonly class PreviewSettingsPage
             targetBranches: $settings->target_branches,
             requiredLabel: $settings->required_label,
             maxConcurrent: $settings->max_concurrent,
+            maxConcurrentRange: NumberRangeData::of(PreviewSettingsInput::class, 'maxConcurrent'),
             expiryDays: $settings->expiry_days,
+            expiryDaysRange: NumberRangeData::of(PreviewSettingsInput::class, 'expiryDays'),
             forkPolicy: $settings->fork_policy,
             protection: $settings->protection,
             allowProductionClone: $settings->allow_production_clone,
@@ -90,14 +94,13 @@ final readonly class PreviewSettingsPage
             cloneLimitMb: intdiv($this->databases->limitBytes($project->team_id), 1024 * 1024),
             baseOptions: array_values($project->environments()
                 ->where('kind', '!=', EnvironmentKind::Preview->value)
-                ->orderByRaw("case kind when 'production' then 0 else 1 end")
-                ->orderBy('name')
+                ->inDisplayOrder()
                 ->get()
                 ->map(static fn (Environment $environment): EnvironmentData => EnvironmentData::fromEnvironment($environment))
                 ->all()),
             services: $services,
-            canManage: $user->hasTeamPermission($project->team_id, Permission::ManageProjects),
-            canAllowProductionClone: $user->hasTeamPermission($project->team_id, Permission::ManageBackups),
+            canManage: Gate::forUser($user)->allows('update', $project),
+            canAllowProductionClone: Gate::forUser($user)->allows('allowProductionClone', $settings),
         );
     }
 }

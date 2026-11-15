@@ -36,7 +36,7 @@ final readonly class CancelServerMove
                 throw DomainRuleViolation::conflict('This move is part of moving launchroom: cancel it in Settings → Move launchroom.');
             }
 
-            if (! in_array($move->status, [ServerMoveStatus::Running, ServerMoveStatus::Ready], true)) {
+            if (! $move->status->isUnderway()) {
                 throw DomainRuleViolation::conflict('This move has ended.');
             }
 

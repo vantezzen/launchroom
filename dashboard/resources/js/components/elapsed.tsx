@@ -1,11 +1,7 @@
 import type { ReactNode } from 'react';
 import { useNow } from '@/hooks/use-now';
-import { elapsedSeconds, formatDuration } from '@/lib/duration';
 import { cn } from '@/lib/utils';
-
-type ClockFormat = (seconds: number) => string;
-
-const compact: ClockFormat = (seconds) => formatDuration(seconds) ?? '';
+import { elapsedSeconds, formatDuration } from '@/lib/format';
 
 /**
  * A fixed duration ("1m 42s", design-system §8) with tabular figures, so
@@ -13,12 +9,10 @@ const compact: ClockFormat = (seconds) => formatDuration(seconds) ?? '';
  */
 export function Duration({
     seconds,
-    format = compact,
     fallback = null,
     className,
 }: {
     seconds: number | null;
-    format?: ClockFormat;
     fallback?: ReactNode;
     className?: string;
 }) {
@@ -31,7 +25,7 @@ export function Duration({
             dateTime={`PT${Math.max(0, Math.round(seconds))}S`}
             className={cn('tabular-nums', className)}
         >
-            {format(Math.max(0, Math.round(seconds)))}
+            {formatDuration(Math.max(0, Math.round(seconds)))}
         </time>
     );
 }
@@ -44,13 +38,11 @@ export function Duration({
 export function Elapsed({
     since,
     until = null,
-    format,
     fallback = null,
     className,
 }: {
     since: string | number | null;
     until?: string | number | null;
-    format?: ClockFormat;
     fallback?: ReactNode;
     className?: string;
 }) {
@@ -60,7 +52,6 @@ export function Elapsed({
     return (
         <Duration
             seconds={since === null ? null : elapsedSeconds(since, until, now)}
-            format={format}
             fallback={fallback}
             className={className}
         />

@@ -7,7 +7,7 @@ use App\Models\Team;
 use Tests\Support\Projects;
 
 /*
-| Shell v2: the home redirect, the team Activity page in the sidebar, the
+| The app shell: the home redirect, the team Activity page in the sidebar, the
 | project Logs tab and the dev-only design sheet.
 */
 
@@ -62,9 +62,4 @@ test('an environment of another project is not found under this project', functi
 
 test('the design sheet only exists in local development', function (): void {
     $this->actingAs($this->viewer)->get('/dev/design')->assertNotFound();
-});
-
-test('the settings dot appears only for instance owners when a release is cached', function (): void {
-    $this->actingAs($this->viewer)->get(route('activity.index'))
-        ->assertInertia(fn ($page) => $page->where('updateAvailable', false));
 });

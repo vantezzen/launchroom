@@ -6,6 +6,7 @@ namespace App\Data\ConfigAsCode;
 
 use App\Enums\ConfigAsCode\ConfigFileStatus;
 use App\Models\ConfigAsCode\EnvironmentConfigFile;
+use Closure;
 use Spatie\LaravelData\Data;
 
 /**
@@ -24,14 +25,17 @@ final class ManagedByFileData extends Data
         public ?string $repository,
         public ?string $commitSha,
         public ConfigFileStatus $status,
-        /** The file on GitHub at that commit, at the service's line. */
+        /** The file on its git host at that commit, at the service's line. */
         public ?string $editUrl,
         public array $fields,
         public array $variables,
         public array $domains,
     ) {}
 
-    public static function for(?EnvironmentConfigFile $record, string $servicePublicId): ?self
+    /**
+     * @param  Closure(int|null): (string|null)  $fileUrl  the file's web page at the record's commit, at a line
+     */
+    public static function for(?EnvironmentConfigFile $record, string $servicePublicId, Closure $fileUrl): ?self
     {
         $managed = $record?->managed->service($servicePublicId);
 
@@ -39,6 +43,6 @@ final class ManagedByFileData extends Data
             return null;
         }
 
-        return new self($record->path, $record->repository, $record->commit_sha, $record->status, $record->webUrl($managed->line), $managed->fields, $managed->variables, $managed->domains);
+        return new self($record->path, $record->repository, $record->commit_sha, $record->status, $fileUrl($managed->line), $managed->fields, $managed->variables, $managed->domains);
     }
 }

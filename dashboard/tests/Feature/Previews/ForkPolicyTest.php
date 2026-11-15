@@ -8,6 +8,7 @@ use App\Actions\Previews\ApprovePreview;
 use App\Actions\Promotions\PromoteChanges;
 use App\Actions\Variables\CreateVariable;
 use App\Data\Audit\AuditActor;
+use App\Data\Deployments\CommitNotDeployed;
 use App\Data\Git\CommitData;
 use App\Data\Promotions\PromoteChangesData;
 use App\Data\Variables\VariableInput;
@@ -97,7 +98,6 @@ test('a developer approves with the button; viewers can’t', function (): void 
     expect($preview->refresh()->approved_by)->toBe($developer->id)
         ->and($preview->environment_id)->not->toBeNull();
 
-    // Approving twice is refused.
     expect(fn () => resolve(ApprovePreview::class)->handle($preview, PreviewFlow::SHA_PR_1, $developer, AuditActor::system()))->toThrow(DomainRuleViolation::class);
 
     PreviewFlow::run($server);
@@ -105,7 +105,7 @@ test('a developer approves with the button; viewers can’t', function (): void 
 });
 
 test('fork previews get no secrets: project secrets resolve empty, their own database credentials stay', function (): void {
-    [, $server, $keypair, $project, , , $web] = PreviewFlow::project();
+    [, $server, , $project, , , $web] = PreviewFlow::project();
     PreviewSettings::forProject($project)->forceFill(['fork_policy' => ForkPolicy::Approval])->save();
     resolve(CreateVariable::class)->handle($project, $web, VariableInput::from([
         'key' => 'STRIPE_KEY', 'value' => 'sk_live_secret', 'type' => VariableType::Secret, 'targets' => [new VariableTargetData(allPreviews: true)],
@@ -191,7 +191,7 @@ test('an author whose permission lookup fails loses automatic fork previews for 
 });
 
 test('promotion into a fork preview never copies a secret; a value has to be entered (docs/09 R20)', function (): void {
-    [, $server, , $project, $production, , $web] = PreviewFlow::project();
+    [, , , $project, $production, , $web] = PreviewFlow::project();
     PreviewSettings::forProject($project)->forceFill(['fork_policy' => ForkPolicy::Approval])->save();
     resolve(CreateVariable::class)->handle($project, $web, VariableInput::from([
         'key' => 'API_TOKEN', 'value' => 'tok_prod', 'type' => VariableType::Secret, 'targets' => [VariableTargetData::environment($production->public_id)],
@@ -218,8 +218,7 @@ test('promotion into a fork preview never copies a secret; a value has to be ent
 
     $promote(['value' => 'tok_for_the_fork']);
     $row = Variable::query()->where('service_id', $web->id)->where('key', 'API_TOKEN_2')->whereHas('targets', static fn (Builder $query) => $query->where('environment_id', $fork->id))->sole();
-    expect(resolve(VariableStore::class)->plaintext($project, $row))->toBe('tok_for_the_fork')
-        ->and($server->id)->toBeInt();
+    expect(resolve(VariableStore::class)->plaintext($project, $row))->toBe('tok_for_the_fork');
 });
 
 test('discard and revert never recreate a withheld secret as a row of a fork preview', function (): void {
@@ -265,5 +264,5 @@ test('"production secrets must differ" blocks preview and push deploys, not only
 
     // A push to production is not deployed either.
     $instance = ServiceInstance::query()->where('environment_id', $production->id)->where('service_id', $web->id)->sole();
-    expect(resolve(DeployCommit::class)->handle($instance, new CommitData(str_repeat('d', 40), 'push', 'dev', null, 'dev'), 'refs/heads/main'))->toBeNull();
+    expect(resolve(DeployCommit::class)->handle($instance, new CommitData(str_repeat('d', 40), 'push', 'dev', null, 'dev'), 'refs/heads/main'))->toBeInstanceOf(CommitNotDeployed::class);
 });

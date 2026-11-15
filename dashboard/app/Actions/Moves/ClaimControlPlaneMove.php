@@ -7,6 +7,8 @@ namespace App\Actions\Moves;
 use App\Actions\Audit\RecordAuditEvent;
 use App\Data\Audit\AuditActor;
 use App\Data\Audit\AuditEntryData;
+use App\Data\Moves\ClaimMoveData;
+use App\Data\Moves\MoveReceiverData;
 use App\Enums\AuditAction;
 use App\Enums\Moves\ControlPlaneMoveStatus;
 use App\Exceptions\DomainRuleViolation;
@@ -14,7 +16,6 @@ use App\Models\Moves\ControlPlaneMove;
 use App\Services\Moves\MoveToken;
 use App\Support\Crypto\PublicKeyFormat;
 use Illuminate\Support\Facades\DB;
-use SensitiveParameter;
 
 /**
  * The new machine claims a move (docs/14 §13.4, `install.sh --move`): it
@@ -29,19 +30,18 @@ final readonly class ClaimControlPlaneMove
         private RecordAuditEvent $audit,
     ) {}
 
-    /**
-     * @param  array{hostname: string, arch: string, version: string|null}  $host
-     */
-    public function handle(ControlPlaneMove $move, #[SensitiveParameter] string $secret, string $publicKey, array $host, ?string $ip): ControlPlaneMove
+    public function handle(ControlPlaneMove $move, ClaimMoveData $claim, ?string $ip): ControlPlaneMove
     {
+        $publicKey = $claim->publicKey;
+
         if (PublicKeyFormat::parseX25519($publicKey) === null) {
             throw DomainRuleViolation::on('publicKey', 'Expected an x25519: public key.');
         }
 
-        return DB::transaction(function () use ($move, $secret, $publicKey, $host, $ip): ControlPlaneMove {
+        return DB::transaction(function () use ($move, $claim, $publicKey, $ip): ControlPlaneMove {
             $move = ControlPlaneMove::query()->whereKey($move->id)->lockForUpdate()->firstOrFail();
 
-            if (! hash_equals($move->token_hash, MoveToken::hashSecret($secret))) {
+            if (! hash_equals($move->token_hash, MoveToken::hashSecret($claim->secret))) {
                 throw DomainRuleViolation::forbidden('This move token is not valid.');
             }
 
@@ -63,12 +63,12 @@ final readonly class ClaimControlPlaneMove
 
             $move->receiver_public_key = $publicKey;
             $move->claim_code = MoveToken::claimCode($move->public_id, $publicKey);
-            $receiver = [
-                'hostname' => mb_substr($host['hostname'], 0, 64),
-                'arch' => mb_substr($host['arch'], 0, 16),
-                'version' => $host['version'] === null ? null : mb_substr($host['version'], 0, 32),
-                'address' => $ip,
-            ];
+            $receiver = new MoveReceiverData(
+                hostname: $claim->hostname,
+                arch: $claim->arch,
+                version: $claim->version,
+                address: $ip,
+            );
             $move->receiver = $receiver;
             $move->claimed_at = now();
             $move->receiver_seen_at = now();
@@ -79,7 +79,7 @@ final readonly class ClaimControlPlaneMove
                 actor: AuditActor::system(),
                 subjectType: 'instance',
                 subjectId: 'instance',
-                meta: array_filter(['move' => $move->public_id, 'hostname' => $receiver['hostname'], 'arch' => $receiver['arch'], 'ip' => $ip, 'key' => PublicKeyFormat::fingerprint($publicKey)]),
+                meta: array_filter(['move' => $move->public_id, 'hostname' => $receiver->hostname, 'arch' => $receiver->arch, 'ip' => $ip, 'key' => PublicKeyFormat::fingerprint($publicKey)]),
             ));
 
             return $move;

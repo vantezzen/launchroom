@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Support\Crypto;
 
+use App\Support\Protocol\Grammar;
+
 /**
  * Text formats of public keys shared with the daemon (protocol/SIGNING.md §1):
  * `ed25519:<std base64 of 32 bytes>`, `x25519:<…>`, and the human-facing
@@ -11,10 +13,6 @@ namespace App\Support\Crypto;
  */
 final class PublicKeyFormat
 {
-    public const string ED25519_PATTERN = '/^ed25519:[A-Za-z0-9+\/]{43}=$/D';
-
-    public const string X25519_PATTERN = '/^x25519:[A-Za-z0-9+\/]{43}=$/D';
-
     public static function formatEd25519(string $raw): string
     {
         return 'ed25519:'.base64_encode(self::assertLength($raw));
@@ -25,12 +23,12 @@ final class PublicKeyFormat
      */
     public static function parseEd25519(string $value): ?string
     {
-        return self::parse($value, self::ED25519_PATTERN, 'ed25519:');
+        return self::parse($value, Grammar::ED25519_KEY, 'ed25519:');
     }
 
     public static function parseX25519(string $value): ?string
     {
-        return self::parse($value, self::X25519_PATTERN, 'x25519:');
+        return self::parse($value, Grammar::X25519_KEY, 'x25519:');
     }
 
     /**

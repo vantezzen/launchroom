@@ -112,7 +112,6 @@ func TestAccessSpecValidateVolume(t *testing.T) {
 			t.Errorf("volume %s: accepted", name)
 		}
 	}
-	// Volume fields belong to volume access only.
 	ssh := vol()
 	ssh.Kind, ssh.AllowWrites = AccessSSH, false
 	if err := ssh.Validate(); err == nil || !strings.Contains(err.Error(), "only valid for volume access") {

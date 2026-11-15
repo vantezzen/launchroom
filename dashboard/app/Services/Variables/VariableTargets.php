@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Variables;
 
 use App\Data\Variables\VariableTargetData;
+use App\Data\Variables\VariableTargetRow;
 use App\Exceptions\DomainRuleViolation;
 use App\Models\Project;
 use App\Models\Variable;
@@ -18,7 +19,7 @@ final class VariableTargets
 {
     /**
      * @param  list<VariableTargetData>  $targets
-     * @return list<array{environment_id: int|null, all_previews: bool, branch_pattern: string|null}>
+     * @return list<VariableTargetRow>
      */
     public function resolve(Project $project, array $targets): array
     {
@@ -42,13 +43,9 @@ final class VariableTargets
                 throw DomainRuleViolation::on('targets', 'That environment does not belong to this project.');
             }
 
-            $row = [
-                'environment_id' => $target->environmentId === null ? null : $environments[$target->environmentId],
-                'all_previews' => $target->allPreviews,
-                'branch_pattern' => $target->branchPattern,
-            ];
+            $row = $target->environmentId === null ? VariableTargetRow::previews($target->branchPattern) : VariableTargetRow::environment($environments[$target->environmentId]);
 
-            if (! in_array($row, $rows, true)) {
+            if (! in_array($row, $rows)) {
                 $rows[] = $row;
             }
         }
@@ -57,7 +54,7 @@ final class VariableTargets
     }
 
     /**
-     * @param  list<array{environment_id: int|null, all_previews: bool, branch_pattern: string|null}>  $targets
+     * @param  list<VariableTargetRow>  $targets
      */
     public function assertNoOverlap(Project $project, ?int $serviceId, string $key, array $targets, ?int $ignoreVariableId = null): void
     {
@@ -73,11 +70,7 @@ final class VariableTargets
         foreach ($existing as $variable) {
             foreach ($variable->targets as $target) {
                 foreach ($targets as $row) {
-                    $same = $row['environment_id'] !== null
-                        ? $target->environment_id === $row['environment_id']
-                        : $target->all_previews && $target->branch_pattern === $row['branch_pattern'];
-
-                    if ($same) {
+                    if ($row->sameAs(VariableTargetRow::of($target))) {
                         throw DomainRuleViolation::conflict("{$key} is already defined for one of these environments. Edit that variable or change its targets.");
                     }
                 }

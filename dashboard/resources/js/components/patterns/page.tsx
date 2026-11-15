@@ -1,14 +1,13 @@
 import type { ComponentProps, ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 
-export type PageSize = 'wide' | 'narrow' | 'settings' | 'full';
+type PageSize = 'wide' | 'narrow' | 'settings' | 'full';
 
 /**
  * Gutters shared by every contained page (design-system §4.2):
  * 32·32·64 desktop, 24·24·48 tablet, 20·16·48 phone (top·sides·bottom).
  */
-export const pageGutters =
-    'px-4 pt-5 pb-12 sm:px-6 sm:pt-6 lg:px-8 lg:pt-8 lg:pb-16';
+const pageGutters = 'px-4 pt-5 pb-12 sm:px-6 sm:pt-6 lg:px-8 lg:pt-8 lg:pb-16';
 
 const widths: Record<Exclude<PageSize, 'full'>, string> = {
     wide: 'max-w-[1280px]',

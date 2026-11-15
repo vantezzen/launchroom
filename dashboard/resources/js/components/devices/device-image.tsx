@@ -1,3 +1,4 @@
+import { labels, vocabulary } from '@/lib/vocabulary';
 import { cn } from '@/lib/utils';
 import { DEVICE_ART } from './device-art.generated';
 
@@ -41,18 +42,7 @@ export const DEVICE_RENDER: Record<DeviceKind, Render> = {
     sbc: 'raspberry-pi',
 };
 
-export const DEVICE_LABEL: Record<DeviceKind, string> = {
-    cloud: 'Cloud server',
-    dedicated: 'Dedicated server',
-    tower: 'Tower PC',
-    minipc: 'Mini PC',
-    compact: 'Compact desktop',
-    sbc: 'Single-board computer',
-    nas: 'NAS',
-    laptop: 'Laptop',
-    vm: 'Virtual machine',
-    unknown: 'Server',
-};
+export const DEVICE_LABEL = labels(vocabulary.DeviceKind);
 
 const LED: Record<DeviceStatus, string | null> = {
     online: 'var(--device-led-ok)',
@@ -151,6 +141,3 @@ export function DeviceImage({
         </span>
     );
 }
-
-/** Alias of DeviceImage. */
-export const DeviceIllustration = DeviceImage;

@@ -1,28 +1,9 @@
+import { vocabulary } from '@/lib/vocabulary';
 import type {
     DeviceKind,
     DeviceStatus,
 } from '@/components/devices/device-image';
-
-/** Megabytes as "4.1 GB" / "512 MB" (one decimal under 10). */
-export function formatMb(mb: number | null | undefined): string | null {
-    if (mb === null || mb === undefined || !Number.isFinite(mb)) {
-        return null;
-    }
-
-    if (mb >= 1024 * 1024) {
-        const tb = mb / 1024 / 1024;
-
-        return `${tb < 10 ? tb.toFixed(1) : Math.round(tb)} TB`;
-    }
-
-    if (mb >= 1024) {
-        const gb = mb / 1024;
-
-        return `${gb < 10 ? gb.toFixed(1) : Math.round(gb)} GB`;
-    }
-
-    return `${Math.round(mb)} MB`;
-}
+import { formatCores, formatMemory } from '@/lib/format';
 
 /** "used / total GB" with one unit ("5.1 / 8 GB"). */
 export function formatUsedOf(usedMb: number, totalMb: number): string {
@@ -43,60 +24,12 @@ export function specParts(
     }
 
     return [
-        specs.cpus !== null
-            ? `${specs.cpus} ${specs.cpus === 1 ? 'core' : 'cores'}`
-            : null,
-        formatMb(specs.memoryMb),
-        formatMb(specs.diskTotalMb),
+        specs.cpus !== null ? formatCores(specs.cpus) : null,
+        specs.memoryMb !== null ? formatMemory(specs.memoryMb) : null,
+        specs.diskTotalMb !== null ? formatMemory(specs.diskTotalMb) : null,
     ].filter((part): part is string => part !== null);
 }
 
-/** Compact age: "now", "12s ago", "8 min ago", "3 h ago", "2 days ago". */
-export function shortAge(
-    iso: string | null,
-    now: number = Date.now(),
-): string | null {
-    if (iso === null) {
-        return null;
-    }
-
-    const seconds = Math.max(
-        0,
-        Math.round((now - new Date(iso).getTime()) / 1000),
-    );
-
-    if (seconds < 5) {
-        return 'now';
-    }
-
-    if (seconds < 60) {
-        return `${seconds}s ago`;
-    }
-
-    if (seconds < 3600) {
-        return `${Math.round(seconds / 60)} min ago`;
-    }
-
-    if (seconds < 86_400) {
-        return `${Math.round(seconds / 3600)} h ago`;
-    }
-
-    const days = Math.round(seconds / 86_400);
-
-    return `${days} ${days === 1 ? 'day' : 'days'} ago`;
-}
-
-/** Duration since a time without "ago": "8 min", "3 h". */
-export function shortDuration(
-    iso: string | null,
-    now: number = Date.now(),
-): string | null {
-    const age = shortAge(iso, now);
-
-    return age === null ? null : age.replace(/ ago$/, '');
-}
-
-/** Device art status from the server status. */
 export function deviceStatus(status: App.Enums.ServerStatus): DeviceStatus {
     switch (status) {
         case 'online':
@@ -135,7 +68,7 @@ export function fleetOrder(
     b: App.Data.Servers.ServerData,
 ): number {
     const rank = (server: App.Data.Servers.ServerData) =>
-        server.status === 'unreachable' || server.status === 'offline'
+        vocabulary.ServerStatus[server.status].isDown
             ? 0
             : server.status === 'pending_approval'
               ? 1

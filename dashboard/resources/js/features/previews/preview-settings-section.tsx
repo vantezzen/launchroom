@@ -13,18 +13,18 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
-import { formatArgv, parseArgv } from '@/features/projects/argv';
+import { formatArgv, parseArgv } from '@/lib/argv';
 import { OptionCards } from '@/components/patterns/option-cards';
 import { Section } from '@/components/patterns/section';
 import { UnsavedBar } from '@/components/patterns/unsaved-bar';
 import { Switch } from '@/components/ui/switch';
+import { bypass, settings, strategy } from '@/routes/projects/previews';
+import { formatBytes } from '@/lib/format';
 import {
     SettingsBody,
     SettingsCard,
     SettingsRow,
-} from '@/features/settings/settings-card';
-import { bypass, settings, strategy } from '@/routes/projects/previews';
-import { formatBytes } from './status';
+} from '@/components/settings/settings-card';
 
 type Settings = App.Data.Previews.PreviewSettingsData;
 
@@ -199,6 +199,7 @@ function ServiceStrategy({
                                             {candidate.backedUpAt
                                                 ? formatBytes(
                                                       candidate.sizeBytes,
+                                                      'size unknown',
                                                   )
                                                 : 'no backup'}
                                             )
@@ -504,8 +505,8 @@ export function PreviewSettingsSection({
                             <Input
                                 id="previews-max"
                                 type="number"
-                                min={1}
-                                max={50}
+                                min={current.maxConcurrentRange.min}
+                                max={current.maxConcurrentRange.max}
                                 className="w-24 tabular-nums"
                                 value={data.maxConcurrent}
                                 disabled={disabled}
@@ -528,8 +529,8 @@ export function PreviewSettingsSection({
                             <Input
                                 id="previews-expiry"
                                 type="number"
-                                min={0}
-                                max={90}
+                                min={current.expiryDaysRange.min}
+                                max={current.expiryDaysRange.max}
                                 className="w-24 tabular-nums"
                                 value={data.expiryDays}
                                 disabled={disabled}

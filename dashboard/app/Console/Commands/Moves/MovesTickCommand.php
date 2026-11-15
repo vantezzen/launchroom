@@ -4,8 +4,7 @@ declare(strict_types=1);
 
 namespace App\Console\Commands\Moves;
 
-use App\Actions\Moves\AdvanceControlPlaneMoves;
-use App\Actions\Moves\AdvanceServerMoves;
+use App\Actions\Moves\AdvanceMoves;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -14,10 +13,9 @@ use Illuminate\Console\Command;
 #[Description('Move server moves and the control-plane move forward (docs/14 §13)')]
 final class MovesTickCommand extends Command
 {
-    public function handle(AdvanceServerMoves $moves, AdvanceControlPlaneMoves $controlPlane): int
+    public function handle(AdvanceMoves $moves): int
     {
         $moves->handle();
-        $controlPlane->handle();
 
         return self::SUCCESS;
     }

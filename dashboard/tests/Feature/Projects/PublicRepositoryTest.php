@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-use App\Actions\Git\PollConnectionRef;
+use App\Actions\Git\PollTrackedRef;
 use App\Enums\AuditAction;
 use App\Enums\Git\GitAuthMethod;
 use App\Enums\Git\GitConnectionStatus;
@@ -13,6 +13,7 @@ use App\Models\AuditEvent;
 use App\Models\Git\GitConnection;
 use App\Models\Git\GitRepository;
 use App\Models\Team;
+use App\Services\Git\PublicGitRemote;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
@@ -217,8 +218,8 @@ test('polling a public repository asks for its one branch', function (): void {
     $this->actingAs($this->developer)->postJson(route('projects.import.add-url'), ['url' => 'github.com/acme/shop'])->assertOk();
     $connection = GitConnection::query()->sole();
 
-    expect(resolve(PollConnectionRef::class)->handle($connection, 0, 'refs/heads/main'))->toBeFalse()
-        ->and(resolve(PollConnectionRef::class)->handle($connection, 0, 'refs/heads/main'))->toBeTrue();
+    expect(resolve(PollTrackedRef::class)->handle($connection, 0, 'refs/heads/main'))->toBeFalse()
+        ->and(resolve(PollTrackedRef::class)->handle($connection, 0, 'refs/heads/main'))->toBeTrue();
 
     Http::assertSent(fn (Request $request): bool => str_contains($request->body(), 'ref-prefix refs/heads/main'));
     Event::assertDispatched(GitPushReceived::class, fn (GitPushReceived $event): bool => $event->after === $this->b);
@@ -342,4 +343,17 @@ test('another team’s connections are never used', function (): void {
         ->assertOk()
         ->assertJsonPath('repository', null)
         ->assertJson(fn ($json) => $json->where('problem', fn (string $problem): bool => str_contains($problem, 'connect GitHub'))->etc());
+});
+
+test('reading a remote’s refs gives up after the configured 10 seconds, not the client default', function (): void {
+    $timeouts = [];
+    Http::fake(function (Request $request, array $options) use (&$timeouts) {
+        $timeouts[] = $options['timeout'] ?? null;
+
+        return Http::response(...prLsRefs(['main' => $this->a]));
+    });
+
+    expect(resolve(PublicGitRemote::class)->refs('https://github.com/acme/shop.git')['refs'])->toHaveKey('refs/heads/main')
+        ->and(config('launchroom.git.refs_timeout_seconds'))->toBe(10)
+        ->and($timeouts)->toBe([10]);
 });

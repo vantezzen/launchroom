@@ -30,6 +30,8 @@ use Illuminate\Support\Carbon;
 #[Hidden(['token_hash'])]
 final class TeamInvitation extends Model
 {
+    public const string TOKEN_PREFIX = 'lr_inv_';
+
     use BelongsToTeam, HasPublicId;
 
     public static function publicIdPrefix(): string

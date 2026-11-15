@@ -45,7 +45,6 @@ func (b *toolBox) host(p string) string {
 	return filepath.Join(b.root, filepath.FromSlash(p))
 }
 
-// operands returns the args after "--" (failing when there is none).
 func (b *toolBox) operands(argv []string) []string {
 	for i, a := range argv {
 		if a == "--" {
@@ -203,7 +202,6 @@ func (b *toolBox) Run(_ context.Context, argv []string, stdin io.Reader, stdout 
 	return 0, "", nil
 }
 
-// RunEnv implements EnvRunner for role tests: records argv, env and stdin.
 type envRecorder struct {
 	mu    sync.Mutex
 	calls []envCall

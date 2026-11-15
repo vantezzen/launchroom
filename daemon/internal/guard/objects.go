@@ -10,16 +10,15 @@ import (
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/api/types/volume"
 
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/policy"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
 
 var (
-	reNetworkName = regexp.MustCompile(`^lr-[a-z0-9][a-z0-9_.-]{0,120}$`)
-	reVolumeName  = regexp.MustCompile(`^lr-[a-z0-9][a-z0-9_.-]{0,120}$`)
-	reImportRepo  = regexp.MustCompile(`^(lr-[a-z0-9][a-z0-9-]{0,62}|launchroom-local/volume-helper)(:[A-Za-z0-9][A-Za-z0-9._-]{0,63})?$`)
-	reDigestTag   = regexp.MustCompile(`^sha256:[a-f0-9]{64}$`)
-	reImportTag   = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
+	reImportRepo = regexp.MustCompile(`^(lr-[a-z0-9][a-z0-9-]{0,62}|launchroom-local/volume-helper)(:[A-Za-z0-9][A-Za-z0-9._-]{0,63})?$`)
+	reDigestTag  = regexp.MustCompile(`^sha256:[a-f0-9]{64}$`)
+	reImportTag  = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
 	// Dockerfile instructions an image import may apply (no RUN, ONBUILD, …).
 	reChange = regexp.MustCompile(`^(CMD|ENTRYPOINT|LABEL|ENV|USER|WORKDIR|EXPOSE) `)
 )
@@ -43,8 +42,8 @@ func (s *Server) createNetwork(w http.ResponseWriter, r *http.Request, q *reques
 		return deny("network fields %s are not allowed", strings.Join(f, ", "))
 	}
 	switch {
-	case !reNetworkName.MatchString(req.Name):
-		return deny("network name %q is not generated", truncate(req.Name, 64))
+	case !names.ReObjectName.MatchString(req.Name):
+		return deny("network name %q is not generated", state.Shorten(req.Name, 64))
 	case !isManaged(req.Labels):
 		return deny("networks must carry launchroom.managed=true and a valid launchroom.server label")
 	case req.Driver != "bridge":
@@ -97,7 +96,7 @@ func (s *Server) connectNetwork(w http.ResponseWriter, r *http.Request, q *reque
 			}
 			for _, a := range ep.Aliases {
 				if !reObject.MatchString(a) {
-					return deny("alias %q is not allowed", truncate(a, 64))
+					return deny("alias %q is not allowed", state.Shorten(a, 64))
 				}
 			}
 		}
@@ -110,7 +109,7 @@ func (s *Server) connectNetwork(w http.ResponseWriter, r *http.Request, q *reque
 		target, body = req.Container, &req
 	}
 	if !reObject.MatchString(target) {
-		return deny("container %q is not allowed", truncate(target, 64))
+		return deny("container %q is not allowed", state.Shorten(target, 64))
 	}
 	c, _, err := s.inspectContainer(ctx, q, target)
 	if err != nil {
@@ -122,7 +121,7 @@ func (s *Server) connectNetwork(w http.ResponseWriter, r *http.Request, q *reque
 	if cls := c.class(); cls != classAmbassador && cls != classWorkload {
 		return deny("%s is not attached to networks at runtime", c.Name)
 	}
-	if c.class() == classWorkload && strings.HasPrefix(n.Name, policy.SystemPrefix) {
+	if c.class() == classWorkload && strings.HasPrefix(n.Name, names.SystemPrefix) {
 		return deny("workloads cannot join system network %s", n.Name)
 	}
 	// The checked id, not the name it was given.
@@ -152,8 +151,8 @@ func (s *Server) createVolume(w http.ResponseWriter, r *http.Request, q *request
 		return deny("volume fields %s are not allowed (driver options can bind host paths)", strings.Join(f, ", "))
 	}
 	switch {
-	case !reVolumeName.MatchString(req.Name):
-		return deny("volume name %q is not generated", truncate(req.Name, 64))
+	case !names.ReObjectName.MatchString(req.Name):
+		return deny("volume name %q is not generated", state.Shorten(req.Name, 64))
 	case !isManaged(req.Labels):
 		return deny("volumes must carry launchroom.managed=true and a valid launchroom.server label")
 	case req.Driver != "" && req.Driver != "local":
@@ -178,7 +177,7 @@ func (s *Server) imageCreate(w http.ResponseWriter, r *http.Request, q *request)
 		}
 		ref := v.Get("fromImage") + "@" + v.Get("tag")
 		if !reDigestTag.MatchString(v.Get("tag")) || state.ImageRef(ref).Validate() != nil {
-			return deny("pull %q: images are pulled by digest (registry/repository@sha256:…)", truncate(ref, 128))
+			return deny("pull %q: images are pulled by digest (registry/repository@sha256:…)", state.Shorten(ref, 128))
 		}
 		return s.forward(w, r, q, q.apiPath("/images/create"), v, nil, "")
 	}
@@ -186,14 +185,14 @@ func (s *Server) imageCreate(w http.ResponseWriter, r *http.Request, q *request)
 		return deny("import: fromImage is not allowed")
 	}
 	if !reImportRepo.MatchString(v.Get("repo")) {
-		return deny("import: %q is not one of launchroomd's local images", truncate(v.Get("repo"), 64))
+		return deny("import: %q is not one of launchroomd's local images", state.Shorten(v.Get("repo"), 64))
 	}
 	if t := v.Get("tag"); t != "" && !reImportTag.MatchString(t) {
-		return deny("import: tag %q is not allowed", truncate(t, 64))
+		return deny("import: tag %q is not allowed", state.Shorten(t, 64))
 	}
 	for _, c := range v["changes"] {
 		if !reChange.MatchString(c) || strings.ContainsAny(c, "\n\r") {
-			return deny("import: change %q is not allowed", truncate(c, 64))
+			return deny("import: change %q is not allowed", state.Shorten(c, 64))
 		}
 	}
 	return s.forward(w, r, q, q.apiPath("/images/create"), v, r.Body, "application/x-tar")
@@ -203,14 +202,14 @@ func (s *Server) imageCreate(w http.ResponseWriter, r *http.Request, q *request)
 // registry or built locally (lr-…), never forced.
 func (s *Server) imageRemove(w http.ResponseWriter, r *http.Request, q *request) error {
 	ref := q.id
-	ok := strings.HasPrefix(ref, "lr-") || strings.HasPrefix(ref, "launchroom-local/")
+	ok := names.Managed(ref) || strings.HasPrefix(ref, names.LocalImagePrefix)
 	for _, p := range s.Policy().AllowedRegistries {
 		if strings.HasPrefix(ref, p) {
 			ok = true
 		}
 	}
 	if !ok {
-		return deny("image %s is not one of launchroom's images", truncate(ref, 96))
+		return deny("image %s is not one of launchroom's images", state.Shorten(ref, 96))
 	}
 	return s.forward(w, r, q, q.apiPath("/images/"+ref), q.query, nil, "")
 }

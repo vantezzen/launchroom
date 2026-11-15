@@ -95,23 +95,14 @@ const (
 	workerMB = 1536
 )
 
-// osReserveMB is what the OS, Docker and launchroom's own containers keep:
-// 256 MB plus 1/32 of the memory, at most 1 GB.
+// osReserveMB is what the OS, Docker and launchroom's own containers keep.
 func osReserveMB(totalMB int) int { return min(256+totalMB/32, 1024) }
 
-// headroomMB is the slack on top of the reserve: max(256 MB, 1/16).
 func headroomMB(totalMB int) int { return max(256, totalMB/16) }
 
-// PlanResources sizes buildkitd for a host (pure, tested).
-//
-//   - Memory: total − reserve − headroom, where the reserve is the larger of
-//     what is in use now and a floor (OS, the control plane on its host, up
-//     to 256 MB per declared workload); at least 512 MB, at most 3/4 of the
-//     host. Swap: 3/4 of the host's swap, at most twice the memory.
-//   - CPU: a low weight always (an idle host still builds at full speed); a
-//     hard cap of CPUs − 0.25 only on hosts with one or two CPUs.
-//   - I/O weight lowest, OOM score highest.
-//   - Parallelism, Node heap and framework workers follow the memory.
+// PlanResources sizes buildkitd for a host. The CPU cap applies only on
+// one- and two-CPU hosts: elsewhere the low weight is enough, and an idle
+// host still builds at full speed.
 func PlanResources(h HostFacts, o Overrides) Resources {
 	r := Resources{CPUShares: buildCPUShares, BlkioWeight: buildBlkioWeight, OOMScoreAdj: buildOOMScoreAdj}
 	total := h.MemoryMB
@@ -200,7 +191,6 @@ func GB(mb int) string {
 	return fmt.Sprintf("%.1f GB", g)
 }
 
-// cpuText formats a CPU cap ("0.75 CPU", "1.75 CPUs").
 func cpuText(c float64) string {
 	s := strings.TrimRight(strings.TrimRight(fmt.Sprintf("%.2f", c), "0"), ".")
 	if c <= 1 {

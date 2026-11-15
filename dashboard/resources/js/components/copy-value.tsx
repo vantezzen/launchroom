@@ -1,6 +1,4 @@
-import { Check, Copy } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { useClipboard } from '@/hooks/use-clipboard';
+import { CopyButton } from '@/components/copy-button';
 import { cn } from '@/lib/utils';
 
 /**
@@ -15,8 +13,6 @@ export function CopyValue({
     label: string;
     className?: string;
 }) {
-    const [copied, copy] = useClipboard();
-
     return (
         <div
             className={cn(
@@ -25,20 +21,11 @@ export function CopyValue({
             )}
         >
             <code className="min-w-0 flex-1 type-mono break-all">{value}</code>
-            <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="size-7 shrink-0"
-                aria-label={copied === value ? 'Copied' : `Copy ${label}`}
-                onClick={() => void copy(value)}
-            >
-                {copied === value ? (
-                    <Check className="size-4" />
-                ) : (
-                    <Copy className="size-4" />
-                )}
-            </Button>
+            <CopyButton
+                value={value}
+                label={label}
+                className="size-7 text-foreground [&_svg]:size-4"
+            />
         </div>
     );
 }

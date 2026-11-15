@@ -16,6 +16,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
 
 // Request signing: a fixed RFC 9421 profile. See protocol/SIGNING.md for the
@@ -41,7 +43,6 @@ const (
 var coveredComponents = []string{"@method", "@path", "@query", "content-digest", "date", "x-lr-nonce"}
 
 var (
-	keyIDPattern = regexp.MustCompile(`^(enroll|srv_[0-9A-HJKMNP-TV-Z]{26})$`)
 	// signatureInputPattern accepts exactly the profile produced by Signer.
 	signatureInputPattern = regexp.MustCompile(`^sig1=(\("@method" "@path" "@query" "content-digest" "date" "x-lr-nonce"\);created=([0-9]{1,12});keyid="([A-Za-z0-9_]{1,64})";alg="ed25519";tag="launchroomd-v1")$`)
 	signaturePattern      = regexp.MustCompile(`^sig1=:([A-Za-z0-9+/]{86}==):$`)
@@ -49,8 +50,15 @@ var (
 	noncePattern          = regexp.MustCompile(`^[A-Za-z0-9_-]{22}$`)
 )
 
-// ValidKeyID reports whether keyID is a valid request-signing keyid.
-func ValidKeyID(keyID string) bool { return keyIDPattern.MatchString(keyID) }
+// ValidKeyID reports whether keyID is a valid request-signing keyid:
+// "enroll" or a server id.
+func ValidKeyID(keyID string) bool {
+	return keyID == "enroll" || state.ServerID(keyID).Validate() == nil
+}
+
+// ValidNonce reports whether n has the shape of a request or probe nonce
+// (16 random bytes, unpadded base64url).
+func ValidNonce(n string) bool { return noncePattern.MatchString(n) }
 
 // Signer produces RFC 9421 signatures for daemon requests.
 type Signer struct {
@@ -299,7 +307,7 @@ func VerifyRequest(r *http.Request, body []byte, opts RequestVerifyOptions) (Ver
 		return fail("Content-Digest does not match body")
 	}
 	nonce := singleHeader(r.Header, NonceHeader)
-	if !noncePattern.MatchString(nonce) {
+	if !ValidNonce(nonce) {
 		return fail("malformed nonce")
 	}
 	dateStr := singleHeader(r.Header, "Date")

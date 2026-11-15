@@ -8,15 +8,16 @@ import type { StatusState } from '@/components/status';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
+import services from '@/routes/projects/services';
+import { IconTile, SaveRow, SettingsPage } from './section';
+import type { SettingsContext } from './settings-context';
 import {
     SettingsBody,
     SettingsCard,
     SettingsRow,
-} from '@/features/settings/settings-card';
-import services from '@/routes/projects/services';
-import { CopyButton } from './general-section';
-import { IconTile, SaveRow, SettingsPage } from './section';
-import type { SettingsContext } from './settings-context';
+} from '@/components/settings/settings-card';
+import { CopyButton } from '@/components/copy-button';
+import { formatBytes } from '@/lib/format';
 
 function Value({
     value,
@@ -272,9 +273,7 @@ function ContainerSettings({ context }: { context: SettingsContext }) {
 }
 
 function byteSize(text: string): string {
-    const bytes = new TextEncoder().encode(text).length;
-
-    return bytes >= 1024 ? `${(bytes / 1024).toFixed(1)} KiB` : `${bytes} B`;
+    return formatBytes(new TextEncoder().encode(text).length);
 }
 
 /**

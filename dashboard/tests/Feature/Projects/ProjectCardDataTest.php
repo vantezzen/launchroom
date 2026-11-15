@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 use App\Enums\DeploymentFailureClass;
 use App\Enums\DeploymentStatus;
+use App\Enums\DeploymentStepName;
+use App\Enums\DeploymentStepStatus;
 use App\Enums\TeamRole;
 use App\Models\CanvasLayout;
 use App\Models\Deployment;
+use App\Models\DeploymentStep;
 use App\Models\Project;
 use App\Models\Team;
 use App\Queries\DeploymentStats;
@@ -31,7 +34,6 @@ test('projects get palette slots in creation order, reusing the least-used slot'
     // Slot 3 is freed (its project moved to 1): the next project takes 3.
     Project::query()->where('team_id', $team->id)->where('color_slot', 3)->update(['color_slot' => 1]);
     expect(Projects::create($team, 'next')->color_slot)->toBe(3)
-        // Another team starts at 0.
         ->and(Projects::create(Team::factory()->create(), 'other')->color_slot)->toBe(0);
 });
 
@@ -122,7 +124,7 @@ test('deployment stats count the week, failures and medians per service', functi
         ->and($summary->medianDurationSeconds)->not->toBeNull()
         ->and($summary->services)->toHaveCount(2);
 
-    Deployment::query()->whereKey($web->id)->update(['status' => DeploymentStatus::Failed->value, 'failure_class' => DeploymentFailureClass::BuildError->value]);
+    Deployment::query()->whereKey($web->id)->update(['status' => DeploymentStatus::Failed->value, 'failure_class' => DeploymentFailureClass::BuildError->value, 'went_live_at' => null]);
     $summary = $stats->summary($world->team->id, [$world->production->id], $world->web->id);
 
     expect($summary->weekTotal)->toBe(1)
@@ -153,7 +155,11 @@ test('the deployment pages expose stats, build history and explained failures', 
     Deployment::query()->whereKey($deployment->id)->update([
         'status' => DeploymentStatus::Failed->value,
         'failure_class' => DeploymentFailureClass::HealthTimeout->value,
-        'failure_message' => 'The new version did not become healthy in time: connection refused; the app listens on 5173, not 80',
+        'failure_message' => 'The new version did not become healthy in time: connection refused. The app listens on 5173, not 80.',
+    ]);
+    DeploymentStep::query()->updateOrCreate(['deployment_id' => $deployment->id, 'name' => DeploymentStepName::Health], [
+        'status' => DeploymentStepStatus::Failed,
+        'meta' => ['message' => 'The app listens on 5173, not 80.', 'portHint' => 'wrong_port', 'listening' => [5173], 'port' => 80],
     ]);
     $viewer = $world->member(TeamRole::Viewer);
 

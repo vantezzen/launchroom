@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Services\Audit;
 
+use App\Enums\Http\WebhookPostFailure;
+use App\Services\Http\Exceptions\WebhookPostFailed;
 use RuntimeException;
 
 /**
@@ -15,6 +17,18 @@ final class AuditDeliveryFailed extends RuntimeException
     public static function because(string $message): self
     {
         return new self($message);
+    }
+
+    public static function from(WebhookPostFailed $e, bool $allowPrivateNetwork): self
+    {
+        return match ($e->failure) {
+            WebhookPostFailure::UnsafeUrl => self::because($allowPrivateNetwork
+                ? 'This address is not allowed.'
+                : 'This address is not allowed: it must be https and reachable on the public internet.'),
+            WebhookPostFailure::ResponseTooLarge => self::because('The destination answered with an unexpectedly large response.'),
+            WebhookPostFailure::Unreachable, WebhookPostFailure::Failed => self::because("Could not reach {$e->host}."),
+            WebhookPostFailure::Status => self::status((int) $e->status),
+        };
     }
 
     public static function status(int $status): self

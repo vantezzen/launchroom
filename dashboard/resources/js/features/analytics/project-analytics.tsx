@@ -2,10 +2,8 @@ import { Link } from '@inertiajs/react';
 import { useQuery } from '@tanstack/react-query';
 import { BarChart3, ScrollText, TriangleAlert } from 'lucide-react';
 import { useMemo } from 'react';
-import { formatCompact } from '@/components/charts/format';
 import { StackedBars } from '@/components/charts/stacked-bars';
 import { StatTile } from '@/components/charts/stat-tile';
-import type { ChartDrill } from '@/components/charts/chart-drill';
 import { Logo } from '@/components/logo';
 import { EmptyState } from '@/components/patterns/empty-state';
 import { MetaLine } from '@/components/patterns/meta-line';
@@ -16,33 +14,27 @@ import {
 } from '@/features/analytics/analytics-header';
 import {
     agentRows,
-    formatShare,
     pathRows,
     referrerRows,
     share,
     statusSeries,
 } from '@/features/analytics/shape';
 import type { ShareRow } from '@/features/analytics/shape';
-import {
-    delta,
-    deployMarkers,
-    formatErrorRate,
-} from '@/features/metrics/format';
-import { requestJson } from '@/features/projects/http';
+import { delta, deployMarkers } from '@/features/metrics/format';
+import { requestJson } from '@/lib/http';
+import { logsHref } from '@/lib/links';
 import { useObserveScope } from '@/hooks/use-observe-scope';
 import {
     formatWindow,
     RANGE_SETS,
     rangeOptions,
     rangeWords,
-    withScope,
 } from '@/lib/observe-scope';
 import { cn } from '@/lib/utils';
-import {
-    analytics as analyticsRoute,
-    logs as logsPage,
-} from '@/routes/projects';
+import { analytics as analyticsRoute } from '@/routes/projects';
 import { index as securityRoute } from '@/routes/security';
+import { formatCompact, formatShare } from '@/lib/format';
+import type { ChartDrill } from '@/lib/observe-scope';
 
 type Analytics = App.Data.Analytics.AnalyticsData;
 type Split = App.Data.Analytics.AnalyticsSplitData;
@@ -173,7 +165,6 @@ export function ProjectAnalytics({
                         }).url + '#firewall'
                     }
                     drill={(span) => {
-                        const logs = logsPage([project, environment]).url;
                         const name = serviceName
                             ? `service:${/\s/.test(serviceName) ? `"${serviceName}"` : serviceName} `
                             : '';
@@ -181,7 +172,9 @@ export function ProjectAnalytics({
                         return [
                             {
                                 label: `Logs from ${formatWindow(span)}`,
-                                href: withScope(logs, {
+                                href: logsHref({
+                                    project,
+                                    environment,
                                     service: selected,
                                     window: span,
                                 }),
@@ -189,10 +182,12 @@ export function ProjectAnalytics({
                             },
                             {
                                 label: `Errors from ${formatWindow(span)}`,
-                                href: withScope(
-                                    `${logs}?q=${encodeURIComponent(`${name}level:error`)}`,
-                                    { window: span },
-                                ),
+                                href: logsHref({
+                                    project,
+                                    environment,
+                                    q: `${name}level:error`,
+                                    window: span,
+                                }),
                                 icon: TriangleAlert,
                             },
                         ];
@@ -253,7 +248,7 @@ function Report({
                     label="Server errors"
                     value={
                         totals.errorRatePct !== null
-                            ? formatErrorRate(totals.errorRatePct)
+                            ? formatShare(totals.errorRatePct)
                             : null
                     }
                     delta={delta(
@@ -572,7 +567,7 @@ function SplitList({
                                         {formatCompact(row.requests)}
                                         {formatShare(pct)}
                                         {row.errorRatePct
-                                            ? `${formatErrorRate(row.errorRatePct)} errors`
+                                            ? `${formatShare(row.errorRatePct)} errors`
                                             : null}
                                     </MetaLine>
                                 </span>

@@ -6,6 +6,7 @@ namespace App\Queries\Security;
 
 use App\Data\Security\ServiceFirewallData;
 use App\Data\Security\WafExclusionData;
+use App\Enums\Security\WafMode;
 use App\Models\Security\SecurityFinding;
 use App\Models\Security\SecurityInvestigation;
 use App\Models\Security\WafExclusion;
@@ -54,11 +55,11 @@ final readonly class ServiceFirewall
         $gate = Gate::forUser($user);
         $networks = $gate->allows('viewClientNetworks', [SecurityFinding::class, $instance->team]);
         $watching = $this->waf->watching($instance->team_id, $refs, $instance->id);
-        $edges = $instance->waf_mode->value === 'off' ? [] : $this->waf->edges($instance->team_id);
+        $edges = $instance->waf_mode === WafMode::Off ? [] : $this->waf->edges($instance->team_id);
         $ruleSet = null;
 
         foreach ($instance->team->servers()->whereNotNull('waf_status')->get() as $server) {
-            $ruleSet ??= is_string($server->waf_status['ruleSet'] ?? null) ? $server->waf_status['ruleSet'] : null;
+            $ruleSet ??= $server->waf_status?->ruleSet;
         }
 
         return new ServiceFirewallData(

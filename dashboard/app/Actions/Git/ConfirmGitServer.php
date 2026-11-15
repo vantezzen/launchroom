@@ -10,9 +10,9 @@ use App\Data\Audit\AuditEntryData;
 use App\Enums\AuditAction;
 use App\Enums\Git\GitConnectionStatus;
 use App\Exceptions\DomainRuleViolation;
+use App\Exceptions\Git\GitConnectionUnusable;
 use App\Models\Git\GitConnection;
 use App\Models\Git\GitRepository;
-use App\Services\Git\Exceptions\GitConnectionUnusable;
 use App\Services\Git\Providers\PlainGitProvider;
 use App\Support\Git\GitServerBranches;
 

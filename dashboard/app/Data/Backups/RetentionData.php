@@ -58,9 +58,6 @@ final class RetentionData extends Data
         return new self(keepDaily: 7);
     }
 
-    /**
-     * Volumes (any persistent environment): 7 daily, 4 weekly.
-     */
     public static function volume(): self
     {
         return new self(keepDaily: 7, keepWeekly: 4);
@@ -89,8 +86,6 @@ final class RetentionData extends Data
     }
 
     /**
-     * restic forget flags.
-     *
      * @return list<string>
      */
     public function resticFlags(): array

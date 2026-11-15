@@ -25,9 +25,6 @@ final class PasswordConfirmationThrottle
     public const int DECAY_SECONDS = 60;
 
     /**
-     * Checks $password for $user; on failure counts an attempt and throws a
-     * validation error on `password`.
-     *
      * @throws ValidationException
      */
     public static function confirm(Request $request, User $user, #[SensitiveParameter] ?string $password): void

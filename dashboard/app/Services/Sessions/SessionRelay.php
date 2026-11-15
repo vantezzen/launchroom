@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Sessions;
 
+use App\Broadcasting\Channel;
 use App\Data\Protocol\ProtocolDocument;
 use App\Data\Protocol\ProtocolJson;
 use App\Data\Protocol\V1\NudgeConfig;
@@ -50,12 +51,10 @@ final readonly class SessionRelay
      */
     public function authorize(InteractiveSession $session, string $socketId): ?string
     {
-        return $this->nudger->authorize($socketId, 'private-'.$session->channelName());
+        return $this->nudger->authorize($socketId, Channel::Session->wire($session->public_id));
     }
 
     /**
-     * Sends one signed command to the session's server; returns its op id.
-     *
      * @throws RuntimeException when Reverb can't be reached
      */
     public function send(InteractiveSession $session, SessionCommandData $command, ?string $op = null): string

@@ -23,7 +23,6 @@ use App\Models\Project;
 use App\Models\Team;
 use App\Models\User;
 use App\Services\Git\GitProviders;
-use App\Services\Git\Providers\GiteaProvider;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -40,7 +39,7 @@ use Illuminate\Console\Command;
 #[Description('Local dev only: connect the dev Forgejo, import a repository, report deployments and previews')]
 final class DevGitProviderCommand extends Command
 {
-    public function handle(StartGitProviderConnection $connect, ImportRepository $import, DeployEnvironment $deploy, UpdatePreviewSettings $previews, GitProviders $providers, GiteaProvider $gitea): int
+    public function handle(StartGitProviderConnection $connect, ImportRepository $import, DeployEnvironment $deploy, UpdatePreviewSettings $previews, GitProviders $providers): int
     {
         if (! app()->environment('local')) {
             $this->components->error('This command only runs in the local dev environment.');
@@ -62,7 +61,7 @@ final class DevGitProviderCommand extends Command
 
         return match ($this->argument('step')) {
             'connect' => $this->connect($connect, $team, $owner, $url),
-            'import' => $this->import($import, $deploy, $previews, $providers, $gitea, $team, $owner, $url, $name),
+            'import' => $this->import($import, $deploy, $previews, $providers, $team, $owner, $url, $name),
             'status' => $this->status($team, $name),
             default => self::INVALID,
         };
@@ -85,7 +84,7 @@ final class DevGitProviderCommand extends Command
         return self::SUCCESS;
     }
 
-    private function import(ImportRepository $import, DeployEnvironment $deploy, UpdatePreviewSettings $previews, GitProviders $providers, GiteaProvider $gitea, Team $team, User $owner, string $url, string $name): int
+    private function import(ImportRepository $import, DeployEnvironment $deploy, UpdatePreviewSettings $previews, GitProviders $providers, Team $team, User $owner, string $url, string $name): int
     {
         $connection = GitConnection::query()->where('team_id', $team->id)->where('base_url', rtrim($url, '/'))->first();
         $fullName = is_string($this->option('repository')) ? $this->option('repository') : '';
@@ -98,7 +97,7 @@ final class DevGitProviderCommand extends Command
 
         $repository = null;
 
-        foreach ($gitea->searchConnection($connection, basename($fullName)) as $candidate) {
+        foreach ($providers->connection(GitProviderKind::Gitea)->searchConnection($connection, basename($fullName)) as $candidate) {
             if ($candidate->full_name === $fullName) {
                 $repository = $candidate;
             }

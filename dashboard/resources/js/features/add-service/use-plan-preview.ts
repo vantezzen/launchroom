@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { requestJson } from '@/features/projects/http';
+import { requestJson } from '@/lib/http';
 
 type Preview = App.Data.Canvas.PlanPreviewData;
 

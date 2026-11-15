@@ -132,5 +132,5 @@ test('every failing rule is listed in order, the first is shown', function (): v
     $verdict = FindingRules::evaluate(findingFacts(['scope' => 'dev', 'severity' => Severity::Low, 'fixed' => false, 'public' => false]));
 
     expect($verdict->reasons)->toBe([FindingReason::Dev, FindingReason::LowSeverity, FindingReason::NoFix, FindingReason::NotPublic])
-        ->and($verdict->checks[1])->toBe(['rule' => 'A2', 'passed' => false, 'label' => 'Development dependency (pnpm-lock.yaml)']);
+        ->and($verdict->checks[1]->toArray())->toBe(['rule' => 'A2', 'passed' => false, 'label' => 'Development dependency (pnpm-lock.yaml)']);
 });

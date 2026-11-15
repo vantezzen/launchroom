@@ -18,7 +18,8 @@ use App\Data\Services\CreateServiceData;
 use App\Enums\ConnectionMode;
 use App\Enums\ConnectionStyle;
 use App\Enums\DaemonTaskType;
-use App\Enums\Previews\PreviewProvider;
+use App\Enums\Git\GitProviderKind;
+use App\Enums\Git\PullRequestAction;
 use App\Enums\ServiceKind;
 use App\Models\DaemonTask;
 use App\Models\Environment;
@@ -28,8 +29,6 @@ use App\Models\Project;
 use App\Models\Server;
 use App\Models\Service;
 use App\Models\Team;
-use GuzzleHttp\Promise\PromiseInterface;
-use Illuminate\Support\Facades\Http;
 
 /**
  * Builders for preview environment tests: a project with a plain-git app
@@ -49,11 +48,7 @@ final class PreviewFlow
         Projects::useTestKek();
         config(['launchroom.git.plain_sources' => true, 'launchroom.git.insecure_hosts' => ['git-fixtures'], 'launchroom.domains.localhost' => true]);
 
-        Http::fake([
-            'http://git-fixtures:8080/*' => static fn (): PromiseInterface => Http::response(
-                self::pkt("# service=git-upload-pack\n").'0000'.self::pkt(self::SHA_MAIN." HEAD\0multi_ack side-band-64k\n").self::pkt(self::SHA_MAIN." refs/heads/main\n").'0000',
-            ),
-        ]);
+        GitFixtures::fake(self::SHA_MAIN);
     }
 
     /**
@@ -98,11 +93,11 @@ final class PreviewFlow
     public static function event(Project $project, string $action = 'opened', array $overrides = []): Preview
     {
         return resolve(SyncPullRequest::class)->handle($project, new PullRequestData(...[
-            'provider' => PreviewProvider::Git,
+            'provider' => GitProviderKind::Git,
             'installationId' => null,
             'repositoryId' => 0,
             'repositoryName' => 'fixtures/node-hello',
-            'action' => $action,
+            'action' => PullRequestAction::from($action),
             'number' => 7,
             'title' => 'Add login',
             'headSha' => self::SHA_PR_1,
@@ -147,10 +142,5 @@ final class PreviewFlow
 
             Projects::report($server);
         }
-    }
-
-    private static function pkt(string $line): string
-    {
-        return sprintf('%04x', strlen($line) + 4).$line;
     }
 }

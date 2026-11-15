@@ -19,6 +19,7 @@ use App\Data\Blueprints\ProjectBlueprint;
 use App\Data\Canvas\AddServiceData;
 use App\Data\Services\AddVolumeData;
 use App\Data\Services\BuildSettings;
+use App\Data\Services\ConnectionVariableData;
 use App\Data\Services\DeploySettings;
 use App\Data\Services\ScalingSettings;
 use App\Data\Services\UpdateServiceSettingsData;
@@ -45,7 +46,6 @@ use App\Support\Canvas\ServiceGlyph;
 use App\Support\Variables\GeneratedValues;
 use App\Support\Variables\VariableReference;
 use App\Support\Variables\VariableReferences;
-use Illuminate\Support\Facades\DB;
 use Spatie\LaravelData\Optional;
 
 /**
@@ -92,7 +92,8 @@ final readonly class ApplyBlueprint
             throw DomainRuleViolation::on('repository', 'Pick the repository to build from.');
         }
 
-        return DB::transaction(function () use ($project, $environment, $blueprint, $repository, $branch, $user, $actor): array {
+        // One save-time variable check for the whole blueprint, after every row exists.
+        return $this->variables->write($project, function () use ($project, $environment, $blueprint, $repository, $branch, $user, $actor): array {
             $positions = $this->positions($environment, $blueprint);
             $services = [];
             $order = [ServiceKind::Database, ServiceKind::App, ServiceKind::Image, ServiceKind::Worker];
@@ -147,15 +148,15 @@ final readonly class ApplyBlueprint
             $model = $this->addService->handle($project, $environment, AddServiceData::from([
                 'name' => $service->name,
                 'kind' => $service->kind,
-                'repository' => $service->kind === ServiceKind::App ? $repository : null,
-                'branch' => $service->kind === ServiceKind::App ? $branch : null,
-                'rootDirectory' => $service->kind === ServiceKind::App && $service->build instanceof BlueprintBuild && $service->build->context !== '' ? $service->build->context : null,
+                'repository' => $repository,
+                'branch' => $branch,
+                'rootDirectory' => $service->build instanceof BlueprintBuild && $service->build->context !== '' ? $service->build->context : null,
                 'image' => $service->image,
-                'port' => in_array($service->kind, [ServiceKind::App, ServiceKind::Image], true) ? $service->port : null,
+                'port' => $service->port,
                 'engine' => $service->database?->engine,
                 'version' => $service->database?->version,
                 'parentServiceId' => $service->parent !== null ? ($created[$service->parent]->public_id ?? null) : null,
-                'startCommand' => $service->kind === ServiceKind::Worker ? $service->startCommand : null,
+                'startCommand' => $service->startCommand,
                 'position' => $position,
                 'connectTo' => null,
             ]), $user, $actor);
@@ -169,7 +170,7 @@ final readonly class ApplyBlueprint
 
         if ($service->provides !== []) {
             $model->forceFill(['connection_variables' => array_map(
-                static fn (BlueprintVariable $variable): array => ['key' => $variable->key, 'value' => $variable->value],
+                static fn (BlueprintVariable $variable): ConnectionVariableData => new ConnectionVariableData($variable->key, $variable->value),
                 $service->provides,
             )])->save();
         }
@@ -238,7 +239,6 @@ final readonly class ApplyBlueprint
         }
     }
 
-    /**
     /**
      * What the service's connections inject (key => value), so a blueprint
      * variable saying the same isn't stored twice.

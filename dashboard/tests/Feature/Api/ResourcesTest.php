@@ -108,6 +108,18 @@ test('image services refuse a git ref deploy with a rule violation', function ()
         ->assertJsonPath('error.code', 'rule_violation');
 });
 
+test('the API accepts SHA-1 and SHA-256 commit ids, like the rest of launchroom', function (string $sha, string $code): void {
+    $world = DeploymentUi::make();
+    $plain = Api::token($world->member(TeamRole::Owner), $world->team);
+
+    Api::call('POST', "environments/{$world->production->public_id}/deployments", $plain, ['service' => $world->web->public_id, 'sha' => $sha])
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', $code);
+})->with([
+    'SHA-256 passes validation' => [str_repeat('b', 64), 'rule_violation'],
+    'neither length' => [str_repeat('b', 50), 'validation_failed'],
+]);
+
 test('deploying staged changes through the API', function (): void {
     $world = DeploymentUi::make();
     $world->variable('FEATURE', 'on');

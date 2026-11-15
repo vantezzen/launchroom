@@ -7,7 +7,7 @@ namespace App\Http\Controllers\Settings;
 use App\Data\Settings\NetworkMemberData;
 use App\Enums\ServerStatus;
 use App\Http\Controllers\Controller;
-use App\Http\Controllers\Teams\TeamSettingsController;
+use App\Http\Routing\CurrentTeam;
 use App\Models\Server;
 use App\Models\User;
 use App\Queries\AppsDomainSetup;
@@ -32,15 +32,14 @@ final class NetworkSettingsController extends Controller
         Gate::authorize('manageInstance');
 
         $controlPlaneIp = $mesh->controlPlaneIp();
-        $servers = TeamSettingsController::currentTeam($user)->servers()
-            ->where('status', '!=', ServerStatus::Revoked)
+        $servers = CurrentTeam::of($user)->servers()
+            ->notRevoked()
             ->orderByDesc('is_control_plane')
             ->orderBy('name')
             ->get();
 
         return Inertia::render('settings/network', [
             'mesh' => $mesh->overview($user),
-            // Who is on the private network and how each reaches the dashboard's server.
             'members' => $servers->map(fn (Server $server): NetworkMemberData => new NetworkMemberData(
                 $server->public_id,
                 $server->name,

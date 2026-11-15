@@ -9,14 +9,15 @@ use App\Data\RemoteAccess\OpenRemoteAccessData;
 use App\Data\RemoteAccess\RemoteAccessPanelData;
 use App\Enums\RemoteAccess\RemoteAccessKind;
 use App\Http\Controllers\Controller;
-use App\Http\Controllers\Projects\ProjectScope;
+use App\Http\Routing\RouteScope;
 use App\Models\Environment;
 use App\Models\Project;
 use App\Models\RemoteAccess\RemoteAccess;
 use App\Models\Service;
 use App\Models\User;
 use App\Queries\RemoteAccess\RemoteAccessPanel;
-use App\Services\RemoteAccess\RemoteAccessView;
+use App\Queries\RemoteAccess\RemoteAccessView;
+use App\Support\PublicId;
 use Illuminate\Container\Attributes\CurrentUser;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -32,13 +33,13 @@ final class ServiceRemoteAccessController extends Controller
 {
     public function show(Request $request, Project $project, Environment $environment, Service $service, string $kind, #[CurrentUser] User $user, RemoteAccessPanel $panel): JsonResponse
     {
-        $instance = ProjectScope::instance($project, $environment, $service);
+        $instance = RouteScope::instance($project, $environment, $service);
         $accessKind = RemoteAccessKind::from($kind);
         Gate::authorize('view', $instance);
         Gate::authorize('viewAny', [RemoteAccess::class, $instance, $accessKind]);
 
         $volume = $request->query('volume');
-        $volume = is_string($volume) && preg_match('/^vol_[0-9A-HJKMNP-TV-Z]{26}$/D', $volume) === 1 ? $volume : null;
+        $volume = is_string($volume) && PublicId::isValid($volume, 'vol') ? $volume : null;
         $data = $panel->panel($instance, $accessKind, $user, $request->ip(), $volume);
         abort_if(! $data instanceof RemoteAccessPanelData, 404);
 
@@ -47,7 +48,7 @@ final class ServiceRemoteAccessController extends Controller
 
     public function store(Request $request, Project $project, Environment $environment, Service $service, string $kind, OpenRemoteAccessData $data, #[CurrentUser] User $user, OpenRemoteAccess $open): JsonResponse
     {
-        $instance = ProjectScope::instance($project, $environment, $service);
+        $instance = RouteScope::instance($project, $environment, $service);
         $accessKind = RemoteAccessKind::from($kind);
         Gate::authorize('view', $instance);
         Gate::authorize('open', [RemoteAccess::class, $instance, $accessKind]);

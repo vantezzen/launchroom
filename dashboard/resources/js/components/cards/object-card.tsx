@@ -3,8 +3,7 @@ import type { InertiaLinkProps } from '@inertiajs/react';
 import type { ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 
-export type ObjectCardProps = {
-    /** Card title (the object's name). */
+type ObjectCardProps = {
     title: ReactNode;
     /** Whole card links here; the title is the single tab stop. */
     href?: NonNullable<InertiaLinkProps['href']>;
@@ -152,31 +151,5 @@ export function CardChip({
         >
             {children}
         </span>
-    );
-}
-
-/** Loading placeholder with the card's shape (fades in after 300 ms, no shimmer). */
-export function ObjectCardSkeleton({
-    media = true,
-    className,
-}: {
-    media?: boolean;
-    className?: string;
-}) {
-    return (
-        <div
-            aria-hidden="true"
-            className={cn(
-                'flex flex-col overflow-hidden rounded-[14px] border bg-card motion-safe:animate-in motion-safe:delay-300 motion-safe:duration-[180ms] motion-safe:fill-mode-both motion-safe:fade-in',
-                className,
-            )}
-        >
-            {media && <div className="h-[150px] border-b bg-(--recessed)" />}
-            <div className="flex flex-col gap-3 p-5">
-                <div className="h-5 w-1/3 rounded-md bg-(--hover)" />
-                <div className="h-4 w-1/2 rounded-md bg-(--hover)" />
-                <div className="mt-3 h-8 rounded-md bg-(--hover)" />
-            </div>
-        </div>
     );
 }

@@ -8,7 +8,7 @@ use App\Data\Attributes\ChangeAffects;
 use App\Data\Attributes\Promotion;
 use App\Enums\ChangeEffect;
 use App\Enums\PromotionClass;
-use App\Support\Blueprints\BlueprintValidator;
+use App\Enums\WorkloadCapability;
 use App\Support\Services\ConfigFileRules;
 use Spatie\LaravelData\Attributes\DataCollectionOf;
 use Spatie\LaravelData\Attributes\Validation\Max;
@@ -61,7 +61,6 @@ final class DeploySettings extends Data
         public ?int $healthTimeoutSeconds = null,
     ) {}
 
-    /** Default of the Roll out step's timeout. */
     public const int ROLLOUT_TIMEOUT_DEFAULT = 600;
 
     public function rolloutTimeout(): int
@@ -99,8 +98,8 @@ final class DeploySettings extends Data
             'seedCommand.*' => ['string', 'max:4096'],
             'entrypoint' => ['nullable', 'array', 'min:1', 'max:256'],
             'entrypoint.*' => ['string', 'max:4096'],
-            'capabilities' => ['sometimes', 'array', 'max:6'],
-            'capabilities.*' => ['string', 'distinct', 'in:'.implode(',', BlueprintValidator::CAPABILITIES)],
+            'capabilities' => ['sometimes', 'array', 'max:'.count(WorkloadCapability::cases())],
+            'capabilities.*' => ['string', 'distinct', 'in:'.implode(',', WorkloadCapability::values())],
             'files' => ['sometimes', 'array', 'max:'.ConfigFileRules::MAX_FILES],
             'files.*.path' => ['required', 'string', 'max:255'],
             'files.*.content' => ['present', 'string', 'max:'.ConfigFileRules::MAX_BYTES],

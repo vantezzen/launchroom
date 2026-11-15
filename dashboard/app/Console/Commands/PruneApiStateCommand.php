@@ -4,28 +4,20 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
-use App\Models\ApiIdempotencyKey;
-use App\Models\ApiToken;
-use App\Models\CliLoginRequest;
+use App\Actions\Api\PruneApiState;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 
-/**
- * Daily: expired CLI sign-in requests, idempotency keys past their window,
- * and tokens that expired more than 30 days ago (docs/16 §2.1, §4).
- */
 #[Signature('launchroom:api:prune')]
 #[Description('Delete expired CLI sign-ins, old idempotency keys and long-expired API tokens')]
 final class PruneApiStateCommand extends Command
 {
-    public function handle(): int
+    public function handle(PruneApiState $prune): int
     {
-        $logins = CliLoginRequest::query()->where('expires_at', '<', now()->subDay())->delete();
-        $keys = ApiIdempotencyKey::query()->where('created_at', '<', now()->subHours(config()->integer('api.idempotency_hours')))->delete();
-        $tokens = ApiToken::query()->where('expires_at', '<', now()->subDays(30))->delete();
+        $pruned = $prune->handle();
 
-        $this->components->info(sprintf('Pruned %d sign-in requests, %d idempotency keys, %d expired tokens.', is_int($logins) ? $logins : 0, is_int($keys) ? $keys : 0, is_int($tokens) ? $tokens : 0));
+        $this->components->info(sprintf('Pruned %d sign-in requests, %d idempotency keys, %d expired tokens.', $pruned->logins, $pruned->idempotencyKeys, $pruned->tokens));
 
         return self::SUCCESS;
     }

@@ -4,16 +4,16 @@ declare(strict_types=1);
 
 namespace App\Actions\Mesh;
 
+use App\Data\Servers\MeshReportData;
+use App\Enums\Mesh\MeshClientState;
 use App\Enums\Mesh\MeshCredentialPurpose;
 use App\Enums\Mesh\MeshMode;
 use App\Events\NodeStateInvalidated;
 use App\Jobs\Mesh\MaintainMeshJob;
 use App\Models\Server;
-use App\Queries\MeshServers;
 use App\Services\Mesh\MeshSecrets;
 use App\Services\Mesh\MeshTopology;
-use App\Services\NodeStates\MeshLinks;
-use App\Support\Servers\MeshStatusFacts;
+use App\Support\Network\Mesh;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -31,8 +31,6 @@ use Illuminate\Support\Facades\Log;
  * - your own Tailscale (no API to ask): the address is taken from the
  *   report, but only inside 100.64.0.0/10 and only if no other server has
  *   it; when it changes, every server's mesh addresses re-render.
- *
- * @param  array<string, mixed>|null  $mesh  validated Report.host.mesh (null: the mesh client is off)
  */
 final readonly class RecordMeshStatus
 {
@@ -42,7 +40,7 @@ final readonly class RecordMeshStatus
     ) {}
 
     /**
-     * @param  array<string, mixed>|null  $mesh
+     * @param  array<string, mixed>|null  $mesh  validated Report.host.mesh (null: the mesh client is off)
      */
     public function handle(Server $server, ?array $mesh): void
     {
@@ -54,23 +52,23 @@ final readonly class RecordMeshStatus
             return;
         }
 
-        $facts = MeshStatusFacts::fromProtocol($mesh);
+        $facts = MeshReportData::fromProtocol($mesh);
         $server->forceFill(['mesh_status' => $facts, 'mesh_status_at' => now()]);
 
-        if ($facts['state'] !== 'connected' || $facts['ipv4'] === null) {
+        if ($facts->state !== MeshClientState::Connected || $facts->ipv4 === null) {
             return;
         }
 
         if ($this->topology->mode() === MeshMode::Embedded) {
-            if ($server->mesh_node_id === null || $server->mesh_ip !== $facts['ipv4']) {
+            if ($server->mesh_node_id === null || $server->mesh_ip !== $facts->ipv4) {
                 dispatch(new MaintainMeshJob)->afterCommit();
             }
 
             return;
         }
 
-        $ip = MeshLinks::meshIp($facts['ipv4']);
-        $taken = $ip === null || Server::query()->whereKeyNot($server->id)->whereNull('revoked_at')->where('mesh_ip', $ip)->exists();
+        $ip = Mesh::ip($facts->ipv4);
+        $taken = $ip === null || Server::query()->whereKeyNot($server->id)->notRevoked()->where('mesh_ip', $ip)->exists();
 
         if ($taken) {
             Log::warning('Mesh address refused: outside the mesh range or another server’s.', ['server' => $server->public_id]);
@@ -80,7 +78,7 @@ final readonly class RecordMeshStatus
 
         $joined = $server->mesh_ip === null;
         $moved = $server->mesh_ip !== $ip;
-        $server->forceFill(['mesh_ip' => $ip, 'mesh_ipv6' => $facts['ipv6']]);
+        $server->forceFill(['mesh_ip' => $ip, 'mesh_ipv6' => $facts->ipv6]);
 
         if ($joined) {
             $this->secrets->forget(MeshSecrets::serverScope($server), MeshCredentialPurpose::PreAuthKey);
@@ -91,7 +89,7 @@ final readonly class RecordMeshStatus
             // plane's registry address, and every mesh address other servers
             // render: ambassador upstreams, allow-lists, edge upstreams and
             // the certificate storage's allowed edges (docs/05 §3, §5).
-            event(new NodeStateInvalidated(array_values(array_unique([$server->id, ...MeshServers::ids()]))));
+            NodeStateInvalidated::mesh([$server->id]);
         }
     }
 }

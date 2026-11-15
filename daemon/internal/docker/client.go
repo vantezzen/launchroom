@@ -5,22 +5,9 @@ import (
 	"errors"
 	"net/netip"
 	"time"
-)
 
-// More labels on launchroom-managed objects (see container.go for the rest).
-const (
-	// LabelSystem marks launchroom's own system containers ("caddy", …).
-	LabelSystem = "launchroom.system"
-	// LabelSpecHash is a digest of everything the container was created from;
-	// a different desired hash means the container must be recreated.
-	LabelSpecHash = "launchroom.spec-hash"
-	// LabelNetwork carries the protocol id of a managed network.
-	LabelNetwork = "launchroom.network"
-	// LabelVolume carries the protocol id (or system purpose) of a managed volume.
-	LabelVolume = "launchroom.volume"
-	// LabelTask marks a one-off container of a run_once task (no workload
-	// label: the reconciler never lists, changes or removes it).
-	LabelTask = "launchroom.task"
+	"github.com/vantezzen/launchroom/daemon/internal/names"
+	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
 
 // ErrNotManaged is returned when an operation targets an object that is not
@@ -30,7 +17,7 @@ var ErrNotManaged = errors.New("docker: object is not managed by this launchroom
 
 // ErrGuardRefused is returned when dockerd-guard refused a call (the
 // request violated its allow-list or the policy floor, docs/09 §6).
-var ErrGuardRefused = errors.New("docker: refused by dockerd-guard")
+var ErrGuardRefused error = &state.StartError{Code: state.FailGuardRefused, Err: errors.New("docker: refused by dockerd-guard")}
 
 // ErrNotFound is returned when an object does not exist.
 var ErrNotFound = errors.New("docker: not found")
@@ -88,20 +75,16 @@ type EngineInfo struct {
 	MemoryMB int
 	// OperatingSystem is the host OS as Docker sees it ("Ubuntu 24.04.1 LTS", "Docker Desktop").
 	OperatingSystem string
-	// KernelVersion is the host kernel release.
-	KernelVersion string
+	KernelVersion   string
 }
 
 // Container is the subset of a container's inspect data the daemon uses.
 type Container struct {
-	ID     string
-	Name   string // without the leading "/"
-	Image  string // the reference it was created from
-	Labels map[string]string
-	// State is Docker's state: created, running, paused, restarting, removing, exited, dead.
-	State        string
-	Running      bool
-	Restarting   bool
+	ID           string
+	Name         string // without the leading "/"
+	Image        string // the reference it was created from
+	Labels       map[string]string
+	State        ContainerState
 	OOMKilled    bool
 	Pid          int
 	ExitCode     int
@@ -116,8 +99,7 @@ type Container struct {
 	// HostPorts are the host addresses Docker actually bound for published
 	// ports (running containers only).
 	HostPorts []netip.AddrPort
-	// Volumes are the names of the named volumes mounted into the container.
-	Volumes []string
+	Volumes   []string
 	// StopTimeout is the container's own stop timeout (WorkloadSpec.stop), 0 if unset.
 	StopTimeout time.Duration
 	// ImageID is the id of the image it runs ("sha256:…"; inspect only).
@@ -128,6 +110,33 @@ type Container struct {
 	// Init: Docker runs its own init as PID 1 (HostConfig.Init; inspect only).
 	Init bool
 }
+
+// ContainerState is Docker's status of a container.
+type ContainerState string
+
+// Docker's container states.
+const (
+	StateCreated    ContainerState = "created"
+	StateRunning    ContainerState = "running"
+	StatePaused     ContainerState = "paused"
+	StateRestarting ContainerState = "restarting"
+	StateRemoving   ContainerState = "removing"
+	StateExited     ContainerState = "exited"
+	StateDead       ContainerState = "dead"
+)
+
+// Running reports whether the container's process is alive. Like Docker's State.Running,
+// this includes a paused container and one Docker is restarting.
+func (c Container) Running() bool {
+	switch c.State {
+	case StateRunning, StatePaused, StateRestarting:
+		return true
+	}
+	return false
+}
+
+// Restarting reports whether Docker is restarting the container under its restart policy.
+func (c Container) Restarting() bool { return c.State == StateRestarting }
 
 // Network is a managed Docker network.
 type Network struct {
@@ -174,10 +183,10 @@ type LogLine struct {
 
 // ManagedLabels returns the labels every launchroom object carries.
 func ManagedLabels(serverID string) map[string]string {
-	return map[string]string{LabelManaged: "true", LabelServer: serverID}
+	return map[string]string{names.LabelManaged: "true", names.LabelServer: serverID}
 }
 
 // IsManaged reports whether labels mark an object as managed by serverID.
 func IsManaged(labels map[string]string, serverID string) bool {
-	return labels[LabelManaged] == "true" && serverID != "" && labels[LabelServer] == serverID
+	return labels[names.LabelManaged] == "true" && serverID != "" && labels[names.LabelServer] == serverID
 }

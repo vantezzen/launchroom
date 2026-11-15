@@ -7,14 +7,13 @@ namespace App\Data\Moves;
 use App\Enums\Moves\ControlPlaneMoveStatus;
 use App\Models\Moves\ControlPlaneMove;
 use App\Models\Server;
-use App\Services\Moves\MovePlanner;
+use App\Support\ByteSize;
 use Carbon\CarbonInterface;
 use Spatie\LaravelData\Data;
 
 /**
  * Settings → Move launchroom (docs/14 §13.4) as the page shows it. The
- * token, anything sealed and the comparison code never appear here (the owner types the code from the new machine's terminal);
- * while it waits for approval.
+ * token, anything sealed and the comparison code never appear here.
  */
 final class ControlPlaneMoveData extends Data
 {
@@ -42,8 +41,7 @@ final class ControlPlaneMoveData extends Data
     public static function fromMove(ControlPlaneMove $move): self
     {
         $move->loadMissing(['source', 'target']);
-        $receiver = $move->receiver ?? [];
-        $size = $move->handover['database']['sizeBytes'] ?? null;
+        $size = $move->handover?->database->sizeBytes;
 
         return new self(
             $move->public_id,
@@ -51,9 +49,9 @@ final class ControlPlaneMoveData extends Data
             // Never shown: the owner types it from the new machine's terminal,
             // which is what proves the claim came from that machine.
             null,
-            is_string($receiver['hostname'] ?? null) ? $receiver['hostname'] : null,
-            is_string($receiver['arch'] ?? null) ? $receiver['arch'] : null,
-            is_string($receiver['address'] ?? null) ? $receiver['address'] : null,
+            $move->receiver?->hostname,
+            $move->receiver?->arch,
+            $move->receiver?->address,
             $move->receiver_seen_at,
             $move->receiver_seen_at?->gt(now()->subSeconds(90)) === true,
             $move->source instanceof Server ? MoveServerData::fromServer($move->source) : null,
@@ -63,7 +61,7 @@ final class ControlPlaneMoveData extends Data
             $move->frozen_at,
             $move->handed_over_at,
             $move->new_url,
-            is_int($size) ? MovePlanner::size($size) : null,
+            $size === null ? null : ByteSize::format($size),
         );
     }
 }

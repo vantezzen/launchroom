@@ -19,6 +19,7 @@ import {
 import { Spinner } from '@/components/ui/spinner';
 import type { UpdatesPageProps } from '@/features/updates/update-status';
 import { fleetSteps } from '@/features/updates/update-steps';
+import { vocabulary } from '@/lib/vocabulary';
 import { servers as updateServers } from '@/routes/updates';
 
 function serverState(server: App.Data.Updates.FleetServerData): {
@@ -122,7 +123,8 @@ export function ServerVersions({
     const failedStep = failed
         ? (fleetUpdate.steps.find(
               (step) =>
-                  step.status === 'failed' || step.status === 'rolled_back',
+                  vocabulary.Updates.FleetUpdateStepStatus[step.status]
+                      .isFailed,
           ) ?? null)
         : null;
 

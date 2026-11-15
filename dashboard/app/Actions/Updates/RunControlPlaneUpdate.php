@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace App\Actions\Updates;
 
+use App\Actions\Audit\RecordAuditEvent;
 use App\Actions\Backups\RunControlPlaneBackup;
 use App\Actions\Backups\StartControlPlaneBackup;
 use App\Data\Audit\AuditActor;
 use App\Enums\Backups\BackupReason;
 use App\Enums\Backups\BackupRunStatus;
-use App\Enums\ServerStatus;
 use App\Enums\Updates\ControlPlaneUpdateStatus;
 use App\Enums\Updates\UpdateScope;
 use App\Exceptions\DomainRuleViolation;
@@ -17,7 +17,6 @@ use App\Models\Backups\BackupDestination;
 use App\Models\Server;
 use App\Models\Updates\ControlPlaneUpdate;
 use App\Services\Updates\SelfUpdateTasks;
-use App\Services\Updates\UpdateAudit;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -40,7 +39,7 @@ final readonly class RunControlPlaneUpdate
         private StartControlPlaneBackup $startBackup,
         private RunControlPlaneBackup $runBackup,
         private SelfUpdateTasks $tasks,
-        private UpdateAudit $audit,
+        private RecordAuditEvent $audit,
     ) {}
 
     public function handle(ControlPlaneUpdate $update): ControlPlaneUpdate
@@ -52,7 +51,7 @@ final readonly class RunControlPlaneUpdate
                 return null;
             }
 
-            $locked->transitionTo(BackupDestination::query()->whereNull('team_id')->exists()
+            $locked->transitionTo(BackupDestination::query()->instanceWide()->exists()
                 ? ControlPlaneUpdateStatus::BackingUp
                 : ControlPlaneUpdateStatus::Updating);
 
@@ -69,8 +68,7 @@ final readonly class RunControlPlaneUpdate
 
         $server = Server::query()
             ->whereKey($claimed->server_id)
-            ->where('is_control_plane', true)
-            ->where('status', '!=', ServerStatus::Revoked->value)
+            ->controlPlane()
             ->first();
 
         if (! $server instanceof Server) {
@@ -127,6 +125,6 @@ final readonly class RunControlPlaneUpdate
     private function fail(ControlPlaneUpdate $update, string $error): void
     {
         $update->transitionTo(ControlPlaneUpdateStatus::Failed, $error);
-        $this->audit->controlPlaneFinished($update);
+        $this->audit->handle($update->finishedAuditEntry());
     }
 }

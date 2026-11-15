@@ -4,13 +4,19 @@ declare(strict_types=1);
 
 namespace App\Models\Moves;
 
+use App\Data\Moves\ServerMoveOptionsData;
+use App\Data\Moves\StartedMovePlanData;
+use App\Enums\Contracts\HasTransitionTable;
 use App\Enums\Moves\ServerMoveStatus;
 use App\Models\Concerns\BelongsToTeam;
 use App\Models\Concerns\HasPublicId;
+use App\Models\Concerns\HasStatusTransitions;
 use App\Models\Server;
 use App\Models\User;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Attributes\Scope;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -29,8 +35,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property int $target_server_id
  * @property bool $control_plane the workload half of Settings → Move launchroom
  * @property ServerMoveStatus $status
- * @property array{backupFirst?: bool} $options
- * @property array<string, mixed> $plan what the plan said when it started (platforms, DNS records, estimates)
+ * @property ServerMoveOptionsData $options
+ * @property StartedMovePlanData $plan what the plan said when it started (platforms, DNS records, estimates)
  * @property bool $edge_added the target got the edge role for this move
  * @property string|null $error
  * @property int|null $created_by
@@ -48,6 +54,9 @@ final class ServerMove extends Model
 {
     use BelongsToTeam, HasPublicId;
 
+    /** @use HasStatusTransitions<ServerMoveStatus> */
+    use HasStatusTransitions;
+
     /** @var array<string, mixed> */
     protected $attributes = [
         'status' => 'running',
@@ -63,13 +72,11 @@ final class ServerMove extends Model
     }
 
     /**
-     * The only way a move's status changes (docs/10 §2.2 rule 3).
+     * @param  ServerMoveStatus  $from
+     * @param  ServerMoveStatus  $to
      */
-    public function transitionTo(ServerMoveStatus $to, ?string $error = null): void
+    protected function recordTransition(HasTransitionTable $from, HasTransitionTable $to, ?string $note): void
     {
-        $this->status->assertCanTransitionTo($to);
-        $this->status = $to;
-
         if ($to === ServerMoveStatus::Ready) {
             $this->forceFill(['ready_at' => now()]);
         }
@@ -82,16 +89,23 @@ final class ServerMove extends Model
             $this->forceFill(['finished_at' => now()]);
         }
 
-        if ($error !== null) {
-            $this->error = mb_substr($error, 0, 2048);
+        if ($note !== null) {
+            $this->error = $note;
         }
+    }
 
-        $this->save();
+    /**
+     * @param  Builder<self>  $query
+     */
+    #[Scope]
+    protected function advancing(Builder $query): void
+    {
+        $query->whereIn('status', ServerMoveStatus::values(ServerMoveStatus::advancing()));
     }
 
     public function backupFirst(): bool
     {
-        return ($this->options['backupFirst'] ?? false) === true;
+        return $this->options->backupFirst;
     }
 
     /**
@@ -134,8 +148,8 @@ final class ServerMove extends Model
         return [
             'status' => ServerMoveStatus::class,
             'control_plane' => 'boolean',
-            'options' => 'array',
-            'plan' => 'array',
+            'options' => ServerMoveOptionsData::class,
+            'plan' => StartedMovePlanData::class,
             'edge_added' => 'boolean',
             'ready_at' => 'datetime',
             'finished_at' => 'datetime',

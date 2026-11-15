@@ -4,8 +4,9 @@ declare(strict_types=1);
 
 namespace App\Actions\Instance;
 
+use App\Data\Instance\OnboardingStateData;
+use App\Enums\Instance\OnboardingStep;
 use App\Models\InstanceSettings;
-use App\Queries\OnboardingChecklist;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -18,10 +19,10 @@ final class UpdateOnboarding
     {
         return DB::transaction(static function () use ($dismissed, $skip, $unskip): InstanceSettings {
             $settings = InstanceSettings::lockedForUpdate();
-            $onboarding = $settings->onboarding ?? [];
-            $skipped = array_values(array_intersect($onboarding['skipped'] ?? [], OnboardingChecklist::SKIPPABLE));
+            $onboarding = clone ($settings->onboarding ?? new OnboardingStateData);
+            $skipped = array_values(array_intersect($onboarding->skipped, OnboardingStep::skippableValues()));
 
-            if ($skip !== null && in_array($skip, OnboardingChecklist::SKIPPABLE, true) && ! in_array($skip, $skipped, true)) {
+            if ($skip !== null && in_array($skip, OnboardingStep::skippableValues(), true) && ! in_array($skip, $skipped, true)) {
                 $skipped[] = $skip;
             }
 
@@ -29,12 +30,12 @@ final class UpdateOnboarding
                 $skipped = array_values(array_diff($skipped, [$unskip]));
             }
 
-            $onboarding['skipped'] = $skipped;
+            $onboarding->skipped = $skipped;
 
             if ($dismissed === true) {
-                $onboarding['dismissedAt'] = now()->toIso8601ZuluString();
+                $onboarding->dismissedAt = now()->toIso8601ZuluString();
             } elseif ($dismissed === false) {
-                unset($onboarding['dismissedAt']);
+                $onboarding->dismissedAt = null;
             }
 
             $settings->forceFill(['onboarding' => $onboarding])->save();

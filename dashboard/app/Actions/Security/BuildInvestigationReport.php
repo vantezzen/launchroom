@@ -4,23 +4,29 @@ declare(strict_types=1);
 
 namespace App\Actions\Security;
 
+use App\Data\Git\RepositoryRef;
 use App\Data\Protocol\V1\ContainerInspectionResult;
+use App\Data\Security\InvestigatedReplicaData;
 use App\Data\Services\GitSource;
 use App\Data\Specs\VolumeSpec;
-use App\Enums\Security\FindingLevel;
+use App\Enums\Crypto\ProjectCiphertext;
+use App\Enums\Security\InventorySource;
 use App\Enums\Security\InvestigationStatus;
-use App\Enums\Security\SecurityFindingStatus;
 use App\Enums\Security\WafCategory;
 use App\Enums\ServiceKind;
+use App\Enums\ServicePanelTab;
+use App\Enums\ServiceSettingsSection;
 use App\Models\Security\SecurityFinding;
 use App\Models\Security\SecurityInvestigation;
 use App\Services\Crypto\ProjectKeyring;
+use App\Services\Git\GitProviders;
+use App\Services\Variables\SpecVariableResolver;
 use App\Support\DocsUrl;
+use App\Support\Links;
 use App\Support\Metrics\Cast;
 use App\Support\Security\CweCategories;
 use App\Support\Security\InvestigationInputs;
 use App\Support\Security\InvestigationReport;
-use App\Support\Variables\SecretTaint;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -40,6 +46,8 @@ final readonly class BuildInvestigationReport
     public function __construct(
         private ProjectKeyring $keyring,
         private RaiseVulnerabilityAlert $alert,
+        private GitProviders $providers,
+        private SpecVariableResolver $variables,
     ) {}
 
     public function handle(SecurityInvestigation $investigation): SecurityInvestigation
@@ -57,7 +65,7 @@ final readonly class BuildInvestigationReport
             $report = InvestigationReport::build($this->inputs($investigation, $now));
             // Partial whenever a replica couldn't be checked (docs/22 §7.5);
             // the firewall, requests and reach are still in the report.
-            $investigation->forceFill(['report' => $report->toArray()]);
+            $investigation->forceFill(['report' => $report]);
             $investigation->transitionTo($report->partial ? InvestigationStatus::Partial : InvestigationStatus::Completed);
 
             return $investigation;
@@ -67,8 +75,7 @@ final readonly class BuildInvestigationReport
         if ($investigation->automatic) {
             $held = SecurityFinding::query()
                 ->where('investigation_id', $investigation->id)
-                ->where('status', SecurityFindingStatus::Open->value)
-                ->where('level', FindingLevel::ActionNeeded->value)
+                ->actionNeeded()
                 ->whereNull('notified_at')
                 ->get();
 
@@ -87,13 +94,12 @@ final readonly class BuildInvestigationReport
         $environment = $instance->environment;
         $finding = $investigation->finding;
         $since = $now->subDays(7);
-        $base = "/p/{$investigation->project->public_id}/{$environment->public_id}/s/{$service->public_id}";
 
         // Container inspections, decrypted for the report only.
         $results = [];
 
         if (is_string($investigation->inspections)) {
-            $decoded = json_decode($this->keyring->decryptInspections($investigation->project, $investigation->public_id, $investigation->inspections), true);
+            $decoded = json_decode($this->keyring->decrypt(ProjectCiphertext::Inspections, $investigation->project, $investigation->public_id, $investigation->inspections), true);
 
             foreach (is_array($decoded) ? $decoded : [] as $workload => $raw) {
                 try {
@@ -104,14 +110,13 @@ final readonly class BuildInvestigationReport
             }
         }
 
-        $replicas = array_map(static fn (array $r): array => [
-            'server' => $r['serverName'],
-            'state' => $r['state'],
-            'message' => $r['message'] ?? null,
-            'result' => $r['state'] === 'done' ? ($results[$r['workload']] ?? null) : null,
-        ], $investigation->replicas);
+        $replicas = array_map(static fn (InvestigatedReplicaData $r): array => [
+            'server' => $r->serverName,
+            'state' => $r->state,
+            'message' => $r->message,
+            'result' => $r->state === 'done' ? ($results[$r->workload] ?? null) : null,
+        ], array_values($investigation->replicas->items()));
 
-        // Advisory → attack categories and references.
         $advisories = $finding === null ? [] : DB::table('advisories')->whereIn('id', $finding->advisory_ids)->get(['cwe_ids', 'references'])->all();
         $cwes = [];
         $references = [];
@@ -129,7 +134,6 @@ final readonly class BuildInvestigationReport
         $categories = $finding === null ? [] : CweCategories::for(array_values(array_unique($cwes)));
         $categoryValues = array_map(static fn (WafCategory $c): string => $c->value, $categories);
 
-        // Firewall: events and totals in the advisory's categories.
         $events = [];
 
         foreach (DB::table('waf_events')->where('service_instance_id', $instance->id)->where('at', '>=', $since->toIso8601String())->orderBy('at')->limit(2000)->get(['at', 'action', 'categories', 'client_network']) as $row) {
@@ -166,7 +170,6 @@ final readonly class BuildInvestigationReport
             $totals['detected'] += $d;
         }
 
-        // Requests per hour.
         $hours = [];
 
         foreach (DB::table('request_metric_samples')
@@ -176,7 +179,6 @@ final readonly class BuildInvestigationReport
             $hours[] = ['at' => CarbonImmutable::parse(Cast::string($row->hour ?? null)), 'requests' => Cast::id($row->requests ?? null), 'errors' => Cast::id($row->errors ?? null)];
         }
 
-        // Sessions of launchroom's own consoles and SSH.
         $sessions = [];
 
         foreach (DB::table('interactive_sessions as s')->join('users as u', 'u.id', '=', 's.user_id')
@@ -199,9 +201,9 @@ final readonly class BuildInvestigationReport
         $serviceSpec = $spec?->service($service->public_id);
         $connections = [];
         $hrefs = [
-            'deployments' => "{$base}/deployments",
-            'variables' => "{$base}/settings/variables",
-            'source' => "{$base}/settings/source",
+            'deployments' => Links::service($instance, ServicePanelTab::Deployments->value),
+            'variables' => Links::serviceSettings($instance, ServiceSettingsSection::Variables->value),
+            'source' => Links::serviceSettings($instance, ServiceSettingsSection::Source->value),
             'docs:responding' => DocsUrl::to('security/responding-to-a-vulnerability'),
         ];
 
@@ -217,18 +219,19 @@ final readonly class BuildInvestigationReport
                 $connections[] = ['name' => $target->name, 'database' => $database, 'engine' => $database ? (is_string($target->source['engine'] ?? null) ? $target->source['engine'] : null) : null];
 
                 if ($database) {
-                    $hrefs['backups:'.$target->name] = "/p/{$investigation->project->public_id}/{$environment->public_id}/s/{$target->id}/settings/backups?before=".rawurlencode($now->toIso8601ZuluString());
+                    $hrefs['backups:'.$target->name] = Links::serviceSettingsAt($investigation->project->public_id, $environment->public_id, $target->id, ServiceSettingsSection::Backups->value, ['before' => $now->toIso8601ZuluString()]);
                 }
             }
         }
 
         $source = $service->source;
 
-        if ($source instanceof GitSource && $source->isGitHub()) {
-            $hrefs['repository'] = 'https://github.com/'.$source->fullName;
+        $repositoryUrl = $source instanceof GitSource ? $this->providers->forSource($source)->repositoryUrl(RepositoryRef::fromSource($instance->team_id, $source)) : null;
+
+        if ($repositoryUrl !== null) {
+            $hrefs['repository'] = $repositoryUrl;
         }
 
-        // How long the vulnerable version has been live.
         $liveSince = null;
 
         if ($finding !== null) {
@@ -260,7 +263,7 @@ final readonly class BuildInvestigationReport
             hours: $hours,
             liveSince: $liveSince,
             connections: $connections,
-            secrets: $spec === null || $serviceSpec === null ? [] : SecretTaint::fromSpec($spec)->taintedKeys($serviceSpec->slug),
+            secrets: $spec === null || $serviceSpec === null ? [] : $this->variables->taint($investigation->project, $spec)->taintedKeys($serviceSpec->slug),
             volumes: $serviceSpec === null ? [] : array_values(array_map(static fn (VolumeSpec $v): string => $v->mountPath, $serviceSpec->volumes)),
             domains: array_values(array_map(Cast::string(...), DB::table('domains')->where('service_instance_id', $instance->id)->whereIn('kind', ['custom', 'generated'])->pluck('hostname')->all())),
             finding: $finding === null ? null : [
@@ -269,7 +272,7 @@ final readonly class BuildInvestigationReport
                 'ecosystem' => $finding->ecosystem,
                 'fixed' => $finding->fixed_version,
                 'groupKey' => $finding->group_key,
-                'built' => $inventory?->source->value === 'built',
+                'built' => $inventory?->source === InventorySource::Built,
                 'lockfiles' => array_values(array_unique($lockfiles)),
                 'references' => array_values(array_unique($references)),
             ],

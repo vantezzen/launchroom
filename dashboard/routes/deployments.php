@@ -15,7 +15,6 @@ use App\Http\Controllers\Variables\RevealVariableController;
 use App\Http\Controllers\Variables\ServiceVariablesController;
 use App\Http\Controllers\Variables\SharedVariableUsageController;
 use App\Http\Controllers\Variables\VariableImportController;
-use App\Support\PublicId;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -24,17 +23,10 @@ use Illuminate\Support\Facades\Route;
 | their grammar (see routes/projects.php). JSON endpoints used by the
 | service panel tabs live under `/p/{project}/{environment}/-/`, which can't
 | collide with page URLs. Controllers check that nested resources belong
-| together (ScopesProjectRoutes) and authorize every action.
+| together (RouteScope) and authorize every action.
 */
 
 Route::middleware(['web', 'auth', 'verified'])
-    ->where([
-        'project' => PublicId::routePattern('prj'),
-        'environment' => PublicId::routePattern('env'),
-        'service' => PublicId::routePattern('svc'),
-        'deployment' => PublicId::routePattern('dpl'),
-        'variable' => PublicId::routePattern('var'),
-    ])
     ->group(function (): void {
         Route::get('-/palette', CommandPaletteController::class)->name('palette.index');
 

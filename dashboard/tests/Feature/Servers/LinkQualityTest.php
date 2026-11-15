@@ -211,7 +211,6 @@ test('the topology labels links with the round trip and both directions’ rates
         ->and(collect($links[0]->speeds)->map(fn ($s): string => "{$s->from}>{$s->to}:{$s->mbps}")->sort()->values()->all())
         ->toBe(collect(["{$b->public_id}>{$a->public_id}:480", "{$a->public_id}>{$b->public_id}:120"])->sort()->values()->all());
 
-    // Old latency is not current.
     $this->travel(11)->minutes();
     expect(resolve(ServerTopology::class)->links([$a, $b])[0]->latencyMs)->toBeNull();
 });

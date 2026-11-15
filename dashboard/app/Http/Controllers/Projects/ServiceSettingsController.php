@@ -8,6 +8,7 @@ use App\Actions\Services\AddServiceVolume;
 use App\Actions\Services\ChangeServiceImage;
 use App\Actions\Services\RemoveServiceVolume;
 use App\Actions\Services\RenameService;
+use App\Actions\Services\ReplanService;
 use App\Actions\Services\UpdateServiceSettings;
 use App\Actions\Services\UpdateServiceVolume;
 use App\Data\Services\AddVolumeData;
@@ -17,21 +18,20 @@ use App\Data\Services\RemoveVolumeData;
 use App\Data\Services\RenameServiceData;
 use App\Data\Services\UpdateServiceSettingsData;
 use App\Data\Services\UpdateVolumeData;
-use App\Enums\ServiceKind;
-use App\Events\CanvasChanged;
 use App\Http\Controllers\Controller;
-use App\Jobs\PlanServiceJob;
+use App\Http\Routing\RouteScope;
+use App\Http\Toast;
 use App\Models\Environment;
 use App\Models\Project;
 use App\Models\Service;
 use App\Models\User;
+use App\Models\Volume;
 use App\Queries\ServiceSettings;
 use Illuminate\Container\Attributes\CurrentUser;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
-use Inertia\Inertia;
 
 /**
  * Settings tab saves: build, deploy, scaling, branch, volumes (staged, docs/06 §4),
@@ -41,14 +41,12 @@ final class ServiceSettingsController extends Controller
 {
     public function update(Project $project, Environment $environment, Service $service, UpdateServiceSettingsData $data, UpdateServiceSettings $updateSettings): RedirectResponse
     {
-        $instance = ProjectScope::instance($project, $environment, $service);
+        $instance = RouteScope::editable(RouteScope::instance($project, $environment, $service));
         Gate::authorize('update', $instance);
-        abort_if($instance->removed_at !== null, 409, 'This service is staged for removal.');
 
         $updateSettings->handle($instance, $data);
 
-        broadcast(new CanvasChanged($environment->public_id, $service->public_id))->toOthers();
-        Inertia::flash('toast', ['type' => 'success', 'message' => 'Settings saved. Deploy to apply them.']);
+        Toast::success('Settings saved. Deploy to apply them.');
 
         return back();
     }
@@ -58,7 +56,7 @@ final class ServiceSettingsController extends Controller
      */
     public function previewScaling(Project $project, Environment $environment, Service $service, PreviewScalingData $data, ServiceSettings $settings): JsonResponse
     {
-        $instance = ProjectScope::instance($project, $environment, $service);
+        $instance = RouteScope::instance($project, $environment, $service);
         Gate::authorize('view', $instance);
 
         return response()->json($settings->preview($instance, $data->scaling));
@@ -69,14 +67,12 @@ final class ServiceSettingsController extends Controller
      */
     public function addVolume(Request $request, Project $project, Environment $environment, Service $service, AddVolumeData $data, #[CurrentUser] User $user, AddServiceVolume $addVolume): RedirectResponse
     {
-        $instance = ProjectScope::instance($project, $environment, $service);
+        $instance = RouteScope::editable(RouteScope::instance($project, $environment, $service));
         Gate::authorize('update', $instance);
-        abort_if($instance->removed_at !== null, 409, 'This service is staged for removal.');
 
         $volume = $addVolume->handle($instance, $data, $this->auditActor($request, $user));
 
-        broadcast(new CanvasChanged($environment->public_id, $service->public_id))->toOthers();
-        Inertia::flash('toast', ['type' => 'success', 'message' => "Volume {$volume->mount_path} added. Deploy to create it."]);
+        Toast::success("Volume {$volume->mount_path} added. Deploy to create it.");
 
         return back();
     }
@@ -84,17 +80,15 @@ final class ServiceSettingsController extends Controller
     /**
      * Mount a volume at another path (staged; docs/14 §9.12).
      */
-    public function updateVolume(Request $request, Project $project, Environment $environment, Service $service, string $volume, UpdateVolumeData $data, #[CurrentUser] User $user, UpdateServiceVolume $updateVolume): RedirectResponse
+    public function updateVolume(Request $request, Project $project, Environment $environment, Service $service, Volume $volume, UpdateVolumeData $data, #[CurrentUser] User $user, UpdateServiceVolume $updateVolume): RedirectResponse
     {
-        $instance = ProjectScope::instance($project, $environment, $service);
+        $instance = RouteScope::editable(RouteScope::instance($project, $environment, $service));
         Gate::authorize('update', $instance);
-        abort_if($instance->removed_at !== null, 409, 'This service is staged for removal.');
-        $model = $instance->volumes()->where('public_id', $volume)->firstOrFail();
+        RouteScope::volume($instance, $volume);
 
-        $updated = $updateVolume->handle($instance, $model, $data, $this->auditActor($request, $user));
+        $updated = $updateVolume->handle($instance, $volume, $data, $this->auditActor($request, $user));
 
-        broadcast(new CanvasChanged($environment->public_id, $service->public_id))->toOthers();
-        Inertia::flash('toast', ['type' => 'success', 'message' => "Volume moves to {$updated->mount_path} with the next deploy."]);
+        Toast::success("Volume moves to {$updated->mount_path} with the next deploy.");
 
         return back();
     }
@@ -102,19 +96,17 @@ final class ServiceSettingsController extends Controller
     /**
      * Remove a volume (staged when it holds files; docs/14 §9.12).
      */
-    public function removeVolume(Request $request, Project $project, Environment $environment, Service $service, string $volume, RemoveVolumeData $data, #[CurrentUser] User $user, RemoveServiceVolume $removeVolume): RedirectResponse
+    public function removeVolume(Request $request, Project $project, Environment $environment, Service $service, Volume $volume, RemoveVolumeData $data, #[CurrentUser] User $user, RemoveServiceVolume $removeVolume): RedirectResponse
     {
-        $instance = ProjectScope::instance($project, $environment, $service);
+        $instance = RouteScope::editable(RouteScope::instance($project, $environment, $service));
         Gate::authorize('update', $instance);
-        abort_if($instance->removed_at !== null, 409, 'This service is staged for removal.');
-        $model = $instance->volumes()->where('public_id', $volume)->firstOrFail();
+        RouteScope::volume($instance, $volume);
 
-        $staged = $removeVolume->handle($instance, $model, $data, $this->auditActor($request, $user));
+        $staged = $removeVolume->handle($instance, $volume, $data, $this->auditActor($request, $user));
 
-        broadcast(new CanvasChanged($environment->public_id, $service->public_id))->toOthers();
-        Inertia::flash('toast', ['type' => 'success', 'message' => $staged
-            ? "Volume {$model->mount_path} is removed with the next deploy."
-            : "Volume {$model->mount_path} removed."]);
+        Toast::success($staged
+            ? "Volume {$volume->mount_path} is removed with the next deploy."
+            : "Volume {$volume->mount_path} removed.");
 
         return back();
     }
@@ -124,13 +116,12 @@ final class ServiceSettingsController extends Controller
      */
     public function changeImage(Request $request, Project $project, Environment $environment, Service $service, ChangeImageData $data, #[CurrentUser] User $user, ChangeServiceImage $changeImage): RedirectResponse
     {
-        ProjectScope::instance($project, $environment, $service);
+        RouteScope::instance($project, $environment, $service);
         Gate::authorize('update', $service);
 
         $changeImage->handle($service, $data, $this->auditActor($request, $user));
 
-        broadcast(new CanvasChanged($environment->public_id, $service->public_id))->toOthers();
-        Inertia::flash('toast', ['type' => 'success', 'message' => 'Image changed. Deploy to run it.']);
+        Toast::success('Image changed. Deploy to run it.');
 
         return back();
     }
@@ -140,29 +131,24 @@ final class ServiceSettingsController extends Controller
      */
     public function rename(Request $request, Project $project, Environment $environment, Service $service, RenameServiceData $data, #[CurrentUser] User $user, RenameService $renameService): RedirectResponse
     {
-        ProjectScope::instance($project, $environment, $service);
+        RouteScope::instance($project, $environment, $service);
         Gate::authorize('update', $service);
 
         $renameService->handle($service, $data, $this->auditActor($request, $user));
 
-        broadcast(new CanvasChanged($environment->public_id, $service->public_id))->toOthers();
-        Inertia::flash('toast', ['type' => 'success', 'message' => "Renamed to {$service->name}."]);
+        Toast::success("Renamed to {$service->name}.");
 
         return back();
     }
 
-    /**
-     * Run the plan preview again for the branch head (docs/04 §4).
-     */
-    public function replan(Project $project, Environment $environment, Service $service): RedirectResponse
+    public function replan(Project $project, Environment $environment, Service $service, ReplanService $replan): RedirectResponse
     {
-        $instance = ProjectScope::instance($project, $environment, $service);
+        $instance = RouteScope::editable(RouteScope::instance($project, $environment, $service));
         Gate::authorize('update', $instance);
-        abort_if($instance->removed_at !== null || $service->kind !== ServiceKind::App, 409, 'Only app services are planned.');
 
-        dispatch(new PlanServiceJob($instance->id));
+        $replan->handle($instance);
 
-        Inertia::flash('toast', ['type' => 'info', 'message' => 'Detecting the build plan again.']);
+        Toast::info('Detecting the build plan again.');
 
         return back();
     }

@@ -10,6 +10,7 @@ import (
 
 	"github.com/moby/moby/client"
 
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 	"github.com/vantezzen/launchroom/daemon/internal/tasks"
 	"github.com/vantezzen/launchroom/daemon/internal/update"
@@ -18,13 +19,30 @@ import (
 // processStart is when this launchroomd process started (data/update/running.json).
 var processStart = time.Now()
 
-// addUpdateHandler registers the self_update handler (docs/11 §4). It
-// talks to Docker directly: launchroomd's own container is compose-managed,
-// not one of the per-server objects the Engine may touch.
+// updateAPI is the Docker client of self-updates (docs/11 §4), created
+// once. It talks to Docker directly: launchroomd's own container is
+// compose-managed, not one of the per-server objects the Engine may touch.
+// nil when there is none (logged once): updates are off, and a pending one
+// is resumed without checking its supervisor container.
+func (rt *daemonRuntime) updateAPI() *client.Client {
+	rt.updateAPIOnce.Do(func() {
+		api, err := newUpdateAPI()
+		if err != nil {
+			rt.log.Warn("self-update disabled: no Docker client", "err", err)
+			return
+		}
+		rt.updateDocker = api
+	})
+	return rt.updateDocker
+}
+
+func newUpdateAPI() (*client.Client, error) {
+	return client.New(client.FromEnv, client.WithUserAgent("launchroomd/"+version))
+}
+
 func (rt *daemonRuntime) addUpdateHandler(h map[state.TaskType]tasks.Handler) {
-	api, err := client.New(client.FromEnv, client.WithUserAgent("launchroomd/"+version))
-	if err != nil {
-		rt.log.Warn("self-update disabled: no Docker client", "err", err)
+	api := rt.updateAPI()
+	if api == nil {
 		return
 	}
 	h[state.TaskSelfUpdate] = update.NewHandler(update.HandlerOptions{
@@ -41,12 +59,8 @@ func (rt *daemonRuntime) controlPlaneContact() {
 		if err := update.MarkRunning(rt.cfg.DataDir, version, processStart); err != nil {
 			rt.log.Warn("could not record the running version", "err", err)
 		}
-		api, err := client.New(client.FromEnv, client.WithUserAgent("launchroomd/"+version))
-		if err != nil {
-			api = nil
-		}
 		go update.Resume(context.Background(), update.ResumeOptions{
-			DataDir: rt.cfg.DataDir, Docker: api, Complete: rt.client.Complete, Log: rt.log.With("component", "update"),
+			DataDir: rt.cfg.DataDir, Docker: rt.updateAPI(), Complete: rt.client.Complete, Log: rt.log.With("component", "update"),
 		})
 	})
 }
@@ -56,10 +70,10 @@ func (rt *daemonRuntime) controlPlaneContact() {
 func runSupervisor(args []string) int {
 	log := slog.New(slog.NewJSONHandler(os.Stderr, nil)).With("component", "update-supervisor", "version", version)
 	if len(args) != 1 {
-		fmt.Fprintln(os.Stderr, "usage: launchroomd "+update.SupervisorCommand+" <plan.json>")
+		fmt.Fprintln(os.Stderr, "usage: launchroomd "+names.SupervisorCommand+" <plan.json>")
 		return 2
 	}
-	api, err := client.New(client.FromEnv, client.WithUserAgent("launchroomd/"+version))
+	api, err := newUpdateAPI()
 	if err != nil {
 		log.Error("docker client", "err", err)
 		return 1

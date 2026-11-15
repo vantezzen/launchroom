@@ -38,7 +38,7 @@ test('a pull request\'s launchroom.json configures its preview within the previe
         ->and(Domain::query()->where('hostname', 'pr.example.com')->exists())->toBeFalse()
         ->and($productionInstance->deploy->startCommand)->not->toBe(['node', 'server.js', '--preview'])
         ->and($record->commit_sha)->toBe(PreviewFlow::SHA_PR_1)
-        ->and(implode("\n", array_column($record->ignored, 'message')))->toContain('domains are ignored in previews');
+        ->and(implode("\n", array_column($record->ignored->toArray(), 'message')))->toContain('domains are ignored in previews');
 });
 
 test('a fork\'s file can\'t add services', function (): void {

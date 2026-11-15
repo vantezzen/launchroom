@@ -18,6 +18,7 @@ import (
 	"github.com/vantezzen/launchroom/daemon/internal/build"
 	"github.com/vantezzen/launchroom/daemon/internal/build/nextadapter"
 	"github.com/vantezzen/launchroom/daemon/internal/build/presets"
+	"github.com/vantezzen/launchroom/daemon/internal/docker"
 	"github.com/vantezzen/launchroom/daemon/internal/health"
 	"github.com/vantezzen/launchroom/daemon/internal/policy"
 	"github.com/vantezzen/launchroom/daemon/internal/reconcile"
@@ -74,13 +75,13 @@ func TestBuildNextAdapterAndRun(t *testing.T) {
 		t.Fatalf("no next summary in the build summary\n%s", tail(logs, 60))
 	}
 	t.Logf("next summary: %+v", *n)
-	if n.AdapterVersion != nextadapter.Version || n.NextVersion != "16.4.2" || n.DeploymentID != string(itDeployment) ||
+	if string(n.AdapterVersion) != nextadapter.Version || n.NextVersion != "16.4.2" || n.DeploymentID != string(itDeployment) ||
 		n.ServerEntry != ".next/standalone/server.js" || !n.Middleware || n.Routes.AppPages < 2 || n.Routes.AppRoutes < 1 ||
 		!slices.Equal(n.ISRRoutes, []state.HTTPPath{"/isr"}) || n.CacheHandler {
 		t.Fatalf("next summary %+v", *n)
 	}
 	done := state.TaskCompletion{TypeMeta: state.NewTypeMeta(state.KindTaskCompletion), Attempt: 1, Outcome: state.OutcomeSucceeded,
-		Build: &state.BuildResult{Image: out.Image, DurationMs: out.Duration.Milliseconds(), Summary: &out.Summary}}
+		TaskResults: state.TaskResults{Build: &state.BuildResult{Image: out.Image, DurationMs: out.Duration.Milliseconds(), Summary: &out.Summary}}}
 	if err := done.Validate(); err != nil {
 		t.Fatalf("summary does not validate: %v", err)
 	}
@@ -164,7 +165,7 @@ func runBuiltImage(ctx context.Context, t *testing.T, be *buildEnv, image state.
 	t.Cleanup(mon.Close)
 	rec := reconcile.New(reconcile.Options{
 		ServerID: be.serverID, Docker: be.engine, Policy: policy.DefaultConfig(), Health: mon,
-		EnvHashKey: reconcile.EnvHashKey(be.key.Bytes()),
+		EnvHashKey: docker.EnvHashKey(be.key.Bytes()),
 		OpenEnv: func(s *state.WorkloadSpec) (map[string]secret.Secret, error) {
 			return sealed.OpenWorkloadEnv(s.Env, be.key, be.serverID, s.ID)
 		},

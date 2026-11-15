@@ -6,7 +6,6 @@ namespace App\Queries;
 
 use App\Data\Servers\SmallServerHintData;
 use App\Enums\ServerRole;
-use App\Enums\ServerStatus;
 use App\Models\InstanceSettings;
 use App\Models\Server;
 use App\Models\Team;
@@ -28,14 +27,14 @@ final readonly class SmallServerHint
             return null;
         }
 
-        if (in_array($user->id, InstanceSettings::current()->onboarding['smallServerHintDismissed'] ?? [], true)) {
+        if (in_array($user->id, InstanceSettings::current()->onboarding->smallServerHintDismissed ?? [], true)) {
             return null;
         }
 
         $builders = Server::query()
             ->where('team_id', $team->id)
-            ->whereIn('status', [ServerStatus::Online->value, ServerStatus::Unreachable->value])
-            ->whereJsonContains('roles', ServerRole::Build->value)
+            ->reachable()
+            ->withRole(ServerRole::Build)
             ->limit(2)
             ->get();
 

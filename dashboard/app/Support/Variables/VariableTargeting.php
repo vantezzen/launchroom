@@ -4,8 +4,9 @@ declare(strict_types=1);
 
 namespace App\Support\Variables;
 
-use App\Data\Specs\VariableSpec;
+use App\Data\Variables\VariableTargetRow;
 use App\Enums\EnvironmentKind;
+use App\Enums\VariableLayer;
 
 /**
  * Whether a variable row applies to an environment, and in which precedence
@@ -17,26 +18,25 @@ use App\Enums\EnvironmentKind;
 final class VariableTargeting
 {
     /**
-     * @param  list<array{environment_id: int|null, all_previews: bool, branch_pattern: string|null}>  $targets
-     * @return VariableSpec::LAYER_*|null
+     * @param  list<VariableTargetRow>  $targets
      */
-    public static function layer(array $targets, int $environmentId, EnvironmentKind $kind, ?string $branch): ?string
+    public static function layer(array $targets, int $environmentId, EnvironmentKind $kind, ?string $branch): ?VariableLayer
     {
         $layer = null;
 
         foreach ($targets as $target) {
-            if ($target['environment_id'] === $environmentId) {
-                $layer ??= VariableSpec::LAYER_ENVIRONMENT;
+            if ($target->environmentId === $environmentId) {
+                $layer ??= VariableLayer::Environment;
             }
 
-            if ($kind !== EnvironmentKind::Preview || ! $target['all_previews']) {
+            if ($kind !== EnvironmentKind::Preview || ! $target->allPreviews) {
                 continue;
             }
 
-            if ($target['branch_pattern'] === null) {
-                $layer ??= VariableSpec::LAYER_ENVIRONMENT;
-            } elseif ($branch !== null && fnmatch($target['branch_pattern'], $branch)) {
-                $layer = VariableSpec::LAYER_BRANCH;
+            if ($target->branchPattern === null) {
+                $layer ??= VariableLayer::Environment;
+            } elseif ($branch !== null && fnmatch($target->branchPattern, $branch)) {
+                $layer = VariableLayer::Branch;
             }
         }
 

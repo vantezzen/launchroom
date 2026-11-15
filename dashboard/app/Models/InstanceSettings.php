@@ -4,15 +4,25 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Data\Ingress\DnsProviderCheckData;
+use App\Data\Instance\LegacyOriginEntryData;
+use App\Data\Instance\OnboardingStateData;
+use App\Data\Instance\RecoveryStateData;
+use App\Data\Moves\MoveChecklistStateData;
+use App\Data\Security\AuditVerificationData;
 use App\Enums\ClientCertificateMode;
 use App\Enums\DnsProvider;
 use App\Enums\Mesh\MeshMode;
+use App\Support\Crypto\OpaqueToken;
+use App\Support\PublicId;
 use Illuminate\Container\Container;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Attributes\Table;
 use Illuminate\Database\Eloquent\Attributes\WithoutIncrementing;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
+use SensitiveParameter;
+use Spatie\LaravelData\DataCollection;
 
 /**
  * The instance-level singleton row (docs/07 "Instance-level"; a check
@@ -30,7 +40,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $recovery_mac_key base64 key authenticating key bundles (RecoveryKey::macKey), encrypted with APP_KEY
  * @property Carbon|null $recovery_passphrase_set_at
  * @property Carbon|null $recovery_kit_downloaded_at
- * @property array{dismissedAt?: string, skipped?: list<string>, twoFactorDismissed?: list<int>, smallServerHintDismissed?: list<int>, domainConfirmed?: array{domain: string, verified: bool|null, at: string}}|null $onboarding first-run checklist (docs/08 §3.1); twoFactorDismissed: user ids who chose "Not now" on the 2FA recommendation; smallServerHintDismissed: user ids who dismissed "This server is small"; domainConfirmed: the platform domain the owner continued with and whether its DNS check passed then (null: set before the check existed)
+ * @property OnboardingStateData|null $onboarding
  * @property MeshMode|null $mesh_mode how servers are connected; null = mesh off (docs/05 §2)
  * @property Carbon|null $mesh_enabled_at
  * @property string|null $mesh_login_server "bring your own Tailscale" login server
@@ -40,28 +50,28 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $mesh_error_at
  * @property DnsProvider|null $dns_provider DNS-01 provider for the platform domain's wildcard certificates (docs/05 §5)
  * @property Carbon|null $dns_verified_at last successful token check
- * @property array{ok: bool, message: string, zone?: string|null, checkedAt: string}|null $dns_verification last token check (no secrets)
+ * @property DnsProviderCheckData|null $dns_verification last token check (no secrets)
  * @property string|null $registry_config_hash sha256 of the last Zot config written by `launchroom:registry:config --write` (docs/14 §9.11)
  * @property Carbon|null $registry_config_written_at
  * @property string|null $node_state_config_hash sha256 of the configuration every NodeState was last rendered with (RefreshNodeStates)
- * @property array{startedAt: string, previousControlPlaneServerId?: int|null, replacementId?: int|null}|null $recovery_state recovery mode after `install --restore` (docs/14 §5.2)
+ * @property RecoveryStateData|null $recovery_state
  * @property string|null $update_channel stable|beta chosen in Settings → Updates; null = config `launchroom.updates.channel`, else beta on a pre-release version, stable otherwise (ReleaseChecker::channel)
  * @property bool $auto_update install new releases automatically at night (docs/11 §4; off by default)
  * @property int|null $auto_update_by the instance owner who turned automatic updates on (their actor)
  * @property Carbon|null $auto_update_changed_at
  * @property string|null $dashboard_url canonical origin chosen in Settings → Dashboard domain; null = APP_URL (docs/05 §4.1)
- * @property list<array<string, mixed>>|null $dashboard_legacy_urls earlier origins that keep answering (redirects; launchroomd's fallback)
+ * @property DataCollection<int, LegacyOriginEntryData>|null $dashboard_legacy_urls earlier origins that keep answering (redirects; launchroomd's fallback)
  * @property string|null $dashboard_pending_host a new domain routed while it is verified (DNS points here)
  * @property string|null $passkey_rp_id WebAuthn relying party id in use; null = the canonical host
  * @property Carbon|null $dashboard_switched_at
- * @property array{ok: bool, mode: string, checkedAt: string, entries: int, checkpoints: int, verifiedUpTo: string|null, lastEventId: int|null, problem?: array{kind: string, eventId: int|null, checkpointId: int|null, message: string}}|null $audit_verification last audit chain verification (docs/09 R34)
+ * @property AuditVerificationData|null $audit_verification
  * @property ClientCertificateMode|null $daemon_client_certificates client certificates for daemon transport (docs/03 §4.3); null = off
  * @property Carbon|null $daemon_client_certificates_changed_at
  * @property string|null $daemon_edge_secret the secret the control-plane edge adds to proxied requests (X-Lr-Edge), encrypted with APP_KEY
  * @property Carbon|null $frozen_at writes are refused while the control plane is handed over to a new server (docs/14 §13.4)
  * @property string|null $frozen_reason
  * @property string|null $moved_to the address this instance moved to (the new dashboard took over)
- * @property array{startedAt: string, moveId?: string|null, previousServerId?: int|null, previousUrl?: string|null, newServerId?: int|null}|null $move_checklist the new dashboard's checklist after a move (docs/14 §13.4)
+ * @property MoveChecklistStateData|null $move_checklist
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
@@ -95,12 +105,50 @@ final class InstanceSettings extends Model
     }
 
     /**
-     * Drops the per-request copy. Model writes do it themselves; call it
-     * after writing the row with a query builder update.
+     * A stable id for this launchroom instance, generated on first use. It
+     * names backups and audit batches, and survives a control-plane restore
+     * because it lives in the restored database.
      */
-    public static function forgetCurrent(): void
+    public static function instanceId(): string
+    {
+        $settings = self::current();
+
+        if ($settings->instance_id === null) {
+            self::query()->whereKey(self::ID)->whereNull('instance_id')->update(['instance_id' => PublicId::generate('ins')]);
+            self::forgetCurrent();
+            $settings = self::current();
+        }
+
+        return (string) $settings->instance_id;
+    }
+
+    private static function forgetCurrent(): void
     {
         Container::getInstance()->forgetInstance(self::CURRENT);
+    }
+
+    public function clientCertificateMode(): ClientCertificateMode
+    {
+        return $this->daemon_client_certificates ?? ClientCertificateMode::Off;
+    }
+
+    /**
+     * First-run setup is done once the owner exists (docs/11 §2).
+     */
+    public function setupDone(): bool
+    {
+        return $this->setup_completed_at !== null || User::query()->exists();
+    }
+
+    /**
+     * $token is the unexpired setup token (`launchroom:setup-token`).
+     */
+    public function acceptsSetupToken(#[SensitiveParameter] string $token): bool
+    {
+        return $token !== ''
+            && $this->setup_token_hash !== null
+            && $this->setup_token_expires_at?->isFuture() === true
+            && OpaqueToken::matches($token, $this->setup_token_hash);
     }
 
     protected static function booted(): void
@@ -126,9 +174,6 @@ final class InstanceSettings extends Model
         return self::query()->findOrFail(self::ID);
     }
 
-    /**
-     * The singleton row, locked for the current transaction.
-     */
     public static function lockedForUpdate(): self
     {
         self::ensureExists();
@@ -154,25 +199,25 @@ final class InstanceSettings extends Model
             'recovery_mac_key' => 'encrypted',
             'recovery_passphrase_set_at' => 'datetime',
             'recovery_kit_downloaded_at' => 'datetime',
-            'onboarding' => 'array',
+            'onboarding' => OnboardingStateData::class,
             'dns_provider' => DnsProvider::class,
             'dns_verified_at' => 'datetime',
-            'dns_verification' => 'array',
+            'dns_verification' => DnsProviderCheckData::class,
             'mesh_mode' => MeshMode::class,
             'mesh_enabled_at' => 'datetime',
             'mesh_error_at' => 'datetime',
             'registry_config_written_at' => 'datetime',
-            'recovery_state' => 'array',
+            'recovery_state' => RecoveryStateData::class,
             'auto_update' => 'boolean',
             'auto_update_changed_at' => 'datetime',
-            'dashboard_legacy_urls' => 'array',
+            'dashboard_legacy_urls' => DataCollection::class.':'.LegacyOriginEntryData::class,
             'dashboard_switched_at' => 'datetime',
             'daemon_client_certificates' => ClientCertificateMode::class,
             'daemon_client_certificates_changed_at' => 'datetime',
             'daemon_edge_secret' => 'encrypted',
-            'audit_verification' => 'array',
+            'audit_verification' => AuditVerificationData::class,
             'frozen_at' => 'datetime',
-            'move_checklist' => 'array',
+            'move_checklist' => MoveChecklistStateData::class,
         ];
     }
 }

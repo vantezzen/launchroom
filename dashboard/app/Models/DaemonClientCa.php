@@ -4,16 +4,18 @@ declare(strict_types=1);
 
 namespace App\Models;
 
-use App\Services\Daemon\ClientCertificateAuthority;
+use App\Contracts\Crypto\SealedRow;
+use App\Models\Concerns\HasSealedSecret;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
+use InvalidArgumentException;
 
 /**
  * The launchroom-internal CA that issues server client certificates
  * (docs/03 §4.3). The key is envelope-encrypted and only ever opened by
- * {@see ClientCertificateAuthority}.
+ * ClientCertificateAuthority.
  *
  * @property int $id
  * @property string $certificate PEM
@@ -29,8 +31,10 @@ use Illuminate\Support\Carbon;
  */
 #[Fillable(['certificate', 'fingerprint', 'private_key', 'wrapped_dek', 'kek_id', 'not_before', 'not_after', 'retired_at'])]
 #[Hidden(['private_key', 'wrapped_dek'])]
-final class DaemonClientCa extends Model
+final class DaemonClientCa extends Model implements SealedRow
 {
+    use HasSealedSecret;
+
     /**
      * Base64 of the certificate's DER (the wire form, docs/03 §4.3).
      */
@@ -49,5 +53,18 @@ final class DaemonClientCa extends Model
             'not_after' => 'datetime',
             'retired_at' => 'datetime',
         ];
+    }
+
+    public function sealWrapContext(): string
+    {
+        return 'daemon_client_ca:'.$this->id;
+    }
+
+    public function sealAssociatedData(string $column): string
+    {
+        return match ($column) {
+            'private_key' => "daemon_client_ca|{$this->id}|key",
+            default => throw new InvalidArgumentException("{$column} is not a sealed column."),
+        };
     }
 }

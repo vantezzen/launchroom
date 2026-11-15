@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Data\Api;
 
 use App\Enums\VariableType;
+use App\Support\Variables\VariableKey;
 use Spatie\LaravelData\Attributes\Validation\Max;
 use Spatie\LaravelData\Attributes\Validation\Regex;
 use Spatie\LaravelData\Data;
@@ -17,9 +18,9 @@ use Spatie\LaravelData\Optional;
 final class UpdateVariableInput extends Data
 {
     public function __construct(
-        #[Regex('/^[A-Za-z_][A-Za-z0-9_]{0,255}$/D')]
+        #[Regex(VariableKey::PATTERN)]
         public string|Optional $key = new Optional,
-        #[Max(131072)]
+        #[Max(VariableKey::MAX_VALUE_BYTES)]
         public string|Optional $value = new Optional,
         public VariableType|Optional $type = new Optional,
     ) {}

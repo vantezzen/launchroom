@@ -24,6 +24,7 @@ final class DeploymentFailureData extends Data
         [$title, $hint] = match ($class) {
             DeploymentFailureClass::PlanError => ['Could not plan the build', 'launchroom could not work out how to build this app. Set install, build and start commands in the service settings, or add a Dockerfile.'],
             DeploymentFailureClass::BuildError => ['Build failed', 'A build step exited with an error. The first error line is highlighted in the build log.'],
+            DeploymentFailureClass::BuildTimeout => ['Build timed out', 'The build didn’t finish in time. Time spent waiting for a free build slot counts too, so check whether other builds kept the build servers busy.'],
             DeploymentFailureClass::Transient => ['Registry or network trouble', 'This is usually temporary. Redeploy to try again.'],
             DeploymentFailureClass::ReleaseError => ['Release command failed', 'The release command exited with an error, so the new version was not rolled out. Check the command in the service settings.'],
             DeploymentFailureClass::RuntimeError => ['The app exited', 'The container stopped while starting. The last runtime log lines usually say why.'],

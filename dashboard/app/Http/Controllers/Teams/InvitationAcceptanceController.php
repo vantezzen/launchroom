@@ -6,13 +6,12 @@ namespace App\Http\Controllers\Teams;
 
 use App\Actions\Teams\AcceptInvitation;
 use App\Actions\Teams\FindInvitation;
-use App\Concerns\PasswordValidationRules;
-use App\Concerns\ProfileValidationRules;
 use App\Data\Audit\AuditActor;
 use App\Data\Teams\AcceptInvitationData;
 use App\Data\Teams\InvitationPreviewData;
 use App\Enums\ActorType;
 use App\Http\Controllers\Controller;
+use App\Http\Toast;
 use App\Models\TeamInvitation;
 use App\Models\User;
 use Illuminate\Http\RedirectResponse;
@@ -30,8 +29,6 @@ use Inertia\Response;
  */
 final class InvitationAcceptanceController extends Controller
 {
-    use PasswordValidationRules, ProfileValidationRules;
-
     public function show(Request $request, string $token, FindInvitation $findInvitation): Response
     {
         $invitation = $findInvitation->handle($token);
@@ -61,11 +58,7 @@ final class InvitationAcceptanceController extends Controller
         $account = null;
 
         if (! $user instanceof User) {
-            $validated = $request->validate([
-                'name' => $this->nameRules(),
-                'password' => $this->passwordRules(),
-            ]);
-            $account = AcceptInvitationData::from($validated);
+            $account = AcceptInvitationData::validateAndCreate($request->all());
         }
 
         $member = $acceptInvitation->handle(
@@ -82,7 +75,7 @@ final class InvitationAcceptanceController extends Controller
             $request->session()->regenerate();
         }
 
-        Inertia::flash('toast', ['type' => 'success', 'message' => 'You joined the team.']);
+        Toast::success('You joined the team.');
 
         return to_route('dashboard');
     }

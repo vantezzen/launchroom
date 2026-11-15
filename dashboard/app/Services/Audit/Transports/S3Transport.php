@@ -5,13 +5,14 @@ declare(strict_types=1);
 namespace App\Services\Audit\Transports;
 
 use App\Models\AuditSink;
+use App\Models\InstanceSettings;
 use App\Services\Audit\AuditBatch;
 use App\Services\Audit\AuditDeliveryFailed;
-use App\Services\Audit\AuditSinkSecrets;
-use App\Services\Backups\SnapshotTags;
+use App\Services\Crypto\SealedColumns;
 use App\Services\Http\Exceptions\ResponseTooLarge;
 use App\Services\Http\Exceptions\UnsafeUrl;
 use App\Services\Http\SafeHttpClient;
+use App\Support\S3\S3Location;
 use App\Support\S3\SigV4;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Client\Response;
@@ -31,7 +32,7 @@ final readonly class S3Transport implements AuditSinkTransport
     public const string FOLDER = 'launchroom-audit';
 
     public function __construct(
-        private AuditSinkSecrets $secrets,
+        private SealedColumns $sealed,
         private SafeHttpClient $http,
     ) {}
 
@@ -47,7 +48,6 @@ final readonly class S3Transport implements AuditSinkTransport
         $mode = $sink->configString('lockMode');
 
         if (($sink->config['objectLock'] ?? false) === true && $days !== null && $days > 0 && in_array($mode, ['GOVERNANCE', 'COMPLIANCE'], true)) {
-            // The integrity checksum S3 requires with Object Lock (instead of Content-MD5).
             $headers['x-amz-checksum-sha256'] = base64_encode(hash('sha256', $body, true));
             $headers['x-amz-object-lock-mode'] = $mode;
             $headers['x-amz-object-lock-retain-until-date'] = CarbonImmutable::now()->utc()->addDays($days)->format('Y-m-d\TH:i:s\Z');
@@ -70,8 +70,8 @@ final readonly class S3Transport implements AuditSinkTransport
             throw $this->failure($lock);
         }
 
-        $body = json_encode(['type' => 'test', 'instance' => SnapshotTags::instanceId(), 'sentAt' => CarbonImmutable::now()->toIso8601ZuluString()], JSON_THROW_ON_ERROR)."\n";
-        $put = $this->request($sink, 'PUT', $this->prefix($sink).self::FOLDER.'/'.SnapshotTags::instanceId().'/connection-test.json', [], $body, ['content-type' => 'application/json']);
+        $body = json_encode(['type' => 'test', 'instance' => InstanceSettings::instanceId(), 'sentAt' => CarbonImmutable::now()->toIso8601ZuluString()], JSON_THROW_ON_ERROR)."\n";
+        $put = $this->request($sink, 'PUT', $this->prefix($sink).self::FOLDER.'/'.InstanceSettings::instanceId().'/connection-test.json', [], $body, ['content-type' => 'application/json']);
 
         if (! $put->successful()) {
             throw $this->failure($put);
@@ -103,10 +103,10 @@ final readonly class S3Transport implements AuditSinkTransport
 
         $host = strtolower($parts['host']).(isset($parts['port']) ? ':'.$parts['port'] : '');
         $path = '/'.$bucket.($key === '' ? '' : '/'.$key);
-        $secret = $this->secrets->reveal($sink);
+        $secret = $this->sealed->revealJson($sink, 'secret');
         $signed = SigV4::sign(
             $method, $host, $path, $query, $headers, hash('sha256', $body),
-            $sink->configString('region') ?? 'us-east-1',
+            S3Location::regionOrDefault($sink->configString('region')),
             $secret['accessKeyId'] ?? '', $secret['secretAccessKey'] ?? '', CarbonImmutable::now(),
         );
 

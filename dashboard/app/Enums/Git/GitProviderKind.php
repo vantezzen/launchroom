@@ -41,4 +41,12 @@ enum GitProviderKind: string
     {
         return $this !== self::Git;
     }
+
+    /**
+     * @return list<self>
+     */
+    public static function apiConnections(): array
+    {
+        return array_values(array_filter(self::cases(), static fn (self $kind): bool => $kind->usesConnections() && $kind->hasApi()));
+    }
 }

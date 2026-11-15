@@ -7,11 +7,10 @@ namespace App\Http\Controllers\Analytics;
 use App\Data\Analytics\TeamAnalyticsData;
 use App\Data\Api\AnalyticsQuery;
 use App\Http\Controllers\Controller;
-use App\Http\Controllers\Teams\TeamSettingsController;
+use App\Http\Routing\CurrentTeam;
 use App\Models\Project;
-use App\Models\User;
+use App\Models\Team;
 use App\Queries\TeamAnalytics;
-use Illuminate\Container\Attributes\CurrentUser;
 use Illuminate\Support\Facades\Gate;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -25,9 +24,8 @@ use Inertia\Response;
  */
 final class TeamAnalyticsController extends Controller
 {
-    public function show(#[CurrentUser] User $user): Response
+    public function show(#[CurrentTeam] Team $team): Response
     {
-        $team = TeamSettingsController::currentTeam($user);
         Gate::authorize('viewAny', [Project::class, $team]);
 
         return Inertia::render('analytics', [
@@ -35,9 +33,8 @@ final class TeamAnalyticsController extends Controller
         ]);
     }
 
-    public function data(AnalyticsQuery $query, #[CurrentUser] User $user, TeamAnalytics $analytics): TeamAnalyticsData
+    public function data(AnalyticsQuery $query, TeamAnalytics $analytics, #[CurrentTeam] Team $team): TeamAnalyticsData
     {
-        $team = TeamSettingsController::currentTeam($user);
         Gate::authorize('viewAny', [Project::class, $team]);
 
         return $analytics->handle($team, $query->range);

@@ -62,7 +62,6 @@ test('PHP-sealed envs round-trip through the daemon checks, bound to server and 
     expect(openSealedEnv($sealed, $secret, $public, $fixture['serverId'], $fixture['workloadId']))->toBe($fixture['env'])
         ->and(openSealedEnv($sealed, $secret, $public, $fixture['serverId'], 'wl_01J9Z8X7W6V5T4S3R2Q1P0N9N8'))->toBeNull()
         ->and(openSealedEnv($sealed, $secret, $public, 'srv_01J9Z8X7W6V5T4S3R2Q1P0N9MA', $fixture['workloadId']))->toBeNull()
-        // Randomized: sealing twice never gives the same ciphertext.
         ->and(WorkloadEnvSealer::seal($fixture['recipientPublicKey'], $fixture['serverId'], $fixture['workloadId'], $fixture['env']))->not->toBe($sealed);
 });
 

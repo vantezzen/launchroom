@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Backups;
 
 use App\Models\Backups\BackupDestination;
+use App\Support\InstallCommands;
 use RuntimeException;
 use SensitiveParameter;
 
@@ -41,6 +42,7 @@ final class RecoveryKitDocument
 
         $lines = array_map(static fn (string $key, string $value): string => "{$key}: {$value}", array_keys($values), $values);
         $created = now()->utc()->format('Y-m-d H:i').' UTC';
+        $restore = InstallCommands::controlPlane('--restore');
         $begin = self::BEGIN;
 
         return <<<TXT
@@ -56,7 +58,7 @@ final class RecoveryKitDocument
 
             To restore on a fresh server:
 
-              curl -fsSL https://launchroom.vantezzen.io/install | sh -s -- --restore
+              {$restore}
 
             The installer asks for this file and for your recovery passphrase, lists
             the control-plane snapshots, and restores the newest one. Details:

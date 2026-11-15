@@ -12,7 +12,7 @@ use App\Data\Security\AddWafExclusionData;
 use App\Data\Security\ServiceFirewallData;
 use App\Data\Security\SetWafSettingsData;
 use App\Http\Controllers\Controller;
-use App\Http\Controllers\Projects\ProjectScope;
+use App\Http\Routing\RouteScope;
 use App\Models\Environment;
 use App\Models\Project;
 use App\Models\Security\SecurityInvestigation;
@@ -35,7 +35,7 @@ final class ServiceFirewallController extends Controller
 {
     public function show(Project $project, Environment $environment, Service $service, #[CurrentUser] User $user, ServiceFirewall $firewall): ServiceFirewallData
     {
-        $instance = ProjectScope::instance($project, $environment, $service);
+        $instance = RouteScope::instance($project, $environment, $service);
         Gate::authorize('viewAny', [WafExclusion::class, $instance]);
 
         return $firewall->handle($instance, $user);
@@ -43,7 +43,7 @@ final class ServiceFirewallController extends Controller
 
     public function update(Request $request, Project $project, Environment $environment, Service $service, SetWafSettingsData $data, #[CurrentUser] User $user, SetWafSettings $set): JsonResponse
     {
-        $instance = ProjectScope::instance($project, $environment, $service);
+        $instance = RouteScope::editable(RouteScope::instance($project, $environment, $service));
         Gate::authorize('update', $instance);
         $instance = $set->handle($instance, $data, $this->auditActor($request, $user));
 
@@ -52,7 +52,7 @@ final class ServiceFirewallController extends Controller
 
     public function store(Request $request, Project $project, Environment $environment, Service $service, AddWafExclusionData $data, #[CurrentUser] User $user, AddWafExclusion $add): JsonResponse
     {
-        $instance = ProjectScope::instance($project, $environment, $service);
+        $instance = RouteScope::editable(RouteScope::instance($project, $environment, $service));
         Gate::authorize('create', [WafExclusion::class, $instance]);
         $exclusion = $add->handle($instance, $data, $user, $this->auditActor($request, $user));
 
@@ -61,8 +61,8 @@ final class ServiceFirewallController extends Controller
 
     public function destroy(Request $request, Project $project, Environment $environment, Service $service, WafExclusion $wafExclusion, #[CurrentUser] User $user, RemoveWafExclusion $remove): JsonResponse
     {
-        $instance = ProjectScope::instance($project, $environment, $service);
-        abort_unless($wafExclusion->service_instance_id === $instance->id, 404);
+        $instance = RouteScope::editable(RouteScope::instance($project, $environment, $service));
+        $wafExclusion = RouteScope::wafExclusion($instance, $wafExclusion);
         Gate::authorize('delete', $wafExclusion);
         $remove->handle($wafExclusion, $this->auditActor($request, $user));
 
@@ -71,7 +71,7 @@ final class ServiceFirewallController extends Controller
 
     public function investigate(Request $request, Project $project, Environment $environment, Service $service, #[CurrentUser] User $user, StartInvestigation $start): JsonResponse
     {
-        $instance = ProjectScope::instance($project, $environment, $service);
+        $instance = RouteScope::instance($project, $environment, $service);
         Gate::authorize('create', [SecurityInvestigation::class, $instance]);
         $investigation = $start->handle($instance, null, $user, actor: $this->auditActor($request, $user));
 

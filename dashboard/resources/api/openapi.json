@@ -436,7 +436,7 @@
             "get": {
                 "operationId": "streamDeploymentLogs",
                 "summary": "Follow a deployment's logs (server-sent events)",
-                "description": "Events: `lines` ({lines, cursor}; the event id is the cursor), `status` ({status, finished}), `end`, `reconnect`. Resume with `Last-Event-ID`.\n\nRequires the `read` ability.",
+                "description": "Events: `lines` (the event id is the cursor), `status`, `end`, `reconnect`. Resume with `Last-Event-ID`.\n\nRequires the `read` ability.",
                 "tags": [
                     "Logs"
                 ],
@@ -474,6 +474,20 @@
                                 "schema": {
                                     "type": "string"
                                 }
+                            }
+                        },
+                        "x-launchroom-events": {
+                            "lines": {
+                                "$ref": "#/components/schemas/DeploymentLinesEvent"
+                            },
+                            "status": {
+                                "$ref": "#/components/schemas/DeploymentStatusEvent"
+                            },
+                            "end": {
+                                "$ref": "#/components/schemas/DeploymentEndEvent"
+                            },
+                            "reconnect": {
+                                "$ref": "#/components/schemas/StreamReconnectEvent"
                             }
                         }
                     },
@@ -1456,14 +1470,7 @@
                         "name": "range",
                         "in": "query",
                         "schema": {
-                            "type": "string",
-                            "enum": [
-                                "15m",
-                                "1h",
-                                "24h",
-                                "7d",
-                                "30d"
-                            ],
+                            "$ref": "#/components/schemas/LogRange",
                             "default": "1h"
                         }
                     },
@@ -1582,7 +1589,7 @@
             "get": {
                 "operationId": "streamEnvironmentLogs",
                 "summary": "Follow an environment's logs (server-sent events)",
-                "description": "Starts live runtime logs like the explorer's Live and renews them while the stream is open. Events: `lines` ({entries, cursor}), `reconnect`. Resume with `Last-Event-ID`.\n\nRequires the `read` ability.",
+                "description": "Starts live runtime logs like the explorer's Live and renews them while the stream is open. Events: `lines` (the event id is the cursor), `reconnect`. Resume with `Last-Event-ID`.\n\nRequires the `read` ability.",
                 "tags": [
                     "Logs"
                 ],
@@ -1606,14 +1613,7 @@
                         "name": "range",
                         "in": "query",
                         "schema": {
-                            "type": "string",
-                            "enum": [
-                                "15m",
-                                "1h",
-                                "24h",
-                                "7d",
-                                "30d"
-                            ],
+                            "$ref": "#/components/schemas/LogRange",
                             "default": "1h"
                         }
                     },
@@ -1692,6 +1692,14 @@
                                 "schema": {
                                     "type": "string"
                                 }
+                            }
+                        },
+                        "x-launchroom-events": {
+                            "lines": {
+                                "$ref": "#/components/schemas/EnvironmentLinesEvent"
+                            },
+                            "reconnect": {
+                                "$ref": "#/components/schemas/StreamReconnectEvent"
                             }
                         }
                     },
@@ -3746,11 +3754,7 @@
                         "schema": {
                             "oneOf": [
                                 {
-                                    "type": "string",
-                                    "enum": [
-                                        "action_needed",
-                                        "worth_knowing"
-                                    ]
+                                    "$ref": "#/components/schemas/FindingLevel"
                                 },
                                 {
                                     "type": "null"
@@ -5505,6 +5509,13 @@
                         "items": {
                             "$ref": "#/components/schemas/ConfigExcerptLineData"
                         }
+                    },
+                    "href": {
+                        "description": "The file at the read commit, at this line, on the repository's host (set when shown).",
+                        "type": [
+                            "string",
+                            "null"
+                        ]
                     }
                 },
                 "required": [
@@ -5545,7 +5556,7 @@
                             "string",
                             "null"
                         ],
-                        "pattern": "^[0-9a-f]{40}$"
+                        "pattern": "^[0-9a-f]{40}(?:[0-9a-f]{24})?$"
                     },
                     "redeploy": {
                         "type": "boolean",
@@ -5603,7 +5614,7 @@
                             "string",
                             "null"
                         ],
-                        "pattern": "^vol_[0-9A-HJKMNP-TV-Z]{26}$"
+                        "pattern": "^vol_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
                     }
                 },
                 "required": [
@@ -5652,7 +5663,7 @@
             },
             "DeployEnvironmentInput": {
                 "type": "object",
-                "description": "`POST /environments/{environment}/deploy`: apply the staged changes. `stage`: build and start, route only on Promote.",
+                "description": "Apply the staged changes (web review sheet and `POST /environments/{environment}/deploy`). `stage`: build and start, route only on Promote.",
                 "properties": {
                     "message": {
                         "type": [
@@ -5733,11 +5744,25 @@
                 ],
                 "additionalProperties": false
             },
+            "DeploymentEndEvent": {
+                "type": "object",
+                "description": "`end` of a deployment log stream: the deployment settled with `status`.",
+                "properties": {
+                    "status": {
+                        "$ref": "#/components/schemas/DeploymentStatus"
+                    }
+                },
+                "required": [
+                    "status"
+                ],
+                "additionalProperties": false
+            },
             "DeploymentFailureClass": {
                 "type": "string",
                 "enum": [
                     "plan_error",
                     "build_error",
+                    "build_timeout",
                     "transient",
                     "release_error",
                     "runtime_error",
@@ -5747,6 +5772,26 @@
                     "placement_error"
                 ],
                 "description": "Why a deployment failed, shown prominently with hints."
+            },
+            "DeploymentLinesEvent": {
+                "type": "object",
+                "description": "`lines` of a deployment log stream; the event id is `cursor`.",
+                "properties": {
+                    "lines": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/LogLineData"
+                        }
+                    },
+                    "cursor": {
+                        "type": "integer"
+                    }
+                },
+                "required": [
+                    "lines",
+                    "cursor"
+                ],
+                "additionalProperties": false
             },
             "DeploymentResource": {
                 "type": "object",
@@ -5844,7 +5889,37 @@
                     "cancelled",
                     "superseded"
                 ],
-                "description": "The deployment state machine. Every status change goes through Deployment::transitionTo(), which validates against this table and emits DeploymentStatusChanged. queued → building? → releasing? → rolling_out → health_checking → [ready →] routing → active any in-flight status → failed | cancelled; queued/building → superseded (a newer deployment of the same service instance collapses older ones); active → superseded (a newer deployment went live). `ready`: a staged deployment is healthy and waits for \"Promote\" to route traffic to it; the previous version keeps serving meanwhile. It can be cancelled (its workloads are removed). `planning` arrives with the build wave."
+                "description": "The deployment state machine. Every status change goes through Deployment::transitionTo(), which validates against this table and emits DeploymentStatusChanged. queued → building? → releasing? → rolling_out → health_checking → [ready →] routing → active any in-flight status → failed | cancelled; queued/building → superseded (a newer deployment of the same service instance collapses older ones); active → superseded (a newer deployment went live). `ready`: a staged deployment is healthy and waits for \"Promote\" to route traffic to it; the previous version keeps serving meanwhile. It can be cancelled (its workloads are removed).",
+                "x-launchroom-tones": {
+                    "queued": "progress",
+                    "building": "progress",
+                    "releasing": "progress",
+                    "rolling_out": "progress",
+                    "health_checking": "progress",
+                    "ready": "staged",
+                    "routing": "progress",
+                    "active": "active",
+                    "failed": "failed",
+                    "cancelled": "idle",
+                    "superseded": "idle"
+                }
+            },
+            "DeploymentStatusEvent": {
+                "type": "object",
+                "description": "`status` of a deployment log stream: sent when the status changes; `finished` once the deployment settled.",
+                "properties": {
+                    "status": {
+                        "$ref": "#/components/schemas/DeploymentStatus"
+                    },
+                    "finished": {
+                        "type": "boolean"
+                    }
+                },
+                "required": [
+                    "status",
+                    "finished"
+                ],
+                "additionalProperties": false
             },
             "DeploymentTrigger": {
                 "type": "string",
@@ -5944,6 +6019,26 @@
                     "preview"
                 ],
                 "description": "Kinds of environments: exactly one production environment per project, any number of persistent ones, ephemeral previews per PR."
+            },
+            "EnvironmentLinesEvent": {
+                "type": "object",
+                "description": "`lines` of an environment log stream; the event id is `cursor`.",
+                "properties": {
+                    "entries": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/LogEntryData"
+                        }
+                    },
+                    "cursor": {
+                        "type": "integer"
+                    }
+                },
+                "required": [
+                    "entries",
+                    "cursor"
+                ],
+                "additionalProperties": false
             },
             "EnvironmentRefData": {
                 "type": "object",
@@ -6142,8 +6237,7 @@
                         ]
                     },
                     "severity": {
-                        "description": "`critical`, `high`, `medium`, `low` or `unknown`.",
-                        "type": "string"
+                        "$ref": "#/components/schemas/Severity"
                     },
                     "cvss": {
                         "type": [
@@ -6179,8 +6273,7 @@
                         ]
                     },
                     "level": {
-                        "description": "`action_needed` or `worth_knowing`.",
-                        "type": "string"
+                        "$ref": "#/components/schemas/FindingLevel"
                     },
                     "reasons": {
                         "type": "array",
@@ -6189,8 +6282,7 @@
                         }
                     },
                     "status": {
-                        "description": "`open` or `dismissed`.",
-                        "type": "string"
+                        "$ref": "#/components/schemas/SecurityFindingStatus"
                     },
                     "firstSeenAt": {
                         "type": "string"
@@ -6424,8 +6516,7 @@
                         "type": "string"
                     },
                     "status": {
-                        "description": "`running`, `completed`, `partial` or `failed`.",
-                        "type": "string"
+                        "$ref": "#/components/schemas/InvestigationStatus"
                     },
                     "startedAt": {
                         "type": "string"
@@ -6451,6 +6542,14 @@
                     "summary"
                 ],
                 "additionalProperties": false
+            },
+            "FindingLevel": {
+                "type": "string",
+                "enum": [
+                    "action_needed",
+                    "worth_knowing"
+                ],
+                "description": "The two alert levels: \"Action needed\" notifies and leads the Security page; \"Worth knowing\" is listed quietly and never notifies."
             },
             "ImportResultData": {
                 "type": "object",
@@ -6581,6 +6680,10 @@
                             "null"
                         ]
                     },
+                    "finished": {
+                        "description": "It ended (succeeded, failed or cancelled).",
+                        "type": "boolean"
+                    },
                     "safetySnapshot": {
                         "description": "Whether a safety snapshot was taken first.",
                         "type": "boolean",
@@ -6622,7 +6725,8 @@
                     "error",
                     "createdAt",
                     "startedAt",
-                    "finishedAt"
+                    "finishedAt",
+                    "finished"
                 ],
                 "additionalProperties": false
             },
@@ -6976,6 +7080,16 @@
                 ],
                 "additionalProperties": false
             },
+            "InvestigationStatus": {
+                "type": "string",
+                "enum": [
+                    "running",
+                    "completed",
+                    "partial",
+                    "failed"
+                ],
+                "description": "An investigation: running while its container inspections run, then completed, partial (a replica couldn't be checked) or failed (nothing could be checked)."
+            },
             "InvestigationStepData": {
                 "type": "object",
                 "description": "One of \"What to do now\", mapped to an existing action.",
@@ -7008,7 +7122,7 @@
             },
             "LogEntryData": {
                 "type": "object",
-                "description": "One line in the project log explorer (direction.md §9.8). `id` is stable (chunk id + index), `level` is guessed from the text (error keywords, warnings, debug), `source` says whether it came from a build/release step or from a running service. Text is raw and rendered as text, never HTML.",
+                "description": "One line in the project log explorer (direction.md §9.8). `id` is stable (chunk id + index), `level` is guessed from the text. Text is raw and rendered as text, never HTML.",
                 "properties": {
                     "id": {
                         "type": "string"
@@ -7017,12 +7131,10 @@
                         "type": "string"
                     },
                     "level": {
-                        "description": "error | warning | info | debug",
-                        "type": "string"
+                        "$ref": "#/components/schemas/LogLineLevel"
                     },
                     "source": {
-                        "description": "build | runtime",
-                        "type": "string"
+                        "$ref": "#/components/schemas/LogLineSource"
                     },
                     "service": {
                         "type": "string"
@@ -7059,8 +7171,7 @@
                         ]
                     },
                     "stream": {
-                        "description": "stdout | stderr | system",
-                        "type": "string"
+                        "$ref": "#/components/schemas/LogStream"
                     },
                     "message": {
                         "type": "string"
@@ -7138,6 +7249,43 @@
                     "step"
                 ],
                 "additionalProperties": false
+            },
+            "LogLineLevel": {
+                "type": "string",
+                "enum": [
+                    "error",
+                    "warning",
+                    "info",
+                    "debug"
+                ],
+                "description": "The level of a stored log line (`lines[].level`), guessed at ingest by LogLevel."
+            },
+            "LogLineSource": {
+                "type": "string",
+                "enum": [
+                    "build",
+                    "runtime"
+                ],
+                "description": "Where a line in the log explorer came from: a build or release step, or a running service."
+            },
+            "LogRange": {
+                "type": "string",
+                "enum": [
+                    "15m",
+                    "1h",
+                    "24h",
+                    "7d",
+                    "30d"
+                ],
+                "description": "Time ranges of the log explorer: the last 15 minutes up to the last 30 days, the longest log retention."
+            },
+            "LogStream": {
+                "type": "string",
+                "enum": [
+                    "stdout",
+                    "stderr",
+                    "system"
+                ]
             },
             "MeData": {
                 "type": "object",
@@ -7254,6 +7402,15 @@
                     "revision"
                 ],
                 "additionalProperties": false
+            },
+            "SecurityFindingStatus": {
+                "type": "string",
+                "enum": [
+                    "open",
+                    "dismissed",
+                    "resolved"
+                ],
+                "description": "Lifecycle of a finding: open → resolved (the live deployment no longer has the version, the advisory was withdrawn, the instance was removed) or dismissed (\"Not affected\"); dismissed → open (reopened by a user, or when the level rises or the advisory becomes known exploited) or resolved; resolved → open (the version came back)."
             },
             "SecurityServiceRefData": {
                 "type": "object",
@@ -7396,7 +7553,14 @@
                     "offline",
                     "revoked"
                 ],
-                "description": "Lifecycle of an enrolled server. pending_approval → online (approved) | revoked online ⇄ unreachable → offline → online revoked is terminal: the key is denied immediately."
+                "description": "Lifecycle of an enrolled server. pending_approval → online (approved) | revoked online ⇄ unreachable → offline → online revoked is terminal: the key is denied immediately.",
+                "x-launchroom-tones": {
+                    "pending_approval": "staged",
+                    "online": "active",
+                    "unreachable": "failed",
+                    "offline": "failed",
+                    "revoked": "idle"
+                }
             },
             "ServiceActionInput": {
                 "type": "object",
@@ -7593,6 +7757,17 @@
                 ],
                 "additionalProperties": false
             },
+            "Severity": {
+                "type": "string",
+                "enum": [
+                    "critical",
+                    "high",
+                    "medium",
+                    "low",
+                    "unknown"
+                ],
+                "description": "Severity of an advisory group: the GHSA label, else the highest CVSS v3 base score, else unknown."
+            },
             "StartCliSessionInput": {
                 "type": "object",
                 "description": "`POST /cli/sessions`: what the CLI says about itself; shown to the person approving (display only, never trusted).",
@@ -7631,7 +7806,7 @@
                             "string",
                             "null"
                         ],
-                        "pattern": "^vol_[0-9A-HJKMNP-TV-Z]{26}$"
+                        "pattern": "^vol_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
                     },
                     "snapshot": {
                         "type": [
@@ -7652,7 +7827,7 @@
                             "string",
                             "null"
                         ],
-                        "pattern": "^dtr_[0-9A-HJKMNP-TV-Z]{26}$"
+                        "pattern": "^dtr_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
                     },
                     "sourceUrl": {
                         "type": [
@@ -7681,7 +7856,7 @@
                             "string",
                             "null"
                         ],
-                        "pattern": "^vol_[0-9A-HJKMNP-TV-Z]{26}$"
+                        "pattern": "^vol_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
                     },
                     "stripComponents": {
                         "type": "integer",
@@ -7700,6 +7875,19 @@
                         ]
                     }
                 },
+                "additionalProperties": false
+            },
+            "StreamReconnectEvent": {
+                "type": "object",
+                "description": "`reconnect`: the stream reached its maximum length; resume from `cursor` (also the event id, so `Last-Event-ID` does it).",
+                "properties": {
+                    "cursor": {
+                        "type": "integer"
+                    }
+                },
+                "required": [
+                    "cursor"
+                ],
                 "additionalProperties": false
             },
             "TeamAnalyticsData": {

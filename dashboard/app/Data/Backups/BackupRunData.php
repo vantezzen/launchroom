@@ -19,7 +19,6 @@ final class BackupRunData extends Data
     public function __construct(
         public string $id,
         public BackupReason $reason,
-        public string $reasonLabel,
         public BackupRunStatus $status,
         public ?string $snapshotId,
         public ?string $shortSnapshotId,
@@ -39,7 +38,6 @@ final class BackupRunData extends Data
         return new self(
             $run->public_id,
             $run->reason,
-            $run->reason->label(),
             $run->status,
             $run->snapshot_id,
             $run->snapshot_id === null ? null : substr($run->snapshot_id, 0, 8),

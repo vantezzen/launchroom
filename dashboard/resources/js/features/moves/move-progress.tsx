@@ -4,8 +4,8 @@ import { Status } from '@/components/status';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Spinner } from '@/components/ui/spinner';
-import { formatBytes } from '@/features/backups/format';
 import { itemStates, kindLabels, moveStates } from '@/features/moves/format';
+import { formatBytes } from '@/lib/format';
 
 type FormDefinition = {
     action: string;

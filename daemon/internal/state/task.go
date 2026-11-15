@@ -33,7 +33,6 @@ type TaskSpec interface {
 	Validate() error
 }
 
-// newSpec returns an empty spec value for a task type.
 func newSpec(t TaskType) (TaskSpec, error) {
 	switch t {
 	case TaskBuild:
@@ -158,11 +157,11 @@ type RepoSpec struct {
 	// Ref is the branch or tag the commit was resolved from. Servers that
 	// refuse to send an unadvertised commit (plain git servers) are fetched
 	// at this ref instead and the commit is checked out from its history.
-	Ref GitRef `json:"ref,omitzero"`
+	Ref GitRef `json:"ref,omitzero" lr:"feature=gitProviders"`
 	// KnownHosts pins the host keys of an ssh:// remote (required for ssh,
 	// refused for http(s)). launchroomd accepts only a host key equal to one
 	// of them and offers only their key types (docs/19 §6).
-	KnownHosts []HostKey `json:"knownHosts,omitzero" jsonschema:"nullable,maxItems=8"`
+	KnownHosts []HostKey `json:"knownHosts,omitzero" jsonschema:"nullable,maxItems=8" lr:"feature=gitProviders"`
 }
 
 // Limits of pinned host keys.
@@ -240,7 +239,7 @@ type BuilderSpec struct {
 	// generated Dockerfile, docs/20): only with kind dockerfile, never with
 	// dockerfilePath. launchroomd writes it outside the checkout and builds
 	// rootDir with it.
-	Dockerfile string `json:"dockerfile,omitzero" jsonschema:"maxLength=65536"`
+	Dockerfile string `json:"dockerfile,omitzero" jsonschema:"maxLength=65536" lr:"feature=generatedDockerfile"`
 	// Preset forces a launchroom preset by name, or disables presets with "none".
 	// Omitted: the daemon detects the preset (kinds auto and railpack).
 	Preset Slug `json:"preset,omitzero"`
@@ -260,7 +259,7 @@ type BuilderSpec struct {
 	// (daemon feature phpExtensions, docs/04 §3.1). Railpack PHP builds add
 	// them through RAILPACK_PHP_EXTENSIONS; Dockerfile builds of a PHP app
 	// only get a warning. Valid for every builder kind.
-	PhpExtensions []PhpExtension `json:"phpExtensions,omitzero" jsonschema:"nullable,maxItems=8"`
+	PhpExtensions []PhpExtension `json:"phpExtensions,omitzero" jsonschema:"nullable,maxItems=8" lr:"feature=phpExtensions"`
 }
 
 // validatePhpExtensions checks a list of PHP extensions: at most 8, each
@@ -301,7 +300,7 @@ type BuildInputs struct {
 	// SSHKey is the repository's ed25519 deploy key for ssh:// clone URLs,
 	// sealed to the daemon (plaintext: TaskToken with purpose "ssh_key",
 	// token = standard base64 of the 32-byte seed). Only valid with ssh URLs.
-	SSHKey *Sealed `json:"sshKey,omitzero" jsonschema:"nullable"`
+	SSHKey *Sealed `json:"sshKey,omitzero" jsonschema:"nullable" lr:"feature=gitProviders"`
 	// RootDir is the repo-relative app directory. Omitted: repo root.
 	RootDir RelPath     `json:"rootDir,omitzero"`
 	Builder BuilderSpec `json:"builder"`
@@ -476,7 +475,7 @@ type PlanSpec struct {
 	// Inspect asks launchroomd to report a RepoInspection (file listing and
 	// selected manifest/entry files, docs/20 §2) in TaskCompletion.inspection,
 	// whether planning succeeds or fails.
-	Inspect bool `json:"inspect,omitzero"`
+	Inspect bool `json:"inspect,omitzero" lr:"feature=generatedDockerfile"`
 }
 
 // TaskType implements TaskSpec.
@@ -522,7 +521,7 @@ type RunOnceSpec struct {
 	// outside that the container accepts connections on probe.port within
 	// probe.within, then stops it. With a probe, command and args may both be
 	// omitted (the image's own CMD runs).
-	Probe *RunOnceProbe `json:"probe,omitzero" jsonschema:"nullable"`
+	Probe *RunOnceProbe `json:"probe,omitzero" jsonschema:"nullable" lr:"feature=generatedDockerfile"`
 }
 
 // RunOnceProbe is the start check of a run_once task.
@@ -661,7 +660,7 @@ type BackupSpec struct {
 	Target      BackupTarget      `json:"target"`
 	Destination BackupDestination `json:"destination"`
 	// Tags are restic snapshot tags ("key:value").
-	Tags []BackupTag `json:"tags"`
+	Tags []BackupTag `json:"tags" jsonschema:"maxItems=32"`
 }
 
 // TaskType implements TaskSpec.
@@ -691,7 +690,7 @@ type RestoreSpec struct {
 	// (omitted: as far as the archive goes). Only for base_backup.
 	PointInTime *time.Time `json:"pointInTime,omitzero" jsonschema:"nullable"`
 	// WalTags select the WAL snapshots to replay after the base backup (base_backup only).
-	WalTags []BackupTag `json:"walTags,omitzero" jsonschema:"nullable"`
+	WalTags []BackupTag `json:"walTags,omitzero" jsonschema:"nullable,maxItems=32"`
 	// Runtime is how Postgres runs for the replay (required for base_backup).
 	Runtime *RestoreRuntime `json:"runtime,omitzero" jsonschema:"nullable"`
 }
@@ -775,7 +774,7 @@ type BackupMaintenanceSpec struct {
 	// Retention is required for forget.
 	Retention *Retention `json:"retention,omitzero" jsonschema:"nullable"`
 	// Tags restrict forget to snapshots with all of these tags.
-	Tags []BackupTag `json:"tags,omitzero" jsonschema:"nullable"`
+	Tags []BackupTag `json:"tags,omitzero" jsonschema:"nullable,maxItems=32"`
 	// ReadDataSubsetPercent makes check read this percentage of pack data (0 = metadata only).
 	ReadDataSubsetPercent int `json:"readDataSubsetPercent,omitzero" jsonschema:"minimum=0,maximum=100"`
 }
@@ -818,7 +817,7 @@ func (s *BackupMaintenanceSpec) Validate() error {
 type BackupSnapshotsSpec struct {
 	Destination BackupDestination `json:"destination"`
 	// Tags restrict the listing to snapshots with all of these tags.
-	Tags []BackupTag `json:"tags"`
+	Tags []BackupTag `json:"tags" jsonschema:"maxItems=32"`
 }
 
 // TaskType implements TaskSpec.

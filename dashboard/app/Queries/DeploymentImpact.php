@@ -45,18 +45,18 @@ final readonly class DeploymentImpact
     {
         $now ??= CarbonImmutable::now();
 
-        if (! in_array($deployment->status, [DeploymentStatus::Active, DeploymentStatus::Superseded], true) || $deployment->finished_at === null) {
+        if ($deployment->went_live_at === null) {
             return null;
         }
 
-        $liveAt = CarbonImmutable::instance($deployment->finished_at);
+        $liveAt = CarbonImmutable::instance($deployment->went_live_at);
         $next = Deployment::query()
             ->where('service_instance_id', $deployment->service_instance_id)
-            ->whereIn('status', [DeploymentStatus::Active->value, DeploymentStatus::Superseded->value])
-            ->where('finished_at', '>', $liveAt)
-            ->oldest('finished_at')
-            ->first(['id', 'finished_at']);
-        $replacedAt = $next?->finished_at !== null ? CarbonImmutable::instance($next->finished_at) : null;
+            ->wentLive()
+            ->where('went_live_at', '>', $liveAt)
+            ->oldest('went_live_at')
+            ->first(['id', 'went_live_at']);
+        $replacedAt = $next?->went_live_at !== null ? CarbonImmutable::instance($next->went_live_at) : null;
         $end = $liveAt->addMinutes(self::WINDOW_MINUTES);
         $replaced = $replacedAt instanceof CarbonImmutable && $replacedAt->lessThan($end);
         // Only completed minutes count, so the rate doesn't dip at the right edge.
@@ -150,8 +150,9 @@ final readonly class DeploymentImpact
         $previous = DeploymentSummaries::withRelations(Deployment::query())
             ->where('service_instance_id', $deployment->service_instance_id)
             ->where('status', DeploymentStatus::Superseded->value)
-            ->where('finished_at', '<', $deployment->finished_at)
-            ->latest('finished_at')
+            ->wentLive()
+            ->where('went_live_at', '<', $deployment->went_live_at)
+            ->latest('went_live_at')
             ->first();
 
         if (! $previous instanceof Deployment) {

@@ -117,9 +117,9 @@ final readonly class TeamAnalytics
             timestamps: $w['timestamps'],
             totals: new AnalyticsTotalsData(
                 $totals['requests'], $totals['s2'], $totals['s3'], $totals['s4'], $totals['s5'],
-                $this->rate($totals['s5'], $totals['requests']),
+                RequestMetrics::rate($totals['s5'], $totals['requests']),
                 $previousRequests > 0 ? $previousRequests : null,
-                $previousRequests > 0 ? $this->rate($previousErrors, $previousRequests) : null,
+                $previousRequests > 0 ? RequestMetrics::rate($previousErrors, $previousRequests) : null,
                 $blocked,
                 BlockedRequests::total($scope, $range, $now, $w['previousFrom'], $w['from']),
             ),
@@ -131,8 +131,6 @@ final readonly class TeamAnalytics
     }
 
     /**
-     * Restricts `waf_samples` to the team's projects.
-     *
      * @return \Closure(Builder): Builder
      */
     private function teamScope(Team $team): \Closure
@@ -188,8 +186,8 @@ final readonly class TeamAnalytics
                 is_string($env) ? $env : null,
                 $agg['requests'],
                 $before > 0 ? $before : null,
-                $this->rate($agg['s5'], $agg['requests']),
-                $this->rate($agg['s4'], $agg['requests']),
+                RequestMetrics::rate($agg['s5'], $agg['requests']),
+                RequestMetrics::rate($agg['s4'], $agg['requests']),
                 array_values($agg['series']),
                 $agg['blocked'] ?? 0,
             );
@@ -217,7 +215,7 @@ final readonly class TeamAnalytics
             $server = $servers->get($id);
 
             if ($server instanceof Server) {
-                $out[] = new AnalyticsSplitData($server->public_id, $server->name, $agg['requests'], $this->rate($agg['s5'], $agg['requests']), array_values($agg['series']), $server->status === ServerStatus::Revoked);
+                $out[] = new AnalyticsSplitData($server->public_id, $server->name, $agg['requests'], RequestMetrics::rate($agg['s5'], $agg['requests']), array_values($agg['series']), $server->status === ServerStatus::Revoked);
             }
         }
 
@@ -264,10 +262,5 @@ final readonly class TeamAnalytics
         }
 
         return [$out, $covered];
-    }
-
-    private function rate(int $part, int $total): ?float
-    {
-        return $total > 0 ? round($part / $total * 100, 2) : null;
     }
 }

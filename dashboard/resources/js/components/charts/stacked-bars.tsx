@@ -3,17 +3,13 @@ import { useState } from 'react';
 import type { KeyboardEvent } from 'react';
 import { cn } from '@/lib/utils';
 import { ChartDrillPopover } from './chart-drill';
-import type { ChartDrill } from './chart-drill';
-import {
-    formatCompact,
-    formatTick,
-    formatTooltipTime,
-    niceMax,
-} from './format';
+import { formatTick, formatTooltipTime, niceMax } from './format';
 import { groupMarkers, LABEL_OFFSET } from './marker-groups';
 import { MarkerLayer } from './marker-layer';
 import type { ChartMarker } from './time-series-chart';
 import { useMeasuredWidth } from './use-measure';
+import type { ChartDrill } from '@/lib/observe-scope';
+import { formatCompact } from '@/lib/format';
 
 export type StackedSeries = {
     key: string;
@@ -26,7 +22,7 @@ export type StackedSeries = {
     values: number[];
 };
 
-export type StackedBarsProps = {
+type StackedBarsProps = {
     /** Bucket starts (epoch ms), oldest first. */
     times: number[];
     /** Bucket width in ms (axis end and readout). */

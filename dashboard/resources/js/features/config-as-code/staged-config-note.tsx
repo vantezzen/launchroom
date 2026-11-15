@@ -1,5 +1,5 @@
 import { FileCode2 } from 'lucide-react';
-import { shortSha } from '@/features/deployments/format';
+import { shortSha } from '@/lib/format';
 
 type Staged = App.Data.ConfigAsCode.StagedConfigFileData;
 

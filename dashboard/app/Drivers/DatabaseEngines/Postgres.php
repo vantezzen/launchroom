@@ -7,11 +7,15 @@ namespace App\Drivers\DatabaseEngines;
 use App\Data\Services\HealthcheckSettings;
 use App\Enums\ConnectionStyle;
 use App\Enums\DatabaseEngine;
+use App\Enums\RemoteAccess\RemoteAccessProtocol;
 use App\Enums\VariableType;
 use App\Support\Images\ImageReference;
 
 final readonly class Postgres implements DatabaseEngineDriver
 {
+    /** Postgres 18 images keep PGDATA in a versioned subdirectory and declare /var/lib/postgresql as the volume. */
+    private const int VERSIONED_PGDATA_FROM = 18;
+
     public function __construct(
         private ConfiguredImages $images,
     ) {}
@@ -28,7 +32,7 @@ final readonly class Postgres implements DatabaseEngineDriver
 
     public function defaultVersion(): string
     {
-        return '18';
+        return $this->images->defaultVersion($this->engine());
     }
 
     public function image(string $version): ImageReference
@@ -41,12 +45,19 @@ final readonly class Postgres implements DatabaseEngineDriver
         return 5432;
     }
 
+    public function category(): DatabaseEngineCategory
+    {
+        return DatabaseEngineCategory::Relational;
+    }
+
     public function volumeMountPath(string $version): string
     {
-        // Postgres 18 images keep PGDATA in a versioned subdirectory
-        // (/var/lib/postgresql/18/docker) and declare /var/lib/postgresql as
-        // the volume; older images use /var/lib/postgresql/data.
-        return (int) $version >= 18 ? '/var/lib/postgresql' : '/var/lib/postgresql/data';
+        return (int) $version >= self::VERSIONED_PGDATA_FROM ? '/var/lib/postgresql' : '/var/lib/postgresql/data';
+    }
+
+    public function dataDirectory(string $version): string
+    {
+        return (int) $version >= self::VERSIONED_PGDATA_FROM ? "/var/lib/postgresql/{$version}/docker" : '/var/lib/postgresql/data';
     }
 
     public function variables(): array
@@ -67,6 +78,38 @@ final readonly class Postgres implements DatabaseEngineDriver
     public function exportedKeys(): array
     {
         return ['DATABASE_URL', 'PGHOST', 'PGPORT', 'PGUSER', 'PGPASSWORD', 'PGDATABASE'];
+    }
+
+    public function exportedKey(ConnectionPart $part): ?string
+    {
+        return match ($part) {
+            ConnectionPart::Url => 'DATABASE_URL',
+            ConnectionPart::Host => 'PGHOST',
+            ConnectionPart::Port => 'PGPORT',
+            ConnectionPart::User => 'PGUSER',
+            ConnectionPart::Password => 'PGPASSWORD',
+            ConnectionPart::Database => 'PGDATABASE',
+            ConnectionPart::NativePort => null,
+        };
+    }
+
+    public function imageEnvAliases(): array
+    {
+        return [
+            'user' => ['POSTGRES_USER', 'POSTGRESQL_USERNAME'],
+            'password' => ['POSTGRES_PASSWORD', 'POSTGRESQL_PASSWORD'],
+            'database' => ['POSTGRES_DB', 'POSTGRESQL_DATABASE'],
+        ];
+    }
+
+    public function nativeSchemes(): array
+    {
+        return [];
+    }
+
+    public function urlQuery(): array
+    {
+        return [];
     }
 
     public function connectionVariables(ConnectionStyle $style, string $slug): array
@@ -109,6 +152,11 @@ final readonly class Postgres implements DatabaseEngineDriver
         return 'SIGINT';
     }
 
+    public function stopTimeout(): string
+    {
+        return '60s';
+    }
+
     public function entrypoint(): ?array
     {
         return null;
@@ -119,18 +167,48 @@ final readonly class Postgres implements DatabaseEngineDriver
         return null;
     }
 
-    public function dumpCommand(): array
+    public function client(): string
     {
-        return ['pg_dump', '--format=custom', '--no-owner', '--no-privileges'];
+        return 'psql';
     }
 
-    public function restoreCommand(): array
+    public function phpExtension(): string
     {
-        return ['pg_restore', '--clean', '--if-exists', '--no-owner', '--no-privileges', '--dbname=app'];
+        return 'pdo_pgsql';
     }
 
-    public function dumpFileExtension(): string
+    public function exportFileExtension(): string
     {
         return 'dump';
+    }
+
+    public function importFormat(): DumpImport
+    {
+        return new DumpImport(
+            engine: $this->engine(),
+            formats: ['postgres_custom', 'postgres_sql'],
+            formatsHint: 'pg_dump -Fc (custom) or plain SQL, optionally gzipped (.dump, .sql, .sql.gz)',
+            urlSchemes: ['postgres', 'postgresql'],
+            urlExample: 'postgres://user:password@db.example.com:5432/app',
+            dumpTool: 'pg_dump',
+            singleNumberMajorsFrom: 10,
+            sqlFormat: 'postgres_sql',
+        );
+    }
+
+    public function restorable(): bool
+    {
+        return true;
+    }
+
+    public function pointInTimeRecoveryFrom(): int
+    {
+        // basic_archive (WAL archiving without a shell command) ships with Postgres 15+.
+        return 15;
+    }
+
+    public function remoteAccess(): RemoteAccessProtocol
+    {
+        return RemoteAccessProtocol::Postgres;
     }
 }

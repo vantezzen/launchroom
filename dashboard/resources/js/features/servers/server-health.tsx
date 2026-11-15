@@ -3,7 +3,7 @@ import { SidePanel, SheetSection } from '@/components/patterns/sheet';
 import { Section } from '@/components/patterns/section';
 import { StatusIcon, StatusPill, healthCheckState } from '@/components/status';
 import { Button } from '@/components/ui/button';
-import { shortAge } from '@/features/servers/format';
+import { shortAge } from '@/lib/format';
 
 type Health = App.Data.Servers.ServerHealthData;
 type Check = App.Data.Servers.HealthCheckData;

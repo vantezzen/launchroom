@@ -100,7 +100,7 @@ test('Supabase is one public gateway in front of private services, with API keys
         ->and($anon->type)->toBe(VariableType::Config)
         ->and($serviceRole->type)->toBe(VariableType::Secret)
         ->and($anon->generator)->toBe('jwt("anon",JWT_SECRET)')
-        ->and($services['supabase']->connection_variables)->toBe([
+        ->and($services['supabase']->connection_variables?->toArray())->toBe([
             ['key' => 'NEXT_PUBLIC_SUPABASE_URL', 'value' => '${{PUBLIC_URL}}'],
             ['key' => 'NEXT_PUBLIC_SUPABASE_ANON_KEY', 'value' => '${{ANON_KEY}}'],
             ['key' => 'SUPABASE_SERVICE_ROLE_KEY', 'value' => '${{SERVICE_ROLE_KEY}}'],

@@ -6,10 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"strings"
 
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
+
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 )
 
 // AmbassadorOps are the Engine operations the ambassador system container
@@ -31,7 +32,7 @@ var _ AmbassadorOps = (*Engine)(nil)
 
 // ImportImage implements AmbassadorOps.
 func (e *Engine) ImportImage(ctx context.Context, ref string, rootfs io.Reader, changes []string) error {
-	if !strings.HasPrefix(ref, "lr-") {
+	if !names.Managed(ref) {
 		return fmt.Errorf("docker: image name %q must be generated (lr-…)", ref)
 	}
 	ctx, cancel := context.WithTimeout(ctx, e.pullTimeout)
@@ -62,7 +63,6 @@ func (e *Engine) ImportImage(ctx context.Context, ref string, rootfs io.Reader, 
 	}
 }
 
-// managedNetworkID resolves a managed network by name.
 func (e *Engine) managedNetworkID(ctx context.Context, name string) (string, error) {
 	nets, err := e.ListNetworks(ctx)
 	if err != nil {
@@ -83,6 +83,9 @@ func (e *Engine) ConnectNetwork(ctx context.Context, networkName, containerID st
 	}
 	id, err := e.managedNetworkID(ctx, networkName)
 	if err != nil {
+		return err
+	}
+	if err := e.isolation.before(ctx, networkName); err != nil {
 		return err
 	}
 	ctx, cancel := e.call(ctx)

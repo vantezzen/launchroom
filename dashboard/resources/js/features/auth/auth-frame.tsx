@@ -11,7 +11,7 @@ import { cn } from '@/lib/utils';
 import { home } from '@/routes';
 
 /** The instance's host, shown quietly under auth forms (direction §9.15). */
-export function instanceHost(): string {
+function instanceHost(): string {
     return typeof window === 'undefined' ? '' : window.location.host;
 }
 

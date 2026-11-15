@@ -20,19 +20,20 @@ use App\Data\Protocol\V1\Task;
 use App\Data\Protocol\V1\TaskCompletion;
 use App\Data\Protocol\V1\TaskLease;
 use App\Data\Services\CreateServiceData;
-use App\Data\Services\ServicePlanData;
 use App\Data\Services\UpdateServiceSettingsData;
 use App\Data\Specs\ServiceSpec;
 use App\Data\Variables\VariableInput;
 use App\Data\Variables\VariableTargetData;
 use App\Enums\ConnectionMode;
 use App\Enums\ConnectionStyle;
+use App\Enums\DaemonTaskPurpose;
 use App\Enums\DaemonTaskStatus;
 use App\Enums\DaemonTaskType;
 use App\Enums\DeploymentFailureClass;
 use App\Enums\DeploymentStatus;
 use App\Enums\ServerRole;
 use App\Enums\ServiceKind;
+use App\Enums\ServicePlanStatus;
 use App\Enums\TeamRole;
 use App\Enums\VariableType;
 use App\Exceptions\DomainRuleViolation;
@@ -56,6 +57,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Validation\ValidationException;
+use Tests\Support\GitFixtures;
 use Tests\Support\Projects;
 use Tests\Support\ProtocolSchemas;
 
@@ -69,11 +71,6 @@ beforeEach(function (): void {
     bfFakeGitRemote();
 });
 
-function bfPkt(string $line): string
-{
-    return sprintf('%04x', strlen($line) + 4).$line;
-}
-
 /**
  * The fake fixture remote advertises $branch at $sha (changeable per test).
  */
@@ -84,6 +81,7 @@ function bfGitHead(string $sha, string $branch = 'main'): void
 
 function bfFakeGitRemote(): void
 {
+    GitFixtures::resolve();
     Http::fake([
         'http://git-fixtures:8080/*' => static function (): PromiseInterface {
             /** @var array{string, string} $head */
@@ -91,7 +89,7 @@ function bfFakeGitRemote(): void
             // Transaction depth of every remote call (lookups must not run under a lock).
             app()->instance('test.git-levels', [...(app()->bound('test.git-levels') ? resolve('test.git-levels') : []), DB::transactionLevel()]);
 
-            return Http::response(bfPkt("# service=git-upload-pack\n").'0000'.bfPkt("{$head[0]} HEAD\0multi_ack side-band-64k\n").bfPkt("{$head[0]} refs/heads/{$head[1]}\n").'0000');
+            return GitFixtures::advertise($head[0], $head[1]);
         },
     ]);
 }
@@ -214,7 +212,7 @@ test('a git app is built by a build task sealed at lease time, released, rolled 
     expect($leased)->toHaveCount(1)
         ->and(ProtocolSchemas::errors('task-lease', ProtocolJson::encode(new TaskLease($leased))))->toBe([]);
 
-    $env = bfOpen($leased[0]->spec->env->sealed, $keypair);
+    $env = bfOpen($leased[0]->spec->inputs->env->sealed, $keypair);
     expect($env)->toBe(['serverId' => $server->public_id, 'taskId' => $task->public_id, 'env' => ['NEXT_PUBLIC_API' => 'https://api.example.com', 'NPM_TOKEN' => 'npm_secret_value']])
         ->and(json_encode(DaemonTask::query()->find($task->id)?->spec))->not->toContain('sealed');
 
@@ -224,12 +222,12 @@ test('a git app is built by a build task sealed at lease time, released, rolled 
     expect($deployment->status)->toBe(DeploymentStatus::Releasing)
         ->and($deployment->image)->toBe(bfImage($app))
         ->and($deployment->build_server_id)->toBe($server->id)
-        ->and($deployment->plan['summary']['port'] ?? null)->toBe(3000)
-        ->and($deployment->plan['secretsHash'] ?? null)->toBe(str_repeat('e', 64));
+        ->and($deployment->plan?->summary?->port)->toBe(3000)
+        ->and($deployment->plan?->secretsHash)->toBe(str_repeat('e', 64));
 
     // The release command (from the build summary) runs as a pinned run_once task.
     $release = DaemonTask::query()->where('deployment_id', $deployment->id)->where('type', DaemonTaskType::RunOnce->value)->sole();
-    expect($release->purpose)->toBe('release')
+    expect($release->purpose)->toBe(DaemonTaskPurpose::Release)
         ->and($release->pinned_to_server)->toBeTrue()
         // Railpack images have a `bash -c` ENTRYPOINT: the argv replaces it.
         ->and($release->spec->command)->toBe(['node', 'migrate.js'])
@@ -286,7 +284,7 @@ test('an unchanged commit reuses the image; a failing release command keeps the 
 
     expect($second->id)->not->toBe($first->id)
         ->and($second->image)->toBe($first->image)
-        ->and($second->plan['reusedFrom'] ?? null)->toBe($first->public_id)
+        ->and($second->plan?->reusedFrom)->toBe($first->public_id)
         ->and(DaemonTask::query()->where('deployment_id', $second->id)->where('type', DaemonTaskType::Build->value)->exists())->toBeFalse()
         ->and($second->status)->toBe(DeploymentStatus::Releasing);
 
@@ -313,7 +311,19 @@ test('build failures map the protocol failure class; transient ones get one more
     expect($deployment->refresh()->status)->toBe(DeploymentStatus::Failed)
         ->and($deployment->failure_class)->toBe(DeploymentFailureClass::PlanError)
         ->and($deployment->failure_message)->toBe('Build failed (plan): railpack could not plan')
-        ->and($deployment->plan['summary']['builderReason'] ?? null)->toBe('railpack');
+        ->and($deployment->plan?->summary?->builderReason->value)->toBe('railpack');
+});
+
+test('a build that passed its deadline fails as timed out, not as a build error', function (): void {
+    [, $server, , , $production, , $app] = bfProject();
+    bfDeploy($production);
+    $deployment = bfLatest($app);
+
+    bfComplete($server, bfLease($server)[0]->id, ['outcome' => 'failed', 'error' => 'context deadline exceeded', 'failure' => ['class' => 'timeout', 'step' => 'queue', 'retryable' => false]]);
+
+    expect($deployment->refresh()->status)->toBe(DeploymentStatus::Failed)
+        ->and($deployment->failure_class)->toBe(DeploymentFailureClass::BuildTimeout)
+        ->and($deployment->failure_message)->toBe('Build failed (queue): context deadline exceeded');
 });
 
 test('a build reporting an image outside the service repository fails', function (): void {
@@ -456,7 +466,7 @@ test('creating a git app plans it; the summary is recorded for the UI', function
     $instance = ServiceInstance::query()->where('service_id', $app->id)->sole();
     $task = DaemonTask::query()->where('type', DaemonTaskType::Plan->value)->sole();
 
-    expect(ServicePlanData::forInstance($instance)?->status)->toBe('planning')
+    expect($instance->plan?->status)->toBe(ServicePlanStatus::Planning)
         ->and(isset($task->spec->deployment))->toBeFalse()
         ->and($task->spec->repo->sha)->toBe(BF_SHA_A);
 
@@ -465,9 +475,9 @@ test('creating a git app plans it; the summary is recorded for the UI', function
 
     bfComplete($server, $task->public_id, ['outcome' => 'succeeded', 'plan' => ['durationMs' => 900, 'summary' => ['builder' => 'railpack', 'builderReason' => 'preset', 'provider' => 'node', 'framework' => 'express', 'port' => 3000]]]);
 
-    $plan = ServicePlanData::forInstance($instance->refresh());
-    expect($plan?->status)->toBe('ready')
-        ->and($plan?->commitSha)->toBe(BF_SHA_A)
+    $plan = $instance->refresh()->plan;
+    expect($plan?->status)->toBe(ServicePlanStatus::Ready)
+        ->and($plan?->sha)->toBe(BF_SHA_A)
         ->and($plan?->summary?->framework)->toBe('express')
         ->and($plan?->summary?->port)->toBe(3000);
 });
@@ -531,7 +541,7 @@ test('deployments whose images the registry pruned are no longer rollback target
     $unknown = '127.0.0.1:5000/'.$repository.'@sha256:'.str_repeat('b', 64);
 
     // Two superseded deployments (one pruned, one the registry can't answer for) and the active one.
-    $first->forceFill(['image' => $pruned, 'status' => DeploymentStatus::Superseded])->save();
+    $first->forceFill(['image' => $pruned, 'status' => DeploymentStatus::Superseded, 'went_live_at' => now()])->save();
     $second = $first->replicate(['public_id']);
     $second->forceFill(['image' => $unknown, 'status' => DeploymentStatus::Superseded, 'public_id' => PublicId::generate('dpl')])->save();
     $active = $first->replicate(['public_id']);
@@ -578,8 +588,8 @@ test('the Next.js adapter report of a build is stored and shown in the Build set
     $fixture = json_decode((string) file_get_contents(ProtocolSchemas::root().'/fixtures/v1/task-completion.build-next.json'), true);
     bfComplete($server, $task->public_id, bfBuilt($app, $fixture['build']['summary']));
 
-    expect($deployment->refresh()->plan['summary']['next']['nextVersion'] ?? null)->toBe('16.4.2')
-        ->and($deployment->plan['summary']['next']['routes']['isr'] ?? null)->toBe(1);
+    expect($deployment->refresh()->plan?->summary?->next?->nextVersion)->toBe('16.4.2')
+        ->and($deployment->plan?->summary?->next?->routes->isr)->toBe(1);
 
     $this->actingAs(memberOf($team, TeamRole::Viewer))
         ->get(route('projects.services.show', [$project, $production, $app, 'settings']))

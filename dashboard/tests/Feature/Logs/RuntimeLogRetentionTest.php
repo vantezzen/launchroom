@@ -11,6 +11,7 @@ use App\Models\LogChunk;
 use App\Models\Placement;
 use Carbon\CarbonImmutable;
 use Tests\Support\DeploymentUi;
+use Tests\Support\LogChunks;
 use Tests\Support\Projects;
 
 /*
@@ -28,7 +29,7 @@ function runtimeChunk(DeploymentUi $world, int $seq, CarbonImmutable $at, int $b
     $web = $world->latest($world->web);
     $placement = Placement::query()->where('deployment_id', $web->id)->firstOrFail();
 
-    $chunk = LogChunk::query()->create([
+    $chunk = LogChunks::create([
         'team_id' => $world->team->id, 'server_id' => $world->server->id, 'deployment_id' => $web->id,
         'source_kind' => $runtime ? LogSourceKind::Workload : LogSourceKind::Deployment,
         'source_id' => $runtime ? $placement->workload_id : $web->public_id,
@@ -100,7 +101,6 @@ test('pruning keeps runtime logs for their period and size cap; tails for a day;
     expect(LogChunk::query()->pluck('id')->all())->toEqualCanonicalizing([$recentTail->id, $oldBuild->id]);
     expect(LogChunk::query()->whereKey($oldTail->id)->exists())->toBeFalse();
 
-    // Retention on: 3 days and 1 MB.
     $world->production->forceFill(['runtime_log_retention_days' => 3, 'runtime_log_max_mb' => 1])->save();
     $kept = runtimeChunk($world, 4, $now->subDays(2), bytes: 400_000);
     $tooOld = runtimeChunk($world, 5, $now->subDays(4));
@@ -112,6 +112,5 @@ test('pruning keeps runtime logs for their period and size cap; tails for a day;
     expect($left)->toContain($kept->id, $newest->id, $recentTail->id, $oldBuild->id)
         ->and($left)->not->toContain($tooOld->id, $overCap->id);
 
-    // Idempotent.
     expect(resolve(PruneRuntimeLogs::class)->handle($now))->toBe(0);
 });

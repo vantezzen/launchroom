@@ -16,7 +16,7 @@ final class FindInvitation
 {
     public function handle(#[SensitiveParameter] string $token, bool $lock = false): ?TeamInvitation
     {
-        if (preg_match('/^lr_inv_[A-Za-z0-9_-]{43}$/D', $token) !== 1) {
+        if (! OpaqueToken::isWellFormed($token, TeamInvitation::TOKEN_PREFIX)) {
             return null;
         }
 

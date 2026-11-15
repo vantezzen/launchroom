@@ -57,8 +57,6 @@ const zotImage = "ghcr.io/project-zot/zot@sha256:96cda11459ce6f8c60da3b03f03e9f6
 // Zot mirror (127.0.0.1:5000/mirror/docker.io/…) with a dashboard-style token.
 const buildkitImage = state.ImageRef("127.0.0.1:5000/mirror/docker.io/moby/buildkit@" + policy.BuildkitImageDigest)
 
-// ---- fake control plane: registry token issuer ----
-
 // tokenIssuer mints Docker token-spec JWTs (ES256) like the dashboard's
 // RegistryTokenIssuer and applies the same scope rules for one server.
 type tokenIssuer struct {
@@ -136,8 +134,6 @@ func (ti *tokenIssuer) RegistryToken(_ context.Context, req *state.RegistryToken
 		ExpiresAt: now.Add(5 * time.Minute), Scopes: req.Scopes,
 	}, nil
 }
-
-// ---- environment ----
 
 type buildEnv struct {
 	*env
@@ -309,7 +305,6 @@ func setupBuild(t *testing.T) *buildEnv {
 	return be
 }
 
-// captureSink records build log lines.
 type captureSink struct {
 	mu    sync.Mutex
 	lines []string
@@ -379,7 +374,6 @@ func TestBuildRailpackNodeHelloAndRun(t *testing.T) {
 		t.Fatalf("unexpected plan summary: %+v", ps)
 	}
 
-	// Build + push.
 	task := state.TaskID("tsk_01J9Z8X7W6V5T4S3R2Q1P0N9P2")
 	be.lease(task)
 	sink := &captureSink{}
@@ -411,7 +405,7 @@ func TestBuildRailpackNodeHelloAndRun(t *testing.T) {
 	defer mon.Close()
 	rec := reconcile.New(reconcile.Options{
 		ServerID: be.serverID, Docker: be.engine, Policy: policy.DefaultConfig(), Health: mon,
-		EnvHashKey: reconcile.EnvHashKey(be.key.Bytes()),
+		EnvHashKey: docker.EnvHashKey(be.key.Bytes()),
 		OpenEnv: func(s *state.WorkloadSpec) (map[string]secret.Secret, error) {
 			return sealed.OpenWorkloadEnv(s.Env, be.key, be.serverID, s.ID)
 		},

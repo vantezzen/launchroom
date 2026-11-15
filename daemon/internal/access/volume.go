@@ -3,8 +3,6 @@ package access
 import (
 	"archive/tar"
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -15,6 +13,7 @@ import (
 	"github.com/moby/moby/api/types/mount"
 
 	"github.com/vantezzen/launchroom/daemon/internal/docker"
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/policy"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
@@ -39,12 +38,6 @@ import (
 // removes them when the access ends and sweeps every one at start (no access
 // outlives the process).
 const (
-	// LabelAccess carries the access id on a volume access helper.
-	LabelAccess = "launchroom.access"
-	// HelperKind is the launchroom.helper value of volume access helpers.
-	HelperKind = "access"
-	// HelperMount is where the helper mounts the volume.
-	HelperMount = "/data"
 	// HelperMaxLifetime bounds the helper's sleep (the access cap is 4 h).
 	HelperMaxLifetime = 5 * time.Hour
 
@@ -60,41 +53,26 @@ type VolumeDocker interface {
 	StreamFromContainer(ctx context.Context, id, src string) (io.ReadCloser, error)
 }
 
-// HelperName returns a generated helper container name.
-func HelperName() string {
-	b := make([]byte, 6)
-	_, _ = rand.Read(b)
-	return "lr-acc-" + hex.EncodeToString(b)
-}
-
 // HelperSpec is the built-in helper container (the guard checks this shape).
 func HelperSpec(server state.ServerID, access state.AccessID, image state.ImageRef, volume string, user string, readOnly bool, lifetime time.Duration) *docker.ContainerCreate {
 	labels := docker.ManagedLabels(string(server))
-	labels[docker.LabelHelper] = HelperKind
-	labels[LabelAccess] = string(access)
+	labels[names.LabelHelper] = names.HelperAccess
+	labels[names.LabelAccess] = string(access)
 	secs := int64(min(max(lifetime, time.Minute), HelperMaxLifetime) / time.Second)
 	memory, pids, init := int64(helperMemory), int64(helperPids), true
+	hc := policy.BaseHostConfig()
+	hc.NetworkMode, hc.ReadonlyRootfs, hc.Init = "none", true, &init
+	hc.Resources = container.Resources{Memory: memory, MemorySwap: memory, PidsLimit: &pids, NanoCPUs: helperCPUs}
+	hc.Mounts = []mount.Mount{{Type: mount.TypeVolume, Source: volume, Target: names.HelperMount, ReadOnly: readOnly}}
 	return &docker.ContainerCreate{
-		Name: HelperName(),
+		Name: names.AccessHelper(),
 		Config: &container.Config{
 			Image: string(image), Labels: labels, User: user,
 			Entrypoint:      []string{"sleep"},
 			Cmd:             []string{strconv.FormatInt(secs, 10)},
 			NetworkDisabled: true,
 		},
-		HostConfig: &container.HostConfig{
-			NetworkMode:    "none",
-			CapDrop:        []string{"ALL"},
-			SecurityOpt:    []string{policy.NoNewPrivileges},
-			ReadonlyRootfs: true,
-			Init:           &init,
-			Resources:      container.Resources{Memory: memory, MemorySwap: memory, PidsLimit: &pids, NanoCPUs: helperCPUs},
-			LogConfig: container.LogConfig{
-				Type:   policy.LogDriver,
-				Config: map[string]string{"max-size": policy.LogMaxSize, "max-file": policy.LogMaxFile},
-			},
-			Mounts: []mount.Mount{{Type: mount.TypeVolume, Source: volume, Target: HelperMount, ReadOnly: readOnly}},
-		},
+		HostConfig: hc,
 	}
 }
 
@@ -116,23 +94,17 @@ func (a *run) volumeTarget(ctx context.Context, wl *state.WorkloadSpec) (docker.
 	}
 	var found []docker.Volume
 	for _, v := range vols {
-		if v.Labels[docker.LabelVolume] == string(a.spec.Volume) {
+		if v.Labels[names.LabelVolume] == string(a.spec.Volume) {
 			found = append(found, v)
 		}
 	}
 	if len(found) != 1 {
 		return docker.Volume{}, fmt.Errorf("volume %s is not on this server yet (deploy the service once)", a.spec.Volume)
 	}
-	v := found[0]
-	l := v.Labels
-	switch {
-	case l[docker.LabelSystem] != "" || policy.CheckVolumeName(state.HostName(v.Name)) != nil:
-		return docker.Volume{}, fmt.Errorf("%w: %s is not a service volume", ErrRefused, a.spec.Volume)
-	case l[docker.LabelService] != "" && l[docker.LabelService] != string(wl.Service),
-		l[docker.LabelEnvironment] != "" && l[docker.LabelEnvironment] != string(wl.Environment):
-		return docker.Volume{}, fmt.Errorf("%w: volume %s belongs to another service", ErrRefused, a.spec.Volume)
+	if err := docker.CheckServiceVolume(found[0], a.spec.Volume, docker.VolumeOwner{Service: wl.Service, Environment: wl.Environment}); err != nil {
+		return docker.Volume{}, fmt.Errorf("%w: %w", ErrRefused, err)
 	}
-	return v, nil
+	return found[0], nil
 }
 
 // startHelper probes the owner, then creates and starts the helper. The
@@ -168,8 +140,6 @@ func (a *run) startHelper(ctx context.Context, vol docker.Volume, until time.Tim
 	return id, owner, remove, nil
 }
 
-// probeOwner reads the owner of the volume's top folder: the first entry of
-// its archive, through a never-started container of the helper's shape.
 func (a *run) probeOwner(ctx context.Context, vd VolumeDocker, volume string) (state.FileOwner, error) {
 	spec := HelperSpec(a.o.ServerID, a.spec.Access, a.spec.Image, volume, probeUser, true, time.Minute)
 	id, err := a.o.Docker.CreateContainer(ctx, spec)
@@ -179,7 +149,7 @@ func (a *run) probeOwner(ctx context.Context, vd VolumeDocker, volume string) (s
 	defer a.remover(ctx, id)()
 	pctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	src, err := vd.StreamFromContainer(pctx, id, HelperMount)
+	src, err := vd.StreamFromContainer(pctx, id, names.HelperMount)
 	if err != nil {
 		return state.FileOwner{}, fmt.Errorf("reading the volume's owner: %w", err)
 	}
@@ -208,12 +178,12 @@ func (a *run) remover(ctx context.Context, id string) func() {
 // SweepHelpers removes volume access helpers that no running access owns
 // (a crash or restart left them; live is the set of running accesses).
 func SweepHelpers(ctx context.Context, d docker.Client, live func(state.AccessID) bool) {
-	cs, err := d.ListContainers(ctx, map[string]string{docker.LabelHelper: HelperKind})
+	cs, err := d.ListContainers(ctx, map[string]string{names.LabelHelper: names.HelperAccess})
 	if err != nil {
 		return
 	}
 	for _, c := range cs {
-		if c.Labels[docker.LabelHelper] != HelperKind || live != nil && live(state.AccessID(c.Labels[LabelAccess])) {
+		if c.Labels[names.LabelHelper] != names.HelperAccess || live != nil && live(state.AccessID(c.Labels[names.LabelAccess])) {
 			continue
 		}
 		rctx, cancel := context.WithTimeout(ctx, 30*time.Second)

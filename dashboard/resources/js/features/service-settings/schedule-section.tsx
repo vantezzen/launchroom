@@ -5,7 +5,6 @@ import type { FormEvent } from 'react';
 import InputError from '@/components/input-error';
 import { MetaLine } from '@/components/patterns/meta-line';
 import { TimeRangeSelect } from '@/components/charts/time-range-select';
-import { relativeTime } from '@/components/time-ago';
 import { Input } from '@/components/ui/input';
 import {
     Select,
@@ -14,11 +13,6 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
-import {
-    SettingsBody,
-    SettingsCard,
-    SettingsRow,
-} from '@/features/settings/settings-card';
 import { cn } from '@/lib/utils';
 import services from '@/routes/projects/services';
 import {
@@ -31,6 +25,12 @@ import {
 } from './cron';
 import { IconTile, SaveRow, SettingsPage } from './section';
 import type { SettingsContext } from './settings-context';
+import { relativeTime } from '@/lib/format';
+import {
+    SettingsBody,
+    SettingsCard,
+    SettingsRow,
+} from '@/components/settings/settings-card';
 
 type Mode = 'schedule' | 'continuous';
 

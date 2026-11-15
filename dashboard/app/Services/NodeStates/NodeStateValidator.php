@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Services\NodeStates;
 
 use App\Support\Cron\CronGrammar;
+use App\Support\Protocol\Grammar;
+use App\Support\Protocol\Limits;
 use Opis\JsonSchema\Errors\ErrorFormatter;
 use Opis\JsonSchema\Errors\ValidationError;
 use Opis\JsonSchema\Validator;
@@ -25,32 +27,44 @@ use RuntimeException;
  *   and workloads; upstream and protection rules; drain/health/publish
  *   pairing; clean mount targets; the policy floor's name prefixes.
  *
- * Problems are "path: message" strings in the Go validator's path syntax
- * (`workloads[2].networks[0].network: …`), at most 25 like the daemon.
+ * Problems are {@see NodeStateProblem} records with paths in the Go
+ * validator's syntax (`workloads[2].networks[0].network`), at most 25 like the
+ * daemon. protocol/fixtures/v1/invalid holds the shared negative cases both
+ * validators must refuse with the same paths.
  */
 final class NodeStateValidator
 {
     private const int MAX_PROBLEMS = 25;
 
-    private const array FORBIDDEN_MOUNT_TARGETS = ['/proc', '/sys', '/dev', '/var/run/docker.sock', '/run/docker.sock'];
-
     private static ?Validator $schema = null;
 
-    /** @var list<string> */
+    /** @var list<NodeStateProblem> */
     private array $problems = [];
 
+    /** @var array<string, true> */
+    private array $seen = [];
+
     /**
-     * @return list<string> problems; [] when the document is valid
+     * The top-level list entry being checked: problems found meanwhile belong to it.
+     *
+     * @var array{string, int}|null
+     */
+    private ?array $at = null;
+
+    /**
+     * @return list<NodeStateProblem> empty when the document is valid
      */
     public function problems(string $json): array
     {
         $this->problems = [];
+        $this->seen = [];
+        $this->at = null;
 
         try {
             $object = json_decode($json, false, 512, JSON_THROW_ON_ERROR);
             $document = json_decode($json, true, 512, JSON_THROW_ON_ERROR);
         } catch (\JsonException $e) {
-            return ['document: not valid JSON: '.$e->getMessage()];
+            return [new NodeStateProblem('document', 'not valid JSON: '.$e->getMessage())];
         }
 
         $this->schemaProblems($object);
@@ -59,7 +73,7 @@ final class NodeStateValidator
             $this->semanticProblems($document);
         }
 
-        return array_values(array_unique(array_slice($this->problems, 0, self::MAX_PROBLEMS)));
+        return $this->problems;
     }
 
     private function schemaProblems(mixed $object): void
@@ -73,7 +87,10 @@ final class NodeStateValidator
 
         foreach ((new ErrorFormatter)->format($error) as $pointer => $messages) {
             foreach ((array) $messages as $message) {
-                $this->add($this->pointerToPath((string) $pointer), is_string($message) ? $message : 'is invalid');
+                [$path, $at] = $this->pointerToPath((string) $pointer);
+                $this->at = $at;
+                $this->add($path, is_string($message) ? $message : 'is invalid');
+                $this->at = null;
             }
         }
     }
@@ -114,6 +131,7 @@ final class NodeStateValidator
         $subnets = [];
 
         foreach ($networks as $i => $network) {
+            $this->at = ['networks', $i];
             $id = $this->str($network['id'] ?? null);
             $name = $this->str($network['name'] ?? null);
 
@@ -125,8 +143,8 @@ final class NodeStateValidator
             $this->unique('networks.name', $i, $name, $netNames);
             $this->unique('networks.subnet', $i, $this->str($network['subnet'] ?? null), $subnets);
 
-            if (! str_starts_with($name, 'lr-e_')) {
-                $this->add("networks[{$i}].name", "network {$name} is not an environment network (lr-e_…)");
+            if (! str_starts_with($name, Grammar::NETWORK_PREFIX)) {
+                $this->add("networks[{$i}].name", "network {$name} is not an environment network (".Grammar::NETWORK_PREFIX.'…)');
             }
 
             if (! $this->canonicalSubnet($this->str($network['subnet'] ?? null))) {
@@ -140,6 +158,7 @@ final class NodeStateValidator
         $volServices = [];
 
         foreach ($volumes as $i => $volume) {
+            $this->at = ['volumes', $i];
             $id = $this->str($volume['id'] ?? null);
             $name = $this->str($volume['name'] ?? null);
 
@@ -154,8 +173,8 @@ final class NodeStateValidator
                 $volServices[$id] = $volume['service'];
             }
 
-            if (! str_starts_with($name, 'lr-v_')) {
-                $this->add("volumes[{$i}].name", "volume {$name} is not a workload volume (lr-v_…)");
+            if (! str_starts_with($name, Grammar::VOLUME_PREFIX)) {
+                $this->add("volumes[{$i}].name", "volume {$name} is not a workload volume (".Grammar::VOLUME_PREFIX.'…)');
             }
         }
 
@@ -164,6 +183,7 @@ final class NodeStateValidator
         $volumeOwners = [];
 
         foreach ($workloads as $i => $workload) {
+            $this->at = ['workloads', $i];
             $this->workload($i, $workload, $netIds, $volIds, $volumeOwners, $volServices);
             $this->unique('workloads.id', $i, $this->str($workload['id'] ?? null), $wlIds);
 
@@ -175,6 +195,8 @@ final class NodeStateValidator
         }
 
         $listeners = [];
+
+        $this->at = null;
 
         foreach ($ambassadors as $i => $ambassador) {
             $network = $this->str($ambassador['network'] ?? null);
@@ -193,15 +215,20 @@ final class NodeStateValidator
 
         $routeIds = [];
         $hosts = [];
+        $hostIndex = 0;
 
         foreach ($routes as $i => $route) {
+            $this->at = ['routes', $i];
             $this->route($i, $route, $wlIds);
             $this->unique('routes.id', $i, $this->str($route['id'] ?? null), $routeIds);
 
+            // Like Go: the index is the host's position in all routes' hosts.
             foreach ($this->strings($route['hosts'] ?? []) as $host) {
-                $this->unique('routes.hosts', $i, $host, $hosts);
+                $this->unique('routes.hosts', $hostIndex++, $host, $hosts);
             }
         }
+
+        $this->at = null;
 
         $certStorage = is_array($doc['system'] ?? null) && is_array($doc['system']['certStorage'] ?? null) ? $doc['system']['certStorage'] : null;
 
@@ -258,6 +285,7 @@ final class NodeStateValidator
         $deleteNames = [];
 
         foreach ($deletes as $i => $delete) {
+            $this->at = ['deleteVolumes', $i];
             $id = $this->str($delete['id'] ?? null);
             $name = $this->str($delete['name'] ?? null);
 
@@ -265,13 +293,15 @@ final class NodeStateValidator
                 $this->add("deleteVolumes[{$i}]", "volume {$id} is still declared in volumes");
             }
 
-            if (! str_starts_with($name, 'lr-v_')) {
-                $this->add("deleteVolumes[{$i}].name", "volume {$name} is not a workload volume (lr-v_…)");
+            if (! str_starts_with($name, Grammar::VOLUME_PREFIX)) {
+                $this->add("deleteVolumes[{$i}].name", "volume {$name} is not a workload volume (".Grammar::VOLUME_PREFIX.'…)');
             }
 
             $this->unique('deleteVolumes.id', $i, $id, $deleteIds);
             $this->unique('deleteVolumes.name', $i, $name, $deleteNames);
         }
+
+        $this->at = null;
     }
 
     /**
@@ -334,7 +364,7 @@ final class NodeStateValidator
                 $this->add("{$p}.mounts[{$j}].target", "container path {$target} must be clean (no . or .. segments)");
             }
 
-            foreach (self::FORBIDDEN_MOUNT_TARGETS as $forbidden) {
+            foreach (Grammar::FORBIDDEN_MOUNT_TARGETS as $forbidden) {
                 if ($target === $forbidden || str_starts_with($target, $forbidden.'/')) {
                     $this->add("{$p}.mounts[{$j}].target", "container path {$target} is not allowed (inside {$forbidden})");
                 }
@@ -411,7 +441,7 @@ final class NodeStateValidator
         foreach (['startPeriod', 'interval', 'timeout'] as $name) {
             $seconds[$name] = $this->durationSeconds($this->str($health[$name] ?? null));
 
-            if ($seconds[$name] !== null && $seconds[$name] > 3600) {
+            if ($seconds[$name] !== null && $seconds[$name] > Limits::HEALTH_DURATION_SECONDS) {
                 $this->add("{$p}.{$name}", 'must be at most 1h');
             }
         }
@@ -481,15 +511,11 @@ final class NodeStateValidator
             foreach ($this->list($waf['exclusions'] ?? []) as $j => $exclusion) {
                 $rule = $exclusion['rule'] ?? null;
 
-                if (! is_int($rule) || $rule < 911000 || $rule > 944999) {
-                    $this->add("{$p}.waf.exclusions[{$j}].rule", 'only detection rules 911000–944999 can be excluded');
+                if (! is_int($rule) || $rule < Limits::WAF_EXCLUDABLE_MIN || $rule > Limits::WAF_EXCLUDABLE_MAX) {
+                    $this->add("{$p}.waf.exclusions[{$j}].rule", 'only detection rules '.Limits::WAF_EXCLUDABLE_MIN.'–'.Limits::WAF_EXCLUDABLE_MAX.' can be excluded');
                 }
 
                 $this->unique("{$p}.waf.exclusions", $j, $this->str($rule).'|'.$this->str($exclusion['path'] ?? null).'|'.$this->str($exclusion['target'] ?? null), $exclusions);
-            }
-
-            if (array_key_exists('inspectBodyKiB', $waf) && ! in_array($waf['inspectBodyKiB'], [32, 128, 1024], true)) {
-                $this->add("{$p}.waf.inspectBodyKiB", 'must be 32, 128 or 1024');
             }
 
             if (isset($route['clientAuth'])) {
@@ -532,9 +558,12 @@ final class NodeStateValidator
 
     private function add(string $path, string $message): void
     {
-        if (count($this->problems) < self::MAX_PROBLEMS) {
-            $this->problems[] = "{$path}: {$message}";
+        if (count($this->problems) >= self::MAX_PROBLEMS || isset($this->seen["{$path}: {$message}"])) {
+            return;
         }
+
+        $this->seen["{$path}: {$message}"] = true;
+        $this->problems[] = new NodeStateProblem($path, $message, $this->at[0] ?? null, $this->at[1] ?? null);
     }
 
     /**
@@ -607,16 +636,22 @@ final class NodeStateValidator
     }
 
     /**
-     * "/workloads/2/networks/0/network" → "workloads[2].networks[0].network".
+     * "/workloads/2/networks/0/network" → "workloads[2].networks[0].network",
+     * with the top-level list entry it belongs to (["workloads", 2]).
+     *
+     * @return array{string, array{string, int}|null}
      */
-    private function pointerToPath(string $pointer): string
+    private function pointerToPath(string $pointer): array
     {
         $path = '';
+        $parts = array_values(array_filter(explode('/', $pointer), static fn (string $part): bool => $part !== ''));
 
-        foreach (array_filter(explode('/', $pointer), static fn (string $part): bool => $part !== '') as $part) {
+        foreach ($parts as $part) {
             $path .= ctype_digit($part) ? "[{$part}]" : ($path === '' ? $part : ".{$part}");
         }
 
-        return $path === '' ? 'document' : $path;
+        $at = count($parts) >= 2 && ctype_digit($parts[1]) ? [$parts[0], (int) $parts[1]] : null;
+
+        return [$path === '' ? 'document' : $path, $at];
     }
 }

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Support\Variables;
 
 use App\Data\Specs\EnvironmentSpec;
+use App\Data\Specs\ServiceSpec;
 use App\Data\Specs\VariableSpec;
 use App\Enums\VariableExposure;
 use App\Enums\VariableType;
@@ -18,8 +19,8 @@ use App\Enums\VariableType;
  * bundle, never a Docker build arg, always masked in logs.
  *
  * Works on metadata only (types and the stored `references` of each
- * VariableSpec, same precedence and scoping as SpecVariableResolver), so no
- * value is decrypted to decide.
+ * VariableSpec, in EnvironmentSpec::variablesInPrecedence order), so no value
+ * is decrypted to decide.
  */
 final class SecretTaint
 {
@@ -35,7 +36,12 @@ final class SecretTaint
         private readonly array $scopes,
     ) {}
 
-    public static function fromSpec(EnvironmentSpec $spec): self
+    /**
+     * @param  array<string, EnvironmentSpec>  $baseSpecs  shared preview services (service public id => the base environment's applied spec):
+     *                                                     references to them resolve to the base instance, so a key is tainted when it is
+     *                                                     tainted in either environment
+     */
+    public static function fromSpec(EnvironmentSpec $spec, array $baseSpecs = []): self
     {
         $meta = static fn (VariableSpec $variable): array => ['secret' => $variable->type === VariableType::Secret, 'references' => $variable->references];
 
@@ -50,27 +56,27 @@ final class SecretTaint
         foreach ($spec->services as $service) {
             $values = [];
 
-            foreach ($service->sharedVariableIds as $variableId) {
-                $variable = $spec->sharedVariables[$variableId] ?? null;
-
-                if ($variable !== null) {
-                    $values[$variable->key] = $meta($variable);
-                }
-            }
-
-            foreach ($spec->connectionVariablesOf($service) as $variable) {
+            foreach ($spec->variablesInPrecedence($service) as $variable) {
                 $values[$variable->key] = $meta($variable);
             }
 
-            foreach ([VariableSpec::LAYER_ENVIRONMENT, VariableSpec::LAYER_BRANCH] as $layer) {
-                foreach ($service->variables as $variable) {
-                    if ($variable->layer === $layer) {
-                        $values[$variable->key] = $meta($variable);
-                    }
-                }
+            $scopes[$service->slug] = $values;
+        }
+
+        foreach ($baseSpecs as $serviceId => $baseSpec) {
+            $service = $spec->service($serviceId);
+
+            if (! $service instanceof ServiceSpec) {
+                continue;
             }
 
-            $scopes[$service->slug] = $values;
+            $base = self::fromSpec($baseSpec);
+
+            foreach (array_keys($base->scopes[$service->slug] ?? []) as $key) {
+                $key = (string) $key;
+                $own = $scopes[$service->slug][$key] ?? ['secret' => false, 'references' => []];
+                $scopes[$service->slug][$key] = ['secret' => $own['secret'] || $base->isTainted($service->slug, $key), 'references' => $own['references']];
+            }
         }
 
         return new self($scopes);

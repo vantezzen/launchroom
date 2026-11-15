@@ -15,6 +15,7 @@ import (
 	"github.com/vantezzen/launchroom/daemon/internal/cleanup"
 	"github.com/vantezzen/launchroom/daemon/internal/docker"
 	"github.com/vantezzen/launchroom/daemon/internal/hostinfo"
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
 
@@ -69,7 +70,7 @@ func TestCleanupAgainstDocker(t *testing.T) {
 
 	// A leftover one-off container (daemon crashed during a run_once task).
 	labels := maps.Clone(docker.ManagedLabels(string(e.serverID)))
-	labels[docker.LabelTask] = randomID("tsk")
+	labels[names.LabelTask] = randomID("tsk")
 	leftover, err := e.api.ContainerCreate(ctx, client.ContainerCreateOptions{Name: "lr-run-itest-leftover", Config: &container.Config{Image: string(whoamiImage), Labels: labels}})
 	if err != nil {
 		t.Fatal(err)

@@ -6,6 +6,9 @@ namespace App\Services\Transfers;
 
 use App\Data\Services\DatabaseSource;
 use App\Data\Transfers\DatabasePreparationData;
+use App\Drivers\DatabaseEngines\DatabaseEngineDriver;
+use App\Drivers\DatabaseEngines\DatabaseEngines;
+use App\Drivers\DatabaseEngines\DumpImport;
 use App\Enums\Backups\BackupSubject;
 use App\Enums\DaemonFeature;
 use App\Enums\DatabaseEngine;
@@ -18,6 +21,7 @@ use App\Models\ServiceInstance;
 use App\Models\Volume;
 use App\Services\Backups\BackupSubjects;
 use App\Services\Backups\DatabaseWorkloads;
+use App\Support\Refusal;
 
 /**
  * Where an import or export of a service instance runs (docs/14 §12.2): the
@@ -26,9 +30,6 @@ use App\Services\Backups\DatabaseWorkloads;
  */
 final readonly class ImportTarget
 {
-    /** Engines a dump can be imported into (ClickHouse, Redis and Valkey can't, docs/14 §12). */
-    public const array IMPORTABLE = [DatabaseEngine::Postgres, DatabaseEngine::MySql, DatabaseEngine::MongoDb];
-
     private function __construct(
         public ServiceInstance $instance,
         public ?DataSubject $subject,
@@ -51,7 +52,12 @@ final readonly class ImportTarget
     public function importSupported(): bool
     {
         return $this->subject === DataSubject::Volume
-            || ($this->database instanceof DatabaseSource && in_array($this->database->engine, self::IMPORTABLE, true));
+            || ($this->database instanceof DatabaseSource && self::accepts($this->database->engine));
+    }
+
+    public static function accepts(DatabaseEngine $engine): bool
+    {
+        return self::driver($engine)->importFormat() instanceof DumpImport;
     }
 
     /**
@@ -59,18 +65,21 @@ final readonly class ImportTarget
      */
     public function placement(string $doing = 'import data'): Placement
     {
+        return Refusal::orThrow($this->servingPlacement($doing));
+    }
+
+    private function servingPlacement(string $doing): Placement|Refusal
+    {
         // Also a database started alone for an import before its first deploy (docs/14 §12.9).
         $placement = DatabasePreparations::importPlacement($this->instance);
 
         if (! $placement instanceof Placement || ! $this->database instanceof DatabaseSource) {
-            throw DomainRuleViolation::on('service', DatabasePreparations::preparable($this->instance)
+            return Refusal::on('service', DatabasePreparations::preparable($this->instance)
                 ? "{$this->instance->service->name} isn’t running yet. Start it for the import first."
                 : "{$this->instance->service->name} isn’t running. Deploy it first, then {$doing}.");
         }
 
-        $this->assertServer($placement->server, $doing);
-
-        return $placement;
+        return $this->serverRefusal($placement->server, $doing) ?? $placement;
     }
 
     /**
@@ -91,9 +100,7 @@ final readonly class ImportTarget
             throw DomainRuleViolation::on('volume', 'This volume is created on the next deploy. Deploy the service first.');
         }
 
-        $this->assertServer($volume->server, $doing);
-
-        return $volume;
+        return Refusal::orThrow($this->serverRefusal($volume->server, $doing) ?? $volume);
     }
 
     /**
@@ -101,48 +108,50 @@ final readonly class ImportTarget
      */
     public function unavailableReason(): ?string
     {
-        try {
-            // A database never deployed is started alone for the import (docs/14 §12.9).
-            if ($this->subject === DataSubject::Database && DatabasePreparations::view($this->instance) instanceof DatabasePreparationData) {
-                return null;
-            }
+        // A database never deployed is started alone for the import (docs/14 §12.9).
+        if ($this->subject === DataSubject::Database && DatabasePreparations::view($this->instance) instanceof DatabasePreparationData) {
+            return null;
+        }
 
-            if ($this->subject === DataSubject::Database) {
-                $this->placement();
-            } elseif ($this->subject === DataSubject::Volume) {
-                foreach ($this->instance->volumes as $volume) {
-                    $volume->loadMissing('server');
+        if ($this->subject === DataSubject::Database) {
+            $placement = $this->servingPlacement('import data');
 
-                    if ($volume->server instanceof Server) {
-                        $this->assertServer($volume->server, 'import data');
-                    }
+            return $placement instanceof Refusal ? $placement->message : null;
+        }
+
+        if ($this->subject === DataSubject::Volume) {
+            foreach ($this->instance->volumes as $volume) {
+                $volume->loadMissing('server');
+                $refusal = $volume->server instanceof Server ? $this->serverRefusal($volume->server, 'import data') : null;
+
+                if ($refusal instanceof Refusal) {
+                    return $refusal->message;
                 }
             }
-        } catch (DomainRuleViolation $e) {
-            return $e->getMessage();
         }
 
         return null;
     }
 
+    /** The protocol engine of the database (exports run for every engine). */
     public function engine(): string
     {
-        return $this->database instanceof DatabaseSource ? DatabaseWorkloads::daemonEngine($this->database) : '';
+        return $this->database?->engine->value ?? '';
     }
 
     /**
-     * The protocol engine of an importable database.
-     *
-     * @return 'postgres'|'mysql'|'mongodb'
+     * How the database takes an import, or a violation when it can't.
      */
+    public function import(): DumpImport
+    {
+        $import = $this->database instanceof DatabaseSource ? self::driver($this->database->engine)->importFormat() : null;
+
+        return $import ?? throw DomainRuleViolation::on('service', 'Importing into this database isn’t supported.');
+    }
+
     public function importEngine(): string
     {
-        return match ($this->database?->engine) {
-            DatabaseEngine::MySql => 'mysql',
-            DatabaseEngine::MongoDb => 'mongodb',
-            DatabaseEngine::Postgres => 'postgres',
-            default => throw DomainRuleViolation::on('service', 'Importing into this database isn’t supported.'),
-        };
+        return $this->import()->engine->value;
     }
 
     /**
@@ -150,26 +159,30 @@ final readonly class ImportTarget
      */
     public function exportFileName(): string
     {
-        $extension = $this->subject === DataSubject::Volume ? 'tar.gz' : match ($this->database?->engine) {
-            DatabaseEngine::Postgres => 'dump',
-            DatabaseEngine::MySql => 'sql.gz',
-            DatabaseEngine::MongoDb => 'archive',
-            DatabaseEngine::ClickHouse => 'zip',
-            DatabaseEngine::Redis, DatabaseEngine::Valkey => 'rdb',
-            null => 'bin',
+        $extension = match (true) {
+            $this->subject === DataSubject::Volume => 'tar.gz',
+            $this->database instanceof DatabaseSource => self::driver($this->database->engine)->exportFileExtension(),
+            default => 'bin',
         };
 
         return $this->instance->service->slug.'-'.now()->utc()->format('Ymd-Hi').'.'.$extension;
     }
 
-    private function assertServer(Server $server, string $doing): void
+    private static function driver(DatabaseEngine $engine): DatabaseEngineDriver
+    {
+        return resolve(DatabaseEngines::class)->for($engine);
+    }
+
+    private function serverRefusal(Server $server, string $doing): ?Refusal
     {
         if (! $server->supportsDaemonFeature(DaemonFeature::DataTransfer)) {
-            throw DomainRuleViolation::on('server', "Update {$server->name} in Settings → Updates to {$doing}.");
+            return Refusal::on('server', "Update {$server->name} in Settings → Updates to {$doing}.");
         }
 
         if ($server->status !== ServerStatus::Online) {
-            throw DomainRuleViolation::on('server', "{$server->name} is offline. Try again once it is back.");
+            return Refusal::on('server', "{$server->name} is offline. Try again once it is back.");
         }
+
+        return null;
     }
 }

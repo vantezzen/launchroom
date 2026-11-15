@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Enums;
 
+use App\Enums\Concerns\HasRangeLength;
+
 /**
  * Time ranges of the usage charts. Each picks the stored resolution that
  * still covers it (1-minute rows live 48 h, 10-minute rows 30 days, daily
@@ -11,6 +13,8 @@ namespace App\Enums;
  */
 enum MetricRange: string
 {
+    use HasRangeLength;
+
     case Hour = '1h';
     case SixHours = '6h';
     case Day = '24h';
@@ -18,19 +22,6 @@ enum MetricRange: string
     case Month = '30d';
     case Quarter = '90d';
     case Year = '1y';
-
-    public function seconds(): int
-    {
-        return match ($this) {
-            self::Hour => 3_600,
-            self::SixHours => 6 * 3_600,
-            self::Day => 86_400,
-            self::Week => 7 * 86_400,
-            self::Month => 30 * 86_400,
-            self::Quarter => 90 * 86_400,
-            self::Year => 365 * 86_400,
-        };
-    }
 
     /**
      * Stored resolution (minutes) the range reads.

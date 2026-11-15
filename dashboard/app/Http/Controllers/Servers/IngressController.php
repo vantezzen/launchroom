@@ -7,16 +7,17 @@ namespace App\Http\Controllers\Servers;
 use App\Actions\Ingress\SetDnsProvider;
 use App\Actions\Ingress\SetSharedEdge;
 use App\Actions\Ingress\VerifyDnsProvider;
-use App\Enums\DnsProvider;
+use App\Data\Ingress\DnsProviderInput;
+use App\Data\Ingress\SharedEdgeData;
+use App\Enums\ToastType;
 use App\Http\Controllers\Controller;
+use App\Http\Toast;
 use App\Models\Server;
 use App\Models\User;
 use Illuminate\Container\Attributes\CurrentUser;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
-use Illuminate\Validation\Rule;
-use Inertia\Inertia;
 
 /**
  * Ingress & certificates actions (instance owners; the page is Settings → Network, docs/05 §4–5): the DNS
@@ -37,36 +38,14 @@ final class IngressController extends Controller
         return to_route('network-settings.edit')->withFragment('public-traffic');
     }
 
-    /**
-     * Set the DNS provider (and its credentials), then check them right away.
-     * `token` is the single-token providers' field (kept for API callers).
-     */
-    public function update(Request $request, #[CurrentUser] User $user, SetDnsProvider $setDnsProvider, VerifyDnsProvider $verify): RedirectResponse
+    public function update(Request $request, DnsProviderInput $data, #[CurrentUser] User $user, SetDnsProvider $setDnsProvider, VerifyDnsProvider $verify): RedirectResponse
     {
         Gate::authorize('manageInstance');
 
-        $request->validate([
-            'provider' => ['required', Rule::enum(DnsProvider::class)],
-            'token' => ['nullable', 'string', 'max:512'],
-            'credentials' => ['nullable', 'array:'.implode(',', $this->credentialKeys())],
-            'credentials.*' => ['nullable', 'string', 'max:512'],
-        ]);
-
-        /** @var array<string, string|null> $credentials */
-        $credentials = array_map(static fn (mixed $value): ?string => is_string($value) ? $value : null, (array) $request->input('credentials', []));
-
-        if ($request->filled('token')) {
-            $credentials['token'] = $request->string('token')->toString();
-        }
-
-        $setDnsProvider->handle(
-            DnsProvider::from($request->string('provider')->toString()),
-            $credentials,
-            $this->auditActor($request, $user),
-        );
+        $setDnsProvider->handle($data->provider, $data->secrets(), $this->auditActor($request, $user));
         $result = $verify->handle();
 
-        Inertia::flash('toast', ['type' => $result->ok ? 'success' : 'error', 'message' => $result->message]);
+        Toast::flash($result->ok ? ToastType::Success : ToastType::Error, $result->message);
 
         return back();
     }
@@ -77,7 +56,7 @@ final class IngressController extends Controller
 
         $setDnsProvider->handle(null, [], $this->auditActor($request, $user));
 
-        Inertia::flash('toast', ['type' => 'success', 'message' => 'DNS provider removed. Generated domains get per-host certificates again.']);
+        Toast::success('DNS provider removed. Generated domains get per-host certificates again.');
 
         return back();
     }
@@ -86,27 +65,16 @@ final class IngressController extends Controller
      * Admit an edge to the shared certificates, or remove it (instance
      * owners only, review M2).
      */
-    public function sharedEdge(Request $request, Server $server, #[CurrentUser] User $user, SetSharedEdge $setSharedEdge): RedirectResponse
+    public function sharedEdge(Request $request, Server $server, SharedEdgeData $data, #[CurrentUser] User $user, SetSharedEdge $setSharedEdge): RedirectResponse
     {
         Gate::authorize('manageInstance');
 
-        $request->validate(['shared' => ['required', 'boolean']]);
-        $shared = $request->boolean('shared');
+        $shared = $data->shared;
         $setSharedEdge->handle($server, $shared, $user, $this->auditActor($request, $user));
 
-        Inertia::flash('toast', ['type' => 'success', 'message' => $shared ? "{$server->name} now shares the certificates." : "{$server->name} no longer gets the shared certificates."]);
+        Toast::success($shared ? "{$server->name} now shares the certificates." : "{$server->name} no longer gets the shared certificates.");
 
         return back();
-    }
-
-    /**
-     * Every provider's credential field names.
-     *
-     * @return list<string>
-     */
-    private function credentialKeys(): array
-    {
-        return array_values(array_unique(array_merge(...array_map(static fn (DnsProvider $provider): array => $provider->keys(), DnsProvider::cases()))));
     }
 
     /**
@@ -118,7 +86,7 @@ final class IngressController extends Controller
 
         $result = $verify->handle();
 
-        Inertia::flash('toast', ['type' => $result->ok ? 'success' : 'error', 'message' => $result->message]);
+        Toast::flash($result->ok ? ToastType::Success : ToastType::Error, $result->message);
 
         return back();
     }

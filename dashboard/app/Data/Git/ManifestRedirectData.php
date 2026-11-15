@@ -16,6 +16,8 @@ use Spatie\LaravelData\Data;
  */
 final class ManifestRedirectData extends Data
 {
+    public const string SESSION_KEY = 'launchroom.github_manifest';
+
     public function __construct(
         public string $action,
         public string $manifest,
@@ -29,7 +31,6 @@ final class ManifestRedirectData extends Data
         return ['action' => $this->action, 'manifest' => $this->manifest];
     }
 
-    /** The flashed manifest form, or null for anything else. */
     public static function fromSession(mixed $value): ?self
     {
         if (! is_array($value) || ! is_string($value['action'] ?? null) || ! is_string($value['manifest'] ?? null)) {

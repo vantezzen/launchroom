@@ -1,6 +1,10 @@
 package dotenv
 
-import "testing"
+import (
+	"encoding/json"
+	"os"
+	"testing"
+)
 
 func TestLine(t *testing.T) {
 	cases := map[string]string{
@@ -45,6 +49,46 @@ func TestValidKey(t *testing.T) {
 		}
 	}
 	for _, k := range []string{"", "1A", "A-B", "A B", "A=B", "$(id)"} {
+		if ValidKey(k) {
+			t.Errorf("%q should be invalid", k)
+		}
+	}
+}
+
+// TestSharedVectors reads protocol/fixtures/cli/dotenv.json, which the
+// dashboard's EnvFileParserTest reads too.
+func TestSharedVectors(t *testing.T) {
+	data, err := os.ReadFile("../../../protocol/fixtures/cli/dotenv.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var v struct {
+		Lines []struct {
+			Key   string `json:"key"`
+			Value string `json:"value"`
+			Line  string `json:"line"`
+		} `json:"lines"`
+		ValidKeys   []string `json:"validKeys"`
+		InvalidKeys []string `json:"invalidKeys"`
+	}
+	if err := json.Unmarshal(data, &v); err != nil {
+		t.Fatal(err)
+	}
+	for _, l := range v.Lines {
+		if got := Line(l.Key, l.Value); got != l.Line {
+			t.Errorf("Line(%s) = %s, want %s", l.Key, got, l.Line)
+		}
+		parsed, err := Parse(l.Line + "\n")
+		if err != nil || parsed[l.Key] != l.Value {
+			t.Errorf("Parse(%s) = %q, %v; want %q", l.Line, parsed[l.Key], err, l.Value)
+		}
+	}
+	for _, k := range v.ValidKeys {
+		if !ValidKey(k) {
+			t.Errorf("%q should be valid", k)
+		}
+	}
+	for _, k := range v.InvalidKeys {
 		if ValidKey(k) {
 			t.Errorf("%q should be invalid", k)
 		}

@@ -4,26 +4,22 @@ declare(strict_types=1);
 
 namespace App\Services\Backups;
 
+use App\Exceptions\DecryptionFailed;
 use App\Models\Backups\BackupDestination;
-use App\Services\Crypto\Envelope;
-use App\Services\Crypto\Exceptions\DecryptionFailed;
-use App\Services\Crypto\SecretKey;
-use JsonException;
+use App\Services\Crypto\SealedColumns;
+use App\Support\Crypto\OpaqueToken;
+use App\Support\S3\S3Credentials;
 use SensitiveParameter;
 
 /**
- * Envelope encryption for backup destinations (docs/09 R13, docs/14 §3).
- *
- * Same scheme as GitHub App credentials: each destination gets its own data
- * key wrapped by the instance KEK (context `backup_destination:<public id>`),
- * values are XChaCha20-Poly1305 with associated data
- * `backup_destination|<team or "instance">|<public id>|<field>`, so
- * ciphertexts can't be moved between destinations, teams or fields.
+ * The typed secrets of a backup destination (docs/14 §3): S3 credentials and
+ * the restic repository password, sealed under the destination's own data
+ * key (App\Services\Crypto\SealedColumns).
  */
 final readonly class DestinationSecrets
 {
     public function __construct(
-        private Envelope $envelope,
+        private SealedColumns $sealed,
     ) {}
 
     /**
@@ -32,12 +28,12 @@ final readonly class DestinationSecrets
      */
     public static function generateRepositoryPassword(): string
     {
-        return rtrim(strtr(base64_encode(random_bytes(32)), '+/', '-_'), '=');
+        return OpaqueToken::generate();
     }
 
     /**
-     * Encrypts credentials onto the model (which must have its public id).
-     * A new data key is generated each time (rotation is free).
+     * Encrypts the secrets onto the model (which must have its public id)
+     * under a new data key.
      */
     public function seal(
         BackupDestination $destination,
@@ -45,15 +41,9 @@ final readonly class DestinationSecrets
         #[SensitiveParameter] string $secretAccessKey,
         #[SensitiveParameter] string $repositoryPassword,
     ): void {
-        $dek = $this->envelope->generateDataKey();
-
-        $destination->wrapped_dek = $this->envelope->wrap($dek, $this->wrapContext($destination));
-        $destination->kek_id = $this->envelope->kekId();
-        $destination->credentials = $dek->encrypt(
-            json_encode(['accessKeyId' => $accessKeyId, 'secretAccessKey' => $secretAccessKey], JSON_THROW_ON_ERROR),
-            $this->associatedData($destination, 'credentials'),
-        );
-        $destination->repository_password = $dek->encrypt($repositoryPassword, $this->associatedData($destination, 'repository_password'));
+        $dek = $this->sealed->newKey($destination);
+        $this->sealed->sealJson($destination, 'credentials', new S3Credentials($accessKeyId, $secretAccessKey)->toArray(), $dek);
+        $this->sealed->seal($destination, 'repository_password', $repositoryPassword, $dek);
     }
 
     /**
@@ -61,49 +51,12 @@ final readonly class DestinationSecrets
      */
     public function reveal(BackupDestination $destination): DestinationCredentials
     {
-        $dek = $this->dataKey($destination);
-        $json = $dek->decrypt($destination->credentials, $this->associatedData($destination, 'credentials'));
-
-        try {
-            $decoded = json_decode($json, true, 4, JSON_THROW_ON_ERROR);
-        } catch (JsonException) {
-            throw DecryptionFailed::malformed();
-        }
-
-        if (! is_array($decoded) || ! is_string($decoded['accessKeyId'] ?? null) || ! is_string($decoded['secretAccessKey'] ?? null)) {
-            throw DecryptionFailed::malformed();
-        }
+        $s3 = S3Credentials::of($this->sealed->revealJson($destination, 'credentials'));
 
         return new DestinationCredentials(
-            $decoded['accessKeyId'],
-            $decoded['secretAccessKey'],
-            $dek->decrypt($destination->repository_password, $this->associatedData($destination, 'repository_password')),
+            $s3->accessKeyId,
+            $s3->secretAccessKey,
+            $this->sealed->reveal($destination, 'repository_password') ?? throw DecryptionFailed::malformed(),
         );
-    }
-
-    private function dataKey(BackupDestination $destination): SecretKey
-    {
-        return $this->envelope->unwrap($destination->wrapped_dek, $this->wrapContext($destination));
-    }
-
-    /**
-     * Re-wraps the stored DEK from one KEK to another (rotate-kek); the caller saves.
-     */
-    public function rewrap(BackupDestination $destination, Envelope $from, Envelope $to): void
-    {
-        $destination->wrapped_dek = $from->rewrap($destination->wrapped_dek, $this->wrapContext($destination), $to);
-        $destination->kek_id = $to->kekId();
-    }
-
-    private function wrapContext(BackupDestination $destination): string
-    {
-        return 'backup_destination:'.$destination->public_id;
-    }
-
-    private function associatedData(BackupDestination $destination, string $field): string
-    {
-        $scope = $destination->team_id === null ? 'instance' : (string) $destination->team_id;
-
-        return "backup_destination|{$scope}|{$destination->public_id}|{$field}";
     }
 }

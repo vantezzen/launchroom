@@ -10,7 +10,7 @@ import { store } from '@/routes/notifications/channels';
 
 type Kind = App.Enums.Alerts.AlertChannelKind;
 
-export const CHANNEL_KINDS: ChoiceTile<Kind>[] = [
+const CHANNEL_KINDS: ChoiceTile<Kind>[] = [
     {
         value: 'email',
         label: 'Email',

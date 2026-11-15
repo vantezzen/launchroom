@@ -3,7 +3,7 @@ import { cn } from '@/lib/utils';
 import { foldToOther, MAX_SERIES, SIGNAL } from './palette';
 import type { Breakdown, ColouredBreakdown } from './palette';
 
-export type DonutProps = {
+type DonutProps = {
     items: Breakdown[];
     /** Capacity; the unfilled arc is the track. Defaults to the sum of items. */
     total?: number;

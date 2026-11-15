@@ -5,8 +5,16 @@ declare(strict_types=1);
 namespace App\Queries;
 
 use App\Data\Servers\HealthCheckData;
+use App\Data\Servers\Host\DiskCleanupData;
+use App\Data\Servers\Host\DiskUsageData;
+use App\Data\Servers\Host\HostHealthData;
+use App\Data\Servers\Host\InotifyLimitsData;
+use App\Data\Servers\Host\MemoryUsageData;
+use App\Data\Servers\Host\NetworkCountData;
+use App\Data\Servers\Host\RegistryReachData;
 use App\Data\Servers\ServerHealthData;
 use App\Enums\HealthCheckState;
+use App\Enums\Servers\CleanupTrigger;
 use App\Models\Environment;
 use App\Models\Server;
 use App\Support\Network\SubnetAllocator;
@@ -23,22 +31,22 @@ final readonly class ServerHealth
 {
     public function evaluate(Server $server): ServerHealthData
     {
-        $host = is_array($server->host_status) ? $server->host_status : [];
-        $health = is_array($host['health'] ?? null) ? $host['health'] : [];
-        $collectedAt = $this->time($health['collectedAt'] ?? null);
+        $host = $server->host_status;
+        $health = $host->health ?? new HostHealthData;
+        $collectedAt = $this->time($health->collectedAt);
         $stale = ! $collectedAt instanceof CarbonImmutable || $collectedAt->lt(now()->subSeconds($this->int('stale_after_seconds')));
 
         $checks = [
             $this->freshness($collectedAt, $stale),
             $this->disk($health),
             $this->memory($health),
-            $this->load($health, is_int($host['cpus'] ?? null) ? $host['cpus'] : null),
+            $this->load($health, $host?->cpus),
             $this->inotify($health),
             $this->networks($health),
             $this->clock($health),
             $this->buildCache($health),
             $this->cleanup($health),
-            $this->registry($host),
+            $this->registry($host?->registry),
             $this->desiredState($server),
         ];
 
@@ -73,20 +81,16 @@ final readonly class ServerHealth
         );
     }
 
-    /**
-     * @param  array<array-key, mixed>  $health
-     */
-    private function disk(array $health): HealthCheckData
+    private function disk(HostHealthData $health): HealthCheckData
     {
-        $docker = $this->pair($health['dockerDisk'] ?? null, 'totalMb', 'freeMb');
-        $fs = $docker ?? $this->pair($health['dataDisk'] ?? null, 'totalMb', 'freeMb');
-        $label = $docker !== null ? 'Disk (Docker)' : 'Disk';
+        $fs = $health->dockerDisk ?? $health->dataDisk;
+        $label = $health->dockerDisk instanceof DiskUsageData ? 'Disk (Docker)' : 'Disk';
 
-        if ($fs === null || $fs[0] <= 0) {
+        if (! $fs instanceof DiskUsageData || $fs->totalMb <= 0) {
             return new HealthCheckData('disk', $label, HealthCheckState::Unknown, null);
         }
 
-        [$total, $free] = $fs;
+        [$total, $free] = [$fs->totalMb, $fs->freeMb];
         $percent = $free * 100 / $total;
         $state = $this->below($percent, 'disk_free_warning_percent', 'disk_free_critical_percent');
 
@@ -94,18 +98,15 @@ final readonly class ServerHealth
             $state === HealthCheckState::Ok ? null : 'Free up space. launchroom removes unused images daily and when the disk is 85% full, but it doesn’t touch old databases, volumes or other software on the server.');
     }
 
-    /**
-     * @param  array<array-key, mixed>  $health
-     */
-    private function memory(array $health): HealthCheckData
+    private function memory(HostHealthData $health): HealthCheckData
     {
-        $memory = $this->pair($health['memory'] ?? null, 'totalMb', 'availableMb');
+        $memory = $health->memory;
 
-        if ($memory === null || $memory[0] <= 0) {
+        if (! $memory instanceof MemoryUsageData || $memory->totalMb <= 0) {
             return new HealthCheckData('memory', 'Memory', HealthCheckState::Unknown, null);
         }
 
-        [$total, $available] = $memory;
+        [$total, $available] = [$memory->totalMb, $memory->availableMb];
         $percent = $available * 100 / $total;
         $state = $this->below($percent, 'memory_available_warning_percent', 'memory_available_critical_percent');
 
@@ -113,15 +114,11 @@ final readonly class ServerHealth
             $state === HealthCheckState::Ok ? null : 'Services may be killed for lack of memory. Lower memory limits, move services to another server or add memory.');
     }
 
-    /**
-     * @param  array<array-key, mixed>  $health
-     */
-    private function load(array $health, ?int $cpus): HealthCheckData
+    private function load(HostHealthData $health, ?int $cpus): HealthCheckData
     {
-        $load = is_array($health['load'] ?? null) ? $health['load'] : null;
-        $load5 = $load['load5'] ?? null;
+        $load5 = $health->load?->load5;
 
-        if (! is_int($load5) && ! is_float($load5)) {
+        if ($load5 === null) {
             return new HealthCheckData('load', 'Load', HealthCheckState::Unknown, null);
         }
 
@@ -136,18 +133,14 @@ final readonly class ServerHealth
             $state === HealthCheckState::Ok ? null : 'The server is overloaded: builds and requests will be slow.');
     }
 
-    /**
-     * @param  array<array-key, mixed>  $health
-     */
-    private function inotify(array $health): HealthCheckData
+    private function inotify(HostHealthData $health): HealthCheckData
     {
-        $limits = is_array($health['inotify'] ?? null) ? $health['inotify'] : null;
-        $watches = $limits['maxUserWatches'] ?? null;
-        $instances = $limits['maxUserInstances'] ?? null;
-
-        if (! is_int($watches) || ! is_int($instances)) {
+        if (! $health->inotify instanceof InotifyLimitsData) {
             return new HealthCheckData('inotify', 'File watch limits', HealthCheckState::Unknown, null);
         }
+
+        $watches = $health->inotify->maxUserWatches;
+        $instances = $health->inotify->maxUserInstances;
 
         $low = $watches < $this->int('inotify_min_watches') || $instances < $this->int('inotify_min_instances');
 
@@ -156,20 +149,17 @@ final readonly class ServerHealth
             $low ? sprintf('Low inotify limits cause "too many open files" errors in containers. Raise fs.inotify.max_user_watches to at least %s and fs.inotify.max_user_instances to at least %s in /etc/sysctl.d on the server.', number_format($this->int('inotify_min_watches')), number_format($this->int('inotify_min_instances'))) : null);
     }
 
-    /**
-     * @param  array<array-key, mixed>  $health
-     */
-    private function networks(array $health): HealthCheckData
+    private function networks(HostHealthData $health): HealthCheckData
     {
-        $networks = $this->pair($health['networks'] ?? null, 'total', 'managed');
+        $networks = $health->networks;
         $rangeFull = $this->rangeUsedPercent() >= $this->int('environment_range_warning_percent');
 
-        if ($networks === null) {
+        if (! $networks instanceof NetworkCountData) {
             return new HealthCheckData('networks', 'Docker networks', $rangeFull ? HealthCheckState::Warning : HealthCheckState::Unknown, null,
                 $rangeFull ? $this->rangeHint() : null);
         }
 
-        [$total, $managed] = $networks;
+        [$total, $managed] = [$networks->total, $networks->managed];
         $unmanaged = max(0, $total - $managed);
         $state = match (true) {
             $unmanaged >= $this->int('unmanaged_networks_critical') => HealthCheckState::Critical,
@@ -192,14 +182,11 @@ final readonly class ServerHealth
         return "launchroom's environment address range is nearly full. Delete unused environments or widen LAUNCHROOM_ENVIRONMENT_RANGE.";
     }
 
-    /**
-     * @param  array<array-key, mixed>  $health
-     */
-    private function clock(array $health): HealthCheckData
+    private function clock(HostHealthData $health): HealthCheckData
     {
-        $skew = $health['clockSkewMs'] ?? null;
+        $skew = $health->clockSkewMs;
 
-        if (! is_int($skew)) {
+        if ($skew === null) {
             return new HealthCheckData('clock', 'Clock', HealthCheckState::Unknown, null);
         }
 
@@ -214,33 +201,27 @@ final readonly class ServerHealth
             $state === HealthCheckState::Ok ? null : 'Signed requests are refused beyond 60 s of skew. Enable time sync (NTP, e.g. systemd-timesyncd) on the server.');
     }
 
-    /**
-     * @param  array<array-key, mixed>  $health
-     */
-    private function buildCache(array $health): HealthCheckData
+    private function buildCache(HostHealthData $health): HealthCheckData
     {
-        $mb = $health['buildCacheMb'] ?? null;
+        $mb = $health->buildCacheMb;
 
         return new HealthCheckData('build_cache', 'Build cache', is_int($mb) ? HealthCheckState::Ok : HealthCheckState::Unknown,
             is_int($mb) ? $this->size($mb) : 'No build role');
     }
 
-    /**
-     * @param  array<array-key, mixed>  $health
-     */
-    private function cleanup(array $health): HealthCheckData
+    private function cleanup(HostHealthData $health): HealthCheckData
     {
-        $cleanup = is_array($health['cleanup'] ?? null) ? $health['cleanup'] : null;
-        $at = $this->time($cleanup['at'] ?? null);
+        $cleanup = $health->cleanup;
+        $at = $this->time($cleanup?->at);
 
-        if ($cleanup === null || ! $at instanceof CarbonImmutable) {
+        if (! $cleanup instanceof DiskCleanupData || ! $at instanceof CarbonImmutable) {
             return new HealthCheckData('cleanup', 'Disk cleanup', HealthCheckState::Unknown, 'Not run yet', 'Runs daily and when the disk is 85% full.');
         }
 
-        $images = is_int($cleanup['removedImages'] ?? null) ? $cleanup['removedImages'] : 0;
-        $reclaimed = is_int($cleanup['reclaimedMb'] ?? null) ? $cleanup['reclaimedMb'] : 0;
-        $error = is_string($cleanup['error'] ?? null) ? $cleanup['error'] : null;
-        $trigger = ($cleanup['trigger'] ?? null) === 'disk_pressure' ? ' (disk almost full)' : '';
+        $images = $cleanup->removedImages;
+        $reclaimed = $cleanup->reclaimedMb;
+        $error = $cleanup->error;
+        $trigger = $cleanup->trigger === CleanupTrigger::DiskPressure ? ' (disk almost full)' : '';
 
         return new HealthCheckData('cleanup', 'Disk cleanup', $error === null ? HealthCheckState::Ok : HealthCheckState::Warning,
             sprintf('%s%s: %d image%s removed, %s freed', $at->diffForHumans(), $trigger, $images, $images === 1 ? '' : 's', $this->size($reclaimed)),
@@ -258,16 +239,16 @@ final readonly class ServerHealth
         $render = $server->render_error;
         $rejected = $server->state_rejection;
 
-        if (is_array($render)) {
+        if ($render !== null) {
             return new HealthCheckData('desired_state', 'Desired state', HealthCheckState::Critical,
                 'Not rendered: the previous version stays applied',
-                $render['message'].' The deployments that caused it were marked as failed. Fix the configuration and deploy again.');
+                $render->message.' The deployments that caused it were marked as failed. Fix the configuration and deploy again.');
         }
 
-        if (is_array($rejected)) {
+        if ($rejected !== null) {
             return new HealthCheckData('desired_state', 'Desired state', HealthCheckState::Critical,
-                sprintf('Server refused v%d and keeps running v%d', $rejected['version'], $server->observed_version),
-                'launchroomd: '.$rejected['error']);
+                sprintf('Server refused v%d and keeps running v%d', $rejected->version, $server->observed_version),
+                'launchroomd: '.$rejected->error);
         }
 
         if ($server->last_report_at === null) {
@@ -280,24 +261,20 @@ final readonly class ServerHealth
     /**
      * Whether the server reaches the image registry it pulls from (D68):
      * a server that can't makes every rollout on it wait for its image.
-     *
-     * @param  array<array-key, mixed>  $host
      */
-    private function registry(array $host): HealthCheckData
+    private function registry(?RegistryReachData $registry): HealthCheckData
     {
-        $registry = is_array($host['registry'] ?? null) ? $host['registry'] : null;
-
-        if ($registry === null) {
+        if (! $registry instanceof RegistryReachData) {
             return new HealthCheckData('registry', 'Image registry', HealthCheckState::Unknown, 'Not checked yet');
         }
 
-        if (($registry['reachable'] ?? false) !== true) {
+        if (! $registry->reachable) {
             return new HealthCheckData('registry', 'Image registry', HealthCheckState::Critical,
-                'Not reachable'.(is_string($registry['error'] ?? null) ? ': '.$registry['error'] : ''),
+                'Not reachable'.($registry->error !== null ? ': '.$registry->error : ''),
                 'This server downloads images from the registry on the main server over the private network. Deploys to it wait until it reaches the registry again. Check the private network connection on this page.');
         }
 
-        $latency = is_int($registry['latencyMs'] ?? null) ? $registry['latencyMs'] : null;
+        $latency = $registry->latencyMs;
 
         return new HealthCheckData('registry', 'Image registry', HealthCheckState::Ok, $latency === null ? 'Reachable' : "Reachable ({$latency} ms)");
     }
@@ -325,25 +302,9 @@ final readonly class ServerHealth
         };
     }
 
-    /**
-     * @return array{0: int, 1: int}|null
-     */
-    private function pair(mixed $group, string $a, string $b): ?array
+    private function time(?string $value): ?CarbonImmutable
     {
-        return is_array($group) && is_int($group[$a] ?? null) && is_int($group[$b] ?? null) ? [$group[$a], $group[$b]] : null;
-    }
-
-    private function time(mixed $value): ?CarbonImmutable
-    {
-        if (! is_string($value)) {
-            return null;
-        }
-
-        try {
-            return CarbonImmutable::parse($value);
-        } catch (Throwable) {
-            return null;
-        }
+        return $value === null ? null : CarbonImmutable::parse($value);
     }
 
     private function size(int $mb): string

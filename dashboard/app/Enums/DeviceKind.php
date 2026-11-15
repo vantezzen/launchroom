@@ -50,7 +50,7 @@ enum DeviceKind: string
             self::Nas => 'NAS',
             self::Laptop => 'Laptop',
             self::Vm => 'Virtual machine',
-            self::Unknown => 'Unknown device',
+            self::Unknown => 'Server',
         };
     }
 }

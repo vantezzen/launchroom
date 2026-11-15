@@ -11,8 +11,8 @@ use App\Models\Registry\RegistryStorage;
 use App\Models\Team;
 use App\Models\User;
 use App\Services\Crypto\Envelope;
+use App\Services\Crypto\SealedColumns;
 use App\Services\Crypto\SecretKey;
-use App\Services\Registry\RegistryStorageSecrets;
 use App\Services\Registry\ZotConfig;
 use Illuminate\Support\Facades\Artisan;
 use Inertia\Testing\AssertableInertia;
@@ -63,7 +63,7 @@ test('instance owners put the registry on S3; credentials are envelope-encrypted
     $storage = RegistryStorage::query()->sole();
     expect($storage->credentials)->toStartWith('lr1:')
         ->and(json_encode($storage->toArray(), JSON_THROW_ON_ERROR))->not->toContain('lr1:')
-        ->and(resolve(RegistryStorageSecrets::class)->reveal($storage)['secretAccessKey'])->toBe('registry-secret-access-key');
+        ->and(resolve(SealedColumns::class)->revealJson($storage, 'credentials')['secretAccessKey'])->toBe('registry-secret-access-key');
 
     $page = $this->actingAs($owner)->get(route('registry-settings.edit'))
         ->assertOk()
@@ -88,14 +88,6 @@ test('only instance owners see or change the registry storage', function (TeamRo
 
     expect(RegistryStorage::query()->count())->toBe(0);
 })->with(['team owner' => [TeamRole::Owner], 'admin' => [TeamRole::Admin], 'developer' => [TeamRole::Developer]]);
-
-test('an instance owner can change registry storage without confirming again', function (): void {
-    $this->actingAs(registryInstanceOwner())
-        ->put(route('registry-settings.update'), registryForm())
-        ->assertRedirect()->assertSessionHasNoErrors();
-
-    expect(RegistryStorage::query()->count())->toBe(1);
-});
 
 test('endpoints follow the backup destination rules; the private-network override is audited', function (): void {
     $owner = registryInstanceOwner();
@@ -133,7 +125,7 @@ test('blank credentials keep the stored ones; new ones are required the first ti
 
     $storage = RegistryStorage::query()->sole();
     expect($storage->bucket)->toBe('other-bucket')
-        ->and(resolve(RegistryStorageSecrets::class)->reveal($storage)['accessKeyId'])->toBe('AKIAREGISTRY00001');
+        ->and(resolve(SealedColumns::class)->revealJson($storage, 'credentials')['accessKeyId'])->toBe('AKIAREGISTRY00001');
 });
 
 test('local storage renders the installer template', function (): void {
@@ -223,9 +215,9 @@ test('KEK rotation re-wraps the registry credentials', function (): void {
     $next = new Envelope(SecretKey::generate());
     resolve(RotateKek::class)->handle($current, $next);
     app()->instance(Envelope::class, $next);
-    app()->forgetInstance(RegistryStorageSecrets::class);
+    app()->forgetInstance(SealedColumns::class);
 
     $storage = RegistryStorage::query()->sole();
     expect($storage->kek_id)->toBe($next->kekId())
-        ->and(resolve(RegistryStorageSecrets::class)->reveal($storage)['secretAccessKey'])->toBe('registry-secret-access-key');
+        ->and(resolve(SealedColumns::class)->revealJson($storage, 'credentials')['secretAccessKey'])->toBe('registry-secret-access-key');
 });

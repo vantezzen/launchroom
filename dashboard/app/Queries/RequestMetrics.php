@@ -118,6 +118,12 @@ final readonly class RequestMetrics
         return $out;
     }
 
+    /** Share of $part in $total in percent (2 decimals), null without a total. */
+    public static function rate(int $part, int $total): ?float
+    {
+        return $total > 0 ? round($part / $total * 100, 2) : null;
+    }
+
     /**
      * Seconds a bucket covers so far: the full width, except for the newest
      * bucket, which only holds the minutes completed since it started (a
@@ -155,7 +161,7 @@ final readonly class RequestMetrics
             $agg = $buckets[$i] ?? null;
             $rps[] = $rates[$i] ?? null;
             $bytes[] = $agg === null ? (($rates[$i] ?? null) === null ? null : 0.0) : round($agg['out'] / self::seconds($window, $i), 1);
-            $errors[] = $agg === null || $agg['requests'] <= 0 ? null : round($agg['s5'] / $agg['requests'] * 100, 2);
+            $errors[] = $agg === null ? null : self::rate($agg['s5'], $agg['requests']);
             $p50[] = $agg === null ? null : RequestStats::quantile($agg['latency'] ?? [], 0.5);
             $p95[] = $agg === null ? null : RequestStats::quantile($agg['latency'] ?? [], 0.95);
         }
@@ -211,7 +217,7 @@ final readonly class RequestMetrics
         return new RequestTotalsData(
             $agg['requests'], $agg['s2'], $agg['s3'], $agg['s4'], $agg['s5'], $agg['in'], $agg['out'],
             round($agg['requests'] / max(1, $seconds), 4),
-            $agg['requests'] > 0 ? round($agg['s5'] / $agg['requests'] * 100, 2) : null,
+            self::rate($agg['s5'], $agg['requests']),
             RequestStats::quantile($agg['latency'] ?? [], 0.5),
             RequestStats::quantile($agg['latency'] ?? [], 0.95),
         );

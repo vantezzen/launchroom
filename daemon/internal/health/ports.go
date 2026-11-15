@@ -10,6 +10,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
 
 // Listener is a listening TCP socket inside a container's network namespace.
@@ -134,26 +136,28 @@ func Ports(ls []Listener) []int {
 	return out
 }
 
-// Hint explains a common misconfiguration when the configured port is not
-// reachable, or "" if nothing useful can be said.
-func Hint(port int, ls []Listener) string {
+// Hint names and explains a common misconfiguration when the configured
+// port is not reachable ("" if nothing useful can be said). The dashboard
+// words the hint itself; the sentence is for dashboards that predate
+// WorkloadStatus.portHint.
+func Hint(port int, ls []Listener) (state.PortHint, string) {
 	if port <= 0 || ls == nil {
-		return ""
+		return "", ""
 	}
 	for _, l := range ls {
 		if l.Port == port {
 			if l.LoopbackOnly {
-				return fmt.Sprintf("the app listens on 127.0.0.1:%d only; bind to 0.0.0.0 so it is reachable", port)
+				return state.PortHintLoopbackOnly, fmt.Sprintf("the app listens on 127.0.0.1:%d only; bind to 0.0.0.0 so it is reachable", port)
 			}
-			return ""
+			return "", ""
 		}
 	}
 	if len(ls) == 0 {
-		return fmt.Sprintf("the app does not listen on any TCP port (expected %d)", port)
+		return state.PortHintNoPort, fmt.Sprintf("the app does not listen on any TCP port (expected %d)", port)
 	}
 	ports := make([]string, len(ls))
 	for i, l := range ls {
 		ports[i] = strconv.Itoa(l.Port)
 	}
-	return fmt.Sprintf("the app listens on %s, not %d", strings.Join(ports, ", "), port)
+	return state.PortHintWrongPort, fmt.Sprintf("the app listens on %s, not %d", strings.Join(ports, ", "), port)
 }

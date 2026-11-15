@@ -7,7 +7,6 @@ namespace App\Data\Projects;
 use App\Data\Protocol\V1\BuildSummary;
 use App\Support\Projects\DatabaseSuggestions;
 use Spatie\LaravelData\Data;
-use Throwable;
 
 /**
  * What the build plan of one app suggests adding next to it (import flow):
@@ -32,23 +31,6 @@ final class PlanSuggestionsData extends Data
         public array $processes = [],
         public array $databases = [],
     ) {}
-
-    /**
-     * From a stored plan summary (`daemon_tasks.result.plan.summary`); empty
-     * when absent or malformed.
-     */
-    public static function fromStored(mixed $summary, string $rootDirectory): self
-    {
-        if (! is_array($summary) || $summary === []) {
-            return new self;
-        }
-
-        try {
-            return self::fromSummary(BuildSummary::from($summary), $rootDirectory);
-        } catch (Throwable) {
-            return new self;
-        }
-    }
 
     public static function fromSummary(BuildSummary $summary, string $rootDirectory): self
     {

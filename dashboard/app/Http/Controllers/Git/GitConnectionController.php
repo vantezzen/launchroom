@@ -8,8 +8,10 @@ use App\Actions\Git\DisconnectGitConnection;
 use App\Actions\Git\StartGitProviderConnection;
 use App\Data\Git\ConnectGitProviderData;
 use App\Http\Controllers\Controller;
-use App\Http\Controllers\Teams\TeamSettingsController;
+use App\Http\Routing\CurrentTeam;
+use App\Http\Toast;
 use App\Models\Git\GitConnection;
+use App\Models\Team;
 use App\Models\User;
 use Illuminate\Container\Attributes\CurrentUser;
 use Illuminate\Http\RedirectResponse;
@@ -25,9 +27,8 @@ use Symfony\Component\HttpFoundation\Response;
  */
 final class GitConnectionController extends Controller
 {
-    public function store(Request $request, ConnectGitProviderData $data, #[CurrentUser] User $user, StartGitProviderConnection $start): Response
+    public function store(Request $request, ConnectGitProviderData $data, #[CurrentUser] User $user, StartGitProviderConnection $start, #[CurrentTeam] Team $team): Response
     {
-        $team = TeamSettingsController::currentTeam($user);
         Gate::authorize('create', [GitConnection::class, $team]);
 
         $authorizeUrl = $start->handle($team, $user, $data, $this->auditActor($request, $user));
@@ -37,7 +38,7 @@ final class GitConnectionController extends Controller
             return Inertia::location($authorizeUrl);
         }
 
-        Inertia::flash('toast', ['type' => 'success', 'message' => 'Connected. Your repositories show up when you import a project.']);
+        Toast::success('Connected. Your repositories show up when you import a project.');
 
         return to_route('git.edit');
     }
@@ -48,7 +49,7 @@ final class GitConnectionController extends Controller
 
         $disconnect->handle($gitConnection, $this->auditActor($request, $user));
 
-        Inertia::flash('toast', ['type' => 'success', 'message' => "Disconnected {$gitConnection->name}."]);
+        Toast::success("Disconnected {$gitConnection->name}.");
 
         return to_route('git.edit');
     }

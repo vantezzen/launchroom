@@ -58,3 +58,12 @@ test('validation regex and route pattern match generated ids', function (): void
 test('rejects invalid prefixes', function (string $prefix): void {
     PublicId::generate($prefix);
 })->with(['', 'p', 'toolong', 'PRJ', 'pr_j', 'pr1'])->throws(InvalidArgumentException::class);
+
+test('regex accepts any of several prefixes', function (): void {
+    $pattern = PublicId::regex('ghr', 'gir');
+
+    expect(preg_match($pattern, PublicId::generate('ghr')))->toBe(1)
+        ->and(preg_match($pattern, PublicId::generate('gir')))->toBe(1)
+        ->and(preg_match($pattern, PublicId::generate('svc')))->toBe(0)
+        ->and(preg_match($pattern, PublicId::generate('gir')."\n"))->toBe(0);
+});

@@ -64,14 +64,19 @@ test('adding a server issues a join token shown once, with the install command i
 
     $this->get(route('servers.enrollments.show', $enrollment->public_id))
         ->assertInertia(fn ($page) => $page->component('servers/enrollment')
-            ->where('joinToken', fn (string $token): bool => hash('sha256', $token) === $enrollment->token_hash)
-            ->where('controlPlaneKey', fn (string $key): bool => str_starts_with($key, 'ed25519:'))
+            ->where('command', function (string $command) use ($enrollment): bool {
+                preg_match('/LR_JOIN_TOKEN=(\S+) LR_CP_KEY=(\S+) /', $command, $m);
+
+                return str_starts_with($command, 'curl -fsSL '.rtrim(config()->string('app.url'), '/').'/install/server.sh | ')
+                    && hash('sha256', $m[1] ?? '') === $enrollment->token_hash
+                    && str_starts_with($m[2] ?? '', 'ed25519:');
+            })
             ->where('enrollment.roles', ['runtime', 'build'])
             ->where('enrollment.server', null));
 
     // The token is gone on the next view (only its hash is stored).
     $this->get(route('servers.enrollments.show', $enrollment->public_id))
-        ->assertInertia(fn ($page) => $page->where('joinToken', null));
+        ->assertInertia(fn ($page) => $page->where('command', null));
 
     expect(AuditEvent::query()->where('action', AuditAction::ServerEnrollmentCreated->value)->count())->toBe(1);
 });

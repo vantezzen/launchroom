@@ -34,11 +34,6 @@ import (
 
 var version = "0.0.0-dev"
 
-const (
-	defaultUpstream = "/var/run/docker.sock"
-	defaultListen   = "/run/launchroom/docker.sock"
-)
-
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
 		os.Exit(healthcheck())
@@ -50,34 +45,20 @@ func main() {
 	os.Exit(run())
 }
 
-func env(k, def string) string {
-	if v := os.Getenv(k); v != "" {
-		return v
-	}
-	return def
-}
-
 func run() int {
-	level := slog.LevelInfo
-	_ = level.UnmarshalText([]byte(env("LR_LOG_LEVEL", "info")))
-	log := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: level})).With("component", "dockerd-guard", "version", version)
+	cfg, cfgErr := config.LoadGuard(os.LookupEnv)
+	log := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: cfg.LogLevel})).With("component", "dockerd-guard", "version", version)
+	if cfgErr != nil {
+		log.Error("configuration", "err", cfgErr)
+		return 2
+	}
 	guard.Version = version
-
-	digests, err := config.ParseSystemImageDigests(os.Getenv(config.EnvSystemImageDigests))
+	pol, err := guard.PolicyFromEnv(policy.DefaultConfig(), cfg.AllowedRegistries, cfg.SystemImageDigests)
 	if err != nil {
 		log.Error("configuration", "err", err)
 		return 2
 	}
-	pol, err := guard.PolicyFromEnv(policy.DefaultConfig(), os.Getenv("LR_GUARD_ALLOWED_REGISTRIES"), digests)
-	if err != nil {
-		log.Error("configuration", "err", err)
-		return 2
-	}
-	upstream, listen := env("LR_GUARD_UPSTREAM", defaultUpstream), env("LR_GUARD_LISTEN", defaultListen)
-	srv, err := guard.New(guard.Options{
-		Upstream: upstream, Policy: pol, Log: log,
-		InteractiveSessions: os.Getenv(config.EnvInteractiveSessions),
-	})
+	srv, err := guard.New(guard.Options{Upstream: cfg.Upstream, Policy: pol, Log: log, InteractiveSessions: cfg.InteractiveSessions})
 	if err != nil {
 		log.Error("configuration", "err", err)
 		return 2
@@ -85,48 +66,16 @@ func run() int {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
-
-	// Wait for Docker, then learn the host: rootless or not, and the
-	// install folder for self-updates.
-	var rootless bool
-	for i := 0; ; i++ {
-		pctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-		rootless, err = srv.DetectRootless(pctx)
-		cancel()
-		if err == nil {
-			break
-		}
-		if ctx.Err() != nil {
-			return 0
-		}
-		if i%10 == 0 {
-			log.Warn("waiting for Docker", "upstream", upstream, "err", err)
-		}
-		time.Sleep(2 * time.Second)
-	}
-	opts := srv.Options()
-	if rootless {
-		opts.Rootless = &guard.RootlessOptions{APISocket: os.Getenv("LR_GUARD_ROOTLESSKIT_API")}
-		log.Info("rootless Docker host", "edgePorts", opts.Rootless.APISocket != "")
-	}
-	if u, err := srv.DiscoverUpdater(ctx); err != nil {
-		log.Warn("self-updates through the guard are disabled", "reason", err)
-	} else {
-		opts.Updater = u
-		log.Info("self-update supervisor allowed", "installFolder", u.ProjectDir)
-	}
-	srv, err = guard.New(opts)
-	if err != nil {
-		log.Error("configuration", "err", err)
-		return 2
+	if err := srv.Discover(ctx, cfg.RootlessKitAPI); err != nil {
+		return 0 // stopped while waiting for Docker
 	}
 
-	l, err := guard.Listen(listen)
+	l, err := guard.Listen(cfg.Listen)
 	if err != nil {
-		log.Error("listen", "socket", listen, "err", err)
+		log.Error("listen", "socket", cfg.Listen, "err", err)
 		return 1
 	}
-	log.Info("dockerd-guard listening", "socket", listen, "upstream", upstream)
+	log.Info("dockerd-guard listening", "socket", cfg.Listen, "upstream", cfg.Upstream)
 	if err := srv.Serve(ctx, l); err != nil {
 		log.Error("serve", "err", err)
 		return 1
@@ -134,9 +83,8 @@ func run() int {
 	return 0
 }
 
-// healthcheck asks the guard's status endpoint on its own socket.
 func healthcheck() int {
-	path := env("LR_GUARD_LISTEN", defaultListen)
+	path := config.GuardListen()
 	c := &http.Client{Timeout: 5 * time.Second, Transport: &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 		var d net.Dialer
 		return d.DialContext(ctx, "unix", path)

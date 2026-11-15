@@ -13,23 +13,22 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Spinner } from '@/components/ui/spinner';
 import { Switch } from '@/components/ui/switch';
-import { shortAge } from '@/features/servers/format';
 import { AppDomainsSettings } from '@/features/domains/app-domains-settings';
 import { MeshStatus, meshModeLabels } from '@/features/servers/mesh-status';
+import { cn } from '@/lib/utils';
+import { show as serverPage } from '@/routes/servers';
+import { destroy, verify, update } from '@/routes/servers/ingress/dns';
+import { update as updateEdge } from '@/routes/servers/ingress/edges';
+import { enable, ownTailscale } from '@/routes/servers/mesh';
+import { shortAge } from '@/lib/format';
 import {
     useDocsUrl,
     LearnMore,
     SettingsBody,
     SettingsCard,
     SettingsRow,
-} from '@/features/settings/settings-card';
-import { cn } from '@/lib/utils';
-import { edit as networkSettings } from '@/routes/network-settings';
-import { show as serverPage } from '@/routes/servers';
-import { destroy, update, verify } from '@/routes/servers/ingress/dns';
-import { update as updateEdge } from '@/routes/servers/ingress/edges';
-import { enable, ownTailscale } from '@/routes/servers/mesh';
-import { index as settingsHome } from '@/routes/settings';
+} from '@/components/settings/settings-card';
+import SettingsLayout from '@/features/settings/settings-layout';
 
 type Props = {
     mesh: App.Data.Servers.MeshOverviewData;
@@ -42,19 +41,6 @@ type Props = {
 };
 
 type Mode = App.Enums.Mesh.MeshMode;
-
-/** Logo keys (components/logo.tsx) of the DNS providers. */
-const dnsLogo: Record<App.Enums.DnsProvider, string> = {
-    cloudflare: 'cloudflare',
-    hetzner: 'hetzner',
-    route53: 'route53',
-    digitalocean: 'digitalocean',
-    porkbun: 'porkbun',
-    desec: 'desec',
-    gandi: 'gandi',
-    ovh: 'ovh',
-    netcup: 'netcup',
-};
 
 const routeStates: Record<string, { state: StatusState; label: string }> = {
     applied: { state: 'active', label: 'Routes applied' },
@@ -584,9 +570,7 @@ function Certificates({
                                                         : undefined,
                                                 media: (
                                                     <Logo
-                                                        kind={
-                                                            dnsLogo[item.value]
-                                                        }
+                                                        kind={item.value}
                                                         name={item.label}
                                                         size={32}
                                                         decorative
@@ -734,9 +718,4 @@ export default function NetworkSettings({
     );
 }
 
-NetworkSettings.layout = {
-    breadcrumbs: [
-        { title: 'Settings', href: settingsHome() },
-        { title: 'Network', href: networkSettings() },
-    ],
-};
+NetworkSettings.layout = SettingsLayout;

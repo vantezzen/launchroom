@@ -44,7 +44,7 @@ final readonly class CreateApiToken
             throw DomainRuleViolation::on('expiresInDays', 'Pick one of the offered lifetimes.');
         }
 
-        $abilities = array_values(array_unique([ApiAbility::Read, ...$abilities], SORT_REGULAR));
+        $abilities = array_values(array_unique([...array_filter(ApiAbility::cases(), static fn (ApiAbility $ability): bool => $ability->alwaysGranted()), ...$abilities], SORT_REGULAR));
 
         foreach ($abilities as $ability) {
             $permission = $ability->grants() ?? Permission::View;

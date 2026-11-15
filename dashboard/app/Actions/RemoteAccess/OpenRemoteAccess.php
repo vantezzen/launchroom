@@ -7,21 +7,25 @@ namespace App\Actions\RemoteAccess;
 use App\Actions\Audit\RecordAuditEvent;
 use App\Data\Audit\AuditActor;
 use App\Data\Audit\AuditEntryData;
+use App\Data\Protocol\V1\Tasks\AccessSpec;
 use App\Data\RemoteAccess\OpenRemoteAccessData;
 use App\Data\Services\DatabaseSource;
-use App\Enums\DaemonTaskType;
+use App\Data\Tasks\AccessPasswordSeal;
+use App\Data\Tasks\TaskSeal;
+use App\Enums\DaemonTaskPurpose;
 use App\Enums\RemoteAccess\RemoteAccessKind;
-use App\Enums\RemoteAccess\RemoteAccessStatus;
 use App\Enums\ServiceKind;
+use App\Enums\TaskBackedAccessStatus;
 use App\Exceptions\DomainRuleViolation;
-use App\Models\DaemonTask;
 use App\Models\Placement;
 use App\Models\RemoteAccess\RemoteAccess;
 use App\Models\ServiceInstance;
 use App\Models\User;
 use App\Models\Volume;
+use App\Queries\RemoteAccess\RemoteAccessView;
 use App\Services\RemoteAccess\RemoteAccessTargets;
-use App\Services\RemoteAccess\RemoteAccessView;
+use App\Services\Sessions\SessionTargets;
+use App\Services\Tasks\DaemonTasks;
 use App\Support\PublicId;
 use App\Support\RemoteAccess\AccessSecrets;
 use App\Support\RemoteAccess\SshPublicKey;
@@ -37,7 +41,9 @@ final readonly class OpenRemoteAccess
 {
     public function __construct(
         private RemoteAccessTargets $targets,
+        private SessionTargets $sessions,
         private RecordAuditEvent $audit,
+        private DaemonTasks $tasks,
     ) {}
 
     public function handle(User $user, ServiceInstance $instance, RemoteAccessKind $kind, OpenRemoteAccessData $data, AuditActor $actor): RemoteAccess
@@ -84,7 +90,7 @@ final readonly class OpenRemoteAccess
         return DB::transaction(function () use ($user, $instance, $kind, $placement, $source, $volume, $allow, $keys, $maxMinutes, $idle, $username, $password, $hosts, $writes, $actor): RemoteAccess {
             // Serialize this user's opens (FOR UPDATE can't be combined with COUNT).
             User::query()->whereKey($user->id)->lockForUpdate()->value('id');
-            $live = [RemoteAccessStatus::Pending->value, RemoteAccessStatus::Open->value];
+            $live = [TaskBackedAccessStatus::Pending->value, TaskBackedAccessStatus::Open->value];
 
             if (RemoteAccess::query()->where('user_id', $user->id)->whereIn('status', $live)->count() >= config()->integer('launchroom.remote_access.max_open_per_user')) {
                 throw DomainRuleViolation::conflict('You have two temporary accesses open already. End one to start another.');
@@ -97,30 +103,27 @@ final readonly class OpenRemoteAccess
             $publicId = PublicId::generate(RemoteAccess::publicIdPrefix());
             $engine = $source?->engine;
 
-            $task = DaemonTask::query()->create([
-                'team_id' => $instance->team_id,
-                'server_id' => $placement->server_id,
-                'pinned_to_server' => true,
-                'type' => DaemonTaskType::Access,
-                'spec' => (object) array_filter([
-                    'access' => $publicId,
-                    'kind' => $kind->value,
-                    'workload' => $placement->workload_id,
-                    'engine' => $engine?->value,
-                    'user' => $username,
-                    'authorizedKeys' => $keys === [] ? null : array_map(static fn (SshPublicKey $key): string => $key->line(), $keys),
-                    'allowFrom' => $allow,
-                    'hosts' => $hosts === [] ? null : $hosts,
-                    'allowWrites' => $writes ? true : null,
-                    'volume' => $volume?->public_id,
-                    'image' => $volume instanceof Volume ? config()->string('launchroom.daemon.system_images.files') : null,
-                    'idleTimeout' => intdiv($idle, 60).'m',
-                ], static fn (mixed $value): bool => $value !== null),
-                'max_attempts' => 1,
-                'timeout_seconds' => $maxMinutes * 60,
-                'purpose' => 'access_'.$kind->value,
-                'seal' => $password === null ? null : ['accessPassword' => ['access' => $publicId]],
-            ]);
+            $task = $this->tasks->create(
+                $instance->team_id,
+                new AccessSpec(
+                    access: $publicId,
+                    kind: $kind->value,
+                    workload: $placement->workload_id,
+                    user: $username,
+                    allowFrom: $allow,
+                    idleTimeout: intdiv($idle, 60).'m',
+                    engine: $engine?->value,
+                    authorizedKeys: $keys === [] ? null : array_map(static fn (SshPublicKey $key): string => $key->line(), $keys),
+                    hosts: $hosts === [] ? null : $hosts,
+                    allowWrites: $writes ? true : null,
+                    volume: $volume?->public_id,
+                    image: $volume instanceof Volume ? config()->string('launchroom.daemon.system_images.files') : null,
+                ),
+                $maxMinutes * 60,
+                pin: $placement->server,
+                seal: $password === null ? null : new TaskSeal(accessPassword: new AccessPasswordSeal($publicId)),
+                purpose: DaemonTaskPurpose::forAccess($kind),
+            );
 
             $access = new RemoteAccess([
                 'team_id' => $instance->team_id,
@@ -202,13 +205,13 @@ final readonly class OpenRemoteAccess
         }
 
         if ($kind === RemoteAccessKind::Database) {
-            $source = $instance->service->kind === ServiceKind::Database ? $this->targets->database($instance) : null;
+            $source = $instance->service->kind === ServiceKind::Database ? $this->sessions->database($instance) : null;
 
             if (! $source instanceof DatabaseSource) {
                 throw DomainRuleViolation::on('service', 'Only databases have temporary database access.');
             }
 
-            if (! RemoteAccessTargets::engineSupported($source->engine)) {
+            if (! $this->targets->engineSupported($source->engine)) {
                 throw DomainRuleViolation::on('service', $source->engine->label().' has no temporary access yet.');
             }
 

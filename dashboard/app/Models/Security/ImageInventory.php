@@ -8,6 +8,7 @@ use App\Enums\Security\InventorySource;
 use App\Enums\Security\InventoryStatus;
 use App\Models\Concerns\BelongsToTeam;
 use App\Models\Concerns\HasPublicId;
+use App\Models\Concerns\HasStatusTransitions;
 use App\Models\DaemonTask;
 use App\Models\Service;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -56,6 +57,9 @@ final class ImageInventory extends Model
 {
     use BelongsToTeam, HasPublicId;
 
+    /** @use HasStatusTransitions<InventoryStatus> */
+    use HasStatusTransitions;
+
     /** @var array<string, mixed> */
     protected $attributes = [
         'status' => 'pending',
@@ -71,17 +75,7 @@ final class ImageInventory extends Model
 
     public static function publicIdPrefix(): string
     {
-        return 'inv';
-    }
-
-    /**
-     * The only way an inventory's status changes (docs/10 §2.2 rule 3).
-     */
-    public function transitionTo(InventoryStatus $to): void
-    {
-        $this->status->assertCanTransitionTo($to);
-        $this->status = $to;
-        $this->save();
+        return 'img';
     }
 
     /**

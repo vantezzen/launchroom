@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
+use App\Enums\Sessions\InteractiveSessionKind;
 use App\Http\Controllers\Sessions\InteractiveSessionController;
 use App\Http\Controllers\Sessions\ServiceSessionController;
 use App\Http\Controllers\Teams\MembershipController;
 use App\Http\Controllers\Teams\TeamSettingsController;
-use App\Support\PublicId;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -17,32 +17,27 @@ use Illuminate\Support\Facades\Route;
 
 Route::middleware(['web', 'auth', 'verified'])->group(function (): void {
     Route::get('sessions/p/{project}/{environment}/s/{service}/{kind}', [ServiceSessionController::class, 'show'])
-        ->whereIn('kind', ['console', 'data'])
+        ->whereIn('kind', InteractiveSessionKind::cases())
         ->middleware('throttle:120,1')
         ->name('sessions.services.show');
     Route::post('sessions/p/{project}/{environment}/s/{service}/{kind}', [ServiceSessionController::class, 'store'])
-        ->whereIn('kind', ['console', 'data'])
+        ->whereIn('kind', InteractiveSessionKind::cases())
         ->middleware('throttle:20,1')
         ->name('sessions.services.open');
 
     Route::get('sessions/{interactiveSession}', [InteractiveSessionController::class, 'show'])
-        ->where('interactiveSession', PublicId::routePattern('ses'))
         ->middleware('throttle:120,1')
         ->name('sessions.show');
     Route::post('sessions/{interactiveSession}/authorize', [InteractiveSessionController::class, 'authorizeChannel'])
-        ->where('interactiveSession', PublicId::routePattern('ses'))
         ->middleware('throttle:30,1')
         ->name('sessions.authorize');
     Route::post('sessions/{interactiveSession}/commands', [InteractiveSessionController::class, 'command'])
-        ->where('interactiveSession', PublicId::routePattern('ses'))
         ->middleware('throttle:120,1')
         ->name('sessions.commands');
     Route::post('sessions/{interactiveSession}/end', [InteractiveSessionController::class, 'end'])
-        ->where('interactiveSession', PublicId::routePattern('ses'))
         ->middleware('throttle:60,1')
         ->name('sessions.end');
     Route::post('sessions/{interactiveSession}/recording', [InteractiveSessionController::class, 'recording'])
-        ->where('interactiveSession', PublicId::routePattern('ses'))
         ->middleware('throttle:10,1')
         ->name('sessions.recording');
 

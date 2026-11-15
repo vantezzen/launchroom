@@ -21,6 +21,7 @@ final class AppliedPreset extends Data
         public string $name,
         #[Min(1)]
         public int $version,
+        #[Max(32)]
         public array $decisions = [],
     ) {}
 }

@@ -85,7 +85,6 @@ func NewCertificate(hosts []string, notAfter time.Time) (tls.Certificate, *state
 		&state.AccessCertificate{SHA256: hex.EncodeToString(sum[:]), PEM: string(pemBytes)}, nil
 }
 
-// serverTLS is the proxy's TLS configuration (TLS 1.2+).
 func serverTLS(cert tls.Certificate, alpn []string) *tls.Config {
 	return &tls.Config{
 		Certificates: []tls.Certificate{cert},

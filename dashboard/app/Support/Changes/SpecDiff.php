@@ -396,7 +396,7 @@ final class SpecDiff
 
     private function variableFingerprint(VariableSpec $variable): string
     {
-        return CanonicalJson::encode([$variable->key, $variable->type->value, $variable->version, $variable->exposure->value, $variable->layer]);
+        return CanonicalJson::encode([$variable->key, $variable->type->value, $variable->version, $variable->exposure->value, $variable->layer->value]);
     }
 
     private function add(string $path, ChangeKind $kind, ChangeEffect $effect, PromotionClass $promotion, string $label, ?string $serviceId, ?string $before = null, ?string $after = null): void

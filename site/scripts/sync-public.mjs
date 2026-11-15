@@ -2,7 +2,9 @@
 // (docs/21 §3). Runs as `predev`/`prebuild`, so every host runs it:
 //   /install                       deploy/install/install.sh (curl … | sh)
 //   /schema/launchroom.v1.json     the launchroom.json JSON Schema ($id, D45)
-//   /schema/v1/*.json              protocol JSON Schemas ($id prefix, protocol/)
+//   /schema/v1/*.json              protocol JSON Schemas ($id prefix) and vocabulary.json (protocol/)
+//   /devices/                      the dashboard's device art (make device-art):
+//                                  manifest.json and <device>@2x.webp as <device>.webp
 // The copies in public/ are committed, so a host that only has the site/
 // folder still serves them; with the whole repo checked out they are refreshed
 // from the source of truth first (CI fails when the committed copies are stale).
@@ -14,7 +16,13 @@ const site = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const repo = resolve(site, '..');
 const pub = join(site, 'public');
 
-const sources = ['deploy/install/install.sh', 'dashboard/resources/schema/launchroom.v1.json', 'protocol/schema/v1'];
+const devices = 'dashboard/public/images/devices';
+const sources = [
+    'deploy/install/install.sh',
+    'dashboard/resources/schema/launchroom.v1.json',
+    'protocol/schema/v1',
+    `${devices}/manifest.json`,
+];
 const missing = sources.filter((s) => !existsSync(join(repo, s)));
 if (missing.length > 0) {
     console.log(
@@ -29,9 +37,14 @@ function copy(from, to) {
 }
 
 rmSync(join(pub, 'schema'), { recursive: true, force: true });
+rmSync(join(pub, 'devices'), { recursive: true, force: true });
 copy('deploy/install/install.sh', 'install');
 copy('dashboard/resources/schema/launchroom.v1.json', 'schema/launchroom.v1.json');
 for (const file of readdirSync(join(repo, 'protocol/schema/v1')).filter((f) => f.endsWith('.json'))) {
     copy(`protocol/schema/v1/${file}`, `schema/v1/${file}`);
 }
-console.log('sync-public: install script and JSON Schemas copied from the repo into public/');
+copy(`${devices}/manifest.json`, 'devices/manifest.json');
+for (const file of readdirSync(join(repo, devices)).filter((f) => f.endsWith('@2x.webp'))) {
+    copy(`${devices}/${file}`, `devices/${file.replace('@2x.webp', '.webp')}`);
+}
+console.log('sync-public: install script, JSON Schemas and device art copied from the repo into public/');

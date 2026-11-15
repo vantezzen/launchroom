@@ -7,14 +7,13 @@ namespace App\Http\Controllers\Git;
 use App\Data\Git\GitConnectionData;
 use App\Data\Git\GitHubAppData;
 use App\Data\Git\ManifestRedirectData;
-use App\Enums\Git\GitProviderKind;
 use App\Http\Controllers\Controller;
-use App\Http\Controllers\Teams\TeamSettingsController;
+use App\Http\Routing\CurrentTeam;
 use App\Models\Git\GitConnection;
 use App\Models\Git\GitHubApp;
+use App\Models\Team;
 use App\Models\User;
-use App\Services\Git\Providers\GiteaProvider;
-use App\Services\Git\Providers\GitLabProvider;
+use App\Services\Git\GitProviders;
 use App\Support\Git\WebhookReachability;
 use Illuminate\Container\Attributes\CurrentUser;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -30,11 +29,8 @@ use Inertia\Response;
  */
 final class GitSettingsController extends Controller
 {
-    public const string MANIFEST_FLASH_KEY = 'launchroom.github_manifest';
-
-    public function edit(Request $request, #[CurrentUser] User $user, GitLabProvider $gitlab, GiteaProvider $gitea): Response
+    public function edit(Request $request, #[CurrentUser] User $user, GitProviders $providers, #[CurrentTeam] Team $team): Response
     {
-        $team = TeamSettingsController::currentTeam($user);
         Gate::authorize('viewAny', [GitHubApp::class, $team]);
 
         $canManage = Gate::allows('create', [GitHubApp::class, $team]);
@@ -62,17 +58,13 @@ final class GitSettingsController extends Controller
                 $connection,
                 Gate::allows('delete', $connection),
                 is_numeric($count = $connection->getAttribute('repositories_count')) ? (int) $count : 0,
-                match ($connection->provider) {
-                    GitProviderKind::GitLab => $gitlab->webhookUrl($connection),
-                    GitProviderKind::Gitea => $gitea->webhookUrl($connection),
-                    default => route('git.webhooks.git', ['connection' => $connection->public_id]),
-                },
+                $providers->connection($connection->provider)->webhookUrl($connection),
             ))
             ->all();
 
         $setup = $request->query('setup');
 
-        $manifest = ManifestRedirectData::fromSession($request->session()->get(self::MANIFEST_FLASH_KEY));
+        $manifest = ManifestRedirectData::fromSession($request->session()->get(ManifestRedirectData::SESSION_KEY));
 
         return Inertia::render('settings/git', [
             'apps' => array_values($apps),

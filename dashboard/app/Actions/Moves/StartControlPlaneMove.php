@@ -30,8 +30,6 @@ use Illuminate\Support\Facades\DB;
  * authorized by the controller. Only the token secret's hash is
  * stored; the token stops working when the move ends or after 24 hours
  * without a claim.
- *
- * @return array{move: ControlPlaneMove, token: string}
  */
 final readonly class StartControlPlaneMove
 {
@@ -56,7 +54,7 @@ final readonly class StartControlPlaneMove
                 throw DomainRuleViolation::conflict('Finish recovery mode first.');
             }
 
-            $source = Server::query()->where('is_control_plane', true)->where('status', '!=', ServerStatus::Revoked->value)->orderByDesc('id')->first();
+            $source = Server::currentControlPlane();
 
             if (! $source instanceof Server || $source->status !== ServerStatus::Online) {
                 throw DomainRuleViolation::conflict('The dashboard’s own server must be online to move.');

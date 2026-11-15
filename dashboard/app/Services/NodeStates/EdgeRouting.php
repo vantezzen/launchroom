@@ -10,6 +10,7 @@ use App\Enums\DomainKind;
 use App\Models\Domain;
 use App\Models\Server;
 use App\Services\Ingress\EdgeIngress;
+use App\Support\Ingress\RouteId;
 
 /**
  * Edge-wide route settings applied after routes are computed (docs/05 §5):
@@ -41,17 +42,13 @@ final readonly class EdgeRouting
         $hsts = $this->hstsRouteIds($routes);
         $maxAge = 'max-age='.config()->integer('launchroom.ingress.hsts_max_age');
 
-        foreach ($routes as $route) {
+        return array_map(function (RouteSpec $route) use ($wildcard, $hsts, $maxAge): RouteSpec {
             if ($wildcard !== null && in_array($route->tls, ['acme', 'on_demand'], true) && $this->allUnder($route->hosts, $wildcard)) {
-                $route->tls = 'wildcard';
+                $route = $route->withTls('wildcard');
             }
 
-            if (isset($hsts[$route->id])) {
-                $route->headers = [...($route->headers ?? []), self::HSTS => $maxAge];
-            }
-        }
-
-        return $routes;
+            return isset($hsts[$route->id]) ? $route->withHeader(self::HSTS, $maxAge) : $route;
+        }, $routes);
     }
 
     /**
@@ -79,8 +76,10 @@ final readonly class EdgeRouting
         $domainIds = [];
 
         foreach ($routes as $route) {
-            if ($route->tls === 'on_demand' && str_starts_with($route->id, 'rt_')) {
-                $domainIds[] = 'dom_'.substr($route->id, 3);
+            $domainId = $route->tls === 'on_demand' ? RouteId::domainPublicId($route->id) : null;
+
+            if ($domainId !== null) {
+                $domainIds[] = $domainId;
             }
         }
 
@@ -98,7 +97,7 @@ final readonly class EdgeRouting
             ->get(['public_id']);
 
         foreach ($domains as $domain) {
-            $ids[Domain::routeIdFor($domain->public_id)] = true;
+            $ids[RouteId::forDomain($domain->public_id)] = true;
         }
 
         return $ids;

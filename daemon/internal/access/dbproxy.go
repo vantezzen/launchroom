@@ -23,7 +23,6 @@ import (
 // certificate and required; the first message must name the temporary
 // role; then bytes are spliced to the database container.
 
-// Postgres protocol codes.
 const (
 	pgSSLRequest    = 80877103
 	pgGSSENCRequest = 80877104
@@ -94,7 +93,6 @@ func (p *dbProxy) dial(ctx context.Context) (net.Conn, error) {
 	return p.o.Dial(dctx, addr)
 }
 
-// refuse answers in the engine's own error format, then closes.
 func (p *dbProxy) refuse(c net.Conn, msg string) {
 	_ = c.SetWriteDeadline(time.Now().Add(5 * time.Second))
 	if p.o.Engine == state.EnginePostgres {
@@ -104,7 +102,6 @@ func (p *dbProxy) refuse(c net.Conn, msg string) {
 	}
 }
 
-// splice copies both ways until either side closes.
 func splice(a, b net.Conn, ep *endpoint) {
 	done := make(chan struct{}, 2)
 	cp := func(dst, src net.Conn, in bool) {
@@ -135,8 +132,6 @@ func splice(a, b net.Conn, ep *endpoint) {
 	<-done
 }
 
-// ---- Postgres ----
-
 // pgError is an ErrorResponse (severity FATAL).
 func pgError(code, msg string) []byte {
 	var body bytes.Buffer
@@ -158,7 +153,6 @@ func isPGCancel(engine state.DatabaseEngine, pkt []byte) bool {
 	return engine == state.EnginePostgres && len(pkt) == 16 && binary.BigEndian.Uint32(pkt[4:8]) == pgCancelRequest
 }
 
-// readPGPacket reads one length-prefixed startup-phase packet.
 func readPGPacket(r io.Reader) ([]byte, error) {
 	var hdr [4]byte
 	if _, err := io.ReadFull(r, hdr[:]); err != nil {
@@ -176,8 +170,6 @@ func readPGPacket(r io.Reader) ([]byte, error) {
 	return b, nil
 }
 
-// postgresStartup negotiates TLS and returns the TLS connection and the
-// (checked, possibly rewritten) StartupMessage to send upstream.
 func (p *dbProxy) postgresStartup(ctx context.Context, c net.Conn) (net.Conn, []byte, error) {
 	br := bufio.NewReader(c)
 	peek, err := br.Peek(1)
@@ -244,8 +236,6 @@ func (p *dbProxy) postgresStartup(ctx context.Context, c net.Conn) (net.Conn, []
 	return tconn, out, nil
 }
 
-// checkPGStartup checks a StartupMessage: protocol 3.x, user = role, no
-// replication, database absent (then set) or the service's database.
 func checkPGStartup(pkt []byte, role, database string) ([]byte, error) {
 	if len(pkt) < 9 {
 		return nil, errors.New("bad startup message")
@@ -303,7 +293,6 @@ func checkPGStartup(pkt []byte, role, database string) ([]byte, error) {
 	return out, nil
 }
 
-// bufConn reads through a bufio.Reader that already peeked.
 type bufConn struct {
 	net.Conn
 	r *bufio.Reader
@@ -311,13 +300,8 @@ type bufConn struct {
 
 func (c *bufConn) Read(p []byte) (int, error) { return c.r.Read(p) }
 
-// ---- Redis / Valkey ----
-
-// maxRESPFirst bounds the first command (AUTH/HELLO).
 const maxRESPFirst = 8 << 10
 
-// redisStartup terminates TLS and checks that the first command
-// authenticates as the temporary user.
 func (p *dbProxy) redisStartup(ctx context.Context, c net.Conn) (net.Conn, []byte, error) {
 	tconn := tls.Server(c, serverTLS(p.o.TLS, nil))
 	if err := tconn.HandshakeContext(ctx); err != nil {
@@ -336,7 +320,6 @@ func (p *dbProxy) redisStartup(ctx context.Context, c net.Conn) (net.Conn, []byt
 		p.ep.failed(remoteAddr(c), false)
 		return nil, nil, errors.New("redis: first command is not AUTH as the temporary user")
 	}
-	// Anything the client pipelined after AUTH goes upstream too.
 	if n := br.Buffered(); n > 0 {
 		rest, _ := br.Peek(n)
 		raw = append(raw, rest...)
@@ -344,8 +327,6 @@ func (p *dbProxy) redisStartup(ctx context.Context, c net.Conn) (net.Conn, []byt
 	return tconn, raw, nil
 }
 
-// redisAuthenticatesAs reports whether args is AUTH <user> <pass> or
-// HELLO <v> AUTH <user> <pass> … for user.
 func redisAuthenticatesAs(args []string, user string) bool {
 	if len(args) == 0 {
 		return false
@@ -363,8 +344,6 @@ func redisAuthenticatesAs(args []string, user string) bool {
 	return false
 }
 
-// readRESPCommand reads one command (RESP array of bulk strings, or an
-// inline command) and returns its arguments and raw bytes.
 func readRESPCommand(br *bufio.Reader) ([]string, []byte, error) {
 	var raw bytes.Buffer
 	line, err := readLine(br, &raw)

@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Services\Daemon;
 
+use App\Broadcasting\Channel;
 use App\Data\Protocol\V1\NudgeConfig;
 use App\Enums\DaemonNudge;
-use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\Factory as BroadcastFactory;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -84,11 +84,6 @@ final readonly class DaemonNudger
         return $this->credential('key').':'.hash_hmac('sha256', $socketId.':'.$channel, $this->credential('secret'));
     }
 
-    public static function channel(string $serverPublicId): string
-    {
-        return 'daemon.'.$serverPublicId;
-    }
-
     private function enabled(): bool
     {
         $connection = $this->connection();
@@ -125,7 +120,7 @@ final readonly class DaemonNudger
         foreach (array_chunk($ids, self::CHANNELS_PER_TRIGGER) as $chunk) {
             try {
                 $this->broadcast->connection()->broadcast(
-                    array_map(static fn (string $id): PrivateChannel => new PrivateChannel(self::channel($id)), $chunk),
+                    array_map(Channel::Daemon->private(...), $chunk),
                     $nudge->value,
                 );
             } catch (Throwable $e) {

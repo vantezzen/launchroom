@@ -12,6 +12,7 @@ use App\Actions\Audit\UpdateAuditSink;
 use App\Data\Audit\AuditSinkInput;
 use App\Data\Audit\AuditSinkUpdateInput;
 use App\Http\Controllers\Controller;
+use App\Http\Toast;
 use App\Models\AuditSink;
 use App\Models\User;
 use Illuminate\Container\Attributes\CurrentUser;
@@ -37,7 +38,7 @@ final class AuditSinkController extends Controller
             Inertia::flash('auditSigningSecret', ['sink' => $created->sink->public_id, 'secret' => $created->signingSecret]);
         }
 
-        Inertia::flash('toast', ['type' => 'success', 'message' => "Added {$created->sink->name}. It receives every entry, starting with the first one."]);
+        Toast::success("Added {$created->sink->name}. It receives every entry, starting with the first one.");
 
         return back();
     }
@@ -52,12 +53,12 @@ final class AuditSinkController extends Controller
             Inertia::flash('auditSigningSecret', ['sink' => $auditSink->public_id, 'secret' => $secret]);
         }
 
-        Inertia::flash('toast', ['type' => 'success', 'message' => match (true) {
+        Toast::success(match (true) {
             $input->enabled === false => "{$auditSink->name} is paused. Entries wait here until you resume it.",
             $input->enabled === true => "{$auditSink->name} is catching up.",
             $secret !== null => 'New signing secret created. Update your receiver, because the old secret no longer works.',
             default => 'Saved.',
-        }]);
+        });
 
         return back();
     }
@@ -68,7 +69,7 @@ final class AuditSinkController extends Controller
 
         $delete->handle($auditSink, $this->auditActor($request, $user));
 
-        Inertia::flash('toast', ['type' => 'success', 'message' => "Removed {$auditSink->name}. Entries it already received stay there."]);
+        Toast::success("Removed {$auditSink->name}. Entries it already received stay there.");
 
         return back();
     }
@@ -77,7 +78,7 @@ final class AuditSinkController extends Controller
     {
         Gate::authorize('test', $auditSink);
 
-        Inertia::flash('toast', ['type' => 'success', 'message' => $test->handle($auditSink)]);
+        Toast::success($test->handle($auditSink));
 
         return back();
     }
@@ -88,7 +89,7 @@ final class AuditSinkController extends Controller
 
         $retry->handle($auditSink);
 
-        Inertia::flash('toast', ['type' => 'success', 'message' => "Trying {$auditSink->name} again now."]);
+        Toast::success("Trying {$auditSink->name} again now.");
 
         return back();
     }

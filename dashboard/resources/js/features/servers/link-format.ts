@@ -1,14 +1,7 @@
-/** "0.4 ms", "3.2 ms", "12 ms", "1.2 s". */
-export function formatLatency(ms: number): string {
-    if (ms >= 1000) {
-        return `${(ms / 1000).toFixed(1)} s`;
-    }
-
-    return ms < 10 ? `${ms.toFixed(1)} ms` : `${Math.round(ms)} ms`;
-}
+import { formatLatency } from '@/lib/format';
 
 /** "480 Mbit/s", "12 Mbit/s", "3.4 Mbit/s", "1.2 Gbit/s". */
-export function formatRate(mbps: number): string {
+export function formatLinkSpeed(mbps: number): string {
     if (mbps >= 1000) {
         return `${(mbps / 1000).toFixed(1)} Gbit/s`;
     }
@@ -19,9 +12,7 @@ export function formatRate(mbps: number): string {
 }
 
 /** The slower direction of a link: what the link can carry both ways. */
-export function slowest(
-    speeds: App.Data.Servers.LinkSpeedData[],
-): number | null {
+function slowest(speeds: App.Data.Servers.LinkSpeedData[]): number | null {
     return speeds.length === 0
         ? null
         : Math.min(...speeds.map((speed) => speed.mbps));
@@ -32,7 +23,7 @@ export function linkLabel(link: App.Data.Servers.MeshLinkData): string | null {
     const rate = slowest(link.speeds);
     const parts = [
         link.latencyMs !== null ? formatLatency(link.latencyMs) : null,
-        rate !== null ? formatRate(rate) : null,
+        rate !== null ? formatLinkSpeed(rate) : null,
     ].filter((part): part is string => part !== null);
 
     return parts.length > 0 ? parts.join(', ') : null;

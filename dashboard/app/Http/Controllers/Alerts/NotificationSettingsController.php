@@ -9,9 +9,10 @@ use App\Data\Alerts\AlertRuleData;
 use App\Data\Alerts\AlertSummaryData;
 use App\Enums\Alerts\AlertStatus;
 use App\Http\Controllers\Controller;
-use App\Http\Controllers\Teams\TeamSettingsController;
+use App\Http\Routing\CurrentTeam;
 use App\Models\Alerts\Alert;
 use App\Models\Alerts\AlertChannel;
+use App\Models\Team;
 use App\Models\User;
 use App\Services\Alerts\AlertRuleSettings;
 use App\Services\Alerts\Senders\EmailSender;
@@ -26,9 +27,8 @@ use Inertia\Response;
  */
 final class NotificationSettingsController extends Controller
 {
-    public function edit(#[CurrentUser] User $user, AlertRuleSettings $rules): Response
+    public function edit(#[CurrentUser] User $user, AlertRuleSettings $rules, #[CurrentTeam] Team $team): Response
     {
-        $team = TeamSettingsController::currentTeam($user);
         Gate::authorize('viewAny', [AlertChannel::class, $team]);
 
         $channels = AlertChannel::query()->where('team_id', $team->id)->orderBy('id')->get();

@@ -26,9 +26,9 @@ import {
     SettingsCard,
     SettingsRow,
     useDocsUrl,
-} from '@/features/settings/settings-card';
-import { destroy, edit, update } from '@/routes/registry-settings';
-import { index as settingsHome } from '@/routes/settings';
+} from '@/components/settings/settings-card';
+import SettingsLayout from '@/features/settings/settings-layout';
+import { destroy, update } from '@/routes/registry-settings';
 
 type Props = {
     settings: App.Data.Registry.RegistrySettingsData;
@@ -397,12 +397,4 @@ function StorageForm({
     );
 }
 
-RegistrySettings.layout = {
-    breadcrumbs: [
-        { title: 'Settings', href: settingsHome() },
-        {
-            title: 'Registry',
-            href: edit(),
-        },
-    ],
-};
+RegistrySettings.layout = SettingsLayout;

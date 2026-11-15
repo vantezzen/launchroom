@@ -46,20 +46,20 @@ final readonly class ServerTopology
         $links = [];
 
         foreach ($active as $server) {
-            foreach ($server->mesh_status['peers'] ?? [] as $peer) {
-                $other = $byIp[$peer['ipv4']] ?? null;
+            foreach ($server->mesh_status->peers ?? [] as $peer) {
+                $other = $byIp[$peer->ipv4] ?? null;
 
                 if (! $other instanceof Server || $other->id === $server->id) {
                     continue;
                 }
 
-                $path = MeshPath::tryFrom($peer['connection']) ?? MeshPath::Idle;
+                $path = $peer->connection;
                 [$a, $b] = strcmp($server->public_id, $other->public_id) < 0 ? [$server, $other] : [$other, $server];
                 $key = $a->public_id.'|'.$b->public_id;
                 $seen = $links[$key] ?? null;
 
                 if (! $seen instanceof MeshLinkData || $rank[$path->value] > $rank[$seen->path->value]) {
-                    $links[$key] = new MeshLinkData($a->public_id, $b->public_id, $path, $path === MeshPath::Relay ? $peer['relay'] : null);
+                    $links[$key] = new MeshLinkData($a->public_id, $b->public_id, $path, $path === MeshPath::Relay ? $peer->relay : null);
                 }
             }
         }

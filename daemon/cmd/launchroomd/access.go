@@ -8,6 +8,8 @@ import (
 
 	"github.com/vantezzen/launchroom/daemon/internal/access"
 	"github.com/vantezzen/launchroom/daemon/internal/docker"
+	"github.com/vantezzen/launchroom/daemon/internal/hostinfo"
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/policy"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 	"github.com/vantezzen/launchroom/daemon/internal/tasks"
@@ -21,24 +23,13 @@ const (
 	accessHBFails   = 2
 )
 
-// accessKinds are the kinds the local policy allows.
 func (rt *daemonRuntime) accessAllowed(k state.AccessKind) bool {
 	return rt.cfg.RemoteAccessAllowed(string(k))
 }
 
-// newAccessManager is created with the firewall (which renders its rules).
-func newAccessManager(rt *daemonRuntime, ports string) (*access.Manager, error) {
-	pr, err := access.ParsePorts(access.DefaultPorts)
-	if err != nil {
-		return nil, err
-	}
-	if ports != "" {
-		if pr, err = access.ParsePorts(ports); err != nil {
-			return nil, err
-		}
-	}
+func newAccessManager(rt *daemonRuntime) *access.Manager {
 	return access.NewManager(access.ManagerOptions{
-		Ports: pr, DataDir: rt.cfg.DataDir,
+		Ports: rt.cfg.RemoteAccessPorts, DataDir: rt.cfg.DataDir,
 		SyncFirewall: func(ctx context.Context) error {
 			if rt.firewall == nil {
 				return nil
@@ -58,7 +49,7 @@ func newAccessManager(rt *daemonRuntime, ports string) (*access.Manager, error) 
 			return netip.Addr{}
 		},
 		Log: rt.log.With("component", "access"),
-	}), nil
+	})
 }
 
 // accessRunner returns the runner for "access" tasks, or nil when the local
@@ -74,13 +65,16 @@ func (rt *daemonRuntime) accessRunner(taskInterval time.Duration) *tasks.Runner 
 	}
 	h := access.Handler(access.Options{
 		ServerID: rt.serverID, SealingKey: rt.sealingKey, Docker: dc, Manager: rt.access,
-		Workload:    rt.desiredWorkload,
+		Workload: func(id state.WorkloadID) (*state.WorkloadSpec, bool) {
+			w := rt.workloadSpec(id)
+			return w, w != nil
+		},
 		WorkloadEnv: rt.workloadEnv,
 		Allowed: func(k state.AccessKind) bool {
 			return rt.accessAllowed(k) && rt.accessPublishable()
 		},
 		CheckImage: func(ref state.ImageRef) error {
-			return policy.CheckSystemImage(policy.SystemFiles, ref, rt.policy)
+			return policy.CheckSystemImage(names.SystemFiles, ref, rt.policy)
 		},
 		Log: rt.log.With("component", "access"),
 	})
@@ -101,7 +95,7 @@ func (rt *daemonRuntime) accessPublishable() bool {
 	if f == nil || f.Rootless {
 		return false
 	}
-	hostOS := hostOSOf(rt.cfg.HostOS, f.Engine)
+	hostOS := hostinfo.HostOS(rt.cfg.HostOS, f.Engine)
 	return hostOS == state.HostLinux && f.Engine != state.EngineDockerDesktop
 }
 
@@ -133,20 +127,6 @@ func (rt *daemonRuntime) sweepAccessHelpers(ctx context.Context) {
 		return
 	}
 	access.SweepHelpers(ctx, rt.docker, rt.access.Running)
-}
-
-// desiredWorkload returns a workload of the verified NodeState.
-func (rt *daemonRuntime) desiredWorkload(id state.WorkloadID) (*state.WorkloadSpec, bool) {
-	cur := rt.store.Current()
-	if cur == nil {
-		return nil, false
-	}
-	for i := range cur.State.Workloads {
-		if w := &cur.State.Workloads[i]; w.ID == id {
-			return w, true
-		}
-	}
-	return nil, false
 }
 
 // sweepAccessRoles drops temporary roles a crash or restart left behind
@@ -182,18 +162,15 @@ func (rt *daemonRuntime) sweepAccessRoles(ctx context.Context) {
 		if err != nil {
 			return err
 		}
-		cs, err := dc.ListContainers(ctx, map[string]string{docker.LabelWorkload: string(wl.ID)})
+		c, err := docker.WorkloadContainer(ctx, dc, wl.ID)
 		if err != nil {
 			return err
 		}
-		for _, c := range cs {
-			if c.Running && c.Labels[docker.LabelSystem] == "" && c.Labels[docker.LabelTask] == "" {
-				dctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-				err := access.DropRole(dctx, access.NewContainer(dc, c.ID), e.Engine, env, e.Role)
-				cancel()
-				return err
-			}
+		if c == nil || !c.Running() {
+			return errors.New("the database container is not running")
 		}
-		return errors.New("the database container is not running")
+		dctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		return access.DropRole(dctx, access.NewContainer(dc, c.ID), e.Engine, env, e.Role)
 	})
 }

@@ -6,11 +6,11 @@ namespace App\Actions\Alerts;
 
 use App\Enums\Alerts\AlertDeliveryEvent;
 use App\Enums\Alerts\AlertDeliveryStatus;
+use App\Exceptions\DecryptionFailed;
 use App\Models\Alerts\AlertDelivery;
 use App\Services\Alerts\AlertMessages;
 use App\Services\Alerts\DeliveryFailed;
 use App\Services\Alerts\Senders\AlertSenders;
-use App\Services\Crypto\Exceptions\DecryptionFailed;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 

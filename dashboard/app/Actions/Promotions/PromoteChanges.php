@@ -8,6 +8,7 @@ use App\Actions\Audit\RecordAuditEvent;
 use App\Actions\Services\RemoveService;
 use App\Data\Audit\AuditActor;
 use App\Data\Audit\AuditEntryData;
+use App\Data\Promotions\PinnedImageData;
 use App\Data\Promotions\PromoteChangesData;
 use App\Data\Promotions\PromoteItemInput;
 use App\Data\Promotions\PromotionEntry;
@@ -23,6 +24,7 @@ use App\Enums\DeploymentStatus;
 use App\Enums\PromotionEntryType;
 use App\Enums\PromotionKind;
 use App\Enums\VariableType;
+use App\Events\CanvasChanged;
 use App\Exceptions\DomainRuleViolation;
 use App\Models\Deployment;
 use App\Models\Environment;
@@ -36,9 +38,7 @@ use App\Services\Environments\EnvironmentIntentCopier;
 use App\Services\Promotions\PromotionPlan;
 use App\Services\Promotions\PromotionPlanner;
 use App\Services\Promotions\PromotionRecorder;
-use App\Services\Variables\SecretExposureGuard;
 use App\Services\Variables\VariableStore;
-use Illuminate\Support\Facades\DB;
 use Spatie\LaravelData\Data;
 
 /**
@@ -70,14 +70,13 @@ final readonly class PromoteChanges
         private PromotionRecorder $recorder,
         private EnvironmentIntentCopier $copier,
         private VariableStore $variables,
-        private SecretExposureGuard $exposure,
         private RemoveService $removeService,
         private RecordAuditEvent $audit,
     ) {}
 
     public function handle(Project $project, PromoteChangesData $data, User $user, AuditActor $actor): EnvironmentPromotion
     {
-        return DB::transaction(function () use ($project, $data, $user, $actor): EnvironmentPromotion {
+        return $this->variables->write($project, function () use ($project, $data, $user, $actor): EnvironmentPromotion {
             [$from, $to] = $this->environments($project, $data);
             $plan = $this->planner->plan($from, $to);
 
@@ -95,18 +94,13 @@ final readonly class PromoteChanges
                 throw DomainRuleViolation::on('items', 'Select at least one change to promote.');
             }
 
-            $changedKeys = [];
-
             foreach ($this->ordered($selected) as $item) {
                 $key = $this->apply($project, $plan, $from, $to, $item, $inputs[$item->path], $user, $actor);
 
                 if ($key !== null) {
-                    $changedKeys[] = $key;
+                    $this->variables->touch($key);
                 }
             }
-
-            // Browser-inlined variables never embed secrets; production secrets differ from preview.
-            $this->exposure->assertNoPublicSecrets($project, array_values(array_unique($changedKeys)), 'items');
 
             $promotion = $this->recorder->record($from, $to, PromotionKind::Promoted, $this->nextBase($plan, $selected), array_keys($selected), $images, $user);
 
@@ -124,9 +118,10 @@ final readonly class PromoteChanges
                     'images' => array_keys($images),
                 ],
             ));
+            event(new CanvasChanged($to->public_id));
 
             return $promotion;
-        });
+        }, 'items');
     }
 
     /**
@@ -218,7 +213,6 @@ final readonly class PromoteChanges
             $item->type === PromotionEntryType::Service && $item->kind !== ChangeKind::Removed => 0,
             $item->type === PromotionEntryType::SharedVariable => 1,
             $item->type === PromotionEntryType::Service => 4,
-            // Values signed with another variable (jwt()) come after it.
             array_any($item->dependsOn, static fn (string $path): bool => str_contains($path, '.variables.')) => 3,
             default => 2,
         };
@@ -431,7 +425,7 @@ final readonly class PromoteChanges
      * Pins the source's active commit per service (docs/06 §6.4).
      *
      * @param  list<string>  $serviceIds
-     * @return array<string, array{deployment: string, commitSha: string, gitRef: string|null}>
+     * @return array<string, PinnedImageData>
      */
     private function images(Environment $from, array $serviceIds): array
     {
@@ -450,7 +444,7 @@ final readonly class PromoteChanges
                 throw DomainRuleViolation::on('images', "{$from->name} has no active build of that service to promote.");
             }
 
-            $pins[$serviceId] = ['deployment' => $deployment->public_id, 'commitSha' => $deployment->commit_sha, 'gitRef' => $deployment->git_ref];
+            $pins[$serviceId] = new PinnedImageData($deployment->public_id, $deployment->commit_sha, $deployment->git_ref);
         }
 
         return $pins;

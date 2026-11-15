@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"log/slog"
 	"math/rand/v2"
-	"net/http"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -28,38 +27,14 @@ type Client interface {
 	ShipLogs(ctx context.Context, batch *state.LogBatch) error
 }
 
-// Result is what a handler reports on success.
-type Result struct {
-	RunOnce *state.RunOnceResult
-	Build   *state.BuildResult
-	Plan    *state.PlanResult
-	// Backup task results (docs/14).
-	Backup      *state.BackupResult
-	Restore     *state.RestoreResult
-	Snapshots   *state.BackupSnapshotsResult
-	Maintenance *state.MaintenanceResult
-	// Verify is the result of a verify_restore task (docs/14 §10.4).
-	Verify *state.VerifyResult
-	// SelfUpdate is reported for succeeded and failed self_update tasks.
-	SelfUpdate *state.SelfUpdateResult
-	// Session is reported for finished session tasks, also when they failed.
-	Session *state.SessionResult
-	// Access is reported for finished access tasks, also when they failed.
-	Access *state.AccessResult
-	// Inspection is reported for plan tasks with inspect, also when they failed (docs/20).
-	Inspection *state.RepoInspection
-	// DataImport and DataExport are the results of import and export tasks (D55).
-	DataImport *state.DataImportResult
-	DataExport *state.DataExportResult
-	// Inventory and ContainerInspection are the results of the security
-	// center's tasks (docs/03 §13).
-	Inventory           *state.InventoryResult
-	ContainerInspection *state.ContainerInspectionResult
-}
-
 // Handler runs one task. ctx is cancelled when the deadline passes, the
 // dashboard cancels the task or the daemon shuts down.
-type Handler func(ctx context.Context, t state.Task) (Result, error)
+type Handler func(ctx context.Context, t state.Task) (state.TaskResults, error)
+
+// failureCarrier is a classified task error (a build error, docs/04 §6).
+type failureCarrier interface {
+	Failure() *state.TaskFailure
+}
 
 // ErrUnsupported is the failure for task types this daemon cannot run.
 var ErrUnsupported = errors.New("task type is not supported by this launchroomd version")
@@ -119,9 +94,7 @@ func HeartbeatNow(ctx context.Context) {
 // heartbeat (docs/03 §7). It is a no-op outside a runner.
 func SetProgress(ctx context.Context, line string) {
 	if p, ok := ctx.Value(progressKey{}).(*progress); ok {
-		if len(line) > 256 {
-			line = line[:256]
-		}
+		line = state.Clip(line, state.MaxProgressLen)
 		p.mu.Lock()
 		p.line = line
 		p.mu.Unlock()
@@ -192,6 +165,9 @@ func New(o Options) *Runner {
 	}
 	return &Runner{o: o, running: map[state.TaskID]bool{}, kick: make(chan struct{}, 1)}
 }
+
+// Wait blocks until every running task finished and was reported.
+func (r *Runner) Wait() { r.wg.Wait() }
 
 // Kick asks for an immediate lease (e.g. after a "task available" nudge).
 func (r *Runner) Kick() {
@@ -308,14 +284,13 @@ func (r *Runner) run(parent context.Context, t state.Task) {
 			if delivered != nil {
 				delivered(err == nil)
 			}
-			var api *controlplane.APIError
 			switch {
 			case err == nil && res.Cancel:
 				log.Info("dashboard cancelled the task")
 				cancelled.Do(func() { cancelledByCP = true })
 				cancel()
 				return
-			case errors.As(err, &api) && (api.Status == http.StatusNotFound || api.Status == http.StatusConflict || api.Status == http.StatusGone):
+			case controlplane.IsLeaseLost(err):
 				log.Warn("task lease lost; stopping", "err", err)
 				cancelled.Do(func() { cancelledByCP = true })
 				cancel()
@@ -335,7 +310,7 @@ func (r *Runner) run(parent context.Context, t state.Task) {
 		}
 	}()
 
-	var res Result
+	var res state.TaskResults
 	var err error
 	if h, ok := r.o.Handlers[t.Type]; ok {
 		res, err = safeRun(ctx, h, t)
@@ -352,34 +327,19 @@ func (r *Runner) run(parent context.Context, t state.Task) {
 	done := &state.TaskCompletion{TypeMeta: state.NewTypeMeta(state.KindTaskCompletion), Attempt: t.Attempt}
 	switch {
 	case err == nil:
-		done.Outcome, done.Build, done.RunOnce, done.Plan = state.OutcomeSucceeded, res.Build, res.RunOnce, res.Plan
-		done.Backup, done.Restore, done.Snapshots, done.Maintenance = res.Backup, res.Restore, res.Snapshots, res.Maintenance
-		done.Verify = res.Verify
-		done.DataImport, done.DataExport = res.DataImport, res.DataExport
-		done.Inventory, done.ContainerInspection = res.Inventory, res.ContainerInspection
+		done.Outcome = state.OutcomeSucceeded
 	case cancelledByCP:
-		done.Outcome, done.Error = state.OutcomeCancelled, clip(err.Error())
+		done.Outcome, done.Error = state.OutcomeCancelled, state.Clip(err.Error(), state.MaxMessageLen)
 	case parent.Err() != nil:
 		// Shutting down (restart, upgrade): hand the lease back so the task
 		// is retried instead of failed or cancelled.
-		done.Outcome, done.Error = state.OutcomeReleased, "launchroomd stopped before the task finished: "+clip(err.Error())
+		done.Outcome, done.Error = state.OutcomeReleased, state.Clip("launchroomd stopped before the task finished: "+err.Error(), state.MaxMessageLen)
 	case errors.Is(err, context.DeadlineExceeded):
 		done.Outcome, done.Error = state.OutcomeFailed, "deadline exceeded"
 	default:
-		done.Outcome, done.Error = state.OutcomeFailed, clip(err.Error())
+		done.Outcome, done.Error = state.OutcomeFailed, state.Clip(err.Error(), state.MaxMessageLen)
 	}
-	if res.SelfUpdate != nil {
-		done.SelfUpdate = res.SelfUpdate
-	}
-	if res.Session != nil {
-		done.Session = res.Session
-	}
-	if res.Access != nil {
-		done.Access = res.Access
-	}
-	if res.Inspection != nil && done.Outcome != state.OutcomeReleased {
-		done.Inspection = res.Inspection
-	}
+	done.TaskResults = res.ForOutcome(done.Outcome)
 	var fc failureCarrier
 	if err != nil && done.Outcome == state.OutcomeFailed && errors.As(err, &fc) {
 		done.Failure = fc.Failure()
@@ -416,7 +376,7 @@ func (r *Runner) stopAfterGrace(parent, task context.Context, cancel context.Can
 	cancel()
 }
 
-func safeRun(ctx context.Context, h Handler, t state.Task) (res Result, err error) {
+func safeRun(ctx context.Context, h Handler, t state.Task) (res state.TaskResults, err error) {
 	defer func() {
 		if p := recover(); p != nil {
 			err = fmt.Errorf("handler panicked: %v", p)
@@ -430,43 +390,14 @@ func safeRun(ctx context.Context, h Handler, t state.Task) (res Result, err erro
 func (r *Runner) complete(parent context.Context, t state.Task, done *state.TaskCompletion, log *slog.Logger) {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(parent), 2*time.Minute)
 	defer cancel()
-	backoff := time.Second
-	for attempt := 1; ; attempt++ {
-		err := r.o.Client.Complete(ctx, t.ID, done)
-		if err == nil {
-			log.Info("task completed", "outcome", done.Outcome)
-			return
-		}
-		if !controlplane.IsRetryable(err) || attempt >= 5 {
-			log.Error("could not report task completion", "err", err, "outcome", done.Outcome)
-			return
-		}
-		select {
-		case <-ctx.Done():
-			return
-		case <-time.After(backoff):
-		}
-		backoff *= 2
+	err := controlplane.Retry(ctx, controlplane.Backoff{Attempts: 5, Initial: time.Second}, func() error {
+		return r.o.Client.Complete(ctx, t.ID, done)
+	})
+	if err != nil {
+		log.Error("could not report task completion", "err", err, "outcome", done.Outcome)
+		return
 	}
-}
-
-func clip(s string) string {
-	if len(s) > 4096 {
-		return s[:4096]
-	}
-	return s
-}
-
-// LineShipper ships step-grouped log lines of a task (the build/backup
-// shipper, exported for other packages' handlers such as session transcripts).
-type LineShipper interface {
-	Line(step string, stream state.LogStream, text string)
-	Close()
-}
-
-// NewTaskLogShipper returns a shipper for the logs of task id, attempt.
-func NewTaskLogShipper(ctx context.Context, c Client, id state.TaskID, attempt int) LineShipper {
-	return newStepShipper(ctx, c, state.LogSource{Kind: state.LogSourceTask, ID: string(id)}, attempt)
+	log.Info("task completed", "outcome", done.Outcome)
 }
 
 // HandlerProbe exposes what a handler registered on a context from

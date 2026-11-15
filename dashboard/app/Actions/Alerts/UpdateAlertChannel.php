@@ -13,10 +13,11 @@ use App\Enums\Alerts\AlertSeverity;
 use App\Enums\AuditAction;
 use App\Exceptions\DomainRuleViolation;
 use App\Models\Alerts\AlertChannel;
-use App\Services\Alerts\AlertChannelSecrets;
 use App\Services\Alerts\ChannelSecret;
 use App\Services\Alerts\ChannelTargets;
+use App\Services\Crypto\SealedColumns;
 use App\Support\Alerts\ChannelUrls;
+use App\Support\Webhooks\WebhookSignature;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -28,7 +29,7 @@ final readonly class UpdateAlertChannel
 {
     public function __construct(
         private ChannelTargets $targets,
-        private AlertChannelSecrets $secrets,
+        private SealedColumns $sealed,
         private RecordAuditEvent $audit,
     ) {}
 
@@ -69,10 +70,10 @@ final readonly class UpdateAlertChannel
             }
 
             if ($url !== null || $input->rotateSecret) {
-                $current = $this->secrets->reveal($channel);
-                $signing = $input->rotateSecret ? AlertChannelSecrets::generateSigningSecret() : $current->signingSecret;
+                $current = ChannelSecret::of($this->sealed->revealJson($channel, 'secret'));
+                $signing = $input->rotateSecret ? WebhookSignature::generateSecret() : $current->signingSecret;
                 $target = $url ?? $current->url;
-                $this->secrets->seal($channel, new ChannelSecret($target, $signing));
+                $this->sealed->sealJson($channel, 'secret', new ChannelSecret($target, $signing)->toArray(), $this->sealed->newKey($channel));
                 $channel->target_hint = ChannelUrls::hint($target);
                 $changed[] = $url !== null ? 'url' : 'signingSecret';
             }

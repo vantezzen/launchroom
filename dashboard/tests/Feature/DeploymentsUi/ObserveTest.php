@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Enums\DaemonTaskPurpose;
 use App\Enums\DaemonTaskStatus;
 use App\Enums\DaemonTaskType;
 use App\Enums\DeploymentFailureClass;
@@ -10,7 +11,6 @@ use App\Enums\LogSourceKind;
 use App\Enums\TeamRole;
 use App\Models\DaemonTask;
 use App\Models\Deployment;
-use App\Models\LogChunk;
 use App\Models\Placement;
 use App\Models\ServiceInstance;
 use App\Queries\LogTails;
@@ -18,6 +18,7 @@ use App\Support\Logs\LogLevel;
 use Illuminate\Support\Facades\Queue;
 use Tests\Support\DeploymentUi;
 use Tests\Support\FakeDaemon;
+use Tests\Support\LogChunks;
 use Tests\Support\Projects;
 
 /*
@@ -40,7 +41,7 @@ function obsTaskLogs(DeploymentUi $world, Deployment $deployment, DaemonTaskType
         'deployment_id' => $deployment->id,
     ]);
 
-    LogChunk::query()->create([
+    LogChunks::create([
         'team_id' => $deployment->team_id, 'server_id' => $world->server->id, 'daemon_task_id' => $task->id,
         'source_kind' => LogSourceKind::Task, 'source_id' => $task->public_id, 'seq' => 1,
         'lines' => array_map(static fn (string $text): array => ['time' => now()->subMinutes(2)->utc()->format('Y-m-d\TH:i:s.v\Z'), 'stream' => 'stdout', 'text' => $text], $texts),
@@ -109,19 +110,19 @@ test('live tails follow each running workload, renew and stop per viewer', funct
     expect(Placement::query()->whereIn('service_instance_id', ServiceInstance::query()->select('id')->where('environment_id', $world->production->id))->count())->toBe($workloads);
 
     $this->actingAs($viewer)->postJson(route('projects.logs.tail', $world->envArgs()))->assertOk()->assertJson(['following' => $workloads]);
-    $tasks = DaemonTask::query()->where('type', DaemonTaskType::Logs->value)->where('purpose', 'tail:'.$viewer->id)->get();
+    $tasks = DaemonTask::query()->where('type', DaemonTaskType::Logs->value)->where('purpose', DaemonTaskPurpose::LogTail->value)->where('requested_by_id', $viewer->id)->get();
 
     expect($tasks)->toHaveCount($workloads)
         ->and($tasks->every(fn (DaemonTask $task): bool => $task->pinned_to_server && $task->server_id === $world->server->id && $task->spec->follow === true && $task->spec->tail === 200 && $task->deployment_id !== null))->toBeTrue();
 
     // Renewing a fresh tail keeps it; an old one is replaced by a tail that starts now.
     $this->actingAs($viewer)->postJson(route('projects.logs.tail', $world->envArgs()))->assertOk();
-    expect(DaemonTask::query()->where('purpose', 'tail:'.$viewer->id)->count())->toBe($workloads);
+    expect(DaemonTask::query()->where('purpose', DaemonTaskPurpose::LogTail->value)->where('requested_by_id', $viewer->id)->count())->toBe($workloads);
 
     $this->travel(LogTails::SECONDS)->seconds();
     Projects::report($world->server);
     $this->actingAs($viewer)->postJson(route('projects.logs.tail', $world->envArgs()))->assertOk();
-    $renewed = DaemonTask::query()->where('purpose', 'tail:'.$viewer->id)->where('status', DaemonTaskStatus::Pending->value)->get();
+    $renewed = DaemonTask::query()->where('purpose', DaemonTaskPurpose::LogTail->value)->where('requested_by_id', $viewer->id)->where('status', DaemonTaskStatus::Pending->value)->get();
     expect($renewed)->toHaveCount($workloads)
         ->and($renewed->every(fn (DaemonTask $task): bool => $task->spec->tail === 0 && isset($task->spec->since)))->toBeTrue();
 

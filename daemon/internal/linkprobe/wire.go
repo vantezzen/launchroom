@@ -29,10 +29,12 @@ import (
 	"errors"
 	"fmt"
 	"net/netip"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/vantezzen/launchroom/daemon/internal/identity"
+	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
 
 // Op is what the client asks for.
@@ -56,11 +58,6 @@ const (
 	MaxTransferBytes = 16 << 20
 	// clockWindow is how far a hello's time may be from the server's clock.
 	clockWindow = 60 * time.Second
-)
-
-var (
-	serverIDPattern = regexp.MustCompile(`^srv_[0-9A-HJKMNP-TV-Z]{26}$`)
-	noncePattern    = regexp.MustCompile(`^[A-Za-z0-9_-]{22}$`)
 )
 
 // Hello opens a probe.
@@ -98,9 +95,9 @@ func (h *Hello) check() error {
 		return errors.New("unsupported version")
 	case h.Op != OpPing && h.Op != OpTransfer:
 		return errors.New("unknown op")
-	case !serverIDPattern.MatchString(h.From) || !serverIDPattern.MatchString(h.To):
+	case state.ServerID(h.From).Validate() != nil || state.ServerID(h.To).Validate() != nil:
 		return errors.New("bad server id")
-	case !noncePattern.MatchString(h.Nonce):
+	case !identity.ValidNonce(h.Nonce):
 		return errors.New("bad nonce")
 	case h.Op == OpPing && h.Bytes != 0:
 		return errors.New("ping carries no bytes")

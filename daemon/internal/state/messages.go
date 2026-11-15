@@ -144,7 +144,8 @@ type EnrollResponse struct {
 
 // RegistryInfo tells the daemon where to pull images from.
 type RegistryInfo struct {
-	// Address the Docker daemon pulls from; always the local forwarder or Zot ("127.0.0.1:5000").
+	// Address the Docker daemon pulls from: always RegistryAddress, the
+	// local forwarder or Zot (launchroomd uses the constant).
 	Address AddrPort `json:"address"`
 	// ForwardTo is Zot's mesh address on servers other than the control-plane host.
 	ForwardTo AddrPort `json:"forwardTo,omitzero"`
@@ -227,7 +228,7 @@ func (r *LeaseRequest) Validate() error {
 // TaskLease is the signed response to a lease request (0..n tasks).
 type TaskLease struct {
 	TypeMeta
-	Tasks []Task `json:"tasks"`
+	Tasks []Task `json:"tasks" jsonschema:"maxItems=16"`
 }
 
 // Validate checks every task.
@@ -294,12 +295,19 @@ type TaskCompletion struct {
 	Outcome TaskOutcome `json:"outcome"`
 	// Error is a short, secret-free failure description.
 	Error string `json:"error,omitzero" jsonschema:"maxLength=4096"`
+	// Failure classifies a failed build or plan task (docs/04 §6).
+	Failure *TaskFailure `json:"failure,omitzero" jsonschema:"nullable"`
+	TaskResults
+}
+
+// TaskResults holds the per-type result of a task; a handler sets the one
+// field of its type. Which results are reported for an outcome other than
+// success is ForOutcome's rule.
+type TaskResults struct {
 	// Build is set for successful build tasks.
 	Build *BuildResult `json:"build,omitzero" jsonschema:"nullable"`
 	// Plan is set for successful plan tasks.
 	Plan *PlanResult `json:"plan,omitzero" jsonschema:"nullable"`
-	// Failure classifies a failed build or plan task (docs/04 §6).
-	Failure *TaskFailure `json:"failure,omitzero" jsonschema:"nullable"`
 	// RunOnce is set for run_once tasks that ran.
 	RunOnce *RunOnceResult `json:"runOnce,omitzero" jsonschema:"nullable"`
 	// Backup is set for successful backup tasks.
@@ -331,20 +339,39 @@ type TaskCompletion struct {
 	ContainerInspection *ContainerInspectionResult `json:"containerInspection,omitzero" jsonschema:"nullable"`
 }
 
+// ForOutcome returns the results reported for an attempt with outcome o. A
+// succeeded attempt reports everything. Self-update, session and access
+// results describe what happened on the server, so they are reported for
+// every outcome; a plan's inspection is reported unless the attempt was
+// released (it is retried and will read the checkout again).
+func (r TaskResults) ForOutcome(o TaskOutcome) TaskResults {
+	if o == OutcomeSucceeded {
+		return r
+	}
+	out := TaskResults{SelfUpdate: r.SelfUpdate, Session: r.Session, Access: r.Access}
+	if o != OutcomeReleased {
+		out.Inspection = r.Inspection
+	}
+	return out
+}
+
 // SelfUpdateResult describes a finished self_update (docs/11 §4).
 type SelfUpdateResult struct {
 	Scope       UpdateScope `json:"scope"`
 	FromVersion Semver      `json:"fromVersion"`
 	ToVersion   Semver      `json:"toVersion"`
 	// RolledBack is true when the new version was installed but did not
-	// become healthy and the previous version was restored.
+	// become healthy and the previous version (fromVersion) was restored.
 	RolledBack bool `json:"rolledBack"`
+	// Reason is why the new version was rolled back (secret-free).
+	Reason string `json:"reason,omitzero" jsonschema:"maxLength=4096"`
 }
 
 func (r *SelfUpdateResult) validate(e *errs) {
 	e.check("selfUpdate.scope", r.Scope)
 	e.check("selfUpdate.fromVersion", r.FromVersion)
 	e.check("selfUpdate.toVersion", r.ToVersion)
+	checkText(e, "selfUpdate.reason", r.Reason, MaxMessageLen)
 }
 
 // BuildResult is the outcome of a build.
@@ -360,7 +387,7 @@ type BuildResult struct {
 	// variables (part of the build key, docs/04 §7). Omitted without build variables.
 	SecretsHash SHA256Hex `json:"secretsHash,omitzero"`
 	// Attestations attached to the image index.
-	Attestations []AttestationKind `json:"attestations,omitzero" jsonschema:"nullable"`
+	Attestations []AttestationKind `json:"attestations,omitzero" jsonschema:"nullable,maxItems=2"`
 }
 
 // RunOnceResult is the outcome of a one-off container.
@@ -408,7 +435,7 @@ func (c *TaskCompletion) Validate() error {
 		e.addf("attempt", "must be >= 1")
 	}
 	e.check("outcome", c.Outcome)
-	checkText(&e, "error", c.Error, maxMessageLen)
+	checkText(&e, "error", c.Error, MaxMessageLen)
 	if c.Build != nil {
 		c.Build.validate(&e)
 	}
@@ -482,7 +509,7 @@ type Report struct {
 	Full bool `json:"full"`
 	// AppliedVersion is the NodeState version the daemon is converging to (0 = none yet).
 	AppliedVersion int64            `json:"appliedVersion" jsonschema:"minimum=0"`
-	Workloads      []WorkloadStatus `json:"workloads"`
+	Workloads      []WorkloadStatus `json:"workloads" jsonschema:"maxItems=1024"`
 	// Host carries current host facts (resources, Docker version).
 	Host *HostStatus `json:"host,omitzero" jsonschema:"nullable"`
 	// Ingress is the state of the local Caddy (edge servers; omitted when Caddy is disabled).
@@ -652,7 +679,7 @@ type WorkloadStatus struct {
 	Message string `json:"message,omitzero" jsonschema:"maxLength=4096"`
 	// DetectedPorts are TCP ports the container listens on (port discovery).
 	// Omitted when discovery is not possible.
-	DetectedPorts []Port `json:"detectedPorts,omitzero" jsonschema:"nullable"`
+	DetectedPorts []Port `json:"detectedPorts,omitzero" jsonschema:"nullable,maxItems=32"`
 	// Health is the external probe result; omitted for workloads without a probe.
 	Health *ProbeStatus `json:"health,omitzero" jsonschema:"nullable"`
 	// Pull is the progress of the image pull while the phase is pulling.
@@ -660,7 +687,31 @@ type WorkloadStatus struct {
 	// Issue is set while the container is clearly misconfigured (crash loop,
 	// port mismatch; D68): the dashboard fails a rollout on it right away.
 	Issue *WorkloadIssue `json:"issue,omitzero" jsonschema:"nullable"`
+	// PortHint names the port misconfiguration the message explains, while
+	// the health check fails (the ports are in detectedPorts).
+	PortHint PortHint `json:"portHint,omitzero"`
 }
+
+// PortHint is a known port misconfiguration of a workload.
+type PortHint string
+
+// Port hints.
+const (
+	// PortHintLoopbackOnly: the app listens on the port, on 127.0.0.1 only.
+	PortHintLoopbackOnly PortHint = "loopback_only"
+	// PortHintNoPort: the app listens on no TCP port.
+	PortHintNoPort PortHint = "no_port"
+	// PortHintWrongPort: the app listens on other ports.
+	PortHintWrongPort PortHint = "wrong_port"
+)
+
+var portHints = []string{string(PortHintLoopbackOnly), string(PortHintNoPort), string(PortHintWrongPort)}
+
+// ProtocolSchema implements SchemaDescriber.
+func (PortHint) ProtocolSchema() ScalarSchema { return enumSchema(portHints) }
+
+// Validate checks the value.
+func (v PortHint) Validate() error { return checkEnum("port hint", string(v), portHints) }
 
 // PullProgress is an in-flight image pull: compressed layer bytes downloaded
 // of the total (0 while the total is not known, e.g. while mirroring).
@@ -697,13 +748,13 @@ func (r *Report) Validate() error {
 		if w.ObservedAt.IsZero() {
 			e.addf(p+".observedAt", "is required")
 		}
-		if w.ContainerID != "" && !reContainerID.MatchString(w.ContainerID) {
+		if w.ContainerID != "" && !reHex64.MatchString(w.ContainerID) {
 			e.addf(p+".containerId", "must be 64 lowercase hex characters")
 		}
 		if w.RestartCount < 0 {
 			e.addf(p+".restartCount", "must be >= 0")
 		}
-		checkText(&e, p+".message", w.Message, maxMessageLen)
+		checkText(&e, p+".message", w.Message, MaxMessageLen)
 		checkCount(&e, p+".detectedPorts", len(w.DetectedPorts), 0, maxDetectedPortCount)
 		for j, port := range w.DetectedPorts {
 			e.check(idx(p+".detectedPorts", j), port)
@@ -720,6 +771,9 @@ func (r *Report) Validate() error {
 		}
 		if w.Issue != nil {
 			w.Issue.validate(&e, p+".issue")
+		}
+		if w.PortHint != "" {
+			e.check(p+".portHint", w.PortHint)
 		}
 		if pp := w.Pull; pp != nil {
 			e.check(p+".pull.stage", pp.Stage)
@@ -779,7 +833,7 @@ func (r *Report) Validate() error {
 		if in.Routes < 0 {
 			e.addf("ingress.routes", "must be >= 0")
 		}
-		checkText(&e, "ingress.message", in.Message, maxMessageLen)
+		checkText(&e, "ingress.message", in.Message, MaxMessageLen)
 		in.validateCerts(&e)
 		if in.Waf != nil {
 			in.Waf.validate(&e, "ingress.waf")
@@ -789,7 +843,7 @@ func (r *Report) Validate() error {
 		if sr.Version < 0 {
 			e.addf("stateRejected.version", "must be >= 0")
 		}
-		checkText(&e, "stateRejected.error", sr.Error, maxMessageLen)
+		checkText(&e, "stateRejected.error", sr.Error, MaxMessageLen)
 		if sr.RejectedAt.IsZero() {
 			e.addf("stateRejected.rejectedAt", "is required")
 		}
@@ -827,27 +881,27 @@ func (r *Report) Validate() error {
 // LogBatch ships log chunks (docs/03 §4).
 type LogBatch struct {
 	TypeMeta
-	Chunks []LogChunk `json:"chunks" jsonschema:"minItems=1"`
+	Chunks []LogChunk `json:"chunks" jsonschema:"minItems=1,maxItems=256"`
 }
 
 // LogChunk is a run of lines from one source; Seq is monotonic per source.
 type LogChunk struct {
 	Source LogSource `json:"source"`
 	Seq    uint64    `json:"seq" jsonschema:"minimum=1"`
-	Lines  []LogLine `json:"lines" jsonschema:"minItems=1"`
+	Lines  []LogLine `json:"lines" jsonschema:"minItems=1,maxItems=5000"`
 }
 
 // LogSource names what the lines belong to. ID is a task, deployment or workload id per Kind.
 type LogSource struct {
 	Kind LogSourceKind `json:"kind"`
-	ID   string        `json:"id" jsonschema:"pattern=^(?:tsk|dpl|wl)_[0-9A-HJKMNP-TV-Z]{26}$"`
+	ID   string        `json:"id" jsonschema:"pattern=^(?:tsk|dpl|wl)_[0-7][0-9A-HJKMNP-TV-Z]{25}$"`
 }
 
 // LogLine is one line. Text is already masked for known secret values.
 type LogLine struct {
 	Time   time.Time `json:"time"`
 	Stream LogStream `json:"stream"`
-	Text   string    `json:"text"`
+	Text   string    `json:"text" jsonschema:"maxLength=16384"`
 	// Step groups build log lines into collapsible steps ("clone", "plan",
 	// "install", "build", "push", …). Omitted for runtime logs.
 	Step string `json:"step,omitzero" jsonschema:"maxLength=128"`
@@ -879,12 +933,11 @@ func (b *LogBatch) Validate() error {
 				e.addf(lp+".time", "is required")
 			}
 			e.check(lp+".stream", l.Stream)
-			checkText(&e, lp+".text", l.Text, maxLogLineLen)
+			checkText(&e, lp+".text", l.Text, MaxLogLineLen)
 			checkText(&e, lp+".step", l.Step, 128)
 		}
 	}
 	return e.err()
 }
 
-// errNotSigned is returned when a document that must be signed has no signature.
 var errNotSigned = errors.New("state: document is not signed")

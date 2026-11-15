@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Data\Services;
 
 use App\Enums\DatabaseEngine;
+use App\Enums\ServiceSourceType;
 use Spatie\LaravelData\Attributes\Validation\Regex;
 use Spatie\LaravelData\Data;
 
@@ -13,14 +14,17 @@ use Spatie\LaravelData\Data;
  */
 final class DatabaseSource extends Data implements ServiceSource
 {
+    /** A major, optionally with a minor version ("16", "8.0"). */
+    public const string VERSION = '/^[0-9]{1,3}(?:\.[0-9]{1,3})?$/D';
+
     public function __construct(
         public DatabaseEngine $engine,
-        #[Regex('/^[0-9]{1,3}(?:\.[0-9]{1,3})?$/D')]
+        #[Regex(self::VERSION)]
         public string $version,
     ) {}
 
-    public function type(): string
+    public function type(): ServiceSourceType
     {
-        return 'database';
+        return ServiceSourceType::Database;
     }
 }

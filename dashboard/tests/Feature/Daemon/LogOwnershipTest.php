@@ -4,15 +4,18 @@ declare(strict_types=1);
 
 use App\Actions\Daemons\StoreLogBatch;
 use App\Data\Protocol\V1\LogBatch;
+use App\Enums\DaemonTaskPurpose;
 use App\Enums\LogSourceKind;
 use App\Enums\VariableType;
+use App\Models\DaemonTask;
 use App\Models\LogChunk;
 use App\Models\Placement;
 use App\Models\Server;
 use App\Queries\DeploymentLogs;
-use App\Services\Deployments\TaskReleaseRunner;
+use App\Services\Deployments\ReleaseRunner;
 use Tests\Support\DeploymentUi;
 use Tests\Support\FakeDaemon;
+use Tests\Support\LogChunks;
 use Tests\Support\Projects;
 
 /**
@@ -63,7 +66,7 @@ test('deployment logs never show chunks another server wrote for that workload o
 
     // Rows written before the store-side check existed.
     foreach ([[LogSourceKind::Workload, $placement->workload_id], [LogSourceKind::Deployment, $deployment->public_id]] as $i => [$kind, $id]) {
-        LogChunk::query()->create([
+        LogChunks::create([
             'team_id' => $world->team->id, 'server_id' => $neighbour->id, 'source_kind' => $kind, 'source_id' => $id, 'seq' => $i + 1,
             'lines' => [['time' => '2026-10-18T12:00:00Z', 'stream' => 'stdout', 'text' => 'injected']], 'created_at' => now(),
         ]);
@@ -106,7 +109,8 @@ test('release commands tell the daemon which env values to mask', function (): v
     $world->deploy();
     $deployment = $world->latest($world->web);
 
-    $task = (fn () => $this->create($deployment, ['php', 'artisan', 'migrate'], 'release'))->call(resolve(TaskReleaseRunner::class));
+    resolve(ReleaseRunner::class)->advance($deployment, ['php', 'artisan', 'migrate']);
+    $task = DaemonTask::query()->where('deployment_id', $deployment->id)->where('purpose', DaemonTaskPurpose::Release->value)->sole();
 
     expect($task->spec->maskEnv)->toBe(['API_TOKEN', 'API_URL', 'DATABASE_URL']);
 });

@@ -2,7 +2,6 @@ package reconcile
 
 import (
 	"context"
-	"fmt"
 	"net/netip"
 	"slices"
 	"strings"
@@ -13,13 +12,14 @@ import (
 
 	"github.com/vantezzen/launchroom/daemon/internal/docker"
 	"github.com/vantezzen/launchroom/daemon/internal/docker/dockerfake"
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
 
 func createManagedNet(t *testing.T, d *dockerfake.Fake, n state.NetworkSpec) {
 	t.Helper()
 	labels := docker.ManagedLabels(srvID)
-	labels[docker.LabelNetwork] = string(n.ID)
+	labels[names.LabelNetwork] = string(n.ID)
 	if _, err := d.CreateNetwork(t.Context(), docker.NetworkCreate{Name: string(n.Name), Subnet: netip.MustParsePrefix(string(n.Subnet)), Labels: labels}); err != nil {
 		t.Fatal(err)
 	}
@@ -39,12 +39,13 @@ func hasNetwork(t *testing.T, d *dockerfake.Fake, name string) bool {
 // the task attached its container.
 func TestHeldNetworkIsNotRemoved(t *testing.T) {
 	h := newHarness(t)
-	var holds docker.NetworkHolds
-	h.r.o.Holds = &holds
 	other := state.NetworkSpec{ID: "net_01J9Z8X7W6V5T4S3R2Q1P0N9B0", Name: "lr-e_b", Subnet: "10.231.5.0/24"}
 	createManagedNet(t, h.d, other)
 
-	release := holds.Hold("lr-e_b")
+	release, err := h.r.o.Networks.Hold(t.Context(), other)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := h.r.Reconcile(t.Context(), h.nodeState(t, 1)); err != nil {
 		t.Fatal(err)
 	}
@@ -57,34 +58,6 @@ func TestHeldNetworkIsNotRemoved(t *testing.T) {
 	}
 	if hasNetwork(t, h.d, "lr-e_b") {
 		t.Fatal("released, undesired network was kept")
-	}
-}
-
-// RemoveUnlessHeld and Hold never interleave: a hold taken while the
-// removal runs waits for it, and a held network is never removed.
-func TestNetworkHoldsSerialiseWithRemoval(t *testing.T) {
-	var holds docker.NetworkHolds
-	started, proceed := make(chan struct{}), make(chan struct{})
-	done := make(chan bool)
-	go func() {
-		removed, _ := holds.RemoveUnlessHeld("lr-e_a", func() error { close(started); <-proceed; return nil })
-		done <- removed
-	}()
-	<-started
-	held := make(chan struct{})
-	go func() { holds.Hold("lr-e_a"); close(held) }()
-	select {
-	case <-held:
-		t.Fatal("hold acquired while the removal was running")
-	default:
-	}
-	close(proceed)
-	if !<-done {
-		t.Fatal("not removed")
-	}
-	<-held
-	if removed, _ := holds.RemoveUnlessHeld("lr-e_a", func() error { t.Fatal("removed a held network"); return nil }); removed {
-		t.Fatal("reported removal of a held network")
 	}
 }
 
@@ -105,7 +78,8 @@ func (v *vanishingNetwork) CreateContainer(ctx context.Context, cc *docker.Conta
 
 func TestCreateRetriesWhenNetworkVanishes(t *testing.T) {
 	h := newHarness(t)
-	h.r.o.Docker = &vanishingNetwork{Fake: h.d}
+	v := &vanishingNetwork{Fake: h.d}
+	h.r.o.Docker, h.r.o.Networks = v, docker.NewNetworks(v, srvID)
 	w := h.workload(t, wlA, nil)
 	if err := h.r.Reconcile(t.Context(), h.nodeState(t, 1, w)); err != nil {
 		t.Fatal(err)
@@ -114,7 +88,7 @@ func TestCreateRetriesWhenNetworkVanishes(t *testing.T) {
 	if n := slices.Index(calls, "create-network lr-e_a 10.231.4.0/24"); n < 0 || !slices.Contains(calls[n+1:], "create-network lr-e_a 10.231.4.0/24") {
 		t.Fatalf("network not re-created: %q", calls)
 	}
-	if !slices.Contains(calls, "start "+docker.ContainerName(wlA)) {
+	if !slices.Contains(calls, "start "+names.WorkloadContainer(wlA)) {
 		t.Fatalf("workload not started: %q", calls)
 	}
 	if ph := phaseOf(h.r, wlA).Phase; ph == state.PhaseFailed {
@@ -122,33 +96,11 @@ func TestCreateRetriesWhenNetworkVanishes(t *testing.T) {
 	}
 }
 
-// racingCreate: another creator (a run_once task) wins the network creation.
-type racingCreate struct{ *dockerfake.Fake }
-
-func (r racingCreate) CreateNetwork(ctx context.Context, n docker.NetworkCreate) (string, error) {
-	if _, err := r.Fake.CreateNetwork(ctx, n); err != nil {
-		return "", err
-	}
-	return "", fmt.Errorf("conflict: network %s already exists", n.Name)
-}
-
-func TestConcurrentNetworkCreationIsNotAFailure(t *testing.T) {
-	h := newHarness(t)
-	h.r.o.Docker = racingCreate{h.d}
-	w := h.workload(t, wlA, nil)
-	if err := h.r.Reconcile(t.Context(), h.nodeState(t, 1, w)); err != nil {
-		t.Fatalf("conflict on an existing, matching network failed the pass: %v", err)
-	}
-	if !slices.Contains(h.d.Calls(), "start "+docker.ContainerName(wlA)) {
-		t.Fatalf("calls %q", h.d.Calls())
-	}
-}
-
 func volLabels(id state.VolumeID, svc state.ServiceID, env state.EnvironmentID) map[string]string {
 	l := docker.ManagedLabels(srvID)
-	l[docker.LabelVolume] = string(id)
-	l[docker.LabelService] = string(svc)
-	l[docker.LabelEnvironment] = string(env)
+	l[names.LabelVolume] = string(id)
+	l[names.LabelService] = string(svc)
+	l[names.LabelEnvironment] = string(env)
 	return l
 }
 
@@ -167,7 +119,7 @@ func TestDeleteVolumes(t *testing.T) {
 	h.d.AddVolume("lr-v_keep", volLabels(volE, svcA, envA)) // not requested: stays although undeclared
 	h.d.AddImage(string(imgA))
 	labels := docker.ManagedLabels(srvID)
-	labels[docker.LabelTask] = "tsk_01J9Z8X7W6V5T4S3R2Q1P0N9Z9" // a one-off container: the reconciler leaves it alone
+	labels[names.LabelTask] = "tsk_01J9Z8X7W6V5T4S3R2Q1P0N9Z9" // a one-off container: the reconciler leaves it alone
 	if _, err := h.d.CreateContainer(ctx, &docker.ContainerCreate{Name: "lr-user", Config: &container.Config{Image: string(imgA), Labels: labels},
 		HostConfig: &container.HostConfig{Mounts: []mount.Mount{{Type: mount.TypeVolume, Source: "lr-v_c", Target: "/data"}}}}); err != nil {
 		t.Fatal(err)
@@ -191,16 +143,16 @@ func TestDeleteVolumes(t *testing.T) {
 	if got[volA].Outcome != state.VolumeDeleted || got[volB].Outcome != state.VolumeRefused || got[volC].Outcome != state.VolumeRefused || got[volD].Outcome != state.VolumeAbsent {
 		t.Fatalf("outcomes %+v", got)
 	}
-	if !strings.Contains(got[volC].Message, "in use by lr-user") || !strings.Contains(got[volB].Message, "labels do not match") {
+	if !strings.Contains(got[volC].Message, "in use by lr-user") || !strings.Contains(got[volB].Message, "belongs to another service") {
 		t.Fatalf("messages %+v", got)
 	}
 	vols, _ := h.d.ListVolumes(ctx)
-	names := []string{}
+	volNames := []string{}
 	for _, v := range vols {
-		names = append(names, v.Name)
+		volNames = append(volNames, v.Name)
 	}
-	if !slices.Equal(names, []string{"lr-v_b", "lr-v_c", "lr-v_keep"}) {
-		t.Fatalf("volumes left %v", names)
+	if !slices.Equal(volNames, []string{"lr-v_b", "lr-v_c", "lr-v_keep"}) {
+		t.Fatalf("volumes left %v", volNames)
 	}
 	removals := slices.DeleteFunc(h.d.Calls(), func(c string) bool { return !strings.HasPrefix(c, "remove-volume") })
 	if !slices.Equal(removals, []string{"remove-volume lr-v_a"}) {
@@ -261,7 +213,7 @@ func TestSharedVolume(t *testing.T) {
 		t.Fatal(err)
 	}
 	vols, _ := h.d.ListVolumes(ctx)
-	if len(vols) != 1 || vols[0].Labels[docker.LabelService] != string(svcOwner) || vols[0].Labels[docker.LabelEnvironment] != string(owner.Environment) {
+	if len(vols) != 1 || vols[0].Labels[names.LabelService] != string(svcOwner) || vols[0].Labels[names.LabelEnvironment] != string(owner.Environment) {
 		t.Fatalf("volumes %+v", vols)
 	}
 	cs, _ := h.d.ListContainers(ctx, nil)

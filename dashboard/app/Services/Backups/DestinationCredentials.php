@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Backups;
 
+use App\Support\S3\S3Location;
 use LogicException;
 use SensitiveParameter;
 
@@ -33,7 +34,7 @@ final readonly class DestinationCredentials
             'AWS_ACCESS_KEY_ID' => $this->accessKeyId,
             'AWS_SECRET_ACCESS_KEY' => $this->secretAccessKey,
             'RESTIC_PASSWORD' => $this->repositoryPassword,
-            'AWS_DEFAULT_REGION' => $region ?? 'us-east-1',
+            'AWS_DEFAULT_REGION' => S3Location::regionOrDefault($region),
         ];
     }
 

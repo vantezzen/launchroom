@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace App\Http\Api\OpenApi;
 
+use App\Data\Api\Events\StreamReconnectEvent;
 use App\Enums\ApiAbility;
 use App\Http\Api\ApiOperation;
+use App\Http\Api\EventStream;
 use App\Http\Middleware\IdempotentRequest;
 use App\Http\Middleware\RequireTokenAbility;
 use Illuminate\Auth\Middleware\Authenticate;
@@ -168,7 +170,11 @@ final readonly class OpenApiGenerator
         $status = (string) $operation->status;
 
         $success = match (true) {
-            $operation->stream => ['description' => 'Server-sent events.', 'content' => ['text/event-stream' => ['schema' => ['type' => 'string']]]],
+            $operation->events !== null => [
+                'description' => 'Server-sent events.',
+                'content' => ['text/event-stream' => ['schema' => ['type' => 'string']]],
+                'x-launchroom-events' => array_map($schemas->reference(...), [...$operation->events, EventStream::RECONNECT => StreamReconnectEvent::class]),
+            ],
             $operation->status === 204 || $operation->response === null => ['description' => 'Done.'],
             $operation->list => ['description' => 'OK', 'content' => ['application/json' => ['schema' => [
                 'type' => 'object',

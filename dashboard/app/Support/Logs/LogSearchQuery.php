@@ -6,7 +6,7 @@ namespace App\Support\Logs;
 
 /**
  * The log explorer's query language, parsed exactly like the client
- * (features/logs/explorer/query.ts): `service:api -level:debug "connection
+ * (features/log-explorer/query.ts): `service:api -level:debug "connection
  * refused" timeout`. Filters with the same key are OR'd, different keys
  * AND'd, negations exclude; every text term must appear in the line
  * (case-insensitive substring). Unknown keys and empty values stay text.

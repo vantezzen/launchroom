@@ -13,6 +13,7 @@ use App\Enums\Transfers\TransferDirection;
 use App\Enums\Transfers\TransferStatus;
 use App\Models\Transfers\DataTransfer;
 use App\Models\User;
+use App\Support\Transfers\DownloadToken;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
 
@@ -29,13 +30,13 @@ final readonly class OpenDownload
 
     public function handle(string $token, User $user, AuditActor $actor, bool $viaToken): DataTransfer
     {
-        if (preg_match('/^lr_dl_[A-Za-z0-9_-]{43}$/D', $token) !== 1) {
+        if (! DownloadToken::isValid($token)) {
             throw (new ModelNotFoundException)->setModel(DataTransfer::class);
         }
 
         return DB::transaction(function () use ($token, $user, $actor, $viaToken): DataTransfer {
             $transfer = DataTransfer::query()
-                ->where('link_token_hash', hash('sha256', $token))
+                ->where('link_token_hash', DownloadToken::hash($token))
                 ->whereIn('team_id', $user->teamIdsQuery())
                 ->with('serviceInstance.service')
                 ->lockForUpdate()
@@ -55,7 +56,6 @@ final readonly class OpenDownload
                 throw (new ModelNotFoundException)->setModel(DataTransfer::class);
             }
 
-            // One use.
             $transfer->forceFill([
                 'link_token_hash' => null,
                 'link_expires_at' => null,

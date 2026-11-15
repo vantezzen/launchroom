@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import InputError from '@/components/input-error';
 import { Label } from '@/components/ui/label';
+import { slugFrom } from '@/lib/slug';
 
 export function Field({
     id,
@@ -27,16 +28,9 @@ export function Field({
     );
 }
 
-/**
- * Turns "ghcr.io/acme/web:1.2" or "acme/shop" into a service name.
- */
+/** "ghcr.io/acme/web:1.2" or "acme/shop" → "web" / "shop". */
 export function suggestName(value: string): string {
     const last = value.split('/').pop() ?? value;
 
-    return last
-        .replace(/[@:].*$/, '')
-        .toLowerCase()
-        .replace(/[^a-z0-9-]+/g, '-')
-        .replace(/^-+|-+$/g, '')
-        .slice(0, 63);
+    return slugFrom(last.replace(/[@:].*$/, ''), '');
 }

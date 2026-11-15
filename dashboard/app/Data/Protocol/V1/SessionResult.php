@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Data\Protocol\V1;
 
-use Spatie\LaravelData\Attributes\Validation\In;
+use App\Data\Attributes\UnknownCodeAsNull;
+use App\Enums\Sessions\SessionEndReason;
+use App\Enums\Sessions\StartFailure;
 use Spatie\LaravelData\Attributes\Validation\Max;
 use Spatie\LaravelData\Attributes\Validation\Min;
 use Spatie\LaravelData\Data;
@@ -16,14 +18,11 @@ use Spatie\LaravelData\Optional;
  */
 final class SessionResult extends Data
 {
-    public const array END_REASONS = ['closed', 'exited', 'idle', 'deadline', 'disconnected', 'ended', 'never_connected', 'refused', 'error'];
-
     /**
      * @param  list<SessionCommandResult>|Optional  $commands
      */
     public function __construct(
-        #[In(self::END_REASONS)]
-        public string $endReason,
+        public SessionEndReason $endReason,
         #[Min(0)]
         public int $bytesIn,
         #[Min(0)]
@@ -34,5 +33,7 @@ final class SessionResult extends Data
         public int|null|Optional $exitCode = new Optional,
         #[Max(1000)]
         public array|Optional $commands = new Optional,
+        #[UnknownCodeAsNull]
+        public ?StartFailure $failure = null,
     ) {}
 }

@@ -13,20 +13,23 @@ const alert = (
     title: label,
     href: `/alerts/${rule}`,
     openedAt: '2026-11-01T00:00:00Z',
+    kind: null,
+    backupKind: null,
+    value: null,
 });
 
 describe('secondarySignals', () => {
     it('leaves out alerts that repeat the status', () => {
         expect(
             secondarySignals(
-                'Failed',
+                'deploy_failed',
                 [alert('deploy_failed', 'Deploy failed')],
                 null,
             ),
         ).toEqual([]);
         expect(
             secondarySignals(
-                'Unhealthy',
+                'unhealthy',
                 [alert('service_unhealthy', 'Unhealthy')],
                 null,
             ),
@@ -36,10 +39,10 @@ describe('secondarySignals', () => {
     it('keeps alerts that say something else', () => {
         const errors = alert('error_rate_high', 'Errors 8%', 'warning');
 
-        expect(secondarySignals('Live', [errors], null)).toEqual([errors]);
+        expect(secondarySignals('live', [errors], null)).toEqual([errors]);
         expect(
             secondarySignals(
-                'Live',
+                'live',
                 [alert('deploy_failed', 'Deploy failed')],
                 null,
             ),
@@ -48,7 +51,7 @@ describe('secondarySignals', () => {
 
     it('puts Action needed first and drops vulnerability alerts it counts', () => {
         const signals = secondarySignals(
-            'Live',
+            'live',
             [
                 alert('vulnerability', 'Vulnerability'),
                 alert('cpu_high', 'CPU 95%', 'warning'),
@@ -68,17 +71,21 @@ describe('failedDeployment', () => {
         expect(
             failedDeployment({
                 state: 'warning',
+                reason: 'last_deploy_failed',
                 label: 'Last deploy failed',
                 since: null,
                 deploymentId: 'dep_1',
+                detail: null,
             }),
         ).toBe('dep_1');
         expect(
             failedDeployment({
                 state: 'active',
+                reason: 'live',
                 label: 'Live',
                 since: null,
                 deploymentId: 'dep_1',
+                detail: null,
             }),
         ).toBeNull();
     });

@@ -17,6 +17,7 @@ use App\Models\InstanceSettings;
 use App\Models\User;
 use App\Services\Backups\DestinationSecrets;
 use App\Services\Backups\EndpointGuard;
+use App\Support\S3\S3Location;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -42,9 +43,9 @@ final readonly class UpdateBackupDestination
         if ($input->allowPrivateNetwork && ! $user->is_instance_owner && (! $destination->allow_private_network || $destination->endpoint !== $endpoint)) {
             throw DomainRuleViolation::on('allowPrivateNetwork', 'Only an instance owner can allow a destination on a private network (docs/09 R5).');
         }
-        $region = $input->region === null || $input->region === '' ? null : strtolower($input->region);
-        $prefix = trim($input->prefix, '/');
-        $this->guard->checkLocation($input->bucket, $prefix, $region);
+        $location = S3Location::parse($endpoint, $input->bucket, $input->region, $input->prefix);
+        $region = $location->region;
+        $prefix = $location->prefix;
 
         $destination = DB::transaction(function () use ($destination, $input, $actor, $endpoint, $region, $prefix): BackupDestination {
             $destination = BackupDestination::query()->whereKey($destination->id)->lockForUpdate()->firstOrFail();

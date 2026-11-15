@@ -5,18 +5,17 @@ declare(strict_types=1);
 namespace App\Data\Canvas;
 
 use App\Data\Projects\PlanSuggestionsData;
+use App\Enums\PlanPreviewStatus;
 use Spatie\LaravelData\Data;
 
 /**
  * Answer to "what will launchroom build from this repository?" while adding
- * a service. `pending` means a plan task is running (poll again);
- * `unavailable` means detection happens with the first build instead.
+ * a service.
  */
 final class PlanPreviewData extends Data
 {
     public function __construct(
-        /** `ready`, `pending`, `failed` or `unavailable`. */
-        public string $status,
+        public PlanPreviewStatus $status,
         public ?DetectedPlanData $plan = null,
         public ?string $message = null,
         /** Worker processes and databases the plan suggests (import flow); null until ready. */
@@ -25,6 +24,6 @@ final class PlanPreviewData extends Data
 
     public static function unavailable(string $message): self
     {
-        return new self('unavailable', null, $message);
+        return new self(PlanPreviewStatus::Unavailable, null, $message);
     }
 }

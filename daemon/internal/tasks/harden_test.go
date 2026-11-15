@@ -10,8 +10,10 @@ import (
 
 	"github.com/vantezzen/launchroom/daemon/internal/docker"
 	"github.com/vantezzen/launchroom/daemon/internal/docker/dockerfake"
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/policy"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
+	"github.com/vantezzen/launchroom/daemon/internal/tasks/taskstest"
 )
 
 // A daemon restart (SIGTERM, `make dev-daemon`) lets running tasks finish
@@ -22,21 +24,21 @@ func TestShutdownGraceAndRelease(t *testing.T) {
 		quick = state.TaskID("tsk_01J9Z8X7W6V5T4S3R2Q1P0N9Q1")
 		slow  = state.TaskID("tsk_01J9Z8X7W6V5T4S3R2Q1P0N9Q2")
 	)
-	cp := &fakeCP{}
+	cp := &taskstest.ControlPlane{}
 	started := make(chan struct{}, 2)
-	r := New(Options{Client: cp, HeartbeatEvery: 10 * time.Millisecond, ShutdownGrace: 200 * time.Millisecond, Handlers: map[state.TaskType]Handler{
-		state.TaskLogs: func(ctx context.Context, t state.Task) (Result, error) {
+	r := New(Options{Client: cp, HeartbeatEvery: 10 * time.Millisecond, ShutdownGrace: 500 * time.Millisecond, Handlers: map[state.TaskType]Handler{
+		state.TaskLogs: func(ctx context.Context, t state.Task) (state.TaskResults, error) {
 			started <- struct{}{}
 			if t.ID == quick {
 				// Still running when shutdown starts, done well within the grace.
 				time.Sleep(80 * time.Millisecond)
-				return Result{}, ctx.Err()
+				return state.TaskResults{}, ctx.Err()
 			}
 			<-ctx.Done()
-			return Result{}, ctx.Err()
+			return state.TaskResults{}, ctx.Err()
 		},
 	}})
-	cp.lease = []state.Task{task(quick, state.TaskLogs, &state.LogsSpec{Workload: wl}, time.Minute), task(slow, state.TaskLogs, &state.LogsSpec{Workload: wl}, time.Minute)}
+	cp.Lease = []state.Task{taskstest.Task(quick, state.TaskLogs, &state.LogsSpec{Workload: wl}, time.Minute), taskstest.Task(slow, state.TaskLogs, &state.LogsSpec{Workload: wl}, time.Minute)}
 	ctx, stop := context.WithCancel(t.Context())
 	r.LeaseOnce(ctx)
 	<-started
@@ -45,40 +47,40 @@ func TestShutdownGraceAndRelease(t *testing.T) {
 	begin := time.Now()
 	r.wg.Wait()
 
-	if got := cp.completion(quick); got == nil || got.Outcome != state.OutcomeSucceeded {
+	if got := cp.Completion(quick); got == nil || got.Outcome != state.OutcomeSucceeded {
 		t.Fatalf("quick task: %+v", got)
 	}
-	got := cp.completion(slow)
+	got := cp.Completion(slow)
 	if got == nil || got.Outcome != state.OutcomeReleased || !strings.Contains(got.Error, "launchroomd stopped") {
 		t.Fatalf("slow task: %+v", got)
 	}
 	if err := got.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	if waited := time.Since(begin); waited < 150*time.Millisecond || waited > 5*time.Second {
+	if waited := time.Since(begin); waited < 400*time.Millisecond || waited > 5*time.Second {
 		t.Fatalf("shutdown took %s", waited)
 	}
 }
 
 // Without a grace the task stops at once but is still released, not cancelled.
 func TestShutdownWithoutGraceReleases(t *testing.T) {
-	cp := &fakeCP{}
+	cp := &taskstest.ControlPlane{}
 	started := make(chan struct{})
 	r := New(Options{Client: cp, Handlers: map[state.TaskType]Handler{
-		state.TaskLogs: func(ctx context.Context, _ state.Task) (Result, error) {
+		state.TaskLogs: func(ctx context.Context, _ state.Task) (state.TaskResults, error) {
 			close(started)
 			<-ctx.Done()
-			return Result{}, ctx.Err()
+			return state.TaskResults{}, ctx.Err()
 		},
 	}})
 	const id = state.TaskID("tsk_01J9Z8X7W6V5T4S3R2Q1P0N9Q3")
-	cp.lease = []state.Task{task(id, state.TaskLogs, &state.LogsSpec{Workload: wl}, time.Minute)}
+	cp.Lease = []state.Task{taskstest.Task(id, state.TaskLogs, &state.LogsSpec{Workload: wl}, time.Minute)}
 	ctx, stop := context.WithCancel(t.Context())
 	r.LeaseOnce(ctx)
 	<-started
 	stop()
 	r.wg.Wait()
-	if got := cp.completion(id); got == nil || got.Outcome != state.OutcomeReleased {
+	if got := cp.Completion(id); got == nil || got.Outcome != state.OutcomeReleased {
 		t.Fatalf("%+v", got)
 	}
 }
@@ -91,21 +93,21 @@ func TestRunOnceHoldsItsNetwork(t *testing.T) {
 		t.Fatal(err)
 	}
 	d := dockerfake.New(string(bServer))
-	var holds docker.NetworkHolds
-	h := RunOnceHandler(RunOnceOptions{ServerID: bServer, SealingKey: priv, Docker: d, Client: &fakeCP{}, Policy: policy.DefaultConfig(),
-		PollEvery: 10 * time.Millisecond, Holds: &holds})
+	nets := docker.NewNetworks(d, bServer)
+	h := RunOnceHandler(RunOnceOptions{ServerID: bServer, SealingKey: priv, Docker: d, Client: &taskstest.ControlPlane{}, Policy: policy.DefaultConfig(),
+		PollEvery: 10 * time.Millisecond, Networks: nets})
 	d.AddImage(string(roImage))
-	d.ExitOnStart[RunOnceContainerName(bTask)] = 0
+	d.ExitOnStart[names.RunOnceContainer(bTask)] = 0
 	const name = "lr-e_0123456789abcdef"
 	heldAtCreate := false
-	d.OnCreate = func(docker.ContainerCreate) { heldAtCreate = holds.Held(name) }
+	d.OnCreate = func(docker.ContainerCreate) { heldAtCreate = nets.Held(name) }
 	if _, err := h(context.Background(), runOnceTask(t, priv.PublicKey(), "1m")); err != nil {
 		t.Fatal(err)
 	}
 	if !heldAtCreate {
 		t.Fatal("network not held while the container was created")
 	}
-	if holds.Held(name) {
+	if nets.Held(name) {
 		t.Fatal("hold not released after the task")
 	}
 }
@@ -119,9 +121,9 @@ func TestRunOnceRecreatesVanishedNetwork(t *testing.T) {
 	}
 	d := dockerfake.New(string(bServer))
 	v := &vanishOnce{Fake: d}
-	h := RunOnceHandler(RunOnceOptions{ServerID: bServer, SealingKey: priv, Docker: v, Client: &fakeCP{}, Policy: policy.DefaultConfig(), PollEvery: 10 * time.Millisecond})
+	h := RunOnceHandler(RunOnceOptions{ServerID: bServer, SealingKey: priv, Docker: v, Client: &taskstest.ControlPlane{}, Policy: policy.DefaultConfig(), PollEvery: 10 * time.Millisecond})
 	d.AddImage(string(roImage))
-	d.ExitOnStart[RunOnceContainerName(bTask)] = 0
+	d.ExitOnStart[names.RunOnceContainer(bTask)] = 0
 	res, err := h(context.Background(), runOnceTask(t, priv.PublicKey(), "1m"))
 	if err != nil || res.RunOnce == nil {
 		t.Fatalf("%v %+v", err, res)

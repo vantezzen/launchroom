@@ -14,13 +14,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vantezzen/launchroom/daemon/internal/build"
 	"github.com/vantezzen/launchroom/daemon/internal/docker"
 	"github.com/vantezzen/launchroom/daemon/internal/docker/dockerfake"
+	"github.com/vantezzen/launchroom/daemon/internal/health"
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/policy"
 	"github.com/vantezzen/launchroom/daemon/internal/sealed"
 	"github.com/vantezzen/launchroom/daemon/internal/secret"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
+	"github.com/vantezzen/launchroom/daemon/internal/tasks/taskstest"
 )
 
 const roImage = state.ImageRef("127.0.0.1:5000/apps/svc_01j9z8x7w6v5t4s3r2q1p0n9n2@sha256:863294e97f3d613949dbcb8bac8bc2f34d40fb4773c50c12679d99fdc95c2272")
@@ -43,21 +45,21 @@ func runOnceTask(t *testing.T, pub *ecdh.PublicKey, timeout state.Duration) stat
 	}
 }
 
-func newRunOnce(t *testing.T) (*dockerfake.Fake, *fakeCP, *ecdh.PrivateKey, Handler) {
+func newRunOnce(t *testing.T) (*dockerfake.Fake, *taskstest.ControlPlane, *ecdh.PrivateKey, Handler) {
 	t.Helper()
 	priv, err := ecdh.X25519().GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatal(err)
 	}
 	d := dockerfake.New(string(bServer))
-	cp := &fakeCP{}
+	cp := &taskstest.ControlPlane{}
 	h := RunOnceHandler(RunOnceOptions{ServerID: bServer, SealingKey: priv, Docker: d, Client: cp, Policy: policy.DefaultConfig(), PollEvery: 10 * time.Millisecond})
 	return d, cp, priv, h
 }
 
 func TestRunOnceExitCodeAndCleanup(t *testing.T) {
 	d, cp, priv, h := newRunOnce(t)
-	d.ExitOnStart[RunOnceContainerName(bTask)] = 3
+	d.ExitOnStart[names.RunOnceContainer(bTask)] = 3
 	d.Logs = map[string][]docker.LogLine{}
 
 	res, err := h(context.Background(), runOnceTask(t, priv.PublicKey(), "1m"))
@@ -74,14 +76,14 @@ func TestRunOnceExitCodeAndCleanup(t *testing.T) {
 		}
 	}
 	nets, _ := d.ListNetworks(context.Background())
-	if len(nets) != 1 || nets[0].Name != "lr-e_0123456789abcdef" || nets[0].Labels[docker.LabelNetwork] != "net_01J9Z8X7W6V5T4S3R2Q1P0N9N4" {
+	if len(nets) != 1 || nets[0].Name != "lr-e_0123456789abcdef" || nets[0].Labels[names.LabelNetwork] != "net_01J9Z8X7W6V5T4S3R2Q1P0N9N4" {
 		t.Fatalf("networks = %+v", nets)
 	}
 	if cs, _ := d.ListContainers(context.Background(), nil); len(cs) != 0 {
 		t.Fatalf("container left behind: %+v", cs)
 	}
 	var steps []string
-	for _, b := range cp.batches {
+	for _, b := range cp.Batches {
 		for _, l := range b.Chunks[0].Lines {
 			steps = append(steps, l.Step)
 			if strings.Contains(l.Text, "postgres://") {
@@ -97,7 +99,7 @@ func TestRunOnceExitCodeAndCleanup(t *testing.T) {
 func TestRunOnceContainerIsNotAWorkload(t *testing.T) {
 	d, _, priv, h := newRunOnce(t)
 	d.AddImage(string(roImage))
-	d.ExitOnStart[RunOnceContainerName(bTask)] = 0
+	d.ExitOnStart[names.RunOnceContainer(bTask)] = 0
 	var created docker.ContainerCreate
 	d.OnCreate = func(cc docker.ContainerCreate) { created = cc }
 
@@ -105,7 +107,7 @@ func TestRunOnceContainerIsNotAWorkload(t *testing.T) {
 		t.Fatal(err)
 	}
 	labels := created.Config.Labels
-	if labels[docker.LabelWorkload] != "" || labels[docker.LabelTask] != string(bTask) || labels[docker.LabelManaged] != "true" {
+	if labels[names.LabelWorkload] != "" || labels[names.LabelTask] != string(bTask) || labels[names.LabelManaged] != "true" {
 		t.Fatalf("labels = %v", labels)
 	}
 	if created.HostConfig.RestartPolicy.Name != "no" || created.HostConfig.Privileged || !slices.Contains(created.HostConfig.CapDrop, "ALL") {
@@ -163,7 +165,7 @@ func TestRunOnceEnvBoundToTask(t *testing.T) {
 func TestRunOnceCommandOnlyReplacesAShellEntrypoint(t *testing.T) {
 	d, _, priv, h := newRunOnce(t)
 	d.AddImage(string(roImage))
-	d.ExitOnStart[RunOnceContainerName(bTask)] = 0
+	d.ExitOnStart[names.RunOnceContainer(bTask)] = 0
 	var created docker.ContainerCreate
 	d.OnCreate = func(cc docker.ContainerCreate) { created = cc }
 	tk := runOnceTask(t, priv.PublicKey(), "1m")
@@ -189,7 +191,7 @@ func TestRunOnceMasksListedEnvValues(t *testing.T) {
 		"API_KEY":      "key-abcdef123456",
 		"APP_NAME":     "production-shop",
 	}
-	m := build.NewMasker(maskValues(env, []state.EnvName{"DATABASE_URL", "API_KEY", "NOT_IN_ENV"})...)
+	m := secret.NewMasker(secret.MaskValues(env, []state.EnvName{"DATABASE_URL", "API_KEY", "NOT_IN_ENV"})...)
 
 	for in, want := range map[string]string{
 		"connecting to postgres://app:s3cr3t-db-pass@db:5432/app":                      "connecting to ***",
@@ -243,7 +245,7 @@ func newProbeRunOnce(t *testing.T, probe func(context.Context, netip.AddrPort, s
 	}
 	d := dockerfake.New(string(bServer))
 	d.Logs = map[string][]docker.LogLine{}
-	h := RunOnceHandler(RunOnceOptions{ServerID: bServer, SealingKey: priv, Docker: d, Client: &fakeCP{}, Policy: policy.DefaultConfig(), PollEvery: 5 * time.Millisecond, Probe: probe, Ports: ports})
+	h := RunOnceHandler(RunOnceOptions{ServerID: bServer, SealingKey: priv, Docker: d, Client: &taskstest.ControlPlane{}, Policy: policy.DefaultConfig(), PollEvery: 5 * time.Millisecond, Probe: probe, Ports: portsFunc(ports)})
 	return d, h, priv
 }
 
@@ -276,7 +278,7 @@ func TestRunOnceProbeListening(t *testing.T) {
 
 func TestRunOnceProbeExited(t *testing.T) {
 	d, h, priv := newProbeRunOnce(t, func(context.Context, netip.AddrPort, string) (int, error) { return 0, errors.New("refused") }, nil)
-	d.ExitOnStart[RunOnceContainerName(bTask)] = 2
+	d.ExitOnStart[names.RunOnceContainer(bTask)] = 2
 	res, err := h(context.Background(), probeTask(t, priv.PublicKey(), "1m", ""))
 	if err != nil {
 		t.Fatal(err)
@@ -298,8 +300,22 @@ func TestRunOnceProbeTimeoutReportsPorts(t *testing.T) {
 	if p == nil || p.Listening || p.Exited || !slices.Equal(p.ListeningPorts, []state.Port{5173, 9229}) {
 		t.Fatalf("probe = %+v", p)
 	}
-	done := &state.TaskCompletion{TypeMeta: state.NewTypeMeta(state.KindTaskCompletion), Attempt: 1, Outcome: state.OutcomeSucceeded, RunOnce: res.RunOnce}
+	done := &state.TaskCompletion{TypeMeta: state.NewTypeMeta(state.KindTaskCompletion), Attempt: 1, Outcome: state.OutcomeSucceeded, TaskResults: state.TaskResults{RunOnce: res.RunOnce}}
 	if err := done.Validate(); err != nil {
 		t.Fatalf("completion invalid: %v", err)
 	}
+}
+
+// portsFunc is a port scanner that lists ports by pid (nil: none).
+type portsFunc func(int) []int
+
+func (f portsFunc) Listeners(pid int) ([]health.Listener, error) {
+	if f == nil {
+		return nil, errors.New("no scanner")
+	}
+	var out []health.Listener
+	for _, p := range f(pid) {
+		out = append(out, health.Listener{Port: p})
+	}
+	return out, nil
 }

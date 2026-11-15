@@ -31,7 +31,7 @@ final readonly class DenyCliLogin
                 return;
             }
 
-            $request->transitionTo(CliLoginStatus::Denied, ['user_id' => $user->id, 'decided_at' => now()]);
+            $request->deny($user);
 
             $this->audit->handle(new AuditEntryData(
                 action: AuditAction::CliLoginDenied,

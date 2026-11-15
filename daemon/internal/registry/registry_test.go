@@ -64,15 +64,16 @@ func TestTokenCache(t *testing.T) {
 	if _, err := tk.Token(t.Context(), pull("apps/svc_x"), "tsk_01J9Z8X7W6V5T4S3R2Q1P0N9P0"); err != nil || cp.count != 3 {
 		t.Fatalf("task-bound token must not reuse an unbound one (%d)", cp.count)
 	}
-	now = now.Add(4*time.Minute + 30*time.Second) // within refreshBefore of expiry
-	if _, err := tk.Token(t.Context(), pull("apps/svc_x"), ""); err != nil || cp.count != 4 {
-		t.Fatalf("expiring token not refreshed (%d)", cp.count)
+	if _, err := tk.Token(t.Context(), pull("apps/svc_x"), "tsk_01J9Z8X7W6V5T4S3R2Q1P0N9P0"); err != nil || cp.count != 3 {
+		t.Fatalf("task-bound token not cached (%d)", cp.count)
 	}
 	tk.Forget("tsk_01J9Z8X7W6V5T4S3R2Q1P0N9P0")
-	for k := range tk.cache {
-		if k[:4] == "tsk_" {
-			t.Fatalf("forgotten task token still cached: %s", k)
-		}
+	if _, err := tk.Token(t.Context(), pull("apps/svc_x"), "tsk_01J9Z8X7W6V5T4S3R2Q1P0N9P0"); err != nil || cp.count != 4 {
+		t.Fatalf("forgotten task token still cached (%d)", cp.count)
+	}
+	now = now.Add(4*time.Minute + 30*time.Second) // within refreshBefore of expiry
+	if _, err := tk.Token(t.Context(), pull("apps/svc_x"), ""); err != nil || cp.count != 5 {
+		t.Fatalf("expiring token not refreshed (%d)", cp.count)
 	}
 	cp.err = errors.New("403")
 	if _, err := tk.Token(t.Context(), pull("apps/other"), ""); err == nil {

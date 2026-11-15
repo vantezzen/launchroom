@@ -13,8 +13,8 @@ use App\Jobs\Git\RefreshInstallationRepositoriesJob;
 use App\Models\Git\GitHubApp;
 use App\Models\Git\GitHubInstallation;
 use App\Models\Team;
-use App\Services\GitHub\Dto\InstallationInfo;
-use App\Services\GitHub\GitHubClientFactory;
+use App\Services\Git\Providers\GitHub\Dto\InstallationInfo;
+use App\Services\Git\Providers\GitHub\GitHubClientFactory;
 use Illuminate\Support\Facades\DB;
 
 /**

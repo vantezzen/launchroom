@@ -4,17 +4,16 @@ declare(strict_types=1);
 
 namespace App\Services\Crypto;
 
+use App\Enums\Crypto\ProjectCiphertext;
 use App\Models\Project;
 use App\Models\ProjectKey;
 use LogicException;
 use SensitiveParameter;
 
 /**
- * Per-project data-encryption keys (docs/09 R13, docs/06 §3.5).
- *
- * Associated data (domain-separated by a leading tag):
- * - variable values: `var|<team id>|<project id>|<variable public id>|<version>`
- * - deployment env snapshots: `env|<team id>|<project id>|<deployment public id>`
+ * Per-project data-encryption keys (docs/09 R13, docs/06 §3.5). What is
+ * encrypted under them, and with which associated data, is
+ * {@see ProjectCiphertext}.
  *
  * Key versions (R13 rotation, `launchroom:keys:rotate-project`): the newest
  * DEK version encrypts. Every ciphertext records the version that made it:
@@ -37,27 +36,12 @@ final class ProjectKeyring
     private array $current = [];
 
     public function __construct(
-        private readonly Envelope $envelope,
+        private readonly SealedColumns $sealed,
     ) {}
 
-    /**
-     * Creates version 1 of a new project's DEK.
-     */
     public function initialize(Project $project): ProjectKey
     {
-        $dek = $this->envelope->generateDataKey();
-
-        $key = ProjectKey::query()->create([
-            'project_id' => $project->id,
-            'version' => 1,
-            'wrapped_dek' => $this->envelope->wrap($dek, $this->wrapContext($project)),
-            'kek_id' => $this->envelope->kekId(),
-        ]);
-
-        $this->keys[$project->id.':1'] = $dek;
-        $this->current[$project->id] = 1;
-
-        return $key;
+        return $this->addVersion($project, 1);
     }
 
     /**
@@ -69,33 +53,10 @@ final class ProjectKeyring
         // FOR UPDATE can't be combined with MAX: lock the rows, then take the maximum.
         $versions = ProjectKey::query()->where('project_id', $project->id)->lockForUpdate()->pluck('version')->all();
         $version = max([0, ...array_map(static fn (mixed $v): int => is_numeric($v) ? (int) $v : 0, $versions)]) + 1;
-        $dek = $this->envelope->generateDataKey();
 
-        $key = ProjectKey::query()->create([
-            'project_id' => $project->id,
-            'version' => $version,
-            'wrapped_dek' => $this->envelope->wrap($dek, $this->wrapContext($project)),
-            'kek_id' => $this->envelope->kekId(),
-        ]);
-
-        $this->keys[$project->id.':'.$version] = $dek;
-        $this->current[$project->id] = $version;
-
-        return $key;
+        return $this->addVersion($project, $version);
     }
 
-    /**
-     * Re-wraps a stored DEK from one KEK to another (rotate-kek); the caller saves.
-     */
-    public function rewrap(Project $project, ProjectKey $key, Envelope $from, Envelope $to): void
-    {
-        $key->wrapped_dek = $from->rewrap($key->wrapped_dek, $this->wrapContext($project), $to);
-        $key->kek_id = $to->kekId();
-    }
-
-    /**
-     * The DEK version a ciphertext was made with.
-     */
     public static function versionOf(string $ciphertext): int
     {
         return preg_match(self::VERSIONED, $ciphertext, $m) === 1 ? (int) $m[1] : 1;
@@ -116,14 +77,34 @@ final class ProjectKeyring
         return $this->current[$project->id];
     }
 
+    public function encrypt(ProjectCiphertext $kind, Project $project, string $rowPublicId, #[SensitiveParameter] string $plaintext, int $rowVersion = 0): string
+    {
+        $version = $this->currentVersion($project);
+        $ciphertext = $this->dataKey($project, $version)->encrypt($plaintext, $kind->associatedData($project, $rowPublicId, $rowVersion));
+
+        return $version === 1 ? $ciphertext : "k{$version}.{$ciphertext}";
+    }
+
+    public function decrypt(ProjectCiphertext $kind, Project $project, string $rowPublicId, string $ciphertext, int $rowVersion = 0): string
+    {
+        $version = 1;
+
+        if (preg_match(self::VERSIONED, $ciphertext, $m) === 1) {
+            $version = (int) $m[1];
+            $ciphertext = $m[2];
+        }
+
+        return $this->dataKey($project, $version)->decrypt($ciphertext, $kind->associatedData($project, $rowPublicId, $rowVersion));
+    }
+
     public function encryptVariable(Project $project, string $variablePublicId, int $version, #[SensitiveParameter] string $plaintext): string
     {
-        return $this->encrypt($project, $plaintext, $this->variableContext($project, $variablePublicId, $version));
+        return $this->encrypt(ProjectCiphertext::Variable, $project, $variablePublicId, $plaintext, $version);
     }
 
     public function decryptVariable(Project $project, string $variablePublicId, int $version, string $ciphertext): string
     {
-        return $this->decrypt($project, $ciphertext, $this->variableContext($project, $variablePublicId, $version));
+        return $this->decrypt(ProjectCiphertext::Variable, $project, $variablePublicId, $ciphertext, $version);
     }
 
     /**
@@ -132,9 +113,10 @@ final class ProjectKeyring
     public function encryptSnapshot(Project $project, string $deploymentPublicId, #[SensitiveParameter] array $env): string
     {
         return $this->encrypt(
+            ProjectCiphertext::Snapshot,
             $project,
+            $deploymentPublicId,
             json_encode((object) $env, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR),
-            $this->snapshotContext($project, $deploymentPublicId),
         );
     }
 
@@ -143,7 +125,7 @@ final class ProjectKeyring
      */
     public function decryptSnapshot(Project $project, string $deploymentPublicId, string $ciphertext): array
     {
-        $decoded = json_decode($this->decrypt($project, $ciphertext, $this->snapshotContext($project, $deploymentPublicId)), true, 4, JSON_THROW_ON_ERROR);
+        $decoded = json_decode($this->decrypt(ProjectCiphertext::Snapshot, $project, $deploymentPublicId, $ciphertext), true, 4, JSON_THROW_ON_ERROR);
 
         if (! is_array($decoded)) {
             throw new LogicException('A deployment env snapshot must decode to an object.');
@@ -159,35 +141,6 @@ final class ProjectKeyring
     }
 
     /**
-     * A SQL console statement in the user's query history (docs/07
-     * `database_queries`, AD `query|<team>|<project>|<qry_ id>`).
-     */
-    public function encryptQuery(Project $project, string $queryPublicId, #[SensitiveParameter] string $statement): string
-    {
-        return $this->encrypt($project, $statement, "query|{$project->team_id}|{$project->id}|{$queryPublicId}");
-    }
-
-    public function decryptQuery(Project $project, string $queryPublicId, string $ciphertext): string
-    {
-        return $this->decrypt($project, $ciphertext, "query|{$project->team_id}|{$project->id}|{$queryPublicId}");
-    }
-
-    /**
-     * An investigation's container inspections (docs/22 §8, AD
-     * `investigation|<team>|<project>|<ivg_ id>`): process commands may
-     * carry secrets the masking missed.
-     */
-    public function encryptInspections(Project $project, string $investigationPublicId, #[SensitiveParameter] string $json): string
-    {
-        return $this->encrypt($project, $json, "investigation|{$project->team_id}|{$project->id}|{$investigationPublicId}");
-    }
-
-    public function decryptInspections(Project $project, string $investigationPublicId, string $ciphertext): string
-    {
-        return $this->decrypt($project, $ciphertext, "investigation|{$project->team_id}|{$project->id}|{$investigationPublicId}");
-    }
-
-    /**
      * A keyed MAC under the current project DEK, for hashing secret material
      * into stored fingerprints (build keys) without making them guessable.
      * Rotating the DEK changes them (one rebuild).
@@ -195,26 +148,6 @@ final class ProjectKeyring
     public function mac(Project $project, string $context, #[SensitiveParameter] string $data): string
     {
         return hash_hmac('sha256', $context."\0".$data, $this->dataKey($project, $this->currentVersion($project))->reveal());
-    }
-
-    private function encrypt(Project $project, #[SensitiveParameter] string $plaintext, string $associatedData): string
-    {
-        $version = $this->currentVersion($project);
-        $ciphertext = $this->dataKey($project, $version)->encrypt($plaintext, $associatedData);
-
-        return $version === 1 ? $ciphertext : "k{$version}.{$ciphertext}";
-    }
-
-    private function decrypt(Project $project, string $ciphertext, string $associatedData): string
-    {
-        $version = 1;
-
-        if (preg_match(self::VERSIONED, $ciphertext, $m) === 1) {
-            $version = (int) $m[1];
-            $ciphertext = $m[2];
-        }
-
-        return $this->dataKey($project, $version)->decrypt($ciphertext, $associatedData);
     }
 
     private function dataKey(Project $project, int $version): SecretKey
@@ -234,21 +167,17 @@ final class ProjectKeyring
             throw new LogicException("Project {$project->public_id} has no data key version {$version}.");
         }
 
-        return $this->keys[$memo] = $this->envelope->unwrap($key->wrapped_dek, $this->wrapContext($project));
+        return $this->keys[$memo] = $this->sealed->dataKey($key->setRelation('project', $project));
     }
 
-    private function wrapContext(Project $project): string
+    private function addVersion(Project $project, int $version): ProjectKey
     {
-        return "project:{$project->public_id}";
-    }
+        $key = new ProjectKey(['project_id' => $project->id, 'version' => $version]);
+        $key->setRelation('project', $project);
+        $this->keys[$project->id.':'.$version] = $this->sealed->newKey($key);
+        $key->save();
+        $this->current[$project->id] = $version;
 
-    private function variableContext(Project $project, string $variablePublicId, int $version): string
-    {
-        return "var|{$project->team_id}|{$project->id}|{$variablePublicId}|{$version}";
-    }
-
-    private function snapshotContext(Project $project, string $deploymentPublicId): string
-    {
-        return "env|{$project->team_id}|{$project->id}|{$deploymentPublicId}";
+        return $key;
     }
 }

@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace App\Actions\Services;
 
+use App\Data\Services\ServicePlanData;
 use App\Enums\DaemonTaskStatus;
 use App\Enums\DaemonTaskType;
+use App\Enums\ServicePlanStatus;
 use App\Events\CanvasChanged;
 use App\Models\DaemonTask;
 use App\Models\ServiceInstance;
@@ -34,17 +36,16 @@ final class RecordPlanResult
                 return null;
             }
 
-            $plan = $instance->plan ?? [];
-            $failure = is_array($task->result['failure'] ?? null) ? $task->result['failure'] : [];
-            $planResult = is_array($task->result['plan'] ?? null) ? $task->result['plan'] : [];
-            $summary = $planResult['summary'] ?? ($failure['summary'] ?? null);
+            $plan = clone ($instance->plan ?? new ServicePlanData(ServicePlanStatus::Planning));
+            $failure = $task->result?->failure;
+            $summary = $task->result?->plan->summary ?? $failure?->summary;
             $succeeded = $task->status === DaemonTaskStatus::Succeeded;
 
-            $plan['status'] = $succeeded ? 'ready' : 'failed';
-            $plan['finishedAt'] = now()->toIso8601ZuluString();
-            $plan['summary'] = is_array($summary) ? $summary : ($succeeded ? null : ($plan['summary'] ?? null));
-            $plan['error'] = $succeeded ? null : ($task->status === DaemonTaskStatus::Cancelled ? 'The plan was cancelled.' : ($task->error ?? 'The plan failed.'));
-            $plan['failureClass'] = $succeeded ? null : (is_string($failure['class'] ?? null) ? $failure['class'] : null);
+            $plan->status = $succeeded ? ServicePlanStatus::Ready : ServicePlanStatus::Failed;
+            $plan->finishedAt = now()->toIso8601ZuluString();
+            $plan->summary = $summary ?? ($succeeded ? null : $plan->summary);
+            $plan->error = $succeeded ? null : ($task->status === DaemonTaskStatus::Cancelled ? 'The plan was cancelled.' : ($task->error ?? 'The plan failed.'));
+            $plan->failureClass = $succeeded ? null : $failure?->class;
 
             $instance->forceFill(['plan' => $plan])->save();
 

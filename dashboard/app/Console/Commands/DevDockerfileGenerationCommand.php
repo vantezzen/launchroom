@@ -9,13 +9,14 @@ use App\Actions\Dockerfiles\StartDockerfileGeneration;
 use App\Actions\Dockerfiles\UseGeneratedDockerfile;
 use App\Actions\Projects\CreateProject;
 use App\Actions\Services\CreateService;
+use App\Console\InstanceOwner;
 use App\Data\Audit\AuditActor;
 use App\Data\Projects\CreateProjectData;
 use App\Data\Services\CreateServiceData;
-use App\Data\Services\GitSource;
 use App\Enums\DeploymentStatus;
 use App\Enums\Dockerfiles\DockerfileGenerationStatus;
 use App\Enums\Dockerfiles\DockerfileGenerationTrigger;
+use App\Enums\Git\GitProviderKind;
 use App\Enums\ServiceKind;
 use App\Models\Deployment;
 use App\Models\Dockerfiles\AiProviderSettings;
@@ -47,8 +48,8 @@ final class DevDockerfileGenerationCommand extends Command
             return self::FAILURE;
         }
 
-        $owner = User::query()->where('is_instance_owner', true)->orderBy('id')->first();
-        $team = ($owner instanceof User ? $owner->currentTeam : null) ?? Team::query()->orderBy('id')->first();
+        $owner = InstanceOwner::first();
+        $team = InstanceOwner::teamOrFirst();
         $fixture = $this->option('fixture');
         $name = $this->option('name');
         $gitUrl = $this->option('git-url');
@@ -72,7 +73,7 @@ final class DevDockerfileGenerationCommand extends Command
         $service = $createService->handle($project, CreateServiceData::from([
             'name' => 'site',
             'kind' => ServiceKind::App,
-            'source' => ['type' => 'git', 'provider' => GitSource::PROVIDER_GIT, 'repositoryId' => 0, 'fullName' => 'fixtures/'.$fixture, 'cloneUrl' => rtrim($gitUrl, '/').'/'.$fixture.'.git', 'branch' => 'main'],
+            'source' => ['type' => 'git', 'provider' => GitProviderKind::Git->value, 'repositoryId' => 0, 'fullName' => 'fixtures/'.$fixture, 'cloneUrl' => rtrim($gitUrl, '/').'/'.$fixture.'.git', 'branch' => 'main'],
         ]), $owner, $actor);
         $instance = $service->instances()->sole();
 

@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Variables;
 
 use App\Data\Specs\VariableSpec;
-use App\Enums\Permission;
+use App\Data\Variables\VariableTargetRow;
 use App\Enums\VariableExposure;
 use App\Enums\VariableType;
 use App\Exceptions\DomainRuleViolation;
@@ -18,30 +18,134 @@ use App\Models\VariableTarget;
 use App\Services\Crypto\ProjectKeyring;
 use App\Support\PublicId;
 use App\Support\Variables\GeneratedValues;
+use App\Support\Variables\VariableKey;
 use App\Support\Variables\VariableReferences;
 use Closure;
+use Illuminate\Container\Attributes\Scoped;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
 use InvalidArgumentException;
+use LogicException;
 use SensitiveParameter;
 
 /**
  * Writes variable rows: validates key/type/expressions, evaluates generator
  * functions once, records references, encrypts under the project DEK with
- * associated data bound to the row id and version (docs/06 §3.5). Shared by
- * the variable, service, connection and discard actions; callers own the
- * transaction and authorization.
+ * associated data bound to the row id and version (docs/06 §3.5). Callers
+ * own authorization.
+ *
+ * New content is written inside {@see write()}, which runs the save-time
+ * checks (SecretExposureGuard: no browser-inlined variable embeds a secret,
+ * production secrets differ from preview) for the keys it touched before the
+ * transaction can commit, so every writer gets them. Rows that reproduce an
+ * existing row ({@see copy()}, {@see restore()}) may be written outside it:
+ * the state they recreate existed already and stays blocked at deploy time.
  */
-final readonly class VariableStore
+#[Scoped]
+final class VariableStore
 {
-    private const string KEY_PATTERN = '/^[A-Za-z_][A-Za-z0-9_]{0,255}$/D';
+    private ?Project $writing = null;
+
+    /** @var array<string, true> */
+    private array $touched = [];
 
     public function __construct(
-        private ProjectKeyring $keyring,
+        private readonly ProjectKeyring $keyring,
+        private readonly SecretExposureGuard $exposure,
     ) {}
 
     /**
-     * @param  list<array{environment_id: int|null, all_previews: bool, branch_pattern: string|null}>  $targets
+     * Runs $writes in a transaction and checks the keys they touched before
+     * it commits; a refusal (DomainRuleViolation on $field) rolls the writes
+     * back. Nested calls join the outermost one.
+     *
+     * @template T
+     *
+     * @param  Closure(): T  $writes
+     * @return T
+     */
+    public function write(Project $project, Closure $writes, string $field = 'value'): mixed
+    {
+        if ($this->writing instanceof Project) {
+            if ($this->writing->id !== $project->id) {
+                throw new LogicException('Variable writes of two projects can\'t be nested.');
+            }
+
+            return $writes();
+        }
+
+        $this->writing = $project;
+        $this->touched = [];
+
+        try {
+            return DB::transaction(function () use ($project, $writes, $field): mixed {
+                $result = $writes();
+                $this->exposure->assertNoPublicSecrets($project, array_keys($this->touched), $field);
+
+                return $result;
+            });
+        } finally {
+            $this->writing = null;
+            $this->touched = [];
+        }
+    }
+
+    /**
+     * Marks $key as changed by a write outside this store (a shared
+     * variable's opt-in), so the surrounding write() checks it.
+     */
+    public function touch(string $key): void
+    {
+        $this->record($key);
+    }
+
+    /**
+     * @param  list<VariableTargetRow>  $targets
      */
     public function create(
+        Project $project,
+        ?Service $service,
+        string $key,
+        #[SensitiveParameter] string $value,
+        VariableType $type,
+        array $targets,
+        ?VariableExposure $exposureOverride = null,
+        ?Connection $connection = null,
+        ?User $actor = null,
+    ): Variable {
+        $this->record($key);
+
+        return $this->insert($project, $service, $key, $value, $type, $targets, $exposureOverride, $connection, $actor);
+    }
+
+    /**
+     * A new row that reproduces an existing one for other targets (restoring
+     * into a copy of a service, cloning an environment's intent). Checked
+     * only when it runs inside a write().
+     *
+     * @param  list<VariableTargetRow>  $targets
+     */
+    public function copy(
+        Project $project,
+        ?Service $service,
+        string $key,
+        #[SensitiveParameter] string $value,
+        VariableType $type,
+        array $targets,
+        ?VariableExposure $exposureOverride = null,
+        ?User $actor = null,
+    ): Variable {
+        if ($this->writing instanceof Project) {
+            $this->record($key);
+        }
+
+        return $this->insert($project, $service, $key, $value, $type, $targets, $exposureOverride, actor: $actor);
+    }
+
+    /**
+     * @param  list<VariableTargetRow>  $targets
+     */
+    private function insert(
         Project $project,
         ?Service $service,
         string $key,
@@ -78,24 +182,21 @@ final readonly class VariableStore
             'updated_by' => $actor?->id,
         ])->save();
 
-        $this->replaceTargets($variable, $targets);
+        $this->writeTargets($variable, $targets);
 
         return $variable;
     }
 
     public function updateValue(Project $project, Variable $variable, #[SensitiveParameter] string $value, ?User $actor = null): void
     {
+        $this->record($variable->key);
         $this->assertValid($variable->key, $value, $variable->type, $variable->exposure_override);
 
         $generated = GeneratedValues::contains($value);
         $generator = GeneratedValues::sole($value);
         $variable->loadMissing(['targets', 'service']);
-        $targets = $variable->targets->map(static fn (VariableTarget $target): array => [
-            'environment_id' => $target->environment_id,
-            'all_previews' => $target->all_previews,
-            'branch_pattern' => $target->branch_pattern,
-        ])->values()->all();
-        $value = $this->evaluate($value, $this->signingSecrets($project, $variable->service, array_values($targets), $variable->id));
+        $targets = array_values($variable->targets->map(VariableTargetRow::of(...))->all());
+        $value = $this->evaluate($value, $this->signingSecrets($project, $variable->service, $targets, $variable->id));
         $version = $variable->version + 1;
 
         $variable->forceFill([
@@ -114,8 +215,13 @@ final readonly class VariableStore
      */
     public function updateMeta(Variable $variable, string $key, VariableType $type, ?VariableExposure $exposureOverride, ?User $actor = null): void
     {
+        $this->record($variable->key);
+        $this->record($key);
         $this->assertValid($key, '', $type, $exposureOverride);
-        $this->assertMayDowngradeSecret($variable, $type, $actor);
+
+        if (! Gate::forUser($actor)->allows('retype', [$variable, $type])) {
+            throw DomainRuleViolation::on('type', 'Changing a secret to config requires permission to reveal secrets.');
+        }
 
         $variable->forceFill([
             'key' => $key,
@@ -126,24 +232,12 @@ final readonly class VariableStore
     }
 
     /**
-     * @param  list<array{environment_id: int|null, all_previews: bool, branch_pattern: string|null}>  $targets
+     * @param  list<VariableTargetRow>  $targets
      */
     public function replaceTargets(Variable $variable, array $targets): void
     {
-        $variable->targets()->delete();
-
-        foreach ($targets as $target) {
-            if (($target['environment_id'] !== null) === $target['all_previews']) {
-                throw new InvalidArgumentException('A target is either one environment or all previews.');
-            }
-
-            VariableTarget::query()->create([
-                'variable_id' => $variable->id,
-                'environment_id' => $target['environment_id'],
-                'all_previews' => $target['all_previews'],
-                'branch_pattern' => $target['all_previews'] ? $target['branch_pattern'] : null,
-            ]);
-        }
+        $this->record($variable->key);
+        $this->writeTargets($variable, $targets);
     }
 
     /**
@@ -190,25 +284,34 @@ final readonly class VariableStore
     }
 
     /**
-     * Turning a secret into config makes its value readable, so it needs the
-     * same permission as revealing it. Enforced here so every path (single
-     * edit, raw .env edit, import) is covered; without an actor it fails
-     * closed (docs/09 R12).
+     * @param  list<VariableTargetRow>  $targets
      */
-    private function assertMayDowngradeSecret(Variable $variable, VariableType $type, ?User $actor): void
+    private function writeTargets(Variable $variable, array $targets): void
     {
-        if ($variable->type !== VariableType::Secret || $type !== VariableType::Config) {
-            return;
+        $variable->targets()->delete();
+
+        foreach ($targets as $target) {
+            VariableTarget::query()->create([
+                'variable_id' => $variable->id,
+                'environment_id' => $target->environmentId,
+                'all_previews' => $target->allPreviews,
+                'branch_pattern' => $target->branchPattern,
+            ]);
+        }
+    }
+
+    private function record(string $key): void
+    {
+        if (! $this->writing instanceof Project) {
+            throw new LogicException('Variable writes run inside VariableStore::write(), so the save-time checks see them.');
         }
 
-        if (! $actor instanceof User || ! $actor->hasTeamPermission($variable->team_id, Permission::RevealSecrets)) {
-            throw DomainRuleViolation::on('type', 'Changing a secret to config requires permission to reveal secrets.');
-        }
+        $this->touched[$key] = true;
     }
 
     private function assertValid(string $key, string $value, VariableType $type, ?VariableExposure $exposureOverride): void
     {
-        if (preg_match(self::KEY_PATTERN, $key) !== 1) {
+        if (! VariableKey::isValid($key)) {
             throw DomainRuleViolation::on('key', 'Use letters, digits and underscores, not starting with a digit.');
         }
 
@@ -216,7 +319,7 @@ final readonly class VariableStore
             throw DomainRuleViolation::on('value', 'Values cannot contain NUL bytes.');
         }
 
-        if (strlen($value) > 128 * 1024) {
+        if (strlen($value) > VariableKey::MAX_VALUE_BYTES) {
             throw DomainRuleViolation::on('value', 'Values are limited to 128 KiB.');
         }
 
@@ -260,7 +363,7 @@ final readonly class VariableStore
      * signed with the secret its environment uses. Null when there is no
      * such row (the caller reports it).
      *
-     * @param  list<array{environment_id: int|null, all_previews: bool, branch_pattern: string|null}>  $targets
+     * @param  list<VariableTargetRow>  $targets
      * @return Closure(string): ?string
      */
     private function signingSecrets(Project $project, ?Service $service, array $targets, ?int $except = null): Closure
@@ -284,10 +387,8 @@ final readonly class VariableStore
             $rows = $query->get();
 
             foreach ($rows as $row) {
-                $covers = array_all($targets, static fn (array $target): bool => $row->targets->contains(
-                    static fn (VariableTarget $own): bool => $target['environment_id'] !== null
-                        ? $own->environment_id === $target['environment_id']
-                        : $own->all_previews && $target['all_previews'] && $own->branch_pattern === $target['branch_pattern'],
+                $covers = array_all($targets, static fn (VariableTargetRow $target): bool => $row->targets->contains(
+                    static fn (VariableTarget $own): bool => $target->sameAs(VariableTargetRow::of($own)),
                 ));
 
                 if ($covers) {

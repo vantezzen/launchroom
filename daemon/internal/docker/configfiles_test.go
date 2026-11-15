@@ -13,6 +13,7 @@ import (
 
 	"github.com/moby/moby/api/types/container"
 
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
 
@@ -26,7 +27,7 @@ func TestConfigFilesTar(t *testing.T) {
 		t.Fatal(err)
 	}
 	tr := tar.NewReader(bytes.NewReader(data))
-	var names []string
+	var entries []string
 	for {
 		h, err := tr.Next()
 		if errors.Is(err, io.EOF) {
@@ -39,11 +40,11 @@ func TestConfigFilesTar(t *testing.T) {
 			t.Errorf("%s: type %c mode %o owner %d:%d", h.Name, h.Typeflag, h.Mode, h.Uid, h.Gid)
 		}
 		body, _ := io.ReadAll(tr)
-		names = append(names, h.Name+"="+string(body))
+		entries = append(entries, h.Name+"="+string(body))
 	}
 	want := []string{"docker-entrypoint-initdb.d/init-scripts/99-roles.sql=ALTER USER x;\n", "etc/kong.yml="}
-	if strings.Join(names, "|") != strings.Join(want, "|") {
-		t.Fatalf("entries %q", names)
+	if strings.Join(entries, "|") != strings.Join(want, "|") {
+		t.Fatalf("entries %q", entries)
 	}
 	if _, err := ConfigFilesTar([]state.ConfigFile{{Path: "/sys/x", Content: "x"}}, nil); err == nil {
 		t.Fatal("bad path accepted")
@@ -97,7 +98,7 @@ func TestEngineCreateWritesConfigFiles(t *testing.T) {
 	cc := func(files []state.ConfigFile) *ContainerCreate {
 		return &ContainerCreate{
 			Name:       "lr-wl_x",
-			Config:     &container.Config{Image: "img", Labels: map[string]string{LabelManaged: "true", LabelServer: "srv_X"}},
+			Config:     &container.Config{Image: "img", Labels: map[string]string{names.LabelManaged: "true", names.LabelServer: "srv_X"}},
 			HostConfig: &container.HostConfig{},
 			Files:      files,
 		}

@@ -7,17 +7,19 @@ namespace App\Actions\Servers;
 use App\Actions\Audit\RecordAuditEvent;
 use App\Data\Audit\AuditActor;
 use App\Data\Audit\AuditEntryData;
+use App\Data\Instance\RecoveryStateData;
+use App\Data\Servers\ReplacedServiceData;
 use App\Enums\AuditAction;
 use App\Enums\Backups\BackupSubject;
 use App\Enums\Backups\RestoreMode;
 use App\Enums\Backups\RestoreRunStatus;
+use App\Enums\ReplacedServiceKind;
+use App\Enums\ReplacedServiceStatus;
 use App\Enums\ServerReplacementStatus;
 use App\Enums\ServerRole;
 use App\Enums\ServerStatus;
-use App\Events\NodeStateInvalidated;
 use App\Exceptions\DomainRuleViolation;
 use App\Models\Backups\BackupDestination;
-use App\Models\Backups\BackupSchedule;
 use App\Models\Backups\RestoreRun;
 use App\Models\InstanceSettings;
 use App\Models\Placement;
@@ -26,6 +28,7 @@ use App\Models\ServerReplacement;
 use App\Models\User;
 use App\Models\Volume;
 use App\Queries\ServerReplacementPlan;
+use App\Support\Refusal;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -34,16 +37,14 @@ use Illuminate\Support\Facades\DB;
  * online server of the team.
  *
  * In one transaction:
- * 1. the replacement inherits the dead server's roles and labels (and the
- *    control-plane flag);
- * 2. volumes pinned to the dead server move to the replacement (their
+ * 1. volumes pinned to the dead server move to the replacement (their
  *    data is restored from backups, they start empty otherwise) and the dead
  *    server's placements are dropped;
- * 3. the dead server gets an empty "decommission" NodeState, is revoked
- *    (keys denied, pinned tasks cancelled, mesh node removed) and marked
- *    replaced: if it ever comes back, the only thing its key still fetches
- *    is that empty state, so it stops what it ran (AuthenticateDaemon);
- * 4. for each stateful service chosen in $restore, an in-place restore of
+ * 2. the replacement takes over the control-plane flag, and
+ *    {@see RetireServer} hands it the dead server's roles and labels, gives
+ *    the dead one an empty "decommission" NodeState and revokes it: if it
+ *    ever comes back, it only stops what it ran;
+ * 3. for each stateful service chosen in $restore, an in-place restore of
  *    its latest backup is queued (one per database or volume; it starts as
  *    soon as the service runs on the replacement).
  *
@@ -56,8 +57,7 @@ final readonly class ReplaceServer
 {
     public function __construct(
         private ServerReplacementPlan $plan,
-        private RenderNodeState $render,
-        private RevokeServer $revoke,
+        private RetireServer $retire,
         private RecordAuditEvent $audit,
         private AdvanceServerReplacements $advance,
     ) {}
@@ -96,31 +96,12 @@ final readonly class ReplaceServer
             }
 
             $plan = $this->plan->for($old);
-            $roles = array_values(array_unique([...array_map(static fn (ServerRole $role): string => $role->value, $old->roles->all()), ...array_map(static fn (ServerRole $role): string => $role->value, $new->roles->all())]));
-
-            $new->forceFill([
-                'roles' => $roles,
-                'labels' => [...$old->labels, ...$new->labels],
-                'is_control_plane' => $new->is_control_plane || $old->is_control_plane,
-            ])->save();
-
+            $new->forceFill(['is_control_plane' => $new->is_control_plane || $old->is_control_plane])->save();
+            // Its services run on the replacement from now on: volumes move
+            // (restored from backups below, empty otherwise), placements go.
             Volume::query()->where('server_id', $old->id)->update(['server_id' => $new->id]);
-            /** @var list<int> $peers */
-            $peers = Placement::query()->where('server_id', '!=', $old->id)->where('team_id', $old->team_id)->distinct()->pluck('server_id')->all();
             Placement::query()->where('server_id', $old->id)->delete();
-
-            // Decommission: an empty desired state while it is still approved,
-            // with the mesh client off and no credentials (review L9). A
-            // render that is refused would leave the old, full state as the
-            // latest one: the replacement then fails (nothing committed).
-            $old->forceFill(['roles' => [], 'labels' => [], 'is_control_plane' => false, 'replaced_by_server_id' => $new->id])->save();
-
-            if ($this->render->handle($old)->failed()) {
-                throw DomainRuleViolation::conflict("{$old->name} could not be given an empty state. Check its server page and try again.");
-            }
-
-            $this->revoke->handle($old, $actor);
-            Server::query()->whereKey($old->id)->update(['replaced_by_server_id' => $new->id, 'replaced_at' => now()]);
+            Refusal::orThrow($this->retire->handle($old, $new, $actor));
 
             $replacement = ServerReplacement::query()->create([
                 'team_id' => $old->team_id,
@@ -140,8 +121,7 @@ final readonly class ReplaceServer
                 $restoreInfo = null;
 
                 if ($backup !== null && in_array($instance->public_id, $restore, true)) {
-                    $destination = BackupSchedule::query()->where('service_instance_id', $instance->id)->first()?->destination()->first()
-                        ?? BackupDestination::defaultFor($instance->team_id);
+                    $destination = BackupDestination::forService($instance);
 
                     if ($destination instanceof BackupDestination) {
                         $targets = $backup['subject'] === BackupSubject::Volume ? $backup['volumes'] : [0 => $backup['snapshot']];
@@ -168,25 +148,25 @@ final readonly class ReplaceServer
                     }
                 }
 
-                $services[] = [
-                    'instance' => $instance->public_id,
-                    'service' => $instance->service->public_id,
-                    'name' => "{$instance->service->name} ({$instance->environment->project->name} / {$instance->environment->name})",
-                    'kind' => $entry['stateful'] ? 'stateful' : 'stateless',
-                    'restore' => $restoreInfo,
-                    'restoreRuns' => $runs,
-                    'deployment' => null,
-                    'status' => 'pending',
-                    'message' => $entry['stateful'] && $runs === [] ? ($entry['reason'] ?? 'Not restored: it starts empty.') : null,
-                ];
+                $services[] = new ReplacedServiceData(
+                    instance: $instance->public_id,
+                    service: $instance->service->public_id,
+                    name: "{$instance->service->name} ({$instance->environment->project->name} / {$instance->environment->name})",
+                    kind: $entry['stateful'] ? ReplacedServiceKind::Stateful : ReplacedServiceKind::Stateless,
+                    restore: $restoreInfo,
+                    restoreRuns: $runs,
+                    deployment: null,
+                    status: ReplacedServiceStatus::Pending,
+                    message: $entry['stateful'] && $runs === [] ? ($entry['reason'] ?? 'Not restored: it starts empty.') : null,
+                );
             }
 
             $replacement->forceFill(['services' => $services])->save();
 
             if ($recovery) {
                 $settings = InstanceSettings::current();
-                $state = $settings->recovery_state ?? ['startedAt' => now()->toIso8601String()];
-                $settings->forceFill(['recovery_state' => [...$state, 'replacementId' => $replacement->id]])->save();
+                $state = $settings->recovery_state ?? new RecoveryStateData(now()->toIso8601String());
+                $settings->forceFill(['recovery_state' => new RecoveryStateData($state->startedAt, $state->previousControlPlaneServerId, $replacement->id)])->save();
             }
 
             $this->audit->handle(new AuditEntryData(
@@ -198,14 +178,12 @@ final readonly class ReplaceServer
                 meta: [
                     'replacement' => $new->public_id,
                     'run' => $replacement->public_id,
-                    'roles' => $roles,
-                    'restores' => array_sum(array_map(static fn (array $service): int => count($service['restoreRuns']), $services)),
+                    'roles' => array_values(array_map(static fn (ServerRole $role): string => $role->value, $new->refresh()->roles->all())),
+                    'restores' => array_sum(array_map(static fn (ReplacedServiceData $service): int => count($service->restoreRuns), $services)),
                     'services' => count($services),
                     'recovery' => $recovery,
                 ],
             ));
-
-            event(new NodeStateInvalidated(array_values(array_unique([$new->id, ...$peers]))));
 
             return $replacement;
         });

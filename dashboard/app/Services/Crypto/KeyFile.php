@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Services\Crypto;
 
 use App\Services\Crypto\Exceptions\InvalidKeyFile;
+use App\Support\Files\SecureFile;
+use App\Support\Files\SecureFileFailed;
 
 /**
  * Reads and creates key files: a single line "lrkey1:<base64 of 32 bytes>".
@@ -45,32 +47,13 @@ final class KeyFile
      */
     public static function create(string $path): SecretKey
     {
-        $directory = dirname($path);
-
-        if (! is_dir($directory) && ! @mkdir($directory, 0700, true) && ! is_dir($directory)) {
-            throw InvalidKeyFile::notWritable($path);
-        }
-
-        // 'x' fails if the file exists, atomically (no check-then-create race).
-        $handle = @fopen($path, 'x');
-
-        if ($handle === false) {
-            throw file_exists($path) ? InvalidKeyFile::alreadyExists($path) : InvalidKeyFile::notWritable($path);
-        }
-
-        chmod($path, 0600);
-
         $key = SecretKey::generate();
-        $written = fwrite($handle, self::PREFIX.base64_encode($key->reveal()).PHP_EOL);
-        fclose($handle);
 
-        if ($written === false) {
-            @unlink($path);
-
-            throw InvalidKeyFile::notWritable($path);
+        try {
+            SecureFile::createExclusive($path, self::PREFIX.base64_encode($key->reveal()).PHP_EOL);
+        } catch (SecureFileFailed $e) {
+            throw $e->exists ? InvalidKeyFile::alreadyExists($path) : InvalidKeyFile::notWritable($path);
         }
-
-        chmod($path, 0400);
 
         return $key;
     }

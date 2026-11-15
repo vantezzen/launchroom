@@ -14,7 +14,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/vantezzen/launchroom/daemon/internal/dbengine"
 	"github.com/vantezzen/launchroom/daemon/internal/docker"
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/secret"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
@@ -54,18 +56,10 @@ type verifier struct {
 func (v *verifier) check(name state.VerifyCheckName, err error, detail string) bool {
 	c := state.VerifyCheck{Name: name, Passed: err == nil, Detail: detail}
 	if err != nil {
-		c.Detail = clip(err.Error(), 512)
+		c.Detail = state.Clip(err.Error(), state.MaxDetailLen)
 	}
 	v.res.Checks = append(v.res.Checks, c)
 	return err == nil
-}
-
-func clip(s string, n int) string {
-	s = strings.ToValidUTF8(s, "")
-	if len(s) <= n {
-		return s
-	}
-	return strings.ToValidUTF8(s[:n], "")
 }
 
 // Verify restores spec.Snapshot into a throwaway container and checks it.
@@ -150,7 +144,6 @@ func (e *Engine) verifyVolume(ctx context.Context, r *repo, spec *state.VerifyRe
 	return nil
 }
 
-// tarCounter counts the regular files and their bytes in a tar stream.
 type tarCounter struct{ files, bytes int64 }
 
 func (c *tarCounter) count(src io.Reader) error {
@@ -174,11 +167,10 @@ func (c *tarCounter) count(src io.Reader) error {
 	}
 }
 
-// verifyVolumeFor creates the throwaway volume of a verification.
 func (e *Engine) verifyVolumeFor(ctx context.Context) (string, func(), error) {
 	name := "lr-verify-" + randomSuffix()
 	labels := docker.ManagedLabels(e.o.ServerID)
-	labels[docker.LabelHelper] = helperVerify
+	labels[names.LabelHelper] = helperVerify
 	if err := e.o.Runtime.CreateVolume(ctx, docker.VolumeCreate{Name: name, Labels: labels}); err != nil {
 		return "", nil, err
 	}
@@ -280,7 +272,6 @@ func (e *Engine) verifyDump(ctx context.Context, r *repo, spec *state.VerifyRest
 	return nil
 }
 
-// countingReader counts bytes read through it.
 type countingReader struct {
 	r io.Reader
 	n int64
@@ -295,7 +286,6 @@ func (c *countingReader) Read(p []byte) (int, error) {
 // waitReady waits until the fresh engine accepts TCP connections on its
 // loopback (the images' init phase only listens on a socket).
 func (e *Engine) waitReady(ctx context.Context, id string, engine state.DatabaseEngine, env map[string]secret.Secret) error {
-	deadline := e.o.Now().Add(verifyStartTimeout)
 	var probe []string
 	var probeEnv []string
 	switch engine {
@@ -303,29 +293,11 @@ func (e *Engine) waitReady(ctx context.Context, id string, engine state.Database
 		probe = []string{"psql", "-XAtq", "--host=127.0.0.1", "--username=verify", "--dbname=verify", "-c", "SELECT 1"}
 		probeEnv = []string{"PGPASSWORD=" + env["POSTGRES_PASSWORD"].Reveal(), "PGCONNECT_TIMEOUT=3"}
 	default:
-		cli := "mysql"
-		if engine == state.EngineMariaDB {
-			cli = "mariadb"
-		}
+		cli := dbengine.Client(engine)
 		probe = []string{cli, "--protocol=tcp", "--host=127.0.0.1", "--user=verify", "--database=verify", "-e", "SELECT 1"}
 		probeEnv = []string{"MYSQL_PWD=" + mysqlPassword(env)}
 	}
-	for {
-		if err := e.running(ctx, id, "the throwaway database"); err != nil {
-			return err
-		}
-		if _, res, err := e.execIn(ctx, id, nil, probeEnv, probe...); err == nil && res.ExitCode == 0 {
-			return nil
-		}
-		if e.o.Now().After(deadline) {
-			return fmt.Errorf("the database did not start within %s: %s", verifyStartTimeout, e.lastLogLines(ctx, id, 10))
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(e.o.PollEvery):
-		}
-	}
+	return e.waitFor(ctx, id, nil, probeEnv, probe...)
 }
 
 func mysqlPassword(env map[string]secret.Secret) string {
@@ -362,21 +334,18 @@ func (e *Engine) postgresChecks(ctx context.Context, id, user, db string, env []
 func parseCounts(out string) (int64, int64, error) {
 	f := strings.Split(strings.TrimSpace(out), "|")
 	if len(f) != 2 {
-		return 0, 0, fmt.Errorf("unexpected count output %q", clip(out, 64))
+		return 0, 0, fmt.Errorf("unexpected count output %q", state.Clip(out, 64))
 	}
 	tables, err1 := strconv.ParseInt(strings.TrimSpace(f[0]), 10, 64)
 	rows, err2 := strconv.ParseInt(strings.TrimSpace(f[1]), 10, 64)
 	if err := errors.Join(err1, err2); err != nil {
-		return 0, 0, fmt.Errorf("unexpected count output %q", clip(out, 64))
+		return 0, 0, fmt.Errorf("unexpected count output %q", state.Clip(out, 64))
 	}
 	return tables, rows, nil
 }
 
 func (e *Engine) mysqlChecks(ctx context.Context, id string, engine state.DatabaseEngine, env map[string]secret.Secret, v *verifier) {
-	cli := "mysql"
-	if engine == state.EngineMariaDB {
-		cli = "mariadb"
-	}
+	cli := dbengine.Client(engine)
 	pwEnv := []string{"MYSQL_PWD=" + mysqlPassword(env)}
 	out, res, err := e.execIn(ctx, id, nil, pwEnv, cli, "--protocol=tcp", "--host=127.0.0.1", "--user=verify", "--batch", "--skip-column-names", "-e",
 		"SELECT COUNT(*), COALESCE(SUM(TABLE_ROWS), 0) FROM information_schema.tables WHERE table_schema = 'verify' AND table_type = 'BASE TABLE'")
@@ -413,7 +382,7 @@ func (e *Engine) mysqlChecks(ctx context.Context, id string, engine state.Databa
 				// Table, Op, Msg_type, Msg_text; only "status OK" (and notes) is healthy.
 				f := strings.Split(strings.TrimSpace(line), "\t")
 				if len(f) == 4 && (f[2] == "error" || (f[2] == "status" && f[3] != "OK")) {
-					err = fmt.Errorf("CHECK TABLE %s: %s", f[0], clip(f[3], 200))
+					err = fmt.Errorf("CHECK TABLE %s: %s", f[0], state.Clip(f[3], 200))
 					break
 				}
 			}
@@ -479,7 +448,7 @@ func (e *Engine) verifyRDB(ctx context.Context, r *repo, spec *state.VerifyResto
 		if err != nil {
 			return err
 		}
-		if !c.Running && c.State != "created" {
+		if !c.Running() && c.State != docker.StateCreated {
 			exit = c.ExitCode
 			break
 		}
@@ -494,7 +463,7 @@ func (e *Engine) verifyRDB(ctx context.Context, r *repo, spec *state.VerifyResto
 	if exit != 0 {
 		checkErr = fmt.Errorf("%s exited with code %d: %s", checker, exit, firstLines(logs))
 	}
-	detail := "the RDB file is consistent: " + clip(lastLine(logs), 200)
+	detail := "the RDB file is consistent: " + state.Clip(lastLine(logs), 200)
 	if m := reKeysRead.FindStringSubmatch(logs); m != nil {
 		keys, _ := strconv.ParseInt(m[1], 10, 64)
 		v.res.Rows = keys

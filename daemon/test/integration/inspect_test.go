@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/ecdh"
 	"crypto/rand"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/vantezzen/launchroom/daemon/internal/docker"
 	"github.com/vantezzen/launchroom/daemon/internal/inspect"
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/secret"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
@@ -47,7 +49,7 @@ func TestInspectContainer(t *testing.T) {
 	defer cancel()
 
 	wl := s.start(ctx, t, busyboxImage, nil, []string{"sleep", "3600"})
-	cs, err := s.engine.ListContainers(ctx, map[string]string{docker.LabelWorkload: string(wl)})
+	cs, err := s.engine.ListContainers(ctx, map[string]string{names.LabelWorkload: string(wl)})
 	if err != nil || len(cs) != 1 {
 		t.Fatalf("containers %v %v", cs, err)
 	}
@@ -56,7 +58,18 @@ func TestInspectContainer(t *testing.T) {
 	// background process with a token on its command line.
 	execIn(ctx, t, api, id, plantShell, "-c", "mkdir -p /tmp/.x && printf '#!/bin/sh\\n' > /tmp/.x/kworker && chmod +x /tmp/.x/kworker && echo hi > /etc/motd")
 	execDetached(ctx, t, api, id, plantShell, "-c", "sleep 1234; echo itest-secret-value-42")
-	time.Sleep(500 * time.Millisecond)
+	waitFor(ctx, t, "the planted sleep process", func() error {
+		top, err := s.engine.ContainerTop(ctx, id)
+		if err != nil {
+			return err
+		}
+		for _, p := range top.Processes {
+			if strings.Contains(strings.Join(p, " "), "sleep 1234") {
+				return nil
+			}
+		}
+		return fmt.Errorf("not running yet: %v", top.Processes)
+	})
 
 	spec := &state.InspectContainerSpec{Workload: wl, MaskEnv: []state.EnvName{"API_TOKEN"}}
 	res, err := inspect.Inspect(ctx, inspect.Options{
@@ -107,7 +120,7 @@ func TestInspectContainer(t *testing.T) {
 	if len(sleeps) != 2 || !masked {
 		t.Fatalf("sleep processes = %+v, masked shell command %v", sleeps, masked)
 	}
-	done := state.TaskCompletion{TypeMeta: state.NewTypeMeta(state.KindTaskCompletion), Attempt: 1, Outcome: state.OutcomeSucceeded, ContainerInspection: res}
+	done := state.TaskCompletion{TypeMeta: state.NewTypeMeta(state.KindTaskCompletion), Attempt: 1, Outcome: state.OutcomeSucceeded, TaskResults: state.TaskResults{ContainerInspection: res}}
 	if err := done.Validate(); err != nil {
 		t.Fatalf("completion invalid: %v", err)
 	}

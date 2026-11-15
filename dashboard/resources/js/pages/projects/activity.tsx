@@ -1,10 +1,10 @@
 import { Head } from '@inertiajs/react';
 import { Page, PageHeader } from '@/components/patterns/page';
 import { ActivityFeed } from '@/features/activity/activity-feed';
-import type { ProjectShellProps } from '@/features/projects/types';
 import { activity } from '@/routes/projects';
+import ProjectLayout from '@/features/app-shell/project-layout';
 
-type Props = ProjectShellProps & {
+type Props = App.Data.Canvas.ProjectShellPropsData & {
     entries: App.Data.Activity.ActivityEntryData[];
     filters: { project: string | null; kind: string | null };
 };
@@ -32,3 +32,5 @@ export default function ProjectActivity({ project, entries, filters }: Props) {
         </>
     );
 }
+
+ProjectActivity.layout = ProjectLayout;

@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Data\Protocol\V1;
 
+use App\Data\Attributes\PublicIdOf;
 use Spatie\LaravelData\Attributes\Validation\In;
 use Spatie\LaravelData\Attributes\Validation\Min;
-use Spatie\LaravelData\Attributes\Validation\Regex;
 use Spatie\LaravelData\Data;
 use Spatie\LaravelData\Optional;
 
@@ -19,7 +19,7 @@ final class SessionCommandResult extends Data
      * @param  'ok'|'error'|'refused'  $status
      */
     public function __construct(
-        #[Regex('/^op_[0-9A-HJKMNP-TV-Z]{26}$/')]
+        #[PublicIdOf('op')]
         public string $op,
         #[In(['ok', 'error', 'refused'])]
         public string $status,

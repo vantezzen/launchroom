@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Alerts;
 
+use App\Exceptions\DecryptionFailed;
 use LogicException;
 use SensitiveParameter;
 
@@ -20,6 +21,26 @@ final readonly class ChannelSecret
         #[SensitiveParameter]
         public ?string $signingSecret = null,
     ) {}
+
+    /**
+     * The stored JSON form `{url, signingSecret?}`.
+     *
+     * @param  array<string, string>  $values
+     *
+     * @throws DecryptionFailed
+     */
+    public static function of(#[SensitiveParameter] array $values): self
+    {
+        return new self($values['url'] ?? throw DecryptionFailed::malformed(), $values['signingSecret'] ?? null);
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public function toArray(): array
+    {
+        return $this->signingSecret === null ? ['url' => $this->url] : ['url' => $this->url, 'signingSecret' => $this->signingSecret];
+    }
 
     /**
      * @return array<string, string>

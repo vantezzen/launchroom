@@ -24,8 +24,10 @@ import (
 	"github.com/moby/moby/client"
 
 	"github.com/vantezzen/launchroom/daemon/internal/docker"
+	"github.com/vantezzen/launchroom/daemon/internal/ingress"
 	"github.com/vantezzen/launchroom/daemon/internal/ingress/caddy"
 	"github.com/vantezzen/launchroom/daemon/internal/ingress/certstore"
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/policy"
 	"github.com/vantezzen/launchroom/daemon/internal/secret"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
@@ -140,8 +142,8 @@ func TestMultiEdgeSharedStorage(t *testing.T) {
 	// Edge A: launchroomd's Manager with shared storage (docs/05 §5).
 	pol := policy.DefaultConfig()
 	pol.CertStorageAddrs = mustAddrPorts(storageAddr)
-	pol.SystemImageDigests[policy.SystemCaddy] = append(pol.SystemImageDigests[policy.SystemCaddy], digest)
-	guardAllowSystemDigest(t, policy.SystemCaddy, digest)
+	pol.SystemImageDigests[names.SystemCaddy] = append(pol.SystemImageDigests[names.SystemCaddy], digest)
+	guardAllowSystemDigest(t, names.SystemCaddy, digest)
 	spec := &state.IngressSpec{Storage: &state.CertStorageSpec{Address: storageAddr, KeyPrefix: "lr-caddy"}}
 	creds := map[string]secret.Secret{"username": "lr-caddy", "password": storagePass, "encryptionKey": storageKey}
 	cacheDir := t.TempDir()
@@ -166,15 +168,15 @@ func TestMultiEdgeSharedStorage(t *testing.T) {
 		ID: state.RouteID(randomID("rt")), Hosts: []state.Hostname{sharedHost}, TLS: state.TLSACME,
 		Upstreams: []state.RouteUpstream{{Workload: state.WorkloadID(randomID("wl")), Port: 3000}},
 	}}
-	noWorkloads := func(state.WorkloadID) (caddy.Endpoint, bool) { return caddy.Endpoint{}, false }
+	noWorkloads := func(state.WorkloadID) (ingress.Endpoint, bool) { return ingress.Endpoint{}, false }
 	sys := state.SystemContainer{Enabled: true, Image: image}
 
 	// The first load creates the container; Pebble's root goes into its data
 	// volume (the issuer reads it at provision), then the config loads.
-	_ = m.Sync(ctx, sys, caddy.ResolveRoutes(specs, noWorkloads))
+	_ = m.Sync(ctx, sys, specs, noWorkloads)
 	edgeA := systemCaddyID(ctx, t, engine)
 	copyFiles(ctx, t, engine, edgeA, map[string][]byte{pebbleRootPEM: minica})
-	st := m.Sync(ctx, sys, caddy.ResolveRoutes(specs, noWorkloads))
+	st := m.Sync(ctx, sys, specs, noWorkloads)
 	if st == nil || st.State != state.IngressApplied || st.Storage == nil || st.Storage.State != state.StorageShared {
 		t.Fatalf("edge A not applied with shared storage: %+v", st)
 	}
@@ -182,7 +184,7 @@ func TestMultiEdgeSharedStorage(t *testing.T) {
 	// Edge B: the same image and storage, other ports, its own admin API.
 	cc := caddy.ContainerSpec(string(serverID), image, edgeBAdmin)
 	cc.Name = "lr-itest-caddy-b"
-	delete(cc.Config.Labels, docker.LabelSystem) // not the Manager's container
+	delete(cc.Config.Labels, names.LabelSystem) // not the Manager's container
 	cc.Config.Cmd = []string{"caddy", "run"}
 	cc.HostConfig.Mounts = nil
 	edgeB, err := fixtureEngine(t, serverID).CreateContainer(ctx, cc) // a modified Caddy: a fixture, not launchroomd's spec
@@ -224,7 +226,7 @@ func TestMultiEdgeSharedStorage(t *testing.T) {
 
 	// launchroomd reads the shared storage, mirrors and reports the cert.
 	m.RefreshCertificates(ctx)
-	st = m.Sync(ctx, sys, caddy.ResolveRoutes(specs, noWorkloads))
+	st = m.Sync(ctx, sys, specs, noWorkloads)
 	cert := findCert(st, sharedHost)
 	if cert == nil || cert.State != state.CertIssued || !strings.Contains(cert.Issuer, "Pebble") || cert.NotAfter == nil {
 		t.Fatalf("certificate status: %+v", st.Certificates)
@@ -246,10 +248,10 @@ func TestMultiEdgeSharedStorage(t *testing.T) {
 		ID: state.RouteID(randomID("rt")), Hosts: []state.Hostname{failingHost}, TLS: state.TLSACME,
 		Upstreams: []state.RouteUpstream{{Workload: state.WorkloadID(randomID("wl")), Port: 3000}},
 	})
-	_ = m.Sync(ctx, sys, caddy.ResolveRoutes(specs, noWorkloads))
+	_ = m.Sync(ctx, sys, specs, noWorkloads)
 	waitFor(ctx, t, "a reported issuance failure", func() error {
 		m.RefreshCertificates(ctx)
-		st = m.Sync(ctx, sys, caddy.ResolveRoutes(specs, noWorkloads))
+		st = m.Sync(ctx, sys, specs, noWorkloads)
 		if c := findCert(st, failingHost); c == nil || c.State != state.CertFailed || c.LastError == "" {
 			return fmt.Errorf("status %+v", c)
 		}
@@ -268,7 +270,7 @@ func TestMultiEdgeSharedStorage(t *testing.T) {
 	if err := engine.RemoveContainer(ctx, edgeA); err != nil {
 		t.Fatal(err)
 	}
-	st = m.Sync(ctx, sys, caddy.ResolveRoutes(specs[:1], noWorkloads))
+	st = m.Sync(ctx, sys, specs[:1], noWorkloads)
 	if st.State != state.IngressApplied || st.Storage == nil || st.Storage.State != state.StorageDegraded || st.Storage.Mirrored != 1 {
 		t.Fatalf("degraded status: %+v / %+v", st, st.Storage)
 	}
@@ -285,7 +287,7 @@ func TestMultiEdgeSharedStorage(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(ctx, t, "shared storage again", func() error {
-		st = m.Sync(ctx, sys, caddy.ResolveRoutes(specs[:1], noWorkloads))
+		st = m.Sync(ctx, sys, specs[:1], noWorkloads)
 		if st.Storage == nil || st.Storage.State != state.StorageShared {
 			return fmt.Errorf("storage %+v", st.Storage)
 		}
@@ -344,7 +346,7 @@ func runHelper(ctx context.Context, t *testing.T, e *docker.Engine, srv state.Se
 
 func systemCaddyID(ctx context.Context, t *testing.T, e *docker.Engine) string {
 	t.Helper()
-	cs, err := e.ListContainers(ctx, map[string]string{docker.LabelSystem: policy.SystemCaddy})
+	cs, err := e.ListContainers(ctx, map[string]string{names.LabelSystem: names.SystemCaddy})
 	if err != nil || len(cs) != 1 {
 		t.Fatalf("system caddy: %v %v", cs, err)
 	}
@@ -375,7 +377,6 @@ func copyFiles(ctx context.Context, t *testing.T, e *docker.Engine, id string, f
 	}
 }
 
-// readFile reads one file out of a container.
 func readFile(ctx context.Context, t *testing.T, e *docker.Engine, id, path string) []byte {
 	t.Helper()
 	archive, err := e.CopyFromContainer(ctx, id, path, 1<<20)

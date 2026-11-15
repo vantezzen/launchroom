@@ -8,17 +8,19 @@ use App\Contracts\Git\GitProvider;
 use App\Contracts\Git\SourceRepository;
 use App\Data\Git\CommitData;
 use App\Data\Git\DeploymentStatusReport;
+use App\Data\Git\GitCredentials;
+use App\Data\Git\PolledHead;
 use App\Data\Git\RepositoryRef;
 use App\Data\Git\RepositoryTree;
 use App\Enums\Git\GitProviderKind;
 use App\Models\Previews\Preview;
 use App\Models\Team;
-use App\Services\Git\GitCredentials;
-use App\Services\Git\Providers\PlainGitProvider;
+use App\Services\Git\Providers\UnconnectedGitProvider;
 
 /**
- * Plain git servers have no file API; tests give them one: launchroom.json
- * contents per commit SHA (docs/18). Everything else is the real provider.
+ * Plain unconnected git sources (the fixtures PreviewFlow deploys) have no
+ * file API; tests give them one: launchroom.json contents per commit SHA
+ * (docs/18). Everything else is the real provider.
  */
 final readonly class ConfigFiles implements GitProvider
 {
@@ -27,17 +29,27 @@ final readonly class ConfigFiles implements GitProvider
      */
     public static function serve(array $files): void
     {
-        $real = app()->make(PlainGitProvider::class);
-        app()->instance(PlainGitProvider::class, new self($real, $files));
+        $real = app()->make(UnconnectedGitProvider::class);
+        app()->instance(UnconnectedGitProvider::class, new self($real, $files));
     }
 
     /**
      * @param  array<string, string>  $files
      */
     private function __construct(
-        private GitProvider $real,
+        private UnconnectedGitProvider $real,
         private array $files,
     ) {}
+
+    public function canReadFiles(): bool
+    {
+        return true;
+    }
+
+    public function fileUrl(RepositoryRef $repository, string $path, string $ref, ?int $line = null): ?string
+    {
+        return $this->real->fileUrl($repository, $path, $ref, $line);
+    }
 
     public function fileAtRef(RepositoryRef $repository, string $path, string $ref): ?string
     {
@@ -67,6 +79,11 @@ final readonly class ConfigFiles implements GitProvider
     public function head(RepositoryRef $repository, string $branch): CommitData
     {
         return $this->real->head($repository, $branch);
+    }
+
+    public function pollHead(RepositoryRef $repository, string $branch, ?string $etag): PolledHead
+    {
+        return $this->real->pollHead($repository, $branch, $etag);
     }
 
     public function tree(RepositoryRef $repository, string $ref): RepositoryTree

@@ -21,7 +21,6 @@ use App\Models\DaemonTask;
 use App\Models\Placement;
 use App\Models\Server;
 use App\Models\Volume;
-use App\Queries\MeshServers;
 use App\Support\Servers\HostRoleLimits;
 use Illuminate\Support\Facades\DB;
 
@@ -60,7 +59,6 @@ final readonly class UpdateServerRoles
             }
 
             $before = $server->roles->all();
-            // Roles outside the editable set (registry) stay as they are.
             $kept = array_values(array_filter($before, static fn (ServerRole $role): bool => ! in_array($role, UpdateServerRolesData::editable(), true)));
             $after = [];
 
@@ -108,7 +106,7 @@ final readonly class UpdateServerRoles
                 $this->releaseBuildPins($server);
             }
 
-            event(new NodeStateInvalidated(array_values(array_unique([...MeshServers::ids(), $server->id]))));
+            NodeStateInvalidated::mesh([$server->id]);
 
             if ($server->mesh_node_id !== null) {
                 dispatch(new MaintainMeshJob)->afterCommit();
@@ -152,8 +150,7 @@ final readonly class UpdateServerRoles
         return Server::query()
             ->where('team_id', $server->team_id)
             ->whereKeyNot($server->id)
-            ->whereNull('revoked_at')
-            ->whereIn('status', $onlineOnly ? [ServerStatus::Online->value] : [ServerStatus::Online->value, ServerStatus::Unreachable->value, ServerStatus::Offline->value])
+            ->whereIn('status', $onlineOnly ? [ServerStatus::Online] : ServerStatus::approved())
             ->whereJsonContains('roles', $role->value)
             ->exists();
     }

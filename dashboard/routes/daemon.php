@@ -17,6 +17,7 @@ use App\Http\Controllers\Daemon\TransferChunkController;
 use App\Http\Middleware\AuthenticateDaemon;
 use App\Http\Middleware\NegotiateProtocolVersion;
 use App\Http\Middleware\SignResponse;
+use App\Models\DaemonTask;
 use App\Support\PublicId;
 use Illuminate\Support\Facades\Route;
 
@@ -45,10 +46,10 @@ Route::middleware([SignResponse::class, 'throttle:daemon'])->group(function (): 
         Route::post('broadcasting/auth', BroadcastAuthController::class)->name('daemon.broadcasting.auth');
         Route::post('tasks/lease', LeaseTasksController::class)->name('daemon.tasks.lease');
         Route::post('tasks/{task}/heartbeat', TaskHeartbeatController::class)
-            ->where('task', PublicId::routePattern('tsk'))
+            ->where('task', PublicId::routePattern(DaemonTask::publicIdPrefix()))
             ->name('daemon.tasks.heartbeat');
         Route::post('tasks/{task}/complete', CompleteTaskController::class)
-            ->where('task', PublicId::routePattern('tsk'))
+            ->where('task', PublicId::routePattern(DaemonTask::publicIdPrefix()))
             ->name('daemon.tasks.complete');
         Route::post('reports', ReportController::class)->name('daemon.reports');
         Route::post('logs', LogController::class)->name('daemon.logs');
@@ -62,7 +63,7 @@ Route::middleware([SignResponse::class, 'throttle:daemon'])->group(function (): 
 // Transfer chunks (docs/14 §12.2): their own per-server budget, so a large
 // import or export doesn't use up the polling budget.
 Route::middleware([SignResponse::class, AuthenticateDaemon::class, NegotiateProtocolVersion::class, 'throttle:daemon-transfers'])
-    ->where(['transfer' => PublicId::routePattern('dtr'), 'index' => '[0-9]{1,7}'])
+    ->where(['index' => '[0-9]{1,7}'])
     ->group(function (): void {
         Route::get('transfers/{transfer}/chunks/{index}', [TransferChunkController::class, 'show'])->name('daemon.transfers.chunks.show');
         Route::put('transfers/{transfer}/chunks/{index}', [TransferChunkController::class, 'store'])->name('daemon.transfers.chunks.store');

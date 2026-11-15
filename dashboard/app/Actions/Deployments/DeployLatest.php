@@ -8,12 +8,11 @@ use App\Data\Audit\AuditActor;
 use App\Data\Services\GitSource;
 use App\Data\Services\ImageSource;
 use App\Enums\DeploymentTrigger;
-use App\Enums\ServiceKind;
 use App\Exceptions\DomainRuleViolation;
 use App\Models\Deployment;
 use App\Models\ServiceInstance;
 use App\Models\User;
-use App\Support\Services\StagedForService;
+use App\Queries\StagedForService;
 
 /**
  * The service panel's Deploy (D68): a new version of the running
@@ -47,7 +46,7 @@ final readonly class DeployLatest
             throw DomainRuleViolation::on('service', 'This service is stopped. Start it first.');
         }
 
-        $versioned = in_array($service->kind, [ServiceKind::App, ServiceKind::Image], true);
+        $versioned = $service->kind->deploysNewVersions();
 
         if (! $versioned && $instance->active_deployment_id !== null) {
             throw DomainRuleViolation::on('service', 'Only apps and image services deploy a new version. Restart this one instead.');

@@ -4,19 +4,21 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Contracts\Crypto\SealedRow;
 use App\Enums\Audit\AuditSinkKind;
 use App\Enums\Audit\AuditSinkStatus;
 use App\Models\Concerns\HasPublicId;
-use App\Services\Audit\AuditSinkSecrets;
+use App\Models\Concerns\HasSealedSecret;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Model;
+use InvalidArgumentException;
 
 /**
  * An instance-wide destination for the audit log (docs/09 R34, docs/07
  * `audit_sinks`). Credentials (webhook URL and signing secret, S3 keys) are
- * envelope-encrypted in `secret` and only opened by {@see AuditSinkSecrets};
+ * envelope-encrypted in `secret` and only opened by App\Services\Crypto\SealedColumns;
  * `config` holds the non-secret settings and `target_hint` the one
  * clear-text trace of a webhook URL (host only).
  *
@@ -44,9 +46,10 @@ use Illuminate\Database\Eloquent\Model;
  */
 #[Fillable(['kind', 'name', 'config', 'target_hint', 'allow_private_network', 'enabled', 'created_by'])]
 #[Hidden(['secret', 'wrapped_dek', 'kek_id'])]
-final class AuditSink extends Model
+final class AuditSink extends Model implements SealedRow
 {
     use HasPublicId;
+    use HasSealedSecret;
 
     public const int MAX_SINKS = 10;
 
@@ -107,5 +110,18 @@ final class AuditSink extends Model
             'created_at' => 'immutable_datetime',
             'updated_at' => 'immutable_datetime',
         ];
+    }
+
+    public function sealWrapContext(): string
+    {
+        return 'audit_sink:'.$this->public_id;
+    }
+
+    public function sealAssociatedData(string $column): string
+    {
+        return match ($column) {
+            'secret' => "audit_sink|instance|{$this->public_id}|secret",
+            default => throw new InvalidArgumentException("{$column} is not a sealed column."),
+        };
     }
 }

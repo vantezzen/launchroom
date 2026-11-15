@@ -107,23 +107,60 @@ func (p *Printer) Table(w io.Writer, header []string, rows [][]string) {
 	_ = tw.Flush()
 }
 
-// Status styles a deployment/service status word.
+// Status styles a deployment or service status with the dashboard's tone
+// (StatusTone, generated into api.DeploymentStatusTones): an icon and the
+// word, never colour alone.
 func (p *Printer) Status(status string) string {
-	switch status {
-	case "active", "live", "running", "ready", "online":
-		return p.Good("● " + statusLabel(status))
-	case "failed", "cancelled", "offline", "unreachable":
-		return p.Bad("✕ " + statusLabel(status))
-	case "queued", "building", "deploying", "starting", "releasing", "routing", "planning", "in_progress":
-		return p.Warn("◌ " + statusLabel(status))
+	label := StatusLabel(status)
+	switch toneOf(status) {
+	case toneActive:
+		return p.Good("● " + label)
+	case toneFailed:
+		return p.Bad("✕ " + label)
+	case toneProgress:
+		return p.Warn("◌ " + label)
+	case toneWarning:
+		return p.Warn("⚠ " + label)
+	case toneStaged:
+		return "◇ " + label
 	default:
-		return p.Dim("○ " + statusLabel(status))
+		return p.Dim("○ " + label)
 	}
 }
 
-func statusLabel(s string) string {
-	if s == "active" {
-		return "live"
+// The dashboard's StatusTone values.
+const (
+	toneActive   = "active"
+	toneProgress = "progress"
+	toneFailed   = "failed"
+	toneWarning  = "warning"
+	toneIdle     = "idle"
+	toneStaged   = "staged"
+)
+
+// serviceTones are the service statuses that aren't deployment statuses
+// (ServiceResource documents them; the schema has no enum for the mix).
+var serviceTones = map[string]string{
+	api.ServiceStatusLive:        toneActive,
+	api.ServiceStatusStopped:     toneIdle,
+	api.ServiceStatusNotDeployed: toneIdle,
+}
+
+func toneOf(status string) string {
+	if tone, ok := api.DeploymentStatusTones[status]; ok {
+		return tone
+	}
+	if tone, ok := serviceTones[status]; ok {
+		return tone
+	}
+	return toneIdle
+}
+
+// StatusLabel turns an API status into words ("rolling_out" → "rolling
+// out"); an active deployment reads "live", like the dashboard says it.
+func StatusLabel(s string) string {
+	if s == api.DeploymentStatusActive {
+		return api.ServiceStatusLive
 	}
 	return strings.ReplaceAll(s, "_", " ")
 }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Data\Registry;
 
+use App\Support\S3\S3Location;
 use SensitiveParameter;
 use Spatie\LaravelData\Attributes\Validation\Max;
 use Spatie\LaravelData\Attributes\Validation\Min;
@@ -23,7 +24,7 @@ final class RegistryStorageInput extends Data
         public string $bucket,
         #[Max(32)]
         public ?string $region = null,
-        #[Max(256)]
+        #[Max(S3Location::PREFIX_MAX)]
         public ?string $prefix = null,
         #[Max(256), SensitiveParameter]
         public ?string $accessKeyId = null,

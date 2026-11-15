@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace App\Actions\RemoteAccess;
 
 use App\Data\Protocol\V1\AccessStatus;
-use App\Enums\RemoteAccess\RemoteAccessStatus;
+use App\Data\RemoteAccess\AccessCertificateData;
+use App\Data\RemoteAccess\AccessHostKeyData;
+use App\Data\RemoteAccess\VolumeOwnerData;
+use App\Enums\TaskBackedAccessStatus;
 use App\Models\DaemonTask;
 use App\Models\RemoteAccess\RemoteAccess;
-use App\Services\RemoteAccess\AccessEventAudit;
 use Carbon\CarbonImmutable;
 use Throwable;
 
@@ -22,7 +24,7 @@ use Throwable;
 final readonly class RecordAccessHeartbeat
 {
     public function __construct(
-        private AccessEventAudit $events,
+        private RecordAccessEvents $events,
     ) {}
 
     public function handle(DaemonTask $task, ?AccessStatus $status): void
@@ -44,12 +46,12 @@ final readonly class RecordAccessHeartbeat
 
         $access->forceFill(array_filter([
             'port' => $status->port,
-            'host_key' => is_array($status->hostKey) ? $status->hostKey : null,
-            'certificate' => is_array($status->certificate) ? $status->certificate : null,
+            'host_key' => is_array($status->hostKey) ? AccessHostKeyData::from($status->hostKey) : null,
+            'certificate' => is_array($status->certificate) ? AccessCertificateData::from($status->certificate) : null,
             'database_name' => is_string($status->database) ? $status->database : null,
             'private_addresses' => is_array($status->privateAddresses) ? array_slice($status->privateAddresses, 0, 4) : null,
             'behind_nat' => is_bool($status->behindNat) ? $status->behindNat : null,
-            'volume_owner' => is_array($status->owner) ? ['uid' => $status->owner['uid'], 'gid' => $status->owner['gid']] : null,
+            'volume_owner' => is_array($status->owner) ? new VolumeOwnerData($status->owner['uid'], $status->owner['gid']) : null,
             'active_connections' => $status->activeConnections,
             'last_activity_at' => is_string($status->lastActivityAt) ? $this->time($status->lastActivityAt) : null,
             'listening_at' => $access->listening_at ?? now(),
@@ -57,11 +59,11 @@ final readonly class RecordAccessHeartbeat
 
         // Listening: an access with keys has no password to seal at lease
         // time, so its first heartbeat is what opens it.
-        if ($access->status === RemoteAccessStatus::Pending) {
-            $access->transitionTo(RemoteAccessStatus::Open);
+        if ($access->status === TaskBackedAccessStatus::Pending) {
+            $access->transitionTo(TaskBackedAccessStatus::Open);
         }
 
-        $this->events->record($access, is_array($status->events) ? $status->events : []);
+        $this->events->handle($access, is_array($status->events) ? $status->events : []);
     }
 
     private function time(string $value): ?CarbonImmutable

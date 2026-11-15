@@ -67,7 +67,7 @@ test('servers of other teams cannot be edited', function (): void {
 test('the server page lists placed workloads and capacity; the list counts them', function (): void {
     [$server] = Projects::server($this->team);
     $project = Projects::create($this->team, 'shop');
-    $web = Projects::image($project, 'web');
+    Projects::image($project, 'web');
     resolve(DeployEnvironment::class)->handle($project->production()->sole(), null, AuditActor::system());
 
     $this->actingAs($this->viewer)->get(route('servers.show', $server->public_id))
@@ -83,7 +83,7 @@ test('the server page lists placed workloads and capacity; the list counts them'
             ->where('placement.workloads.0.projectName', 'shop'));
 
     // The latest report's memory wins over the enrollment facts.
-    $server->forceFill(['host_status' => ['cpus' => 2, 'memoryMb' => 4096]])->save();
+    $server->forceFill(['host_status' => ['cpus' => 2, 'memoryMb' => 4096, 'diskTotalMb' => 0, 'diskFreeMb' => 0, 'daemonVersion' => '0.4.0']])->save();
 
     $this->actingAs($this->admin)->get(route('servers.show', $server->public_id))
         ->assertInertia(fn ($page) => $page->where('placement.canUpdate', true)
@@ -91,15 +91,13 @@ test('the server page lists placed workloads and capacity; the list counts them'
 
     // A fresh measurement decides: what is really available, minus headroom
     // and the replica that hasn't started yet.
-    $server->forceFill(['host_status' => ['cpus' => 2, 'memoryMb' => 4096, 'health' => ['collectedAt' => now()->toIso8601String(), 'memory' => ['totalMb' => 4096, 'availableMb' => 3000]]], 'host_status_at' => now()])->save();
+    $server->forceFill(['host_status' => ['cpus' => 2, 'memoryMb' => 4096, 'diskTotalMb' => 0, 'diskFreeMb' => 0, 'daemonVersion' => '0.4.0', 'health' => ['collectedAt' => now()->toIso8601String(), 'memory' => ['totalMb' => 4096, 'availableMb' => 3000]]], 'host_status_at' => now()])->save();
 
     $this->actingAs($this->admin)->get(route('servers.show', $server->public_id))
         ->assertInertia(fn ($page) => $page->where('placement.freeMemoryMb', 3000 - 256 - 128));
 
     $this->actingAs($this->viewer)->get(route('servers.index'))
         ->assertInertia(fn ($page) => $page->where('servers.0.workloads', 1));
-
-    expect($web->public_id)->toStartWith('svc_');
 });
 
 test('Settings → Scaling lists the runtime servers against the constraints', function (): void {

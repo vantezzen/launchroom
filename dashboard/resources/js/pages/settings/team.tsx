@@ -1,3 +1,4 @@
+import { vocabulary } from '@/lib/vocabulary';
 import { Head, router, useForm } from '@inertiajs/react';
 import { MoreHorizontal, UserPlus } from 'lucide-react';
 import { useState } from 'react';
@@ -30,10 +31,8 @@ import {
 import { Spinner } from '@/components/ui/spinner';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
-import { SettingsCard, SettingsRow } from '@/features/settings/settings-card';
-import { useInitials } from '@/hooks/use-initials';
-import { index as settingsHome } from '@/routes/settings';
-import { consoleRecording as consoleRecordingRoute, edit } from '@/routes/team';
+import { initials } from '@/lib/format';
+import { consoleRecording as consoleRecordingRoute } from '@/routes/team';
 import {
     destroy as destroyInvitation,
     store as storeInvitation,
@@ -43,6 +42,8 @@ import {
     permissions as updatePermissions,
     update as updateMember,
 } from '@/routes/team/members';
+import { SettingsCard, SettingsRow } from '@/components/settings/settings-card';
+import SettingsLayout from '@/features/settings/settings-layout';
 
 type Props = {
     team: App.Data.Teams.TeamData;
@@ -81,7 +82,7 @@ function AccessChips({ member }: { member: App.Data.Teams.MemberData }) {
         .map((grant) => accessLabel[grant])
         .filter((label): label is string => Boolean(label));
 
-    if (member.role !== 'developer' || labels.length === 0) {
+    if (!roles[member.role].takesGrants || labels.length === 0) {
         return null;
     }
 
@@ -92,16 +93,9 @@ function AccessChips({ member }: { member: App.Data.Teams.MemberData }) {
     );
 }
 
-const roleLabel = (role: App.Enums.TeamRole): string =>
-    role.charAt(0).toUpperCase() + role.slice(1);
+const roles = vocabulary.TeamRole;
 
-/** What each role can do, in one line (docs/09 §2 permissions). */
-const roleSummary: Record<App.Enums.TeamRole, string> = {
-    owner: 'Full access, including team settings',
-    admin: 'Manages servers, members, backups and projects',
-    developer: 'Deploys and edits projects',
-    viewer: 'Can view everything but not change it',
-};
+const roleLabel = (role: App.Enums.TeamRole): string => roles[role].label;
 
 function RoleChip({ role }: { role: App.Enums.TeamRole }) {
     return (
@@ -112,12 +106,10 @@ function RoleChip({ role }: { role: App.Enums.TeamRole }) {
 }
 
 function MemberAvatar({ name }: { name: string }) {
-    const getInitials = useInitials();
-
     return (
         <Avatar className="size-9">
             <AvatarFallback className="bg-hover type-label text-muted-foreground">
-                {getInitials(name)}
+                {initials(name)}
             </AvatarFallback>
         </Avatar>
     );
@@ -361,7 +353,7 @@ function InvitePanel({
                         options={assignableRoles.map((role) => ({
                             value: role,
                             label: roleLabel(role),
-                            description: roleSummary[role],
+                            description: roles[role].summary,
                         }))}
                     />
                     <InputError message={form.errors.role} />
@@ -559,12 +551,4 @@ export default function TeamSettings({
     );
 }
 
-TeamSettings.layout = {
-    breadcrumbs: [
-        { title: 'Settings', href: settingsHome() },
-        {
-            title: 'Members',
-            href: edit(),
-        },
-    ],
-};
+TeamSettings.layout = SettingsLayout;

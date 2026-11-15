@@ -1,8 +1,5 @@
 import { Ban, Check, ChevronDown, Pin } from 'lucide-react';
 import type { ReactNode } from 'react';
-import { DEVICE_RENDER, DeviceImage } from '@/components/devices';
-import type { DeviceKind, DeviceStatus } from '@/components/devices';
-import { DEVICE_ART } from '@/components/devices/device-art.generated';
 import { Logo } from '@/components/logo';
 import { MetaDivider } from '@/components/patterns/meta-line';
 import {
@@ -16,14 +13,15 @@ import {
 import {
     deviceKind,
     deviceStatus,
-    formatMb,
     placeLabel,
 } from '@/features/servers/format';
 import { cn } from '@/lib/utils';
+import { DeviceStage } from '@/components/devices/device-stage';
+import { formatCores, formatMemory } from '@/lib/format';
 
 export type ServerRule = 'any' | 'only' | 'never';
 
-export const ruleLabels: Record<ServerRule, string> = {
+const ruleLabels: Record<ServerRule, string> = {
     any: 'May run here',
     only: 'Only here',
     never: 'Never here',
@@ -107,7 +105,7 @@ export function ReplicaUnits({
  * reservations, so other services' limits never fill it. Amber only when
  * this service doesn't fit in what is free.
  */
-export function CapacityBar({
+function CapacityBar({
     label,
     used,
     mine = 0,
@@ -187,64 +185,6 @@ export function CapacityBar({
     );
 }
 
-const DEVICE_SIZE = 168;
-
-/** px from the stage's bottom to just above the device body (art metadata). */
-function unitsBottom(kind: DeviceKind, size = DEVICE_SIZE): number {
-    const art = DEVICE_ART.devices[DEVICE_RENDER[kind]];
-    const [, canvasHeight] = DEVICE_ART.canvas;
-    const height = (size * 10) / 16;
-    const top = (art.body[1] / canvasHeight) * height;
-
-    return 4 + height - top + 6;
-}
-
-/**
- * A device on the recessed stage with things standing on its top edge
- * (replicas, a volume): the art's body box says where that edge is.
- */
-export function DeviceStage({
-    device,
-    status,
-    dimmed = false,
-    size = DEVICE_SIZE,
-    className,
-    children,
-}: {
-    device: DeviceKind;
-    status: DeviceStatus;
-    dimmed?: boolean;
-    size?: number;
-    className?: string;
-    children?: ReactNode;
-}) {
-    return (
-        <div
-            className={cn(
-                'relative flex h-[150px] items-end justify-center bg-recessed pb-1',
-                className,
-            )}
-        >
-            <div
-                className={cn(
-                    'transition-[filter,opacity] duration-base',
-                    dimmed && 'opacity-45 grayscale',
-                )}
-            >
-                <DeviceImage device={device} status={status} size={size} />
-            </div>
-            {children && (
-                <div
-                    className="absolute inset-x-0 z-10 flex justify-center px-4"
-                    style={{ bottom: unitsBottom(device, size) }}
-                >
-                    {children}
-                </div>
-            )}
-        </div>
-    );
-}
-
 export type ServerTile = App.Data.Canvas.PlacementServerOptionData & {
     /** Draft eligibility and placement from the live preview. */
     draftEligible: boolean;
@@ -281,12 +221,9 @@ export function ServerPlacementCard({
     logo: string;
 }) {
     const planned = server.draftPlanned;
-    const formatCores = (value: number) =>
-        `${Number(value.toFixed(2))} ${value === 1 ? 'core' : 'cores'}`;
-    const memory = (value: number) => formatMb(value) ?? '0 MB';
     const limits = [
         server.limitCpus > 0 ? formatCores(server.limitCpus) : null,
-        server.limitMemoryMb > 0 ? memory(server.limitMemoryMb) : null,
+        server.limitMemoryMb > 0 ? formatMemory(server.limitMemoryMb) : null,
     ].filter((part): part is string => part !== null);
     const place = placeLabel(server);
     const eligible = server.draftEligible;
@@ -371,7 +308,7 @@ export function ServerPlacementCard({
                         mine={planned * memoryNeedMb}
                         total={server.memoryMb}
                         free={server.freeMemoryMb}
-                        format={memory}
+                        format={(mb) => formatMemory(mb)}
                     />
                     {limits.length > 0 && (
                         <p className="type-small text-muted-foreground">
@@ -548,7 +485,11 @@ export function ResourceSlider({
 }
 
 /** Mini pictures for Spread vs Pack: three servers with replica blocks. */
-export function StrategyPicture({ strategy }: { strategy: 'spread' | 'pack' }) {
+export function StrategyPicture({
+    strategy,
+}: {
+    strategy: App.Enums.PlacementStrategy;
+}) {
     const layout = strategy === 'spread' ? [1, 1, 1] : [3, 0, 0];
 
     return (

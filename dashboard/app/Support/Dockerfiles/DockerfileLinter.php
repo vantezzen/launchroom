@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Support\Dockerfiles;
 
 use App\Support\Images\ImageReference;
+use App\Support\Variables\VariableKey;
 
 /**
  * The policy gate for generated Dockerfiles (docs/20 §4). Pure and strict:
@@ -32,8 +33,6 @@ final class DockerfileLinter
         'VOLUME' => 'VOLUME is not allowed: launchroom manages volumes in the service settings.',
         'MAINTAINER' => 'MAINTAINER is deprecated; use a LABEL instead.',
     ];
-
-    private const string NAME = '/^[A-Za-z_][A-Za-z0-9_]{0,255}$/D';
 
     /**
      * @param  list<string>  $buildVariables  names a `RUN --mount=type=secret,id=…` may use (the service's build-time variables)
@@ -487,7 +486,7 @@ final class DockerfileLinter
         }
 
         foreach ($pairs as [$name, $value]) {
-            if (preg_match(self::NAME, $name) !== 1) {
+            if (! VariableKey::isValid($name)) {
                 $lint->problem($line, "{$keyword} {$name} is not a valid variable name.");
 
                 continue;

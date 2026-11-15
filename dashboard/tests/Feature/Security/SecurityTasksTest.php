@@ -163,7 +163,7 @@ test('a completed inventory stores its components with their OSV packages and li
 
     $inventory = $inventory?->refresh();
     expect($task->refresh()->status)->toBe(DaemonTaskStatus::Succeeded)
-        ->and($task->result)->toBe(['inventory' => ['components' => 8]])
+        ->and($task->result)->toBeNull()
         ->and($inventory?->status)->toBe(InventoryStatus::Ready)
         ->and($inventory?->component_count)->toBe(8)
         ->and($inventory?->unqueried_count)->toBe(0)
@@ -226,10 +226,10 @@ test('an investigation inspects each running replica and stores the result encry
 
     $investigation = $investigation?->refresh();
     $raw = DB::table('security_investigations')->where('id', $investigation?->id)->value('inspections');
-    $report = $investigation?->report ?? [];
+    $report = $investigation?->report?->toArray() ?? [];
 
     expect($task->refresh()->status)->toBe(DaemonTaskStatus::Succeeded)
-        ->and($task->result)->toBe(['containerInspection' => ['stored' => true]])
+        ->and($task->result)->toBeNull()
         ->and((string) $raw)->not->toContain('kworker')
         ->and($investigation?->status)->toBe(InvestigationStatus::Completed)
         ->and(json_encode($report))->not->toContain('pool.example')
@@ -248,7 +248,7 @@ test('replicas on servers that can\'t inspect make the report partial', function
     $investigation = resolve(StartInvestigation::class)->handle($this->instance, null, $this->owner)?->refresh();
 
     expect($investigation?->status)->toBe(InvestigationStatus::Partial)
-        ->and($investigation?->report['checked'][0]['note'] ?? null)->toBe("Couldn’t check: {$this->server->name} is offline.")
+        ->and($investigation?->report?->checked[0]->note ?? null)->toBe("Couldn’t check: {$this->server->name} is offline.")
         ->and(DaemonTask::query()->where('type', DaemonTaskType::InspectContainer->value)->count())->toBe(0);
 });
 

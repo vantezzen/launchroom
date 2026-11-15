@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace App\Services\Security;
 
 use App\Data\Protocol\V1\RouteSpec;
-use App\Enums\DaemonFeature;
 use App\Enums\Security\WafMode;
 use App\Models\Server;
+use App\Queries\RouteOwners;
 use App\Support\Metrics\Cast;
 use Illuminate\Support\Facades\DB;
 
@@ -22,17 +22,21 @@ use Illuminate\Support\Facades\DB;
  */
 final readonly class WafRoutes
 {
+    public function __construct(
+        private RouteOwners $owners,
+    ) {}
+
     /**
      * @param  list<RouteSpec>  $routes
      * @return list<RouteSpec>
      */
     public function apply(array $routes, Server $server): array
     {
-        if ($routes === [] || ! $server->supportsDaemonFeature(DaemonFeature::Waf)) {
+        if ($routes === []) {
             return $routes;
         }
 
-        $owners = $this->owners($server, $routes);
+        $owners = array_map(static fn (array $owner): int => $owner[0], $this->owners->current($server->team_id, array_map(static fn (RouteSpec $route): string => $route->id, $routes)));
 
         if ($owners === []) {
             return $routes;
@@ -40,49 +44,12 @@ final readonly class WafRoutes
 
         $settings = $this->settings(array_values(array_unique($owners)));
 
-        foreach ($routes as $route) {
+        return array_map(static function (RouteSpec $route) use ($owners, $settings): RouteSpec {
             $instance = $owners[$route->id] ?? null;
             $waf = $instance === null ? null : ($settings[$instance] ?? null);
 
-            if ($waf !== null && $route->clientAuth === null) {
-                $route->waf = $waf;
-            }
-        }
-
-        return $routes;
-    }
-
-    /**
-     * Route id → service instance id, for the server's team only.
-     *
-     * @param  list<RouteSpec>  $routes
-     * @return array<string, int>
-     */
-    private function owners(Server $server, array $routes): array
-    {
-        $ulids = [];
-
-        foreach ($routes as $route) {
-            if (preg_match('/^rt_([0-9A-HJKMNP-TV-Z]{26})$/D', $route->id, $m) === 1) {
-                $ulids[] = $m[1];
-            }
-        }
-
-        if ($ulids === []) {
-            return [];
-        }
-
-        $owners = [];
-
-        foreach (DB::table('domains')->where('team_id', $server->team_id)->whereIn('public_id', array_map(static fn (string $u): string => 'dom_'.$u, $ulids))->get(['public_id', 'service_instance_id']) as $row) {
-            $owners['rt_'.substr(Cast::string($row->public_id ?? null), 4)] = Cast::id($row->service_instance_id ?? null);
-        }
-
-        foreach (DB::table('deployments')->where('team_id', $server->team_id)->whereIn('public_id', array_map(static fn (string $u): string => 'dpl_'.$u, $ulids))->get(['public_id', 'service_instance_id']) as $row) {
-            $owners['rt_'.substr(Cast::string($row->public_id ?? null), 4)] ??= Cast::id($row->service_instance_id ?? null);
-        }
-
-        return $owners;
+            return $waf !== null && $route->clientAuth === null ? $route->withWaf($waf) : $route;
+        }, $routes);
     }
 
     /**

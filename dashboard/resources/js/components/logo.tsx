@@ -102,7 +102,6 @@ type Mark =
  * identify the user's own stack (design-system §3.5).
  */
 const marks: Record<string, Mark> = {
-    // Frameworks and runtimes
     nextjs: { icon: siNextdotjs, label: 'Next.js' },
     laravel: { icon: siLaravel, label: 'Laravel' },
     node: { icon: siNodedotjs, label: 'Node.js' },
@@ -124,7 +123,6 @@ const marks: Record<string, Mark> = {
     rust: { icon: siRust, label: 'Rust' },
     nginx: { icon: siNginx, label: 'nginx' },
     caddy: { icon: siCaddy, label: 'Caddy' },
-    // Databases and services
     postgres: { icon: siPostgresql, label: 'PostgreSQL' },
     mysql: { icon: siMysql, label: 'MySQL' },
     mariadb: { icon: siMariadb, label: 'MariaDB' },
@@ -135,7 +133,6 @@ const marks: Record<string, Mark> = {
     rabbitmq: { icon: siRabbitmq, label: 'RabbitMQ' },
     meilisearch: { icon: siMeilisearch, label: 'Meilisearch' },
     minio: { icon: siMinio, label: 'MinIO' },
-    // One-click apps (templates, docs/17 §3.2)
     umami: { icon: siUmami, label: 'Umami' },
     plausible: { icon: siPlausibleanalytics, label: 'Plausible' },
     uptimekuma: { icon: siUptimekuma, label: 'Uptime Kuma' },
@@ -156,13 +153,11 @@ const marks: Record<string, Mark> = {
     api: { lucide: Braces, label: 'API' },
     realtime: { lucide: Radio, label: 'Realtime' },
     storage: { lucide: HardDrive, label: 'Storage' },
-    // Sources
     docker: { icon: siDocker, label: 'Image' },
     github: { icon: siGithub, label: 'GitHub repository' },
     gitlab: { icon: siGitlab, label: 'GitLab' },
     codeberg: { icon: siCodeberg, label: 'Codeberg' },
     git: { icon: siGit, label: 'Git server' },
-    // Providers and operating systems
     hetzner: { icon: siHetzner, label: 'Hetzner' },
     digitalocean: { icon: siDigitalocean, label: 'DigitalOcean' },
     googlecloud: { icon: siGooglecloud, label: 'Google Cloud' },
@@ -180,12 +175,10 @@ const marks: Record<string, Mark> = {
     ubuntu: { icon: siUbuntu, label: 'Ubuntu' },
     debian: { icon: siDebian, label: 'Debian' },
     tailscale: { icon: siTailscale, label: 'Tailscale' },
-    // Notification channels (docs/15 §3.5)
     slack: { icon: siSlack, label: 'Slack' },
     discord: { icon: siDiscord, label: 'Discord' },
     email: { lucide: Mail, label: 'Email' },
     webhook: { lucide: Webhook, label: 'Webhook' },
-    // Generic kinds (no brand)
     static: { lucide: Globe, label: 'Static site' },
     worker: { lucide: Cog, label: 'Worker' },
     cron: { lucide: Clock, label: 'Cron' },

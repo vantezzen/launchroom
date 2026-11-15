@@ -45,9 +45,7 @@ final class BackupVerificationData extends Data
             $verification->subject,
             substr($verification->snapshot_id, 0, 8),
             $verification->snapshot_taken_at,
-            array_map(static fn (array $check): BackupVerificationCheckData => new BackupVerificationCheckData(
-                (string) $check['name'], (bool) $check['passed'], isset($check['detail']) ? (string) $check['detail'] : null,
-            ), $verification->checks),
+            array_values($verification->checks->items()),
             $verification->tables,
             $verification->rows,
             $verification->files,

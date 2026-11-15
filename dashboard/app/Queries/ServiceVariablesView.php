@@ -14,7 +14,6 @@ use App\Data\Variables\SystemVariableData;
 use App\Data\Variables\VariableRowData;
 use App\Data\Variables\VariableTargetChipData;
 use App\Enums\EnvironmentKind;
-use App\Enums\Permission;
 use App\Enums\VariableExposure;
 use App\Enums\VariableType;
 use App\Models\ConfigAsCode\EnvironmentConfigFile;
@@ -22,6 +21,7 @@ use App\Models\Connection;
 use App\Models\Environment;
 use App\Models\Project;
 use App\Models\Service;
+use App\Models\ServiceInstance;
 use App\Models\User;
 use App\Models\Variable;
 use App\Models\VariableTarget;
@@ -58,12 +58,16 @@ final readonly class ServiceVariablesView
         $project = $environment->project;
         $spec = $this->currentSpec->get($environment);
         $serviceSpec = $spec->service($service->public_id);
-        // Keys launchroom.json sets in this environment (docs/18 §3.5).
-        $managed = EnvironmentConfigFile::query()->where('environment_id', $environment->id)->first()?->managed->service($service->public_id)->variables ?? [];
+        $stagedRemoval = null;
 
         if (! $serviceSpec instanceof ServiceSpec) {
-            throw (new ModelNotFoundException)->setModel(Service::class);
+            $stagedRemoval = ServiceInstance::query()->where('environment_id', $environment->id)->where('service_id', $service->id)->whereNotNull('removed_at')->first();
+            $spec = $stagedRemoval instanceof ServiceInstance ? $this->currentSpec->get($environment, $stagedRemoval) : $spec;
+            $serviceSpec = $spec->service($service->public_id) ?? throw (new ModelNotFoundException)->setModel(Service::class);
         }
+
+        // Keys launchroom.json sets in this environment (docs/18 §3.5).
+        $managed = EnvironmentConfigFile::query()->where('environment_id', $environment->id)->first()?->managed->service($service->public_id)->variables ?? [];
 
         $scopes = $this->resolver->annotatedScopes($project, $spec);
         $preview = new ReferencePreview($scopes);
@@ -81,12 +85,17 @@ final readonly class ServiceVariablesView
             ->keyBy('public_id')
             ->all();
 
-        $environments = $project->environments()->orderByRaw("CASE kind WHEN 'production' THEN 0 WHEN 'persistent' THEN 1 ELSE 2 END")->orderBy('name')->get(['id', 'public_id', 'name', 'kind']);
+        $environments = $project->environments()->inDisplayOrder()->get(['id', 'public_id', 'name', 'kind']);
         $environmentNames = $environments->mapWithKeys(static fn (Environment $env): array => [$env->id => $env->name])->all();
         $environmentIds = $environments->mapWithKeys(static fn (Environment $env): array => [$env->id => $env->public_id])->all();
 
-        $canRevealSecrets = $user->hasTeamPermission($project->team_id, Permission::RevealSecrets);
-        $winners = $this->winners($serviceSpec, $inherited);
+        $canRevealSecrets = Gate::forUser($user)->allows('revealSecrets', [Variable::class, $project]);
+        $winners = [];
+
+        foreach ($spec->variablesInPrecedence($serviceSpec) as $variable) {
+            $winners[$variable->key] = $variable->id;
+        }
+
         $rows = [];
 
         foreach ([...$serviceSpec->connectionVariables, ...$serviceSpec->variables] as $id => $variable) {
@@ -155,7 +164,7 @@ final readonly class ServiceVariablesView
                 ->filter(static fn (Environment $env): bool => $env->kind !== EnvironmentKind::Preview)
                 ->map(static fn (Environment $env): EnvironmentOptionData => new EnvironmentOptionData($env->public_id, $env->name, $env->kind))
                 ->all()),
-            canWrite: Gate::allows('create', [Variable::class, $project]),
+            canWrite: $stagedRemoval === null && Gate::allows('create', [Variable::class, $project]),
             canRevealSecrets: $canRevealSecrets,
             secretPlaceholder: self::SECRET_PLACEHOLDER,
         );
@@ -208,32 +217,5 @@ final readonly class ServiceVariablesView
             managedByFile: $model->connection_id === null && in_array($variable->key, $managed, true),
             inheritedFrom: $inheritedFrom,
         );
-    }
-
-    /**
-     * Which row's value applies per key (docs/06 §3.1 precedence:
-     * connection < environment-targeted < branch override; the app's
-     * connections before the worker's own).
-     *
-     * @param  array<string, VariableSpec>  $inherited
-     * @return array<string, string>
-     */
-    private function winners(ServiceSpec $service, array $inherited = []): array
-    {
-        $winners = [];
-
-        foreach ([...$inherited, ...$service->connectionVariables] as $id => $variable) {
-            $winners[$variable->key] = $id;
-        }
-
-        foreach ([VariableSpec::LAYER_ENVIRONMENT, VariableSpec::LAYER_BRANCH] as $layer) {
-            foreach ($service->variables as $id => $variable) {
-                if ($variable->layer === $layer) {
-                    $winners[$variable->key] = $id;
-                }
-            }
-        }
-
-        return $winners;
     }
 }

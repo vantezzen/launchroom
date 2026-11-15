@@ -5,18 +5,20 @@ declare(strict_types=1);
 namespace App\Services\Registry;
 
 use App\Data\Registry\RegistryScope;
+use App\Support\Images\ImageReference;
+use App\Support\Images\RegistryLayout;
 use Illuminate\Http\Client\Factory as HttpFactory;
 use Throwable;
 
 /**
- * Is an image still in the registry? (docs/14 §5.2 step e: after a
- * control-plane restore, Zot is empty unless its storage was on S3; active
- * deployments whose image is gone are rebuilt from their recorded commit.)
+ * Is an image still in the registry? `HEAD /v2/<repository>/manifests/<digest>`
+ * on the dashboard's own view of Zot (`launchroom.registry_lookup.url`) with a
+ * pull token for exactly that repository.
  *
- * `HEAD /v2/<repository>/manifests/<digest>` on the dashboard's own view of
- * Zot (`launchroom.registry_lookup.url`) with a pull token for exactly that
- * repository. Only images of launchroom's registry (`127.0.0.1:5000/…`)
- * are checked.
+ * Used after a control-plane restore (docs/14 §5.2 step e: Zot is empty
+ * unless its storage was on S3; active deployments whose image is gone are
+ * rebuilt from their recorded commit) and for pruned rollback targets
+ * ({@see PrunedImages}).
  */
 final readonly class RegistryManifests
 {
@@ -26,18 +28,25 @@ final readonly class RegistryManifests
     ) {}
 
     /**
-     * true: present, false: missing, null: not ours or unknown (registry unreachable).
+     * true: present, false: missing, null: not in launchroom's registry
+     * (`127.0.0.1:5000/…`) or unknown (registry unreachable).
      */
     public function exists(string $image): ?bool
     {
-        $apps = config()->string('launchroom.images.apps_prefix');
-        $prefix = strtok($apps, '/').'/';
+        $registry = RegistryLayout::registry();
 
-        if (! str_starts_with($image, $prefix) || preg_match('#^([a-z0-9][a-z0-9._/-]{0,250})@(sha256:[a-f0-9]{64})$#D', substr($image, strlen($prefix)), $matches) !== 1) {
+        if (! str_starts_with($image, $registry) || preg_match('#^([a-z0-9][a-z0-9._/-]{0,250})@('.ImageReference::DIGEST_BODY.')$#D', substr($image, strlen($registry)), $matches) !== 1) {
             return null;
         }
 
-        [, $repository, $digest] = $matches;
+        return $this->head($matches[1], $matches[2]);
+    }
+
+    /**
+     * true: present, false: a definite 404, null: anything else.
+     */
+    public function head(string $repository, string $digest): ?bool
+    {
         $url = rtrim(config()->string('launchroom.registry_lookup.url'), '/')."/v2/{$repository}/manifests/{$digest}";
 
         try {
@@ -46,7 +55,7 @@ final readonly class RegistryManifests
                 ->timeout(config()->integer('launchroom.registry_lookup.timeout_seconds'))
                 ->withoutRedirecting()
                 ->withToken($token->token)
-                ->accept('application/vnd.oci.image.index.v1+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json, application/vnd.docker.distribution.manifest.list.v2+json')
+                ->accept(implode(', ', RegistryLayout::MANIFEST_ACCEPT))
                 ->head($url);
         } catch (Throwable) {
             return null;

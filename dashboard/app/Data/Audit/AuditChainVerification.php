@@ -4,13 +4,12 @@ declare(strict_types=1);
 
 namespace App\Data\Audit;
 
-use App\Actions\Audit\VerifyAuditChain;
 use App\Enums\Audit\AuditChainProblem;
 use Carbon\CarbonImmutable;
 use Spatie\LaravelData\Data;
 
 /**
- * The outcome of {@see VerifyAuditChain} (docs/09 R34).
+ * The outcome of VerifyAuditChain (docs/09 R34).
  * `checked` counts entries that verified (in this run); `verifiedUpTo` is
  * the time of the newest entry a valid checkpoint anchors.
  */

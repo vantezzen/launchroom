@@ -6,6 +6,7 @@ use App\Actions\Backups\StartServiceBackup;
 use App\Actions\Connections\CreateConnection;
 use App\Actions\Deployments\DeployEnvironment;
 use App\Actions\Moves\AdvanceServerMoves;
+use App\Actions\Moves\PrebuildForPlatform;
 use App\Actions\Transfers\AdvanceImports;
 use App\Data\Audit\AuditActor;
 use App\Data\Servers\HostFactsData;
@@ -37,7 +38,7 @@ use App\Models\Transfers\DataExportRun;
 use App\Models\Transfers\DataImportRun;
 use App\Models\Volume;
 use App\Services\Moves\MovePlanner;
-use App\Services\Moves\Prebuilds;
+use App\Support\Refusal;
 use Tests\Support\Backups;
 use Tests\Support\Projects;
 use Tests\Support\Transfers;
@@ -117,9 +118,6 @@ function exited(ServiceInstance $instance): array
     return Placement::query()->where('service_instance_id', $instance->id)->pluck('workload_id')->mapWithKeys(fn (string $id): array => [$id => 'exited'])->all();
 }
 
-/**
- * The placement of $instance on $server, if any.
- */
 function workloadOn(ServiceInstance $instance, Server $server): ?Placement
 {
     return Placement::query()->where('service_instance_id', $instance->id)->where('server_id', $server->id)->first();
@@ -181,7 +179,7 @@ test('a move is refused onto a server that can’t take it', function (): void {
     expect($planner->plan($this->source, $this->target->refresh())->blockers)->toContain('netcup doesn’t run apps. Turn on Run apps in its settings first.');
 
     // Too little disk for what the database's last backup weighed.
-    $this->target->forceFill(['roles' => [ServerRole::Runtime->value], 'host_status' => ['diskFreeMb' => 512]])->save();
+    $this->target->forceFill(['roles' => [ServerRole::Runtime->value], 'host_status' => ['cpus' => 2, 'memoryMb' => 4096, 'diskTotalMb' => 1024, 'diskFreeMb' => 512, 'daemonVersion' => '0.4.0']])->save();
     Backups::destination($this->team, $this->owner, makeDefault: true);
     resolve(StartServiceBackup::class)->handle($this->postgres, BackupReason::Manual, $this->owner, AuditActor::user($this->owner));
     VolumeServices::backedUp($this->source, str_repeat('ab', 32));
@@ -419,10 +417,5 @@ test('an architecture change rebuilds apps built from source for the target, and
     $this->source->forceFill(['roles' => [ServerRole::Edge->value, ServerRole::Runtime->value]])->save();
     expect(implode(' ', $planner->plan($this->source->refresh(), $this->target->refresh())->blockers))->toContain('No build server builds linux/arm64');
 
-    // A build for the target's platform ends without rolling out.
-    $deployment = Deployment::query()->whereKey($this->web->active_deployment_id)->sole();
-    $deployment->plan = [Prebuilds::KEY => 'linux/arm64'];
-    expect(Prebuilds::platform($deployment))->toBe('linux/arm64');
-    $deployment->plan = [Prebuilds::KEY => 'linux/s390x'];
-    expect(Prebuilds::platform($deployment))->toBeNull();
+    expect(resolve(PrebuildForPlatform::class)->handle($this->web, 'linux/s390x', null))->toEqual(Refusal::on('platform', 'Unknown platform.'));
 });

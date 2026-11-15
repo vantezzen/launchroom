@@ -15,6 +15,7 @@ use App\Models\AuditEvent;
 use App\Models\Server;
 use App\Models\Transfers\DataExportRun;
 use App\Models\Transfers\DataTransfer;
+use App\Services\Tasks\TaskSecrets;
 use Tests\Support\Api;
 use Tests\Support\Backups;
 use Tests\Support\FakeDaemon;
@@ -87,7 +88,6 @@ test('an authorized download needs no extra password, is uploaded by launchroomd
     $url = (string) $link->json('url');
     expect($url)->toContain('/transfers/download/lr_dl_');
 
-    // Another owner can't use it.
     $this->actingAs(memberOf($team, TeamRole::Owner))->get($url)->assertNotFound();
 
     $download = $this->actingAs($owner)->get($url)->assertOk();
@@ -145,7 +145,8 @@ test('a backup snapshot is exported with its destination sealed to the task', fu
     $this->postJson(route('transfers.services.exports.store', $postgres), ['snapshot' => substr($snapshot, 0, 8)])->assertStatus(409);
 
     $task = VolumeServices::lease($server, DaemonTaskType::DbExport);
-    $spec = json_decode(json_encode($task->spec, JSON_THROW_ON_ERROR), true, 32, JSON_THROW_ON_ERROR);
+    expect((array) $task->spec->destination)->not->toHaveKey('credentials');
+    $spec = resolve(TaskSecrets::class)->materialize($task, $server)->toProtocol();
     $credentials = Backups::openTaskEnv($spec['destination']['credentials']['sealed'], $keypair);
 
     expect($spec['snapshot'])->toBe($snapshot)

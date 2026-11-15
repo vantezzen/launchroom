@@ -35,7 +35,6 @@ final class InvestigationReport
         $earliest = null;
         $partial = false;
 
-        // Containers, one per replica.
         foreach ($in->replicas as $replica) {
             $label = "Container of {$in->service} on {$replica['server']}";
 
@@ -71,12 +70,10 @@ final class InvestigationReport
 
         array_push($found, ...self::sessions($in));
 
-        // Web firewall.
         [$wafLines, $wafAt] = self::firewall($in);
         $checked[] = new InvestigationCheckData('Web firewall', 'last 7 days', $in->wafMode === 'off' ? 'skipped' : 'checked', $in->wafMode === 'off' ? 'The firewall is off for this service.' : null);
         array_push($found, ...$wafLines);
 
-        // Requests.
         $checked[] = new InvestigationCheckData('Requests and server errors', 'last 7 days');
         $found[] = self::errors($in);
 
@@ -111,8 +108,6 @@ final class InvestigationReport
     }
 
     /**
-     * Sentences about one container.
-     *
      * @return list<array{string, string, CarbonImmutable|null}>
      */
     private static function container(ContainerInspectionResult $r, string $server, InvestigationInputs $in, bool $several): array

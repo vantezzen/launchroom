@@ -78,7 +78,7 @@ func TestInspectDenyListAndSelection(t *testing.T) {
 	if slices.Contains(files, "bin.dat") || slices.Contains(files, "lib/util.ts") {
 		t.Errorf("unexpected files %v", files)
 	}
-	if err := (&state.TaskCompletion{TypeMeta: state.NewTypeMeta(state.KindTaskCompletion), Attempt: 1, Outcome: state.OutcomeFailed, Inspection: ins}).Validate(); err != nil {
+	if err := (&state.TaskCompletion{TypeMeta: state.NewTypeMeta(state.KindTaskCompletion), Attempt: 1, Outcome: state.OutcomeFailed, TaskResults: state.TaskResults{Inspection: ins}}).Validate(); err != nil {
 		t.Fatalf("inspection does not validate: %v", err)
 	}
 }

@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/vantezzen/launchroom/daemon/internal/docker"
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
 
@@ -40,10 +41,10 @@ func (f *fakeVolumes) log(e string) {
 func (f *fakeVolumes) ListContainers(_ context.Context, labels map[string]string) ([]docker.Container, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if labels[docker.LabelHelper] == "volume" {
+	if labels[names.LabelHelper] == "volume" {
 		var out []docker.Container
 		for id := range f.Helpers {
-			out = append(out, docker.Container{ID: id, Labels: map[string]string{docker.LabelHelper: "volume"}})
+			out = append(out, docker.Container{ID: id, Labels: map[string]string{names.LabelHelper: "volume"}})
 		}
 		return out, nil
 	}
@@ -58,12 +59,12 @@ func (f *fakeVolumes) ListContainers(_ context.Context, labels map[string]string
 
 func (f *fakeVolumes) ListVolumes(context.Context) ([]docker.Volume, error) {
 	return []docker.Volume{
-		{Name: "lr-system-caddy-data", Labels: map[string]string{docker.LabelSystem: "caddy", docker.LabelVolume: "caddy-data"}},
-		{Name: "lr-v_0123456789abcdef", Labels: map[string]string{docker.LabelVolume: string(volumeID), docker.LabelService: "svc_1", docker.LabelEnvironment: "env_1"}},
+		{Name: "lr-system-caddy-data", Labels: map[string]string{names.LabelSystem: "caddy", names.LabelVolume: "caddy-data"}},
+		{Name: "lr-v_0123456789abcdef", Labels: map[string]string{names.LabelVolume: string(volumeID), names.LabelService: "svc_1", names.LabelEnvironment: "env_1"}},
 		// Prepared for a service moving here (docs/14 §13.2): no owner yet.
-		{Name: "lr-v_fedcba9876543210", Labels: map[string]string{docker.LabelVolume: string(preparedVolumeID)}},
+		{Name: "lr-v_fedcba9876543210", Labels: map[string]string{names.LabelVolume: string(preparedVolumeID)}},
 		// A system volume dressed up with a workload volume id.
-		{Name: "lr-system-buildkit-state", Labels: map[string]string{docker.LabelVolume: string(systemVolumeID)}},
+		{Name: "lr-system-buildkit-state", Labels: map[string]string{names.LabelVolume: string(systemVolumeID)}},
 	}, nil
 }
 
@@ -72,20 +73,32 @@ const (
 	systemVolumeID   state.VolumeID = "vol_01J9Z8X7W6V5T4S3R2Q1P0N9SY"
 )
 
-func TestFindVolumeAcceptsPreparedVolumesOnly(t *testing.T) {
+// A volume prepared for a move (no owner labels yet) can be backed up; a
+// system volume carrying a workload volume id never is.
+func TestVolumeBackupAcceptsPreparedVolumesOnly(t *testing.T) {
 	t.Parallel()
-	h, _ := volumeHarness(t, nil)
-	v, err := h.e.findVolume(context.Background(), preparedVolumeID)
-	if err != nil || v.Name != "lr-v_fedcba9876543210" {
-		t.Fatalf("prepared volume: %+v %v", v, err)
+	h, v := volumeHarness(t, map[string]fakeStep{"backup": {Stdout: summaryLine}})
+	spec := volumeSpec(state.ConsistencyLive)
+	spec.Target.Volume = preparedVolumeID
+	if _, err := h.e.Backup(context.Background(), spec, creds, nil); err != nil {
+		t.Fatalf("prepared volume: %v", err)
 	}
-	if _, err := h.e.findVolume(context.Background(), systemVolumeID); err == nil || !strings.Contains(err.Error(), "not a service volume") {
+	if !slices.Contains(v.Events, "create-helper lr-v_fedcba9876543210") {
+		t.Fatalf("prepared volume not read: %v", v.Events)
+	}
+
+	h, v = volumeHarness(t, map[string]fakeStep{"backup": {Stdout: summaryLine}})
+	spec.Target.Volume = systemVolumeID
+	if _, err := h.e.Backup(context.Background(), spec, creds, nil); err == nil || !strings.Contains(err.Error(), "not a service volume") {
 		t.Fatalf("system volume: %v", err)
+	}
+	if len(h.calls()) != 0 || len(v.Events) != 0 {
+		t.Fatalf("system volume touched: restic %v, docker %v", h.subcommands(), v.Events)
 	}
 }
 
 func (f *fakeVolumes) CreateVolume(_ context.Context, v docker.VolumeCreate) error {
-	f.log("create-volume " + v.Name + " service=" + v.Labels[docker.LabelService])
+	f.log("create-volume " + v.Name + " service=" + v.Labels[names.LabelService])
 	return nil
 }
 
@@ -100,7 +113,7 @@ func (f *fakeVolumes) CreateContainer(_ context.Context, cc *docker.ContainerCre
 	if f.Helpers == nil {
 		f.Helpers = map[string]bool{}
 	}
-	if !strings.HasPrefix(cc.Name, "lr-vol-") || cc.Config.Labels[docker.LabelHelper] != "volume" || cc.HostConfig.Mounts[0].Target != "/data" {
+	if !strings.HasPrefix(cc.Name, "lr-vol-") || cc.Config.Labels[names.LabelHelper] != "volume" || cc.HostConfig.Mounts[0].Target != "/data" {
 		return "", errors.New("unexpected helper spec")
 	}
 	f.Helpers[cc.Name] = true
@@ -171,7 +184,7 @@ func volumeSpec(c state.VolumeConsistency) *state.BackupSpec {
 func TestVolumeBackupStreamsTarIntoRestic(t *testing.T) {
 	t.Parallel()
 	h, v := volumeHarness(t, map[string]fakeStep{"backup": {Stdout: summaryLine}})
-	v.Users = []docker.Container{{ID: "app", Running: true, Volumes: []string{"lr-v_0123456789abcdef"}}}
+	v.Users = []docker.Container{{ID: "app", State: docker.StateRunning, Volumes: []string{"lr-v_0123456789abcdef"}}}
 	res, err := h.e.Backup(context.Background(), volumeSpec(state.ConsistencyLive), creds, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -201,8 +214,8 @@ func TestVolumeBackupPausesUsersOnlyWhileReading(t *testing.T) {
 	t.Parallel()
 	h, v := volumeHarness(t, map[string]fakeStep{"backup": {Stdout: summaryLine}})
 	v.Users = []docker.Container{
-		{ID: "app", Running: true, Volumes: []string{"lr-v_0123456789abcdef"}},
-		{ID: "other", Running: true, Volumes: []string{"lr-v_other"}},
+		{ID: "app", State: docker.StateRunning, Volumes: []string{"lr-v_0123456789abcdef"}},
+		{ID: "other", State: docker.StateRunning, Volumes: []string{"lr-v_other"}},
 	}
 	if _, err := h.e.Backup(context.Background(), volumeSpec(state.ConsistencyPause), creds, nil); err != nil {
 		t.Fatal(err)
@@ -279,7 +292,7 @@ func TestVolumeRestoreRefusesDatabaseSnapshotsAndBusyVolumes(t *testing.T) {
 	}
 
 	h, v := volumeHarness(t, map[string]fakeStep{"snapshots": {Stdout: volumeSnapshots}})
-	v.Users = []docker.Container{{ID: "app", Running: true, Volumes: []string{"lr-v_0123456789abcdef"}}}
+	v.Users = []docker.Container{{ID: "app", State: docker.StateRunning, Volumes: []string{"lr-v_0123456789abcdef"}}}
 	h.e.o.VolumeIdleTimeout = 1
 	if _, err := h.e.Restore(context.Background(), spec, creds, nil); err == nil || !strings.Contains(err.Error(), "still used") {
 		t.Fatalf("err = %v", err)

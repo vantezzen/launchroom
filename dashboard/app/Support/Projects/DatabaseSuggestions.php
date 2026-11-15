@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Support\Projects;
 
 use App\Enums\DatabaseEngine;
+use App\Support\Variables\VariableKey;
 
 /**
  * Databases an app probably needs, from the variables of its `.env.example`
@@ -23,7 +24,7 @@ final class DatabaseSuggestions
         $variables = [];
 
         foreach (preg_split('/\r\n|\n|\r/', mb_substr($contents, 0, 65536)) ?: [] as $line) {
-            if (preg_match('/^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]{0,127})\s*=\s*(.*)$/', $line, $match) !== 1) {
+            if (preg_match('/^\s*(?:export\s+)?('.VariableKey::BODY.')\s*=\s*(.*)$/', $line, $match) !== 1) {
                 continue;
             }
 

@@ -19,14 +19,13 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import { store, update } from '@/routes/variables';
-import { api } from './api';
+import { requestJson } from '@/lib/http';
 import { looksLikeEnv } from './env-paste';
 import { ReferenceInput } from './reference-input';
+import { grammar } from '@/types/grammar.generated';
 
 type Row = App.Data.Variables.VariableRowData;
 type Data = App.Data.Variables.ServiceVariablesData;
-
-const KEY_PATTERN = /^[A-Za-z_][A-Za-z0-9_]{0,255}$/;
 
 type Target = {
     environmentId: string | null;
@@ -117,7 +116,7 @@ export function VariableDialog({
     // The server classifies keys (docs/06 §3.3); known for saved variables.
     const inlined =
         variable !== null && variable.browserInlined && key === variable.key;
-    const keyInvalid = key !== '' && !KEY_PATTERN.test(key);
+    const keyInvalid = key !== '' && !grammar.envName.test(key);
     const previews = targets.find((target) => target.allPreviews);
 
     const toggleEnvironment = (id: string, checked: boolean) =>
@@ -173,7 +172,7 @@ export function VariableDialog({
 
         try {
             if (editing) {
-                await api(
+                await requestJson(
                     'patch',
                     update({
                         project: urls.project,
@@ -183,7 +182,7 @@ export function VariableDialog({
                     payload,
                 );
             } else {
-                await api('post', store(urls).url, payload);
+                await requestJson('post', store(urls).url, payload);
             }
 
             onSaved(

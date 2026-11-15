@@ -18,12 +18,12 @@ import {
     DropdownMenuRadioItem,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { compactAge } from '@/features/canvas/format';
 import { providerLabel, repositoryLogo } from '@/features/git/providers';
-import { requestJson } from '@/features/projects/http';
+import { requestJson } from '@/lib/http';
 import { cn } from '@/lib/utils';
 import { edit as gitSettings } from '@/routes/git';
 import { index as repositoriesRoute } from '@/routes/git/repositories';
+import { compactAge } from '@/lib/format';
 
 type Repository = App.Data.Git.GitRepositoryData;
 

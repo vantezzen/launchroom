@@ -17,8 +17,6 @@ const NextAdapterPackage = "@vantezzen/launchroom-next-adapter"
 // summary line when it is applied.
 const NextAdapterDecision = "deployment-adapter"
 
-// ---- Laravel ----
-
 type laravel struct{}
 
 func (laravel) Name() string { return "laravel" }
@@ -72,8 +70,6 @@ func (laravel) Propose(f Facts, _ Info) Proposal {
 	p.Warnings = append(p.Warnings, Warning{Code: "app-key", Message: "Laravel needs APP_KEY at runtime. Generate one in the service variables if it is not set."})
 	return p
 }
-
-// ---- Django ----
 
 type django struct{}
 
@@ -142,8 +138,7 @@ func (django) Propose(f Facts, _ Info) Proposal {
 	return p
 }
 
-// ---- FastAPI / Flask / Litestar ----
-
+// pythonASGI covers FastAPI, Flask and Litestar.
 type pythonASGI struct{}
 
 func (pythonASGI) Name() string { return "python-web" }
@@ -224,8 +219,6 @@ func containsStr(list []string, s string) bool {
 	}
 	return false
 }
-
-// ---- Next.js ----
 
 type nextjs struct{}
 
@@ -332,8 +325,7 @@ func (nextjs) Propose(f Facts, _ Info) Proposal {
 	return p
 }
 
-// ---- Static SPA (Vite, CRA, Angular, Astro static, Next export) ----
-
+// staticSPA covers Vite, CRA, Angular, Astro static and Next export.
 type staticSPA struct{}
 
 func (staticSPA) Name() string { return "static-spa" }
@@ -364,8 +356,7 @@ func (staticSPA) Propose(f Facts, i Info) Proposal {
 	}
 }
 
-// ---- Node servers (Express, Fastify, Hono, Koa, Nest, plain Node) ----
-
+// nodeServer covers Express, Fastify, Hono, Koa, Nest and plain Node.
 type nodeServer struct{}
 
 func (nodeServer) Name() string { return "node-server" }

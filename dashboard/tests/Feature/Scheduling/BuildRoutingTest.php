@@ -39,9 +39,8 @@ use App\Models\Service;
 use App\Models\Team;
 use App\Services\Builds\BuildRouting;
 use App\Support\ServerPlatform;
-use GuzzleHttp\Promise\PromiseInterface;
 use Illuminate\Contracts\Database\Query\Builder;
-use Illuminate\Support\Facades\Http;
+use Tests\Support\GitFixtures;
 use Tests\Support\Projects;
 
 /*
@@ -55,10 +54,7 @@ beforeEach(function (): void {
     Projects::useTestKek();
     config(['launchroom.git.plain_sources' => true, 'launchroom.git.insecure_hosts' => ['git-fixtures']]);
 
-    $pkt = static fn (string $line): string => sprintf('%04x', strlen($line) + 4).$line;
-    Http::fake([
-        'http://git-fixtures:8080/*' => static fn (): PromiseInterface => Http::response($pkt("# service=git-upload-pack\n").'0000'.$pkt(BR_SHA." HEAD\0multi_ack side-band-64k\n").$pkt(BR_SHA." refs/heads/main\n").'0000'),
-    ]);
+    GitFixtures::fake(BR_SHA);
 });
 
 function brApp(Project $project): Service
@@ -198,7 +194,7 @@ test('a built image records its platform and only runs on servers of it', functi
 
     $deployment = Deployment::query()->latest('id')->firstOrFail();
 
-    expect($deployment->plan['platform'])->toBe('linux/amd64')
+    expect($deployment->plan?->platform)->toBe('linux/amd64')
         ->and(Placement::query()->where('deployment_id', $deployment->id)->pluck('server_id')->unique()->values()->all())->toBe([$amd->id])
         ->and(Placement::query()->where('server_id', $arm->id)->exists())->toBeFalse();
 });

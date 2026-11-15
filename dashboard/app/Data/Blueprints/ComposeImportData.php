@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Data\Blueprints;
 
 use App\Support\Compose\ComposeYaml;
+use App\Support\PublicId;
 use Closure;
 use Spatie\LaravelData\Attributes\Validation\In;
 use Spatie\LaravelData\Attributes\Validation\Max;
@@ -48,7 +49,7 @@ final class ComposeImportData extends Data
     {
         return [
             'compose' => ['nullable', 'string', 'required_unless:source,repository'],
-            'repository' => ['nullable', 'string', 'required_if:source,repository', 'regex:/^(?:ghr|gir)_[0-7][0-9A-HJKMNP-TV-Z]{25}$/D'],
+            'repository' => ['nullable', 'string', 'required_if:source,repository', 'regex:'.PublicId::regex('ghr', 'gir')],
             'branch' => ['nullable', 'string', 'required_if:source,repository'],
             'files' => ['sometimes', 'array', 'max:10'],
             'files.*' => ['string', 'max:65536'],

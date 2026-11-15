@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace App\Data\Transfers\Inputs;
 
+use App\Data\Attributes\PublicIdOf;
 use Spatie\LaravelData\Attributes\Validation\In;
 use Spatie\LaravelData\Attributes\Validation\Max;
 use Spatie\LaravelData\Attributes\Validation\Min;
-use Spatie\LaravelData\Attributes\Validation\Regex;
 use Spatie\LaravelData\Data;
 
 /**
@@ -22,7 +22,7 @@ final class CreateTransferInput extends Data
         public string $fileName,
         #[Min(1)]
         public int $sizeBytes,
-        #[Regex('/^vol_[0-9A-HJKMNP-TV-Z]{26}$/')]
+        #[PublicIdOf('vol')]
         public ?string $volume = null,
     ) {}
 }

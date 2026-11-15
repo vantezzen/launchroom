@@ -45,8 +45,7 @@ final class TransferData extends Data
 
     public static function fromTransfer(DataTransfer $transfer): self
     {
-        $sniff = $transfer->sniff ?? [];
-        $entries = array_values(array_filter(is_array($sniff['entries'] ?? null) ? $sniff['entries'] : [], is_string(...)));
+        $sniff = $transfer->sniff;
 
         return new self(
             $transfer->public_id,
@@ -65,8 +64,8 @@ final class TransferData extends Data
             $transfer->error,
             $transfer->created_at?->toIso8601String(),
             $transfer->expires_at->toIso8601String(),
-            array_slice($entries, 0, 20),
-            is_string($sniff['topFolder'] ?? null) ? $sniff['topFolder'] : null,
+            array_slice($sniff->entries ?? [], 0, 20),
+            $sniff?->topFolder,
         );
     }
 }

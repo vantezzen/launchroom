@@ -17,8 +17,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/vantezzen/launchroom/daemon/internal/build"
+	"github.com/vantezzen/launchroom/daemon/internal/dbengine"
 	"github.com/vantezzen/launchroom/daemon/internal/docker"
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/secret"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 	"github.com/vantezzen/launchroom/daemon/internal/transfer"
@@ -71,13 +72,10 @@ func (e *Engine) importTarget(ctx context.Context, spec *state.DbImportSpec, wit
 	}
 	t := &importTarget{engine: spec.Engine}
 	switch spec.Engine {
-	case state.EnginePostgres:
-		t.user, t.db, t.pw, err = pgConn(env)
-	case state.EngineMySQL, state.EngineMariaDB:
-		t.user, t.db, t.pw, err = mysqlConn(env)
-		if err == nil {
-			t.rootPw, _ = password(env, "MYSQL_ROOT_PASSWORD", "MARIADB_ROOT_PASSWORD")
-		}
+	case state.EnginePostgres, state.EngineMySQL, state.EngineMariaDB:
+		var l dbengine.Login
+		l, err = dbengine.LoginOf(spec.Engine, env)
+		t.user, t.db, t.pw, t.rootPw = l.User, l.Database, l.Password, l.Root
 	case state.EngineMongoDB:
 		t.user, t.db, t.pw, err = mongoConn(env)
 	default:
@@ -111,26 +109,6 @@ func (e *Engine) importTarget(ctx context.Context, spec *state.DbImportSpec, wit
 	return t, nil
 }
 
-func mysqlConn(env map[string]secret.Secret) (user, db, pw string, err error) {
-	if user, err = ident(env, "", "MYSQL_USER", "MARIADB_USER"); err != nil {
-		return "", "", "", err
-	}
-	if db, err = ident(env, "", "MYSQL_DATABASE", "MARIADB_DATABASE"); err != nil {
-		return "", "", "", err
-	}
-	pw, err = password(env, "MYSQL_PASSWORD", "MARIADB_PASSWORD")
-	return user, db, pw, err
-}
-
-func clientBin(engine state.DatabaseEngine) string {
-	if engine == state.EngineMariaDB {
-		return "mariadb"
-	}
-	return "mysql"
-}
-
-// ---- fixed queries in the database container ----
-
 const pgInspectQuery = `SELECT (SELECT count(*) FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace ` +
 	`WHERE c.relkind IN ('r','p','v','m','S','f') AND n.nspname NOT IN ('pg_catalog','information_schema') AND n.nspname NOT LIKE 'pg\_toast%' AND n.nspname NOT LIKE 'pg\_temp%'), ` +
 	`(SELECT count(*) FROM pg_catalog.pg_tables WHERE schemaname NOT IN ('pg_catalog','information_schema')), ` +
@@ -145,7 +123,7 @@ const mysqlInspectQuery = `SELECT (SELECT COUNT(*) FROM information_schema.table
 // variable arrives through the exec env.
 const mongoImportScript = `const env = process.env;
 const uri = "mongodb://" + encodeURIComponent(env.LR_MONGO_USER) + ":" + encodeURIComponent(env.LR_MONGO_PASSWORD) +
-  "@127.0.0.1:27017/?authSource=admin&directConnection=true&appName=launchroom";
+  "@127.0.0.1:" + env.LR_MONGO_PORT + "/?authSource=admin&directConnection=true&appName=launchroom";
 const d = new Mongo(uri).getDB(env.LR_MONGO_DB);
 if (env.LR_MONGO_OP === "drop") { d.dropDatabase(); }
 const names = d.getCollectionNames().filter((n) => !n.startsWith("system."));
@@ -166,7 +144,7 @@ func (e *Engine) inspectTarget(ctx context.Context, t *importTarget) (inspection
 		argv = []string{"psql", "-X", "-A", "-t", "-F", "|", "--host=127.0.0.1", "--username=" + t.user, "--dbname=" + t.db, "-c", pgInspectQuery}
 		env = []string{"PGPASSWORD=" + t.pw, "PGAPPNAME=launchroom"}
 	case state.EngineMySQL, state.EngineMariaDB:
-		argv = []string{clientBin(t.engine), "--protocol=tcp", "--host=127.0.0.1", "--user=" + t.user, "--database=" + t.db, "-N", "-B", "-e", mysqlInspectQuery}
+		argv = []string{dbengine.Client(t.engine), "--protocol=tcp", "--host=127.0.0.1", "--user=" + t.user, "--database=" + t.db, "-N", "-B", "-e", mysqlInspectQuery}
 		env = []string{"MYSQL_PWD=" + t.pw}
 	case state.EngineMongoDB:
 		return e.mongoTarget(ctx, t, "inspect")
@@ -181,7 +159,7 @@ func (e *Engine) inspectTarget(ctx context.Context, t *importTarget) (inspection
 	}
 	f := strings.Split(lastLine(out), sep)
 	if len(f) < 4 {
-		return inspection{}, fmt.Errorf("backup: unexpected answer from the database: %q", clip(out, 128))
+		return inspection{}, fmt.Errorf("backup: unexpected answer from the database: %q", state.Clip(out, 128))
 	}
 	var in inspection
 	in.objects, _ = strconv.ParseInt(strings.TrimSpace(f[0]), 10, 64)
@@ -192,7 +170,8 @@ func (e *Engine) inspectTarget(ctx context.Context, t *importTarget) (inspection
 }
 
 func (e *Engine) mongoTarget(ctx context.Context, t *importTarget, op string) (inspection, error) {
-	out, err := e.execOut(ctx, t.container, []string{"LR_MONGO_USER=" + t.user, "LR_MONGO_PASSWORD=" + t.pw, "LR_MONGO_DB=" + t.db, "LR_MONGO_OP=" + op},
+	out, err := e.execOut(ctx, t.container, []string{"LR_MONGO_USER=" + t.user, "LR_MONGO_PASSWORD=" + t.pw, "LR_MONGO_DB=" + t.db, "LR_MONGO_OP=" + op,
+		"LR_MONGO_PORT=" + dbengine.Of(state.EngineMongoDB).PortText()},
 		[]string{"mongosh", "--quiet", "--nodb", "--norc", "--eval", mongoImportScript})
 	if err != nil {
 		return inspection{}, err
@@ -211,7 +190,7 @@ func (e *Engine) mongoTarget(ctx context.Context, t *importTarget, op string) (i
 func markedJSON(out string, v any) error {
 	i := strings.LastIndex(out, mongoMarker)
 	if i < 0 {
-		return fmt.Errorf("backup: unexpected answer from mongosh: %q", clip(out, 128))
+		return fmt.Errorf("backup: unexpected answer from mongosh: %q", state.Clip(out, 128))
 	}
 	return json.Unmarshal([]byte(strings.TrimSpace(lastLine(out[i+len(mongoMarker):]))), v)
 }
@@ -238,7 +217,7 @@ func maskTail(stderr string, env []string, extra ...string) string {
 			vals = append(vals, v)
 		}
 	}
-	return build.NewMasker(vals...).Mask(firstLines(stderr))
+	return secret.NewMasker(vals...).Mask(firstLines(stderr))
 }
 
 // replace drops and recreates the target database (docs/14 §12.3).
@@ -256,7 +235,7 @@ func (e *Engine) replace(ctx context.Context, t *importTarget) error {
 			user, pw = "root", t.rootPw
 		}
 		_, err := e.execOut(ctx, t.container, []string{"MYSQL_PWD=" + pw}, []string{
-			clientBin(t.engine), "--protocol=tcp", "--host=127.0.0.1", "--user=" + user,
+			dbengine.Client(t.engine), "--protocol=tcp", "--host=127.0.0.1", "--user=" + user,
 			"-e", "DROP DATABASE IF EXISTS `" + t.db + "`; CREATE DATABASE `" + t.db + "`",
 		})
 		return err
@@ -266,8 +245,6 @@ func (e *Engine) replace(ctx context.Context, t *importTarget) error {
 	}
 	return ErrUnsupported
 }
-
-// ---- URL sources ----
 
 // sourceConn is a parsed connection URL. It holds a secret: never log it.
 type sourceConn struct {
@@ -289,12 +266,8 @@ func parseSourceURL(engine state.DatabaseEngine, raw string) (*sourceConn, error
 	if err != nil || u.Host == "" || u.Opaque != "" {
 		return nil, bad
 	}
-	schemes := map[state.DatabaseEngine][]string{
-		state.EnginePostgres: {"postgres", "postgresql"},
-		state.EngineMySQL:    {"mysql", "mariadb"},
-		state.EngineMariaDB:  {"mysql", "mariadb"},
-		state.EngineMongoDB:  {"mongodb", "mongodb+srv"},
-	}[engine]
+	facts := dbengine.Of(engine)
+	schemes := facts.URLSchemes
 	scheme := strings.ToLower(u.Scheme)
 	ok := false
 	for _, s := range schemes {
@@ -309,7 +282,7 @@ func parseSourceURL(engine state.DatabaseEngine, raw string) (*sourceConn, error
 		c.pw, _ = u.User.Password()
 	}
 	if c.port == "" {
-		c.port = map[state.DatabaseEngine]string{state.EnginePostgres: "5432", state.EngineMySQL: "3306", state.EngineMariaDB: "3306", state.EngineMongoDB: "27017"}[engine]
+		c.port = facts.PortText()
 	}
 	if c.host == "" || strings.ContainsAny(c.host, " /\\") || c.db == "" || strings.Contains(c.db, "/") {
 		return nil, errors.New("the connection URL needs a host and a database name (…/<database>)")
@@ -323,7 +296,7 @@ func parseSourceURL(engine state.DatabaseEngine, raw string) (*sourceConn, error
 	return c, nil
 }
 
-// probe checks the source can be reached from the throwaway and returns its version.
+// probeSource checks the source can be reached from the throwaway and returns its version.
 func (e *Engine) probeSource(ctx context.Context, id string, engine state.DatabaseEngine, src *sourceConn) (Version, int64, error) {
 	var argv, env []string
 	switch engine {
@@ -332,7 +305,7 @@ func (e *Engine) probeSource(ctx context.Context, id string, engine state.Databa
 			"SELECT current_setting('server_version'), (SELECT count(*) FROM pg_catalog.pg_tables WHERE schemaname NOT IN ('pg_catalog','information_schema'))"}
 		env = src.pgEnv()
 	case state.EngineMySQL, state.EngineMariaDB:
-		argv = append(src.mysqlArgs(clientBin(engine)), "--connect-timeout=15", "-N", "-B", "-e",
+		argv = append(src.mysqlArgs(dbengine.Client(engine)), "--connect-timeout=15", "-N", "-B", "-e",
 			"SELECT VERSION(), (SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE())", "--database="+src.db)
 		env = []string{"MYSQL_PWD=" + src.pw}
 	case state.EngineMongoDB:
@@ -348,7 +321,7 @@ func (e *Engine) probeSource(ctx context.Context, id string, engine state.Databa
 	}
 	if err != nil {
 		return Version{}, 0, fmt.Errorf("couldn't reach the source database at %s from this server: %s. Private and mesh addresses are blocked for imports like for apps; use a dump file instead",
-			net.JoinHostPort(src.host, src.port), build.NewMasker(src.raw, src.pw).Mask(err.Error()))
+			net.JoinHostPort(src.host, src.port), secret.NewMasker(src.raw, src.pw).Mask(err.Error()))
 	}
 	if engine == state.EngineMongoDB {
 		var r struct {
@@ -406,17 +379,17 @@ func (s *sourceConn) dumpCommand(engine state.DatabaseEngine) command {
 	case state.EnginePostgres:
 		return command{argv: []string{"pg_dump", "--format=custom", "--no-owner", "--no-privileges"}, env: s.pgEnv()}
 	case state.EngineMySQL:
-		return command{argv: append(s.mysqlArgs("mysqldump"), "--single-transaction", "--routines", "--triggers", "--events", "--no-tablespaces",
+		return command{argv: append(s.mysqlArgs(dbengine.Of(engine).Dump), "--single-transaction", "--routines", "--triggers", "--events", "--no-tablespaces",
 			"--hex-blob", "--set-gtid-purged=OFF", "--column-statistics=0", "--", s.db), env: []string{"MYSQL_PWD=" + s.pw}}
 	case state.EngineMariaDB:
-		return command{argv: append(s.mysqlArgs("mariadb-dump"), "--single-transaction", "--routines", "--triggers", "--events", "--no-tablespaces",
+		return command{argv: append(s.mysqlArgs(dbengine.Of(engine).Dump), "--single-transaction", "--routines", "--triggers", "--events", "--no-tablespaces",
 			"--hex-blob", "--", s.db), env: []string{"MYSQL_PWD=" + s.pw}}
 	case state.EngineMongoDB:
 		u, _ := url.Parse(s.raw)
 		if u.User != nil {
 			u.User = url.User(u.User.Username())
 		}
-		c := command{argv: []string{"mongodump", "--uri=" + u.String(), "--archive", "--quiet"}}
+		c := command{argv: []string{dbengine.Of(engine).Dump, "--uri=" + u.String(), "--archive", "--quiet"}}
 		if s.pw != "" {
 			c.stdin = []byte(s.pw + "\n")
 		}
@@ -425,23 +398,22 @@ func (s *sourceConn) dumpCommand(engine state.DatabaseEngine) command {
 	return command{}
 }
 
-// ---- restore ----
-
 // restoreCommand is the restore into the target, run in the throwaway.
 func (t *importTarget) restoreCommand(s Sniffed) command {
+	port := "--port=" + dbengine.Of(t.engine).PortText()
 	switch t.engine {
 	case state.EnginePostgres:
-		conn := []string{"--host=" + t.host, "--port=5432", "--username=" + t.user, "--dbname=" + t.db}
+		conn := []string{"--host=" + t.host, port, "--username=" + t.user, "--dbname=" + t.db}
 		env := []string{"PGPASSWORD=" + t.pw, "PGAPPNAME=launchroom-import"}
 		if s.Format == state.FormatPostgresCustom {
 			return command{argv: append([]string{"pg_restore", "--no-owner", "--no-privileges", "--single-transaction", "--exit-on-error"}, conn...), env: env}
 		}
 		return command{argv: append([]string{"psql", "-X", "-q", "-v", "ON_ERROR_STOP=1", "--single-transaction", "--file=-"}, conn...), env: env}
 	case state.EngineMySQL, state.EngineMariaDB:
-		return command{argv: []string{clientBin(t.engine), "--protocol=tcp", "--host=" + t.host, "--port=3306", "--user=" + t.user, "--database=" + t.db,
+		return command{argv: []string{dbengine.Client(t.engine), "--protocol=tcp", "--host=" + t.host, port, "--user=" + t.user, "--database=" + t.db,
 			"--binary-mode", "--default-character-set=utf8mb4"}, env: []string{"MYSQL_PWD=" + t.pw}}
 	case state.EngineMongoDB:
-		argv := []string{"mongorestore", "--host=" + t.host, "--port=27017", "--username=" + t.user, "--authenticationDatabase=admin", "--quiet", "--archive"}
+		argv := []string{"mongorestore", "--host=" + t.host, port, "--username=" + t.user, "--authenticationDatabase=admin", "--quiet", "--archive"}
 		if s.InnerGzip {
 			argv = append(argv, "--gzip")
 		}
@@ -525,8 +497,8 @@ func (e *Engine) ImportDatabase(ctx context.Context, task state.TaskID, spec *st
 			if err != nil {
 				return nil, err
 			}
-			res.SourceVersion = strings.TrimSpace(familyOf(spec.Engine) + " " + v.String())
-			if _, err := checkCompatible(Sniffed{Format: formatOf(spec.Engine), Family: familyOf(spec.Engine), Server: v}, spec.Engine, before.version, t.name); err != nil {
+			res.SourceVersion = strings.TrimSpace(dumpsOf(spec.Engine).family + " " + v.String())
+			if _, err := checkCompatible(Sniffed{Format: dumpsOf(spec.Engine).format, Family: dumpsOf(spec.Engine).family, Server: v}, spec.Engine, before.version, t.name); err != nil {
 				return nil, err
 			}
 		}
@@ -534,7 +506,6 @@ func (e *Engine) ImportDatabase(ctx context.Context, task state.TaskID, spec *st
 		return res, nil
 	}
 
-	// Import.
 	var (
 		sniffed Sniffed
 		path    string
@@ -576,11 +547,11 @@ func (e *Engine) ImportDatabase(ctx context.Context, task state.TaskID, spec *st
 		if err != nil {
 			return nil, err
 		}
-		sniffed = Sniffed{Format: formatOf(spec.Engine), Family: familyOf(spec.Engine), Server: v, InnerGzip: false}
+		sniffed = Sniffed{Format: dumpsOf(spec.Engine).format, Family: dumpsOf(spec.Engine).family, Server: v, InnerGzip: false}
 		res.SourceVersion = sniffed.SourceVersion()
 	} else {
 		if sniffed.Generic {
-			sniffed.Format, sniffed.Family = formatOf(spec.Engine), familyOf(spec.Engine)
+			sniffed.Format, sniffed.Family = dumpsOf(spec.Engine).format, dumpsOf(spec.Engine).family
 			if spec.Engine == state.EngineMongoDB {
 				return nil, fmt.Errorf("this is a SQL file, but %s is MongoDB; use mongodump --archive", t.name)
 			}
@@ -650,33 +621,9 @@ func limitWarnings(w []string) []string {
 		if s == "" || len(out) == state.MaxImportWarnings {
 			continue
 		}
-		out = append(out, clip(s, 256))
+		out = append(out, state.Clip(s, 256))
 	}
 	return out
-}
-
-func familyOf(engine state.DatabaseEngine) string {
-	switch engine {
-	case state.EnginePostgres:
-		return familyPostgres
-	case state.EngineMySQL:
-		return familyMySQL
-	case state.EngineMariaDB:
-		return familyMariaDB
-	case state.EngineMongoDB:
-		return familyMongoDB
-	}
-	return ""
-}
-
-func formatOf(engine state.DatabaseEngine) state.DataFormat {
-	switch engine {
-	case state.EnginePostgres:
-		return state.FormatPostgresSQL
-	case state.EngineMongoDB:
-		return state.FormatMongoArchive
-	}
-	return state.FormatMySQLSQL
 }
 
 // importThrowaway creates and starts the throwaway the client tools run in:
@@ -684,11 +631,6 @@ func formatOf(engine state.DatabaseEngine) state.DataFormat {
 func (e *Engine) importThrowaway(ctx context.Context, t *importTarget, spec *state.DbImportSpec, purpose string) (string, func(), error) {
 	if err := e.checkRuntime(ctx, t.rt.Image, spec.Resources); err != nil {
 		return "", nil, err
-	}
-	if e.o.Isolate != nil {
-		if err := e.o.Isolate(ctx); err != nil {
-			return "", nil, fmt.Errorf("backup: the firewall could not cover the import: %w", err)
-		}
 	}
 	secs := 6 * 3600
 	if dl, ok := ctx.Deadline(); ok {
@@ -716,7 +658,7 @@ func (e *Engine) sweepImports(ctx context.Context) {
 		return
 	}
 	e.sweepThrowaways(ctx, helperImport)
-	cs, err := e.o.Runtime.ListContainers(ctx, map[string]string{docker.LabelHelper: helperImportCheck})
+	cs, err := e.o.Runtime.ListContainers(ctx, map[string]string{names.LabelHelper: helperImportCheck})
 	if err != nil {
 		return
 	}
@@ -727,7 +669,6 @@ func (e *Engine) sweepImports(ctx context.Context) {
 	}
 }
 
-// runRestore feeds in into the restore command in the throwaway.
 func (e *Engine) runRestore(ctx context.Context, id string, cmd command, in io.Reader, extraMask ...string) error {
 	res, err := e.o.Runtime.ExecStream(ctx, id, docker.ExecOptions{Argv: cmd.argv, Env: cmd.env, Stdin: cmd.input(in)})
 	if err != nil {
@@ -801,7 +742,6 @@ func (e *Engine) restoreStream(ctx context.Context, id string, t *importTarget, 
 	return in.n.Load(), warnings, nil
 }
 
-// importFromURL pipes the source's dump into the restore.
 func (e *Engine) importFromURL(ctx context.Context, id string, t *importTarget, src *sourceConn, progress Progress) (int64, []string, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -820,7 +760,7 @@ func (e *Engine) importFromURL(ctx context.Context, id string, t *importTarget, 
 		dumpDone <- err
 	}()
 	in := &progressReader{r: pr, tick: func(n int64) { progress("Importing " + transfer.HumanBytes(n)) }}
-	s := Sniffed{Format: formatOf(t.engine)}
+	s := Sniffed{Format: dumpsOf(t.engine).format}
 	if t.engine == state.EnginePostgres {
 		s.Format = state.FormatPostgresCustom
 	}

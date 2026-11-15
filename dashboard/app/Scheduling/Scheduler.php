@@ -20,12 +20,10 @@ use App\Enums\ServerRole;
  * - stateful services run one replica, on the server holding their volume
  *   once pinned (never moved automatically, docs/02 §6);
  * - a server being moved away from (draining, docs/14 §13.2) only keeps
- *   services pinned to it by their volumes.
- *
+ *   services pinned to it by their volumes;
  * - a replica's CPU limit is at most the server's cores (Docker refuses
  *   more) and its memory limit at most the server's memory. Limits of
- *   different replicas are never summed: they are caps, not reservations
- *   (D72).
+ *   different replicas are never summed.
  *
  * Capacity is memory only, and limits are caps, not reservations (D72):
  * each replica needs `PlacementRequest::memoryNeedMb()` (its measured peak

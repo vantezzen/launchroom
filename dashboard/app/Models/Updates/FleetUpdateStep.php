@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Models\Updates;
 
+use App\Enums\Contracts\HasTransitionTable;
 use App\Enums\Updates\FleetUpdateStepStatus;
+use App\Models\Concerns\HasStatusTransitions;
 use App\Models\DaemonTask;
 use App\Models\Server;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -35,26 +37,28 @@ use Illuminate\Support\Carbon;
 #[Fillable(['fleet_update_id', 'server_id', 'position', 'server_name', 'from_version'])]
 final class FleetUpdateStep extends Model
 {
+    /** @use HasStatusTransitions<FleetUpdateStepStatus> */
+    use HasStatusTransitions;
+
     /** @var array<string, mixed> */
     protected $attributes = [
         'status' => 'pending',
     ];
 
-    public function transitionTo(FleetUpdateStepStatus $to, ?string $error = null): void
+    /**
+     * @param  FleetUpdateStepStatus  $from
+     * @param  FleetUpdateStepStatus  $to
+     */
+    protected function recordTransition(HasTransitionTable $from, HasTransitionTable $to, ?string $note): void
     {
-        $this->status->assertCanTransitionTo($to);
-        $this->status = $to;
-
         if ($to === FleetUpdateStepStatus::Updating) {
             $this->forceFill(['started_at' => now()]);
         }
 
         if ($to->isTerminal()) {
             $this->forceFill(['finished_at' => now()]);
-            $this->error = $error === null ? null : mb_substr($error, 0, 2048);
+            $this->error = $note;
         }
-
-        $this->save();
     }
 
     /**

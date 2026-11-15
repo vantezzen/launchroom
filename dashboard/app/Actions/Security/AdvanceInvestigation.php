@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Security;
 
+use App\Data\Security\InvestigatedReplicaData;
 use App\Enums\DaemonTaskStatus;
 use App\Enums\Security\InvestigationStatus;
 use App\Jobs\Security\BuildInvestigationReportJob;
@@ -32,18 +33,18 @@ final readonly class AdvanceInvestigation
                 return;
             }
 
-            $replicas = $investigation->replicas;
+            $replicas = $investigation->replicas->items();
 
-            foreach ($replicas as $i => $replica) {
-                if (($replica['task'] ?? null) === $task->public_id && $replica['state'] === 'pending') {
-                    $replicas[$i]['state'] = 'failed';
-                    $replicas[$i]['message'] = $task->status === DaemonTaskStatus::Failed && is_string($task->error) ? mb_substr($task->error, 0, 300) : null;
+            foreach ($replicas as $replica) {
+                if ($replica->task === $task->public_id && $replica->state === 'pending') {
+                    $replica->state = 'failed';
+                    $replica->message = $task->status === DaemonTaskStatus::Failed && is_string($task->error) ? mb_substr($task->error, 0, 300) : null;
                 }
             }
 
             $investigation->forceFill(['replicas' => $replicas])->save();
 
-            if (array_filter($replicas, static fn (array $r): bool => $r['state'] === 'pending') === []) {
+            if (array_filter($replicas, static fn (InvestigatedReplicaData $r): bool => $r->state === 'pending') === []) {
                 dispatch(new BuildInvestigationReportJob($investigation->id))->afterCommit();
             }
         });

@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace App\Listeners\Moves;
 
-use App\Enums\DeploymentStatus;
-use App\Enums\Moves\ServerMoveStatus;
 use App\Events\DeploymentStatusChanged;
 use App\Jobs\Moves\AdvanceServerMovesJob;
 use App\Models\Moves\ServerMove;
@@ -19,11 +17,11 @@ final class AdvanceMovesOnDeployment
 {
     public function handle(DeploymentStatusChanged $event): void
     {
-        if (! in_array($event->to, [DeploymentStatus::Active, DeploymentStatus::Failed, DeploymentStatus::Cancelled, DeploymentStatus::Superseded], true)) {
+        if (! $event->to->isFinished()) {
             return;
         }
 
-        if (ServerMove::query()->whereIn('status', ServerMoveStatus::values([ServerMoveStatus::Running, ServerMoveStatus::Cancelling]))->exists()) {
+        if (ServerMove::query()->advancing()->exists()) {
             dispatch(new AdvanceServerMovesJob);
         }
     }

@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef, useState } from 'react';
 import { Logo } from '@/components/logo';
 import { GROUPS } from '@/features/canvas/groups';
 import { cn } from '@/lib/utils';
+import { formatMemory } from '@/lib/format';
 
 type Preview = App.Data.Blueprints.BlueprintPreviewData;
 type ServicePreview = App.Data.Blueprints.BlueprintServicePreviewData;
@@ -224,10 +225,7 @@ function ServiceTile({
 
 /** "2 CPUs, 1.5 GB, 2 volumes" for a blueprint. */
 export function resourcesLine(preview: Preview): string {
-    const memory =
-        preview.memoryMb >= 1024
-            ? `${Number((preview.memoryMb / 1024).toFixed(1))} GB`
-            : `${preview.memoryMb} MB`;
+    const memory = formatMemory(preview.memoryMb);
     const cpus = `${Number(preview.cpus.toFixed(2))} ${preview.cpus === 1 ? 'CPU' : 'CPUs'}`;
     const volumes =
         preview.volumes === 0

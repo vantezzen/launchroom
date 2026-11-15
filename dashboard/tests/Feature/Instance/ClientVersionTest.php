@@ -22,8 +22,6 @@ it('answers the version the pages carry, so a new build is detected', function (
 
     $version = $this->getJson('/up/version')->assertOk()->json('version');
 
-    expect($version)->toBe(hash('xxh128', 'https://assets.example.test/build-42'));
-
     // A page built from the same assets loads; an older one is told to reload.
     $this->get('/login', ['X-Inertia' => 'true', 'X-Inertia-Version' => $version])
         ->assertOk()

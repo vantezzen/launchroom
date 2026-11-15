@@ -13,6 +13,7 @@ import (
 
 	"github.com/vantezzen/launchroom/daemon/internal/docker"
 	"github.com/vantezzen/launchroom/daemon/internal/docker/dockerfake"
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/policy"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
@@ -30,7 +31,7 @@ func (d *aaDocker) StartContainer(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
-	if cc, ok := d.Create(c.Name); ok && !d.loaded && strings.Join(cc.HostConfig.SecurityOpt, ",") == "seccomp=unconfined,apparmor="+AppArmorProfile {
+	if cc, ok := d.Create(c.Name); ok && !d.loaded && strings.Join(cc.HostConfig.SecurityOpt, ",") == "seccomp=unconfined,apparmor="+names.BuildkitAppArmorProfile {
 		return errors.New("Error response from daemon: failed to create task for container: OCI runtime create failed: unable to apply apparmor profile: apparmor failed to apply profile: write /proc/thread-self/attr/apparmor/exec: no such file or directory: unknown")
 	}
 	return d.Fake.StartContainer(ctx, id)
@@ -63,7 +64,7 @@ func aaRig(t *testing.T, restrict, apparmor string, loaded bool) (*Manager, *aaD
 
 func securityOpt(t *testing.T, d *aaDocker) string {
 	t.Helper()
-	cc, ok := d.Create(ContainerName)
+	cc, ok := d.Create(names.BuildkitContainer)
 	if !ok {
 		t.Fatal("no buildkitd container")
 	}
@@ -139,8 +140,8 @@ func TestAppArmorMissingProfileFallsBackAndRetries(t *testing.T) {
 
 	// Crash-looping unconfined, and the owner has loaded the profile since:
 	// the next pass after reprobeAfter switches to it.
-	cs, _ := d.ListContainers(t.Context(), map[string]string{docker.LabelSystem: policy.SystemBuildkit})
-	d.Update(cs[0].ID, func(c *docker.Container) { c.State, c.Restarting, c.RestartCount = "restarting", true, 4 })
+	cs, _ := d.ListContainers(t.Context(), map[string]string{names.LabelSystem: names.SystemBuildkit})
+	d.Update(cs[0].ID, func(c *docker.Container) { c.State, c.RestartCount = "restarting", 4 })
 	d.loaded = true
 	m.mu.Lock()
 	m.profileMissing = time.Now() // too recent: not yet
@@ -159,7 +160,7 @@ func TestAppArmorMissingProfileFallsBackAndRetries(t *testing.T) {
 	if m.Userns() != UsernsProfile {
 		t.Fatalf("userns %s", m.Userns())
 	}
-	cs, _ = d.ListContainers(t.Context(), map[string]string{docker.LabelSystem: policy.SystemBuildkit})
+	cs, _ = d.ListContainers(t.Context(), map[string]string{names.LabelSystem: names.SystemBuildkit})
 	if len(cs) != 1 {
 		t.Fatalf("%d buildkitd containers", len(cs))
 	}
@@ -172,7 +173,7 @@ func TestAppArmorOtherStartErrorsAreNotAProfileProblem(t *testing.T) {
 }
 
 func TestProfileCommandMatchesTheProfile(t *testing.T) {
-	for _, want := range []string{"profile " + AppArmorProfile + " flags=(unconfined) {", "userns,", "abi <abi/4.0>,", "/etc/apparmor.d/" + AppArmorProfile, "apparmor_parser -r -W"} {
+	for _, want := range []string{"profile " + names.BuildkitAppArmorProfile + " flags=(unconfined) {", "userns,", "abi <abi/4.0>,", "/etc/apparmor.d/" + names.BuildkitAppArmorProfile, "apparmor_parser -r -W"} {
 		if !strings.Contains(ProfileCommand, want) {
 			t.Errorf("ProfileCommand misses %q", want)
 		}

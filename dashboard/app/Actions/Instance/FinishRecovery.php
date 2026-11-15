@@ -9,25 +9,32 @@ use App\Data\Audit\AuditActor;
 use App\Data\Audit\AuditEntryData;
 use App\Enums\AuditAction;
 use App\Models\InstanceSettings;
+use App\Queries\RecoveryChecklist;
+use App\Services\Instance\RecoveryMode;
 use Illuminate\Support\Facades\DB;
 
 /**
  * Leaves recovery mode (docs/14 §5.2): an instance owner confirms the
- * checklist is done. Audited with what was left open.
+ * checklist is done. Audited with the steps still open, as freshly checked
+ * here.
  */
 final readonly class FinishRecovery
 {
     public function __construct(
         private RecordAuditEvent $audit,
+        private RecoveryChecklist $checklist,
     ) {}
 
-    /**
-     * @param  list<string>  $open  checklist items still open (for the audit trail)
-     */
-    public function handle(array $open, AuditActor $actor): void
+    public function handle(AuditActor $actor): void
     {
+        if (! RecoveryMode::active()) {
+            return;
+        }
+
+        $open = $this->checklist->get(checkImages: true)->openSteps;
+
         DB::transaction(function () use ($open, $actor): void {
-            $settings = InstanceSettings::query()->whereKey(InstanceSettings::ID)->lockForUpdate()->firstOrFail();
+            $settings = InstanceSettings::lockedForUpdate();
 
             if ($settings->recovery_state === null) {
                 return;
@@ -40,7 +47,7 @@ final readonly class FinishRecovery
                 action: AuditAction::RecoveryFinished,
                 actor: $actor,
                 subjectType: 'instance',
-                meta: ['startedAt' => $state['startedAt'], 'open' => $open],
+                meta: ['startedAt' => $state->startedAt, 'open' => $open],
             ));
         });
     }

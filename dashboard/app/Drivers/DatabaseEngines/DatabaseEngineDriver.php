@@ -7,6 +7,7 @@ namespace App\Drivers\DatabaseEngines;
 use App\Data\Services\HealthcheckSettings;
 use App\Enums\ConnectionStyle;
 use App\Enums\DatabaseEngine;
+use App\Enums\RemoteAccess\RemoteAccessProtocol;
 use App\Support\Images\ImageReference;
 
 /**
@@ -21,13 +22,16 @@ interface DatabaseEngineDriver
 {
     public function engine(): DatabaseEngine;
 
+    public function category(): DatabaseEngineCategory;
+
     /**
-     * Supported major versions, newest first.
+     * Configured versions, newest first.
      *
      * @return list<string>
      */
     public function versions(): array;
 
+    /** The first configured version. */
     public function defaultVersion(): string;
 
     /**
@@ -44,6 +48,9 @@ interface DatabaseEngineDriver
      */
     public function volumeMountPath(string $version): string;
 
+    /** Where the server keeps its data files (Postgres: PGDATA). */
+    public function dataDirectory(string $version): string;
+
     /**
      * Variables created for every environment: generated credentials,
      * container configuration and the exported connection variables.
@@ -58,6 +65,33 @@ interface DatabaseEngineDriver
      * @return list<string>
      */
     public function exportedKeys(): array;
+
+    /** The exported variable holding one part of a connection, if the engine has it. */
+    public function exportedKey(ConnectionPart $part): ?string;
+
+    /**
+     * Env names other images of this engine use for a connection part
+     * (Compose imports rewrite consumers that repeat them, docs/17 §2.3).
+     *
+     * @return array<value-of<ConnectionPart>, list<string>>
+     */
+    public function imageEnvAliases(): array;
+
+    /**
+     * URL schemes that speak the engine's native protocol (its
+     * ConnectionPart::NativePort) instead of the exported port's.
+     *
+     * @return list<string>
+     */
+    public function nativeSchemes(): array;
+
+    /**
+     * Query parameters a connection URL needs for the generated user
+     * (MongoDB: `authSource=admin`).
+     *
+     * @return array<string, string>
+     */
+    public function urlQuery(): array;
 
     /**
      * Variables a canvas connection injects into the consumer (docs/06 §3.2),
@@ -86,6 +120,9 @@ interface DatabaseEngineDriver
      */
     public function stopSignal(): string;
 
+    /** How long a stop waits before the kill (`WorkloadSpec.stop`, D42), as a Go duration. */
+    public function stopTimeout(): string;
+
     /**
      * ENTRYPOINT override rendered together with the stop (D42) when the
      * image's own ENTRYPOINT starts an init in front of the server; null
@@ -102,18 +139,27 @@ interface DatabaseEngineDriver
      */
     public function args(string $version): ?array;
 
-    /**
-     * Backup argv run in the database's network (docs/14 §7); credentials
-     * come from the engine's env, never argv.
-     *
-     * @return list<string>
-     */
-    public function dumpCommand(): array;
+    /** The engine's command-line client in its image (launchroomd's dbengine.Client), if it has one. */
+    public function client(): ?string;
+
+    /** The PHP extension a connected PHP app needs (D71), or none. */
+    public function phpExtension(): ?string;
 
     /**
-     * @return list<string>
+     * The file extension of an export (docs/14 §12.5), as launchroomd writes
+     * it (`backup.exportFormat`: MySQL dumps are gzipped).
      */
-    public function restoreCommand(): array;
+    public function exportFileExtension(): string;
 
-    public function dumpFileExtension(): string;
+    /** How a dump or URL is imported into it, or null: no imports (docs/14 §12). */
+    public function importFormat(): ?DumpImport;
+
+    /** Whether launchroomd restores its backups (docs/14 §7). */
+    public function restorable(): bool;
+
+    /** The first major version with point-in-time recovery (docs/14 §10), or null: none. */
+    public function pointInTimeRecoveryFrom(): ?int;
+
+    /** The protocol of temporary access (docs/08 §15), or null: none. */
+    public function remoteAccess(): ?RemoteAccessProtocol;
 }

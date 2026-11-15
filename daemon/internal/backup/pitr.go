@@ -34,7 +34,7 @@ const WalDirName = "launchroom-wal"
 
 // walAfterTarget is how much WAL past a target time is laid out: a record at
 // time t is in a segment Postgres completes within archive_timeout (60 s)
-// and launchroomd ships within an interval, so a quarter of an hour is
+// and launchroomd ships within an interval, so half an hour is
 // plenty; replay stops at the target anyway.
 const walAfterTarget = 30 * time.Minute
 
@@ -549,7 +549,7 @@ func parseReplayTime(s string) *time.Time {
 // adoptCredentials gives the restored data the target's password (a copy
 // has its own generated credentials) and checks that its database exists.
 func (e *Engine) adoptCredentials(ctx context.Context, id string, t PostgresTarget) error {
-	if !reDBIdent.MatchString(t.User) || !reDBIdent.MatchString(t.Database) {
+	if state.DatabaseIdent(t.User).Validate() != nil || state.DatabaseIdent(t.Database).Validate() != nil {
 		return errors.New("backup: invalid target role or database name")
 	}
 	pw := t.Password.Reveal()

@@ -130,13 +130,4 @@ enum AlertRule: string
             default => null,
         };
     }
-
-    /**
-     * Raised and resolved by the per-minute evaluator (the others come from
-     * events or other workstreams).
-     */
-    public function isCondition(): bool
-    {
-        return in_array($this, [self::ServiceUnhealthy, self::ErrorRateHigh, self::CpuHigh, self::MemoryHigh, self::DiskFull, self::CertificateExpiring, self::WafUnavailable], true);
-    }
 }

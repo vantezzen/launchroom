@@ -8,12 +8,13 @@ use App\Actions\Audit\RecordAuditEvent;
 use App\Actions\Environments\DeleteEnvironment;
 use App\Data\Audit\AuditActor;
 use App\Data\Audit\AuditEntryData;
+use App\Data\Previews\PreviewClosingData;
+use App\Data\Previews\PreviewStateData;
 use App\Enums\AuditAction;
 use App\Enums\Backups\DeletionOutcome;
 use App\Enums\Previews\PreviewStatus;
-use App\Exceptions\DomainRuleViolation;
 use App\Jobs\Previews\AdvancePreviewsJob;
-use App\Jobs\Previews\ReportPreviewToGitHubJob;
+use App\Jobs\Previews\ReportPreviewJob;
 use App\Models\Environment;
 use App\Models\Previews\Preview;
 use App\Models\Previews\PreviewShareLink;
@@ -50,20 +51,16 @@ final readonly class DestroyPreview
         $environment = $preview->environment_id === null ? null : Environment::query()->whereKey($preview->environment_id)->first();
 
         if ($environment instanceof Environment) {
-            try {
-                $outcome = $this->deleteEnvironment->handle($environment, null, $actor);
-                $waiting = match ($outcome) {
-                    DeletionOutcome::Deleted => null,
-                    DeletionOutcome::WaitingForFinalBackup => 'Removal waits for the final backup of its data.',
-                    DeletionOutcome::Blocked => 'Removal is blocked: the final backup of its data failed. Retry it or delete without a final backup in the project settings.',
-                };
-            } catch (DomainRuleViolation) {
-                $waiting = 'Removal waits for a running backup or restore of its database.';
-            }
+            $waiting = match ($this->deleteEnvironment->handle($environment, null, $actor)) {
+                DeletionOutcome::Deleted => null,
+                DeletionOutcome::WaitingForFinalBackup => 'Removal waits for the final backup of its data.',
+                DeletionOutcome::Blocked => 'Removal is blocked: the final backup of its data failed. Retry it or delete without a final backup in the project settings.',
+                DeletionOutcome::Busy => 'Removal waits for a running backup or restore of its database.',
+            };
 
             if ($waiting !== null) {
                 $preview->forceFill([
-                    'data' => [...$preview->data, 'pendingClose' => ['to' => $to->value, 'reason' => $reason]],
+                    'data' => $preview->data->changed(['pendingClose' => new PreviewClosingData($to, $reason)]),
                     'status_reason' => $waiting,
                 ])->save();
 
@@ -77,7 +74,7 @@ final readonly class DestroyPreview
             PreviewShareLink::query()->where('preview_id', $preview->id)->whereNull('revoked_at')->update(['revoked_at' => now()]);
 
             $preview->environment_id = null;
-            $preview->data = [];
+            $preview->data = new PreviewStateData;
             $preview->transitionTo($to, $reason);
 
             if ($environment instanceof Environment) {
@@ -93,7 +90,7 @@ final readonly class DestroyPreview
         });
 
         if ($environment instanceof Environment) {
-            dispatch(new ReportPreviewToGitHubJob($preview->id));
+            dispatch(new ReportPreviewJob($preview->id));
             dispatch(new AdvancePreviewsJob($preview->team_id));
         }
     }

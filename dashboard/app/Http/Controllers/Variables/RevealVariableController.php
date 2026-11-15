@@ -6,7 +6,7 @@ namespace App\Http\Controllers\Variables;
 
 use App\Actions\Variables\RevealSecret;
 use App\Http\Controllers\Controller;
-use App\Http\Controllers\Deployments\ScopesProjectRoutes;
+use App\Http\Routing\RouteScope;
 use App\Models\Environment;
 use App\Models\Project;
 use App\Models\User;
@@ -23,11 +23,10 @@ use Illuminate\Support\Facades\Gate;
  */
 final class RevealVariableController extends Controller
 {
-    use ScopesProjectRoutes;
-
     public function __invoke(Request $request, Project $project, Environment $environment, Variable $variable, #[CurrentUser] User $user, RevealSecret $reveal): JsonResponse
     {
-        $this->scopeVariable($project, $environment, $variable);
+        RouteScope::environment($project, $environment);
+        RouteScope::variable($project, $variable);
         Gate::authorize('reveal', $variable);
 
         return response()

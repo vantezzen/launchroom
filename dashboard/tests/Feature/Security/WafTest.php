@@ -24,10 +24,10 @@ use App\Exceptions\DomainRuleViolation;
 use App\Models\Alerts\Alert;
 use App\Models\AuditEvent;
 use App\Models\Domain;
-use App\Models\Placement;
 use App\Models\Server;
 use App\Models\ServiceInstance;
 use App\Models\Team;
+use App\Support\Ingress\RouteId;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -169,7 +169,7 @@ function wafReport(object $test, int $seq = 1): array
 
 test('firewall samples and events are stored idempotently, attributed by route, with the client network only', function (): void {
     $domain = Domain::query()->where('service_instance_id', $this->instance->id)->firstOrFail();
-    $this->domainRoute = Domain::routeIdFor($domain->public_id);
+    $this->domainRoute = RouteId::forDomain($domain->public_id);
     $this->deploymentRoute = 'rt_'.substr((string) $this->instance->activeDeployment?->public_id, 4);
     $body = wafReport($this);
 
@@ -186,7 +186,7 @@ test('firewall samples and events are stored idempotently, attributed by route, 
         ->and(DB::table('waf_events')->orderBy('at')->pluck('client_network')->all())->toBe(['203.0.113.0/24', '2001:db8::/48', '198.51.100.0/24']);
 
     $status = $this->server->refresh()->waf_status;
-    expect($status)->toMatchArray(['state' => 'on', 'engine' => 'coraza 3.8.1', 'ruleSet' => 'OWASP CRS 4.25.0', 'routes' => 2]);
+    expect($status?->toArray())->toMatchArray(['state' => 'on', 'engine' => 'coraza 3.8.1', 'ruleSet' => 'OWASP CRS 4.25.0', 'routes' => 2]);
 
     // A full address or a non-canonical network never gets stored.
     $bad = wafReport($this, 3);
@@ -205,7 +205,7 @@ test('firewall samples and events are stored idempotently, attributed by route, 
 
 test('samples whose counts don\'t add up are dropped', function (): void {
     $domain = Domain::query()->where('service_instance_id', $this->instance->id)->firstOrFail();
-    $this->domainRoute = Domain::routeIdFor($domain->public_id);
+    $this->domainRoute = RouteId::forDomain($domain->public_id);
     $this->deploymentRoute = 'rt_'.substr((string) $this->instance->activeDeployment?->public_id, 4);
     $body = wafReport($this);
     $body['metrics']['waf'][0]['otherPaths']['blocked'] = 5;
@@ -266,6 +266,5 @@ test('changing the firewall re-renders the team\'s edges', function (): void {
 
     resolve(SetWafSettings::class)->handle($this->instance, SetWafSettingsData::from(['mode' => 'log']), $this->actor);
 
-    expect($this->server->refresh()->desired_version)->toBeGreaterThan($before)
-        ->and(Placement::query()->count())->toBe(1);
+    expect($this->server->refresh()->desired_version)->toBeGreaterThan($before);
 });

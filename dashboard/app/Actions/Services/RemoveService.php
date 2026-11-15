@@ -5,14 +5,15 @@ declare(strict_types=1);
 namespace App\Actions\Services;
 
 use App\Actions\Audit\RecordAuditEvent;
+use App\Actions\Backups\RequestFinalBackups;
 use App\Data\Audit\AuditActor;
 use App\Data\Audit\AuditEntryData;
 use App\Enums\ActorType;
 use App\Enums\AuditAction;
+use App\Events\CanvasChanged;
 use App\Models\Backups\DeletionRequest;
 use App\Models\ServiceInstance;
 use App\Models\User;
-use App\Services\Backups\FinalBackups;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 
@@ -23,13 +24,13 @@ use Illuminate\Support\Facades\DB;
  *
  * A database or a service with volumes that has backups configured gets a
  * final backup now, while it still runs (docs/14 §9.13): the Deploy that
- * tears it down waits for it ({@see FinalBackups::assertCleared()}).
+ * tears it down waits for it (FinalBackups::assertCleared()).
  */
 final readonly class RemoveService
 {
     public function __construct(
         private RecordAuditEvent $audit,
-        private FinalBackups $finalBackups,
+        private RequestFinalBackups $requestFinalBackups,
     ) {}
 
     public function handle(ServiceInstance $instance, AuditActor $actor): void
@@ -51,6 +52,7 @@ final readonly class RemoveService
                 subjectId: $instance->service->public_id,
                 meta: ['instance' => $instance->public_id],
             ));
+            CanvasChanged::forInstance($instance);
 
             return true;
         });
@@ -62,7 +64,7 @@ final readonly class RemoveService
                 $instance = ServiceInstance::query()->whereKey($instance->id)->with(['service', 'volumes'])->lockForUpdate()->firstOrFail();
                 $user = $actor->type === ActorType::User && $actor->id !== null ? User::query()->find($actor->id) : null;
 
-                $this->finalBackups->gate(
+                $this->requestFinalBackups->handle(
                     DeletionRequest::SERVICE_INSTANCE,
                     $instance->id,
                     $instance->public_id,

@@ -6,8 +6,8 @@ namespace App\Services\Deployments;
 
 use App\Data\Services\ScalingSettings;
 use App\Data\Specs\ServiceSpec;
-use App\Enums\DaemonFeature;
 use App\Enums\EnvironmentKind;
+use App\Enums\NodeStateField;
 use App\Enums\ServerRole;
 use App\Enums\ServerStatus;
 use App\Enums\WorkloadPhase;
@@ -23,10 +23,10 @@ use App\Scheduling\PlacementRequest;
 use App\Scheduling\SchedulableServer;
 use App\Scheduling\Scheduler;
 use App\Services\Moves\MovingServers;
+use App\Services\NodeStates\FeatureGate;
 use App\Services\Volumes\MountedVolumes;
 use App\Support\PublicId;
 use App\Support\ServerPlatform;
-use App\Support\Servers\HostCapacity;
 use App\Support\Servers\HostRoleLimits;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
@@ -36,28 +36,15 @@ use Illuminate\Support\Facades\DB;
  * builds the scheduler's view of the team's servers and of a replica set's
  * needs, and creates placement rows (one workload per replica slot).
  *
- * Placement rows are only ever created through createPlacement(), the one
- * place that assigns a workload id and records the replica's limits (the
- * mesh-port allocation hooks in there too, docs/05 §3).
- *
  * Limits are caps, not reservations (D72): a replica is expected to use its
  * measured peak over the last 6 hours (`workload_metric_samples`), at least
  * `replica_memory_mb`, at most its limit. A server's free memory is what it
  * reports available, minus `reserved_memory_mb` of headroom and what
  * workloads its report doesn't show yet are expected to use.
- *
- * The request (PlacementRequest) carries: replicas and limits, required
- * labels, spread/pack, the allow/deny lists (server public ids → ids), the
- * environment's kind (previews only on servers allowing previews, production
- * only on servers allowing production), the image's platform for built
- * images (`deployments.plan.platform`), the servers of the current
- * deployment (preferred on ties), and the stateful pin (the volume's server).
  */
 final class Placer
 {
     /**
-     * Places every replica slot of $deployment (all at once).
-     *
      * @return list<int> ids of the servers that received workloads
      *
      * @throws PlacementFailed
@@ -97,12 +84,12 @@ final class Placer
         $plan = Scheduler::place($this->servers($instance->team_id, $instance->id), $request);
         $mounted = MountedVolumes::for($instance);
 
-        if ($plan->serverIds !== [] && MountedVolumes::shared($instance)->isNotEmpty() && Server::query()->whereKey($plan->serverIds[0])->first()?->supportsDaemonFeature(DaemonFeature::SharedVolumes) === false) {
+        if ($plan->serverIds !== [] && MountedVolumes::shared($instance)->isNotEmpty() && ($first = Server::query()->whereKey($plan->serverIds[0])->first()) instanceof Server && ! FeatureGate::accepts($first, NodeStateField::SharedVolume)) {
             throw new PlacementFailed('This service mounts a volume of another service, and its server runs an older version of launchroom that can\'t share volumes. Update launchroom on the server, then deploy again.');
         }
 
         // Services with volumes (databases, apps with uploads) are pinned to their volume's server.
-        if (($instance->service->kind->isStateful() || $mounted->isNotEmpty()) && $plan->serverIds !== []) {
+        if ($instance->isStateful() && $plan->serverIds !== []) {
             Volume::query()->whereKey($mounted->whereNull('server_id')->modelKeys())->update(['server_id' => $plan->serverIds[0]]);
             $instance->volumes()->whereNull('server_id')->update(['server_id' => $plan->serverIds[0]]);
         }
@@ -125,6 +112,26 @@ final class Placer
     }
 
     /**
+     * The same replica again under a fresh workload id (a stopped stateful
+     * replica that comes back after a failed rollout), keeping its limits.
+     */
+    public function recreatePlacement(Placement $placement): Placement
+    {
+        $placement->delete();
+
+        return Placement::query()->create([
+            'team_id' => $placement->team_id,
+            'service_instance_id' => $placement->service_instance_id,
+            'deployment_id' => $placement->deployment_id,
+            'server_id' => $placement->server_id,
+            'slot' => $placement->slot,
+            'workload_id' => PublicId::generate('wl'),
+            'memory_mb' => $placement->memory_mb,
+            'cpus' => $placement->cpus,
+        ]);
+    }
+
+    /**
      * The scheduler's view of the team's approved servers. Only `online`
      * servers are eligible; the workloads counted are the serving ones of
      * every other service instance.
@@ -135,7 +142,7 @@ final class Placer
     {
         $servers = Server::query()
             ->where('team_id', $teamId)
-            ->whereIn('status', [ServerStatus::Online->value, ServerStatus::Unreachable->value, ServerStatus::Offline->value])
+            ->approved()
             ->orderBy('id')
             ->get();
 
@@ -159,7 +166,7 @@ final class Placer
             $limits = 0;
             $cpus = 0.0;
             $unseen = 0;
-            $measured = HostCapacity::availableMemory($server);
+            $measured = $server->availableMemory();
 
             foreach ($here as $placement) {
                 $need = $this->expected($placement->memory_mb, $peaks[$placement->service_instance_id] ?? null);
@@ -168,7 +175,7 @@ final class Placer
                 $cpus += $placement->cpus;
 
                 // Not in the measurement yet: placed after it, or not running yet.
-                if ($measured !== null && (in_array($placement->phase, [WorkloadPhase::Pending, WorkloadPhase::Pulling, WorkloadPhase::Starting], true) || $placement->created_at?->greaterThan($measured[1]) === true)) {
+                if ($measured !== null && (in_array($placement->phase, WorkloadPhase::starting(), true) || $placement->created_at?->greaterThan($measured[1]) === true)) {
                     $unseen += $need;
                 }
             }
@@ -179,9 +186,9 @@ final class Placer
                 roles: array_values(array_filter($server->roles->all(), static fn (ServerRole $role): bool => HostRoleLimits::refusal($server, $role) === null)),
                 labels: $server->labels,
                 online: $server->status === ServerStatus::Online,
-                memoryMb: HostCapacity::memoryMb($server),
+                memoryMb: $server->memoryMb(),
                 allocatedMemoryMb: $expected,
-                cpus: HostCapacity::cpus($server),
+                cpus: $server->cpus(),
                 allocatedCpus: round($cpus, 2),
                 allowPreviews: $server->allow_previews,
                 allowProduction: $server->allow_production,
@@ -205,9 +212,6 @@ final class Placer
     }
 
     /**
-     * The highest memory one replica of each instance used in the last 6
-     * hours (per-minute samples).
-     *
      * @param  list<int>  $instanceIds
      * @return array<int, int> service instance id => MB
      */
@@ -241,10 +245,8 @@ final class Placer
     public function request(ServiceInstance $instance, ScalingSettings $scaling, ?Deployment $deployment, int $replicas, array $existingServerIds = []): PlacementRequest
     {
         $instance->loadMissing(['volumes', 'service', 'environment']);
-        // A volume makes any service stateful: one replica, never moved (docs/02 §6, docs/14 §2).
-        // Shared ones count too (D73): the service runs where the volume is.
         $mounted = MountedVolumes::for($instance);
-        $stateful = $instance->service->kind->isStateful() || $mounted->isNotEmpty();
+        $stateful = $instance->isStateful();
         $ids = $this->serverIds($instance->team_id, [...$scaling->allowServers, ...$scaling->denyServers]);
         $allowed = $scaling->allowServers === [] ? null : array_values(array_filter(array_map(static fn (string $id): ?int => $ids[$id] ?? null, $scaling->allowServers), is_int(...)));
 
@@ -257,7 +259,7 @@ final class Placer
                 }
             }
         }
-        $platform = $deployment?->plan['platform'] ?? null;
+        $platform = $deployment?->plan?->platform;
 
         /** @var list<int> $previous */
         $previous = $instance->active_deployment_id === null ? [] : Placement::query()
@@ -282,7 +284,7 @@ final class Placer
             denyServerIds: array_values(array_filter(array_map(static fn (string $id): ?int => $ids[$id] ?? null, $scaling->denyServers), is_int(...))),
             preview: $instance->environment->kind === EnvironmentKind::Preview,
             production: $instance->environment->kind === EnvironmentKind::Production,
-            platform: is_string($platform) ? $platform : null,
+            platform: $platform,
             existingServerIds: $existingServerIds,
             expectedMemoryMb: $this->expectedMemoryMb($instance, $scaling->memoryMb),
         );

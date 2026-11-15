@@ -4,13 +4,17 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Data\Servers\ReplacedServiceData;
+use App\Enums\Contracts\HasTransitionTable;
 use App\Enums\ServerReplacementStatus;
 use App\Models\Concerns\BelongsToTeam;
 use App\Models\Concerns\HasPublicId;
+use App\Models\Concerns\HasStatusTransitions;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
+use Spatie\LaravelData\DataCollection;
 
 /**
  * One "Replace server" run (docs/14 §5.3, §9.14): the dead server's roles
@@ -18,10 +22,7 @@ use Illuminate\Support\Carbon;
  * from their latest backups, its other workloads re-placed, and the dead
  * server revoked (it may only fetch its empty decommission state).
  *
- * `services` tracks progress per service instance:
- * {instance, service, name, kind: stateful|stateless, restore: {snapshot,
- * takenAt}|null, restoreRuns (rsr_…), deployment (dep_…), status: pending |
- * deploying | restoring | restored | done | running | failed | gone, message}.
+ * `services` tracks progress per service instance ({@see ReplacedServiceData}).
  *
  * @property int $id
  * @property string $public_id
@@ -29,7 +30,7 @@ use Illuminate\Support\Carbon;
  * @property int $old_server_id
  * @property int $new_server_id
  * @property ServerReplacementStatus $status
- * @property list<array{instance: string, service: string, name: string, kind: string, restore: array{snapshot: string, takenAt: string|null}|null, restoreRuns: list<string>, deployment: string|null, status: string, message: string|null}> $services
+ * @property DataCollection<int, ReplacedServiceData> $services
  * @property bool $recovery
  * @property string|null $error
  * @property int|null $created_by
@@ -44,6 +45,9 @@ final class ServerReplacement extends Model
 {
     use BelongsToTeam, HasPublicId;
 
+    /** @use HasStatusTransitions<ServerReplacementStatus> */
+    use HasStatusTransitions;
+
     /** @var array<string, mixed> */
     protected $attributes = [
         'status' => 'running',
@@ -56,13 +60,14 @@ final class ServerReplacement extends Model
         return 'srp';
     }
 
-    public function transitionTo(ServerReplacementStatus $to, ?string $error = null): void
+    /**
+     * @param  ServerReplacementStatus  $from
+     * @param  ServerReplacementStatus  $to
+     */
+    protected function recordTransition(HasTransitionTable $from, HasTransitionTable $to, ?string $note): void
     {
-        $this->status->assertCanTransitionTo($to);
-        $this->status = $to;
-        $this->error = $error === null ? null : mb_substr($error, 0, 2048);
+        $this->error = $note;
         $this->forceFill(['finished_at' => now()]);
-        $this->save();
     }
 
     /**
@@ -88,7 +93,7 @@ final class ServerReplacement extends Model
     {
         return [
             'status' => ServerReplacementStatus::class,
-            'services' => 'array',
+            'services' => DataCollection::class.':'.ReplacedServiceData::class.',default',
             'recovery' => 'boolean',
             'finished_at' => 'datetime',
         ];

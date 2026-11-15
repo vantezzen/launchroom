@@ -25,7 +25,6 @@ import (
 
 // Options configures a Collector.
 type Options struct {
-	// DataDir is the daemon data dir.
 	DataDir string
 	// Docker reads host-wide Docker facts (nil: skipped).
 	Docker docker.HostOps
@@ -100,7 +99,6 @@ func (c *Collector) read(rel string) ([]byte, bool) {
 	return data, true
 }
 
-// memory parses MemTotal and MemAvailable (kB) from /proc/meminfo.
 func (c *Collector) memory() *state.MemoryUsage {
 	m, ok := c.memInfo()
 	if !ok {
@@ -125,6 +123,12 @@ func (c *Collector) memInfo() (MemInfo, bool) {
 	if !ok {
 		return MemInfo{}, false
 	}
+	return ParseMemInfo(data)
+}
+
+// ParseMemInfo reads the content of /proc/meminfo (ok = MemTotal and
+// MemAvailable were there).
+func ParseMemInfo(data []byte) (MemInfo, bool) {
 	m := MemInfo{TotalMB: -1, AvailableMB: -1}
 	sc := bufio.NewScanner(bytes.NewReader(data))
 	for sc.Scan() {
@@ -153,6 +157,45 @@ func (c *Collector) memInfo() (MemInfo, bool) {
 	m.AvailableMB = min(m.AvailableMB, m.TotalMB)
 	m.SwapFreeMB = min(m.SwapFreeMB, m.SwapTotalMB)
 	return m, true
+}
+
+// virtualInterfaces are prefixes of interfaces that are not the host's own
+// network: loopback, Docker bridges and veths, the mesh (tailscale0),
+// tunnels and other container/VM plumbing.
+var virtualInterfaces = []string{
+	"lo", "docker", "br-", "veth", "tailscale", "cni", "flannel", "virbr", "lr-", "tunl", "sit", "ip6tnl", "ip6gre",
+	"gre", "erspan", "ip_vti", "ip6_vti", "nlmon", "dummy", "kube", "cali", "vxlan", "genev", "ifb",
+}
+
+// VirtualInterface reports whether name is container, VM or tunnel plumbing
+// rather than a physical (or the VM's own) interface.
+func VirtualInterface(name string) bool {
+	for _, p := range virtualInterfaces {
+		if strings.HasPrefix(name, p) {
+			return true
+		}
+	}
+	return false
+}
+
+// DockerDisk returns the filesystem Docker stores images and containers on:
+// Docker's root dir when launchroomd can see it (it shares Docker's mount
+// namespace in dev, or by a deliberate mount), else the data dir standing in.
+func DockerDisk(host docker.HostOps, dataDir string) func(ctx context.Context) (state.FilesystemUsage, bool) {
+	var root string
+	return func(ctx context.Context) (state.FilesystemUsage, bool) {
+		if root == "" && host != nil {
+			if r, err := host.RootDir(ctx); err == nil && filepath.IsAbs(r) {
+				root = r
+			}
+		}
+		if root != "" {
+			if fs, ok := Filesystem(root); ok {
+				return fs, true
+			}
+		}
+		return Filesystem(dataDir)
+	}
 }
 
 func (c *Collector) load() *state.LoadAverage {

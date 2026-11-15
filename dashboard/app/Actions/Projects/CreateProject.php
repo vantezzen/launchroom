@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Projects;
 
 use App\Actions\Audit\RecordAuditEvent;
+use App\Actions\Environments\AllocateEnvironmentSubnet;
 use App\Data\Audit\AuditActor;
 use App\Data\Audit\AuditEntryData;
 use App\Data\Environments\EnvironmentTriggers;
@@ -16,7 +17,6 @@ use App\Models\Environment;
 use App\Models\Project;
 use App\Models\Team;
 use App\Services\Crypto\ProjectKeyring;
-use App\Services\Projects\EnvironmentSubnets;
 use App\Support\Slug;
 use Illuminate\Support\Facades\DB;
 
@@ -28,7 +28,7 @@ final readonly class CreateProject
 {
     public function __construct(
         private ProjectKeyring $keyring,
-        private EnvironmentSubnets $subnets,
+        private AllocateEnvironmentSubnet $subnets,
         private RecordAuditEvent $audit,
     ) {}
 
@@ -55,7 +55,7 @@ final readonly class CreateProject
                 'slug' => 'production',
                 'kind' => EnvironmentKind::Production,
                 'triggers' => new EnvironmentTriggers(branch: 'main'),
-                'network_subnet' => $this->subnets->allocate(),
+                'network_subnet' => $this->subnets->handle(),
             ]);
 
             CanvasLayout::query()->create(['environment_id' => $production->id]);

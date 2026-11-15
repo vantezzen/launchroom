@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/vantezzen/launchroom/daemon/internal/docker"
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/secret"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
@@ -173,8 +174,8 @@ type walFakeDocker struct {
 	users   []string
 }
 
-func (f *walFakeDocker) ListContainers(context.Context, map[string]string) ([]docker.Container, error) {
-	return []docker.Container{{ID: "c1", Running: true, State: "running", Labels: map[string]string{}}}, nil
+func (f *walFakeDocker) ListContainers(_ context.Context, labels map[string]string) ([]docker.Container, error) {
+	return []docker.Container{{ID: "c1", State: docker.StateRunning, Labels: map[string]string{names.LabelManaged: "true", names.LabelWorkload: labels[names.LabelWorkload]}}}, nil
 }
 
 func (f *walFakeDocker) ExecStream(_ context.Context, _ string, o docker.ExecOptions) (docker.ExecResult, error) {
@@ -182,12 +183,12 @@ func (f *walFakeDocker) ExecStream(_ context.Context, _ string, o docker.ExecOpt
 	f.users = append(f.users, o.User)
 	switch o.Argv[0] {
 	case "ls":
-		var names []string
+		var files []string
 		for n := range f.files {
-			names = append(names, n)
+			files = append(files, n)
 		}
-		slices.Sort(names)
-		_, _ = io.WriteString(o.Stdout, strings.Join(names, "\n")+"\n")
+		slices.Sort(files)
+		_, _ = io.WriteString(o.Stdout, strings.Join(files, "\n")+"\n")
 	case "rm":
 		f.removed = append(f.removed, o.Argv[3:]...)
 	}

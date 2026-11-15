@@ -45,7 +45,6 @@ export function StaysYoursVisual() {
     );
 }
 
-/** Card visual: free, MIT. */
 export function FreeVisual() {
     return (
         <div className="flex h-full flex-col items-center justify-center gap-2 px-6 py-6 text-center">

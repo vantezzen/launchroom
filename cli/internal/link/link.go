@@ -10,7 +10,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/vantezzen/launchroom/cli/internal/config"
+	"github.com/vantezzen/launchroom/cli/internal/fsutil"
 )
 
 // DirName and FileName locate the link file.
@@ -63,5 +63,5 @@ func Write(dir string, l Link) (string, error) {
 		return "", err
 	}
 	path := filepath.Join(dir, DirName, FileName)
-	return path, config.WriteFileAtomic(path, append(b, '\n'), 0o644)
+	return path, fsutil.WriteFileAtomic(path, append(b, '\n'), 0o644)
 }

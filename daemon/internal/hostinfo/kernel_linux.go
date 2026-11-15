@@ -1,6 +1,8 @@
 package hostinfo
 
-import "golang.org/x/sys/unix"
+import (
+	"golang.org/x/sys/unix"
+)
 
 // KernelRelease is the kernel release from uname(2) ("" if unknown).
 func KernelRelease() string {

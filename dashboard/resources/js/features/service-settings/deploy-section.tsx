@@ -5,16 +5,17 @@ import InputError from '@/components/input-error';
 import { TimeRangeSelect } from '@/components/charts/time-range-select';
 import { Stepper } from '@/components/patterns/stepper';
 import { Input } from '@/components/ui/input';
-import { formatArgv, parseArgv } from '@/features/projects/argv';
+import { formatArgv, parseArgv } from '@/lib/argv';
+import services from '@/routes/projects/services';
+import { autoHealthTimeout } from './health-timeout';
+import { OverrideRow } from './override-row';
+import { SaveRow, SettingsPage } from './section';
+import type { SettingsContext } from './settings-context';
 import {
     SettingsBody,
     SettingsCard,
     SettingsRow,
-} from '@/features/settings/settings-card';
-import services from '@/routes/projects/services';
-import { OverrideRow } from './override-row';
-import { SaveRow, SettingsPage } from './section';
-import type { SettingsContext } from './settings-context';
+} from '@/components/settings/settings-card';
 
 type DeployForm = {
     port: string | null;
@@ -33,18 +34,10 @@ type DeployForm = {
     healthTimeout: number | null;
 };
 
-/** The Roll out step's default timeout (DeploySettings::ROLLOUT_TIMEOUT_DEFAULT). */
-const ROLLOUT_TIMEOUT_DEFAULT = 600;
-
-/** The health check's own bound (DeploySettings::healthTimeout()). */
-function autoHealthTimeout(form: DeployForm): number {
-    return Math.max(
-        90,
-        form.startPeriod + (form.interval + form.timeout) * form.failures + 60,
-    );
-}
-
-function fromSettings(deploy: App.Data.Services.DeploySettings): DeployForm {
+function fromSettings(
+    deploy: App.Data.Services.DeploySettings,
+    rolloutTimeoutDefault: number,
+): DeployForm {
     return {
         port: deploy.port === null ? null : String(deploy.port),
         start:
@@ -60,7 +53,7 @@ function fromSettings(deploy: App.Data.Services.DeploySettings): DeployForm {
         timeout: deploy.healthcheck.timeoutSeconds,
         failures: deploy.healthcheck.failureThreshold,
         drain: deploy.drainSeconds,
-        rolloutTimeout: deploy.rolloutTimeoutSeconds ?? ROLLOUT_TIMEOUT_DEFAULT,
+        rolloutTimeout: deploy.rolloutTimeoutSeconds ?? rolloutTimeoutDefault,
         healthTimeout: deploy.healthTimeoutSeconds,
     };
 }
@@ -72,7 +65,7 @@ function fromSettings(deploy: App.Data.Services.DeploySettings): DeployForm {
 function HealthTimeline({ form }: { form: DeployForm }) {
     const checks = Math.min(8, Math.max(form.failures + 2, 4));
     const total = form.startPeriod + checks * Math.max(form.interval, 1);
-    const grace = total === 0 ? 0 : (form.startPeriod / total) * 100;
+    const grace = (form.startPeriod / total) * 100;
 
     return (
         <div className="flex flex-col gap-2" aria-hidden="true">
@@ -105,12 +98,7 @@ function HealthTimeline({ form }: { form: DeployForm }) {
                 })}
             </div>
             <div className="flex justify-between gap-4 type-small text-muted-foreground">
-                <span>
-                    {form.startPeriod > 0
-                        ? 'Time to start, then a check'
-                        : 'Checks start at once'}{' '}
-                    every {form.interval}s
-                </span>
+                <span>Time to start, then a check every {form.interval}s</span>
                 <span className="text-status-progress">
                     Unhealthy after {form.failures} misses in a row
                 </span>
@@ -127,11 +115,13 @@ function HealthTimeline({ form }: { form: DeployForm }) {
 export function DeploySection({ context }: { context: SettingsContext }) {
     const { settings, node, canUpdate } = context;
     const detected = settings.detected;
-    const form = useForm<DeployForm>(fromSettings(settings.deploy));
+    const limits = settings.deployLimits;
+    const form = useForm<DeployForm>(
+        fromSettings(settings.deploy, limits.rolloutTimeoutDefault),
+    );
     const [commandError, setCommandError] = useState<string | null>(null);
-    const built =
-        node.kind === 'app' || node.kind === 'worker' || node.kind === 'cron';
-    const web = node.kind === 'app' || node.kind === 'image';
+    const built = node.capabilities.built;
+    const web = node.capabilities.web;
     const error = (key: string) =>
         (form.errors as Record<string, string | undefined>)[`deploy.${key}`];
     const data = form.data;
@@ -172,7 +162,7 @@ export function DeploySection({ context }: { context: SettingsContext }) {
                 },
                 drainSeconds: values.drain,
                 rolloutTimeoutSeconds:
-                    values.rolloutTimeout === ROLLOUT_TIMEOUT_DEFAULT
+                    values.rolloutTimeout === limits.rolloutTimeoutDefault
                         ? null
                         : values.rolloutTimeout,
                 healthTimeoutSeconds: values.healthTimeout,
@@ -349,8 +339,8 @@ export function DeploySection({ context }: { context: SettingsContext }) {
                                 <Stepper
                                     label="Time to start"
                                     unit="s"
-                                    min={0}
-                                    max={3600}
+                                    min={limits.startPeriod.min}
+                                    max={limits.startPeriod.max}
                                     step={5}
                                     value={data.startPeriod}
                                     disabled={!canUpdate}
@@ -364,8 +354,8 @@ export function DeploySection({ context }: { context: SettingsContext }) {
                                 <Stepper
                                     label="Check every"
                                     unit="s"
-                                    min={1}
-                                    max={300}
+                                    min={limits.interval.min}
+                                    max={limits.interval.max}
                                     value={data.interval}
                                     disabled={!canUpdate}
                                     onChange={(value) =>
@@ -378,8 +368,8 @@ export function DeploySection({ context }: { context: SettingsContext }) {
                                 <Stepper
                                     label="Answer within"
                                     unit="s"
-                                    min={1}
-                                    max={300}
+                                    min={limits.timeout.min}
+                                    max={limits.timeout.max}
                                     value={data.timeout}
                                     disabled={!canUpdate}
                                     onChange={(value) =>
@@ -390,8 +380,8 @@ export function DeploySection({ context }: { context: SettingsContext }) {
                                 <Stepper
                                     label="Unhealthy after"
                                     unit="misses"
-                                    min={1}
-                                    max={20}
+                                    min={limits.failures.min}
+                                    max={limits.failures.max}
                                     value={data.failures}
                                     disabled={!canUpdate}
                                     onChange={(value) =>
@@ -416,8 +406,8 @@ export function DeploySection({ context }: { context: SettingsContext }) {
                             label="Drain time"
                             className="[&>label]:sr-only"
                             unit="s"
-                            min={0}
-                            max={3600}
+                            min={limits.drain.min}
+                            max={limits.drain.max}
                             step={5}
                             value={data.drain}
                             disabled={!canUpdate}
@@ -434,8 +424,8 @@ export function DeploySection({ context }: { context: SettingsContext }) {
                             label="Start timeout"
                             className="[&>label]:sr-only"
                             unit="s"
-                            min={60}
-                            max={3600}
+                            min={limits.rolloutTimeout.min}
+                            max={limits.rolloutTimeout.max}
                             step={60}
                             value={data.rolloutTimeout}
                             disabled={!canUpdate}
@@ -458,8 +448,8 @@ export function DeploySection({ context }: { context: SettingsContext }) {
                             label="Health check timeout"
                             className="[&>label]:sr-only"
                             unit="s"
-                            min={30}
-                            max={3600}
+                            min={limits.healthTimeout.min}
+                            max={limits.healthTimeout.max}
                             step={30}
                             value={
                                 data.healthTimeout ?? autoHealthTimeout(data)

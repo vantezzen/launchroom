@@ -39,7 +39,7 @@ final readonly class AutoUpdateWindow
 
     public function timezone(): DateTimeZone
     {
-        $zone = Server::query()->where('is_control_plane', true)->whereNull('revoked_at')->first()?->facts->hardware?->timezone;
+        $zone = Server::currentControlPlane()?->facts->hardware?->timezone;
 
         try {
             return new DateTimeZone(is_string($zone) && $zone !== '' ? $zone : 'UTC');

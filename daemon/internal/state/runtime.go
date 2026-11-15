@@ -80,8 +80,72 @@ func (v EngineKind) Validate() error { return checkEnum("engine", string(v), eng
 type HostCapability struct {
 	Name  CapabilityName  `json:"name"`
 	State CapabilityState `json:"state"`
-	// Message explains a degraded or unavailable capability (secret-free).
+	// Reason says why the capability is limited or what qualifies it; the
+	// dashboard words it. Omitted when there is nothing to say.
+	Reason CapabilityReason `json:"reason,omitzero"`
+	// Message carries the facts behind the reason (an error text, the
+	// refused ports, a command to run, the build limits), secret-free.
 	Message string `json:"message,omitzero" jsonschema:"maxLength=512"`
+}
+
+// CapabilityReason is why a capability has its state (HostCapability.reason).
+type CapabilityReason string
+
+// Capability reasons.
+const (
+	// CapReasonFullSocket: launchroomd holds the whole Docker socket (no dockerd-guard).
+	CapReasonFullSocket CapabilityReason = "full_socket"
+	// CapReasonVM: Docker runs in a Linux VM (a Mac, or Docker Desktop
+	// anywhere): ports open in the VM, connections arrive through the
+	// engine's port forwarding, the mesh sits behind its NAT, the firewall
+	// applies inside the VM.
+	CapReasonVM CapabilityReason = "vm"
+	// CapReasonRootless: rootless Docker forwards connections, applies the
+	// firewall in its network namespace and NATs the mesh's UDP.
+	CapReasonRootless CapabilityReason = "rootless"
+	// CapReasonNoRootlessKitAPI: rootless Docker without RootlessKit's API
+	// in dockerd-guard, so the edge ports can't be exposed.
+	CapReasonNoRootlessKitAPI CapabilityReason = "no_rootlesskit_api"
+	// CapReasonPortsPending: the edge ports were not exposed yet.
+	CapReasonPortsPending CapabilityReason = "ports_pending"
+	// CapReasonPortsRefused: some edge ports were refused (message: which
+	// and why; ports below 1024 need net.ipv4.ip_unprivileged_port_start=80).
+	CapReasonPortsRefused CapabilityReason = "ports_refused"
+	// CapReasonTurnedOff: turned off on this server (LR_FIREWALL=off).
+	CapReasonTurnedOff CapabilityReason = "turned_off"
+	// CapReasonError: it failed (message: the error).
+	CapReasonError CapabilityReason = "error"
+	// CapReasonDockerDesktop: Docker Desktop publishes ports on the machine,
+	// not on the mesh address inside its VM, so apps can't be reached from
+	// the other servers (D53).
+	CapReasonDockerDesktop CapabilityReason = "docker_desktop"
+	// CapReasonUsernsProfile: the host restricts user namespaces and
+	// launchroom's AppArmor profile allows them for the build container (D58).
+	CapReasonUsernsProfile CapabilityReason = "userns_profile"
+	// CapReasonUsernsBlocked: the host restricts user namespaces and has
+	// not loaded launchroom's AppArmor profile (message: the command that
+	// loads it, D58).
+	CapReasonUsernsBlocked CapabilityReason = "userns_blocked"
+	// CapReasonNoSwap: a small host without swap: a build that needs more
+	// memory fails instead of slowing down (message: the command that adds swap).
+	CapReasonNoSwap CapabilityReason = "no_swap"
+	// CapReasonBuildLimits: builds run with limits (message: the limits).
+	CapReasonBuildLimits CapabilityReason = "build_limits"
+)
+
+var capabilityReasons = []string{
+	string(CapReasonFullSocket), string(CapReasonVM), string(CapReasonRootless), string(CapReasonNoRootlessKitAPI),
+	string(CapReasonPortsPending), string(CapReasonPortsRefused), string(CapReasonTurnedOff), string(CapReasonError),
+	string(CapReasonDockerDesktop), string(CapReasonUsernsProfile), string(CapReasonUsernsBlocked), string(CapReasonNoSwap),
+	string(CapReasonBuildLimits),
+}
+
+// ProtocolSchema implements SchemaDescriber.
+func (CapabilityReason) ProtocolSchema() ScalarSchema { return enumSchema(capabilityReasons) }
+
+// Validate checks the value.
+func (v CapabilityReason) Validate() error {
+	return checkEnum("capability reason", string(v), capabilityReasons)
 }
 
 // CapabilityName names a server capability.
@@ -161,6 +225,9 @@ func (r *HostRuntime) validate(e *errs, p string) {
 		q := idx(p+".capabilities", i)
 		e.check(q+".name", c.Name)
 		e.check(q+".state", c.State)
+		if c.Reason != "" {
+			e.check(q+".reason", c.Reason)
+		}
 		checkText(e, q+".message", c.Message, 512)
 		names = append(names, c.Name)
 	}

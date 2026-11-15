@@ -9,11 +9,13 @@ use App\Actions\Security\SyncLifecycles;
 use App\Enums\Security\AdvisoryFeed;
 use App\Enums\Security\SecurityFindingStatus;
 use App\Enums\TeamRole;
+use App\Jobs\Security\SyncAdvisoriesJob;
 use App\Models\Security\AdvisoryFeedState;
 use App\Models\Security\SecurityFinding;
 use App\Models\Team;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Tests\Support\Projects;
@@ -122,6 +124,15 @@ test('querybatch asks only ecosystem, name and version, follows pages and hydrat
     Http::fake();
     expect(resolve(SyncAdvisories::class)->handle()['queries'])->toBe(0);
     Http::assertNothingSent();
+});
+
+test('a forced sync paused by a rate limit queues itself again still forced (bug 14b)', function (): void {
+    Http::fake(['api.osv.dev/v1/querybatch' => Http::response('slow down', 429, ['Retry-After' => '120'])]);
+    Bus::fake([SyncAdvisoriesJob::class]);
+
+    new SyncAdvisoriesJob($this->inventory->id, force: true)->handle(resolve(SyncAdvisories::class));
+
+    Bus::assertDispatched(SyncAdvisoriesJob::class, fn (SyncAdvisoriesJob $job): bool => $job->inventoryId === $this->inventory->id && $job->force);
 });
 
 test('a rate limit pauses the sync with a back-off and keeps the cursor', function (): void {

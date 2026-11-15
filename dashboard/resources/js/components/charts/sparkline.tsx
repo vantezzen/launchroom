@@ -4,7 +4,7 @@ import { cn } from '@/lib/utils';
 import { SIGNAL } from './palette';
 import { useMeasuredWidth } from './use-measure';
 
-export type SparklineProps = {
+type SparklineProps = {
     /** Values in time order; `null` leaves a gap. */
     values: (number | null)[];
     /** Accessible description, e.g. "CPU, last hour, 12% to 34%". */

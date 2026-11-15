@@ -17,18 +17,13 @@ import type {
 } from '@xyflow/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
-import { router, usePage } from '@inertiajs/react';
+import { router } from '@inertiajs/react';
 import { toast } from 'sonner';
 import { useClipboard } from '@/hooks/use-clipboard';
-import { serviceAnalyticsHref } from '@/lib/links';
-import { requestJson } from '@/features/projects/http';
+import { analyticsHref } from '@/lib/links';
+import { requestJson } from '@/lib/http';
 import { RemoveServiceDialog } from '@/features/service-settings/remove-service-dialog';
-import {
-    optimisticService,
-    rollbackToast,
-} from '@/features/deployments/optimistic';
 import { layout as layoutRoute } from '@/routes/projects';
-import lifecycle from '@/routes/services/lifecycle';
 import { autoLayout, NODE_HEIGHT, NODE_WIDTH } from './auto-layout';
 import { StagedToolbarButton } from '@/features/staged-changes/staged-changes-pill';
 import { CanvasToolbar } from './canvas-toolbar';
@@ -58,6 +53,7 @@ import {
 } from './volume-layer';
 import type { MountFlowEdge, VolumeFlowNode } from './volume-layer';
 import './canvas.css';
+import { restartService } from '@/features/service-lifecycle/actions';
 
 const nodeTypes = {
     service: ServiceNode,
@@ -93,7 +89,7 @@ function mountLinks(volumes: App.Data.Canvas.CanvasVolumeData[]) {
 }
 
 /** The floating service panel's width on desktop (service-panel.tsx). */
-export const PANEL_WIDTH = 680;
+const PANEL_WIDTH = 680;
 
 function prefersReducedMotion(): boolean {
     return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -113,7 +109,7 @@ function nextFreeSpot(placed: XY[], index: number): XY {
     return { x: maxX + NODE_WIDTH + 120, y: minY + index * (NODE_HEIGHT + 48) };
 }
 
-export type ServiceCanvasProps = {
+type ServiceCanvasProps = {
     project: string;
     environment: string;
     nodes: App.Data.Canvas.CanvasNodeData[];
@@ -188,9 +184,7 @@ export function ServiceCanvas({
     const [connecting, setConnecting] = useState(false);
     const [, copy] = useClipboard();
     const initialFit = useRef(false);
-    // The panel's Console tab rule (InteractiveSessionPolicy::viewAny).
-    const canConsole =
-        usePage().props.teams?.permissions.includes('containers.exec') ?? false;
+    const canConsole = abilities.console;
 
     const byId = useMemo(
         () => new Map(nodes.map((node) => [node.id, node])),
@@ -853,11 +847,11 @@ export function ServiceCanvas({
                     break;
                 case 'analytics':
                     router.visit(
-                        serviceAnalyticsHref({
+                        analyticsHref({
                             project,
                             environment,
                             service: node.id,
-                            hasDomain: node.domain !== null,
+                            view: node.analyticsView,
                         }),
                     );
                     break;
@@ -912,21 +906,7 @@ export function ServiceCanvas({
         [onOpenService, canConsole],
     );
     const restart = (node: App.Data.Canvas.CanvasNodeData) =>
-        router.post(
-            lifecycle.restart({ project, environment, service: node.id }).url,
-            { processes: true },
-            {
-                preserveScroll: true,
-                preserveState: true,
-                optimistic: optimisticService(
-                    node.id,
-                    { state: 'progress', label: 'Restarting' },
-                    { deploying: true },
-                ),
-                onSuccess: () => toast.success(`Restarting ${node.name}`),
-                ...rollbackToast(`Couldn’t restart ${node.name}.`),
-            },
-        );
+        restartService({ project, environment, service: node.id }, node.name);
     const openVolumeData = openVolume
         ? volumesById.get(openVolume.id)
         : undefined;

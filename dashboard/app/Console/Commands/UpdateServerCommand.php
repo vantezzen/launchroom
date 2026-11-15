@@ -38,7 +38,7 @@ final class UpdateServerCommand extends Command
         $ref = $this->argument('server');
         $ref = is_string($ref) ? $ref : '';
         $servers = Server::query()
-            ->whereNull('revoked_at')
+            ->notRevoked()
             ->where(static fn (Builder $query) => $query->where('public_id', $ref)->orWhere('name', $ref))
             ->get();
 

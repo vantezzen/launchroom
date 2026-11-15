@@ -30,7 +30,7 @@ final class BackfillSecurityCommand extends Command
         // A paused OSV sync resumes after its back-off; KEV older than a day is fetched (docs/22 §4.3).
         $osv = AdvisoryFeedState::of(AdvisoryFeed::Osv);
 
-        if ($osv->enabled && is_array($osv->cursor) && ($osv->retry_at === null || $osv->retry_at->isPast())) {
+        if ($osv->enabled && $osv->cursor !== null && ($osv->retry_at === null || $osv->retry_at->isPast())) {
             dispatch(new SyncAdvisoriesJob);
         }
 

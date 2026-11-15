@@ -6,10 +6,10 @@ use App\Actions\Deployments\DeployEnvironment;
 use App\Actions\Deployments\SweepDeployments;
 use App\Data\Audit\AuditActor;
 use App\Data\Deployments\LogLineData;
-use App\Enums\CanvasNodeState;
 use App\Enums\DeploymentFailureClass;
 use App\Enums\DeploymentStatus;
 use App\Enums\DeploymentStepName;
+use App\Enums\StatusTone;
 use App\Enums\WorkloadPhase;
 use App\Models\Deployment;
 use App\Models\Placement;
@@ -104,6 +104,31 @@ test('an app on another port names the port to set', function (): void {
 
     expect(rolloutLatestOf($web)->failure_message)->toContain('The app listens on 3000, not 8000')
         ->and(rolloutLatestOf($web)->failure_message)->toContain('Set the service port to 3000');
+});
+
+test('a fail-fast port mismatch is explained from its code, not its wording', function (): void {
+    [$server, $web, $placement] = rollingOut();
+    Projects::report($server, 'starting', fields: [$placement->workload_id => ['issue' => ['kind' => 'wrong_port', 'since' => stamp(), 'port' => 8000, 'listening' => [3000]]]]);
+
+    $explanation = resolve(DeploymentDetailView::class)->get(rolloutLatestOf($web))->failureExplanation;
+    expect($explanation?->key)->toBe('port_mismatch')
+        ->and($explanation?->params)->toBe(['port' => 3000, 'currentPort' => 8000]);
+});
+
+test('a health check that times out names launchroomd\'s port hint', function (): void {
+    [$server, $web, $placement] = rollingOut();
+    $w = $placement->workload_id;
+    $unhealthy = [$w => ['health' => ['state' => 'failing', 'consecutiveFailures' => 3, 'lastError' => 'connection refused', 'attempts' => 3], 'portHint' => 'no_port', 'detectedPorts' => []]];
+    Projects::report($server, 'unhealthy', fields: $unhealthy);
+
+    Date::setTestNow(now()->addHour());
+    Projects::report($server, 'unhealthy', fields: $unhealthy);
+    resolve(SweepDeployments::class)->handle();
+
+    $deployment = rolloutLatestOf($web);
+    expect($deployment->failure_class)->toBe(DeploymentFailureClass::HealthTimeout)
+        ->and($deployment->failure_message)->toContain('The app does not listen on any TCP port (expected 8000).')
+        ->and(resolve(DeploymentDetailView::class)->get($deployment)->failureExplanation?->key)->toBe('no_port');
 });
 
 test('the running steps say what they wait for', function (): void {
@@ -206,7 +231,7 @@ test('a service without an observed container is not running', function (): void
     // Its server lost the container (or never created it).
     $active->each(static fn (Placement $p) => $p->forceFill(['phase' => WorkloadPhase::Pending, 'created_at' => now()->subHour()])->save());
     $status = NodeStatus::for($instance, rolloutLatestOf($web), $active->fresh());
-    expect($status->state)->toBe(CanvasNodeState::Warning)->and($status->label)->toBe('Not running');
+    expect($status->state)->toBe(StatusTone::Warning)->and($status->label)->toBe('Not running');
 
     expect(NodeStatus::for($instance, rolloutLatestOf($web), [])->label)->toBe('Not running');
 });

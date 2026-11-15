@@ -15,6 +15,6 @@ final class BackupVerificationCheckData extends Data
     public function __construct(
         public string $name,
         public bool $passed,
-        public ?string $detail,
+        public ?string $detail = null,
     ) {}
 }

@@ -27,7 +27,12 @@ test('the page lists your tokens and what your role allows', function (): void {
             ->missing('tokens.0.token')
             ->where('teamOptions.0.role', 'developer')
             ->where('teamOptions.0.abilities.4.value', 'secrets:read')
-            ->where('teamOptions.0.abilities.4.available', false));
+            ->where('teamOptions.0.abilities.4.available', false)
+            ->where('teamOptions.0.abilities.0.value', 'read')
+            ->where('teamOptions.0.abilities.0.locked', true)
+            ->where('teamOptions.0.abilities.4.locked', false)
+            ->where('defaultLifetime', 90)
+            ->where('cliInstall', 'curl -fsSL https://github.com/vantezzen/launchroom/releases/latest/download/cli.sh | sh'));
 });
 
 test('creating an authorized token shows the plaintext once without an extra password', function (): void {

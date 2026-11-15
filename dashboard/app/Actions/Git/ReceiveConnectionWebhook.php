@@ -6,18 +6,17 @@ namespace App\Actions\Git;
 
 use App\Data\Git\ConnectionWebhookRequest;
 use App\Enums\Git\GitConnectionStatus;
-use App\Enums\Git\GitProviderKind;
 use App\Enums\Git\WebhookDeliveryStatus;
 use App\Enums\Git\WebhookReceipt;
+use App\Exceptions\DecryptionFailed;
 use App\Jobs\Git\PollConnectionNowJob;
-use App\Jobs\Git\ProcessConnectionWebhookJob;
+use App\Jobs\Git\ProcessWebhookDeliveryJob;
 use App\Models\Git\GitConnection;
 use App\Models\Git\WebhookDelivery;
-use App\Services\Crypto\Exceptions\DecryptionFailed;
-use App\Services\Git\GitConnectionSecrets;
-use App\Services\GitHub\Exceptions\InvalidGitHubPayload;
-use App\Services\GitHub\JsonObject;
-use App\Support\Git\ConnectionWebhookSignature;
+use App\Services\Crypto\SealedColumns;
+use App\Services\Git\GitProviders;
+use App\Support\Json\InvalidJsonPayload;
+use App\Support\Json\JsonObject;
 use App\Support\PublicId;
 use Illuminate\Support\Facades\Log;
 
@@ -35,7 +34,8 @@ use Illuminate\Support\Facades\Log;
 final readonly class ReceiveConnectionWebhook
 {
     public function __construct(
-        private GitConnectionSecrets $secrets,
+        private SealedColumns $sealed,
+        private GitProviders $providers,
     ) {}
 
     public function handle(ConnectionWebhookRequest $request): WebhookReceipt
@@ -48,26 +48,23 @@ final readonly class ReceiveConnectionWebhook
 
         $connection->forceFill(['webhook_last_received_at' => now()])->saveQuietly();
 
-        if ($request->provider === GitProviderKind::Git) {
+        if (! $request->provider->hasApi()) {
             dispatch(new PollConnectionNowJob($connection->id));
 
             return WebhookReceipt::Accepted;
         }
 
+        $provider = $this->providers->api($request->provider);
         $deliveryId = $request->deliveryId ?? '';
-        $event = $this->event($request);
+        $event = $provider->webhookEvent($request->event);
 
         if (preg_match('/^[A-Za-z0-9-]{1,56}$/D', $deliveryId) !== 1 || $event === null) {
             return WebhookReceipt::Invalid;
         }
 
         try {
-            $payload = JsonObject::decode($request->rawBody);
-            $repositoryId = $payload->objectOrNull($request->provider === GitProviderKind::GitLab ? 'project' : 'repository')?->intOrNull('id');
-            $action = $request->provider === GitProviderKind::GitLab
-                ? $payload->objectOrNull('object_attributes')?->stringOrNull('action')
-                : $payload->stringOrNull('action');
-        } catch (InvalidGitHubPayload) {
+            [$repositoryId, $action] = $provider->webhookSummary(JsonObject::decode($request->rawBody));
+        } catch (InvalidJsonPayload) {
             return WebhookReceipt::Invalid;
         }
 
@@ -93,33 +90,9 @@ final readonly class ReceiveConnectionWebhook
             return WebhookReceipt::Accepted;
         }
 
-        dispatch(new ProcessConnectionWebhookJob($delivery->id, $request->rawBody));
+        dispatch(new ProcessWebhookDeliveryJob($delivery->id, $request->rawBody));
 
         return WebhookReceipt::Accepted;
-    }
-
-    /**
-     * Normalized event name, or null when the header is malformed.
-     */
-    private function event(ConnectionWebhookRequest $request): ?string
-    {
-        $event = $request->event ?? '';
-
-        if ($request->provider === GitProviderKind::GitLab) {
-            return match ($event) {
-                'Push Hook' => 'push',
-                'Tag Push Hook' => 'tag_push',
-                'Merge Request Hook' => 'merge_request',
-                default => preg_match('/^[A-Za-z ]{1,64}$/D', $event) === 1 ? strtolower(str_replace(' ', '_', $event)) : null,
-            };
-        }
-
-        if (preg_match('/^[a-z_]{1,64}$/D', $event) !== 1) {
-            return null;
-        }
-
-        // Gitea sends pull_request_sync / pull_request_label as their own events.
-        return str_starts_with($event, 'pull_request') ? 'pull_request' : $event;
     }
 
     private function verifiedConnection(ConnectionWebhookRequest $request): ?GitConnection
@@ -139,13 +112,13 @@ final readonly class ReceiveConnectionWebhook
         }
 
         try {
-            $secret = $this->secrets->webhookSecret($connection);
+            $secret = (string) $this->sealed->reveal($connection, 'webhook_secret');
         } catch (DecryptionFailed) {
             Log::error('A git connection webhook secret could not be decrypted', ['connection' => $connection->public_id]);
 
             return null;
         }
 
-        return ConnectionWebhookSignature::isValid($request->provider, $request->rawBody, $request->signature, $secret) ? $connection : null;
+        return $this->providers->connection($request->provider)->verifyWebhook($request->rawBody, $request->signature, $secret) ? $connection : null;
     }
 }

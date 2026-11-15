@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Data\Logs;
 
-use Spatie\LaravelData\Attributes\Validation\Regex;
+use App\Data\Attributes\PublicIdOf;
 use Spatie\LaravelData\Data;
 
 /**
@@ -14,7 +14,7 @@ use Spatie\LaravelData\Data;
 final class LogTailData extends Data
 {
     public function __construct(
-        #[Regex('/^svc_[0-7][0-9A-HJKMNP-TV-Z]{25}$/D')]
+        #[PublicIdOf('svc')]
         public ?string $service = null,
     ) {}
 }

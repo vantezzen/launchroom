@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vantezzen/launchroom/daemon/internal/docker"
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/policy"
 	"github.com/vantezzen/launchroom/daemon/internal/sealed"
 	"github.com/vantezzen/launchroom/daemon/internal/secret"
@@ -65,7 +65,7 @@ func TestRunOnce(t *testing.T) {
 	h := tasks.RunOnceHandler(tasks.RunOnceOptions{ServerID: e.serverID, SealingKey: e.key, Docker: e.engine, Client: cp, Policy: pol})
 	netSpec := state.NetworkSpec{ID: "net_01J9Z8X7W6V5T4S3R2Q1P0N9N1", Name: "lr-e_itest_release", Subnet: "10.231.251.0/24"}
 
-	run := func(t *testing.T, args []string, timeout state.Duration) (tasks.Result, error) {
+	run := func(t *testing.T, args []string, timeout state.Duration) (state.TaskResults, error) {
 		t.Helper()
 		id := state.TaskID(randomID("tsk"))
 		env, err := sealed.SealJSON(state.TaskEnv{ServerID: e.serverID, TaskID: id, Env: map[string]secret.Secret{"RELEASE_SECRET": "s3cr3t-value"}}, e.key.PublicKey(), rand.Reader)
@@ -113,7 +113,7 @@ func TestRunOnce(t *testing.T) {
 		}
 		found := false
 		for _, n := range nets {
-			found = found || (n.Name == string(netSpec.Name) && n.Labels[docker.LabelNetwork] == string(netSpec.ID))
+			found = found || (n.Name == string(netSpec.Name) && n.Labels[names.LabelNetwork] == string(netSpec.ID))
 		}
 		if !found {
 			t.Fatalf("environment network not created: %+v", nets)
@@ -123,7 +123,7 @@ func TestRunOnce(t *testing.T) {
 			t.Fatal(err)
 		}
 		for _, c := range cs {
-			if c.Labels[docker.LabelTask] != "" {
+			if c.Labels[names.LabelTask] != "" {
 				t.Fatalf("one-off container left behind: %s", c.Name)
 			}
 		}
@@ -141,7 +141,7 @@ func TestRunOnce(t *testing.T) {
 			cs, _ := e.engine.ListContainers(context.Background(), nil)
 			running := false
 			for _, c := range cs {
-				running = running || (c.Labels[docker.LabelTask] != "" && c.Running)
+				running = running || (c.Labels[names.LabelTask] != "" && c.Running())
 			}
 			if running {
 				break
@@ -159,7 +159,7 @@ func TestRunOnce(t *testing.T) {
 		cs, _ := e.engine.ListContainers(context.Background(), nil)
 		alive := false
 		for _, c := range cs {
-			alive = alive || (c.Labels[docker.LabelTask] != "" && c.Running)
+			alive = alive || (c.Labels[names.LabelTask] != "" && c.Running())
 		}
 		if !alive {
 			t.Fatal("the reconciler stopped or removed a run_once container")
@@ -169,7 +169,7 @@ func TestRunOnce(t *testing.T) {
 		}
 		cs, _ = e.engine.ListContainers(context.Background(), nil)
 		for _, c := range cs {
-			if c.Labels[docker.LabelTask] != "" {
+			if c.Labels[names.LabelTask] != "" {
 				t.Fatalf("timed-out container not removed: %s (%s)", c.Name, c.State)
 			}
 		}

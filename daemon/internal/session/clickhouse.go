@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/vantezzen/launchroom/daemon/internal/dbengine"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
 
@@ -25,19 +26,15 @@ type clickhouse struct {
 }
 
 func newClickHouse(env envMap, ex execer, container string) (*clickhouse, error) {
-	user, err := ident(env, "default", "CLICKHOUSE_USER")
+	l, err := dbengine.LoginOf(state.EngineClickHouse, env)
 	if err != nil {
 		return nil, err
 	}
-	db, err := ident(env, "default", "CLICKHOUSE_DATABASE", "CLICKHOUSE_DB")
-	if err != nil {
-		return nil, err
+	creds := []string{"CLICKHOUSE_USER=" + l.User}
+	if l.Password != "" {
+		creds = append(creds, "CLICKHOUSE_PASSWORD="+l.Password)
 	}
-	creds := []string{"CLICKHOUSE_USER=" + user}
-	if pw := env["CLICKHOUSE_PASSWORD"]; !pw.IsZero() {
-		creds = append(creds, "CLICKHOUSE_PASSWORD="+pw.Reveal())
-	}
-	return &clickhouse{p: newProc(ex, container, creds...), db: db}, nil
+	return &clickhouse{p: newProc(ex, container, creds...), db: l.Database}, nil
 }
 
 func (c *clickhouse) argv(statement string, readOnly bool) []string {

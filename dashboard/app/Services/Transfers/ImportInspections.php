@@ -9,6 +9,7 @@ use App\Enums\DaemonTaskStatus;
 use App\Models\DaemonTask;
 use App\Models\ServiceInstance;
 use App\Models\User;
+use App\Support\PublicId;
 use Illuminate\Support\Facades\Cache;
 
 /**
@@ -24,7 +25,7 @@ final class ImportInspections
 
     public function read(string $taskPublicId, ServiceInstance $instance, User $user): ?ImportInspectionData
     {
-        if (preg_match('/^tsk_[0-9A-HJKMNP-TV-Z]{26}$/D', $taskPublicId) !== 1) {
+        if (! PublicId::isValid($taskPublicId, 'tsk')) {
             return null;
         }
 
@@ -48,20 +49,19 @@ final class ImportInspections
             return new ImportInspectionData($taskPublicId, 'pending');
         }
 
-        $result = is_array($task->result['dataImport'] ?? null) ? $task->result['dataImport'] : [];
-        $int = static fn (mixed $value): ?int => is_int($value) ? $value : null;
-        $owner = is_array($result['rootOwner'] ?? null) ? $result['rootOwner'] : [];
+        $result = $task->result?->dataImport;
+        $owner = is_array($result?->rootOwner) ? $result->rootOwner : [];
 
         return new ImportInspectionData(
             $taskPublicId,
             'done',
-            ($result['empty'] ?? false) === true,
-            $int($result['tables'] ?? null) ?? 0,
-            $int($result['sizeBytes'] ?? null) ?? 0,
-            is_string($result['serverVersion'] ?? null) ? $result['serverVersion'] : null,
-            $int($owner['uid'] ?? null),
-            $int($owner['gid'] ?? null),
-            is_string($result['sourceVersion'] ?? null) ? $result['sourceVersion'] : null,
+            $result?->empty === true,
+            is_int($result?->tables) ? $result->tables : 0,
+            is_int($result?->sizeBytes) ? $result->sizeBytes : 0,
+            is_string($result?->serverVersion) ? $result->serverVersion : null,
+            is_int($owner['uid'] ?? null) ? $owner['uid'] : null,
+            is_int($owner['gid'] ?? null) ? $owner['gid'] : null,
+            is_string($result?->sourceVersion) ? $result->sourceVersion : null,
         );
     }
 

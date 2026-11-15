@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Templates;
 
 use App\Data\Templates\TemplateSummaryData;
-use App\Services\Blueprints\EngineVersions;
+use App\Drivers\DatabaseEngines\DatabaseEngines;
 use App\Support\Blueprints\BlueprintPreview;
 use App\Support\Git\PublicRepositoryUrl;
 use App\Support\Templates\TemplateCompiler;
@@ -26,7 +26,7 @@ final class TemplateCatalog
 
     public function __construct(
         private readonly Filesystem $files,
-        private readonly EngineVersions $engines,
+        private readonly DatabaseEngines $engines,
     ) {}
 
     public static function directory(): string
@@ -106,7 +106,7 @@ final class TemplateCatalog
         foreach ($this->paths() as $id => $path) {
             try {
                 $template = TemplateCompiler::parse($this->files->get($path), $id);
-                $problems[$id] = TemplateCompiler::lint($template, $this->engines->all());
+                $problems[$id] = TemplateCompiler::lint($template, $this->engines);
 
                 foreach ($template->repositories as $repository) {
                     if (isset($owners[$repository])) {
@@ -155,7 +155,7 @@ final class TemplateCatalog
         }
 
         try {
-            $translation = TemplateCompiler::compile($template, $samples, $this->engines->all(), $template->needsRepository());
+            $translation = TemplateCompiler::compile($template, $samples, $this->engines, $template->needsRepository());
         } catch (TemplateInvalid) {
             return null;
         }

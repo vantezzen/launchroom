@@ -12,7 +12,6 @@ use App\Data\Services\DatabaseSource;
 use App\Data\Services\DeploySettings;
 use App\Data\Services\GitSource;
 use App\Data\Services\HealthcheckSettings;
-use App\Data\Services\ImageSource;
 use App\Data\Services\ServiceSource;
 use App\Drivers\DatabaseEngines\DatabaseEngines;
 use App\Enums\AuditAction;
@@ -133,21 +132,10 @@ final readonly class CreateService
             return $parent->source;
         }
 
-        $source = $data->serviceSource();
+        $source = $data->source;
 
-        $valid = match ($data->kind) {
-            ServiceKind::App => $source instanceof GitSource,
-            ServiceKind::Image => $source instanceof ImageSource,
-            ServiceKind::Database => $source instanceof DatabaseSource,
-            ServiceKind::Worker, ServiceKind::Cron => false,
-        };
-
-        if (! $valid || ! $source instanceof ServiceSource) {
-            throw DomainRuleViolation::on('source', "A {$data->kind->value} service needs a ".match ($data->kind) {
-                ServiceKind::App => 'git repository',
-                ServiceKind::Image => 'image reference',
-                default => 'database engine',
-            }.' source.');
+        if (! $source instanceof ServiceSource || $source->type() !== $data->kind->sourceType()) {
+            throw DomainRuleViolation::on('source', "A {$data->kind->value} service needs a {$data->kind->sourceLabel()} source.");
         }
 
         if ($source instanceof GitSource) {

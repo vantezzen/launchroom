@@ -1,10 +1,10 @@
 import { ArrowRight, Globe, Lock, Network, Plug } from 'lucide-react';
-import { SettingsCard, SettingsRow } from '@/features/settings/settings-card';
-import { ServiceGlyph } from '@/features/canvas/service-glyph';
-import { CopyButton } from './general-section';
 import { IconTile, SettingsPage } from './section';
 import type { SettingsContext } from './settings-context';
 import type { Navigate } from './settings-tab';
+import { SettingsCard, SettingsRow } from '@/components/settings/settings-card';
+import { ServiceGlyph } from '@/components/service-glyph';
+import { CopyButton } from '@/components/copy-button';
 
 /**
  * Private network: the address other services of this environment use,
@@ -19,7 +19,7 @@ export function NetworkingSection({
     navigate: Navigate;
 }) {
     const { settings, node } = context;
-    const web = node.kind === 'app' || node.kind === 'image';
+    const web = node.capabilities.web;
     const port = settings.deploy.port ?? settings.detected?.port ?? null;
     const address =
         node.privateAddress ??

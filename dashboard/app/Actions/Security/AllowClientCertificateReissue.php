@@ -28,10 +28,10 @@ final readonly class AllowClientCertificateReissue
     /**
      * Any team's server: only instance owners get here (the caller authorizes).
      */
-    public function handle(string $serverPublicId, AuditActor $actor): Server
+    public function handle(Server $server, AuditActor $actor): Server
     {
-        return DB::transaction(function () use ($serverPublicId, $actor): Server {
-            $server = Server::query()->where('public_id', $serverPublicId)->lockForUpdate()->firstOrFail();
+        return DB::transaction(function () use ($server, $actor): Server {
+            $server = Server::query()->whereKey($server->id)->lockForUpdate()->firstOrFail();
 
             if ($server->status === ServerStatus::Revoked) {
                 throw DomainRuleViolation::on('server', 'This server was removed.');

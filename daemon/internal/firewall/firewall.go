@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/netip"
-	"strings"
 	"sync"
 	"time"
 
@@ -17,7 +16,6 @@ import (
 // Mode selects whether the daemon enforces isolation (local config only).
 type Mode string
 
-// Modes.
 const (
 	// ModeEnforce (default) applies the rules and refuses to start workloads
 	// and builds while they cannot be applied (fail closed).
@@ -142,7 +140,8 @@ func (m *Manager) Spec(nets []docker.Network) Spec {
 // compares the live table with the expected ruleset and re-applies it on any
 // difference (new networks, or drift: rules flushed or edited by something
 // else). In enforce mode it returns ErrNotApplied (wrapped) when the rules
-// could not be applied; callers must not start workloads or builds then.
+// could not be applied; Docker then refuses containers on launchroom
+// networks (docker.ErrNotIsolated) and builds don't start.
 func (m *Manager) Sync(ctx context.Context) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -180,11 +179,7 @@ func (m *Manager) Sync(ctx context.Context) error {
 }
 
 func (m *Manager) failed(now time.Time, err error) error {
-	msg := err.Error()
-	if len(msg) > 1024 {
-		msg = msg[:1024]
-	}
-	m.status = state.FirewallStatus{Mode: state.FirewallError, CheckedAt: now, Repairs: m.status.Repairs, Error: strings.ToValidUTF8(msg, "?")}
+	m.status = state.FirewallStatus{Mode: state.FirewallError, CheckedAt: now, Repairs: m.status.Repairs, Error: state.Clip(err.Error(), 1024)}
 	m.applied = ""
 	m.o.Log.Error("firewall rules could not be applied; workloads and builds are held back", "err", err)
 	return fmt.Errorf("%w: %w", ErrNotApplied, err)

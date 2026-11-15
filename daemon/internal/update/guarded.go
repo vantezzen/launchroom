@@ -91,7 +91,6 @@ func (s *Supervisor) prepareGuarded(ctx context.Context, p *Plan) (string, error
 	return filepath.Join(own, dirBackup), nil
 }
 
-// loadTrustFile reads a trust pin from an explicit path.
 func loadTrustFile(path string) (Trust, error) {
 	t, err := LoadTrust(filepath.Dir(path))
 	if errors.Is(err, fs.ErrNotExist) || errors.Is(err, ErrNoTrust) {

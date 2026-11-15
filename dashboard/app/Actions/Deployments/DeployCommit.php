@@ -4,22 +4,17 @@ declare(strict_types=1);
 
 namespace App\Actions\Deployments;
 
-use App\Contracts\BuildOrchestrator;
+use App\Data\Deployments\CommitNotDeployed;
+use App\Data\Deployments\DeploymentCommit;
 use App\Data\Git\CommitData;
-use App\Enums\DeploymentStatus;
 use App\Enums\DeploymentTrigger;
-use App\Enums\EnvironmentKind;
-use App\Enums\Git\DeploymentReportState;
 use App\Exceptions\UnresolvedReferences;
-use App\Jobs\AdvanceDeploymentJob;
-use App\Listeners\Git\ReportDeploymentToGitHub;
 use App\Models\Deployment;
 use App\Models\ServiceInstance;
+use App\Models\User;
 use App\Services\Deployments\DeploymentFactory;
 use App\Services\Variables\ProductionSecretPolicy;
 use App\Services\Variables\SpecVariableResolver;
-use App\Support\Git\GitHubAvatar;
-use Illuminate\Contracts\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -30,23 +25,22 @@ use Illuminate\Support\Facades\Log;
  * deployments of the instance are superseded, and a build still running for
  * an older commit is cancelled and superseded.
  *
- * Returns null (and logs why) when the instance can't be deployed this way:
- * never deployed (no applied revision), removed or disabled in that
- * revision, broken references, a violated "production secrets must differ"
- * policy (production and previews), or this commit is already queued/in flight.
+ * Not deployed (logged, and returned with the reason): never deployed (no
+ * applied revision), removed or disabled in that revision, this commit is
+ * already queued or in flight, a violated "production secrets must differ"
+ * policy, or broken references.
  */
 final readonly class DeployCommit
 {
     public function __construct(
         private SpecVariableResolver $resolver,
         private DeploymentFactory $factory,
-        private BuildOrchestrator $builds,
         private ProductionSecretPolicy $secretPolicy,
     ) {}
 
-    public function handle(ServiceInstance $instance, CommitData $commit, string $ref, DeploymentTrigger $trigger = DeploymentTrigger::Push): ?Deployment
+    public function handle(ServiceInstance $instance, CommitData $commit, string $ref, DeploymentTrigger $trigger = DeploymentTrigger::Push, ?User $user = null): Deployment|CommitNotDeployed
     {
-        $deployment = DB::transaction(function () use ($instance, $commit, $ref, $trigger): ?Deployment {
+        $outcome = DB::transaction(function () use ($instance, $commit, $ref, $trigger, $user): Deployment|CommitNotDeployed {
             $instance = ServiceInstance::query()
                 ->with(['service', 'environment.project', 'environment.lastAppliedRevision'])
                 ->whereKey($instance->id)
@@ -58,74 +52,49 @@ final readonly class DeployCommit
             $service = $instance === null ? null : $spec?->service($instance->service->public_id);
 
             if ($instance === null || $revision === null || $spec === null || $service === null || ! $service->enabled || $instance->removed_at !== null) {
-                Log::info('Push not deployed: the service is not live in this environment yet.', ['instance' => $instance?->public_id, 'sha' => $commit->sha]);
-
-                return null;
+                return new CommitNotDeployed('The service isn’t deployed in this environment yet. Deploy its staged changes first.');
             }
 
             $duplicate = Deployment::query()
                 ->where('service_instance_id', $instance->id)
                 ->where('commit_sha', $commit->sha)
-                ->whereIn('status', DeploymentStatus::values([DeploymentStatus::Queued, ...DeploymentStatus::inFlight()]))
+                ->unfinished()
                 ->exists();
 
             if ($duplicate) {
-                return null;
+                return new CommitNotDeployed('This commit is already deploying.');
             }
 
-            // "Production secrets must differ" holds for push, tag and
-            // preview deploys too (docs/06 §3.1).
-            if (in_array($instance->environment->kind, [EnvironmentKind::Production, EnvironmentKind::Preview], true)) {
-                $violations = $this->secretPolicy->violations($instance->environment->project);
+            $violations = $this->secretPolicy->violationsFor($instance->environment);
 
-                if ($violations !== []) {
-                    Log::warning('Push not deployed: production secrets must differ from preview.', ['instance' => $instance->public_id, 'sha' => $commit->sha, 'error' => implode(' ', $violations)]);
-
-                    return null;
-                }
+            if ($violations !== []) {
+                return new CommitNotDeployed(implode(' ', $violations));
             }
 
             try {
                 $env = $this->resolver->resolve($instance->environment->project, $spec, $service);
             } catch (UnresolvedReferences $e) {
-                Log::warning('Push not deployed: broken variable references.', ['instance' => $instance->public_id, 'sha' => $commit->sha, 'error' => $e->getMessage()]);
-
-                return null;
+                return new CommitNotDeployed('Broken variable references: '.$e->getMessage());
             }
 
-            $deployment = $this->factory->create($instance->environment->project, $instance, $revision, $spec, $service, $env, $trigger, null, $commit->sha, $ref);
-            $deployment->forceFill([
-                'commit_message' => mb_substr($commit->message, 0, 4000),
-                'commit_author' => $commit->authorLogin ?? $commit->authorName,
-                'commit_author_avatar_url' => GitHubAvatar::url($commit->authorAvatarUrl, $commit->authorLogin),
-            ])->save();
-
-            $older = Deployment::query()
-                ->where('service_instance_id', $instance->id)
-                ->whereKeyNot($deployment->id)
-                ->where(static fn (Builder $query) => $query
-                    ->where('status', DeploymentStatus::Queued->value)
-                    ->orWhere(static fn (Builder $building) => $building->where('status', DeploymentStatus::Building->value)->where('commit_sha', '!=', $commit->sha)))
-                ->lockForUpdate()
-                ->get();
-
-            foreach ($older as $previous) {
-                if ($previous->status === DeploymentStatus::Building) {
-                    $this->builds->cancel($previous);
-                }
-
-                $previous->forceFill(['superseded_by_id' => $deployment->id]);
-                $previous->transitionTo(DeploymentStatus::Superseded);
-            }
-
-            return $deployment;
+            return $this->factory->create(
+                $instance->environment->project,
+                $instance,
+                $revision,
+                $spec,
+                $service,
+                $env,
+                $trigger,
+                $user,
+                DeploymentCommit::pushed($commit, $ref),
+                supersedesOlderBuilds: true,
+            );
         });
 
-        if ($deployment instanceof Deployment) {
-            ReportDeploymentToGitHub::report($deployment, DeploymentReportState::Queued);
-            dispatch(new AdvanceDeploymentJob($deployment->id));
+        if ($outcome instanceof CommitNotDeployed) {
+            Log::info('Commit not deployed.', ['instance' => $instance->public_id, 'sha' => $commit->sha, 'reason' => $outcome->message]);
         }
 
-        return $deployment;
+        return $outcome;
     }
 }

@@ -18,7 +18,7 @@ enum DockerEngine: string
     public function label(): string
     {
         return match ($this) {
-            self::DockerEngine => 'Docker Engine',
+            self::DockerEngine => 'Docker',
             self::DockerDesktop => 'Docker Desktop',
             self::OrbStack => 'OrbStack',
             self::Colima => 'Colima',

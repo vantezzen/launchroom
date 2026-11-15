@@ -5,7 +5,8 @@ declare(strict_types=1);
 namespace Tests\Support;
 
 use App\Contracts\PublicDnsResolver;
-use App\Services\Dns\DnsLookup;
+use App\Enums\Domains\DnsLookupStatus;
+use App\Support\Network\DnsLookup;
 
 /**
  * Public DNS for tests: every test starts with an empty zone (NXDOMAIN) so
@@ -59,6 +60,6 @@ final class FakeDns implements PublicDnsResolver
 
         $parent = substr($hostname, (int) strpos($hostname, '.') + 1);
 
-        return $this->zone['*.'.$parent] ?? new DnsLookup('nxdomain');
+        return $this->zone['*.'.$parent] ?? new DnsLookup(DnsLookupStatus::NxDomain);
     }
 }

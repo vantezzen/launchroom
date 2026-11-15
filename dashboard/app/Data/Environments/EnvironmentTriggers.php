@@ -14,7 +14,7 @@ use Spatie\LaravelData\Data;
 
 /**
  * `environments.triggers` (docs/06 §2): pushes to a branch matching `branch`
- * and tags matching `tagPattern` deploy here (App\Listeners\Git\DeployOnGitPush);
+ * and tags matching `tagPattern` deploy here (App\Actions\Git\DeployPush);
  * both empty means manual only. Production may track tags only (no branch).
  * They never restart anything by themselves.
  */

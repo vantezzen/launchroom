@@ -24,7 +24,6 @@ import (
 	"time"
 )
 
-// Balancing policies.
 const (
 	// LeastConn sends a new connection to the healthy upstream with the
 	// fewest open connections (ties: round robin). Default.

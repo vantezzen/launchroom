@@ -6,12 +6,10 @@ namespace App\Http\Controllers\Projects;
 
 use App\Data\Metrics\MetricsQueryData;
 use App\Data\Metrics\ProjectMetricsData;
-use App\Enums\EnvironmentKind;
 use App\Http\Controllers\Controller;
+use App\Http\Routing\RouteScope;
 use App\Models\Project;
-use App\Models\ServiceInstance;
 use App\Queries\ProjectMetrics;
-use Illuminate\Contracts\Database\Query\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 
@@ -27,23 +25,8 @@ final class ProjectMetricsController extends Controller
         Gate::authorize('view', $project);
         $query = MetricsQueryData::validateAndCreate($request->query());
 
-        $environment = $project->environments()
-            ->when(
-                $query->environment !== null,
-                static fn ($q) => $q->where('public_id', $query->environment),
-                static fn ($q) => $q->where('kind', EnvironmentKind::Production->value),
-            )
-            ->firstOrFail();
+        $environment = RouteScope::environmentOrProduction($project, $query->environment);
 
-        $instance = null;
-
-        if ($query->service !== null) {
-            $instance = ServiceInstance::query()
-                ->where('environment_id', $environment->id)
-                ->whereHas('service', static fn (Builder $q) => $q->where('public_id', $query->service)->where('project_id', $project->id))
-                ->firstOrFail();
-        }
-
-        return $metrics->handle($project, $environment, $instance, $query->range);
+        return $metrics->handle($project, $environment, RouteScope::serviceInstance($environment, $query->service), $query->range);
     }
 }

@@ -5,6 +5,9 @@ declare(strict_types=1);
 use App\Actions\Moves\TakeOverControlPlane;
 use App\Contracts\ControlPlaneDumps;
 use App\Data\Audit\AuditActor;
+use App\Data\Moves\HandoverDatabaseData;
+use App\Data\Moves\HandoverKeysData;
+use App\Data\Moves\HandoverManifestData;
 use App\Enums\AuditAction;
 use App\Enums\Moves\ControlPlaneMoveStatus;
 use App\Enums\Moves\ServerMoveStatus;
@@ -183,13 +186,11 @@ test('the new machine claims with its key; a wrong secret or a second machine is
 
     expect($move->status)->toBe(ControlPlaneMoveStatus::Claimed)
         ->and($code)->toBe(MoveToken::claimCode($move->public_id, $this->receiverPublic))
-        ->and($move->receiver['hostname'] ?? null)->toBe('netcup');
+        ->and($move->receiver?->hostname)->toBe('netcup');
 
     // The same machine again (a re-run installer): the same code.
     expect(claimMove($this, $token, $this->receiverPublic)[2])->toBe($code);
-    // Another key: refused.
     $this->postJson('/move/v1/claim', ['move' => $parsed['move'], 'secret' => $parsed['secret'], 'publicKey' => 'x25519:'.base64_encode(random_bytes(32)), 'hostname' => 'x', 'arch' => 'x86_64'])->assertStatus(409);
-    // Status needs the secret.
     receiver($this, 'GET', "/move/v1/{$move->public_id}", 'wrong')->assertForbidden();
 });
 
@@ -315,7 +316,7 @@ test('the new dashboard takes over: its server becomes the control plane, the ol
     $serverMove = ServerMove::query()->create(['team_id' => $this->team->id, 'source_server_id' => $this->source->id, 'target_server_id' => $target->id, 'control_plane' => true]);
     $serverMove->transitionTo(ServerMoveStatus::Ready);
     $move = new ControlPlaneMove(['source_server_id' => $this->source->id]);
-    $move->forceFill(['token_hash' => str_repeat('a', 64), 'token_expires_at' => now()->addDay(), 'target_server_id' => $target->id, 'server_move_id' => $serverMove->id, 'receiver_public_key' => $this->receiverPublic, 'handover' => ['canonicalUrl' => 'https://1-2-3-4.sslip.io']]);
+    $move->forceFill(['token_hash' => str_repeat('a', 64), 'token_expires_at' => now()->addDay(), 'target_server_id' => $target->id, 'server_move_id' => $serverMove->id, 'receiver_public_key' => $this->receiverPublic, 'handover' => new HandoverManifestData('launchroom-move/1', 'cpm_x', '2026-11-15T00:00:00Z', 'https://1-2-3-4.sslip.io', 'https://1-2-3-4.sslip.io', new HandoverDatabaseData(0, 1, 0, [], str_repeat('0', 64)), 'sealed', new HandoverKeysData(0, str_repeat('0', 64)))]);
     $move->status = ControlPlaneMoveStatus::HandingOver;
     $move->save();
     InstanceSettings::current()->forceFill(['frozen_at' => now(), 'frozen_reason' => 'moving', 'recovery_passphrase_set_at' => now(), 'recovery_kit_confirmed_at' => now()])->save();
@@ -333,13 +334,14 @@ test('the new dashboard takes over: its server becomes the control plane, the ol
         ->and(InstanceSettings::current()->frozen_at)->toBeNull()
         // The address changed (it was tied to the old IP): a new recovery kit, please.
         ->and(InstanceSettings::current()->recovery_kit_confirmed_at)->toBeNull()
-        ->and(InstanceSettings::current()->move_checklist['previousServerId'] ?? null)->toBe($this->source->id)
+        ->and(InstanceSettings::current()->move_checklist?->previousServerId)->toBe($this->source->id)
         ->and(AuditEvent::query()->where('action', AuditAction::ControlPlaneTakenOver->value)->exists())->toBeTrue();
 
     $this->actingAs($this->owner)->get(route('move.edit'))
-        ->assertInertia(fn ($page) => $page->where('checklist.previous.name', 'droplet')->where('checklist.needsRecoveryKit', true));
-    $this->actingAs($this->owner)->post(route('move.finish'))->assertRedirect(route('servers.index'));
-    expect(InstanceSettings::current()->move_checklist)->toBeNull();
+        ->assertInertia(fn ($page) => $page->where('checklist.previous.name', 'droplet')->where('checklist.needsRecoveryKit', true)->where('checklist.openSteps', fn ($open): bool => in_array('recovery-kit', collect($open)->all(), true)));
+    $this->actingAs($this->owner)->post(route('move.finish'), ['open' => ['<forged>']])->assertRedirect(route('servers.index'));
+    expect(InstanceSettings::current()->move_checklist)->toBeNull()
+        ->and(AuditEvent::query()->where('action', AuditAction::ControlPlaneMoveFinished->value)->sole()->meta['open'])->toContain('recovery-kit')->not->toContain('<forged>');
 
     // A second takeover finds nothing to take over.
     expect(fn () => resolve(TakeOverControlPlane::class)->handle(AuditActor::system()))->toThrow(DomainRuleViolation::class);

@@ -1,9 +1,11 @@
+import { labels as wordsOf, vocabulary } from '@/lib/vocabulary';
 import { TriangleAlert } from 'lucide-react';
 import { Section } from '@/components/patterns/section';
 import { Status } from '@/components/status';
 import type { StatusState } from '@/components/status';
 
 type Runtime = App.Data.Servers.ServerRuntimeData;
+type Row = App.Data.Servers.CapabilityRowData;
 type Capability = App.Enums.Servers.RuntimeCapability;
 type CapabilityState = App.Enums.Servers.CapabilityState;
 
@@ -45,12 +47,7 @@ const consequences: Record<Capability, string> = {
     builds: 'Ubuntu’s user-namespace restriction stops builds here. Run the launchroom installer on this server again and allow launchroom’s build profile, or run the command shown in the Builds row.',
 };
 
-const engines: Record<App.Enums.Servers.DockerEngine, string> = {
-    'docker-engine': 'Docker',
-    'docker-desktop': 'Docker Desktop',
-    orbstack: 'OrbStack',
-    colima: 'Colima',
-};
+const engines = wordsOf(vocabulary.Servers.DockerEngine);
 
 /** "OrbStack on macOS", "Rootless Docker", "Docker". */
 function runtimeTitle(runtime: Runtime): string {
@@ -70,7 +67,7 @@ function LimitedCallout({
 }: {
     rootless: boolean;
     mac: boolean;
-    limited: Runtime['capabilities'];
+    limited: Row[];
 }) {
     return (
         <div
@@ -109,10 +106,16 @@ function LimitedCallout({
 
 /**
  * How Docker runs on the server and what launchroom can do there (D49) on
- * the Network tab: one row per capability with icon + word, the message
- * launchroomd sent, and a callout when something is limited.
+ * the Network tab: one row per capability with icon + word and the
+ * server-worded explanation, and a callout when something is limited.
  */
-export function ServerRuntime({ runtime }: { runtime: Runtime | null }) {
+export function ServerRuntime({
+    runtime,
+    capabilities: rows,
+}: {
+    runtime: Runtime | null;
+    capabilities: Row[];
+}) {
     if (runtime === null) {
         return (
             <Section title="Capabilities">
@@ -128,7 +131,7 @@ export function ServerRuntime({ runtime }: { runtime: Runtime | null }) {
     const rootless = runtime.docker === 'rootless';
     const mac = runtime.hostOs === 'darwin';
     const platforms = runtime.buildPlatforms ?? [];
-    const capabilities = [...runtime.capabilities].sort(
+    const capabilities = [...rows].sort(
         (a, b) => order.indexOf(a.name) - order.indexOf(b.name),
     );
     const limited = capabilities.filter((c) => c.state !== 'full');
@@ -181,9 +184,9 @@ export function ServerRuntime({ runtime }: { runtime: Runtime | null }) {
                                         <p className="type-body">
                                             {labels[capability.name]}
                                         </p>
-                                        {capability.message && (
+                                        {capability.explanation && (
                                             <p className="type-small break-words text-muted-foreground">
-                                                {capability.message}
+                                                {capability.explanation}
                                             </p>
                                         )}
                                     </div>

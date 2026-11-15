@@ -1,0 +1,230 @@
+{
+  "description": "Database dump samples and what a sniffer must read from them (docs/14 \u00a712.3). A sample is `text` or `base64` bytes, gzipped first when `gzip` is true. expect: the format (protocol DataFormat), the family that made it (engine id; mariadb imports into mysql), versions, or refused (not importable at all) or generic (SQL without a dump tool's header). compatibility: whether a sample imports into engine at targetVersion. launchroomd (daemon/internal/backup) decides; the dashboard's FileSniffer gives early feedback with the same rules. Both tests read this file.",
+  "samples": [
+    {
+      "name": "pg-custom-15",
+      "base64": "UEdETVABDwAECAEAAAwAAAAAHgAAAAAKAAAAABUAAAAACQAAAAB+AAAAAAAAAAAABQAAAHVtYW1pAB4AAAAxNS44IChEZWJpYW4gMTUuOC0xLnBnZGcxMjArMSkAHgAAADE1LjggKERlYmlhbiAxNS44LTEucGdkZzEyMCsxKQ==",
+      "expect": {
+        "format": "postgres_custom",
+        "family": "postgres",
+        "serverVersion": "15.8",
+        "toolVersion": "15.8",
+        "compressed": false
+      }
+    },
+    {
+      "name": "pg-custom-15-gzip",
+      "base64": "UEdETVABDwAECAEAAAwAAAAAHgAAAAAKAAAAABUAAAAACQAAAAB+AAAAAAAAAAAABQAAAHVtYW1pAAQAAAAxNS44AAQAAAAxNS44",
+      "gzip": true,
+      "expect": {
+        "format": "postgres_custom",
+        "family": "postgres",
+        "serverVersion": "15.8",
+        "toolVersion": "15.8",
+        "compressed": true
+      }
+    },
+    {
+      "name": "pg-custom-18",
+      "base64": "UEdETVABDwAECAEAAAwAAAAAHgAAAAAKAAAAABUAAAAACQAAAAB+AAAAAAAAAAAABQAAAHVtYW1pAAQAAAAxOC4xAAQAAAAxOC4x",
+      "expect": {
+        "format": "postgres_custom",
+        "family": "postgres",
+        "serverVersion": "18.1",
+        "toolVersion": "18.1",
+        "compressed": false
+      }
+    },
+    {
+      "name": "pg-custom-tool-18",
+      "base64": "UEdETVABDwAECAEAAAwAAAAAHgAAAAAKAAAAABUAAAAACQAAAAB+AAAAAAAAAAAABQAAAHVtYW1pAAQAAAAxNi40AAQAAAAxOC4x",
+      "expect": {
+        "format": "postgres_custom",
+        "family": "postgres",
+        "serverVersion": "16.4",
+        "toolVersion": "18.1",
+        "compressed": false
+      }
+    },
+    {
+      "name": "pg-custom-9.6",
+      "base64": "UEdETVABDwAECAEAAAwAAAAAHgAAAAAKAAAAABUAAAAACQAAAAB+AAAAAAAAAAAABQAAAHVtYW1pAAYAAAA5LjYuMjQABgAAADkuNi4yNA==",
+      "expect": {
+        "format": "postgres_custom",
+        "family": "postgres",
+        "serverVersion": "9.6.24",
+        "toolVersion": "9.6.24",
+        "compressed": false
+      }
+    },
+    {
+      "name": "pg-plain-16",
+      "text": "--\n-- PostgreSQL database dump\n--\n\n-- Dumped from database version 16.4\n-- Dumped by pg_dump version 16.4\n\nSET statement_timeout = 0;\n",
+      "expect": {
+        "format": "postgres_sql",
+        "family": "postgres",
+        "serverVersion": "16.4",
+        "toolVersion": "16.4",
+        "compressed": false
+      }
+    },
+    {
+      "name": "pg-plain-16-gzip",
+      "text": "--\n-- PostgreSQL database dump\n--\n\n-- Dumped from database version 16.4\n-- Dumped by pg_dump version 16.4\n\nSET statement_timeout = 0;\n",
+      "gzip": true,
+      "expect": {
+        "format": "postgres_sql",
+        "family": "postgres",
+        "serverVersion": "16.4",
+        "toolVersion": "16.4",
+        "compressed": true
+      }
+    },
+    {
+      "name": "pg-cluster",
+      "text": "--\n-- PostgreSQL database cluster dump\n--\n",
+      "expect": {
+        "refused": true
+      }
+    },
+    {
+      "name": "mysql-8.0",
+      "text": "-- MySQL dump 10.13  Distrib 8.0.36, for Linux (x86_64)\n--\n-- Host: localhost    Database: app\n-- ------------------------------------------------------\n-- Server version\t8.0.36\n",
+      "expect": {
+        "format": "mysql_sql",
+        "family": "mysql",
+        "serverVersion": "8.0.36",
+        "compressed": false
+      }
+    },
+    {
+      "name": "mysql-9.1",
+      "text": "-- MySQL dump 10.13  Distrib 9.1.0, for Linux (x86_64)\n--\n-- Host: localhost    Database: app\n-- ------------------------------------------------------\n-- Server version\t9.1.0\n",
+      "expect": {
+        "format": "mysql_sql",
+        "family": "mysql",
+        "serverVersion": "9.1.0",
+        "compressed": false
+      }
+    },
+    {
+      "name": "mariadb-11.4",
+      "text": "/*M!999999\\- enable the sandbox mode */ \n-- MariaDB dump 10.19-11.4.2-MariaDB, for debian-linux-gnu (x86_64)\n--\n-- Server version\t11.4.2-MariaDB-ubu2404\n",
+      "expect": {
+        "format": "mysql_sql",
+        "family": "mariadb",
+        "serverVersion": "11.4.2",
+        "compressed": false
+      }
+    },
+    {
+      "name": "mongo-archive-7.0",
+      "base64": "beKZgWYAAAAQY29uY3VycmVudF9jb2xsZWN0aW9ucwAEAAAAAnZlcnNpb24ABAAAADAuMQACc2VydmVyX3ZlcnNpb24ABgAAADcuMC41AAJ0b29sX3ZlcnNpb24ACAAAADEwMC45LjQAAP////8=",
+      "expect": {
+        "format": "mongodb_archive",
+        "family": "mongodb",
+        "serverVersion": "7.0.5",
+        "compressed": false
+      }
+    },
+    {
+      "name": "mongo-archive-8.0",
+      "base64": "beKZgWYAAAAQY29uY3VycmVudF9jb2xsZWN0aW9ucwAEAAAAAnZlcnNpb24ABAAAADAuMQACc2VydmVyX3ZlcnNpb24ABgAAADguMC40AAJ0b29sX3ZlcnNpb24ACAAAADEwMC45LjQAAP////8=",
+      "expect": {
+        "format": "mongodb_archive",
+        "family": "mongodb",
+        "serverVersion": "8.0.4",
+        "compressed": false
+      }
+    },
+    {
+      "name": "plain-text",
+      "text": "hello world",
+      "expect": {
+        "refused": true
+      }
+    },
+    {
+      "name": "binary",
+      "base64": "AAECA2JpbmFyeQA=",
+      "expect": {
+        "refused": true
+      }
+    },
+    {
+      "name": "generic-sql",
+      "text": "-- schema\nCREATE TABLE t (id int);\n",
+      "expect": {
+        "generic": true
+      }
+    }
+  ],
+  "compatibility": [
+    {
+      "sample": "pg-custom-15",
+      "engine": "postgres",
+      "targetVersion": "17",
+      "importable": true
+    },
+    {
+      "sample": "pg-custom-18",
+      "engine": "postgres",
+      "targetVersion": "17",
+      "importable": false
+    },
+    {
+      "sample": "pg-custom-tool-18",
+      "engine": "postgres",
+      "targetVersion": "17",
+      "importable": false
+    },
+    {
+      "sample": "pg-custom-9.6",
+      "engine": "postgres",
+      "targetVersion": "16",
+      "importable": true
+    },
+    {
+      "sample": "pg-plain-16",
+      "engine": "postgres",
+      "targetVersion": "16",
+      "importable": true
+    },
+    {
+      "sample": "pg-custom-15",
+      "engine": "mysql",
+      "targetVersion": "8.4",
+      "importable": false
+    },
+    {
+      "sample": "mysql-8.0",
+      "engine": "mysql",
+      "targetVersion": "8.4",
+      "importable": true
+    },
+    {
+      "sample": "mysql-9.1",
+      "engine": "mysql",
+      "targetVersion": "8.4",
+      "importable": false
+    },
+    {
+      "sample": "mariadb-11.4",
+      "engine": "mysql",
+      "targetVersion": "8.4",
+      "importable": true
+    },
+    {
+      "sample": "mongo-archive-7.0",
+      "engine": "mongodb",
+      "targetVersion": "7.0",
+      "importable": true
+    },
+    {
+      "sample": "mongo-archive-8.0",
+      "engine": "mongodb",
+      "targetVersion": "7.0",
+      "importable": false
+    }
+  ]
+}

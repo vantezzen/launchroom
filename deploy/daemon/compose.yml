@@ -3,6 +3,9 @@
 # put local overrides in compose.override.yml next to it.
 #
 # Written by install/server.sh into ./launchroomd/ together with .env and data/.
+# The control plane runs the same two services: its compose.yml extends them
+# (install.sh copies this file next to it as daemon-compose.yml), so values
+# here stay optional and the server's .env or the control plane sets them.
 # Two containers: dockerd-guard owns the Docker socket and offers launchroomd
 # a narrow, allow-listed Engine API on its own socket (docs/09 §6, D49), and
 # launchroomd starts the system containers its roles need (Caddy for edge,
@@ -66,9 +69,10 @@ services:
       driver: json-file
       options: { max-size: "10m", max-file: "3" }
     environment:
-      LR_CONTROL_PLANE_URL: ${LR_CONTROL_PLANE_URL:?set LR_CONTROL_PLANE_URL in .env}
+      # launchroomd refuses to start without the URL and the pinned key.
+      LR_CONTROL_PLANE_URL: ${LR_CONTROL_PLANE_URL:-}
       # Pinned control-plane signing key (ed25519:<base64>, public).
-      LR_CP_KEY: ${LR_CP_KEY:?set LR_CP_KEY in .env}
+      LR_CP_KEY: ${LR_CP_KEY:-}
       # Only set until launchroomd has enrolled; install/server.sh then removes the
       # token file and this setting. Empty = not configured.
       LR_JOIN_TOKEN_FILE: ${LR_JOIN_TOKEN_FILE:-}

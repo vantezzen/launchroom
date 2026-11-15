@@ -11,6 +11,7 @@ use App\Actions\Services\CreateService;
 use App\Actions\Variables\CreateVariable;
 use App\Actions\Variables\SetSharedVariableUsage;
 use App\Data\Audit\AuditActor;
+use App\Data\Deployments\DeploymentCommit;
 use App\Data\Environments\CreateEnvironmentData;
 use App\Data\Projects\CreateProjectData;
 use App\Data\Services\CreateServiceData;
@@ -19,6 +20,7 @@ use App\Data\Variables\VariableInput;
 use App\Data\Variables\VariableTargetData;
 use App\Enums\ConnectionMode;
 use App\Enums\ConnectionStyle;
+use App\Enums\DaemonTaskType;
 use App\Enums\DeploymentFailureClass;
 use App\Enums\DeploymentStatus;
 use App\Enums\DeploymentStepName;
@@ -45,6 +47,7 @@ use App\Models\Variable;
 use App\Queries\CurrentEnvironmentSpec;
 use App\Services\Deployments\DeploymentFactory;
 use App\Services\Variables\SpecVariableResolver;
+use App\Support\Logs\LogChunkRow;
 use App\Support\PublicId;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Seeder;
@@ -165,7 +168,7 @@ final class DeploymentsDemoSeeder extends Seeder
                 continue;
             }
 
-            $deployment = $factory->create($project, $instance, $revision, $spec, $serviceSpec, $envs[$service->public_id], $trigger, null, $sha, $sha === null ? null : 'refs/heads/main');
+            $deployment = $factory->create($project, $instance, $revision, $spec, $serviceSpec, $envs[$service->public_id], $trigger, null, $sha === null ? null : new DeploymentCommit($sha, 'refs/heads/main'));
             $queued = $this->now->subMinutes($ago);
             $finished = $duration === null ? null : $queued->addSeconds($duration + 4);
 
@@ -352,15 +355,13 @@ final class DeploymentsDemoSeeder extends Seeder
         $time = $deployment->started_at ?? $deployment->queued_at;
 
         foreach (array_chunk($lines, 50) as $index => $part) {
-            LogChunk::query()->create([
-                'team_id' => $deployment->team_id,
-                'server_id' => $server->id,
-                'daemon_task_id' => $task?->id,
-                'deployment_id' => $task instanceof DaemonTask ? null : $deployment->id,
-                'source_kind' => $kind,
-                'source_id' => $sourceId,
-                'seq' => $seq + $index,
-                'lines' => array_map(static function (array $line) use (&$time): array {
+            LogChunk::query()->insert(LogChunkRow::build(
+                $deployment->team_id,
+                $server->id,
+                $kind,
+                $sourceId,
+                $seq + $index,
+                array_map(static function (array $line) use (&$time): array {
                     $time = $time->addMilliseconds(170);
 
                     return [
@@ -370,8 +371,10 @@ final class DeploymentsDemoSeeder extends Seeder
                         ...($line[0] === null ? [] : ['step' => $line[0]]),
                     ];
                 }, $part),
-                'created_at' => now(),
-            ]);
+                $kind === LogSourceKind::Workload || $task?->type === DaemonTaskType::Logs,
+                LogChunkRow::scopeOf($deployment),
+                $task?->id,
+            ));
         }
     }
 }

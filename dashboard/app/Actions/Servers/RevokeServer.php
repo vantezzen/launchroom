@@ -14,7 +14,6 @@ use App\Events\NodeStateInvalidated;
 use App\Models\DaemonTask;
 use App\Models\Server;
 use App\Models\ServerClientCertificate;
-use App\Queries\MeshServers;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -43,12 +42,13 @@ final readonly class RevokeServer
         DB::transaction(function () use ($server, $actor): void {
             $server = Server::query()->whereKey($server->id)->lockForUpdate()->firstOrFail();
 
-            $server->forceFill(['revoked_at' => now()]);
+            // A revoked server no longer runs the dashboard (Server::controlPlane()).
+            $server->forceFill(['revoked_at' => now(), 'is_control_plane' => false]);
             $server->transitionTo(ServerStatus::Revoked);
 
             $tasks = DaemonTask::query()
                 ->where('server_id', $server->id)
-                ->whereIn('status', [DaemonTaskStatus::Pending->value, DaemonTaskStatus::Leased->value])
+                ->open()
                 ->lockForUpdate()
                 ->get();
 
@@ -63,7 +63,6 @@ final readonly class RevokeServer
                 $task->transitionTo(DaemonTaskStatus::Pending);
             }
 
-            // Its client certificates stop working from the next request (docs/03 §4.3).
             $revoked = ServerClientCertificate::query()
                 ->where('server_id', $server->id)
                 ->whereNull('revoked_at')
@@ -71,7 +70,7 @@ final readonly class RevokeServer
                 ->update(['revoked_at' => now(), 'revoked_reason' => 'server_revoked']);
 
             // Its mesh address leaves every allow-list, ambassador and edge upstream (docs/05 §3).
-            event(new NodeStateInvalidated(MeshServers::ids()));
+            NodeStateInvalidated::mesh();
 
             $this->audit->handle(new AuditEntryData(
                 action: AuditAction::ServerRevoked,

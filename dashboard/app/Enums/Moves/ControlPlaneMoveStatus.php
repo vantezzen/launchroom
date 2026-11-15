@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Enums\Moves;
 
+use App\Enums\Attributes\SharedFacts;
 use App\Enums\Concerns\HasTransitions;
 use App\Enums\Contracts\HasTransitionTable;
 
@@ -20,6 +21,7 @@ use App\Enums\Contracts\HasTransitionTable;
  * new machine confirms (back to ready_to_hand_over, writes thawed); before
  * it, the move can be cancelled.
  */
+#[SharedFacts('isCancellable')]
 enum ControlPlaneMoveStatus: string implements HasTransitionTable
 {
     use HasTransitions;
@@ -53,6 +55,11 @@ enum ControlPlaneMoveStatus: string implements HasTransitionTable
         };
     }
 
+    public function isCancellable(): bool
+    {
+        return $this->canTransitionTo(self::Cancelled);
+    }
+
     /**
      * The move token (and the new machine's secret) still answer.
      */
@@ -62,10 +69,21 @@ enum ControlPlaneMoveStatus: string implements HasTransitionTable
     }
 
     /**
+     * The hand-over runs and the new machine hasn't taken over yet: it can
+     * still be aborted, or taken over.
+     *
+     * @return list<self>
+     */
+    public static function handingOver(): array
+    {
+        return [self::HandingOver, self::HandoverReady];
+    }
+
+    /**
      * Writes are frozen on this dashboard.
      */
     public function freezes(): bool
     {
-        return in_array($this, [self::HandingOver, self::HandoverReady, self::HandedOver], true);
+        return in_array($this, [...self::handingOver(), self::HandedOver], true);
     }
 }

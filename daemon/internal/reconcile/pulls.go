@@ -11,13 +11,12 @@ import (
 
 // Image pulls run in the background (D68, docs/04 §11). A pass that needs
 // an image starts its pull and waits for it at most PullWait: a quick pull
-// (most of them) creates the workloads in the same pass as before; a slow
-// or stuck one goes on in the background while the pass converges
-// everything else, and the pass after it ends creates the workloads that
-// waited (OnPullDone kicks it). Until then they are reported as pulling,
-// with the pull's progress and the time it last moved, so the dashboard
-// can tell a slow download from a stuck one. Before, the pass blocked on
-// the pull for up to 45 minutes and applied nothing newer meanwhile.
+// (most of them) creates the workloads in the same pass; a slow or stuck
+// one goes on in the background while the pass converges everything else,
+// and the pass after it ends creates the workloads that waited (OnPullDone
+// kicks it). Until then they are reported as pulling, with the pull's
+// progress and the time it last moved, so the dashboard can tell a slow
+// download from a stuck one.
 
 // DefaultPullWait is how long a pass waits for a pull it started.
 const DefaultPullWait = 15 * time.Second

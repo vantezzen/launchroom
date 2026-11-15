@@ -1,11 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { api } from '@/features/variables/api';
+import { schedulePoll } from '@/hooks/use-live-props';
+import { requestJson } from '@/lib/http';
+import { vocabulary } from '@/lib/vocabulary';
 import generations from '@/routes/projects/services/dockerfile-generations';
 
 export type Generation = App.Data.Dockerfiles.DockerfileGenerationData;
 type Route = [project: string, environment: string, service: string];
 
 const POLL_MS = 2000;
+
+export function isGenerationRunning(
+    status: App.Enums.Dockerfiles.DockerfileGenerationStatus,
+): boolean {
+    return !vocabulary.Dockerfiles.DockerfileGenerationStatus[status]
+        .isTerminal;
+}
 
 function args(route: Route) {
     return { project: route[0], environment: route[1], service: route[2] };
@@ -26,8 +35,7 @@ export function useGeneration(route: Route, initial: Generation | null) {
     const [busy, setBusy] = useState<string | null>(null);
     const id = generation?.id;
     const running =
-        generation !== null &&
-        !['verified', 'failed', 'cancelled'].includes(generation.status);
+        generation !== null && isGenerationRunning(generation.status);
     const routeKey = route.join('/');
     const routeRef = useRef(route);
     routeRef.current = route;
@@ -38,12 +46,8 @@ export function useGeneration(route: Route, initial: Generation | null) {
         }
 
         const controller = new AbortController();
-        const timer = window.setInterval(() => {
-            if (document.visibilityState !== 'visible') {
-                return;
-            }
-
-            api<Generation>(
+        const stop = schedulePoll(() => {
+            requestJson<Generation>(
                 'get',
                 generations.show(withGeneration(routeRef.current, id)).url,
                 undefined,
@@ -54,7 +58,7 @@ export function useGeneration(route: Route, initial: Generation | null) {
         }, POLL_MS);
 
         return () => {
-            window.clearInterval(timer);
+            stop();
             controller.abort();
         };
     }, [running, id, routeKey]);
@@ -95,14 +99,18 @@ export function useGeneration(route: Route, initial: Generation | null) {
         },
         start: (trigger: App.Enums.Dockerfiles.DockerfileGenerationTrigger) =>
             run('start', () =>
-                api<Generation>('post', generations.store(args(route)).url, {
-                    trigger,
-                }),
+                requestJson<Generation>(
+                    'post',
+                    generations.store(args(route)).url,
+                    {
+                        trigger,
+                    },
+                ),
             ),
         use: () =>
             id
                 ? run('use', () =>
-                      api<Generation>(
+                      requestJson<Generation>(
                           'post',
                           generations.use(withGeneration(route, id)).url,
                       ),
@@ -111,7 +119,7 @@ export function useGeneration(route: Route, initial: Generation | null) {
         pullRequest: () =>
             id
                 ? run('pullRequest', () =>
-                      api<Generation>(
+                      requestJson<Generation>(
                           'post',
                           generations.pullRequest(withGeneration(route, id))
                               .url,
@@ -121,7 +129,7 @@ export function useGeneration(route: Route, initial: Generation | null) {
         cancel: () =>
             id
                 ? run('cancel', () =>
-                      api<Generation>(
+                      requestJson<Generation>(
                           'delete',
                           generations.destroy(withGeneration(route, id)).url,
                       ),
@@ -136,16 +144,4 @@ export function formatCost(cost: number | null): string | null {
     }
 
     return cost < 0.01 ? 'under $0.01' : `$${cost.toFixed(2)}`;
-}
-
-export function formatMs(ms: number | null): string | null {
-    if (ms === null) {
-        return null;
-    }
-
-    const seconds = ms / 1000;
-
-    return seconds < 60
-        ? `${seconds < 10 ? seconds.toFixed(1) : Math.round(seconds)}s`
-        : `${Math.floor(seconds / 60)}m ${Math.round(seconds % 60)}s`;
 }

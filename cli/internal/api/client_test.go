@@ -187,15 +187,11 @@ func TestAttachmentNameIsSanitised(t *testing.T) {
 		`attachment; filename="postgres-20261021.dump"`: "postgres-20261021.dump",
 		`attachment; filename="../../etc/passwd"`:       "passwd",
 		`attachment; filename=".bashrc"`:                "bashrc",
-		`attachment; filename="a\b|c?.tar.gz"`:          "b|c?.tar.gz",
+		`attachment; filename="a\b|c?.tar.gz"`:          "bc.tar.gz",
+		`attachment; filename="x<y>:z*.sql"`:            "xyz.sql",
 		`attachment`:                                    "",
 	} {
-		if got := AttachmentName(header); got != strings.Map(func(r rune) rune {
-			if strings.ContainsRune(`<>:"|?*`, r) {
-				return -1
-			}
-			return r
-		}, want) {
+		if got := AttachmentName(header); got != want {
 			t.Errorf("%s → %q, want %q", header, got, want)
 		}
 	}

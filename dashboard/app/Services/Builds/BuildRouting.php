@@ -7,8 +7,8 @@ namespace App\Services\Builds;
 use App\Data\Specs\ServiceSpec;
 use App\Enums\DaemonTaskStatus;
 use App\Enums\DaemonTaskType;
+use App\Enums\DeploymentPurpose;
 use App\Enums\ServerRole;
-use App\Enums\ServerStatus;
 use App\Models\DaemonTask;
 use App\Models\Deployment;
 use App\Models\Server;
@@ -17,9 +17,7 @@ use App\Scheduling\BuildRouter;
 use App\Scheduling\BuildRoutingFailed;
 use App\Scheduling\Scheduler;
 use App\Services\Deployments\Placer;
-use App\Services\Moves\Prebuilds;
 use App\Support\ServerPlatform;
-use App\Support\Servers\HostCapacity;
 
 /**
  * The database side of build routing (docs/04 §5): which platform a
@@ -44,7 +42,7 @@ final readonly class BuildRouting
     public function platformFor(Deployment $deployment, ServiceSpec $spec): string
     {
         // A build for a server move's target platform (docs/14 §13.3).
-        $prebuild = Prebuilds::platform($deployment);
+        $prebuild = $deployment->purpose === DeploymentPurpose::Prebuild ? $deployment->target_platform : null;
 
         if ($prebuild !== null) {
             // Throws when no build server builds it.
@@ -62,9 +60,8 @@ final readonly class BuildRouting
         }
 
         $active = $instance->active_deployment_id === null ? null : Deployment::query()->find($instance->active_deployment_id);
-        $current = $active?->plan['platform'] ?? null;
 
-        return BuildRouter::platform($platforms, $this->builders($instance->team_id), is_string($current) ? $current : null);
+        return BuildRouter::platform($platforms, $this->builders($instance->team_id), $active?->plan?->platform);
     }
 
     /**
@@ -77,8 +74,8 @@ final readonly class BuildRouting
 
         $servers = Server::query()
             ->where('team_id', $teamId)
-            ->where('status', ServerStatus::Online->value)
-            ->whereJsonContains('roles', ServerRole::Runtime->value)
+            ->online()
+            ->withRole(ServerRole::Runtime)
             ->orderBy('id')
             ->get();
 
@@ -93,7 +90,7 @@ final readonly class BuildRouting
         try {
             return BuildRouter::platform($platforms, $this->builders($teamId));
         } catch (BuildRoutingFailed) {
-            return (string) (array_key_first($platforms) ?? 'linux/amd64');
+            return (string) (array_key_first($platforms) ?? ServerPlatform::DEFAULT);
         }
     }
 
@@ -109,8 +106,7 @@ final readonly class BuildRouting
     {
         $servers = Server::query()
             ->where('team_id', $teamId)
-            ->where('status', ServerStatus::Online->value)
-            ->whereJsonContains('roles', ServerRole::Build->value)
+            ->onlineBuilders()
             ->orderBy('id')
             ->get();
 
@@ -126,7 +122,7 @@ final readonly class BuildRouting
         return array_values($servers->map(static fn (Server $server): BuildCandidate => new BuildCandidate(
             id: $server->id,
             platform: ServerPlatform::of($server),
-            slots: max(1, intdiv(HostCapacity::cpus($server) ?? 4, 4)),
+            slots: max(1, intdiv($server->cpus() ?? 4, 4)),
             running: is_numeric($running[$server->id] ?? null) ? (int) $running[$server->id] : 0,
             emulated: ServerPlatform::emulated($server),
         ))->all());

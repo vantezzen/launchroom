@@ -6,7 +6,7 @@ import {
     test,
     vi,
 } from 'vite-plus/test';
-import { subscribe, tickerState } from './use-now';
+import { subscribe } from './use-now';
 
 class FakeDocument extends EventTarget {
     visibilityState: 'visible' | 'hidden' = 'visible';
@@ -38,7 +38,7 @@ describe('shared clock', () => {
         const offA = subscribe(a);
         const offB = subscribe(b);
 
-        expect(tickerState()).toEqual({ listeners: 2, running: true });
+        expect(vi.getTimerCount()).toBe(1);
         a.mockClear();
         b.mockClear();
 
@@ -48,9 +48,11 @@ describe('shared clock', () => {
         expect(vi.getTimerCount()).toBe(1);
 
         offA();
+        expect(vi.getTimerCount()).toBe(1);
         offB();
-        expect(tickerState()).toEqual({ listeners: 0, running: false });
         expect(vi.getTimerCount()).toBe(0);
+        vi.advanceTimersByTime(3000);
+        expect(a).toHaveBeenCalledTimes(3);
     });
 
     test('pauses while the tab is hidden and ticks once on return', () => {
@@ -59,13 +61,14 @@ describe('shared clock', () => {
         listener.mockClear();
 
         doc.setVisibility('hidden');
-        expect(tickerState().running).toBe(false);
+        expect(vi.getTimerCount()).toBe(0);
         vi.advanceTimersByTime(10_000);
         expect(listener).not.toHaveBeenCalled();
 
         doc.setVisibility('visible');
         expect(listener).toHaveBeenCalledTimes(1);
-        expect(tickerState().running).toBe(true);
+        vi.advanceTimersByTime(1000);
+        expect(listener).toHaveBeenCalledTimes(2);
 
         off();
     });

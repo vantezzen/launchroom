@@ -2,11 +2,9 @@ package build
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -24,34 +22,6 @@ import (
 	"github.com/vantezzen/launchroom/daemon/internal/secret"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
-
-func TestMasker(t *testing.T) {
-	const s = "s3cr3t/value+x=="
-	m := NewMasker(s, "abc", "")
-	for _, form := range []string{
-		s,
-		base64.StdEncoding.EncodeToString([]byte(s)),
-		base64.URLEncoding.EncodeToString([]byte(s)),
-		base64.RawStdEncoding.EncodeToString([]byte(s)),
-		url.QueryEscape(s),
-		url.PathEscape(s),
-	} {
-		if got := m.Mask("before " + form + " after"); got != "before *** after" {
-			t.Errorf("form %q not masked: %q", form, got)
-		}
-	}
-	if got := m.Mask("abc is short"); got != "abc is short" {
-		t.Errorf("short values must not be masked: %q", got)
-	}
-	pem := "-----BEGIN KEY-----\nMIIBVQIBADANBgkqhkiG9w0BAQEFAASCAT8w\n-----END KEY-----"
-	if got := NewMasker(pem).Mask("line MIIBVQIBADANBgkqhkiG9w0BAQEFAASCAT8w"); strings.Contains(got, "MIIBVQ") {
-		t.Errorf("multi-line secret line leaked: %q", got)
-	}
-	var nilMasker *Masker
-	if nilMasker.Mask("x") != "x" {
-		t.Error("nil masker")
-	}
-}
 
 func TestSecretsHash(t *testing.T) {
 	if SecretsHash(nil) != "" {
@@ -80,41 +50,19 @@ func TestCheckCloneURL(t *testing.T) {
 	}
 }
 
-func TestCheckTreeAndAppDir(t *testing.T) {
+// appDir refuses a root directory that is missing or leaves the checkout
+// (symlink cases of checkTree are in symlink_test.go).
+func TestAppDirRefusesMissingAndEscaping(t *testing.T) {
 	root := t.TempDir()
-	must := func(err error) {
-		t.Helper()
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
-	must(os.MkdirAll(filepath.Join(root, "apps", "web"), 0o750))
-	must(os.WriteFile(filepath.Join(root, "apps", "web", "package.json"), []byte("{}"), 0o644))
-	must(os.Symlink("web", filepath.Join(root, "apps", "alias")))
-	must(os.Symlink("../web/package.json", filepath.Join(root, "apps", "web", "link.json")))
-	if err := checkTree(root); err != nil {
-		t.Fatalf("relative in-repo symlinks are fine: %v", err)
-	}
-	if d, err := appDir(root, "apps/alias"); err != nil || !strings.HasSuffix(d, filepath.Join("apps", "web")) {
-		t.Fatalf("appDir via symlink: %q %v", d, err)
+	if err := os.MkdirAll(filepath.Join(root, "apps", "web"), 0o750); err != nil {
+		t.Fatal(err)
 	}
 	if _, err := appDir(root, "missing"); err == nil {
 		t.Fatal("missing root dir accepted")
 	}
-
-	evil := t.TempDir()
-	must(os.Symlink("/data/daemon/keys/daemon.key", filepath.Join(evil, "package.json")))
-	if err := checkTree(evil); !errors.Is(err, errUnsafeRepo) {
-		t.Fatalf("absolute symlink accepted: %v", err)
+	if err := os.Symlink(t.TempDir(), filepath.Join(root, "out")); err != nil {
+		t.Fatal(err)
 	}
-	evil2 := t.TempDir()
-	must(os.MkdirAll(filepath.Join(evil2, "a"), 0o750))
-	must(os.Symlink("../../etc", filepath.Join(evil2, "a", "up")))
-	if err := checkTree(evil2); !errors.Is(err, errUnsafeRepo) {
-		t.Fatalf("escaping symlink accepted: %v", err)
-	}
-	outside := t.TempDir()
-	must(os.Symlink(outside, filepath.Join(root, "out")))
 	if _, err := appDir(root, "out"); err == nil {
 		t.Fatal("root dir escaping through a symlink accepted")
 	}
@@ -438,7 +386,7 @@ func TestBuildkitUnavailable(t *testing.T) {
 	if f.Class != state.FailureInternal || f.Step != "setup" || !f.Retryable {
 		t.Fatalf("failure %+v", f)
 	}
-	if len(f.Hints) != 2 || f.Hints[0].Code != buildkitd.HintUserns || f.Hints[1].Code != buildkitd.HintCrashLoop {
+	if len(f.Hints) != 2 || f.Hints[0].Code != state.HintBuildkitUsernsRestricted || f.Hints[1].Code != state.HintBuildkitCrashLoop {
 		t.Fatalf("hints %+v", f.Hints)
 	}
 	for _, h := range f.Hints {
@@ -452,7 +400,9 @@ func TestBuildkitUnavailable(t *testing.T) {
 	if e := buildkitUnavailable(fmt.Errorf("x: %w", context.DeadlineExceeded), sink); e.Class != state.FailureTimeout {
 		t.Fatalf("deadline class %s", e.Class)
 	}
-	if e := buildkitUnavailable(buildkitd.ErrNotRunning, nil); e.Class != state.FailureInternal || len(e.Hints) != 0 {
+	// Every way BuildKit can be unavailable carries a hint code (the
+	// dashboard explains failures by code, not by their text).
+	if e := buildkitUnavailable(buildkitd.ErrNotRunning, nil); e.Class != state.FailureInternal || len(e.Hints) != 1 || e.Hints[0].Code != state.HintBuildkitNotReady {
 		t.Fatalf("not running %+v", e)
 	}
 }

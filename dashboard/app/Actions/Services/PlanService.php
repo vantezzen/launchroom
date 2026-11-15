@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace App\Actions\Services;
 
 use App\Data\Services\GitSource;
+use App\Data\Services\ServicePlanData;
 use App\Data\Specs\ServiceSpec;
-use App\Enums\DaemonTaskStatus;
 use App\Enums\ServiceKind;
+use App\Enums\ServicePlanStatus;
+use App\Enums\TaskFailureClass;
 use App\Exceptions\DomainRuleViolation;
 use App\Exceptions\GitHeadUnavailable;
 use App\Models\DaemonTask;
@@ -58,7 +60,7 @@ final readonly class PlanService
         try {
             $sha = $this->heads->head($instance->team_id, $source, $branch);
         } catch (GitHeadUnavailable $e) {
-            $this->record($instance, ['status' => 'failed', 'branch' => $branch, 'requestedAt' => now()->toIso8601ZuluString(), 'finishedAt' => now()->toIso8601ZuluString(), 'error' => $e->getMessage(), 'failureClass' => 'clone_error']);
+            $this->record($instance, new ServicePlanData(ServicePlanStatus::Failed, branch: $branch, requestedAt: now()->toIso8601ZuluString(), finishedAt: now()->toIso8601ZuluString(), error: $e->getMessage(), failureClass: TaskFailureClass::CloneError->value));
 
             return null;
         }
@@ -72,40 +74,37 @@ final readonly class PlanService
 
         return DB::transaction(function () use ($instance, $environment, $service, $source, $sha, $branch): ?DaemonTask {
             $instance = ServiceInstance::query()->whereKey($instance->id)->lockForUpdate()->firstOrFail();
-            $current = $instance->plan ?? [];
+            $current = $instance->plan;
             // Same commit and same build inputs: the running plan already answers.
             $inputs = hash('sha256', CanonicalJson::encode(['sha' => $sha, 'source' => $service->source, 'build' => $service->build->toArray()]));
-            $running = is_string($current['task'] ?? null) ? DaemonTask::query()
+            $running = $current?->task !== null ? DaemonTask::query()
                 ->where('team_id', $instance->team_id)
-                ->where('public_id', $current['task'])
-                ->whereIn('status', [DaemonTaskStatus::Pending->value, DaemonTaskStatus::Leased->value])
+                ->where('public_id', $current->task)
+                ->open()
                 ->first() : null;
 
-            if ($running instanceof DaemonTask && ($current['sha'] ?? null) === $sha && ($current['inputs'] ?? $inputs) === $inputs) {
+            if ($running instanceof DaemonTask && $current->sha === $sha && ($current->inputs ?? $inputs) === $inputs) {
                 return null;
             }
 
             try {
                 $task = $this->tasks->plan($instance, $environment, $service, $source, $sha);
             } catch (DomainRuleViolation $e) {
-                $this->record($instance, ['status' => 'failed', 'sha' => $sha, 'branch' => $branch, 'requestedAt' => now()->toIso8601ZuluString(), 'finishedAt' => now()->toIso8601ZuluString(), 'error' => $e->getMessage(), 'failureClass' => 'config_error']);
+                $this->record($instance, new ServicePlanData(ServicePlanStatus::Failed, sha: $sha, branch: $branch, requestedAt: now()->toIso8601ZuluString(), finishedAt: now()->toIso8601ZuluString(), error: $e->getMessage(), failureClass: TaskFailureClass::ConfigError->value));
 
                 return null;
             }
 
             // Keep the previous summary visible while the new plan runs.
-            $this->record($instance, [
-                'status' => 'planning',
-                'task' => $task->public_id,
-                'inputs' => $inputs,
-                'sha' => $sha,
-                'branch' => $branch,
-                'requestedAt' => now()->toIso8601ZuluString(),
-                'finishedAt' => null,
-                'summary' => $current['summary'] ?? null,
-                'error' => null,
-                'failureClass' => null,
-            ]);
+            $this->record($instance, new ServicePlanData(
+                status: ServicePlanStatus::Planning,
+                task: $task->public_id,
+                inputs: $inputs,
+                sha: $sha,
+                branch: $branch,
+                requestedAt: now()->toIso8601ZuluString(),
+                summary: $current?->summary,
+            ));
 
             // A plan for outdated inputs is no longer anyone's answer.
             if ($running instanceof DaemonTask) {
@@ -116,10 +115,7 @@ final readonly class PlanService
         });
     }
 
-    /**
-     * @param  array<string, mixed>  $plan
-     */
-    private function record(ServiceInstance $instance, array $plan): void
+    private function record(ServiceInstance $instance, ServicePlanData $plan): void
     {
         $instance->forceFill(['plan' => $plan])->save();
     }

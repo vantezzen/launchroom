@@ -28,7 +28,7 @@ final class RestoredControlPlaneRuns
     {
         $runs = BackupRun::on($connection)
             ->where('subject', BackupSubject::ControlPlane->value)
-            ->whereIn('status', [BackupRunStatus::Pending->value, BackupRunStatus::Running->value])
+            ->whereIn('status', BackupRunStatus::nonTerminal())
             ->get();
 
         foreach ($runs as $run) {

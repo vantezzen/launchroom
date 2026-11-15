@@ -9,7 +9,7 @@ use Attribute;
 
 /**
  * Declares how a property is promoted between environments (docs/06 §6.2).
- * Read by App\Support\Changes\FieldMeta; the promotion flow uses it later.
+ * Read by App\Support\Changes\FieldMeta.
  */
 #[Attribute(Attribute::TARGET_PROPERTY | Attribute::TARGET_PARAMETER)]
 final readonly class Promotion

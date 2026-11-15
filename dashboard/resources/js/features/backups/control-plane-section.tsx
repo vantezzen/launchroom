@@ -4,35 +4,25 @@ import { useState } from 'react';
 import InputError from '@/components/input-error';
 import { MetaLine } from '@/components/patterns/meta-line';
 import { SidePanel, SheetSection } from '@/components/patterns/sheet';
-import { Status, StatusPill } from '@/components/status';
-import type { StatusState } from '@/components/status';
+import { Status, StatusPill, backupRunStatus } from '@/components/status';
 import { TimeAgo } from '@/components/time-ago';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
 import { DestinationPanel } from '@/features/backups/destinations-section';
-import { formatBytes } from '@/features/backups/format';
+import { reasonLabel } from '@/features/backups/format';
 import { ScheduleRow } from '@/features/backups/schedules-section';
-import { SettingsCard, SettingsRow } from '@/features/settings/settings-card';
 import { run } from '@/routes/backups/control-plane';
 import { confirm, kit, passphrase } from '@/routes/backups/recovery';
+import { formatBytes } from '@/lib/format';
+import { SettingsCard, SettingsRow } from '@/components/settings/settings-card';
 
 export type InstanceBackups = {
     destination: App.Data.Backups.BackupDestinationData | null;
     schedule: App.Data.Backups.BackupScheduleData | null;
     recoveryKit: App.Data.Backups.RecoveryKitStatusData;
     runs: App.Data.Backups.BackupRunData[];
-};
-
-const runStates: Record<
-    App.Enums.Backups.BackupRunStatus,
-    [StatusState, string]
-> = {
-    pending: ['progress', 'Queued'],
-    running: ['progress', 'Running'],
-    succeeded: ['active', 'Succeeded'],
-    failed: ['failed', 'Failed'],
 };
 
 function RecentRuns({ runs }: { runs: App.Data.Backups.BackupRunData[] }) {
@@ -51,9 +41,9 @@ function RecentRuns({ runs }: { runs: App.Data.Backups.BackupRunData[] }) {
                         >
                             <div className="flex flex-wrap items-center justify-between gap-x-3">
                                 <Status
-                                    state={runStates[item.status][0]}
-                                    label={runStates[item.status][1]}
-                                    detail={item.reasonLabel}
+                                    state={backupRunStatus[item.status].state}
+                                    label={backupRunStatus[item.status].label}
+                                    detail={reasonLabel(item.reason)}
                                 />
                                 <MetaLine className="type-small text-muted-foreground tabular-nums">
                                     <TimeAgo value={item.createdAt} />

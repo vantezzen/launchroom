@@ -52,23 +52,19 @@ import (
 
 	"github.com/vantezzen/launchroom/daemon/internal/ambassador"
 	"github.com/vantezzen/launchroom/daemon/internal/docker"
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/policy"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
 
 // Fixed host-side names.
 const (
-	ContainerName = "lr-system-ambassador"
-	NetworkName   = "lr-system-ambassador"
-	ConfigVolume  = "lr-system-ambassador-config"
-	ImageRepo     = "lr-system-ambassador"
 	// BinaryName is the forwarder binary shipped next to launchroomd.
 	BinaryName = "launchroom-ambassador"
 
 	configDir  = "/config"
 	configFile = "ambassador.json"
 	user       = "65534:65534"
-	specVer    = "ambassador-v1"
 	// gwPriority makes the ambassador's own network the default gateway.
 	gwPriority = 1000
 	memoryMB   = 256
@@ -85,14 +81,10 @@ type Options struct {
 	Ops      docker.AmbassadorOps
 	// Binary is the launchroom-ambassador executable to build the image from.
 	Binary string
-	// Subnet of the ambassador network.
 	Subnet netip.Prefix
 	// DrainSeconds is passed to the forwarder (0 = its default).
 	DrainSeconds int
-	// Isolate applies the firewall (which covers the ambassador network and
-	// allows its upstreams) before the container is (re)started; nil = none.
-	Isolate func(ctx context.Context) error
-	Log     *slog.Logger
+	Log          *slog.Logger
 }
 
 // Manager converges the ambassador container.
@@ -151,15 +143,11 @@ func (m *Manager) Sync(ctx context.Context, ns *state.NodeState) (Status, error)
 	if err := m.ensureNetwork(ctx); err != nil {
 		return Status{}, err
 	}
-	if m.o.Isolate != nil {
-		// Fail closed: the ambassador only runs behind its firewall chain.
-		if err := m.o.Isolate(ctx); err != nil {
-			return Status{}, fmt.Errorf("ambassador: not started: %w", err)
-		}
-	}
+	// Docker fails closed: the ambassador only runs behind its firewall
+	// chain (docker.ErrNotIsolated).
 	c, err := m.ensureContainer(ctx, image)
 	if err != nil {
-		return Status{}, err
+		return Status{}, fmt.Errorf("ambassador: not started: %w", err)
 	}
 	if c, err = m.attach(ctx, c, desired); err != nil {
 		return Status{}, err
@@ -175,7 +163,7 @@ func (m *Manager) Sync(ctx context.Context, ns *state.NodeState) (Status, error)
 // about to be removed (the reconciler removes networks before the next
 // Sync would leave them). No-op when it is not attached.
 func (m *Manager) Detach(ctx context.Context, network string) error {
-	if network == NetworkName || m.o.Ops == nil {
+	if network == names.AmbassadorNetwork || m.o.Ops == nil {
 		return nil
 	}
 	m.mu.Lock()
@@ -222,7 +210,7 @@ func Config(c docker.Container, desired []policy.Ambassador, drainSeconds int) a
 }
 
 func (m *Manager) list(ctx context.Context) ([]docker.Container, error) {
-	return m.o.Docker.ListContainers(ctx, map[string]string{docker.LabelSystem: policy.SystemAmbassador})
+	return m.o.Docker.ListContainers(ctx, map[string]string{names.LabelSystem: names.SystemAmbassador})
 }
 
 func (m *Manager) remove(ctx context.Context) error {
@@ -233,7 +221,7 @@ func (m *Manager) remove(ctx context.Context) error {
 	var errs []error
 	for _, c := range cs {
 		m.o.Log.Info("removing the ambassador (no ambassadors left)", "container", c.Name)
-		if c.Running {
+		if c.Running() {
 			errs = append(errs, m.o.Docker.StopContainer(ctx, c.ID, 10*time.Second))
 		}
 		errs = append(errs, m.o.Docker.RemoveContainer(ctx, c.ID))
@@ -247,7 +235,7 @@ func (m *Manager) remove(ctx context.Context) error {
 		return err
 	}
 	for _, n := range nets {
-		if n.Name == NetworkName && n.Labels[docker.LabelSystem] == policy.SystemAmbassador {
+		if n.Name == names.AmbassadorNetwork && n.Labels[names.LabelSystem] == names.SystemAmbassador {
 			if err := m.o.Docker.RemoveNetwork(ctx, n.ID); err != nil {
 				return err
 			}
@@ -280,7 +268,7 @@ func (m *Manager) binaryHash() (string, error) {
 }
 
 // ImageRef is the local image tag for a binary hash.
-func ImageRef(hash string) string { return ImageRepo + ":" + hash[:16] }
+func ImageRef(hash string) string { return names.AmbassadorImageRepo + ":" + hash[:16] }
 
 func (m *Manager) ensureImage(ctx context.Context) (string, error) {
 	hash, err := m.binaryHash()
@@ -304,7 +292,7 @@ func (m *Manager) ensureImage(ctx context.Context) (string, error) {
 		`ENTRYPOINT ["/` + BinaryName + `"]`,
 		`CMD ["--config", "` + configDir + "/" + configFile + `"]`,
 		"USER " + user,
-		"LABEL " + docker.LabelManaged + "=true",
+		"LABEL " + names.LabelManaged + "=true",
 	})
 	return ref, err
 }
@@ -328,110 +316,60 @@ func (m *Manager) ensureNetwork(ctx context.Context) error {
 		return err
 	}
 	for _, n := range nets {
-		if n.Name != NetworkName {
+		if n.Name != names.AmbassadorNetwork {
 			continue
 		}
 		if len(n.Subnets) == 1 && n.Subnets[0] == m.o.Subnet {
 			return nil
 		}
-		return fmt.Errorf("ambassador: network %s exists with subnet %v, want %s (remove it or change LR_AMBASSADOR_SUBNET)", NetworkName, n.Subnets, m.o.Subnet)
+		return fmt.Errorf("ambassador: network %s exists with subnet %v, want %s (remove it or change LR_AMBASSADOR_SUBNET)", names.AmbassadorNetwork, n.Subnets, m.o.Subnet)
 	}
 	labels := docker.ManagedLabels(m.o.ServerID)
-	labels[docker.LabelSystem] = policy.SystemAmbassador
-	labels[docker.LabelNetwork] = "system-ambassador"
-	_, err = m.o.Docker.CreateNetwork(ctx, docker.NetworkCreate{Name: NetworkName, Subnet: m.o.Subnet, Labels: labels})
+	labels[names.LabelSystem] = names.SystemAmbassador
+	labels[names.LabelNetwork] = "system-ambassador"
+	_, err = m.o.Docker.CreateNetwork(ctx, docker.NetworkCreate{Name: names.AmbassadorNetwork, Subnet: m.o.Subnet, Labels: labels})
 	return err
-}
-
-// SpecHash identifies the container spec for an image.
-func (m *Manager) SpecHash(image string) string {
-	sum := sha256.Sum256([]byte(fmt.Sprintf("%s|%s|%s", specVer, image, m.o.Subnet)))
-	return hex.EncodeToString(sum[:16])
 }
 
 // ContainerSpec is the built-in container spec.
 func (m *Manager) ContainerSpec(image string) *docker.ContainerCreate {
 	labels := docker.ManagedLabels(m.o.ServerID)
-	labels[docker.LabelSystem] = policy.SystemAmbassador
-	labels[docker.LabelSpecHash] = m.SpecHash(image)
+	labels[names.LabelSystem] = names.SystemAmbassador
 	pidLimit := int64(pids)
 	mem := int64(memoryMB) << 20
 	init := true
+	hc := policy.BaseHostConfig()
+	hc.NetworkMode = names.AmbassadorNetwork
+	hc.RestartPolicy = container.RestartPolicy{Name: container.RestartPolicyUnlessStopped}
+	hc.ReadonlyRootfs, hc.Init = true, &init
+	// Listeners on service ports below 1024 without capabilities (Docker's
+	// default for bridge networks, made explicit).
+	hc.Sysctls = map[string]string{"net.ipv4.ip_unprivileged_port_start": "0"}
+	hc.Mounts = []mount.Mount{{Type: mount.TypeVolume, Source: names.AmbassadorConfigVolume, Target: configDir}}
+	hc.Resources = container.Resources{Memory: mem, MemorySwap: mem, NanoCPUs: 1e9, PidsLimit: &pidLimit}
 	return &docker.ContainerCreate{
-		Name: ContainerName,
+		Name: names.AmbassadorContainer,
 		Config: &container.Config{
 			Image:  image,
 			User:   user,
 			Labels: labels,
 		},
-		HostConfig: &container.HostConfig{
-			NetworkMode:    NetworkName,
-			RestartPolicy:  container.RestartPolicy{Name: container.RestartPolicyUnlessStopped},
-			CapDrop:        []string{"ALL"},
-			SecurityOpt:    []string{policy.NoNewPrivileges},
-			ReadonlyRootfs: true,
-			Init:           &init,
-			// Listeners on service ports below 1024 without capabilities
-			// (Docker's default for bridge networks, made explicit).
-			Sysctls: map[string]string{"net.ipv4.ip_unprivileged_port_start": "0"},
-			LogConfig: container.LogConfig{
-				Type:   policy.LogDriver,
-				Config: map[string]string{"max-size": policy.LogMaxSize, "max-file": policy.LogMaxFile},
-			},
-			Mounts:    []mount.Mount{{Type: mount.TypeVolume, Source: ConfigVolume, Target: configDir}},
-			Resources: container.Resources{Memory: mem, MemorySwap: mem, NanoCPUs: 1e9, PidsLimit: &pidLimit},
-		},
+		HostConfig: hc,
 		Networking: &network.NetworkingConfig{EndpointsConfig: map[string]*network.EndpointSettings{
-			NetworkName: {GwPriority: gwPriority},
+			names.AmbassadorNetwork: {GwPriority: gwPriority},
 		}},
 	}
 }
 
 func (m *Manager) ensureContainer(ctx context.Context, image string) (docker.Container, error) {
-	hash := m.SpecHash(image)
-	cs, err := m.list(ctx)
-	if err != nil {
-		return docker.Container{}, err
-	}
-	var current *docker.Container
-	for i := range cs {
-		c := cs[i]
-		if current == nil && c.Name == ContainerName && c.Labels[docker.LabelSpecHash] == hash {
-			current = &cs[i]
-			continue
-		}
-		m.o.Log.Info("replacing the ambassador container", "container", c.Name)
-		if c.Running {
-			_ = m.o.Docker.StopContainer(ctx, c.ID, 10*time.Second)
-		}
-		if err := m.o.Docker.RemoveContainer(ctx, c.ID); err != nil {
-			return docker.Container{}, err
-		}
-	}
-	if current == nil {
-		labels := docker.ManagedLabels(m.o.ServerID)
-		labels[docker.LabelVolume] = "system-" + ConfigVolume
-		labels[docker.LabelSystem] = policy.SystemAmbassador
-		if err := m.o.Docker.CreateVolume(ctx, docker.VolumeCreate{Name: ConfigVolume, Labels: labels}); err != nil {
-			return docker.Container{}, err
-		}
-		id, err := m.o.Docker.CreateContainer(ctx, m.ContainerSpec(image))
-		if err != nil {
-			return docker.Container{}, err
-		}
-		c, err := m.o.Docker.InspectContainer(ctx, id)
-		if err != nil {
-			return docker.Container{}, err
-		}
-		current = &c
+	c, created, err := docker.SystemContainer{
+		Component: names.SystemAmbassador, Spec: m.ContainerSpec(image), Extra: []string{m.o.Subnet.String()},
+		Volumes: []string{names.AmbassadorConfigVolume},
+	}.Ensure(ctx, m.o.Docker, m.o.Log)
+	if created {
 		m.written, m.writtenTo = nil, ""
 	}
-	if !current.Running {
-		if err := m.o.Docker.StartContainer(ctx, current.ID); err != nil {
-			return docker.Container{}, err
-		}
-	}
-	return *current, nil
+	return c, err
 }
 
 // attach connects the container to the environment networks with
@@ -457,7 +395,7 @@ func (m *Manager) attach(ctx context.Context, c docker.Container, desired []poli
 	changed := false
 	var errs []error
 	for name := range c.Networks {
-		if name == NetworkName {
+		if name == names.AmbassadorNetwork {
 			continue
 		}
 		aliases, ok := want[name]

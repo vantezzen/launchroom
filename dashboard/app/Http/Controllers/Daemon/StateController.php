@@ -25,7 +25,6 @@ final class StateController extends Controller
     {
         $server = AuthenticateDaemon::server($request);
 
-        // A replaced server only gets its last (empty, decommission) state; nothing is rendered for it anymore.
         $decommissioned = $server->status === ServerStatus::Revoked && $server->replaced_at !== null;
 
         if (! $server->status->isApproved() && ! $decommissioned) {

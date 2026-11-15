@@ -16,8 +16,7 @@ type TTYOptions struct {
 	// Argv is the process to run (never a shell string).
 	Argv []string
 	// Env is added to the container's environment for this process only.
-	Env []string
-	// Cols and Rows are the initial terminal size.
+	Env        []string
 	Cols, Rows uint
 }
 
@@ -50,7 +49,7 @@ func (e *Engine) ExecTTY(ctx context.Context, id string, o TTYOptions) (*TTYExec
 	if err != nil {
 		return nil, err
 	}
-	if !c.Running {
+	if !c.Running() {
 		return nil, fmt.Errorf("docker: container %s is not running", shortID(id))
 	}
 	size := client.ConsoleSize{Height: max(o.Rows, 2), Width: max(o.Cols, 2)}

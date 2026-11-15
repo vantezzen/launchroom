@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Middleware;
 
 use App\Exceptions\DomainRuleViolation;
+use App\Http\Routing\RouteFamily;
 use App\Services\Moves\InstanceFreeze;
 use Closure;
 use Illuminate\Http\JsonResponse;
@@ -19,15 +20,11 @@ use Symfony\Component\HttpFoundation\Response;
  *   and webhooks answer 503) and pages stay readable;
  * - once the new dashboard took over (`moved_to`), every page says where
  *   launchroom went;
- * - launchroomd's endpoints, the move endpoints the new machine uses,
- *   health and the registry realm always pass: servers keep their state
- *   and keep reporting, and the hand-over can finish.
+ * - what servers and the new machine call always passes
+ *   (RouteFamily::passesFreeze()).
  */
 final class RespectInstanceFreeze
 {
-    /** @var list<string> */
-    private const array ALWAYS = ['daemon/*', 'move/*', 'up', 'registry/token', 'install/*', '.well-known/launchroom/*', 'auth/preview', 'build/*'];
-
     /** Writes that still work while frozen: signing in and out, aborting the hand-over. */
     private const array WRITES = ['login', 'logout', 'two-factor-challenge', 'settings/move/*', 'user/confirm-password', 'user/confirmed-password-status'];
 
@@ -40,7 +37,9 @@ final class RespectInstanceFreeze
      */
     public function handle(Request $request, Closure $next, string $layer = 'global'): Response
     {
-        if ($request->is(...self::ALWAYS) || ! InstanceFreeze::active()) {
+        $family = RouteFamily::of($request);
+
+        if ($family->passesFreeze() || ! InstanceFreeze::active()) {
             return $next($request);
         }
 
@@ -58,7 +57,7 @@ final class RespectInstanceFreeze
         }
 
         // The API and webhooks: changes wait (503 with Retry-After); once moved, everything points away.
-        if (($request->is('api/*', 'webhooks/*', 'cli/*') && (! $request->isMethodSafe() || $moved !== null)) || ($moved !== null && $request->expectsJson())) {
+        if (($family->pausesWithJson() && (! $request->isMethodSafe() || $moved !== null)) || ($moved !== null && $request->expectsJson())) {
             return new JsonResponse(['error' => ['code' => 'moving', 'message' => $message]], 503, ['Retry-After' => '120']);
         }
 

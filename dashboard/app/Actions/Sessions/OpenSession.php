@@ -5,20 +5,22 @@ declare(strict_types=1);
 namespace App\Actions\Sessions;
 
 use App\Actions\Audit\RecordAuditEvent;
+use App\Broadcasting\Channel;
 use App\Data\Audit\AuditActor;
 use App\Data\Audit\AuditEntryData;
+use App\Data\Protocol\V1\Tasks\SessionSpec;
 use App\Data\Services\DatabaseSource;
 use App\Data\Sessions\OpenedSessionData;
 use App\Data\Sessions\OpenSessionData;
 use App\Data\Sessions\SessionReplicaData;
+use App\Data\Tasks\SessionKeySeal;
+use App\Data\Tasks\TaskSeal;
 use App\Enums\DaemonFeature;
-use App\Enums\DaemonTaskType;
-use App\Enums\DatabaseEngine;
+use App\Enums\DaemonTaskPurpose;
 use App\Enums\ServiceKind;
 use App\Enums\Sessions\InteractiveSessionKind;
-use App\Enums\Sessions\InteractiveSessionStatus;
+use App\Enums\TaskBackedAccessStatus;
 use App\Exceptions\DomainRuleViolation;
-use App\Models\DaemonTask;
 use App\Models\Placement;
 use App\Models\ServiceInstance;
 use App\Models\Sessions\InteractiveSession;
@@ -27,6 +29,7 @@ use App\Services\Backups\DatabaseWorkloads;
 use App\Services\Sessions\SessionRelay;
 use App\Services\Sessions\SessionSecrets;
 use App\Services\Sessions\SessionTargets;
+use App\Services\Tasks\DaemonTasks;
 use App\Support\PublicId;
 use Illuminate\Support\Facades\DB;
 
@@ -44,6 +47,7 @@ final readonly class OpenSession
         private SessionRelay $relay,
         private RecordAuditEvent $audit,
         private EndSession $end,
+        private DaemonTasks $tasks,
     ) {}
 
     public function handle(User $user, ServiceInstance $instance, InteractiveSessionKind $kind, OpenSessionData $data, AuditActor $actor): OpenedSessionData
@@ -70,7 +74,7 @@ final readonly class OpenSession
             // Sessions already being ended (replaced, closed) don't count.
             $open = InteractiveSession::query()
                 ->where('user_id', $user->id)
-                ->whereIn('status', [InteractiveSessionStatus::Pending->value, InteractiveSessionStatus::Open->value])
+                ->whereIn('status', TaskBackedAccessStatus::nonTerminal())
                 ->whereNull('ended_by_id')
                 ->count();
 
@@ -81,28 +85,25 @@ final readonly class OpenSession
             $publicId = PublicId::generate(InteractiveSession::publicIdPrefix());
             $shell = $kind === InteractiveSessionKind::Console ? $data->shell : null;
 
-            $task = DaemonTask::query()->create([
-                'team_id' => $instance->team_id,
-                'server_id' => $placement->server_id,
-                'pinned_to_server' => true,
-                'type' => DaemonTaskType::Session,
-                'spec' => (object) array_filter([
-                    'session' => $publicId,
-                    'kind' => $kind->value,
-                    'workload' => $placement->workload_id,
-                    'channel' => 'private-session.'.$publicId,
-                    'idleTimeout' => intdiv($idle, 60).'m',
-                    'shell' => $shell,
-                    'cols' => $kind === InteractiveSessionKind::Console ? $data->cols : null,
-                    'rows' => $kind === InteractiveSessionKind::Console ? $data->rows : null,
-                    'record' => $record ? true : null,
-                    'engine' => $engine,
-                ], static fn (mixed $value): bool => $value !== null),
-                'max_attempts' => 1,
-                'timeout_seconds' => $max,
-                'purpose' => $kind->value,
-                'seal' => ['sessionKey' => ['session' => $publicId]],
-            ]);
+            $task = $this->tasks->create(
+                $instance->team_id,
+                new SessionSpec(
+                    session: $publicId,
+                    kind: $kind->value,
+                    workload: $placement->workload_id,
+                    channel: Channel::Session->wire($publicId),
+                    idleTimeout: intdiv($idle, 60).'m',
+                    shell: $shell,
+                    cols: $kind === InteractiveSessionKind::Console ? $data->cols : null,
+                    rows: $kind === InteractiveSessionKind::Console ? $data->rows : null,
+                    record: $record ? true : null,
+                    engine: $engine,
+                ),
+                $max,
+                pin: $placement->server,
+                seal: new TaskSeal(sessionKey: new SessionKeySeal($publicId)),
+                purpose: DaemonTaskPurpose::forSession($kind),
+            );
 
             $session = new InteractiveSession([
                 'team_id' => $instance->team_id,
@@ -174,7 +175,7 @@ final readonly class OpenSession
             ->where('user_id', $user->id)
             ->where('service_instance_id', $instance->id)
             ->where('kind', $kind->value)
-            ->whereIn('status', [InteractiveSessionStatus::Pending->value, InteractiveSessionStatus::Open->value])
+            ->whereIn('status', TaskBackedAccessStatus::nonTerminal())
             ->whereNull('ended_by_id')
             ->get()
             ->each(fn (InteractiveSession $previous) => $this->end->handle($previous, $user, 'Replaced by a new session.'));
@@ -204,7 +205,7 @@ final readonly class OpenSession
                 throw DomainRuleViolation::conflict("Update {$placement->server->name} in Settings → Updates to browse {$source->engine->label()}.");
             }
 
-            return [$placement, $this->daemonEngine($source->engine)];
+            return [$placement, $source->engine->value];
         }
 
         $placement = $this->targets->replica($instance, $data->workload, $kind);
@@ -216,10 +217,5 @@ final readonly class OpenSession
         }
 
         return [$placement, null];
-    }
-
-    private function daemonEngine(DatabaseEngine $engine): string
-    {
-        return $engine->value;
     }
 }

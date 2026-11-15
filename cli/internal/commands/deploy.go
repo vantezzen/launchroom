@@ -15,6 +15,7 @@ import (
 
 	"github.com/vantezzen/launchroom/cli/internal/api"
 	"github.com/vantezzen/launchroom/cli/internal/exitcode"
+	"github.com/vantezzen/launchroom/cli/internal/output"
 	"github.com/vantezzen/launchroom/cli/internal/sse"
 )
 
@@ -122,8 +123,8 @@ func (a *App) finishDeployments(ctx context.Context, s *session, deployments []a
 	for _, d := range final {
 		if d.Failed() {
 			msg := d.ServiceName + " " + d.Status
-			if d.Failure != nil && d.Failure.Message != "" {
-				msg += ": " + d.Failure.Message
+			if d.Failure != nil && d.Failure.Message != nil && *d.Failure.Message != "" {
+				msg += ": " + *d.Failure.Message
 			}
 			failed = append(failed, msg)
 		}
@@ -131,7 +132,7 @@ func (a *App) finishDeployments(ctx context.Context, s *session, deployments []a
 	if err := p.Result(final, func(w io.Writer) {
 		for _, d := range final {
 			if !d.Failed() {
-				_, _ = fmt.Fprintf(w, "%s %s is %s\n", p.Good("✓"), d.ServiceName, statusWord(d.Status))
+				_, _ = fmt.Fprintf(w, "%s %s is %s\n", p.Good("✓"), d.ServiceName, output.StatusLabel(d.Status))
 			}
 		}
 	}); err != nil {
@@ -150,13 +151,6 @@ func plural(n int, one, many string) string {
 	return many
 }
 
-func statusWord(s string) string {
-	if s == "active" {
-		return "live"
-	}
-	return strings.ReplaceAll(s, "_", " ")
-}
-
 func describeCommit(d api.Deployment) string {
 	if d.Commit == nil {
 		return ""
@@ -172,17 +166,6 @@ func describeCommit(d api.Deployment) string {
 	return "(" + out + ")"
 }
 
-type linesEvent struct {
-	Lines   []api.LogLine  `json:"lines"`
-	Entries []api.LogEntry `json:"entries"`
-	Cursor  int            `json:"cursor"`
-}
-
-type statusEvent struct {
-	Status   string `json:"status"`
-	Finished bool   `json:"finished"`
-}
-
 // followDeployment streams a deployment's log lines (not in --json mode)
 // until it finishes and returns its final state.
 func (a *App) followDeployment(ctx context.Context, s *session, d api.Deployment) (api.Deployment, error) {
@@ -194,7 +177,7 @@ func (a *App) followDeployment(ctx context.Context, s *session, d api.Deployment
 	err := s.Client.Stream(ctx, "/deployments/"+url.PathEscape(d.ID)+"/logs/stream", nil, "", func(ev sse.Event) error {
 		switch ev.Event {
 		case "lines":
-			var le linesEvent
+			var le api.DeploymentLinesEvent
 			if json.Unmarshal([]byte(ev.Data), &le) != nil || p.JSON {
 				return nil
 			}
@@ -202,7 +185,7 @@ func (a *App) followDeployment(ctx context.Context, s *session, d api.Deployment
 				a.printLogLine(l)
 			}
 		case "status":
-			var st statusEvent
+			var st api.DeploymentStatusEvent
 			if json.Unmarshal([]byte(ev.Data), &st) == nil {
 				if st.Status != last && !p.JSON {
 					p.Info("%s %s", p.Status(st.Status), p.Dim(d.ServiceName))

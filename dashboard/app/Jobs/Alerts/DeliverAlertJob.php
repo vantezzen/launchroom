@@ -12,9 +12,9 @@ use Illuminate\Queue\Attributes\Timeout;
 use Illuminate\Queue\Attributes\Tries;
 
 /**
- * Sends one queued delivery (docs/15 §3.2): up to 3 attempts, 30 s / 2 min /
- * 10 min apart, 30 s each. Only the id travels; the delivery row makes it
- * idempotent (a sent or failed delivery is never sent again).
+ * Sends one queued delivery (docs/15 §3.2). Only the id travels; the
+ * delivery row makes it idempotent (a sent or failed delivery is never sent
+ * again).
  */
 #[Backoff([30, 120, 600])]
 #[Timeout(30)]

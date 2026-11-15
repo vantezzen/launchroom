@@ -26,6 +26,7 @@ final readonly class ConfigFilePage
 {
     public function __construct(
         private ConfigFileReader $reader,
+        private ConfigFileLinks $links,
     ) {}
 
     public function for(Project $project): ConfigFilePageData
@@ -41,8 +42,7 @@ final readonly class ConfigFilePage
 
         $environments = $project->environments()
             ->where('kind', '!=', EnvironmentKind::Preview->value)
-            ->orderByRaw("case kind when 'production' then 0 else 1 end")
-            ->orderBy('name')
+            ->inDisplayOrder()
             ->get();
         $records = EnvironmentConfigFile::query()->whereIn('environment_id', $environments->modelKeys())->get()->keyBy('environment_id');
         $rows = [];
@@ -61,10 +61,10 @@ final readonly class ConfigFilePage
                 checkedAt: $record?->checked_at->toIso8601String(),
                 managedServices: count($managed),
                 managedSettings: array_sum(array_map(static fn ($service): int => count($service->fields) + count($service->variables) + count($service->domains), $managed)),
-                errors: $record?->problems() ?? [],
+                errors: $record instanceof EnvironmentConfigFile ? $this->links->problems($project, $record->repository, $record->commit_sha, $record->path, $record->problems()) : [],
                 warnings: $record?->problems('warnings') ?? [],
                 ignored: $record?->problems('ignored') ?? [],
-                fileUrl: $record?->webUrl(),
+                fileUrl: $record instanceof EnvironmentConfigFile ? $this->links->url($project, $record->repository, $record->commit_sha, $record->path) : null,
                 downloadUrl: route('projects.config.download', [$project, $environment]),
                 canSync: Gate::allows('update', $environment),
             );

@@ -10,7 +10,6 @@ use App\Data\Audit\AuditEntryData;
 use App\Enums\AuditAction;
 use App\Events\NodeStateInvalidated;
 use App\Models\Security\WafExclusion;
-use App\Queries\TeamEdges;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -39,7 +38,7 @@ final readonly class RemoveWafExclusion
             ));
 
             $exclusion->delete();
-            event(new NodeStateInvalidated(TeamEdges::ids($exclusion->team_id)));
+            NodeStateInvalidated::edges($exclusion->team_id);
         });
     }
 }

@@ -8,10 +8,9 @@ use App\Actions\Audit\RecordAuditEvent;
 use App\Data\Audit\AuditActor;
 use App\Data\Audit\AuditEntryData;
 use App\Enums\RemoteAccess\RemoteAccessEndReason;
-use App\Enums\RemoteAccess\RemoteAccessStatus;
+use App\Enums\TaskBackedAccessStatus;
 use App\Models\DaemonTask;
 use App\Models\RemoteAccess\RemoteAccess;
-use App\Services\RemoteAccess\AccessEventAudit;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Throwable;
@@ -26,7 +25,7 @@ final readonly class FinishRemoteAccess
 {
     public function __construct(
         private RecordAuditEvent $audit,
-        private AccessEventAudit $events,
+        private RecordAccessEvents $events,
     ) {}
 
     public function handle(DaemonTask $task): void
@@ -43,24 +42,24 @@ final readonly class FinishRemoteAccess
             }
 
             $task->refresh();
-            $result = is_array($task->result['access'] ?? null) ? $task->result['access'] : [];
-            $reason = RemoteAccessEndReason::tryFrom(is_string($result['endReason'] ?? null) ? $result['endReason'] : '')
+            $result = $task->result?->access;
+            $reason = $result->endReason
                 ?? ($access->ended_by_id !== null ? RemoteAccessEndReason::Ended : RemoteAccessEndReason::Error);
 
-            $this->events->record($access, is_array($result['events'] ?? null) ? $result['events'] : []);
+            $this->events->handle($access, is_array($result?->events) ? $result->events : []);
 
             $endedAt = CarbonImmutable::now();
             $access->forceFill([
                 'ended_at' => $endedAt,
                 'end_reason' => $reason,
                 'active_connections' => 0,
-                'connections' => max($access->connections, is_int($result['connections'] ?? null) ? $result['connections'] : 0),
-                'auth_failures' => is_int($result['authFailures'] ?? null) ? $result['authFailures'] : $access->auth_failures,
-                'bytes_in' => is_int($result['bytesIn'] ?? null) ? $result['bytesIn'] : 0,
-                'bytes_out' => is_int($result['bytesOut'] ?? null) ? $result['bytesOut'] : 0,
+                'connections' => max($access->connections, $result->connections ?? 0),
+                'auth_failures' => $result->authFailures ?? $access->auth_failures,
+                'bytes_in' => $result->bytesIn ?? 0,
+                'bytes_out' => $result->bytesOut ?? 0,
                 'password' => null,
             ]);
-            $access->transitionTo(RemoteAccessStatus::Ended);
+            $access->transitionTo(TaskBackedAccessStatus::Ended);
 
             $access->loadMissing('serviceInstance.service', 'server');
             $from = $access->listening_at ?? $access->created_at ?? $endedAt;

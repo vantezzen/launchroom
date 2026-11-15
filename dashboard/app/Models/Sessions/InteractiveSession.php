@@ -4,12 +4,18 @@ declare(strict_types=1);
 
 namespace App\Models\Sessions;
 
+use App\Broadcasting\Channel;
+use App\Broadcasting\ServiceActivityTopic;
+use App\Enums\Contracts\HasTransitionTable;
 use App\Enums\DatabaseEngine;
 use App\Enums\Sessions\InteractiveSessionKind;
-use App\Enums\Sessions\InteractiveSessionStatus;
 use App\Enums\Sessions\SessionEndReason;
+use App\Enums\TaskBackedAccessStatus;
+use App\Events\Broadcasts\ServiceActivityChanged;
 use App\Models\Concerns\BelongsToTeam;
 use App\Models\Concerns\HasPublicId;
+use App\Models\Concerns\HasStatusTransitions;
+use App\Models\Concerns\OpenedByUser;
 use App\Models\DaemonTask;
 use App\Models\Environment;
 use App\Models\Project;
@@ -36,7 +42,7 @@ use Illuminate\Support\Carbon;
  * @property int|null $server_id
  * @property int $user_id
  * @property InteractiveSessionKind $kind
- * @property InteractiveSessionStatus $status
+ * @property TaskBackedAccessStatus $status
  * @property string $workload_id
  * @property int $slot
  * @property string|null $shell
@@ -69,7 +75,10 @@ use Illuminate\Support\Carbon;
 #[Hidden(['ticket_hash', 'session_key'])]
 final class InteractiveSession extends Model
 {
-    use BelongsToTeam, HasPublicId;
+    use BelongsToTeam, HasPublicId, OpenedByUser;
+
+    /** @use HasStatusTransitions<TaskBackedAccessStatus> */
+    use HasStatusTransitions;
 
     /** @var array<string, mixed> */
     protected $attributes = [
@@ -86,17 +95,7 @@ final class InteractiveSession extends Model
      */
     public function channelName(): string
     {
-        return 'session.'.$this->public_id;
-    }
-
-    /**
-     * The only way a session's status changes (docs/10 §2.2 rule 3).
-     */
-    public function transitionTo(InteractiveSessionStatus $to): void
-    {
-        $this->status->assertCanTransitionTo($to);
-        $this->status = $to;
-        $this->save();
+        return Channel::Session->name($this->public_id);
     }
 
     /**
@@ -162,7 +161,7 @@ final class InteractiveSession extends Model
     {
         return [
             'kind' => InteractiveSessionKind::class,
-            'status' => InteractiveSessionStatus::class,
+            'status' => TaskBackedAccessStatus::class,
             'engine' => DatabaseEngine::class,
             'end_reason' => SessionEndReason::class,
             'session_key' => 'encrypted',
@@ -178,5 +177,10 @@ final class InteractiveSession extends Model
             'started_at' => 'datetime',
             'ended_at' => 'datetime',
         ];
+    }
+
+    protected function transitioned(HasTransitionTable $from, HasTransitionTable $to): void
+    {
+        ServiceActivityChanged::about($this->serviceInstance, ServiceActivityTopic::Sessions);
     }
 }

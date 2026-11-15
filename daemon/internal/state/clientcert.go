@@ -7,7 +7,6 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"regexp"
 	"time"
 )
 
@@ -41,15 +40,13 @@ const (
 	ClientCertRequiredBody = `{"error":"client certificate required"}`
 )
 
-var reBase64Std = regexp.MustCompile(`^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$`)
-
 // DERBase64 is standard base64 (padded) of DER bytes: a certificate or a
 // SubjectPublicKeyInfo.
 type DERBase64 string
 
 // ProtocolSchema implements SchemaDescriber.
 func (DERBase64) ProtocolSchema() ScalarSchema {
-	s := strSchema(reBase64Std, maxDERBase64)
+	s := strSchema(reBase64, maxDERBase64)
 	s.MinLength = 4
 	return s
 }
@@ -59,7 +56,7 @@ func (v DERBase64) Validate() error {
 	if len(v) < 4 {
 		return errors.New("base64 DER value is empty")
 	}
-	return checkPattern("base64 DER value", string(v), reBase64Std, maxDERBase64)
+	return checkPattern("base64 DER value", string(v), reBase64, maxDERBase64)
 }
 
 // Bytes decodes the value.

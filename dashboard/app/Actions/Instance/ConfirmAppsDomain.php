@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace App\Actions\Instance;
 
 use App\Data\Domains\DnsCheckData;
+use App\Data\Instance\DomainConfirmationData;
+use App\Data\Instance\OnboardingStateData;
+use App\Enums\Domains\DnsCheckStatus;
 use App\Exceptions\DomainRuleViolation;
 use App\Models\InstanceSettings;
 use App\Services\Dns\DnsCheck;
@@ -35,7 +38,7 @@ final readonly class ConfirmAppsDomain
 
         // Network calls stay outside the transaction.
         $result = $this->check->wildcard($domain, $this->edges->addresses(null));
-        $verified = $result->status === 'ok';
+        $verified = $result->status === DnsCheckStatus::Ok;
 
         if (! $verified && ! $anyway) {
             throw DomainRuleViolation::on('appsDomain', 'DNS doesn’t reach your server yet. Check again in a minute, or continue anyway.');
@@ -48,8 +51,8 @@ final readonly class ConfirmAppsDomain
                 return;
             }
 
-            $onboarding = $settings->onboarding ?? [];
-            $onboarding['domainConfirmed'] = ['domain' => $domain, 'verified' => $verified, 'at' => now()->toIso8601ZuluString()];
+            $onboarding = clone ($settings->onboarding ?? new OnboardingStateData);
+            $onboarding->domainConfirmed = new DomainConfirmationData($domain, $verified, now()->toIso8601ZuluString());
             $settings->forceFill(['onboarding' => $onboarding])->save();
         });
 

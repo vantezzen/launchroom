@@ -1,3 +1,4 @@
+import { vocabulary } from '@/lib/vocabulary';
 import { Form, Head, Link } from '@inertiajs/react';
 import InputError from '@/components/input-error';
 import PasswordInput from '@/components/password-input';
@@ -8,6 +9,8 @@ import { Spinner } from '@/components/ui/spinner';
 import { AuthFrame } from '@/features/auth/auth-frame';
 import { login } from '@/routes';
 import { accept } from '@/routes/invitations';
+import { initials } from '@/lib/format';
+import { noLayout } from '@/lib/pages';
 
 type Props = {
     token: string;
@@ -15,29 +18,6 @@ type Props = {
     signedInAs: string | null;
     passwordRules: string;
 };
-
-/** What each role may do, in one line (flows §16). */
-const roleSummary: Record<App.Enums.TeamRole, string> = {
-    owner: 'Full control of the team, its members and settings.',
-    admin: 'Manage projects, servers, members and settings.',
-    developer: 'Deploy, change variables and work on projects.',
-    viewer: 'See projects, deployments and logs.',
-};
-
-function initials(name: string): string {
-    const words = name
-        .replace(/[’'`]s team$/i, '')
-        .trim()
-        .split(/\s+/);
-
-    return (
-        words
-            .slice(0, 2)
-            .map((word) => word.charAt(0))
-            .join('')
-            .toUpperCase() || '?'
-    );
-}
 
 /**
  * Invitation acceptance (flows §16): the team, who invited you and as what,
@@ -49,8 +29,7 @@ export default function ShowInvitation({
     signedInAs,
     passwordRules,
 }: Props) {
-    const role =
-        invitation.role.charAt(0).toUpperCase() + invitation.role.slice(1);
+    const role = vocabulary.TeamRole[invitation.role].label;
     const needsLogin = signedInAs === null && invitation.hasAccount;
     const wrongAccount =
         signedInAs !== null &&
@@ -70,7 +49,7 @@ export default function ShowInvitation({
                     aria-hidden="true"
                     className="flex size-14 items-center justify-center rounded-2xl bg-foreground type-heading text-background"
                 >
-                    {initials(invitation.teamName)}
+                    {initials(invitation.teamName.replace(/[’'`]s team$/i, ''))}
                 </span>
             }
         >
@@ -80,7 +59,7 @@ export default function ShowInvitation({
                 <div className="flex min-w-0 flex-col gap-0.5">
                     <span className="type-label">{role}</span>
                     <span className="type-small text-muted-foreground">
-                        {roleSummary[invitation.role]}
+                        {vocabulary.TeamRole[invitation.role].summary}
                     </span>
                 </div>
             </div>
@@ -171,3 +150,5 @@ export default function ShowInvitation({
         </AuthFrame>
     );
 }
+
+ShowInvitation.layout = noLayout;

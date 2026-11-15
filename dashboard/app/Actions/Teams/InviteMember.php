@@ -57,7 +57,7 @@ final readonly class InviteMember
             // One open invitation per e-mail: a new one replaces the old token.
             $team->invitations()->where('email', $email)->whereNull('accepted_at')->delete();
 
-            $token = OpaqueToken::generate('lr_inv_');
+            $token = OpaqueToken::generate(TeamInvitation::TOKEN_PREFIX);
 
             $invitation = TeamInvitation::query()->create([
                 'team_id' => $team->id,

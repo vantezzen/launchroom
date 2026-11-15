@@ -13,6 +13,7 @@ use App\Exceptions\DomainRuleViolation;
 use App\Jobs\Backups\RunBackupMaintenanceJob;
 use App\Models\Backups\BackupRun;
 use App\Models\Backups\BackupSchedule;
+use App\Support\Refusal;
 use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Database\Query\Builder;
 use Throwable;
@@ -80,8 +81,13 @@ final readonly class RunBackupTick
             }
 
             try {
-                $this->start($schedule);
-                $started++;
+                $refusal = $this->start($schedule);
+
+                if ($refusal instanceof Refusal) {
+                    $this->recordSkipped($schedule, $refusal->message);
+                } else {
+                    $started++;
+                }
             } catch (DomainRuleViolation $e) {
                 $this->recordSkipped($schedule, $e->getMessage());
             } catch (Throwable $e) {
@@ -109,17 +115,24 @@ final readonly class RunBackupTick
         return [...$result, 'baseBackups' => $pointInTime['base'], 'verifications' => $this->verifications->handle($now), 'alerts' => $this->alerts->handle($now)];
     }
 
-    private function start(BackupSchedule $schedule): void
+    /**
+     * @throws DomainRuleViolation when the control-plane backup can't start
+     */
+    private function start(BackupSchedule $schedule): ?Refusal
     {
         if ($schedule->subject === BackupSubject::ControlPlane) {
             $this->controlPlane->handle(BackupReason::Scheduled, null, AuditActor::system());
 
-            return;
+            return null;
         }
 
-        if ($schedule->serviceInstance !== null && $schedule->serviceInstance->removed_at === null) {
-            $this->service->handle($schedule->serviceInstance, BackupReason::Scheduled, null, AuditActor::system(), $schedule);
+        if ($schedule->serviceInstance === null || $schedule->serviceInstance->removed_at !== null) {
+            return null;
         }
+
+        $runs = $this->service->handle($schedule->serviceInstance, BackupReason::Scheduled, null, AuditActor::system(), $schedule);
+
+        return $runs instanceof Refusal ? $runs : null;
     }
 
     /**

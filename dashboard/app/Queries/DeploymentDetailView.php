@@ -17,12 +17,14 @@ use App\Data\Deployments\EnvSnapshotEntryData;
 use App\Data\Deployments\FailureExplanationData;
 use App\Data\Deployments\ResolvedConfigEntryData;
 use App\Data\Git\RepositoryRef;
+use App\Data\Protocol\V1\BuildWarning;
 use App\Data\Servers\DeviceData;
 use App\Data\Services\GitSource;
 use App\Data\Specs\ServiceSpec;
 use App\Enums\DaemonTaskStatus;
 use App\Enums\DaemonTaskType;
 use App\Enums\DeploymentStatus;
+use App\Enums\DeploymentStepName;
 use App\Enums\DeploymentStepStatus;
 use App\Enums\WorkloadPhase;
 use App\Models\DaemonTask;
@@ -32,13 +34,16 @@ use App\Models\LogChunk;
 use App\Models\Placement;
 use App\Models\Server;
 use App\Models\Service;
+use App\Queries\ConfigAsCode\ConfigFileLinks;
 use App\Services\Crypto\ProjectKeyring;
 use App\Services\Deployments\ReleaseStep;
+use App\Services\Deployments\RolloutStatus;
 use App\Services\Git\GitProviders;
 use App\Support\Canvas\ServiceGlyph;
+use App\Support\Deployments\EffectiveDeploy;
 use App\Support\Deployments\Failures\FailureCatalogue;
 use App\Support\Deployments\Failures\FailureContext;
-use App\Support\Deployments\RolloutProgress;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Gate;
 
 /**
@@ -53,6 +58,7 @@ final readonly class DeploymentDetailView
         private ProjectKeyring $keyring,
         private DeploymentStats $stats,
         private GitProviders $providers,
+        private ConfigFileLinks $configLinks,
     ) {}
 
     public function get(Deployment $deployment): DeploymentDetailData
@@ -67,7 +73,7 @@ final readonly class DeploymentDetailView
         // ("Waiting for server-2 to pick up the change", "Downloading image
         // (412 MB of 690 MB)", "Waiting for GET / on :8000 to answer
         // (attempt 3: connection refused)"; D68).
-        $progress = RolloutProgress::for($deployment, $stepRows);
+        $progress = $this->rolloutProgress($deployment, $stepRows);
         $steps = array_values($stepRows->map(static fn (DeploymentStep $step): DeploymentStepData => DeploymentStepData::fromStep(
             $step,
             $step->status === DeploymentStepStatus::Running ? ($progress[$step->name->value] ?? null) : null,
@@ -99,7 +105,7 @@ final readonly class DeploymentDetailView
             serving: $related['serving'],
             previous: $related['previous'],
             compareUrl: $related['compareUrl'],
-            configErrors: DeploymentConfigErrorsData::fromStored($deployment->config_errors),
+            configErrors: $this->configErrors($deployment),
             buildServer: $related['buildServer'],
             servers: $this->servers($deployment),
             supersededBy: $this->supersededBy($deployment),
@@ -175,21 +181,21 @@ final readonly class DeploymentDetailView
             ->where('type', DaemonTaskType::Build->value)
             ->latest('id')
             ->first(['id', 'result']);
-        $failure = $build?->result['failure'] ?? null;
-        $hints = is_array($failure) ? ($failure['hints'] ?? []) : [];
-        $codes = [];
-
-        foreach (is_array($hints) ? $hints : [] as $hint) {
-            if (is_array($hint) && is_string($hint['code'] ?? null)) {
-                $codes[] = $hint['code'];
-            }
-        }
+        $codes = array_map(static fn (BuildWarning $hint): string => $hint->code, $build?->result?->failure->hints ?? []);
 
         $stepMessages = [];
+        $listening = [];
+        $hintPort = null;
 
         foreach ($steps as $step) {
             if ($step->status === DeploymentStepStatus::Failed && is_string($step->meta['message'] ?? null)) {
                 $stepMessages[] = $step->meta['message'];
+            }
+
+            if ($step->status === DeploymentStepStatus::Failed && is_string($step->meta['portHint'] ?? null)) {
+                $codes[] = $step->meta['portHint'];
+                $listening = array_values(array_filter((array) ($step->meta['listening'] ?? []), is_int(...)));
+                $hintPort = is_int($step->meta['port'] ?? null) ? $step->meta['port'] : null;
             }
         }
 
@@ -207,6 +213,8 @@ final readonly class DeploymentDetailView
             logExcerpt: $stepMessages === [] ? null : implode("\n", $stepMessages),
             currentPort: $service?->deploy->port,
             healthStartPeriodSeconds: $service?->deploy->healthcheck->startPeriodSeconds,
+            listening: $listening,
+            hintPort: $hintPort,
         ));
     }
 
@@ -221,8 +229,8 @@ final readonly class DeploymentDetailView
         $instance = $deployment->serviceInstance;
         // The summary relations select a few columns only: load the whole service.
         $service = Service::query()->whereKey($instance->service_id)->firstOrFail();
-        $summary = $deployment->plan['summary'] ?? null;
-        $framework = is_array($summary) && is_string($summary['framework'] ?? null) && $summary['framework'] !== '' ? DetectedPlanData::frameworkLabel($summary['framework']) : null;
+        $framework = $deployment->plan?->framework();
+        $framework = $framework === null ? null : DetectedPlanData::frameworkLabel($framework);
 
         $serving = $instance->active_deployment_id !== null && $instance->active_deployment_id !== $deployment->id
             ? Deployment::query()->whereKey($instance->active_deployment_id)->first()
@@ -230,11 +238,11 @@ final readonly class DeploymentDetailView
         $previous = Deployment::query()
             ->where('service_instance_id', $instance->id)
             ->where('id', '<', $deployment->id)
-            ->whereIn('status', [DeploymentStatus::Active->value, DeploymentStatus::Superseded->value])
+            ->wentLive()
             ->latest('id')
             ->first();
         $source = $service->source;
-        $compare = $source instanceof GitSource && ! $source->isUnconnectedPlainGit()
+        $compare = $source instanceof GitSource
             && $previous?->commit_sha !== null && $deployment->commit_sha !== null && $previous->commit_sha !== $deployment->commit_sha
             ? $this->providers->forSource($source)->compareUrl(RepositoryRef::fromSource($deployment->team_id, $source), $previous->commit_sha, $deployment->commit_sha)
             : null;
@@ -329,5 +337,51 @@ final readonly class DeploymentDetailView
         }
 
         return $entries;
+    }
+
+    private function configErrors(Deployment $deployment): ?DeploymentConfigErrorsData
+    {
+        $errors = $deployment->config_errors === null ? null : clone $deployment->config_errors;
+
+        if ($errors instanceof DeploymentConfigErrorsData) {
+            $errors->errors = $this->configLinks->problems($deployment->environment->project, $errors->repository, $errors->commitSha, $errors->path, $errors->errors);
+        }
+
+        return $errors;
+    }
+
+    /**
+     * The running Roll out and Health check steps' current sub-step (D68),
+     * from the placements launchroomd reports on.
+     *
+     * @param  Collection<int, DeploymentStep>  $steps
+     * @return array<string, string> step name => what it is doing
+     */
+    private function rolloutProgress(Deployment $deployment, Collection $steps): array
+    {
+        $running = $steps->filter(static fn (DeploymentStep $step): bool => $step->status === DeploymentStepStatus::Running
+            && in_array($step->name, [DeploymentStepName::Rollout, DeploymentStepName::Health], true));
+
+        if ($running->isEmpty()) {
+            return [];
+        }
+
+        $spec = $deployment->revision?->spec->service($deployment->serviceInstance->service->public_id);
+        $effective = $spec instanceof ServiceSpec ? EffectiveDeploy::for($spec, $deployment) : null;
+        $rollout = $steps->first(static fn (DeploymentStep $step): bool => $step->name === DeploymentStepName::Rollout);
+        /** @var array<int|string, int> $versions */
+        $versions = (array) ($rollout?->meta['versions'] ?? []);
+        $status = new RolloutStatus($deployment->placements()->get(), $versions, $effective?->port, $effective?->healthcheck, $deployment->image);
+        $out = [];
+
+        foreach ($running as $step) {
+            $message = $step->name === DeploymentStepName::Rollout ? $status->rollout() : $status->health();
+
+            if ($message !== null) {
+                $out[$step->name->value] = $message;
+            }
+        }
+
+        return $out;
     }
 }

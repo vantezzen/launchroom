@@ -11,6 +11,7 @@ import (
 	"sync"
 
 	"github.com/vantezzen/launchroom/daemon/internal/docker"
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 	"github.com/vantezzen/launchroom/daemon/internal/transfer"
 )
@@ -18,22 +19,6 @@ import (
 // Exports (D55, docs/14 §12.2): a database's data in the engine's native
 // format, or a volume's files as a .tar.gz, from the running service or a
 // stored backup, uploaded to the dashboard in chunks.
-
-// exportFormat is the native format of an engine's export.
-func exportFormat(engine state.DatabaseEngine) (state.DataFormat, bool) {
-	switch engine {
-	case state.EnginePostgres:
-		return state.FormatPostgresCustom, false
-	case state.EngineMySQL, state.EngineMariaDB:
-		return state.FormatMySQLSQL, true
-	case state.EngineMongoDB:
-		return state.FormatMongoArchive, false
-	case state.EngineClickHouse:
-		return state.FormatClickHouseBackup, false
-	default:
-		return state.FormatRedisRDB, false
-	}
-}
 
 // exportSink is where an export's bytes go: optionally gzip, then the uploader.
 type exportSink struct {
@@ -54,7 +39,6 @@ func newExportSink(ctx context.Context, c transfer.Client, target state.Transfer
 
 func (s *exportSink) Write(p []byte) (int, error) { return s.w.Write(p) }
 
-// finish flushes everything and returns the result.
 func (s *exportSink) finish(format state.DataFormat, compressed bool, durationMs int64) (*state.DataExportResult, error) {
 	if s.gz != nil {
 		if err := s.gz.Close(); err != nil {
@@ -84,7 +68,7 @@ func (e *Engine) ExportDatabase(ctx context.Context, spec *state.DbExportSpec, c
 		return nil, err
 	}
 	start := e.o.Now()
-	format, compress := exportFormat(spec.Engine)
+	format, compress := dumpsOf(spec.Engine).export, dumpsOf(spec.Engine).exportGzip
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	sink := newExportSink(ctx, e.o.Transfers, spec.Transfer, compress, progress)
@@ -204,7 +188,7 @@ func (e *Engine) ExportVolume(ctx context.Context, spec *state.VolumeExportSpec,
 	}
 	defer unpause()
 	logf("Reading volume %s", spec.Volume)
-	src, err := e.o.Volumes.StreamFromContainer(ctx, hid, docker.HelperMount)
+	src, err := e.o.Volumes.StreamFromContainer(ctx, hid, names.HelperMount)
 	if err != nil {
 		return nil, err
 	}
@@ -233,7 +217,7 @@ func rerootVolumeTar(dst io.Writer, src io.Reader) error {
 		}
 		name, ok := volumeEntryName(h.Name)
 		if !ok {
-			return fmt.Errorf("backup: unexpected entry %q in the volume", clip(h.Name, 96))
+			return fmt.Errorf("backup: unexpected entry %q in the volume", state.Clip(h.Name, 96))
 		}
 		out := &tar.Header{Name: reroot(name), Mode: h.Mode, Uid: h.Uid, Gid: h.Gid, ModTime: h.ModTime, Typeflag: h.Typeflag, Linkname: h.Linkname, Format: tar.FormatPAX}
 		switch h.Typeflag {
@@ -244,7 +228,7 @@ func rerootVolumeTar(dst io.Writer, src io.Reader) error {
 		case tar.TypeLink:
 			target, ok := volumeEntryName(h.Linkname)
 			if !ok {
-				return fmt.Errorf("backup: unexpected hard link %q in the volume", clip(h.Name, 96))
+				return fmt.Errorf("backup: unexpected hard link %q in the volume", state.Clip(h.Name, 96))
 			}
 			out.Linkname = reroot(target)
 		case tar.TypeSymlink, tar.TypeFifo:

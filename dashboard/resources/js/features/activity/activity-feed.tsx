@@ -15,7 +15,6 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import { useMemo } from 'react';
 import { TimeRangeSelect } from '@/components/charts/time-range-select';
-import type { TimeRangeOption } from '@/components/charts/time-range-select';
 import { EmptyState } from '@/components/patterns/empty-state';
 import { StatusIcon } from '@/components/status';
 import { TimeAgo } from '@/components/time-ago';
@@ -27,9 +26,11 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
+import { dayLabel } from '@/lib/format';
+import type { TimeRangeOption } from '@/lib/observe-scope';
 
 type Entry = App.Data.Activity.ActivityEntryData;
-export type ActivityKindFilter =
+type ActivityKindFilter =
     | 'all'
     | 'deploys'
     | 'promotions'
@@ -49,27 +50,6 @@ const icons: Record<string, LucideIcon> = {
     member: UserPlus,
     alert: BellRing,
 };
-
-const dayFormat = new Intl.DateTimeFormat('en-GB', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-});
-
-function dayLabel(iso: string): string {
-    const date = new Date(iso);
-    const today = new Date();
-    const yesterday = new Date();
-    yesterday.setDate(today.getDate() - 1);
-
-    if (date.toDateString() === today.toDateString()) {
-        return 'Today';
-    }
-
-    return date.toDateString() === yesterday.toDateString()
-        ? 'Yesterday'
-        : dayFormat.format(date);
-}
 
 function Item({ entry, showProject }: { entry: Entry; showProject: boolean }) {
     const Icon = icons[entry.kind] ?? History;

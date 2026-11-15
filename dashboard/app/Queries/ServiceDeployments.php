@@ -31,7 +31,7 @@ final readonly class ServiceDeployments
     public function for(ServiceInstance $instance): ServiceDeploymentsData
     {
         ['active' => $active, 'rows' => $rows] = $this->summaries->forInstance($instance, self::HISTORY);
-        $running = [DeploymentStatus::Queued, ...DeploymentStatus::inFlight()];
+        $running = DeploymentStatus::unfinished();
         $current = array_values(array_filter($rows, static fn (DeploymentSummaryData $row): bool => in_array($row->status, $running, true)))[0] ?? $active ?? $rows[0] ?? null;
         $deployment = $current === null ? null : Deployment::query()
             ->where('service_instance_id', $instance->id)

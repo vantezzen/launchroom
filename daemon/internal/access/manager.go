@@ -14,35 +14,21 @@ import (
 	"path/filepath"
 	"slices"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/vantezzen/launchroom/daemon/internal/atomicfile"
+	"github.com/vantezzen/launchroom/daemon/internal/config"
 	"github.com/vantezzen/launchroom/daemon/internal/firewall"
+	"github.com/vantezzen/launchroom/daemon/internal/hostinfo"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
 
-// DefaultPorts is LR_REMOTE_ACCESS_PORTS' default.
-const DefaultPorts = "40100-40199"
-
-// PortRange is the local range access ports are picked from.
-type PortRange struct{ Lo, Hi uint16 }
-
-// ParsePorts parses "lo-hi" (1024 ≤ lo ≤ hi, at most 1000 ports).
-func ParsePorts(s string) (PortRange, error) {
-	lo, hi, ok := strings.Cut(strings.TrimSpace(s), "-")
-	a, err1 := strconv.ParseUint(strings.TrimSpace(lo), 10, 16)
-	b, err2 := strconv.ParseUint(strings.TrimSpace(hi), 10, 16)
-	if !ok || err1 != nil || err2 != nil || a < 1024 || b < a || b-a >= 1000 {
-		return PortRange{}, fmt.Errorf("remote access ports must be \"lo-hi\" between 1024 and 65535 with at most 1000 ports, got %q", s)
-	}
-	return PortRange{Lo: uint16(a), Hi: uint16(b)}, nil
-}
-
 // ManagerOptions configures the Manager.
 type ManagerOptions struct {
-	Ports PortRange
+	// Ports is the local range access ports are picked from
+	// (LR_REMOTE_ACCESS_PORTS; zero: the default).
+	Ports config.PortRange
 	// DataDir holds the role ledger (data/access/roles.json).
 	DataDir string
 	// SyncFirewall re-renders the firewall with the current Rules (nil: none).
@@ -73,7 +59,7 @@ type Manager struct {
 // NewManager returns a Manager.
 func NewManager(o ManagerOptions) *Manager {
 	if o.Ports.Lo == 0 {
-		o.Ports, _ = ParsePorts(DefaultPorts)
+		o.Ports = config.DefaultRemoteAccessPorts
 	}
 	if o.Log == nil {
 		o.Log = slog.New(slog.DiscardHandler)
@@ -195,7 +181,7 @@ func (m *Manager) Network() ([]state.IPAddr, bool) {
 	local := map[netip.Addr]bool{}
 	ifaces, _ := net.Interfaces()
 	for _, ifc := range ifaces {
-		if ifc.Flags&net.FlagUp == 0 || ifc.Flags&net.FlagLoopback != 0 || skipInterface(ifc.Name) {
+		if ifc.Flags&net.FlagUp == 0 || ifc.Flags&net.FlagLoopback != 0 || hostinfo.VirtualInterface(ifc.Name) {
 			continue
 		}
 		addrs, _ := ifc.Addrs()
@@ -220,16 +206,6 @@ func (m *Manager) Network() ([]state.IPAddr, bool) {
 	return priv, nat
 }
 
-// skipInterface: Docker bridges, veths and the mesh are not how users reach a server.
-func skipInterface(name string) bool {
-	for _, p := range []string{"docker", "br-", "veth", "tailscale", "lr-", "cni", "flannel"} {
-		if strings.HasPrefix(name, p) {
-			return true
-		}
-	}
-	return false
-}
-
 func firewallMesh(ip netip.Addr) bool {
 	for _, p := range firewall.Mesh {
 		if p.Contains(ip) {
@@ -238,8 +214,6 @@ func firewallMesh(ip netip.Addr) bool {
 	}
 	return false
 }
-
-// ---- role ledger ----
 
 // LedgerEntry is a temporary role that may exist in a database.
 type LedgerEntry struct {
@@ -295,7 +269,7 @@ func (m *Manager) writeLedger(es []LedgerEntry) error {
 
 // Remember adds an entry before the role is created (write-ahead).
 func (m *Manager) Remember(e LedgerEntry) error {
-	if !reRoleName.MatchString(e.Role) {
+	if !state.AccessUser(e.Role).DatabaseUser() {
 		return errors.New("access ledger: role name is not generated")
 	}
 	m.ledgerMu.Lock()
@@ -325,8 +299,7 @@ func (m *Manager) Forget(role string) error {
 }
 
 // Sweep drops the roles of entries whose access isn't running in this
-// process (left by a crash or restart). drop is called per entry; entries
-// whose drop succeeded or whose database is gone are forgotten.
+// process (left by a crash or restart).
 func (m *Manager) Sweep(ctx context.Context, drop func(ctx context.Context, e LedgerEntry) error) {
 	es, err := m.Ledger()
 	if err != nil {

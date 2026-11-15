@@ -2,8 +2,19 @@
 
 declare(strict_types=1);
 
+use App\Drivers\DatabaseEngines\DatabaseEngines;
+use App\Drivers\DatabaseEngines\DumpImport;
+use App\Enums\DatabaseEngine;
 use App\Services\Transfers\FileSniffer;
 use Tests\Support\Transfers;
+
+function sniffImport(string $engine): DumpImport
+{
+    $import = resolve(DatabaseEngines::class)->for(DatabaseEngine::from($engine))->importFormat();
+    assert($import instanceof DumpImport);
+
+    return $import;
+}
 
 /*
 | docs/14 §12.3: the dashboard recognises a dump from its first bytes and
@@ -18,18 +29,18 @@ test('a pg_dump custom file carries the source server and pg_dump versions', fun
         ->and($result->serverVersion)->toBe('15.8')
         ->and($result->toolVersion)->toBe('15.8')
         ->and($result->detail())->toBe('PostgreSQL custom dump from PostgreSQL 15.8')
-        ->and(FileSniffer::refusal($result, 'postgres', '17', 'postgres'))->toBeNull();
+        ->and(FileSniffer::refusal($result, sniffImport('postgres'), '17', 'postgres'))->toBeNull();
 });
 
 test('a dump newer than the target is refused, naming both versions', function (): void {
     $sniffer = new FileSniffer;
 
-    expect(FileSniffer::refusal($sniffer->database(Transfers::pgCustom('18.1', '18.1')), 'postgres', '17', 'postgres'))
+    expect(FileSniffer::refusal($sniffer->database(Transfers::pgCustom('18.1', '18.1')), sniffImport('postgres'), '17', 'postgres'))
         ->toContain('PostgreSQL 18.1')->toContain('PostgreSQL 17')
-        ->and(FileSniffer::refusal($sniffer->database(Transfers::pgCustom('16.4', '18.1')), 'postgres', '17', 'postgres'))
+        ->and(FileSniffer::refusal($sniffer->database(Transfers::pgCustom('16.4', '18.1')), sniffImport('postgres'), '17', 'postgres'))
         ->toContain('pg_dump 18.1')->toContain('17')
-        ->and(FileSniffer::refusal($sniffer->database(Transfers::pgCustom('9.6.24', '9.6.24')), 'postgres', '16', 'db'))->toBeNull()
-        ->and(FileSniffer::refusal($sniffer->database(Transfers::mongoArchive('8.0.4')), 'mongodb', '7.0', 'mongo'))
+        ->and(FileSniffer::refusal($sniffer->database(Transfers::pgCustom('9.6.24', '9.6.24')), sniffImport('postgres'), '16', 'db'))->toBeNull()
+        ->and(FileSniffer::refusal($sniffer->database(Transfers::mongoArchive('8.0.4')), sniffImport('mongodb'), '7.0', 'mongo'))
         ->toContain('MongoDB 8.0.4')->toContain('MongoDB 7.0');
 });
 
@@ -46,18 +57,18 @@ test('plain SQL dumps, gzipped or not, are recognised by their header', function
         ->and($gz->detail())->toBe('Gzipped PostgreSQL SQL dump from PostgreSQL 16.4')
         ->and($sniffer->database($mysql)->family)->toBe('mysql')
         ->and($sniffer->database($mysql)->serverVersion)->toBe('8.0.36')
-        ->and(FileSniffer::refusal($sniffer->database($mysql), 'mysql', '8.4', 'mysql'))->toBeNull()
+        ->and(FileSniffer::refusal($sniffer->database($mysql), sniffImport('mysql'), '8.4', 'mysql'))->toBeNull()
         ->and($sniffer->database($maria)->family)->toBe('mariadb')
-        ->and(FileSniffer::refusal($sniffer->database($maria), 'mysql', '8.4', 'mysql'))->toBeNull()
-        ->and(FileSniffer::refusal($sniffer->database(str_replace('8.0.36', '9.1.0', $mysql)), 'mysql', '8.4', 'mysql'))->toContain('MySQL 9.1.0');
+        ->and(FileSniffer::refusal($sniffer->database($maria), sniffImport('mysql'), '8.4', 'mysql'))->toBeNull()
+        ->and(FileSniffer::refusal($sniffer->database(str_replace('8.0.36', '9.1.0', $mysql)), sniffImport('mysql'), '8.4', 'mysql'))->toContain('MySQL 9.1.0');
 });
 
 test('wrong engines, cluster dumps and unknown files are refused clearly', function (): void {
     $sniffer = new FileSniffer;
 
-    expect(FileSniffer::refusal($sniffer->database(Transfers::pgCustom()), 'mysql', '8.4', 'mysql'))->toContain('but mysql is MySQL')
-        ->and(FileSniffer::refusal($sniffer->database("--\n-- PostgreSQL database cluster dump\n--\n"), 'postgres', '17', 'postgres'))->toContain('pg_dumpall')
-        ->and(FileSniffer::refusal($sniffer->database('hello world'), 'postgres', '17', 'postgres'))->toContain('couldn’t recognise')
+    expect(FileSniffer::refusal($sniffer->database(Transfers::pgCustom()), sniffImport('mysql'), '8.4', 'mysql'))->toContain('but mysql is MySQL')
+        ->and(FileSniffer::refusal($sniffer->database("--\n-- PostgreSQL database cluster dump\n--\n"), sniffImport('postgres'), '17', 'postgres'))->toContain('pg_dumpall')
+        ->and(FileSniffer::refusal($sniffer->database('hello world'), sniffImport('postgres'), '17', 'postgres'))->toContain('couldn’t recognise')
         ->and($sniffer->database(Transfers::mongoArchive('7.0.5'))->serverVersion)->toBe('7.0.5');
 });
 

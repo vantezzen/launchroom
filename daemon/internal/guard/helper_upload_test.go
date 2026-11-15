@@ -13,6 +13,7 @@ import (
 	"github.com/moby/moby/api/types/container"
 
 	"github.com/vantezzen/launchroom/daemon/internal/backup"
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/policy"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
@@ -23,7 +24,7 @@ func helperHarness(t *testing.T) *harness {
 	t.Helper()
 	h := newHarness(t)
 	labels := managed()
-	labels[labelHelper] = "volume"
+	labels[names.LabelHelper] = "volume"
 	h.fake.addContainer(helperID, "lr-vol-0123456789ab", labels)
 	return h
 }

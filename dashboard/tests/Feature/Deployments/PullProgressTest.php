@@ -70,7 +70,7 @@ test('pull progress lands on the placement and in the running rollout step', fun
     $w = $placement->workload_id;
 
     Projects::report($server, 'pulling', pulls: [$w => ['stage' => 'mirroring', 'downloadedBytes' => 0, 'totalBytes' => 0]]);
-    expect($placement->refresh()->pull)->toEqual(['stage' => 'mirroring', 'downloaded' => 0, 'total' => 0])
+    expect($placement->refresh()->pull?->toArray())->toEqual(['stage' => 'mirroring', 'downloaded' => 0, 'total' => 0, 'updatedAt' => null])
         ->and(rolloutStepMessage(pullDeploymentOf($web)))->toBe('Fetching image into the local registry (first deploy of this image)');
 
     Projects::report($server, 'pulling', pulls: [$w => ['stage' => 'downloading', 'downloadedBytes' => 412_400_000, 'totalBytes' => 690_100_000]]);

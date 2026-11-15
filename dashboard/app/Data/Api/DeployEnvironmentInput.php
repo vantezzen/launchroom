@@ -8,8 +8,9 @@ use Spatie\LaravelData\Attributes\Validation\Max;
 use Spatie\LaravelData\Data;
 
 /**
- * `POST /environments/{environment}/deploy`: apply the staged changes.
- * `stage`: build and start, route only on Promote (docs/06 §6.5).
+ * Apply the staged changes (web review sheet and
+ * `POST /environments/{environment}/deploy`). `stage`: build and start, route
+ * only on Promote (docs/06 §6.5).
  */
 final class DeployEnvironmentInput extends Data
 {
@@ -18,4 +19,11 @@ final class DeployEnvironmentInput extends Data
         public ?string $message = null,
         public bool $stage = false,
     ) {}
+
+    public function revisionMessage(): ?string
+    {
+        $message = $this->message === null ? '' : trim($this->message);
+
+        return $message === '' ? null : $message;
+    }
 }

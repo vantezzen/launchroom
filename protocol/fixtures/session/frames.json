@@ -1,0 +1,85 @@
+{
+  "description": "Browser <-> launchroomd session frames (docs/03 \u00a711.2). m = base64url(HMAC-SHA256(key, macPrefix + dir + \"\\n\" + session + \"\\n\" + p)). browserFrames are what the browser seals in order (b2d, s from 1); daemonFrames are what launchroomd sends in order (d2b); refusedAfterDaemonFrames must be dropped by a receiver that has opened daemonFrames. Read by daemon/internal/session and the dashboard's frames.test.ts.",
+  "macPrefix": "launchroom-session-v1\n",
+  "maxPayload": 8192,
+  "maxData": 4096,
+  "key": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+  "session": "ses_01J9Z8X7W6V5T4S3R2Q1P0N9NA",
+  "browserFrames": [
+    {
+      "payload": {
+        "t": "hello",
+        "cols": 80,
+        "rows": 24
+      },
+      "p": "{\"s\":1,\"t\":\"hello\",\"cols\":80,\"rows\":24}",
+      "m": "YwqJN2_OWbFHCu2SKGfzGNe8r0zSsMkxl2SX0mso1Jk"
+    },
+    {
+      "payload": {
+        "t": "in",
+        "d": "bHMgLWxhCg"
+      },
+      "p": "{\"s\":2,\"t\":\"in\",\"d\":\"bHMgLWxhCg\"}",
+      "m": "FD0PTWI8V8vTfC_Dx-brI09xD8ABdxt8RrcyTYOp4Ls"
+    },
+    {
+      "payload": {
+        "t": "resize",
+        "cols": 120,
+        "rows": 40
+      },
+      "p": "{\"s\":3,\"t\":\"resize\",\"cols\":120,\"rows\":40}",
+      "m": "o_28CorkXtXGOpYBOXbFyHyPZ8j3mCka30WFxjJuzaI"
+    },
+    {
+      "payload": {
+        "t": "ping"
+      },
+      "p": "{\"s\":4,\"t\":\"ping\"}",
+      "m": "5gFecqp2sQPSOTdOyPIVo3LQiMaU3g3m8vqSRuxQ4Uo"
+    },
+    {
+      "payload": {
+        "t": "bye"
+      },
+      "p": "{\"s\":5,\"t\":\"bye\"}",
+      "m": "cPnQsYgrG9TbOhzjq8yxKEMGkQeTO12NLACOMIppf80"
+    }
+  ],
+  "daemonFrames": [
+    {
+      "p": "{\"s\":1,\"t\":\"ready\",\"kind\":\"console\",\"shell\":\"/bin/sh\"}",
+      "m": "06t7bkAW-kiH6-IC6GwN4SsZU5m9AbuPqbGdyEswBrI"
+    },
+    {
+      "p": "{\"s\":2,\"t\":\"out\",\"d\":\"aGVsbG8K\"}",
+      "m": "9Pu7qi2sjLYIB1WEE8mJRf-Dpn92OefJienIdenRUlE"
+    },
+    {
+      "p": "{\"s\":3,\"t\":\"exit\",\"code\":0}",
+      "m": "EwSlUPy4sfbVzjzvUAZIRqLAJtHzFwJnpQ3ZEpl90Yk"
+    },
+    {
+      "p": "{\"s\":4,\"t\":\"end\",\"reason\":\"exited\"}",
+      "m": "t7JWMtLGX0u1BG7UwFpmDsfyAjcuSlRF_IgelMMb4tM"
+    }
+  ],
+  "refusedAfterDaemonFrames": [
+    {
+      "why": "MAC of another payload",
+      "p": "{\"s\":5,\"t\":\"pong\"}",
+      "m": "06t7bkAW-kiH6-IC6GwN4SsZU5m9AbuPqbGdyEswBrI"
+    },
+    {
+      "why": "signed for the other direction",
+      "p": "{\"s\":5,\"t\":\"pong\"}",
+      "m": "EPDcQMXVc06DUF5mOl-b-ddk99scYl2342n3sAIEw84"
+    },
+    {
+      "why": "replayed sequence",
+      "p": "{\"s\":2,\"t\":\"out\",\"d\":\"aGVsbG8K\"}",
+      "m": "9Pu7qi2sjLYIB1WEE8mJRf-Dpn92OefJienIdenRUlE"
+    }
+  ]
+}

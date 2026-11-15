@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Security;
 
 use App\Data\Protocol\V1\ContainerInspectionResult;
+use App\Enums\Crypto\ProjectCiphertext;
 use App\Enums\Security\InvestigationStatus;
 use App\Exceptions\DomainRuleViolation;
 use App\Models\DaemonTask;
@@ -42,16 +43,16 @@ final readonly class CompleteContainerInspection
             throw DomainRuleViolation::conflict('No investigation is waiting for this inspection.');
         }
 
-        $replicas = $investigation->replicas;
+        $replicas = $investigation->replicas->items();
         $found = false;
 
-        foreach ($replicas as $i => $replica) {
-            if (($replica['task'] ?? null) === $task->public_id) {
-                if (! hash_equals($replica['workload'], $result->workload)) {
+        foreach ($replicas as $replica) {
+            if ($replica->task === $task->public_id) {
+                if (! hash_equals($replica->workload, $result->workload)) {
                     throw DomainRuleViolation::conflict('The inspection is of another workload than the task asked for.');
                 }
 
-                $replicas[$i]['state'] = 'done';
+                $replica->state = 'done';
                 $found = true;
             }
         }
@@ -64,7 +65,7 @@ final readonly class CompleteContainerInspection
         $stored = [];
 
         if (is_string($investigation->inspections)) {
-            $decoded = json_decode($this->keyring->decryptInspections($project, $investigation->public_id, $investigation->inspections), true);
+            $decoded = json_decode($this->keyring->decrypt(ProjectCiphertext::Inspections, $project, $investigation->public_id, $investigation->inspections), true);
             $stored = is_array($decoded) ? $decoded : [];
         }
 
@@ -72,7 +73,7 @@ final readonly class CompleteContainerInspection
 
         $investigation->forceFill([
             'replicas' => $replicas,
-            'inspections' => $this->keyring->encryptInspections($project, $investigation->public_id, json_encode($stored, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)),
+            'inspections' => $this->keyring->encrypt(ProjectCiphertext::Inspections, $project, $investigation->public_id, json_encode($stored, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)),
         ])->save();
 
         return $investigation;

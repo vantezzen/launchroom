@@ -4,12 +4,20 @@ declare(strict_types=1);
 
 namespace App\Models\RemoteAccess;
 
+use App\Broadcasting\ServiceActivityTopic;
+use App\Data\RemoteAccess\AccessCertificateData;
+use App\Data\RemoteAccess\AccessHostKeyData;
+use App\Data\RemoteAccess\VolumeOwnerData;
+use App\Enums\Contracts\HasTransitionTable;
 use App\Enums\DatabaseEngine;
 use App\Enums\RemoteAccess\RemoteAccessEndReason;
 use App\Enums\RemoteAccess\RemoteAccessKind;
-use App\Enums\RemoteAccess\RemoteAccessStatus;
+use App\Enums\TaskBackedAccessStatus;
+use App\Events\Broadcasts\ServiceActivityChanged;
 use App\Models\Concerns\BelongsToTeam;
 use App\Models\Concerns\HasPublicId;
+use App\Models\Concerns\HasStatusTransitions;
+use App\Models\Concerns\OpenedByUser;
 use App\Models\DaemonTask;
 use App\Models\Environment;
 use App\Models\Project;
@@ -39,7 +47,7 @@ use Illuminate\Support\Carbon;
  * @property int $user_id
  * @property int|null $daemon_task_id
  * @property RemoteAccessKind $kind
- * @property RemoteAccessStatus $status
+ * @property TaskBackedAccessStatus $status
  * @property string $workload_id
  * @property int $slot
  * @property DatabaseEngine|null $engine
@@ -53,10 +61,10 @@ use Illuminate\Support\Carbon;
  * @property int $max_seconds
  * @property Carbon $expires_at
  * @property int|null $port
- * @property array{type: string, sha256: string, publicKey: string}|null $host_key
- * @property array{sha256: string, pem: string}|null $certificate
+ * @property AccessHostKeyData|null $host_key
+ * @property AccessCertificateData|null $certificate
  * @property string|null $database_name
- * @property array{uid: int, gid: int}|null $volume_owner who SFTP reads and writes as in a volume access
+ * @property VolumeOwnerData|null $volume_owner who SFTP reads and writes as in a volume access
  * @property list<string> $private_addresses
  * @property bool $behind_nat
  * @property int $active_connections
@@ -84,7 +92,10 @@ use Illuminate\Support\Carbon;
 #[Table(name: 'remote_accesses')]
 final class RemoteAccess extends Model
 {
-    use BelongsToTeam, HasPublicId;
+    use BelongsToTeam, HasPublicId, OpenedByUser;
+
+    /** @use HasStatusTransitions<TaskBackedAccessStatus> */
+    use HasStatusTransitions;
 
     /** @var array<string, mixed> */
     protected $attributes = [
@@ -105,16 +116,6 @@ final class RemoteAccess extends Model
     public static function publicIdPrefix(): string
     {
         return 'acc';
-    }
-
-    /**
-     * The only way an access' status changes (docs/10 §2.2 rule 3).
-     */
-    public function transitionTo(RemoteAccessStatus $to): void
-    {
-        $this->status->assertCanTransitionTo($to);
-        $this->status = $to;
-        $this->save();
     }
 
     /**
@@ -180,16 +181,16 @@ final class RemoteAccess extends Model
     {
         return [
             'kind' => RemoteAccessKind::class,
-            'status' => RemoteAccessStatus::class,
+            'status' => TaskBackedAccessStatus::class,
             'engine' => DatabaseEngine::class,
             'end_reason' => RemoteAccessEndReason::class,
             'password' => 'encrypted',
             'public_keys' => 'array',
             'allow_from' => 'array',
             'hosts' => 'array',
-            'host_key' => 'array',
-            'certificate' => 'array',
-            'volume_owner' => 'array',
+            'host_key' => AccessHostKeyData::class,
+            'certificate' => AccessCertificateData::class,
+            'volume_owner' => VolumeOwnerData::class,
             'private_addresses' => 'array',
             'allow_writes' => 'boolean',
             'behind_nat' => 'boolean',
@@ -207,5 +208,10 @@ final class RemoteAccess extends Model
             'last_activity_at' => 'datetime',
             'ended_at' => 'datetime',
         ];
+    }
+
+    protected function transitioned(HasTransitionTable $from, HasTransitionTable $to): void
+    {
+        ServiceActivityChanged::about($this->serviceInstance, ServiceActivityTopic::RemoteAccess);
     }
 }

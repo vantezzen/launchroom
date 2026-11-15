@@ -28,7 +28,7 @@ func (a *App) securityCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			findings, err := s.Client.SecurityFindings(cmd.Context(), "action_needed")
+			findings, err := s.Client.SecurityFindings(cmd.Context(), api.FindingLevelActionNeeded)
 			if err != nil {
 				return err
 			}

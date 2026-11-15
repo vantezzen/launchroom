@@ -49,7 +49,6 @@ const (
 
 func updateDir(dataDir string) string { return filepath.Join(dataDir, dirUpdate) }
 
-// taskDir is the per-task working directory.
 func taskDir(dataDir string, id state.TaskID) string {
 	return filepath.Join(dataDir, dirUpdate, dirTasks, string(id))
 }
@@ -135,24 +134,29 @@ const (
 
 // Status is the final result of one update task.
 type Status struct {
-	TaskID     state.TaskID      `json:"taskId"`
-	Scope      state.UpdateScope `json:"scope"`
-	From       string            `json:"fromVersion"`
-	To         string            `json:"toVersion"`
-	Outcome    Outcome           `json:"outcome"`
-	Error      string            `json:"error,omitempty"`
-	FinishedAt time.Time         `json:"finishedAt"`
+	TaskID  state.TaskID      `json:"taskId"`
+	Scope   state.UpdateScope `json:"scope"`
+	From    string            `json:"fromVersion"`
+	To      string            `json:"toVersion"`
+	Outcome Outcome           `json:"outcome"`
+	Error   string            `json:"error,omitempty"`
+	// Reason is why a rolled-back update was rolled back.
+	Reason     string    `json:"reason,omitempty"`
+	FinishedAt time.Time `json:"finishedAt"`
 }
 
 // Completion converts the status into the task completion fields.
 func (s Status) Completion(attempt int) *state.TaskCompletion {
-	done := &state.TaskCompletion{TypeMeta: state.NewTypeMeta(state.KindTaskCompletion), Attempt: attempt,
-		SelfUpdate: &state.SelfUpdateResult{Scope: s.Scope, FromVersion: state.Semver(s.From), ToVersion: state.Semver(s.To), RolledBack: s.Outcome == OutcomeRolledBack}}
+	res := &state.SelfUpdateResult{Scope: s.Scope, FromVersion: state.Semver(s.From), ToVersion: state.Semver(s.To)}
+	if s.Outcome == OutcomeRolledBack {
+		res.RolledBack, res.Reason = true, state.Clip(s.Reason, state.MaxMessageLen)
+	}
+	done := &state.TaskCompletion{TypeMeta: state.NewTypeMeta(state.KindTaskCompletion), Attempt: attempt, TaskResults: state.TaskResults{SelfUpdate: res}}
 	if s.Outcome == OutcomeSucceeded {
 		done.Outcome = state.OutcomeSucceeded
 	} else {
 		done.Outcome = state.OutcomeFailed
-		done.Error = clip(s.Error)
+		done.Error = state.Clip(s.Error, state.MaxMessageLen)
 	}
 	return done
 }
@@ -162,7 +166,7 @@ func (s Status) Err() error {
 	if s.Outcome == OutcomeSucceeded {
 		return nil
 	}
-	return errors.New(clip(s.Error))
+	return errors.New(state.Clip(s.Error, state.MaxMessageLen))
 }
 
 // Duration is a JSON duration string ("3m0s").
@@ -204,7 +208,6 @@ func readJSON(path string, v any) error {
 	return nil
 }
 
-// readStatus returns the recorded outcome of a task (fs.ErrNotExist if none).
 func readStatus(dataDir string, id state.TaskID) (Status, error) {
 	var s Status
 	err := readJSON(filepath.Join(taskDir(dataDir, id), fileStatus), &s)
@@ -233,8 +236,6 @@ func removePending(dataDir string, id state.TaskID) {
 	}
 }
 
-// pruneTaskDirs keeps the newest keepTaskDirs task directories (and the
-// current one).
 func pruneTaskDirs(dataDir string, current state.TaskID) {
 	root := filepath.Join(updateDir(dataDir), dirTasks)
 	entries, err := os.ReadDir(root)
@@ -264,11 +265,4 @@ func pruneTaskDirs(dataDir string, current state.TaskID) {
 		_ = os.RemoveAll(filepath.Join(root, dirs[oldest].name))
 		dirs = append(dirs[:oldest], dirs[oldest+1:]...)
 	}
-}
-
-func clip(s string) string {
-	if len(s) > 4000 {
-		return s[:4000]
-	}
-	return s
 }

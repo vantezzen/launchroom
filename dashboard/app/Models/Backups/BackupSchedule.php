@@ -53,6 +53,11 @@ final class BackupSchedule extends Model
         return 'bks';
     }
 
+    public static function ofInstance(ServiceInstance $instance): ?self
+    {
+        return self::query()->where('service_instance_id', $instance->id)->first();
+    }
+
     public function isDue(DateTimeInterface $at): bool
     {
         return $this->enabled && CronExpression::isValidExpression($this->cron) && new CronExpression($this->cron)->isDue($at, 'UTC');

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Services\Transfers;
 
+use App\Drivers\DatabaseEngines\DumpImport;
+
 /**
  * Recognises an uploaded file from its first bytes (docs/14 §12.3), so the
  * dashboard can say what it is and refuse a wrong or too new dump before
@@ -20,6 +22,12 @@ final class FileSniffer
 {
     /** How much of a compressed file is inflated to look at it. */
     private const int INFLATE_LIMIT = 4 * 1024 * 1024;
+
+    /** How much of a text dump is read (launchroomd's sniffBytes). */
+    private const int TEXT_LIMIT = 1024 * 1024;
+
+    /** SQL that starts with a statement after comments (launchroomd's reSQLStart). */
+    private const string SQL_START = '~^(?:\s++|--[^\n]*+\n|/\*.*?\*/)*+(?:SET|CREATE|INSERT|BEGIN|START|DROP|ALTER|COPY|SELECT|LOCK|USE)\b~is';
 
     public function database(string $head): SniffResult
     {
@@ -38,7 +46,11 @@ final class FileSniffer
             return new SniffResult('mongodb_archive', $compressed, 'mongodb', $this->mongoServerVersion($bytes));
         }
 
-        $text = substr($bytes, 0, 256 * 1024);
+        $text = substr($bytes, 0, self::TEXT_LIMIT);
+
+        if (str_contains($text, "\0") || ! mb_check_encoding($this->trimTornRune($text), 'UTF-8')) {
+            return SniffResult::unrecognised();
+        }
 
         if (str_contains($text, '-- PostgreSQL database cluster dump')) {
             return SniffResult::unrecognised('This is a pg_dumpall file with every database and role. Dump one database with pg_dump instead.');
@@ -62,6 +74,11 @@ final class FileSniffer
             $version = $server === null ? null : self::match('/^([0-9]+(?:\.[0-9]+){0,2})/', $server);
 
             return new SniffResult('mysql_sql', $compressed, $family, $version);
+        }
+
+        // No dump tool's header: launchroomd imports it as SQL of the target engine.
+        if (preg_match(self::SQL_START, $text) === 1) {
+            return new SniffResult(null, $compressed, generic: true);
         }
 
         return SniffResult::unrecognised();
@@ -91,69 +108,46 @@ final class FileSniffer
     }
 
     /**
-     * Whether $engine (the target's) can import $result, and why not. Version
-     * rules (docs/14 §12.3): a dump from the same or an older major version
+     * Whether the target can import $result, and why not. Version rules
+     * (docs/14 §12.3): a dump from the same or an older major version
      * imports; a newer one is refused naming both.
      */
-    public static function refusal(SniffResult $result, string $engine, string $targetVersion, string $serviceName): ?string
+    public static function refusal(SniffResult $result, DumpImport $import, string $targetVersion, string $serviceName): ?string
     {
         if ($result->refusal !== null) {
             return $result->refusal;
         }
 
-        $label = match ($engine) {
-            'postgres' => 'PostgreSQL',
-            'mysql' => 'MySQL',
-            'mongodb' => 'MongoDB',
-            default => $engine,
-        };
-        $accepts = match ($engine) {
-            'postgres' => ['postgres_custom', 'postgres_sql'],
-            'mysql' => ['mysql_sql'],
-            'mongodb' => ['mongodb_archive'],
-            default => [],
-        };
+        $label = $import->engine->label();
+
+        if ($result->generic) {
+            return $import->sqlFormat === null ? "This is a SQL file, but {$serviceName} is {$label}." : null;
+        }
 
         if ($result->format === null) {
             return 'launchroom couldn’t recognise this file. Supported: pg_dump -Fc or plain SQL (.sql, .sql.gz), mysqldump SQL, mongodump --archive.';
         }
 
-        if (! in_array($result->format, $accepts, true)) {
+        if (! in_array($result->format, $import->formats, true)) {
             return "This is a {$result->detail()}, but {$serviceName} is {$label}.";
         }
 
-        $newer = static fn (?string $version): bool => $version !== null && version_compare(self::major($version, $engine), self::major($targetVersion, $engine), '>');
-
-        if ($engine === 'mysql' && $result->family === 'mariadb') {
-            return null; // Different families: no comparable versions (a warning when it runs).
+        // Another family (MariaDB into MySQL) has no comparable versions: a warning when it runs.
+        if ($result->family !== null && $result->family !== $import->engine->value) {
+            return null;
         }
+
+        $newer = static fn (?string $version): bool => $version !== null && version_compare($import->major($version), $import->major($targetVersion), '>');
 
         if ($newer($result->serverVersion)) {
-            return "This dump comes from {$label} {$result->serverVersion}, but {$serviceName} runs {$label} {$targetVersion}. Pick ".self::major((string) $result->serverVersion, $engine).' or newer for the database, or dump the data with an older tool.';
+            return "This dump comes from {$label} {$result->serverVersion}, but {$serviceName} runs {$label} {$targetVersion}. Pick ".$import->major((string) $result->serverVersion).' or newer for the database, or dump the data with an older tool.';
         }
 
-        if ($engine === 'postgres' && $newer($result->toolVersion)) {
-            return "This dump was made with pg_dump {$result->toolVersion}, but {$serviceName} runs PostgreSQL {$targetVersion}. Dump it with pg_dump {$targetVersion} or older, or pick a newer version for the database.";
+        if ($import->dumpTool !== null && $newer($result->toolVersion)) {
+            return "This dump was made with {$import->dumpTool} {$result->toolVersion}, but {$serviceName} runs {$label} {$targetVersion}. Dump it with {$import->dumpTool} {$targetVersion} or older, or pick a newer version for the database.";
         }
 
         return null;
-    }
-
-    /**
-     * The comparable part of a version: Postgres majors ("17", "9.6"),
-     * MySQL and MongoDB major.minor ("8.4", "7.0").
-     */
-    public static function major(string $version, string $engine): string
-    {
-        preg_match('/^([0-9]+)(?:\.([0-9]+))?/', $version, $m);
-        $first = (int) ($m[1] ?? 0);
-        $second = (int) ($m[2] ?? 0);
-
-        if ($engine === 'postgres') {
-            return $first >= 10 ? (string) $first : "{$first}.{$second}";
-        }
-
-        return "{$first}.{$second}";
     }
 
     private function u16(string $bytes, int $offset): int
@@ -199,6 +193,16 @@ final class FileSniffer
         }
 
         return $out;
+    }
+
+    /** Drops a UTF-8 sequence cut off at the end of the read prefix. */
+    private function trimTornRune(string $text): string
+    {
+        for ($i = 0; $i < 3 && $text !== '' && ! mb_check_encoding($text, 'UTF-8'); $i++) {
+            $text = substr($text, 0, -1);
+        }
+
+        return $text;
     }
 
     private static function match(string $pattern, string $text): ?string

@@ -3,7 +3,6 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Eye, Plus, ShieldCheck, ShieldOff, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
-import { formatCompact } from '@/components/charts/format';
 import { Sparkline } from '@/components/charts/sparkline';
 import { Callout } from '@/components/patterns/callout';
 import { ChoiceTiles } from '@/components/patterns/choice-tiles';
@@ -26,23 +25,22 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
-import { requestJson } from '@/features/projects/http';
-import { SettingsCard, SettingsRow } from '@/features/settings/settings-card';
+import { requestJson } from '@/lib/http';
 import { index as securityRoute } from '@/routes/security';
 import { show as firewallRoute } from '@/routes/security/firewall';
-import { listNames } from '@/features/security/firewall-section';
 import { SettingsPage } from './section';
 import type { SettingsContext } from './settings-context';
+import { SettingsCard, SettingsRow } from '@/components/settings/settings-card';
+import { formatBytes, formatCompact, listNames } from '@/lib/format';
+import { limits } from '@/types/grammar.generated';
 
-/** Request body inspection limits (docs/22 §6.7); 32 KiB is the default. */
-const BODY_LABEL: Record<string, string> = {
-    '32': '32 KiB',
-    '128': '128 KiB',
-    '1024': '1 MiB',
-};
+/** Request body inspection limits (docs/22 §6.7). */
+function bodyLimit(kib: number): string {
+    return formatBytes(kib * 1024);
+}
 
 type Firewall = App.Data.Security.ServiceFirewallData;
-type Mode = 'off' | 'log' | 'block';
+type Mode = App.Enums.Security.WafMode;
 
 /**
  * Settings → Web firewall (docs/22 §9.6): the mode as three tiles, the
@@ -317,7 +315,7 @@ export function FirewallSection({ context }: { context: SettingsContext }) {
                                 onValueChange={(value) =>
                                     void update(
                                         { inspectBodyKiB: Number(value) },
-                                        `Request bodies are checked up to ${BODY_LABEL[value] ?? value}`,
+                                        `Request bodies are checked up to ${bodyLimit(Number(value))}`,
                                     )
                                 }
                             >
@@ -328,16 +326,14 @@ export function FirewallSection({ context }: { context: SettingsContext }) {
                                     <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    {Object.entries(BODY_LABEL).map(
-                                        ([value, label]) => (
-                                            <SelectItem
-                                                key={value}
-                                                value={value}
-                                            >
-                                                {label}
-                                            </SelectItem>
-                                        ),
-                                    )}
+                                    {limits.wafInspectBodyKib.map((kib) => (
+                                        <SelectItem
+                                            key={kib}
+                                            value={String(kib)}
+                                        >
+                                            {bodyLimit(kib)}
+                                        </SelectItem>
+                                    ))}
                                 </SelectContent>
                             </Select>
                         </SettingsRow>
@@ -520,8 +516,9 @@ function AddException({
                             onChange={(e) => setRule(e.target.value)}
                         />
                         <span className="type-small text-muted-foreground">
-                            The id on the blocked request, between 911000 and
-                            944999.
+                            The id on the blocked request, between{' '}
+                            {limits.wafExcludableMin} and{' '}
+                            {limits.wafExcludableMax}.
                         </span>
                     </label>
                     <label className="flex flex-col gap-1.5">

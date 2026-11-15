@@ -1,11 +1,13 @@
-import { Form, Head, router, usePoll } from '@inertiajs/react';
-import { Check, Globe, LockKeyhole, Minus, RotateCcw, X } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { Form, Head, router } from '@inertiajs/react';
+import { Globe, LockKeyhole, Minus, RotateCcw } from 'lucide-react';
+import { useState } from 'react';
 import type { ReactNode } from 'react';
 import { CopyValue } from '@/components/copy-value';
 import InputError from '@/components/input-error';
 import { MetaLine } from '@/components/patterns/meta-line';
 import { StatusPill } from '@/components/status';
+import { StepMarker } from '@/components/steps/step-marker';
+import type { StepMarkerStatus } from '@/components/steps/step-marker';
 import type { StatusState } from '@/components/status';
 import { TimeAgo } from '@/components/time-ago';
 import { Button } from '@/components/ui/button';
@@ -21,21 +23,23 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
+import { cn } from '@/lib/utils';
+import {
+    destroy,
+    activate,
+    check,
+    revert,
+    store,
+} from '@/routes/dashboard-domain';
 import {
     LearnMore,
     SettingsBody,
     SettingsCard,
     SettingsRow,
     useDocsUrl,
-} from '@/features/settings/settings-card';
-import { cn } from '@/lib/utils';
-import {
-    activate,
-    check,
-    destroy,
-    revert,
-    store,
-} from '@/routes/dashboard-domain';
+} from '@/components/settings/settings-card';
+import SettingsLayout from '@/features/settings/settings-layout';
+import { useLiveProps } from '@/hooks/use-live-props';
 
 type Settings = App.Data.Instance.DashboardDomainSettingsData;
 type Change = App.Data.Instance.DashboardDomainChangeData;
@@ -82,17 +86,7 @@ function formatDate(iso: string): string {
 export default function DashboardDomain({ settings }: { settings: Settings }) {
     const { change } = settings;
     const waiting = change !== null && change.status === 'pending';
-    const { start, stop } = usePoll(5000, {}, { autoStart: false });
-
-    useEffect(() => {
-        if (waiting) {
-            start();
-        } else {
-            stop();
-        }
-
-        return stop;
-    }, [waiting, start, stop]);
+    useLiveProps(['settings'], { while: waiting, everyMs: 5000 });
 
     return (
         <>
@@ -249,40 +243,10 @@ function NewDomain({ settings }: { settings: Settings }) {
     );
 }
 
-function StepIcon({ state, number }: { state: string; number: number }) {
-    if (state === 'done') {
-        return (
-            <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-foreground text-background">
-                <Check aria-hidden="true" className="size-4" />
-                <span className="sr-only">Done</span>
-            </span>
-        );
-    }
-
-    if (state === 'failed') {
-        return (
-            <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-status-error-soft text-status-error">
-                <X aria-hidden="true" className="size-4" />
-                <span className="sr-only">Needs a fix</span>
-            </span>
-        );
-    }
-
-    if (state === 'waiting') {
-        return (
-            <span className="flex size-8 shrink-0 items-center justify-center rounded-full border">
-                <Spinner className="size-4 text-status-progress" />
-                <span className="sr-only">In progress</span>
-            </span>
-        );
-    }
-
-    return (
-        <span className="flex size-8 shrink-0 items-center justify-center rounded-full border type-label text-muted-foreground tabular-nums">
-            {number}
-            <span className="sr-only">Not yet</span>
-        </span>
-    );
+function markerOf(state: string): StepMarkerStatus {
+    return state === 'done' || state === 'failed' || state === 'waiting'
+        ? state
+        : 'todo';
 }
 
 function StepRow({
@@ -308,7 +272,7 @@ function StepRow({
 
     return (
         <li className="flex gap-4 px-5 py-4">
-            <StepIcon state={step.state} number={number} />
+            <StepMarker status={markerOf(step.state)} number={number} />
             <div className="flex min-w-0 flex-1 flex-col gap-3 pt-1">
                 <div className="flex flex-col gap-0.5">
                     <p
@@ -390,7 +354,7 @@ function ChangeFlow({
                 <StepRow step={certificate} number={2} />
                 <StepRow step={https} number={3} />
                 <li className="flex gap-4 px-5 py-4">
-                    <StepIcon state={ready ? 'ready' : 'blocked'} number={4} />
+                    <StepMarker status="todo" number={4} />
                     <div className="flex min-w-0 flex-1 flex-col gap-4 pt-1">
                         <div className="flex flex-col gap-0.5">
                             <p
@@ -751,3 +715,5 @@ function UrlField({ label, value }: { label: string; value: string }) {
         </div>
     );
 }
+
+DashboardDomain.layout = SettingsLayout;

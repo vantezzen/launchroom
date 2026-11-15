@@ -14,6 +14,7 @@ import (
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/policy"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
@@ -35,71 +36,41 @@ const (
 	classUpdater
 )
 
-// Names of launchroom's system objects (kept in sync with their packages by
-// guard_test.go; the guard does not import them).
 const (
-	caddyName            = "lr-system-caddy"
-	caddyDataVolume      = "lr-system-caddy-data"
-	caddyConfigVolume    = "lr-system-caddy-config"
-	tailscaleName        = "lr-system-tailscale"
-	tailscaleStateVolume = "lr-system-tailscale-state"
-	buildkitName         = "lr-system-buildkit"
-	buildkitNetwork      = "lr-system-build"
-	buildkitStateVolume  = "lr-system-buildkit-state"
-	buildkitAppArmor     = "launchroom-buildkit"
-	ambassadorName       = "lr-system-ambassador"
-	ambassadorNetwork    = "lr-system-ambassador"
-	ambassadorVolume     = "lr-system-ambassador-config"
-	volumeHelperImage    = "launchroom-local/volume-helper:1"
-	volumeHelperMount    = "/data"
-	accessHelperMount    = "/data"
 	accessHelperMaxSleep = 5 * 60 * 60
-	systemAmbassador     = "ambassador"
-	roleUpdater          = "updater"
-	supervisorBinary     = "/usr/local/bin/launchroomd"
-	supervisorCommand    = "update-supervisor"
 	dockerSocket         = "/var/run/docker.sock"
 	tunDevice            = "/dev/net/tun"
 	unprivilegedPortsCtl = "net.ipv4.ip_unprivileged_port_start"
 )
 
 var (
-	reContainerName = regexp.MustCompile(`^lr-[a-z0-9][a-z0-9_.-]{0,120}$`)
-	reHelperName    = regexp.MustCompile(`^lr-vol-[a-f0-9]{12}$`)
-	reAccessHelper  = regexp.MustCompile(`^lr-acc-[a-f0-9]{12}$`)
-	reAccessID      = regexp.MustCompile(`^acc_[0-9A-HJKMNP-TV-Z]{26}$`)
-	reNumericUser   = regexp.MustCompile(`^[0-9]{1,10}:[0-9]{1,10}$`)
-	reSleepSeconds  = regexp.MustCompile(`^[1-9][0-9]{0,4}$`)
-	reUpdaterName   = regexp.MustCompile(`^lr-system-update-[a-z0-9]{26}$`)
-	reLocalImage    = regexp.MustCompile(`^lr-[a-z0-9][a-z0-9-]{0,62}:[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$`)
-	reImageID       = regexp.MustCompile(`^sha256:[a-f0-9]{64}$`)
-	reUser          = regexp.MustCompile(`^[a-z_][a-z0-9_-]{0,31}$|^[0-9]{1,10}(:[0-9]{1,10})?$`)
-	reGroup         = regexp.MustCompile(`^[0-9]{1,10}$`)
-	reExtraHost     = regexp.MustCompile(`^[a-z0-9][a-z0-9.-]{0,252}:[0-9a-f.:]{2,45}$`)
-	reTaskLabel     = regexp.MustCompile(`^tsk_[0-9A-HJKMNP-TV-Z]{26}$`)
-	reEnvKey        = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]{0,255}$`)
+	reNumericUser  = regexp.MustCompile(`^[0-9]{1,10}:[0-9]{1,10}$`)
+	reSleepSeconds = regexp.MustCompile(`^[1-9][0-9]{0,4}$`)
+	reLocalImage   = regexp.MustCompile(`^lr-[a-z0-9][a-z0-9-]{0,62}:[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$`)
+	reUser         = regexp.MustCompile(`^[a-z_][a-z0-9_-]{0,31}$|^[0-9]{1,10}(:[0-9]{1,10})?$`)
+	reGroup        = regexp.MustCompile(`^[0-9]{1,10}$`)
+	reExtraHost    = regexp.MustCompile(`^[a-z0-9][a-z0-9.-]{0,252}:[0-9a-f.:]{2,45}$`)
 )
 
 func reflect0(v any) reflect.Value { return reflect.Indirect(reflect.ValueOf(v)) }
 
-// classify decides the class of a container from its name and labels.
 func classify(name string, labels map[string]string) class {
 	switch {
-	case labels[labelRole] == roleUpdater:
+	case labels[names.LabelRole] == names.RoleUpdater:
 		return classUpdater
-	case labels[labelHelper] == "volume":
+	case labels[names.LabelHelper] == names.HelperVolume:
 		return classVolumeHelper
-	case labels[labelHelper] == "access":
+	case labels[names.LabelHelper] == "access":
 		return classAccessHelper
 	}
 	switch name {
-	case caddyName:
+	case names.CaddyContainer:
 		return classCaddy
-	case tailscaleName:
+	case names.TailscaleContainer:
 		return classTailscale
-	case buildkitName:
+	case names.BuildkitContainer:
 		return classBuildkit
-	case ambassadorName:
+	case names.AmbassadorContainer:
 		return classAmbassador
 	}
 	return classWorkload
@@ -138,31 +109,31 @@ type systemShape struct {
 
 var shapes = map[class]systemShape{
 	classCaddy: {
-		component: policy.SystemCaddy, name: caddyName, labelKind: policy.SystemCaddy, network: "host",
+		component: names.SystemCaddy, name: names.CaddyContainer, labelKind: names.SystemCaddy, network: "host",
 		capAdd: []string{"NET_BIND_SERVICE"}, capDropAll: true, securityOpt: []string{policy.NoNewPrivileges},
-		volumes: []string{caddyDataVolume, caddyConfigVolume}, putRoots: []string{"/data"},
+		volumes: []string{names.CaddyDataVolume, names.CaddyConfigVolume}, putRoots: []string{"/data"},
 	},
 	classTailscale: {
-		component: policy.SystemTailscale, name: tailscaleName, labelKind: policy.SystemTailscale, network: "host",
+		component: names.SystemTailscale, name: names.TailscaleContainer, labelKind: names.SystemTailscale, network: "host",
 		capAdd: []string{"NET_ADMIN", "NET_RAW"}, capDropAll: true, securityOpt: []string{policy.NoNewPrivileges},
-		volumes: []string{tailscaleStateVolume}, extraHost: []string{"Devices"}, exec: []string{"tailscale"},
+		volumes: []string{names.TailscaleStateVolume}, extraHost: []string{"Devices"}, exec: []string{"tailscale"},
 	},
 	classBuildkit: {
-		component: policy.SystemBuildkit, name: buildkitName, labelKind: policy.SystemBuildkit, network: buildkitNetwork,
+		component: names.SystemBuildkit, name: names.BuildkitContainer, labelKind: names.SystemBuildkit, network: names.BuildkitNetwork,
 		securityOpt: []string{"seccomp=unconfined", "apparmor=unconfined"},
 		// Hosts that restrict user namespaces: the installers' AppArmor
 		// profile (unconfined plus userns) instead of unconfined (D58).
-		securityOptAlt: []string{"seccomp=unconfined", "apparmor=" + buildkitAppArmor},
-		volumes:        []string{buildkitStateVolume},
+		securityOptAlt: []string{"seccomp=unconfined", "apparmor=" + names.BuildkitAppArmorProfile},
+		volumes:        []string{names.BuildkitStateVolume},
 		// Builds lose every contest for the host (D59): a block I/O weight
 		// and a raised OOM score, never a lowered one.
 		extraHost: []string{"MaskedPaths", "ReadonlyPaths", "ExtraHosts", "BlkioWeight", "OomScoreAdj"},
 		putRoots:  []string{"/home/user/.config"}, exec: []string{"buildctl", "dial-stdio"}, execExact: true,
 	},
 	classAmbassador: {
-		name: ambassadorName, labelKind: systemAmbassador, network: ambassadorNetwork,
+		name: names.AmbassadorContainer, labelKind: names.SystemAmbassador, network: names.AmbassadorNetwork,
 		capDropAll: true, securityOpt: []string{policy.NoNewPrivileges},
-		volumes: []string{ambassadorVolume}, extraHost: []string{"ReadonlyRootfs", "Sysctls"}, putRoots: []string{"/config"},
+		volumes: []string{names.AmbassadorConfigVolume}, extraHost: []string{"ReadonlyRootfs", "Sysctls"}, putRoots: []string{"/config"},
 	},
 }
 
@@ -201,7 +172,6 @@ func (s *Server) checkCreate(ctx context.Context, name string, req *container.Cr
 	cls := classify(name, cfg.Labels)
 	pol := s.Policy()
 
-	// 1. The field allow-list of the class.
 	cfgAllowed, hostAllowed := slices.Clone(baseConfigFields), slices.Clone(baseHostFields)
 	switch cls {
 	case classUpdater:
@@ -232,13 +202,12 @@ func (s *Server) checkCreate(ctx context.Context, name string, req *container.Cr
 		}
 	}
 
-	// 2. Labels and names.
 	if cls != classUpdater {
 		if !isManaged(cfg.Labels) {
 			return deny("container %s must carry launchroom.managed=true and a valid launchroom.server label", name)
 		}
-		if !reContainerName.MatchString(name) {
-			return deny("container name %q is not a generated name (lr-…)", truncate(name, 64))
+		if !names.ReObjectName.MatchString(name) {
+			return deny("container name %q is not a generated name (lr-…)", state.Shorten(name, 64))
 		}
 	}
 
@@ -250,8 +219,8 @@ func (s *Server) checkCreate(ctx context.Context, name string, req *container.Cr
 	case classAccessHelper:
 		return s.checkAccessHelper(ctx, name, cfg, hc, endpoints, pol)
 	case classWorkload:
-		if strings.HasPrefix(name, policy.SystemPrefix) {
-			return deny("%s… names are reserved for launchroom's system containers", policy.SystemPrefix)
+		if strings.HasPrefix(name, names.SystemPrefix) {
+			return deny("%s… names are reserved for launchroom's system containers", names.SystemPrefix)
 		}
 		if err := policy.CheckContainer(cfg, hc, pol); err != nil {
 			return deny("container %s: %v", name, err)
@@ -264,10 +233,9 @@ func (s *Server) checkCreate(ctx context.Context, name string, req *container.Cr
 	return s.checkSystem(ctx, cls, name, cfg, hc, endpoints, pol)
 }
 
-// checkSystem checks one of the system shapes.
 func (s *Server) checkSystem(ctx context.Context, cls class, name string, cfg *container.Config, hc *container.HostConfig, endpoints map[string]bool, pol policy.Config) error {
 	sh := shapes[cls]
-	if name != sh.name || cfg.Labels[labelSystem] != sh.labelKind {
+	if name != sh.name || cfg.Labels[names.LabelSystem] != sh.labelKind {
 		return deny("container %s: system containers need their own name and launchroom.system label", name)
 	}
 	if sh.component != "" {
@@ -275,7 +243,7 @@ func (s *Server) checkSystem(ctx context.Context, cls class, name string, cfg *c
 			return deny("container %s: %v", name, err)
 		}
 	} else if !reLocalImage.MatchString(cfg.Image) {
-		return deny("container %s: image %q must be launchroomd's locally built lr- image", name, truncate(cfg.Image, 96))
+		return deny("container %s: image %q must be launchroomd's locally built lr- image", name, state.Shorten(cfg.Image, 96))
 	}
 	if string(hc.NetworkMode) != sh.network {
 		return deny("container %s: network mode %q is not allowed (want %s)", name, hc.NetworkMode, sh.network)
@@ -334,7 +302,7 @@ func (s *Server) checkSystem(ctx context.Context, cls class, name string, cfg *c
 		}
 		for _, h := range hc.ExtraHosts {
 			if !reExtraHost.MatchString(h) {
-				return deny("container %s: extra host %q is not allowed", name, truncate(h, 64))
+				return deny("container %s: extra host %q is not allowed", name, state.Shorten(h, 64))
 			}
 		}
 	case classAmbassador:
@@ -352,16 +320,16 @@ func (s *Server) checkSystem(ctx context.Context, cls class, name string, cfg *c
 // no network, one named volume at /data.
 func (s *Server) checkVolumeHelper(ctx context.Context, name string, cfg *container.Config, hc *container.HostConfig, endpoints map[string]bool) error {
 	switch {
-	case !reHelperName.MatchString(name):
-		return deny("volume helper name %q is not generated", truncate(name, 64))
-	case cfg.Image != volumeHelperImage:
-		return deny("volume helpers run %s only", volumeHelperImage)
+	case !names.ReVolumeHelper.MatchString(name):
+		return deny("volume helper name %q is not generated", state.Shorten(name, 64))
+	case cfg.Image != names.VolumeHelperImage:
+		return deny("volume helpers run %s only", names.VolumeHelperImage)
 	case string(hc.NetworkMode) != "none" || !cfg.NetworkDisabled || len(endpoints) > 0:
 		return deny("volume helpers have no network")
 	case !slices.Equal(upper(hc.CapDrop), []string{"ALL"}) || len(hc.CapAdd) > 0:
 		return deny("volume helpers drop every capability")
-	case len(hc.Mounts) != 1 || hc.Mounts[0].Target != volumeHelperMount:
-		return deny("volume helpers mount exactly one volume at %s", volumeHelperMount)
+	case len(hc.Mounts) != 1 || hc.Mounts[0].Target != names.HelperMount:
+		return deny("volume helpers mount exactly one volume at %s", names.HelperMount)
 	case len(hc.PortBindings) > 0 || len(cfg.ExposedPorts) > 0 || len(cfg.Env) > 0 || cfg.User != "":
 		return deny("volume helpers have no ports, environment or user")
 	}
@@ -383,11 +351,11 @@ func (s *Server) checkAccessHelper(ctx context.Context, name string, cfg *contai
 		sleep = n <= accessHelperMaxSleep
 	}
 	switch {
-	case !reAccessHelper.MatchString(name):
-		return deny("access helper name %q is not generated", truncate(name, 64))
-	case !reAccessID.MatchString(cfg.Labels["launchroom.access"]):
+	case !names.ReAccessHelper.MatchString(name):
+		return deny("access helper name %q is not generated", state.Shorten(name, 64))
+	case state.AccessID(cfg.Labels[names.LabelAccess]).Validate() != nil:
 		return deny("access helpers carry their access id")
-	case policy.CheckSystemImage(policy.SystemFiles, state.ImageRef(cfg.Image), pol) != nil:
+	case policy.CheckSystemImage(names.SystemFiles, state.ImageRef(cfg.Image), pol) != nil:
 		return deny("access helpers run the pinned files image only")
 	case !slices.Equal(cfg.Entrypoint, []string{"sleep"}) || !sleep:
 		return deny("access helpers run sleep for at most %d seconds", accessHelperMaxSleep)
@@ -405,8 +373,8 @@ func (s *Server) checkAccessHelper(ctx context.Context, name string, cfg *contai
 		return deny("access helpers need memory, pids and CPU limits")
 	case hc.RestartPolicy.Name != "" && hc.RestartPolicy.Name != container.RestartPolicyDisabled:
 		return deny("access helpers are never restarted")
-	case len(hc.Mounts) != 1 || hc.Mounts[0].Target != accessHelperMount:
-		return deny("access helpers mount exactly one volume at %s", accessHelperMount)
+	case len(hc.Mounts) != 1 || hc.Mounts[0].Target != names.HelperMount:
+		return deny("access helpers mount exactly one volume at %s", names.HelperMount)
 	case len(hc.PortBindings) > 0 || len(cfg.ExposedPorts) > 0 || len(cfg.Env) > 0:
 		return deny("access helpers have no ports or environment")
 	}
@@ -431,14 +399,14 @@ func (s *Server) checkUpdater(ctx context.Context, name string, cfg *container.C
 	if u == nil {
 		return deny("self-update supervisors are not allowed on this server (dockerd-guard has no install folder configured)")
 	}
-	if !reUpdaterName.MatchString(name) {
-		return deny("supervisor name %q is not generated", truncate(name, 64))
+	if !names.ReUpdater.MatchString(name) {
+		return deny("supervisor name %q is not generated", state.Shorten(name, 64))
 	}
 	l := cfg.Labels
-	if l[labelManaged] != "true" || !reTaskLabel.MatchString(l["launchroom.update-task"]) || len(l) != 3 {
+	if l[names.LabelManaged] != "true" || state.TaskID(l[names.LabelUpdateTask]).Validate() != nil || len(l) != 3 {
 		return deny("supervisor labels must be exactly managed, role and update-task")
 	}
-	if !reImageID.MatchString(cfg.Image) {
+	if !state.IsImageID(cfg.Image) {
 		return deny("the supervisor runs from an image id")
 	}
 	images, err := u.Images(ctx)
@@ -448,12 +416,12 @@ func (s *Server) checkUpdater(ctx context.Context, name string, cfg *container.C
 	if !slices.Contains(images, cfg.Image) {
 		return deny("the supervisor must run launchroomd's current image")
 	}
-	if !slices.Equal(cfg.Entrypoint, []string{supervisorBinary, supervisorCommand}) || len(cfg.Cmd) != 1 {
-		return deny("the supervisor entrypoint is fixed (%s %s <plan>)", supervisorBinary, supervisorCommand)
+	if !slices.Equal(cfg.Entrypoint, []string{names.SupervisorBinary, names.SupervisorCommand}) || len(cfg.Cmd) != 1 {
+		return deny("the supervisor entrypoint is fixed (%s %s <plan>)", names.SupervisorBinary, names.SupervisorCommand)
 	}
 	plan := cfg.Cmd[0]
 	if path.Clean(plan) != plan || !strings.HasPrefix(plan, u.ProjectDir+"/") || path.Base(plan) != "plan.json" || !strings.Contains(plan, "/update/tasks/") {
-		return deny("supervisor plan path %q is not inside the install folder's update tasks", truncate(plan, 128))
+		return deny("supervisor plan path %q is not inside the install folder's update tasks", state.Shorten(plan, 128))
 	}
 	if len(cfg.Env) > 0 || cfg.User != "" || cfg.WorkingDir != "" || len(cfg.ExposedPorts) > 0 {
 		return deny("the supervisor gets no environment, user, working dir or ports")
@@ -466,7 +434,7 @@ func (s *Server) checkUpdater(ctx context.Context, name string, cfg *container.C
 	}
 	for _, g := range hc.GroupAdd {
 		if !reGroup.MatchString(g) {
-			return deny("supervisor group %q must be numeric", truncate(g, 32))
+			return deny("supervisor group %q must be numeric", state.Shorten(g, 32))
 		}
 	}
 	want := []mount.Mount{
@@ -490,9 +458,9 @@ func (s *Server) checkUpdater(ctx context.Context, name string, cfg *container.C
 
 // checkNetworks requires every attached network to be launchroom's.
 func (s *Server) checkNetworks(ctx context.Context, mode string, endpoints map[string]bool, system bool) error {
-	names := map[string]bool{}
+	seen := map[string]bool{}
 	for n := range endpoints {
-		names[n] = true
+		seen[n] = true
 	}
 	switch mode {
 	case "none":
@@ -504,11 +472,11 @@ func (s *Server) checkNetworks(ctx context.Context, mode string, endpoints map[s
 		return deny("network mode %q is not allowed: workloads run on launchroom networks", mode)
 	}
 	if strings.HasPrefix(mode, "container:") || strings.ContainsAny(mode, ":/") {
-		return deny("network mode %q is not allowed", truncate(mode, 64))
+		return deny("network mode %q is not allowed", state.Shorten(mode, 64))
 	}
-	names[mode] = true
-	for n := range names {
-		if !system && strings.HasPrefix(n, policy.SystemPrefix) {
+	seen[mode] = true
+	for n := range seen {
+		if !system && strings.HasPrefix(n, names.SystemPrefix) {
 			return deny("workloads cannot join system network %s", n)
 		}
 		info, _, err := s.inspectNetwork(ctx, nil, n)
@@ -534,13 +502,13 @@ func (s *Server) checkMounts(ctx context.Context, ms []mount.Mount, allowed []st
 		}
 		if allowed != nil {
 			if !slices.Contains(allowed, m.Source) {
-				return deny("volume %s is not allowed here", truncate(m.Source, 64))
+				return deny("volume %s is not allowed here", state.Shorten(m.Source, 64))
 			}
-		} else if !strings.HasPrefix(m.Source, "lr-") || strings.HasPrefix(m.Source, policy.SystemPrefix) {
-			return deny("volume %s is not a launchroom workload volume", truncate(m.Source, 64))
+		} else if !names.Managed(m.Source) || names.System(m.Source) {
+			return deny("volume %s is not a launchroom workload volume", state.Shorten(m.Source, 64))
 		}
 		if !reObject.MatchString(m.Source) {
-			return deny("volume name %q is not allowed", truncate(m.Source, 64))
+			return deny("volume name %q is not allowed", state.Shorten(m.Source, 64))
 		}
 		if err := state.ContainerPath(m.Target).Validate(); err != nil {
 			return deny("mount target: %v", err)

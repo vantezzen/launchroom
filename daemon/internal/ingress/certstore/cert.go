@@ -11,6 +11,8 @@ import (
 	"path"
 	"strings"
 	"time"
+
+	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
 
 // Cert is one certificate from Caddy's storage (certmagic key layout
@@ -144,9 +146,5 @@ func Issuer(c *x509.Certificate) string {
 	if c.Issuer.CommonName != "" && (len(parts) == 0 || !strings.Contains(c.Issuer.CommonName, parts[0])) {
 		parts = append(parts, c.Issuer.CommonName)
 	}
-	s := strings.Join(parts, " ")
-	if len(s) > 256 {
-		s = s[:256]
-	}
-	return s
+	return state.Clip(strings.Join(parts, " "), 256)
 }

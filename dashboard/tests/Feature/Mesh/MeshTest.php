@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\Crypto\RotateKek;
+use App\Actions\Mesh\AutoEnableMesh;
 use App\Actions\Mesh\EnableMesh;
 use App\Actions\Mesh\IssueMeshAuthKey;
 use App\Actions\Mesh\MaintainMesh;
@@ -14,6 +15,7 @@ use App\Data\Protocol\V1\Report;
 use App\Enums\AuditAction;
 use App\Enums\Mesh\MeshCredentialPurpose;
 use App\Enums\Mesh\MeshMode;
+use App\Enums\Mesh\MeshPath;
 use App\Enums\ServerRole;
 use App\Enums\ServerStatus;
 use App\Enums\TeamRole;
@@ -34,6 +36,7 @@ use App\Services\Mesh\HeadscaleConnection;
 use App\Services\Mesh\MeshSecrets;
 use App\Services\Mesh\MeshTopology;
 use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Facades\DB;
 use Tests\Support\FakeHeadscale;
 use Tests\Support\ProtocolSchemas;
 
@@ -116,7 +119,6 @@ test('enabling the mesh bootstraps a dashboard-owned API key, the policy and one
 
     expect(json_decode((string) $this->headscale->policy, true)['acls'])->toHaveCount(5);
 
-    // One single-use key per server, tagged by role.
     $tags = array_map(static fn (array $k): array => $k['tags'], array_values($this->headscale->preAuthKeys));
     expect($tags)->toEqualCanonicalizing([
         ['tag:lr-build', 'tag:lr-cp', 'tag:lr-edge', 'tag:lr-runtime'],
@@ -125,7 +127,6 @@ test('enabling the mesh bootstraps a dashboard-owned API key, the policy and one
 
     expect(AuditEvent::query()->where('action', AuditAction::MeshEnabled->value)->count())->toBe(1);
 
-    // Idempotent: a second run issues nothing new and audits nothing new.
     $keys = count($this->headscale->preAuthKeys);
     resolve(EnableMesh::class)->handle(AuditActor::system());
     expect(AuditEvent::query()->where('action', AuditAction::MeshEnabled->value)->count())->toBe(1)
@@ -180,8 +181,8 @@ test('a joined server reports its address, loses its key and others forward the 
 
     $this->worker->refresh();
     expect($this->worker->mesh_ip)->toBe('100.64.0.2')
-        ->and($this->worker->mesh_status['peers'][0]['connection'])->toBe('relay')
-        ->and($this->worker->mesh_status)->not->toHaveKey('unknownField')
+        ->and($this->worker->mesh_status?->peers[0]->connection)->toBe(MeshPath::Relay)
+        ->and(DB::table('servers')->where('id', $this->worker->id)->value('mesh_status'))->not->toContain('unknownField')
         ->and(MeshCredential::query()->where('scope', MeshSecrets::serverScope($this->worker))->exists())->toBeFalse();
 
     resolve(RenderNodeState::class)->handle($this->worker);
@@ -193,7 +194,6 @@ test('a joined server reports its address, loses its key and others forward the 
     resolve(MaintainMesh::class)->handle();
     expect($this->worker->refresh()->mesh_node_id)->toBe($workerNode);
 
-    // The servers page shows the path to the control plane.
     $viewer = memberOf($this->team, TeamRole::Viewer);
     $this->actingAs($viewer)->get(route('servers.show', $this->worker->public_id))
         ->assertInertia(fn ($page) => $page->component('servers/show')
@@ -324,12 +324,30 @@ test('a single server never turns the mesh on by itself', function (): void {
     $this->worker->forceFill(['revoked_at' => now(), 'status' => ServerStatus::Revoked])->save();
 
     new ProvisionMeshMemberJob($this->cp->id)->handle(
-        resolve(EnableMesh::class), resolve(IssueMeshAuthKey::class),
+        resolve(AutoEnableMesh::class), resolve(IssueMeshAuthKey::class),
         resolve(HeadscaleConnection::class), resolve(MeshTopology::class),
     );
 
     expect(InstanceSettings::current()->mesh_enabled_at)->toBeNull()
         ->and(latestStateOrNull($this->cp))->toBeNull();
+});
+
+test('maintenance switches the mesh on when the job of the second server’s approval gave up (bug 14a)', function (): void {
+    // Two approved servers, no mesh chosen: what is left when ProvisionMeshMemberJob exhausted its tries.
+    expect(InstanceSettings::current()->mesh_mode)->toBeNull();
+
+    resolve(MaintainMesh::class)->handle();
+
+    expect(InstanceSettings::current()->mesh_mode)->toBe(MeshMode::Embedded)
+        ->and(AuditEvent::query()->where('action', AuditAction::MeshEnabled->value)->count())->toBe(1);
+});
+
+test('maintenance leaves the mesh off while auto-enable is off', function (): void {
+    config()->set('launchroom.mesh.auto_enable', false);
+
+    resolve(MaintainMesh::class)->handle();
+
+    expect(InstanceSettings::current()->mesh_mode)->toBeNull();
 });
 
 function latestStateOrNull(Server $server): ?array

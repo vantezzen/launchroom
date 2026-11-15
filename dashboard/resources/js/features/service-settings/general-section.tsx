@@ -1,43 +1,18 @@
+import { labels, vocabulary } from '@/lib/vocabulary';
 import { useForm } from '@inertiajs/react';
-import {
-    Network,
-    ArrowRight,
-    Check,
-    Copy,
-    Globe,
-    HardDrive,
-    Layers,
-} from 'lucide-react';
+import { Network, ArrowRight, Globe, HardDrive, Layers } from 'lucide-react';
 import type { FormEvent, ReactNode } from 'react';
 import InputError from '@/components/input-error';
 import { MetaLine } from '@/components/patterns/meta-line';
-import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { ServiceGlyph, glyphLabel } from '@/features/canvas/service-glyph';
-import { SettingsCard, SettingsRow } from '@/features/settings/settings-card';
-import { useClipboard } from '@/hooks/use-clipboard';
 import services from '@/routes/projects/services';
 import { SaveRow, SettingsPage } from './section';
 import type { SectionId } from './sections';
 import type { SettingsContext } from './settings-context';
 import type { Navigate } from './settings-tab';
-
-export function CopyButton({ value, label }: { value: string; label: string }) {
-    const [copied, copy] = useClipboard();
-
-    return (
-        <Button
-            type="button"
-            variant="ghost"
-            size="icon-sm"
-            className="text-muted-foreground"
-            aria-label={copied === value ? 'Copied' : `Copy ${label}`}
-            onClick={() => void copy(value)}
-        >
-            {copied === value ? <Check /> : <Copy />}
-        </Button>
-    );
-}
+import { ServiceGlyph, glyphLabel } from '@/components/service-glyph';
+import { SettingsCard, SettingsRow } from '@/components/settings/settings-card';
+import { CopyButton } from '@/components/copy-button';
 
 function MediaTile({ children }: { children: ReactNode }) {
     return (
@@ -50,13 +25,7 @@ function MediaTile({ children }: { children: ReactNode }) {
     );
 }
 
-const kindLabels: Record<App.Enums.ServiceKind, string> = {
-    app: 'App',
-    image: 'Image',
-    worker: 'Worker',
-    cron: 'Cron job',
-    database: 'Database',
-};
+const kindLabels = labels(vocabulary.ServiceKind);
 
 type Glance = {
     section: SectionId;
@@ -70,7 +39,7 @@ type Glance = {
 function glances(context: SettingsContext): Glance[] {
     const { settings, node } = context;
     const items: Glance[] = [];
-    const web = node.kind === 'app' || node.kind === 'image';
+    const web = node.capabilities.web;
 
     if (web) {
         const primary =

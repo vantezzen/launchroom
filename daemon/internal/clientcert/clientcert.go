@@ -42,7 +42,6 @@ const (
 	CertFile = "client-tls.crt"
 )
 
-// Retry timings.
 const (
 	retryMin      = time.Minute
 	retryMax      = time.Hour
@@ -191,7 +190,6 @@ func (m *Manager) nextWait() time.Duration {
 	return due.Sub(now)
 }
 
-// failed schedules the retry after a failed issuance.
 func (m *Manager) failed(err error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Data\Protocol\V1;
 
-use Spatie\LaravelData\Attributes\Validation\In;
+use App\Data\Attributes\UnknownCodeAsNull;
+use App\Enums\RemoteAccess\RemoteAccessEndReason;
+use App\Enums\Sessions\StartFailure;
 use Spatie\LaravelData\Attributes\Validation\Max;
 use Spatie\LaravelData\Attributes\Validation\Min;
 use Spatie\LaravelData\Data;
@@ -16,14 +18,11 @@ use Spatie\LaravelData\Optional;
  */
 final class AccessResult extends Data
 {
-    public const array END_REASONS = ['ended', 'idle', 'deadline', 'locked', 'refused', 'error'];
-
     /**
      * @param  list<array{at: string, type: string, remote?: string, method?: string, channel?: string, count?: int}>|Optional  $events
      */
     public function __construct(
-        #[In(self::END_REASONS)]
-        public string $endReason,
+        public RemoteAccessEndReason $endReason,
         #[Min(0)]
         public int $connections,
         #[Min(0)]
@@ -36,6 +35,8 @@ final class AccessResult extends Data
         public string|Optional $startedAt = new Optional,
         #[Max(50)]
         public array|Optional $events = new Optional,
+        #[UnknownCodeAsNull]
+        public ?StartFailure $failure = null,
     ) {}
 
     /**

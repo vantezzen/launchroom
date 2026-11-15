@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/vantezzen/launchroom/daemon/internal/dbengine"
 	"github.com/vantezzen/launchroom/daemon/internal/secret"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
@@ -24,11 +25,7 @@ import (
 // the grammar re-checked right before a statement is built.
 
 var (
-	reRoleName = regexp.MustCompile(`^lr_tmp_[a-z0-9]{12}$`)
-	// reServiceIdent is the grammar of identifiers read from the
-	// workload's env (the same as data sessions and backups).
-	reServiceIdent = regexp.MustCompile(`^[A-Za-z0-9_]{1,63}$`)
-	reVerifier     = regexp.MustCompile(`^SCRAM-SHA-256\$4096:[A-Za-z0-9+/=]{24}\$[A-Za-z0-9+/=]{44}:[A-Za-z0-9+/=]{44}$`)
+	reVerifier = regexp.MustCompile(`^SCRAM-SHA-256\$4096:[A-Za-z0-9+/=]{24}\$[A-Za-z0-9+/=]{44}:[A-Za-z0-9+/=]{44}$`)
 )
 
 // QuoteIdent double-quotes a Postgres identifier ("" doubled). It refuses
@@ -85,9 +82,9 @@ type PostgresRole struct {
 
 func (r PostgresRole) check() error {
 	switch {
-	case !reRoleName.MatchString(r.Role):
+	case !state.AccessUser(r.Role).DatabaseUser():
 		return errors.New("postgres: role name is not generated")
-	case !reServiceIdent.MatchString(r.Database) || !reServiceIdent.MatchString(r.Owner):
+	case state.DatabaseIdent(r.Database).Validate() != nil || state.DatabaseIdent(r.Owner).Validate() != nil:
 		return errors.New("postgres: database or user name is not a valid identifier")
 	case r.Verifier != "" && !reVerifier.MatchString(r.Verifier):
 		return errors.New("postgres: not a SCRAM verifier")
@@ -166,8 +163,6 @@ DROP ROLE IF EXISTS %s;
 `, roleLit, roleLit, quoteForConcat(role), quoteForConcat(owner), quoteForConcat(role), role), nil
 }
 
-// quoteForConcat makes an already quoted identifier a literal for string
-// concatenation inside the DO block.
 func quoteForConcat(quotedIdent string) string {
 	l, _ := QuoteLiteral(quotedIdent)
 	return l
@@ -190,7 +185,7 @@ var (
 // SetUserArgs is the redis-cli argv tail for ACL SETUSER: the password only
 // as its SHA-256 (#hex), so it is never in the container's process list.
 func (r RedisRole) SetUserArgs() ([]string, error) {
-	if !reRoleName.MatchString(r.User) {
+	if !state.AccessUser(r.User).DatabaseUser() {
 		return nil, errors.New("redis: user name is not generated")
 	}
 	if r.Password == "" {
@@ -207,71 +202,25 @@ func (r RedisRole) SetUserArgs() ([]string, error) {
 
 // DropArgs are the commands that end the user's connections and remove it.
 func (r RedisRole) DropArgs() ([][]string, error) {
-	if !reRoleName.MatchString(r.User) {
+	if !state.AccessUser(r.User).DatabaseUser() {
 		return nil, errors.New("redis: user name is not generated")
 	}
 	return [][]string{{"CLIENT", "KILL", "USER", r.User}, {"ACL", "DELUSER", r.User}}, nil
 }
 
-// ---- running them in the database container ----
-
-// identFromEnv reads an identifier from the workload's env.
-func identFromEnv(env map[string]secret.Secret, def string, names ...string) (string, error) {
-	v := def
-	for _, n := range names {
-		if s := env[n]; !s.IsZero() {
-			v = s.Reveal()
-			break
-		}
-	}
-	if !reServiceIdent.MatchString(v) {
-		return "", fmt.Errorf("%s in the database env is not a valid identifier", names[0])
-	}
-	return v, nil
-}
-
-func passwordFromEnv(env map[string]secret.Secret, names ...string) (string, error) {
-	for _, n := range names {
-		if s := env[n]; !s.IsZero() {
-			return s.Reveal(), nil
-		}
-	}
-	return "", fmt.Errorf("the database env has no %s", names[0])
-}
-
-// pgTarget is the service's own user and database, from its env.
 type pgTarget struct{ user, db, password string }
 
 func postgresTarget(env map[string]secret.Secret) (pgTarget, error) {
-	user, err := identFromEnv(env, "postgres", "POSTGRES_USER")
+	l, err := dbengine.LoginOf(state.EnginePostgres, env)
 	if err != nil {
 		return pgTarget{}, err
 	}
-	db, err := identFromEnv(env, user, "POSTGRES_DB")
-	if err != nil {
-		return pgTarget{}, err
-	}
-	pw, err := passwordFromEnv(env, "POSTGRES_PASSWORD")
-	if err != nil {
-		return pgTarget{}, err
-	}
-	return pgTarget{user: user, db: db, password: pw}, nil
+	return pgTarget{user: l.User, db: l.Database, password: l.Password}, nil
 }
 
-// redisCLI is the engine's client binary.
-func redisCLI(engine state.DatabaseEngine) string {
-	if engine == state.EngineValkey {
-		return "valkey-cli"
-	}
-	return "redis-cli"
-}
-
-// redisAuthEnv is the service's own password (REDISCLI_AUTH), if any.
 func redisAuthEnv(env map[string]secret.Secret) []string {
-	for _, n := range []string{"REDIS_PASSWORD", "VALKEY_PASSWORD"} {
-		if s := env[n]; !s.IsZero() {
-			return []string{"REDISCLI_AUTH=" + s.Reveal()}
-		}
+	if pw, err := dbengine.Password(env, dbengine.RedisPassword); err == nil {
+		return []string{"REDISCLI_AUTH=" + pw}
 	}
 	return nil
 }
@@ -366,7 +315,7 @@ func runPsql(ctx context.Context, r EnvRunner, t pgTarget, sql string) error {
 }
 
 func runRedis(ctx context.Context, r EnvRunner, engine state.DatabaseEngine, env map[string]secret.Secret, args []string) error {
-	argv := append([]string{redisCLI(engine), "--no-auth-warning"}, args...)
+	argv := append([]string{dbengine.Client(engine), "--no-auth-warning"}, args...)
 	var out bytes.Buffer
 	code, stderr, err := r.RunEnv(ctx, argv, redisAuthEnv(env), nil, &out)
 	if err != nil {
@@ -384,7 +333,6 @@ func runRedis(ctx context.Context, r EnvRunner, engine state.DatabaseEngine, env
 	return nil
 }
 
-// firstLine is a short, masked error line.
 func firstLine(s, mask string) string {
 	s = strings.TrimSpace(s)
 	if i := strings.IndexByte(s, '\n'); i >= 0 {
@@ -393,8 +341,5 @@ func firstLine(s, mask string) string {
 	if mask != "" {
 		s = strings.ReplaceAll(s, mask, "********")
 	}
-	if len(s) > 300 {
-		s = s[:300]
-	}
-	return s
+	return state.Clip(s, 300)
 }

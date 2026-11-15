@@ -190,7 +190,6 @@ func lineAfter(s, prefix string) string {
 
 // ---- pg_dump custom format (pg_backup_archiver.c ReadHead) ----
 
-// pgHeader reads the custom format's header fields.
 type pgHeader struct {
 	b       []byte
 	off     int
@@ -447,16 +446,12 @@ func sniffMongoArchive(head []byte) (Sniffed, error) {
 	return s, nil
 }
 
-// ---- compatibility ----
-
 // checkCompatible decides whether a sniffed dump can be imported into the
 // target engine at targetVersion (read from the running database). target
 // names the service for messages ("postgres").
 func checkCompatible(s Sniffed, engine state.DatabaseEngine, targetVersion Version, target string) ([]string, error) {
 	var warnings []string
-	targetFamily := map[state.DatabaseEngine]string{
-		state.EnginePostgres: familyPostgres, state.EngineMySQL: familyMySQL, state.EngineMariaDB: familyMariaDB, state.EngineMongoDB: familyMongoDB,
-	}[engine]
+	targetFamily := dumpsOf(engine).family
 	switch engine {
 	case state.EnginePostgres:
 		if s.Format != state.FormatPostgresCustom && s.Format != state.FormatPostgresSQL {

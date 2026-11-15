@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Queries;
 
-use App\Data\Metrics\DeployMarkerData;
 use App\Data\Metrics\EnvironmentTotalsData;
 use App\Data\Metrics\ProjectMetricsData;
 use App\Data\Metrics\ReplicaUsageSeriesData;
@@ -13,6 +12,8 @@ use App\Enums\MetricRange;
 use App\Models\Environment;
 use App\Models\Project;
 use App\Models\ServiceInstance;
+use App\Queries\Metrics\LatestSample;
+use App\Queries\Metrics\MetricInstances;
 use App\Support\Metrics\Cast;
 use App\Support\Metrics\MetricWindow;
 use Carbon\CarbonImmutable;
@@ -29,8 +30,6 @@ final readonly class ProjectMetrics
     public function __construct(
         private RequestMetrics $requests = new RequestMetrics,
     ) {}
-
-    private const int MAX_DEPLOY_MARKERS = 200;
 
     /** Group keys of series(): literal SQL only. */
     private const array GROUP_BY = [
@@ -84,7 +83,7 @@ final readonly class ProjectMetrics
             $current[$si['id']]['mem'] ?? null,
             $replicaRows,
             RequestMetrics::data($requestBuckets[$si['id']] ?? [], $requestTotals[$si['id']] ?? null, $requestPrevious[$si['id']] ?? null, $window, $count),
-        ), ServerMetrics::instances($instanceIds));
+        ), MetricInstances::named($instanceIds));
 
         return new ProjectMetricsData(
             $project->public_id,
@@ -93,7 +92,7 @@ final readonly class ProjectMetrics
             $window->bucket,
             $window->timestamps($count),
             $services,
-            self::deploys($instanceIds, $window),
+            DeployMarkers::forInstances($instanceIds, $window->from()),
             $this->totals($instanceIds, $series, $requestBuckets, $requestTotals, $requestPrevious, $window, $count),
         );
     }
@@ -242,7 +241,7 @@ final readonly class ProjectMetrics
     }
 
     /**
-     * Newest minute per service instance (≤ 5 minutes old), summed over its workloads.
+     * Newest minute per service instance, summed over its workloads.
      *
      * @param  list<int>  $instanceIds
      * @return array<int, array{cpu: float|null, mem: int|null}>
@@ -253,10 +252,8 @@ final readonly class ProjectMetrics
             return [];
         }
 
-        $rows = DB::table('workload_metric_samples as w')
+        $rows = LatestSample::workloadsPerInstance($now)
             ->whereIn('w.service_instance_id', $instanceIds)
-            ->where('w.resolution', 1)
-            ->whereRaw('w.at = (SELECT max(x.at) FROM workload_metric_samples x WHERE x.service_instance_id = w.service_instance_id AND x.resolution = 1 AND x.at >= ?)', [$now->subMinutes(ServerMetrics::CURRENT_WITHIN_MINUTES)->toIso8601String()])
             ->groupBy('w.service_instance_id')
             ->selectRaw('w.service_instance_id, sum(w.cpu_cores) as cpu, sum(w.mem_mb) as mem')
             ->get();
@@ -268,16 +265,5 @@ final readonly class ProjectMetrics
         }
 
         return $out;
-    }
-
-    /**
-     * The newest deploys of these services in the range, oldest first.
-     *
-     * @param  list<int>  $instanceIds
-     * @return list<DeployMarkerData>
-     */
-    public static function deploys(array $instanceIds, MetricWindow $window): array
-    {
-        return DeployMarkers::forInstances($instanceIds, $window->from(), null, self::MAX_DEPLOY_MARKERS);
     }
 }

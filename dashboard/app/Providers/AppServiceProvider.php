@@ -4,11 +4,10 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
-use App\Contracts\BuildOrchestrator;
 use App\Contracts\DnsResolver;
 use App\Contracts\Git\TrackedRefs;
 use App\Contracts\ImageDigestResolver;
-use App\Contracts\ReleaseRunner;
+use App\Contracts\PublicDnsResolver;
 use App\Drivers\DatabaseEngines\DatabaseEngines;
 use App\Http\Routing\TeamScopedBindings;
 use App\Models\Connection;
@@ -29,12 +28,11 @@ use App\Models\Variable;
 use App\Models\Volume;
 use App\Services\Audit\Transports\SyslogConnector;
 use App\Services\Audit\Transports\TlsSyslogConnector;
-use App\Services\Builds\TaskBuildOrchestrator;
 use App\Services\Crypto\Envelope;
 use App\Services\Crypto\ProjectKeyring;
 use App\Services\Crypto\Signer;
 use App\Services\Crypto\SigningKeyFile;
-use App\Services\Deployments\TaskReleaseRunner;
+use App\Services\Dns\UdpDnsResolver;
 use App\Services\Git\ServiceTrackedRefs;
 use App\Services\Http\SafeHttpClient;
 use App\Services\Http\SystemDnsResolver;
@@ -96,12 +94,10 @@ final class AppServiceProvider extends ServiceProvider
         $this->app->scoped(DashboardOrigin::class);
         $this->app->singleton(DatabaseEngines::class, static fn (): DatabaseEngines => DatabaseEngines::fromConfig());
 
-        // Deployment extension points (docs/04 §11–13).
-        $this->app->bind(BuildOrchestrator::class, TaskBuildOrchestrator::class);
         // Syslog over TLS for audit forwarding (docs/09 R34); tests swap the connector.
         $this->app->bind(SyslogConnector::class, TlsSyslogConnector::class);
-        $this->app->bind(ReleaseRunner::class, TaskReleaseRunner::class);
         $this->app->bind(ImageDigestResolver::class, RegistryImageDigestResolver::class);
+        $this->app->bind(PublicDnsResolver::class, UdpDnsResolver::class);
         // Refs the GitHub polling fallback watches (docs/06 §2).
         $this->app->bind(TrackedRefs::class, ServiceTrackedRefs::class);
     }
@@ -147,9 +143,6 @@ final class AppServiceProvider extends ServiceProvider
         });
     }
 
-    /**
-     * Configure default behaviors for production-ready applications.
-     */
     private function configureDefaults(): void
     {
         Date::use(CarbonImmutable::class);

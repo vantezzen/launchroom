@@ -7,10 +7,10 @@ use App\Enums\DaemonTaskType;
 use App\Enums\ServerRole;
 use App\Models\DaemonTask;
 use App\Models\Server;
-use App\Services\Crypto\ResponseSignature;
 use App\Services\Crypto\Signer;
 use Tests\Support\FakeDaemon;
 use Tests\Support\ProtocolSchemas;
+use Tests\Support\ResponseSignature;
 
 function logsTask(Server $server, array $attributes = []): DaemonTask
 {
@@ -49,7 +49,6 @@ test('leasing returns a signed, schema-valid lease and marks tasks leased', func
     expect($task->status)->toBe(DaemonTaskStatus::Leased)
         ->and($task->server_id)->toBe($this->server->id);
 
-    // Nothing left to lease.
     expect($this->daemon->send($this, 'POST', '/daemon/v1/tasks/lease', leaseBody())->json('tasks'))->toBe([]);
 });
 

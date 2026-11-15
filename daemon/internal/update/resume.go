@@ -5,7 +5,6 @@ import (
 	"errors"
 	"io/fs"
 	"log/slog"
-	"net/http"
 	"time"
 
 	"github.com/moby/moby/client"
@@ -90,26 +89,17 @@ func Resume(ctx context.Context, o ResumeOptions) {
 	if o.Docker != nil {
 		removeByName(context.WithoutCancel(ctx), o.Docker, p.Supervisor)
 	}
-	for attempt := 1; ; attempt++ {
-		err := o.Complete(ctx, p.TaskID, st.Completion(p.Attempt))
-		var api *controlplane.APIError
-		switch {
-		case err == nil:
-			log.Info("reported the update outcome", "outcome", st.Outcome)
-		case errors.As(err, &api) && (api.Status == http.StatusConflict || api.Status == http.StatusNotFound || api.Status == http.StatusGone):
-			log.Info("the dashboard re-queued the update task; the next lease reports the outcome", "outcome", st.Outcome)
-		case controlplane.IsRetryable(err) && attempt < 30 && ctx.Err() == nil:
-			select {
-			case <-ctx.Done():
-				return
-			case <-time.After(o.Poll * time.Duration(min(attempt, 15))):
-			}
-			continue
-		default:
-			log.Error("could not report the update outcome", "err", err)
-			return // keep pending.json: the next start tries again
-		}
-		removePending(o.DataDir, p.TaskID)
-		return
+	err = controlplane.Retry(ctx, controlplane.Backoff{Attempts: 30, Initial: o.Poll, Max: 15 * o.Poll}, func() error {
+		return o.Complete(ctx, p.TaskID, st.Completion(p.Attempt))
+	})
+	switch {
+	case err == nil:
+		log.Info("reported the update outcome", "outcome", st.Outcome)
+	case controlplane.IsLeaseLost(err):
+		log.Info("the dashboard re-queued the update task; the next lease reports the outcome", "outcome", st.Outcome)
+	default:
+		log.Error("could not report the update outcome", "err", err)
+		return // keep pending.json: the next start tries again
 	}
+	removePending(o.DataDir, p.TaskID)
 }

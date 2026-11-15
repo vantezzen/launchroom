@@ -32,6 +32,9 @@
 # built dashboard and caddy images). Run from the repo root.
 set -eu
 
+# shellcheck source=deploy/test/lib.sh
+. deploy/test/lib.sh
+
 PREFIX=launchroom-dev-e2e-move
 NET="$PREFIX-net"
 SUBNET=172.29.250.0/24
@@ -40,8 +43,6 @@ B="$PREFIX-b" B_IP=172.29.250.12
 C="$PREFIX-c" C_IP=172.29.250.13
 D="$PREFIX-d" D_IP=172.29.250.14
 HS="$PREFIX-hs" HS_IP=172.29.250.20
-DIND_IMAGE="docker:29-dind@sha256:3e5756e2b6dad6a5f1f5deacf0a19f9eaa2581b76ae092b2d4a118162e1d4d4e"
-SOCAT_IMAGE="alpine/socat@sha256:beb4a68d9e4fe6b0f21ea774a0fde6c31f580dde6368939ed70100c5385b015e"
 DASHBOARD_IMAGE=launchroom-dev-e2e-dashboard:test
 DAEMON_IMAGE=launchroom-dev-e2e-daemon:test
 CADDY_IMAGE=launchroom-dev-e2e-caddy:test
@@ -51,9 +52,6 @@ APP_HOST=""
 APP2_HOST=""
 LR=/root/launchroom
 
-step() { printf '\n==> %s\n' "$*"; }
-fail() { printf '\nFAIL: %s\n' "$*" >&2; exit 1; }
-ok() { printf '    ok: %s\n' "$*"; }
 on() { vps=$1; shift; docker exec "$vps" "$@"; }
 in_lr() { vps=$1; shift; docker exec -w "$LR" "$vps" "$@"; }
 psql_on() { in_lr "$1" docker compose exec -T postgres psql -U launchroom -d launchroom -tAc "$2"; }
@@ -89,28 +87,7 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-# retry SECONDS COMMAND...: run until it succeeds or the time is up.
-retry() {
-	limit=$1
-	shift
-	start=$(date +%s)
-	until "$@" >/dev/null 2>&1; do
-		[ $(($(date +%s) - start)) -lt "$limit" ] || return 1
-		sleep 3
-	done
-}
-
-# ---- Images -----------------------------------------------------------------------
-
-if [ "${SKIP_BUILD:-0}" = 1 ]; then
-	step "SKIP_BUILD=1: using the existing $DASHBOARD_IMAGE and $CADDY_IMAGE"
-else
-	step "building images (dashboard production target, launchroom-caddy)"
-	docker build -q -f deploy/images/dashboard/Dockerfile --target production \
-		--label launchroom.dev=true -t "$DASHBOARD_IMAGE" . >/dev/null
-	docker build -q --label launchroom.dev=true -t "$CADDY_IMAGE" deploy/images/caddy >/dev/null
-	ok "built $DASHBOARD_IMAGE and $CADDY_IMAGE"
-fi
+build_images "$DASHBOARD_IMAGE" "$CADDY_IMAGE"
 
 step "network $NET ($SUBNET) and the mesh login address hs.e2e-move"
 docker rm -f -v "$A" "$B" "$C" "$D" "$HS" >/dev/null 2>&1 || true
@@ -122,7 +99,7 @@ ok "network ready"
 hs_points_at() {
 	docker rm -f "$HS" >/dev/null 2>&1 || true
 	docker run -d --name "$HS" --label launchroom.dev=true --network "$NET" --ip "$HS_IP" --network-alias hs.e2e-move \
-		"$SOCAT_IMAGE" TCP-LISTEN:80,fork,reuseaddr "TCP:$1:8081" >/dev/null
+		"$LR_SOCAT_IMAGE" TCP-LISTEN:80,fork,reuseaddr "TCP:$1:8081" >/dev/null
 }
 
 # start_vps NAME IP: a fresh docker:dind "VPS" with our images and the bundle.
@@ -130,7 +107,7 @@ start_vps() {
 	docker run -d --name "$1" --hostname "$1" --privileged \
 		--label launchroom.dev=true --network "$NET" --ip "$2" \
 		--mount type=volume,dst=/var/lib/docker,volume-label=launchroom.dev=true \
-		"$DIND_IMAGE" >/dev/null
+		"$LR_DIND_IMAGE" >/dev/null
 	retry 60 docker exec "$1" docker info || fail "the Docker daemon of $1 did not start"
 	docker save "$CADDY_IMAGE" "$DASHBOARD_IMAGE" | docker exec -i "$1" docker load -q >/dev/null
 	[ "$1" = "$A" ] || docker save "$DAEMON_IMAGE" | docker exec -i "$1" docker load -q >/dev/null
@@ -171,10 +148,9 @@ EOF
 
 step "VPS A ($A_IP): launchroom-caddy digest, launchroomd built like a release"
 start_vps "$A" "$A_IP"
-caddy_digest="$(on "$A" docker image inspect "$CADDY_IMAGE" --format '{{index .RepoDigests 0}}' | sed 's/.*@//')"
-printf '%s' "$caddy_digest" | grep -Eq '^sha256:[0-9a-f]{64}$' || fail "no digest for $CADDY_IMAGE ($caddy_digest)"
+caddy_digest="$(digest_in "$A" "$CADDY_IMAGE")"
 CADDY_REF="docker.io/library/${CADDY_IMAGE%%:*}@$caddy_digest"
-docker build -q --build-arg CADDY_DIGEST="$caddy_digest" --label launchroom.dev=true -t "$DAEMON_IMAGE" daemon >/dev/null
+build_daemon "$DAEMON_IMAGE" "$caddy_digest"
 docker save "$DAEMON_IMAGE" | docker exec -i "$A" docker load -q >/dev/null
 ok "images on A (caddy $caddy_digest)"
 hs_points_at "$A_IP"

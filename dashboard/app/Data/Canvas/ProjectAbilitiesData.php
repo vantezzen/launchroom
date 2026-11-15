@@ -18,5 +18,7 @@ final class ProjectAbilitiesData extends Data
         /** Connections inject variables: needs manage + variable write. */
         public bool $connect,
         public bool $deploy,
+        /** The Console tab on its services (InteractiveSessionPolicy::viewAny). */
+        public bool $console,
     ) {}
 }

@@ -10,7 +10,6 @@ use App\Data\Audit\AuditEntryData;
 use App\Data\Updates\ReleaseData;
 use App\Data\Updates\StartControlPlaneUpdateInput;
 use App\Enums\AuditAction;
-use App\Enums\ServerStatus;
 use App\Enums\Updates\FleetUpdateStatus;
 use App\Exceptions\DomainRuleViolation;
 use App\Jobs\Updates\RunControlPlaneUpdateJob;
@@ -64,8 +63,8 @@ final readonly class StartControlPlaneUpdate
 
         $update = DB::transaction(function () use ($user, $input, $release, $current, $automatic): ControlPlaneUpdate {
             $server = Server::query()
-                ->where('is_control_plane', true)
-                ->where('status', '!=', ServerStatus::Revoked->value)
+                ->controlPlane()
+                ->latest('id')
                 ->lockForUpdate()
                 ->first();
 
@@ -78,7 +77,7 @@ final readonly class StartControlPlaneUpdate
                 throw DomainRuleViolation::conflict('An update is already running.');
             }
 
-            $hasDestination = BackupDestination::query()->whereNull('team_id')->exists();
+            $hasDestination = BackupDestination::query()->instanceWide()->exists();
 
             if (! $hasDestination && $automatic) {
                 throw DomainRuleViolation::on('skipBackup', 'Automatic updates need a control-plane backup destination.');

@@ -62,9 +62,6 @@ final class ControlPlaneKeyBundle
     /** Upper bound of the Headscale state in a bundle (bytes, before base64). */
     public const int HEADSCALE_MAX_BYTES = 64 * 1024 * 1024;
 
-    /**
-     * Collects the bundle from config and the key files.
-     */
     public static function collect(): string
     {
         $paths = [

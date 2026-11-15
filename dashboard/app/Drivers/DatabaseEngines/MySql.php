@@ -28,7 +28,7 @@ final readonly class MySql implements DatabaseEngineDriver
 
     public function defaultVersion(): string
     {
-        return '8.4';
+        return $this->images->defaultVersion($this->engine());
     }
 
     public function image(string $version): ImageReference
@@ -41,9 +41,19 @@ final readonly class MySql implements DatabaseEngineDriver
         return 3306;
     }
 
+    public function category(): DatabaseEngineCategory
+    {
+        return DatabaseEngineCategory::Relational;
+    }
+
     public function volumeMountPath(string $version): string
     {
         return '/var/lib/mysql';
+    }
+
+    public function dataDirectory(string $version): string
+    {
+        return $this->volumeMountPath($version);
     }
 
     public function variables(): array
@@ -62,6 +72,38 @@ final readonly class MySql implements DatabaseEngineDriver
     public function exportedKeys(): array
     {
         return ['DATABASE_URL', 'MYSQLHOST', 'MYSQLPORT', 'MYSQL_USER', 'MYSQL_PASSWORD', 'MYSQL_DATABASE'];
+    }
+
+    public function exportedKey(ConnectionPart $part): ?string
+    {
+        return match ($part) {
+            ConnectionPart::Url => 'DATABASE_URL',
+            ConnectionPart::Host => 'MYSQLHOST',
+            ConnectionPart::Port => 'MYSQLPORT',
+            ConnectionPart::User => 'MYSQL_USER',
+            ConnectionPart::Password => 'MYSQL_PASSWORD',
+            ConnectionPart::Database => 'MYSQL_DATABASE',
+            ConnectionPart::NativePort => null,
+        };
+    }
+
+    public function imageEnvAliases(): array
+    {
+        return [
+            'user' => ['MYSQL_USER', 'MARIADB_USER'],
+            'password' => ['MYSQL_PASSWORD', 'MARIADB_PASSWORD', 'MYSQL_ROOT_PASSWORD', 'MARIADB_ROOT_PASSWORD'],
+            'database' => ['MYSQL_DATABASE', 'MARIADB_DATABASE'],
+        ];
+    }
+
+    public function nativeSchemes(): array
+    {
+        return [];
+    }
+
+    public function urlQuery(): array
+    {
+        return [];
     }
 
     public function connectionVariables(ConnectionStyle $style, string $slug): array
@@ -101,6 +143,11 @@ final readonly class MySql implements DatabaseEngineDriver
         return 'SIGTERM';
     }
 
+    public function stopTimeout(): string
+    {
+        return '60s';
+    }
+
     public function entrypoint(): ?array
     {
         return null;
@@ -111,19 +158,45 @@ final readonly class MySql implements DatabaseEngineDriver
         return null;
     }
 
-    public function dumpCommand(): array
+    public function client(): string
     {
-        // MYSQL_PWD comes from the env (never argv).
-        return ['mysqldump', '--single-transaction', '--routines', '--triggers', '--user=app', 'app'];
+        return 'mysql';
     }
 
-    public function restoreCommand(): array
+    public function phpExtension(): string
     {
-        return ['mysql', '--user=app', 'app'];
+        return 'pdo_mysql';
     }
 
-    public function dumpFileExtension(): string
+    public function exportFileExtension(): string
     {
-        return 'sql';
+        return 'sql.gz';
+    }
+
+    public function importFormat(): DumpImport
+    {
+        return new DumpImport(
+            engine: $this->engine(),
+            formats: ['mysql_sql'],
+            formatsHint: 'mysqldump or mariadb-dump SQL, optionally gzipped (.sql, .sql.gz)',
+            urlSchemes: ['mysql', 'mariadb'],
+            urlExample: 'mysql://user:password@db.example.com:3306/app',
+            sqlFormat: 'mysql_sql',
+        );
+    }
+
+    public function restorable(): bool
+    {
+        return true;
+    }
+
+    public function pointInTimeRecoveryFrom(): null
+    {
+        return null;
+    }
+
+    public function remoteAccess(): null
+    {
+        return null;
     }
 }

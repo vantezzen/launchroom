@@ -70,7 +70,6 @@ final readonly class AcceptInvitation
             }
 
             $user->forceFill(['current_team_id' => $invitation->team_id])->save();
-            $user->forgetTeamRoles();
 
             $invitation->forceFill(['accepted_at' => now()])->save();
 

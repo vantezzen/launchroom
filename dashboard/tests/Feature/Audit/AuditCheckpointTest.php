@@ -73,7 +73,6 @@ test('a checkpoint signs the newest entry with the control-plane key over the do
     $public = sodium_crypto_sign_publickey(sodium_crypto_sign_seed_keypair(TestCase::signingSeed()));
 
     expect(sodium_crypto_sign_verify_detached((string) base64_decode($checkpoint->signature, true), $message, $public))->toBeTrue()
-        // Nothing new: no second checkpoint.
         ->and(resolve(CreateAuditCheckpoint::class)->handle())->toBeNull();
 
     auditEntries(2);
@@ -120,6 +119,7 @@ test('an edited entry is named', function (): void {
     expect($result->valid)->toBeFalse()
         ->and($result->problem)->toBe(AuditChainProblem::Edited)
         ->and($result->firstInvalidId)->toBe($ids[1])
+        ->and($result->checked)->toBe(1)
         ->and($result->message)->toContain('changed');
 });
 
@@ -228,8 +228,8 @@ test('the command records the result for the UI and prints the public key', func
     $this->artisan('launchroom:audit:verify')->expectsOutputToContain('verified up to')->assertSuccessful();
 
     $status = InstanceSettings::current()->audit_verification;
-    expect($status['ok'] ?? null)->toBeTrue()
-        ->and($status['verifiedUpTo'] ?? null)->toBeString();
+    expect($status?->ok)->toBeTrue()
+        ->and($status?->verifiedUpTo)->toBeString();
 
     $this->artisan('launchroom:audit:verify --public-key')
         ->expectsOutputToContain(TestCase::SIGNING_KID.' ed25519:')
@@ -240,7 +240,22 @@ test('the command records the result for the UI and prints the public key', func
     $this->artisan('launchroom:audit:verify')->assertFailed();
 
     $status = InstanceSettings::current()->audit_verification;
-    expect($status['ok'] ?? null)->toBeFalse()
-        ->and($status['problem']['kind'] ?? null)->toBe('edited')
-        ->and($status['problem']['eventId'] ?? null)->toBe($ids[0]);
+    expect($status?->ok)->toBeFalse()
+        ->and($status?->problem)->toContain("#{$ids[0]}")
+        ->and($status?->problemEntry)->toBe($ids[0]);
+});
+
+test('a verification stored before the Data cast is converted by its migration', function (): void {
+    InstanceSettings::current();
+    DB::table('instance_settings')->update(['audit_verification' => json_encode([
+        'ok' => false, 'mode' => 'full', 'checkedAt' => '2026-11-01T00:00:00Z', 'entries' => 3, 'checkpoints' => 1, 'verifiedUpTo' => null, 'lastEventId' => 3,
+        'problem' => ['kind' => 'edited', 'eventId' => 2, 'checkpointId' => null, 'message' => 'Entry #2 was changed after it was written.'],
+    ])]);
+
+    (require database_path('migrations/2026_12_30_210000_type_json_columns.php'))->up();
+
+    expect(InstanceSettings::query()->findOrFail(InstanceSettings::ID)->audit_verification?->toArray())->toBe([
+        'ok' => false, 'mode' => 'full', 'checkedAt' => '2026-11-01T00:00:00Z', 'entries' => 3, 'verifiedUpTo' => null,
+        'problem' => 'Entry #2 was changed after it was written.', 'problemEntry' => 2,
+    ]);
 });

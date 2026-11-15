@@ -7,9 +7,6 @@ namespace App\Services\Alerts\Senders;
 use App\Enums\Alerts\AlertChannelKind;
 use Illuminate\Contracts\Container\Container;
 
-/**
- * The sender of each channel kind.
- */
 final readonly class AlertSenders
 {
     public function __construct(

@@ -10,23 +10,6 @@ export function clock(seconds: number): string {
         : `${m}:${rest}`;
 }
 
-/** "12 s", "4 min", "1 h 5 min". */
-export function duration(seconds: number | null): string | null {
-    if (seconds === null) {
-        return null;
-    }
-
-    if (seconds < 60) {
-        return `${seconds} s`;
-    }
-
-    const minutes = Math.round(seconds / 60);
-
-    return minutes < 60
-        ? `${minutes} min`
-        : `${Math.floor(minutes / 60)} h ${minutes % 60} min`;
-}
-
 export function shellLabel(shell: string | null | undefined): string {
     if (!shell) {
         return 'Automatic';

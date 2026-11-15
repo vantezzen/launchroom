@@ -4,10 +4,11 @@ declare(strict_types=1);
 
 namespace App\Data\Security;
 
+use App\Data\Audit\AuditChainVerification;
 use Spatie\LaravelData\Data;
 
 /**
- * The last audit log check (docs/09 R34): "Audit log verified ✓ up to
+ * `instance_settings.audit_verification`: the last audit log check (docs/09 R34): "Audit log verified ✓ up to
  * <verifiedUpTo>" or the problem it found. `verifiedUpTo` is the newest
  * entry a valid signed checkpoint anchors (null: no checkpoint yet).
  */
@@ -24,25 +25,16 @@ final class AuditVerificationData extends Data
         public ?int $problemEntry,
     ) {}
 
-    /**
-     * @param  array<string, mixed>|null  $status
-     */
-    public static function fromStatus(?array $status): ?self
+    public static function fromResult(AuditChainVerification $result): self
     {
-        if ($status === null || ! is_string($status['checkedAt'] ?? null)) {
-            return null;
-        }
-
-        $problem = is_array($status['problem'] ?? null) ? $status['problem'] : null;
-
         return new self(
-            ok: ($status['ok'] ?? false) === true,
-            mode: is_string($status['mode'] ?? null) ? $status['mode'] : 'full',
-            checkedAt: $status['checkedAt'],
-            entries: is_int($status['entries'] ?? null) ? $status['entries'] : 0,
-            verifiedUpTo: is_string($status['verifiedUpTo'] ?? null) ? $status['verifiedUpTo'] : null,
-            problem: $problem !== null && is_string($problem['message'] ?? null) ? $problem['message'] : null,
-            problemEntry: $problem !== null && is_int($problem['eventId'] ?? null) ? $problem['eventId'] : null,
+            ok: $result->valid,
+            mode: $result->incremental ? 'incremental' : 'full',
+            checkedAt: now()->toIso8601ZuluString(),
+            entries: $result->checked,
+            verifiedUpTo: $result->verifiedUpTo?->toIso8601ZuluString(),
+            problem: $result->valid ? null : (string) $result->message,
+            problemEntry: $result->valid ? null : $result->firstInvalidId,
         );
     }
 

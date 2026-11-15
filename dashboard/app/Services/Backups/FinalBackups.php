@@ -4,12 +4,6 @@ declare(strict_types=1);
 
 namespace App\Services\Backups;
 
-use App\Actions\Audit\RecordAuditEvent;
-use App\Actions\Backups\StartServiceBackup;
-use App\Data\Audit\AuditActor;
-use App\Data\Audit\AuditEntryData;
-use App\Enums\AuditAction;
-use App\Enums\Backups\BackupReason;
 use App\Enums\Backups\BackupRunStatus;
 use App\Enums\Backups\BackupSubject;
 use App\Enums\Backups\DeletionRequestStatus;
@@ -19,11 +13,9 @@ use App\Models\Backups\BackupRun;
 use App\Models\Backups\BackupSchedule;
 use App\Models\Backups\DeletionRequest;
 use App\Models\ServiceInstance;
-use App\Models\User;
 use App\Models\Volume;
 use Illuminate\Contracts\Database\Query\Builder;
 use Illuminate\Database\Eloquent\Collection;
-use Throwable;
 
 /**
  * Final backups before data goes away (docs/14 §9.13). Deleting an
@@ -36,67 +28,12 @@ use Throwable;
  * retries it or chooses "delete without final backup" (authorized,
  * audited). Callers own authorization and their transaction.
  *
- * The state lives in a {@see DeletionRequest} per subject:
- *
- *     $request = $finalBackups->gate(DeletionRequest::ENVIRONMENT, $environment->id, …, $instances, $user, $actor);
- *     if ($request !== null && ! $request->status->allowsDeletion()) { … wait … }
+ * The state lives in a DeletionRequest per subject, opened by
+ * RequestFinalBackups. This class reads and refreshes it.
  */
 final readonly class FinalBackups
 {
-    public function __construct(
-        private StartServiceBackup $start,
-        private RecordAuditEvent $audit,
-    ) {}
-
     /**
-     * The open request of the subject (refreshed), or a new one when some of
-     * $instances need a final backup; null when nothing needs one.
-     *
-     * @param  Collection<int, ServiceInstance>  $instances
-     */
-    public function gate(string $type, int $subjectId, string $publicId, string $name, int $teamId, Collection $instances, ?User $user, AuditActor $actor, bool $skip = false): ?DeletionRequest
-    {
-        $open = DeletionRequest::openFor($type, $subjectId, lock: true);
-
-        if ($open instanceof DeletionRequest) {
-            $this->refresh($open);
-
-            if ($skip && ! $open->status->allowsDeletion()) {
-                $this->skip($open, $user, $actor);
-            }
-
-            return $open;
-        }
-
-        $needed = $this->needed($instances);
-
-        if ($needed === []) {
-            return null;
-        }
-
-        $request = DeletionRequest::query()->create([
-            'team_id' => $teamId,
-            'subject_type' => $type,
-            'subject_id' => $subjectId,
-            'subject_public_id' => $publicId,
-            'subject_name' => mb_substr($name, 0, 255),
-            'requested_by' => $user?->id,
-        ]);
-
-        if ($skip) {
-            $this->skip($request, $user, $actor);
-
-            return $request;
-        }
-
-        $this->startRuns($request, $needed, $user, $actor);
-
-        return $request;
-    }
-
-    /**
-     * The service instances a request's subject covers today.
-     *
      * @return Collection<int, ServiceInstance>
      */
     public function instancesFor(DeletionRequest $request): Collection
@@ -215,53 +152,6 @@ final readonly class FinalBackups
     }
 
     /**
-     * Starts the final backups again (blocked → backing_up).
-     *
-     * @param  Collection<int, ServiceInstance>  $instances
-     */
-    public function retry(DeletionRequest $request, Collection $instances, ?User $user, AuditActor $actor): void
-    {
-        if ($request->status !== DeletionRequestStatus::Blocked) {
-            return;
-        }
-
-        $needed = $this->needed($instances);
-        $request->forceFill(['backup_run_ids' => []]);
-        $request->transitionTo(DeletionRequestStatus::BackingUp);
-
-        if ($needed === []) {
-            $request->transitionTo(DeletionRequestStatus::Ready);
-
-            return;
-        }
-
-        $this->startRuns($request, $needed, $user, $actor);
-    }
-
-    /**
-     * "Delete without final backup" (owner/admin with the required permission;
-     * callers authorize). Audited.
-     */
-    public function skip(DeletionRequest $request, ?User $user, AuditActor $actor): void
-    {
-        if ($request->status->allowsDeletion()) {
-            return;
-        }
-
-        $request->forceFill(['overridden_by' => $user?->id, 'overridden_at' => now()]);
-        $request->transitionTo(DeletionRequestStatus::Overridden, $request->error);
-
-        $this->audit->handle(new AuditEntryData(
-            action: AuditAction::FinalBackupSkipped,
-            actor: $actor,
-            teamId: $request->team_id,
-            subjectType: $request->subject_type,
-            subjectId: $request->subject_public_id,
-            meta: ['request' => $request->public_id, 'name' => $request->subject_name, 'reason' => $request->error],
-        ));
-    }
-
-    /**
      * The final snapshot per volume (a database's dump covers its volume)
      * of a request whose backups succeeded, for VolumeRetirements.
      *
@@ -292,34 +182,6 @@ final readonly class FinalBackups
         }
 
         return $out;
-    }
-
-    /**
-     * @param  list<ServiceInstance>  $instances
-     */
-    private function startRuns(DeletionRequest $request, array $instances, ?User $user, AuditActor $actor): void
-    {
-        $ids = [];
-        $problems = [];
-
-        foreach ($instances as $instance) {
-            try {
-                foreach ($this->start->handle($instance, BackupReason::PreDelete, $user, $actor) as $run) {
-                    $ids[] = $run->id;
-                }
-            } catch (DomainRuleViolation $e) {
-                $problems[] = "{$instance->service->name}: {$e->getMessage()}";
-            } catch (Throwable $e) {
-                report($e);
-                $problems[] = "{$instance->service->name}: the final backup could not start.";
-            }
-        }
-
-        $request->forceFill(['backup_run_ids' => $ids])->save();
-
-        if ($problems !== []) {
-            $request->transitionTo(DeletionRequestStatus::Blocked, 'No final backup could be taken of '.implode(' ', $problems));
-        }
     }
 
     /**

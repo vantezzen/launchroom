@@ -18,13 +18,13 @@ import (
 
 	"github.com/vantezzen/launchroom/daemon/internal/docker"
 	"github.com/vantezzen/launchroom/daemon/internal/firewall"
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
 
 // busyboxImage provides wget and httpd for the reachability probes.
 const busyboxImage = "docker.io/library/busybox@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e"
 
-// fwNet is one test network.
 type fwNet struct {
 	name    string
 	subnet  netip.Prefix
@@ -54,10 +54,10 @@ func (f *fwEnv) network(n fwNet) {
 	if n.managed {
 		labels := docker.ManagedLabels(string(f.server))
 		if n.system {
-			labels[docker.LabelSystem] = "buildkit"
-			labels[docker.LabelNetwork] = "system-build"
+			labels[names.LabelSystem] = "buildkit"
+			labels[names.LabelNetwork] = "system-build"
 		} else {
-			labels[docker.LabelNetwork] = randomID("net")
+			labels[names.LabelNetwork] = randomID("net")
 		}
 		if _, err := f.engine.CreateNetwork(ctx, docker.NetworkCreate{Name: n.name, Subnet: n.subnet, Labels: labels}); err != nil {
 			t.Fatal(err)

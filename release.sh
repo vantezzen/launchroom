@@ -11,12 +11,11 @@ die() { echo "release: $*" >&2; exit 1; }
 [ $# -eq 1 ] || die "usage: ./release.sh <version>   (e.g. 0.1.0 or 0.1.0-rc.1)"
 version=${1#v}
 
-# Same check as the workflow: a semantic version without build metadata.
-echo "$version" | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$' ||
-	die "'$version' is not a semantic version (e.g. 0.1.0 or 0.1.0-rc.1)"
-tag="v$version"
-
 cd "$(dirname "$0")"
+# shellcheck source=deploy/install/lib/release.sh
+. deploy/install/lib/release.sh
+is_release_version "$version" || die "'$version' is not a semantic version (e.g. 0.1.0 or 0.1.0-rc.1)"
+tag="v$version"
 
 [ "$(git rev-parse --abbrev-ref HEAD)" = "main" ] || die "check out main first (the tagged commit must be on main)"
 [ -z "$(git status --porcelain)" ] || die "the working tree has uncommitted changes; commit or stash them first"

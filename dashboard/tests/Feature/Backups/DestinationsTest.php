@@ -357,9 +357,10 @@ test('the settings page shows a 30-day strip per schedule and what each destinat
         'reason' => BackupReason::Scheduled,
     ]), fn (BackupRun $r) => $r->forceFill(['status' => $status, 'size_bytes' => $size, 'created_at' => $at, 'finished_at' => $at])->save());
 
-    $run(BackupRunStatus::Succeeded, 1000, now()->subDays(3)->toDateTimeString());
-    $run(BackupRunStatus::Failed, 0, now()->subDay()->toDateTimeString());
-    $run(BackupRunStatus::Succeeded, 2000, now()->subHour()->toDateTimeString());
+    // Pinned to calendar days so the strip doesn't depend on the time of day.
+    $run(BackupRunStatus::Succeeded, 1000, today()->subDays(3)->toDateTimeString());
+    $run(BackupRunStatus::Failed, 0, today()->subHours(12)->toDateTimeString());
+    $run(BackupRunStatus::Succeeded, 2000, today()->toDateTimeString());
 
     $this->actingAs($owner)->get(route('backups.settings'))
         ->assertOk()
@@ -369,7 +370,7 @@ test('the settings page shows a 30-day strip per schedule and what each destinat
             ->where('protection.0.scheduleId', $schedule->public_id)
             ->has('protection.0.days', 30)
             ->where('protection.0.days.29.status', 'ok')
-            ->where('protection.0.days.28.status', now()->subDay()->isSameDay(now()->subHour()) ? 'ok' : 'failed')
+            ->where('protection.0.days.28.status', 'failed')
             ->where('protection.0.lastSizeBytes', 2000)
             ->where('schedules.0.cronDescription', fn (?string $sentence): bool => $sentence !== null && str_starts_with($sentence, 'Daily at'))
             ->has('usage', 1)

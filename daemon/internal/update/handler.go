@@ -16,11 +16,11 @@ import (
 
 	"github.com/moby/moby/client"
 
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 	"github.com/vantezzen/launchroom/daemon/internal/tasks"
 )
 
-// Default timeouts (overridable for tests).
 const (
 	defaultDaemonInstallTimeout = 10 * time.Minute
 	defaultCPInstallTimeout     = 40 * time.Minute
@@ -61,7 +61,7 @@ func NewHandler(o HandlerOptions) tasks.Handler {
 		o.Self = func(ctx context.Context) (Self, error) { return Discover(ctx, o.Docker, os.Getpid(), o.DataDir) }
 	}
 	if len(o.SupervisorEntrypoint) == 0 {
-		o.SupervisorEntrypoint = []string{"/usr/local/bin/launchroomd", SupervisorCommand}
+		o.SupervisorEntrypoint = []string{names.SupervisorBinary, names.SupervisorCommand}
 	}
 	if o.Verifier.TUFCacheDir == "" {
 		o.Verifier.TUFCacheDir = filepath.Join(updateDir(o.DataDir), dirTUF)
@@ -75,21 +75,21 @@ func NewHandler(o HandlerOptions) tasks.Handler {
 
 type handler struct{ o HandlerOptions }
 
-func (h *handler) handle(ctx context.Context, t state.Task) (tasks.Result, error) {
+func (h *handler) handle(ctx context.Context, t state.Task) (state.TaskResults, error) {
 	spec, ok := t.Spec.(*state.SelfUpdateSpec)
 	if !ok {
-		return tasks.Result{}, errors.New("self_update: unexpected spec")
+		return state.TaskResults{}, errors.New("self_update: unexpected spec")
 	}
 	scope, target := spec.EffectiveScope(), strings.TrimPrefix(string(spec.Version), "v")
-	result := func(rolledBack bool) tasks.Result {
-		return tasks.Result{SelfUpdate: &state.SelfUpdateResult{Scope: scope, FromVersion: state.Semver(h.o.Version), ToVersion: state.Semver(target), RolledBack: rolledBack}}
+	result := func(rolledBack bool) state.TaskResults {
+		return state.TaskResults{SelfUpdate: &state.SelfUpdateResult{Scope: scope, FromVersion: state.Semver(h.o.Version), ToVersion: state.Semver(target), RolledBack: rolledBack}}
 	}
 	log := h.o.Log.With("task", t.ID, "scope", scope, "from", h.o.Version, "to", target)
 
 	// A re-leased attempt of an update that already finished: report it.
 	if st, err := readStatus(h.o.DataDir, t.ID); err == nil {
 		removePending(h.o.DataDir, t.ID)
-		return tasks.Result{SelfUpdate: st.Completion(t.Attempt).SelfUpdate}, st.Err()
+		return state.TaskResults{SelfUpdate: st.Completion(t.Attempt).SelfUpdate}, st.Err()
 	}
 	// Still running (launchroomd restarted, or the lease moved): wait for it.
 	if p, err := readPending(h.o.DataDir); err == nil && p != nil && p.TaskID == t.ID {
@@ -181,7 +181,7 @@ func (h *handler) handle(ctx context.Context, t state.Task) (tasks.Result, error
 		return result(false), err
 	}
 	pending := &Pending{TaskID: t.ID, Attempt: t.Attempt, Scope: scope, From: h.o.Version, To: target,
-		Supervisor: supervisorName(t.ID), CreatedAt: time.Now().UTC()}
+		Supervisor: names.Updater(t.ID), CreatedAt: time.Now().UTC()}
 	if err := writeJSON(filepath.Join(updateDir(h.o.DataDir), filePending), pending); err != nil {
 		return result(false), err
 	}
@@ -206,7 +206,7 @@ func (h *handler) handle(ctx context.Context, t state.Task) (tasks.Result, error
 // await waits for the supervisor. If this process is stopped first (the
 // supervisor replaced launchroomd's container), it hands the report over
 // to the next launchroomd process (Resume).
-func (h *handler) await(ctx context.Context, t state.Task, p *Pending, log *slog.Logger, result func(bool) tasks.Result) (tasks.Result, error) {
+func (h *handler) await(ctx context.Context, t state.Task, p *Pending, log *slog.Logger, result func(bool) state.TaskResults) (state.TaskResults, error) {
 	if p.Scope == state.UpdateControlPlane {
 		tasks.SetProgress(ctx, "Updating the control plane to v"+p.To+" (the dashboard restarts)")
 	} else {
@@ -218,7 +218,7 @@ func (h *handler) await(ctx context.Context, t state.Task, p *Pending, log *slog
 		if st, err := readStatus(h.o.DataDir, t.ID); err == nil {
 			removePending(h.o.DataDir, t.ID)
 			removeByName(context.WithoutCancel(ctx), h.o.Docker, p.Supervisor)
-			return tasks.Result{SelfUpdate: st.Completion(t.Attempt).SelfUpdate}, st.Err()
+			return state.TaskResults{SelfUpdate: st.Completion(t.Attempt).SelfUpdate}, st.Err()
 		} else if !errors.Is(err, fs.ErrNotExist) {
 			log.Warn("reading update status", "err", err)
 		}
@@ -253,10 +253,6 @@ func (h *handler) timeouts(scope state.UpdateScope) (install, health time.Durati
 		health = h.o.HealthTimeout
 	}
 	return install, health
-}
-
-func supervisorName(id state.TaskID) string {
-	return "lr-system-update-" + strings.ToLower(strings.TrimPrefix(string(id), "tsk_"))
 }
 
 func shortRef(ref string) string {

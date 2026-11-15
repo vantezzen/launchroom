@@ -13,11 +13,12 @@ use App\Enums\LogSourceKind;
 use App\Enums\TeamRole;
 use App\Models\DaemonTask;
 use App\Models\Deployment;
-use App\Models\LogChunk;
 use App\Models\ServiceInstance;
 use Illuminate\Contracts\Database\Query\Builder;
+use Illuminate\Support\Facades\Gate;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\Support\DeploymentUi;
+use Tests\Support\LogChunks;
 use Tests\Support\Projects;
 
 beforeEach(fn () => Projects::useTestKek());
@@ -35,7 +36,7 @@ test('a build failure explains the missing variable from its logs and names the 
         'type' => DaemonTaskType::Build, 'deployment_id' => $deployment->id,
         'spec' => new stdClass, 'timeout_seconds' => 7200, 'max_attempts' => 1,
     ]);
-    LogChunk::query()->create([
+    LogChunks::create([
         'team_id' => $world->team->id, 'server_id' => $world->server->id,
         'daemon_task_id' => $task->id, 'source_kind' => LogSourceKind::Task,
         'source_id' => $task->public_id, 'seq' => 1,
@@ -214,6 +215,21 @@ test('rollback to a superseded deployment; not to the active one', function (): 
 
     expect($world->latest($world->web)->trigger)->toBe(DeploymentTrigger::Rollback)
         ->and($world->production->refresh()->auto_deploy_paused)->toBeTrue();
+});
+
+test('a superseded deployment without its environment snapshot is offered nowhere as a rollback', function (): void {
+    $world = DeploymentUi::make();
+    $first = $world->latest($world->web);
+    $world->variable('GREETING', 'hi');
+    $world->deploy();
+    $first->refresh()->forceFill(['env_snapshot' => null])->save();
+    $developer = $world->member(TeamRole::Developer);
+
+    expect($first->status)->toBe(DeploymentStatus::Superseded)
+        ->and($first->isRollbackTarget())->toBeFalse()
+        ->and(Gate::forUser($developer)->allows('rollback', $first))->toBeFalse();
+
+    $this->actingAs($developer)->post(route('deployments.rollback', $world->deploymentArgs($first)))->assertForbidden();
 });
 
 test('cancel: queued deployments by deployers only', function (): void {

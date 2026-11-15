@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Jobs\Audit;
 
 use App\Actions\Audit\VerifyAuditChain;
-use App\Services\Audit\AuditVerificationStatus;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -24,8 +23,8 @@ final class VerifyAuditLogJob implements ShouldBeUnique, ShouldQueue
 {
     use Dispatchable, Queueable;
 
-    public function handle(VerifyAuditChain $verify, AuditVerificationStatus $status): void
+    public function handle(VerifyAuditChain $verify): void
     {
-        $status->record($verify->handle());
+        $verify->handle();
     }
 }

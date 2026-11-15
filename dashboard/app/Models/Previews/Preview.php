@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace App\Models\Previews;
 
-use App\Enums\Previews\PreviewProvider;
+use App\Data\Previews\PreviewStateData;
+use App\Enums\Contracts\HasTransitionTable;
+use App\Enums\Git\GitProviderKind;
 use App\Enums\Previews\PreviewStatus;
 use App\Models\Concerns\BelongsToTeam;
 use App\Models\Concerns\HasPublicId;
+use App\Models\Concerns\HasStatusTransitions;
 use App\Models\Environment;
 use App\Models\Git\GitConnection;
 use App\Models\Git\GitHubInstallation;
@@ -32,7 +35,7 @@ use Illuminate\Support\Carbon;
  * @property string $public_id
  * @property int $project_id
  * @property int|null $environment_id
- * @property PreviewProvider $provider
+ * @property GitProviderKind $provider
  * @property int|null $github_installation_id
  * @property int|null $git_connection_id GitLab/Gitea previews (docs/19)
  * @property int $repository_id
@@ -51,7 +54,7 @@ use Illuminate\Support\Carbon;
  * @property int|null $approved_by
  * @property CarbonInterface|null $approved_at
  * @property string|null $approved_sha the fork head commit the approval covers
- * @property array<string, mixed> $data
+ * @property PreviewStateData $data
  * @property list<string>|null $changed_files
  * @property int|null $github_deployment_id
  * @property string|null $github_deployment_sha
@@ -70,6 +73,9 @@ final class Preview extends Model
 {
     use BelongsToTeam, HasPublicId;
 
+    /** @use HasStatusTransitions<PreviewStatus> */
+    use HasStatusTransitions;
+
     /** @var array<string, mixed> */
     protected $attributes = [
         'labels' => '[]',
@@ -82,18 +88,13 @@ final class Preview extends Model
     }
 
     /**
-     * The only way a preview's status changes (docs/10 §2.2 rule 3).
+     * @param  PreviewStatus  $from
+     * @param  PreviewStatus  $to
      */
-    public function transitionTo(PreviewStatus $to, ?string $reason = null): void
+    protected function recordTransition(HasTransitionTable $from, HasTransitionTable $to, ?string $note): void
     {
-        if ($to !== $this->status) {
-            $this->status->assertCanTransitionTo($to);
-        }
-
-        $this->status = $to;
-        $this->status_reason = $reason === null ? null : mb_substr($reason, 0, 500);
-
-        $this->forceFill(['closed_at' => $to->isOpen() ? null : now()])->save();
+        $this->status_reason = $note;
+        $this->forceFill(['closed_at' => $to->isOpen() ? null : now()]);
     }
 
     /**
@@ -172,13 +173,13 @@ final class Preview extends Model
     protected function casts(): array
     {
         return [
-            'provider' => PreviewProvider::class,
+            'provider' => GitProviderKind::class,
             'status' => PreviewStatus::class,
             'repository_id' => 'integer',
             'pr_number' => 'integer',
             'is_fork' => 'boolean',
             'labels' => 'array',
-            'data' => 'array',
+            'data' => PreviewStateData::class,
             'changed_files' => 'array',
             'approved_at' => 'datetime',
             'last_activity_at' => 'datetime',

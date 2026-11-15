@@ -14,6 +14,7 @@ use App\Exceptions\DomainRuleViolation;
 use App\Models\InstanceSettings;
 use App\Models\Server;
 use App\Queries\Security\ClientCertificatesOverview;
+use App\Services\Daemon\DaemonEdgeSecret;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -28,6 +29,7 @@ final readonly class SetClientCertificateMode
     public function __construct(
         private ClientCertificatesOverview $overview,
         private RecordAuditEvent $audit,
+        private DaemonEdgeSecret $edgeSecret,
     ) {}
 
     public function handle(ClientCertificateMode $mode, AuditActor $actor, bool $force = false): void
@@ -50,6 +52,10 @@ final readonly class SetClientCertificateMode
                 throw DomainRuleViolation::on('mode', 'Not every server is ready: '.implode(', ', array_slice($blocking, 0, 5)).(count($blocking) > 5 ? ' and '.(count($blocking) - 5).' more' : '').'.');
             }
 
+            if ($mode->checks()) {
+                $this->edgeSecret->provision();
+            }
+
             $settings->forceFill([
                 'daemon_client_certificates' => $mode,
                 'daemon_client_certificates_changed_at' => now(),
@@ -62,7 +68,7 @@ final readonly class SetClientCertificateMode
             ));
 
             /** @var list<int> $controlPlane */
-            $controlPlane = Server::query()->where('is_control_plane', true)->whereNull('revoked_at')->pluck('id')->values()->all();
+            $controlPlane = Server::query()->controlPlane()->pluck('id')->values()->all();
             event(new NodeStateInvalidated($controlPlane));
         });
     }

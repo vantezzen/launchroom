@@ -1,4 +1,8 @@
-const ENV_LINE = /^\s*(?:export\s+)?[A-Za-z_][A-Za-z0-9_]*\s*=/;
+import { grammar } from '@/types/grammar.generated';
+
+const ENV_LINE = new RegExp(
+    `^\\s*(?:export\\s+)?${grammar.envName.source.slice(1, -1)}\\s*=`,
+);
 
 /**
  * Whether pasted text looks like a `.env` file (docs/06 §3.4 "paste a .env

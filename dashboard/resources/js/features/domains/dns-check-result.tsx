@@ -1,37 +1,19 @@
 import { Link } from '@inertiajs/react';
 import { Callout } from '@/components/patterns/callout';
 import type { StatusState } from '@/components/status';
-import { Status } from '@/components/status';
+import { Status, dnsCheckStatus } from '@/components/status';
 import { TimeAgo } from '@/components/time-ago';
-import { LearnMore, useDocsUrl } from '@/features/settings/settings-card';
 import { edit as networkSettings } from '@/routes/network-settings';
+import { LearnMore, useDocsUrl } from '@/components/settings/settings-card';
 
 type Check = App.Data.Domains.DnsCheckData;
 
-const states: Record<string, StatusState> = {
-    ok: 'active',
-    proxied: 'warning',
-    mismatch: 'failed',
-    missing: 'warning',
-    unknown: 'warning',
-    error: 'warning',
-};
-
-const labels: Record<string, string> = {
-    ok: 'DNS verified',
-    proxied: 'Behind a proxy, not confirmed',
-    mismatch: 'DNS points elsewhere',
-    missing: 'No DNS record yet',
-    unknown: 'Can’t compare yet',
-    error: 'DNS check failed',
-};
-
-export function dnsCheckState(check: Check): StatusState {
-    return states[check.status] ?? 'idle';
+function dnsCheckState(check: Check): StatusState {
+    return dnsCheckStatus[check.status].state;
 }
 
 /** The status word: "Reached through a proxy (Cloudflare)" when it is one. */
-export function dnsCheckLabel(check: Check): string {
+function dnsCheckLabel(check: Check): string {
     if (check.status === 'ok' && check.proxy) {
         return `Reached through a proxy (${check.proxy})`;
     }
@@ -40,7 +22,7 @@ export function dnsCheckLabel(check: Check): string {
         return 'Reaches your server';
     }
 
-    return labels[check.status] ?? check.status;
+    return dnsCheckStatus[check.status].label;
 }
 
 /**
@@ -48,7 +30,7 @@ export function dnsCheckLabel(check: Check): string {
  * Cloudflare, Full (strict), and certificates over HTTP-01 through the proxy
  * or DNS-01 with an API token.
  */
-export function ProxyNote({ proxy }: { proxy: string }) {
+function ProxyNote({ proxy }: { proxy: string }) {
     const docsUrl = useDocsUrl();
     const cloudflare = proxy === 'Cloudflare';
 
@@ -103,7 +85,7 @@ export function ProxyNote({ proxy }: { proxy: string }) {
  * addresses are deeper, so visitors get a certificate error. Amber, not red:
  * nothing is broken until an app is opened, and the fix is one click.
  */
-export function CloudflareWildcardCallout({ domain }: { domain: string }) {
+function CloudflareWildcardCallout({ domain }: { domain: string }) {
     const docsUrl = useDocsUrl();
     const example = `web-production.shop.${domain}`;
 

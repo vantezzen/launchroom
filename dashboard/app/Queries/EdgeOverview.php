@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Queries;
 
 use App\Data\Ingress\EdgeOverviewData;
-use App\Enums\ServerStatus;
 use App\Models\Server;
 use App\Services\Ingress\EdgeServers;
 use App\Support\DocsUrl;
@@ -38,7 +37,7 @@ final readonly class EdgeOverview
 
         $servers = Server::query()
             ->when($teamId !== null, static fn ($query) => $query->where('team_id', $teamId))
-            ->whereIn('status', [ServerStatus::Online->value, ServerStatus::Unreachable->value, ServerStatus::Offline->value])
+            ->approved()
             ->count();
 
         return new EdgeOverviewData(

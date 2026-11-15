@@ -1,0 +1,60 @@
+# The dev "fake server" every server-N extends (compose.yml: server-1,
+# compose.multi.yml: server-2, server-3): a privileged dind container that
+# runs launchroomd (dev/dind) against its own Docker daemon. Not a project
+# file: the services only `extends` it, so what one fake server gets, all get.
+# Each server adds its name, volumes, ports and its own host config.
+
+services:
+  fake-server:
+    image: launchroom-dev-dind:dev
+    pull_policy: never
+    build:
+      context: ./dind
+      args:
+        DIND_IMAGE: ${LR_DIND_IMAGE:?run through make or dev/bin/compose.sh (deploy/pins.env)}
+        UID: ${LR_DEV_UID:-1000}
+        GID: ${LR_DEV_GID:-1000}
+      labels:
+        launchroom.dev: "true"
+    labels:
+      launchroom.dev: "true"
+    # The ONLY privileged containers in the stack are the dind fake servers.
+    privileged: true
+    # Everything deployed in dev runs inside the fake servers: cap them so a
+    # busy test app can't take the whole machine.
+    cpus: ${LR_DEV_SERVER_CPUS:-2}
+    restart: unless-stopped
+    environment:
+      # Extra system image pins (host config): `make caddy-image-pin` adds the
+      # local launchroom-caddy build here.
+      LR_SYSTEM_IMAGE_DIGESTS: ${LR_DEV_SYSTEM_IMAGE_DIGESTS:-}
+      # Dev never asks IP echo services (fake servers have no public address).
+      LR_PUBLIC_IP_DETECT: "off"
+      LR_CONTROL_PLANE_URL: http://dashboard:8000
+      LR_CP_KEY: ${LR_DEV_CP_KEY:-}
+      LR_JOIN_TOKEN_FILE: /data/join-token
+      # Alternative to LR_CP_KEY (a file in the data volume); if both are set they must match.
+      LR_CP_KEY_FILE: /data/cp-key
+      # Redirects point at the host-mapped HTTPS port (apps on https://<name>.localhost:8443).
+      LR_INGRESS_HTTPS_PORT: "${LR_DEV_HTTPS_PORT:-8443}"
+      LR_DOCKERD_ARGS: ${LR_DEV_DOCKERD_ARGS:-}
+      # Fixture repositories are cloned over plain http from the dev git server
+      # and the dev Forgejo (profile "forgejo", docs/19 §8).
+      LR_BUILD_INSECURE_GIT_HOSTS: git-fixtures,forgejo
+      # The dev S3 target (profile "backups") speaks plain http (docs/14 §3).
+      LR_BACKUP_INSECURE_HOSTS: versitygw
+      # Network isolation of apps and builds (nftables in the fake server's
+      # kernel namespace, docs/05 §1). Dev apps that must reach a dev-stack
+      # service (e.g. mailpit) need its CIDR in LR_DEV_FIREWALL_ALLOW_PRIVATE.
+      LR_FIREWALL: ${LR_DEV_FIREWALL:-enforce}
+      LR_FIREWALL_ALLOW_PRIVATE: ${LR_DEV_FIREWALL_ALLOW_PRIVATE:-}
+      # The dev Headscale (make up-multi) speaks plain http (docs/05 §2).
+      LR_MESH_INSECURE_LOGIN_HOSTS: headscale
+    volumes:
+      - daemon-bin:/opt/launchroom/bin:ro # built by `make dev-daemon`
+    healthcheck:
+      test: ["CMD", "docker", "info"]
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
+      retries: 6

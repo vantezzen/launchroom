@@ -7,6 +7,7 @@ import { Spinner } from '@/components/ui/spinner';
 import { AuthFrame, AuthNotice } from '@/features/auth/auth-frame';
 import { login } from '@/routes';
 import { email } from '@/routes/password';
+import { noLayout } from '@/lib/pages';
 
 export default function ForgotPassword({ status }: { status?: string }) {
     return (
@@ -57,3 +58,5 @@ export default function ForgotPassword({ status }: { status?: string }) {
         </AuthFrame>
     );
 }
+
+ForgotPassword.layout = noLayout;

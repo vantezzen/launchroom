@@ -1,4 +1,24 @@
-import type { TimeRangeOption } from '@/components/charts/time-range-select';
+import type { LucideIcon } from 'lucide-react';
+
+/** One choice of a range or filter control (`TimeRangeSelect`). */
+export type TimeRangeOption<T extends string = string> = {
+    value: T;
+    label: string;
+};
+
+export type DrillAction = {
+    label: string;
+    href: string;
+    icon?: LucideIcon;
+};
+
+/**
+ * What a chart offers for one bucket (design-system §13.8 "Drill-down"):
+ * the page builds the links from the bucket's window and its scope,
+ * usually "Logs from 14:00 to 15:00", "Errors only" and the deployments
+ * around that time. Return [] to make a bucket not selectable.
+ */
+export type ChartDrill = (window: ObserveWindow) => DrillAction[];
 
 /**
  * The observe scope (docs/08 §1, design-system §5.3): one time range and
@@ -8,15 +28,28 @@ import type { TimeRangeOption } from '@/components/charts/time-range-select';
  * pages keeps what you were looking at. Each page supports a subset of the ranges and snaps
  * anything else to the nearest one it has.
  */
-export type ObserveRange = '15m' | '1h' | '24h' | '7d' | '30d';
+export type ObserveRange =
+    | App.Enums.LogRange
+    | App.Enums.AnalyticsRange
+    | ResourcesRange;
 
-export const RANGE_SECONDS: Record<ObserveRange, number> = {
-    '15m': 900,
-    '1h': 3600,
-    '24h': 86_400,
-    '7d': 604_800,
-    '30d': 2_592_000,
-};
+/**
+ * The length of a range from its value (`15m`, `7d`, `1y`): the rule of
+ * App\Enums\Concerns\HasRangeLength.
+ */
+export function rangeSeconds(range: string): number | null {
+    const match = /^([1-9]\d*)([mhdy])$/.exec(range);
+
+    if (match === null) {
+        return null;
+    }
+
+    const unit = { m: 60, h: 3600, d: 86_400, y: 365 * 86_400 }[
+        match[2] as 'm' | 'h' | 'd' | 'y'
+    ];
+
+    return Number(match[1]) * unit;
+}
 
 /** Control labels, the same on every page. */
 export const RANGE_LABEL: Record<ObserveRange, string> = {
@@ -39,17 +72,27 @@ export const RANGE_WORDS: Record<ObserveRange, string> = {
 /** Every observe page opens on the last day unless the URL says otherwise. */
 export const DEFAULT_RANGE: ObserveRange = '24h';
 
-/** The ranges each page offers. */
+/**
+ * Every case of the PHP enum `T`, checked at compile time: a case added on
+ * the server fails the build until the list has it.
+ */
+function allOf<T extends string>() {
+    return <const L extends readonly T[]>(
+        list: L & ([T] extends [L[number]] ? unknown : never),
+    ): L => list;
+}
+
+/** Analytics → Resources and the server pages offer three of the MetricRange cases. */
+type ResourcesRange = Extract<App.Enums.MetricRange, '1h' | '24h' | '7d'>;
+
 export const RANGE_SETS = {
-    logs: ['15m', '1h', '24h', '7d', '30d'],
-    /** Analytics → Resources and the server pages (usage samples). */
-    resources: ['1h', '24h', '7d'],
-    /** Analytics → Traffic, team Analytics and Security (hourly rollups). */
-    analytics: ['24h', '7d', '30d'],
-} as const satisfies Record<string, readonly ObserveRange[]>;
+    logs: allOf<App.Enums.LogRange>()(['15m', '1h', '24h', '7d', '30d']),
+    resources: allOf<ResourcesRange>()(['1h', '24h', '7d']),
+    analytics: allOf<App.Enums.AnalyticsRange>()(['24h', '7d', '30d']),
+};
 
 export function isObserveRange(value: unknown): value is ObserveRange {
-    return typeof value === 'string' && value in RANGE_SECONDS;
+    return typeof value === 'string' && Object.hasOwn(RANGE_LABEL, value);
 }
 
 /** "last 7 days"; unknown values read as the default range. */
@@ -78,13 +121,14 @@ export function snapRange<T extends ObserveRange>(
         return wanted as T;
     }
 
-    const target = Math.log(RANGE_SECONDS[wanted]);
+    const seconds = (range: ObserveRange) => rangeSeconds(range) ?? 0;
+    const target = Math.log(seconds(wanted));
 
     return [...supported].sort(
         (a, b) =>
-            Math.abs(Math.log(RANGE_SECONDS[a]) - target) -
-                Math.abs(Math.log(RANGE_SECONDS[b]) - target) ||
-            RANGE_SECONDS[b] - RANGE_SECONDS[a],
+            Math.abs(Math.log(seconds(a)) - target) -
+                Math.abs(Math.log(seconds(b)) - target) ||
+            seconds(b) - seconds(a),
     )[0];
 }
 

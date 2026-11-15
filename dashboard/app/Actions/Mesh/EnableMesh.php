@@ -12,7 +12,7 @@ use App\Enums\Mesh\MeshMode;
 use App\Events\NodeStateInvalidated;
 use App\Exceptions\DomainRuleViolation;
 use App\Models\InstanceSettings;
-use App\Queries\MeshServers;
+use App\Models\Server;
 use App\Services\Mesh\Exceptions\HeadscaleUnavailable;
 use App\Services\Mesh\HeadscaleConnection;
 use App\Services\Mesh\MeshPolicy;
@@ -79,7 +79,7 @@ final readonly class EnableMesh
         $settings = InstanceSettings::current();
 
         try {
-            foreach (MeshServers::query()->whereNull('mesh_ip')->orderBy('id')->get() as $server) {
+            foreach (Server::query()->meshMembers()->whereNull('mesh_ip')->orderBy('id')->get() as $server) {
                 $this->issueKey->handle($client, $server, $settings);
             }
         } catch (HeadscaleUnavailable $e) {
@@ -87,7 +87,7 @@ final readonly class EnableMesh
 
             throw $e;
         } finally {
-            event(new NodeStateInvalidated(MeshServers::ids()));
+            NodeStateInvalidated::mesh();
         }
 
         if (! $wasOn) {

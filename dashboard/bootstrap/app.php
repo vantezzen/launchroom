@@ -10,6 +10,7 @@ use App\Http\Middleware\RespectInstanceFreeze;
 use App\Http\Middleware\SecurityHeaders;
 use App\Http\Middleware\ThrottleRequestsPerRoute;
 use App\Http\Middleware\UseDashboardOrigin;
+use App\Http\Routing\RouteFamily;
 use App\Support\SensitiveInput;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -25,6 +26,7 @@ return Application::configure(basePath: dirname(__DIR__))
         web: __DIR__.'/../routes/web.php',
         commands: __DIR__.'/../routes/console.php',
         health: '/up',
+        // Machine-facing prefixes have a RouteFamily (freeze, origin redirects, error rendering).
         then: static function (): void {
             // Daemon API: no web group (no session/cookies/CSRF); its own
             // signature middleware inside (docs/03 §4.1).
@@ -36,8 +38,8 @@ return Application::configure(basePath: dirname(__DIR__))
             // Settings → API tokens, CLI sign-in approval, API reference (web group inside).
             Route::group([], __DIR__.'/../routes/api-tokens.php');
 
-            // GitHub integration: dashboard pages (web group inside) and the
-            // public, signature-verified webhook (no web group).
+            // Git providers: dashboard pages (web group inside) and the
+            // public, signature-verified webhooks (no web group).
             Route::group([], __DIR__.'/../routes/git.php');
 
             // Installer downloads (/install/server.sh): public, no web group.
@@ -109,7 +111,7 @@ return Application::configure(basePath: dirname(__DIR__))
         // Laravel's dontFlash matches exact keys only; also drop anything
         // that looks like a password, token or secret, at any depth.
         $exceptions->render(function (ValidationException $e, Request $request) {
-            if ($request->is('api/*', 'daemon/*', 'move/*') || $request->expectsJson() || $e->response !== null) {
+            if (RouteFamily::of($request)->rendersJson() || $request->expectsJson() || $e->response !== null) {
                 return null;
             }
 
@@ -121,12 +123,12 @@ return Application::configure(basePath: dirname(__DIR__))
         });
 
         $exceptions->shouldRenderJsonWhen(
-            fn (Request $request): bool => $request->is('api/*', 'daemon/*', 'move/*') || $request->expectsJson(),
+            fn (Request $request): bool => RouteFamily::of($request)->rendersJson() || $request->expectsJson(),
         );
 
         // Use-case refusals carry user-facing messages (docs/10 §2.2 rule 10).
         $exceptions->render(function (DomainRuleViolation $e, Request $request) {
-            if ($request->is('daemon/*', 'move/*')) {
+            if (RouteFamily::of($request) === RouteFamily::Daemon) {
                 return new JsonResponse(['error' => $e->getMessage()], $e->status);
             }
 

@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 namespace App\Actions\Logs;
 
-use App\Enums\DaemonTaskType;
+use App\Data\Protocol\V1\Tasks\LogsSpec;
+use App\Enums\DaemonTaskPurpose;
 use App\Enums\ServerStatus;
 use App\Enums\WorkloadPhase;
 use App\Models\DaemonTask;
@@ -13,6 +14,7 @@ use App\Models\Placement;
 use App\Models\ServiceInstance;
 use App\Models\User;
 use App\Queries\LogTails;
+use App\Services\Tasks\DaemonTasks;
 use App\Services\Tasks\TaskCancellation;
 use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Database\Query\Builder;
@@ -37,6 +39,7 @@ final readonly class StartLogTail
 
     public function __construct(
         private TaskCancellation $cancellation,
+        private DaemonTasks $tasks,
     ) {}
 
     public function handle(Environment $environment, User $user, ?ServiceInstance $only = null): int
@@ -44,13 +47,13 @@ final readonly class StartLogTail
         return DB::transaction(function () use ($environment, $user, $only): int {
             $placements = Placement::query()
                 ->where('team_id', $environment->team_id)
-                ->whereIn('phase', [WorkloadPhase::Starting->value, WorkloadPhase::Running->value, WorkloadPhase::Healthy->value, WorkloadPhase::Unhealthy->value])
+                ->whereIn('phase', WorkloadPhase::running())
                 ->whereIn('service_instance_id', ServiceInstance::query()
                     ->select('id')
                     ->where('environment_id', $environment->id)
                     ->when($only instanceof ServiceInstance, static fn ($query) => $query->whereKey($only?->id)))
                 ->whereHas('server', static fn (Builder $query) => $query->where('status', ServerStatus::Online->value))
-                ->with('serviceInstance:id,active_deployment_id')
+                ->with(['serviceInstance:id,active_deployment_id', 'server'])
                 ->orderBy('id')
                 ->limit(50)
                 ->get()
@@ -77,22 +80,20 @@ final readonly class StartLogTail
                     continue;
                 }
 
-                DaemonTask::query()->create([
-                    'team_id' => $environment->team_id,
-                    'server_id' => $placement->server_id,
-                    'pinned_to_server' => true,
-                    'type' => DaemonTaskType::Logs,
-                    'spec' => (object) array_filter([
-                        'workload' => $placement->workload_id,
-                        'tail' => $existing->isEmpty() ? self::HISTORY : 0,
-                        'follow' => true,
-                        'since' => $existing->isEmpty() ? null : CarbonImmutable::now()->utc()->format('Y-m-d\TH:i:s\Z'),
-                    ], static fn (mixed $value): bool => $value !== null),
-                    'max_attempts' => 1,
-                    'timeout_seconds' => LogTails::SECONDS,
-                    'deployment_id' => $placement->deployment_id,
-                    'purpose' => LogTails::purpose($user),
-                ]);
+                $this->tasks->create(
+                    $environment->team_id,
+                    new LogsSpec(
+                        workload: $placement->workload_id,
+                        tail: $existing->isEmpty() ? self::HISTORY : 0,
+                        follow: true,
+                        since: $existing->isEmpty() ? null : CarbonImmutable::now()->utc()->format('Y-m-d\TH:i:s\Z'),
+                    ),
+                    LogTails::SECONDS,
+                    pin: $placement->server,
+                    purpose: DaemonTaskPurpose::LogTail,
+                    deploymentId: $placement->deployment_id,
+                    requestedById: $user->id,
+                );
             }
 
             return $followed;

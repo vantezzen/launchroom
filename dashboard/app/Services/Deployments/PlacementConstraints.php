@@ -6,7 +6,6 @@ namespace App\Services\Deployments;
 
 use App\Data\Services\ScalingSettings;
 use App\Enums\ServerRole;
-use App\Enums\ServerStatus;
 use App\Exceptions\DomainRuleViolation;
 use App\Models\Server;
 use App\Models\ServiceInstance;
@@ -41,7 +40,7 @@ final readonly class PlacementConstraints
 
         $known = Server::query()
             ->where('team_id', $instance->team_id)
-            ->where('status', '!=', ServerStatus::Revoked->value)
+            ->notRevoked()
             ->whereIn('public_id', [...$allow, ...$deny])
             ->get(['public_id'])
             ->map(static fn (Server $server): string => $server->public_id)

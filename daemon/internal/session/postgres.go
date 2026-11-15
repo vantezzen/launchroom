@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/vantezzen/launchroom/daemon/internal/dbengine"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
 
@@ -21,19 +22,11 @@ type postgres struct {
 }
 
 func newPostgres(env envMap, ex execer, container string) (*postgres, error) {
-	user, err := ident(env, "postgres", "POSTGRES_USER")
+	l, err := dbengine.LoginOf(state.EnginePostgres, env)
 	if err != nil {
 		return nil, err
 	}
-	db, err := ident(env, user, "POSTGRES_DB")
-	if err != nil {
-		return nil, err
-	}
-	pw, err := password(env, "POSTGRES_PASSWORD")
-	if err != nil {
-		return nil, err
-	}
-	return &postgres{p: newProc(ex, container, "PGPASSWORD="+pw, "PGAPPNAME=launchroom"), user: user, db: db}, nil
+	return &postgres{p: newProc(ex, container, "PGPASSWORD="+l.Password, "PGAPPNAME=launchroom"), user: l.User, db: l.Database}, nil
 }
 
 func token() string {
@@ -42,7 +35,7 @@ func token() string {
 	return hex.EncodeToString(b)
 }
 
-// pgArgv is the psql argv for one statement (docs/03 §11.4).
+// argv is the psql argv for one statement (docs/03 §11.4).
 func (pg *postgres) argv(statement, null, marker string) []string {
 	return []string{
 		"psql", "-X", "-q", "--csv", "--pset=null=" + null,

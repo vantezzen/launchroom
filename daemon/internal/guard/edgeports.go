@@ -9,6 +9,8 @@ import (
 	"net"
 	"net/http"
 	"time"
+
+	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
 
 // RootlessOptions describes a rootless Docker host (docs/05 §4, D49).
@@ -93,7 +95,7 @@ func (s *Server) EnsureEdgePorts(ctx context.Context) ([]EdgePort, error) {
 			var st rkPortStatus
 			err := rkCall(ctx, hc, http.MethodPost, rkPortSpec{Proto: p.proto, ParentIP: parent, ParentPort: p.port, ChildPort: p.port}, &st)
 			if err != nil {
-				e.Message = truncate(err.Error(), 300)
+				e.Message = state.Shorten(err.Error(), 300)
 			} else {
 				e.Exposed = true
 			}
@@ -134,7 +136,7 @@ func rkCall(ctx context.Context, hc *http.Client, method string, in, out any) er
 		}
 		_ = json.Unmarshal(raw, &e)
 		if e.Message == "" {
-			e.Message = truncate(string(raw), 200)
+			e.Message = state.Shorten(string(raw), 200)
 		}
 		return fmt.Errorf("HTTP %d: %s", res.StatusCode, e.Message)
 	}

@@ -18,8 +18,8 @@ import {
     PopoverAnchor,
     PopoverContent,
 } from '@/components/ui/popover';
-import { SettingsRow } from '@/features/settings/settings-card';
 import { destroy, test, update } from '@/routes/notifications/channels';
+import { SettingsRow } from '@/components/settings/settings-card';
 
 type Channel = App.Data.Alerts.AlertChannelData;
 

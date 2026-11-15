@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Data\Protocol\V1;
 
+use App\Support\Protocol\Grammar;
 use Spatie\LaravelData\Attributes\Validation\In;
 use Spatie\LaravelData\Attributes\Validation\Max;
 use Spatie\LaravelData\Attributes\Validation\Min;
@@ -19,16 +20,14 @@ use Spatie\LaravelData\Optional;
  */
 final class WafStatus extends Data
 {
-    public const string LABEL = '/^[A-Za-z0-9][A-Za-z0-9 ._\/+-]{0,63}$/D';
-
     public function __construct(
         #[In(['on', 'off', 'error', 'unsupported'])]
         public string $state,
         #[Min(0)]
         public int $routes,
-        #[Regex(self::LABEL)]
+        #[Regex(Grammar::WAF_LABEL)]
         public string|Optional $engine = new Optional,
-        #[Regex(self::LABEL)]
+        #[Regex(Grammar::WAF_LABEL)]
         public string|Optional $ruleSet = new Optional,
         #[Min(0)]
         public int|Optional $droppedRecords = new Optional,

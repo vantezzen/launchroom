@@ -10,15 +10,19 @@ use App\Data\Blueprints\BlueprintScaling;
 use App\Data\Blueprints\BlueprintService;
 use App\Data\Blueprints\BlueprintVariable;
 use App\Data\Blueprints\ProjectBlueprint;
+use App\Data\Forms\NumberRangeData;
 use App\Data\Services\HealthcheckSettings;
+use App\Data\Services\ScalingSettings;
 use App\Enums\ServiceKind;
 use App\Enums\WorkloadCapability;
 use App\Support\Connections\ProvidedVariables;
 use App\Support\Hostname;
 use App\Support\Images\ImageReference;
 use App\Support\Services\ConfigFileRules;
+use App\Support\Services\VolumeMountRules;
 use App\Support\Slug;
 use App\Support\Variables\GeneratedValues;
+use App\Support\Variables\VariableKey;
 use App\Support\Variables\VariableReferences;
 
 /**
@@ -29,16 +33,6 @@ use App\Support\Variables\VariableReferences;
 final class BlueprintValidator
 {
     public const int MAX_SERVICES = 50;
-
-    /** launchroomd's capability allow-list (docs/03 §8). */
-    /** launchroomd's capability allow-list ({@see WorkloadCapability}). */
-    public const array CAPABILITIES = ['CHOWN', 'DAC_OVERRIDE', 'FOWNER', 'NET_BIND_SERVICE', 'SETGID', 'SETUID'];
-
-    private const string KEY = '/^[A-Za-z_][A-Za-z0-9_]{0,255}$/D';
-
-    private const string MOUNT_PATH = '/^\/[A-Za-z0-9._@+=,-]+(?:\/[A-Za-z0-9._@+=,-]+)*$/D';
-
-    private const array FORBIDDEN_MOUNTS = ['/proc', '/sys', '/dev', '/var/run/docker.sock', '/run/docker.sock'];
 
     /**
      * @return list<string> one sentence per problem; empty when valid
@@ -107,7 +101,7 @@ final class BlueprintValidator
     {
         $errors = [];
         $key = $service->key;
-        $web = in_array($service->kind, [ServiceKind::App, ServiceKind::Image], true);
+        $web = $service->kind->isWeb();
 
         if (trim($service->name) === '' || mb_strlen($service->name) > 63) {
             $errors[] = "{$key}: the name must be 1 to 63 characters.";
@@ -155,8 +149,8 @@ final class BlueprintValidator
             $errors[] = "{$key}: the engine driver manages a database’s command, volume and size.";
         }
 
-        if (array_diff($service->capabilities, self::CAPABILITIES) !== []) {
-            $errors[] = "{$key}: capabilities must be among ".implode(', ', self::CAPABILITIES).'.';
+        if (array_diff($service->capabilities, WorkloadCapability::values()) !== []) {
+            $errors[] = "{$key}: capabilities must be among ".implode(', ', WorkloadCapability::values()).'.';
         }
 
         if ($service->volumes !== [] && ! $web) {
@@ -164,9 +158,7 @@ final class BlueprintValidator
         }
 
         foreach ($service->volumes as $index => $path) {
-            if (preg_match(self::MOUNT_PATH, $path) !== 1 || strlen($path) > 255
-                || array_any(explode('/', $path), static fn (string $segment): bool => $segment === '.' || $segment === '..')
-                || array_any(self::FORBIDDEN_MOUNTS, static fn (string $forbidden): bool => $path === $forbidden || str_starts_with($path, $forbidden.'/'))) {
+            if (! VolumeMountRules::isMountable($path)) {
                 $errors[] = "{$key}: {$path} can’t be a mount path.";
             }
 
@@ -208,12 +200,13 @@ final class BlueprintValidator
         }
 
         if ($service->scaling instanceof BlueprintScaling) {
-            $scaling = $service->scaling;
+            foreach (['replicas' => 'replicas', 'cpus' => 'CPUs', 'memoryMb' => 'memory (MB)'] as $field => $label) {
+                $value = $service->scaling->{$field};
+                [$min, $max] = NumberRangeData::bounds(ScalingSettings::class, $field);
 
-            if (($scaling->replicas !== null && ($scaling->replicas < 0 || $scaling->replicas > 64))
-                || ($scaling->cpus !== null && ($scaling->cpus < 0.05 || $scaling->cpus > 1024))
-                || ($scaling->memoryMb !== null && ($scaling->memoryMb < 16 || $scaling->memoryMb > 1048576))) {
-                $errors[] = "{$key}: replicas 0–64, CPUs 0.05–1024 and memory 16 MB–1 TB.";
+                if ($value !== null && ($value < $min || $value > $max)) {
+                    $errors[] = "{$key}: {$label} must be between {$min} and {$max}.";
+                }
             }
         }
 
@@ -259,7 +252,7 @@ final class BlueprintValidator
                 continue;
             }
 
-            if ($target->kind !== ServiceKind::Database && ! in_array($target->kind, [ServiceKind::App, ServiceKind::Image], true)) {
+            if ($target->kind !== ServiceKind::Database && ! $target->kind->isWeb()) {
                 $errors[] = "{$key}: {$connection->to} has no address to connect to.";
             }
 
@@ -280,11 +273,11 @@ final class BlueprintValidator
     {
         $errors = [];
 
-        if (preg_match(self::KEY, $variable->key) !== 1) {
+        if (! VariableKey::isValid($variable->key)) {
             $errors[] = "{$owner}: “{$variable->key}” isn’t a valid variable name.";
         }
 
-        if (strlen($variable->value) > 131072 || str_contains($variable->value, "\0")) {
+        if (strlen($variable->value) > VariableKey::MAX_VALUE_BYTES || str_contains($variable->value, "\0")) {
             $errors[] = "{$owner}: {$variable->key} is too long.";
         }
 

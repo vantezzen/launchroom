@@ -4,10 +4,14 @@ declare(strict_types=1);
 
 namespace App\Models\Backups;
 
+use App\Broadcasting\ServiceActivityTopic;
 use App\Enums\Backups\BackupReason;
 use App\Enums\Backups\BackupRunStatus;
 use App\Enums\Backups\BackupSubject;
+use App\Enums\Contracts\HasTransitionTable;
+use App\Events\Broadcasts\ServiceActivityChanged;
 use App\Models\Concerns\HasPublicId;
+use App\Models\Concerns\HasStatusTransitions;
 use App\Models\DaemonTask;
 use App\Models\Server;
 use App\Models\ServiceInstance;
@@ -59,6 +63,9 @@ final class BackupRun extends Model
 {
     use HasPublicId;
 
+    /** @use HasStatusTransitions<BackupRunStatus> */
+    use HasStatusTransitions;
+
     /** @var array<string, mixed> */
     protected $attributes = [
         'status' => 'pending',
@@ -70,23 +77,19 @@ final class BackupRun extends Model
     }
 
     /**
-     * The only way a run's status changes (docs/10 §2.2 rule 3).
+     * @param  BackupRunStatus  $from
+     * @param  BackupRunStatus  $to
      */
-    public function transitionTo(BackupRunStatus $to, ?string $error = null): void
+    protected function recordTransition(HasTransitionTable $from, HasTransitionTable $to, ?string $note): void
     {
-        $this->status->assertCanTransitionTo($to);
-        $this->status = $to;
-
         if ($to === BackupRunStatus::Running) {
             $this->forceFill(['started_at' => $this->started_at ?? now()]);
         }
 
         if ($to->isTerminal()) {
             $this->forceFill(['started_at' => $this->started_at ?? now(), 'finished_at' => now()]);
-            $this->error = $error === null ? null : mb_substr($error, 0, 2048);
+            $this->error = $note;
         }
-
-        $this->save();
     }
 
     /**
@@ -168,5 +171,10 @@ final class BackupRun extends Model
             'started_at' => 'datetime',
             'finished_at' => 'datetime',
         ];
+    }
+
+    protected function transitioned(HasTransitionTable $from, HasTransitionTable $to): void
+    {
+        ServiceActivityChanged::about($this->serviceInstance, ServiceActivityTopic::Backups);
     }
 }

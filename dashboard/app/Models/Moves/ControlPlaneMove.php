@@ -4,8 +4,12 @@ declare(strict_types=1);
 
 namespace App\Models\Moves;
 
+use App\Data\Moves\HandoverManifestData;
+use App\Data\Moves\MoveReceiverData;
+use App\Enums\Contracts\HasTransitionTable;
 use App\Enums\Moves\ControlPlaneMoveStatus;
 use App\Models\Concerns\HasPublicId;
+use App\Models\Concerns\HasStatusTransitions;
 use App\Models\Server;
 use App\Models\ServerEnrollment;
 use Carbon\CarbonImmutable;
@@ -34,12 +38,12 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property CarbonImmutable $token_expires_at
  * @property string|null $receiver_public_key X25519, base64
  * @property string|null $claim_code
- * @property array{hostname?: string, arch?: string, address?: string|null, version?: string|null}|null $receiver
+ * @property MoveReceiverData|null $receiver
  * @property CarbonImmutable|null $claimed_at
  * @property CarbonImmutable|null $receiver_seen_at
  * @property int|null $enrollment_id
  * @property string|null $sealed_join_token
- * @property array{kind?: string, move?: string, createdAt?: string, appUrl?: string, canonicalUrl?: string, database?: array{chunks: int, chunkBytes: int, sizeBytes: int, digests: list<string>, digest: string}, sealedKey?: string, keys?: array{bytes: int, sha256: string}}|null $handover the hand-over manifest
+ * @property HandoverManifestData|null $handover the hand-over manifest
  * @property CarbonImmutable|null $frozen_at
  * @property CarbonImmutable|null $handed_over_at
  * @property string|null $new_url
@@ -60,6 +64,9 @@ final class ControlPlaneMove extends Model
 {
     use HasPublicId;
 
+    /** @use HasStatusTransitions<ControlPlaneMoveStatus> */
+    use HasStatusTransitions;
+
     /** @var array<string, mixed> */
     protected $attributes = [
         'status' => 'waiting_for_server',
@@ -76,25 +83,22 @@ final class ControlPlaneMove extends Model
     public static function open(): ?self
     {
         return self::query()
-            ->whereNotIn('status', [ControlPlaneMoveStatus::HandedOver->value, ControlPlaneMoveStatus::Cancelled->value])
+            ->whereIn('status', ControlPlaneMoveStatus::nonTerminal())
             ->latest('id')
             ->first();
     }
 
     /**
-     * The only way its status changes (docs/10 §2.2 rule 3).
+     * @param  ControlPlaneMoveStatus  $from
+     * @param  ControlPlaneMoveStatus  $to
      */
-    public function transitionTo(ControlPlaneMoveStatus $to, ?string $error = null): void
+    protected function recordTransition(HasTransitionTable $from, HasTransitionTable $to, ?string $note): void
     {
-        $this->status->assertCanTransitionTo($to);
-        $this->status = $to;
-        $this->error = $error === null ? null : mb_substr($error, 0, 2048);
+        $this->error = $note;
 
         if ($to->isTerminal()) {
             $this->forceFill(['finished_at' => now(), 'sealed_join_token' => null]);
         }
-
-        $this->save();
     }
 
     /**
@@ -137,10 +141,10 @@ final class ControlPlaneMove extends Model
         return [
             'status' => ControlPlaneMoveStatus::class,
             'token_expires_at' => 'datetime',
-            'receiver' => 'array',
+            'receiver' => MoveReceiverData::class,
             'claimed_at' => 'datetime',
             'receiver_seen_at' => 'datetime',
-            'handover' => 'array',
+            'handover' => HandoverManifestData::class,
             'frozen_at' => 'datetime',
             'handed_over_at' => 'datetime',
             'finished_at' => 'datetime',

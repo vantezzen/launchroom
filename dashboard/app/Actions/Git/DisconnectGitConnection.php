@@ -11,7 +11,6 @@ use App\Enums\AuditAction;
 use App\Models\Git\GitConnection;
 use App\Models\Git\GitRepository;
 use App\Services\Git\GitProviders;
-use App\Services\Git\Providers\ApiGitProvider;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -29,9 +28,9 @@ final readonly class DisconnectGitConnection
 
     public function handle(GitConnection $connection, AuditActor $actor): void
     {
-        $provider = $this->providers->for($connection->provider);
+        $provider = $this->providers->connection($connection->provider);
 
-        if ($provider instanceof ApiGitProvider && $connection->isActive()) {
+        if ($connection->isActive()) {
             foreach ($connection->repositories()->whereNotNull('hook_id')->get() as $repository) {
                 /** @var GitRepository $repository */
                 $repository->setRelation('gitConnection', $connection);

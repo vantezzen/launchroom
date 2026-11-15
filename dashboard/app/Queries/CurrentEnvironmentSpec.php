@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Queries;
 
-use App\Casts\ServiceSourceCast;
 use App\Data\Protocol\V1\PhpExtension;
 use App\Data\Services\DatabaseSource;
+use App\Data\Services\ServiceSources;
 use App\Data\Specs\ConnectionSpec;
 use App\Data\Specs\DomainSpec;
 use App\Data\Specs\EnvironmentMetaSpec;
@@ -14,31 +14,39 @@ use App\Data\Specs\EnvironmentSpec;
 use App\Data\Specs\ServiceSpec;
 use App\Data\Specs\VariableSpec;
 use App\Data\Specs\VolumeSpec;
+use App\Data\Variables\VariableTargetRow;
+use App\Drivers\DatabaseEngines\DatabaseEngines;
 use App\Enums\ConnectionStyle;
 use App\Enums\DatabaseEngine;
 use App\Enums\EnvironmentKind;
 use App\Enums\PreviewStrategy;
+use App\Enums\VariableLayer;
 use App\Enums\VariableType;
 use App\Models\Connection;
 use App\Models\Domain;
 use App\Models\Environment;
 use App\Models\ServiceInstance;
 use App\Models\Variable;
-use App\Models\VariableTarget;
 use App\Models\Volume;
 use App\Models\VolumeMount;
 use App\Support\Builds\PhpExtensions;
 use App\Support\Variables\VariableTargeting;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 
 /**
  * Snapshots an environment's current intent (docs/06 §4: "intent tables are
  * the draft") as an EnvironmentSpec. A fixed number of queries regardless of
- * the number of services (no N+1).
+ * the number of services (no N+1). `$stagedRemoval` keeps one service whose
+ * removal is staged in the snapshot, for read views of it (RouteScope).
  */
-final class CurrentEnvironmentSpec
+final readonly class CurrentEnvironmentSpec
 {
-    public function get(Environment $environment): EnvironmentSpec
+    public function __construct(
+        private DatabaseEngines $engines,
+    ) {}
+
+    public function get(Environment $environment, ?ServiceInstance $stagedRemoval = null): EnvironmentSpec
     {
         $environment->loadMissing('project');
         $project = $environment->project;
@@ -46,8 +54,14 @@ final class CurrentEnvironmentSpec
         $branch = $environment->kind === EnvironmentKind::Preview ? $environment->pr_head_ref : null;
 
         $instances = ServiceInstance::query()
-            ->current()
             ->where('environment_id', $environment->id)
+            ->where(static function (Builder $query) use ($stagedRemoval): void {
+                $query->whereNull('removed_at');
+
+                if ($stagedRemoval instanceof ServiceInstance) {
+                    $query->orWhere('id', $stagedRemoval->id);
+                }
+            })
             ->with(['service', 'domains', 'volumes', 'volumeMounts.volume'])
             ->get();
 
@@ -149,7 +163,7 @@ final class CurrentEnvironmentSpec
                 name: $service->name,
                 kind: $service->kind,
                 parentId: $parent?->public_id,
-                source: ServiceSourceCast::toArray($service->source),
+                source: ServiceSources::toArray($service->source),
                 icon: $service->icon,
                 enabled: $instance->enabled,
                 branchOverride: $instance->branch_override,
@@ -259,7 +273,7 @@ final class CurrentEnvironmentSpec
             }
 
             if (isset($laravel[$app]) || $this->detectedPhp($instance)) {
-                $extensions[$app] = PhpExtensions::forEngines($list);
+                $extensions[$app] = PhpExtensions::forEngines($this->engines, $list);
             }
         }
 
@@ -268,22 +282,16 @@ final class CurrentEnvironmentSpec
 
     private function detectedPhp(ServiceInstance $instance): bool
     {
-        $summary = $instance->plan['summary'] ?? null;
-
-        return is_array($summary) && ($summary['provider'] ?? null) === 'php';
+        return $instance->plan?->summary?->provider === 'php';
     }
 
     private function variableSpec(Variable $variable, Environment $environment, ?string $branch): ?VariableSpec
     {
-        $targets = array_values($variable->targets->map(static fn (VariableTarget $target): array => [
-            'environment_id' => $target->environment_id,
-            'all_previews' => $target->all_previews,
-            'branch_pattern' => $target->branch_pattern,
-        ])->all());
+        $targets = array_values($variable->targets->map(VariableTargetRow::of(...))->all());
 
         $layer = VariableTargeting::layer($targets, $environment->id, $environment->kind, $branch);
 
-        if ($layer === null) {
+        if (! $layer instanceof VariableLayer) {
             return null;
         }
 
@@ -292,17 +300,17 @@ final class CurrentEnvironmentSpec
         // resolves to an empty value.
         $withheld = $environment->secrets_withheld
             && $variable->type === VariableType::Secret
-            && ! array_any($targets, static fn (array $target): bool => $target['environment_id'] === $environment->id);
+            && ! array_any($targets, static fn (VariableTargetRow $target): bool => $target->environmentId === $environment->id);
 
         return $this->toSpec($variable, $layer, $withheld);
     }
 
     private function connectionVariableSpec(Variable $variable): VariableSpec
     {
-        return $this->toSpec($variable, VariableSpec::LAYER_ENVIRONMENT);
+        return $this->toSpec($variable, VariableLayer::Environment);
     }
 
-    private function toSpec(Variable $variable, string $layer, bool $withheld = false): VariableSpec
+    private function toSpec(Variable $variable, VariableLayer $layer, bool $withheld = false): VariableSpec
     {
         return new VariableSpec(
             id: $variable->public_id,

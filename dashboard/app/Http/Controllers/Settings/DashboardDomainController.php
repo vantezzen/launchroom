@@ -11,6 +11,7 @@ use App\Actions\Instance\DashboardDomain\SwitchBackDashboardDomain;
 use App\Actions\Instance\DashboardDomain\SwitchDashboardDomain;
 use App\Data\Instance\StartDashboardDomainData;
 use App\Http\Controllers\Controller;
+use App\Http\Toast;
 use App\Models\DashboardDomainChange;
 use App\Models\User;
 use App\Queries\DashboardDomainSettings;
@@ -65,7 +66,9 @@ final class DashboardDomainController extends Controller
 
         $cancel->handle($this->auditActor($request, $user));
 
-        return back()->with('success', 'The new domain was dropped.');
+        Toast::success('The new domain was dropped.');
+
+        return back();
     }
 
     public function activate(Request $request, #[CurrentUser] User $user, SwitchDashboardDomain $switch): HttpResponse

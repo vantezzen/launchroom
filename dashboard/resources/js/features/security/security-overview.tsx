@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link } from '@inertiajs/react';
+import { Link, usePage } from '@inertiajs/react';
 import { Info, RefreshCw, ShieldCheck } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
@@ -9,17 +9,17 @@ import { EmptyState } from '@/components/patterns/empty-state';
 import { PageHeader } from '@/components/patterns/page';
 import { Section } from '@/components/patterns/section';
 import { TopBarActions } from '@/components/patterns/top-bar';
-import { relativeTime } from '@/components/time-ago';
 import { Button } from '@/components/ui/button';
 import {
     Tooltip,
     TooltipContent,
     TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { requestJson } from '@/features/projects/http';
+import { requestJson } from '@/lib/http';
 import { useObserveScope } from '@/hooks/use-observe-scope';
 import { RANGE_SETS, rangeOptions } from '@/lib/observe-scope';
 import { cn } from '@/lib/utils';
+import { edit as instanceSecurity } from '@/routes/instance-security';
 import { investigate as investigateRoute } from '@/routes/security/findings';
 import {
     check as checkRoute,
@@ -29,12 +29,16 @@ import {
 import { FindingSheet } from './finding-detail';
 import { ActionNeededList } from './action-needed';
 import { FirewallSection } from './firewall-section';
-import { card, plural } from './format';
+import { card } from './format';
 import { HowItWorks } from './how-it-works';
 import { InventorySection } from './inventory-section';
 import { SecurityHero } from './security-hero';
 import { groupActionNeeded } from './shape';
 import { WorthKnowing } from './worth-knowing';
+import { relativeTime, plural } from '@/lib/format';
+import { securityKeys } from './query-keys';
+import { ChannelEvents } from '@/components/channel-events';
+import { channelName } from '@/lib/realtime';
 
 type PageData = App.Data.Security.SecurityPageData;
 type Finding = App.Data.Security.FindingCardData;
@@ -61,9 +65,10 @@ export function SecurityOverview({
     const [howOpen, setHowOpen] = useState(false);
     const [finding, setFinding] = useState<string | null>(null);
     const client = useQueryClient();
+    const team = usePage().props.teams?.current?.id ?? null;
 
     const { data, isError } = useQuery({
-        queryKey: ['security', range, service, project],
+        queryKey: securityKeys.overview(range, service, project),
         queryFn: ({ signal }) =>
             requestJson<PageData>(
                 'get',
@@ -83,7 +88,7 @@ export function SecurityOverview({
     });
 
     const refresh = () =>
-        void client.invalidateQueries({ queryKey: ['security'] });
+        void client.invalidateQueries({ queryKey: securityKeys.all });
 
     const openHref = (href: string) => {
         const id = href.split('/').pop() ?? null;
@@ -94,7 +99,6 @@ export function SecurityOverview({
         try {
             await requestJson('post', checkRoute().url);
             toast.success('Checking every package now');
-            window.setTimeout(refresh, 4000);
         } catch (error) {
             toast.error((error as Error).message);
         }
@@ -124,6 +128,14 @@ export function SecurityOverview({
 
     return (
         <>
+            {team && (
+                <ChannelEvents
+                    channel={channelName('security', team)}
+                    event="security.changed"
+                    pollMs={60_000}
+                    onEvent={(event) => event && refresh()}
+                />
+            )}
             <TopBarActions>
                 <Button
                     variant="ghost"
@@ -192,7 +204,7 @@ export function SecurityOverview({
                             actions={
                                 data.canManageSources ? (
                                     <a
-                                        href="/settings/instance-security"
+                                        href={instanceSecurity.url()}
                                         className="text-signal hover:underline"
                                     >
                                         Settings

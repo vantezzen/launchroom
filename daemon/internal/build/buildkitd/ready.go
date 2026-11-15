@@ -3,7 +3,6 @@ package buildkitd
 import (
 	"context"
 	"fmt"
-	"os"
 	"regexp"
 	"slices"
 	"strings"
@@ -12,6 +11,7 @@ import (
 	bkclient "github.com/moby/buildkit/client"
 
 	"github.com/vantezzen/launchroom/daemon/internal/docker"
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
 
@@ -21,13 +21,7 @@ import (
 // by ReadyTimeout, instead of failing on the first dial. A container that
 // keeps crashing fails the build early with what Docker and its logs say.
 
-// Hint codes of BuildKit readiness failures (TaskFailure.hints; the
-// dashboard's FailureCatalogue explains them).
 const (
-	HintNotReady  = "buildkit-not-ready"
-	HintCrashLoop = "buildkit-crash-loop"
-	HintOOM       = "buildkit-oom"
-	HintUserns    = "buildkit-userns-restricted"
 	crashRestarts = 3                // restarts seen during one wait that make a crash loop
 	shortRun      = 10 * time.Second // Docker resets its restart backoff after 10 s of running
 	logTailLines  = 60
@@ -38,7 +32,7 @@ const (
 	stillWaitEvery = 30 * time.Second
 )
 
-// ProfileCommand loads AppArmorProfile on a host by hand (the same rules
+// ProfileCommand loads names.BuildkitAppArmorProfile on a host by hand (the same rules
 // the installers write; D58).
 const ProfileCommand = `printf 'abi <abi/4.0>,\ninclude <tunables/global>\nprofile launchroom-buildkit flags=(unconfined) {\n  userns,\n}\n' | sudo tee /etc/apparmor.d/launchroom-buildkit && sudo apparmor_parser -r -W /etc/apparmor.d/launchroom-buildkit`
 
@@ -56,7 +50,7 @@ type NotReadyError struct {
 	ExitCode  int
 	OOMKilled bool
 	// UsernsRestricted: the kernel restricts unprivileged user namespaces
-	// (Ubuntu 24.04+ AppArmor), which rootless BuildKit needs.
+	// (Ubuntu 23.10+ AppArmor), which rootless BuildKit needs.
 	UsernsRestricted bool
 	// LogTail are the container's last log lines (oldest first).
 	LogTail []string
@@ -78,7 +72,7 @@ func (e *NotReadyError) Error() string {
 	}
 	switch {
 	case e.UsernsRestricted:
-		b.WriteString(": the kernel blocks the user namespaces rootless BuildKit needs (kernel.apparmor_restrict_unprivileged_userns=1, Ubuntu 23.10 and later) and the AppArmor profile " + AppArmorProfile + " is not loaded")
+		b.WriteString(": the kernel blocks the user namespaces rootless BuildKit needs (kernel.apparmor_restrict_unprivileged_userns=1, Ubuntu 23.10 and later) and the AppArmor profile " + names.BuildkitAppArmorProfile + " is not loaded")
 	case e.OOMKilled:
 		b.WriteString(": it was killed for running out of memory")
 	}
@@ -103,17 +97,23 @@ func (e *NotReadyError) Logs() []string { return e.LogTail }
 func (e *NotReadyError) Hints() []state.FailureHint {
 	var out []state.FailureHint
 	if e.UsernsRestricted {
-		out = append(out, state.FailureHint{Code: HintUserns, Message: "This server's kernel blocks the user namespaces that rootless BuildKit needs (Ubuntu 23.10 and later restrict them through AppArmor). Allow them for launchroom's build container only: re-run the launchroom installer on the server and answer yes, or run `" + ProfileCommand + "`. launchroom switches to the profile within a few minutes; then redeploy."})
+		out = append(out, state.FailureHint{Code: state.HintBuildkitUsernsRestricted, Message: "This server's kernel blocks the user namespaces that rootless BuildKit needs (Ubuntu 23.10 and later restrict them through AppArmor). Allow them for launchroom's build container only: re-run the launchroom installer on the server and answer yes, or run `" + ProfileCommand + "`. launchroom switches to the profile within a few minutes; then redeploy."})
 	}
 	if e.OOMKilled {
-		out = append(out, state.FailureHint{Code: HintOOM, Message: "BuildKit was killed for running out of memory. Builds need more memory than this server has free: add swap or memory, or add a bigger build server."})
+		out = append(out, state.FailureHint{Code: state.HintBuildkitOOM, Message: "BuildKit was killed for running out of memory. Builds need more memory than this server has free: add swap or memory, or add a bigger build server."})
 	}
 	if e.CrashLoop || e.Restarts > 0 && e.State != "running" {
-		out = append(out, state.FailureHint{Code: HintCrashLoop, Message: "BuildKit keeps crashing on this server. Its last log lines are in the build log; the build is retried once."})
+		out = append(out, state.FailureHint{Code: state.HintBuildkitCrashLoop, Message: "BuildKit keeps crashing on this server. Its last log lines are in the build log; the build is retried once."})
 	} else {
-		out = append(out, state.FailureHint{Code: HintNotReady, Message: "BuildKit did not start in time on this server. The build is retried once; if it keeps happening, check the server's free memory and disk."})
+		out = append(out, NotReadyHint())
 	}
 	return out
+}
+
+// NotReadyHint is the hint of a BuildKit that is not running or did not
+// answer in time.
+func NotReadyHint() state.FailureHint {
+	return state.FailureHint{Code: state.HintBuildkitNotReady, Message: "BuildKit did not start in time on this server. The build is retried once; if it keeps happening, check the server's free memory and disk."}
 }
 
 // WaitClient connects to buildkitd like Client, but first waits (up to
@@ -164,7 +164,7 @@ func (m *Manager) WaitClient(ctx context.Context, waiting func(string)) (*bkclie
 			if first < 0 {
 				first = c.RestartCount
 			}
-			if c.Running && !c.Restarting {
+			if c.Running() && !c.Restarting() {
 				actx, acancel := context.WithTimeout(wctx, attemptTimeout)
 				cl, err := m.connect(actx, id)
 				acancel()
@@ -207,14 +207,14 @@ func (m *Manager) WaitClient(ctx context.Context, waiting func(string)) (*bkclie
 		last = c
 	}
 	icancel()
-	crash := crashLooping(last, last.RestartCount-first) || last.Restarting && last.RestartCount > first
+	crash := crashLooping(last, last.RestartCount-first) || last.Restarting() && last.RestartCount > first
 	return nil, m.notReady(ctx, lastID, &last, crash, time.Since(start), lastErr)
 }
 
 // crashLooping: Docker restarted it crashRestarts times during this wait,
 // or it had restarted many times already and its last runs were short.
 func crashLooping(c docker.Container, restartsSeen int) bool {
-	if c.Running && !c.Restarting {
+	if c.Running() && !c.Restarting() {
 		return false
 	}
 	short := !c.StartedAt.IsZero() && !c.FinishedAt.IsZero() && c.FinishedAt.Sub(c.StartedAt) < shortRun
@@ -225,22 +225,21 @@ func waitState(seen bool, c *docker.Container) string {
 	switch {
 	case !seen:
 		return "not started yet"
-	case c.Restarting:
+	case c.Restarting():
 		return fmt.Sprintf("restarting, %d restarts so far", c.RestartCount)
-	case c.Running:
+	case c.Running():
 		return "starting"
 	default:
-		return c.State
+		return string(c.State)
 	}
 }
 
-// notReady collects the diagnostics of a buildkitd that never answered.
 func (m *Manager) notReady(ctx context.Context, id string, c *docker.Container, crash bool, waited time.Duration, cause error) *NotReadyError {
 	e := &NotReadyError{
 		CrashLoop: crash, Restarts: c.RestartCount, ExitCode: c.ExitCode, OOMKilled: c.OOMKilled,
-		State: c.State, Waited: waited,
+		State: string(c.State), Waited: waited,
 	}
-	if c.Running && !c.Restarting {
+	if c.Running() && !c.Restarting() {
 		e.State = "running"
 		e.Err = cause // up, but never answered
 	}
@@ -248,12 +247,12 @@ func (m *Manager) notReady(ctx context.Context, id string, c *docker.Container, 
 	defer cancel()
 	_ = m.o.Docker.StreamLogs(lctx, id, docker.LogsOptions{Tail: logTailLines}, func(l docker.LogLine) error {
 		if t := strings.TrimSpace(l.Text); t != "" && !stackFrame(l.Text) {
-			e.LogTail = append(e.LogTail, clipLine(t, 300))
+			e.LogTail = append(e.LogTail, state.Shorten(t, 300))
 		}
 		return nil
 	})
 	e.LogTail = lastDistinct(e.LogTail, keepLogLines)
-	e.UsernsRestricted = usernsRestricted(m.o.UsernsSysctl, e.LogTail)
+	e.UsernsRestricted = m.restricted() && usernsFailure(e.LogTail)
 	return e
 }
 
@@ -269,20 +268,13 @@ func stackFrame(raw string) bool {
 
 var reUserns = regexp.MustCompile(`(?i)apparmor_restrict_unprivileged_userns|(rootlesskit|newuidmap|newgidmap|user namespace|/proc/self/exe).*(permission denied|operation not permitted)`)
 
-// usernsRestricted: the logs name the AppArmor restriction, or they show
-// rootlesskit failing to set up its user namespace while the sysctl says
-// unprivileged user namespaces are restricted. A restricted kernel without
-// matching logs (another cause) is not blamed.
-func usernsRestricted(sysctl string, logs []string) bool {
-	text := strings.Join(logs, "\n")
-	if strings.Contains(strings.ToLower(text), "apparmor_restrict_unprivileged_userns") {
-		return true
-	}
-	if !reUserns.MatchString(text) {
-		return false
-	}
-	b, err := os.ReadFile(sysctl) //nolint:gosec // fixed procfs path (tests: a temp file)
-	return err == nil && strings.TrimSpace(string(b)) == "1"
+// usernsFailure: the logs show rootlesskit failing to set up its user
+// namespace. Whether the host restricts user namespaces is a host fact read
+// up front (restricted); BuildKit's logs are the only place that tells
+// whether this crash is that failure, so they are matched here and only
+// blamed on the restriction when the host has it.
+func usernsFailure(logs []string) bool {
+	return reUserns.MatchString(strings.Join(logs, "\n"))
 }
 
 // lastDistinct keeps the last n distinct lines in the order of their last
@@ -298,11 +290,4 @@ func lastDistinct(lines []string, n int) []string {
 	}
 	slices.Reverse(out)
 	return out
-}
-
-func clipLine(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n] + "…"
 }

@@ -4,9 +4,7 @@ declare(strict_types=1);
 
 namespace App\Contracts;
 
-use App\Services\Dns\DnsLookup;
-use App\Services\Dns\UdpDnsResolver;
-use Illuminate\Container\Attributes\Bind;
+use App\Support\Network\DnsLookup;
 
 /**
  * Looks a hostname up the way the internet sees it (docs/05 §5 "live
@@ -15,7 +13,6 @@ use Illuminate\Container\Attributes\Bind;
  * addresses it returns, through SafeHttpClient (public addresses only), so
  * user-supplied names can't reach internal services.
  */
-#[Bind(UdpDnsResolver::class)]
 interface PublicDnsResolver
 {
     public function lookup(string $hostname): DnsLookup;

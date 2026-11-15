@@ -75,3 +75,18 @@ test('the v0 advertisement names HEAD through its symref capability', function (
     expect(RefAdvertisement::headSymref($body))->toBe('trunk')
         ->and(RefAdvertisement::parse($body))->toHaveKey('refs/heads/trunk');
 });
+
+$repositoryUrlVectors = json_decode((string) file_get_contents(__DIR__.'/../../Fixtures/repository-url-vectors.json'), true, flags: JSON_THROW_ON_ERROR);
+
+test('PublicRepositoryUrl::parse matches the shared vectors the TypeScript mirror reads', function (string $input, ?string $fullName, ?string $provider, ?string $error): void {
+    if ($error !== null) {
+        expect(fn (): PublicRepositoryUrl => PublicRepositoryUrl::parse($input))->toThrow(InvalidArgumentException::class, $error);
+
+        return;
+    }
+
+    $url = PublicRepositoryUrl::parse($input);
+
+    expect($url->fullName())->toBe($fullName)
+        ->and($url->provider)->toBe($provider);
+})->with(array_map(static fn (array $vector): array => [$vector['input'], $vector['fullName'], $vector['provider'], $vector['error']], $repositoryUrlVectors));

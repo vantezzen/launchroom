@@ -1,6 +1,6 @@
 import { ArrowUpRight, FileCode2 } from 'lucide-react';
 import type { ReactNode } from 'react';
-import { shortSha } from '@/features/deployments/format';
+import { shortSha } from '@/lib/format';
 
 type Managed = App.Data.ConfigAsCode.ManagedByFileData;
 
@@ -25,7 +25,7 @@ const PAGES: Record<string, (field: string) => boolean> = {
 };
 
 /** Fields of `page` that come from the file (domains are listed by hostname). */
-export function managedOn(managed: Managed | null, page: string): string[] {
+function managedOn(managed: Managed | null, page: string): string[] {
     if (!managed) {
         return [];
     }
@@ -77,7 +77,7 @@ export function ManagedByFile({
     );
 }
 
-export function ManagedByFileCallout({
+function ManagedByFileCallout({
     managed,
     fields,
 }: {

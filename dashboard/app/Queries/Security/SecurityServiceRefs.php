@@ -8,6 +8,7 @@ use App\Data\Canvas\DetectedPlanData;
 use App\Data\Security\SecurityServiceRefData;
 use App\Models\ServiceInstance;
 use App\Support\Canvas\ServiceGlyph;
+use App\Support\Links;
 
 /**
  * Service instances of a team as references for the Security page (name,
@@ -53,8 +54,8 @@ final class SecurityServiceRefs
         $service = $instance->service;
         $environment = $instance->environment;
         $project = $environment->project;
-        $summary = $instance->activeDeployment?->plan['summary'] ?? ($instance->plan['summary'] ?? null);
-        $framework = is_array($summary) && is_string($summary['framework'] ?? null) && $summary['framework'] !== '' ? DetectedPlanData::frameworkLabel($summary['framework']) : null;
+        $detected = $instance->activeDeployment?->plan?->summary->framework ?? $instance->plan?->summary?->framework;
+        $framework = $detected !== null && $detected !== '' ? DetectedPlanData::frameworkLabel($detected) : null;
 
         return new SecurityServiceRefData(
             id: $service->public_id,
@@ -65,7 +66,7 @@ final class SecurityServiceRefs
             projectName: $project->name,
             environmentId: $environment->public_id,
             environmentName: $environment->name,
-            href: "/p/{$project->public_id}/{$environment->public_id}/s/{$service->public_id}",
+            href: Links::serviceAt($project->public_id, $environment->public_id, $service->public_id),
         );
     }
 }

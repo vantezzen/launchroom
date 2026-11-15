@@ -421,10 +421,29 @@
             "unavailable"
           ]
         },
+        "reason": {
+          "type": "string",
+          "enum": [
+            "full_socket",
+            "vm",
+            "rootless",
+            "no_rootlesskit_api",
+            "ports_pending",
+            "ports_refused",
+            "turned_off",
+            "error",
+            "docker_desktop",
+            "userns_profile",
+            "userns_blocked",
+            "no_swap",
+            "build_limits"
+          ],
+          "description": "Reason says why the capability is limited or what qualifies it; the\ndashboard words it. Omitted when there is nothing to say."
+        },
         "message": {
           "type": "string",
           "maxLength": 512,
-          "description": "Message explains a degraded or unavailable capability (secret-free)."
+          "description": "Message carries the facts behind the reason (an error text, the\nrefused ports, a command to run, the build limits), secret-free."
         }
       },
       "additionalProperties": false,
@@ -1019,7 +1038,7 @@
       "properties": {
         "peer": {
           "type": "string",
-          "pattern": "^srv_[0-9A-HJKMNP-TV-Z]{26}$"
+          "pattern": "^srv_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
         },
         "measuredAt": {
           "type": "string",
@@ -1120,7 +1139,8 @@
           ]
         },
         "text": {
-          "type": "string"
+          "type": "string",
+          "maxLength": 16384
         },
         "step": {
           "type": "string",
@@ -1233,6 +1253,7 @@
                 "$ref": "#/$defs/MeshPeer"
               },
               "type": "array",
+              "maxItems": 256,
               "description": "Peers are the other servers this client knows (at most 256)."
             },
             {
@@ -1559,7 +1580,7 @@
       "properties": {
         "route": {
           "type": "string",
-          "pattern": "^rt_[0-9A-HJKMNP-TV-Z]{26}$",
+          "pattern": "^rt_[0-7][0-9A-HJKMNP-TV-Z]{25}$",
           "description": "Route is the NodeState route the request's host belongs to."
         },
         "at": {
@@ -1624,7 +1645,7 @@
       "properties": {
         "route": {
           "type": "string",
-          "pattern": "^rt_[0-9A-HJKMNP-TV-Z]{26}$",
+          "pattern": "^rt_[0-7][0-9A-HJKMNP-TV-Z]{25}$",
           "description": "Route is the NodeState route the request's host belongs to."
         },
         "at": {
@@ -1685,7 +1706,7 @@
       "properties": {
         "id": {
           "type": "string",
-          "pattern": "^vol_[0-9A-HJKMNP-TV-Z]{26}$"
+          "pattern": "^vol_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
         },
         "name": {
           "type": "string",
@@ -1929,7 +1950,7 @@
       "properties": {
         "route": {
           "type": "string",
-          "pattern": "^rt_[0-9A-HJKMNP-TV-Z]{26}$",
+          "pattern": "^rt_[0-7][0-9A-HJKMNP-TV-Z]{25}$",
           "description": "Route is the NodeState route the request's host belongs to."
         },
         "at": {
@@ -2063,7 +2084,7 @@
       "properties": {
         "workload": {
           "type": "string",
-          "pattern": "^wl_[0-9A-HJKMNP-TV-Z]{26}$"
+          "pattern": "^wl_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
         },
         "state": {
           "type": "string",
@@ -2124,11 +2145,11 @@
         },
         "workload": {
           "type": "string",
-          "pattern": "^wl_[0-9A-HJKMNP-TV-Z]{26}$"
+          "pattern": "^wl_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
         },
         "deployment": {
           "type": "string",
-          "pattern": "^dpl_[0-9A-HJKMNP-TV-Z]{26}$",
+          "pattern": "^dpl_[0-7][0-9A-HJKMNP-TV-Z]{25}$",
           "description": "Deployment is the workload's deployment from the NodeState (omitted\nwhen launchroomd no longer knows it, e.g. a leftover container)."
         },
         "at": {
@@ -2290,7 +2311,7 @@
       "properties": {
         "workload": {
           "type": "string",
-          "pattern": "^wl_[0-9A-HJKMNP-TV-Z]{26}$"
+          "pattern": "^wl_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
         },
         "at": {
           "type": "string",
@@ -2335,7 +2356,7 @@
       "properties": {
         "id": {
           "type": "string",
-          "pattern": "^wl_[0-9A-HJKMNP-TV-Z]{26}$"
+          "pattern": "^wl_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
         },
         "phase": {
           "type": "string",
@@ -2400,6 +2421,7 @@
                 "minimum": 1
               },
               "type": "array",
+              "maxItems": 32,
               "description": "DetectedPorts are TCP ports the container listens on (port discovery).\nOmitted when discovery is not possible."
             },
             {
@@ -2439,6 +2461,15 @@
               "type": "null"
             }
           ]
+        },
+        "portHint": {
+          "type": "string",
+          "enum": [
+            "loopback_only",
+            "no_port",
+            "wrong_port"
+          ],
+          "description": "PortHint names the port misconfiguration the message explains, while\nthe health check fails (the ports are in detectedPorts)."
         }
       },
       "additionalProperties": false,
@@ -2463,7 +2494,7 @@
     },
     "serverId": {
       "type": "string",
-      "pattern": "^srv_[0-9A-HJKMNP-TV-Z]{26}$"
+      "pattern": "^srv_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
     },
     "observedAt": {
       "type": "string",
@@ -2486,7 +2517,8 @@
       "items": {
         "$ref": "#/$defs/WorkloadStatus"
       },
-      "type": "array"
+      "type": "array",
+      "maxItems": 1024
     },
     "host": {
       "oneOf": [

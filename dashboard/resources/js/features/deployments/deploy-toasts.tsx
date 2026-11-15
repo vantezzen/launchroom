@@ -1,9 +1,8 @@
 import { router, usePage } from '@inertiajs/react';
-import type { ProjectShellProps } from '@/features/projects/types';
 import { toast } from 'sonner';
-import { ChannelEvents } from './realtime';
-import type { DeploymentUpdatedEvent } from './realtime';
 import { show } from '@/routes/deployments';
+import { ChannelEvents } from '@/components/channel-events';
+import { channelName } from '@/lib/realtime';
 
 /** One toast per deployment outcome, however many listeners are mounted. */
 const announced = new Set<string>();
@@ -16,7 +15,7 @@ const announced = new Set<string>();
  * Mounted once, by the project layout (`ProjectDeployToasts`), so every
  * project page announces outcomes the same way.
  */
-export function DeployOutcomeToasts({
+function DeployOutcomeToasts({
     project,
     environments,
     names,
@@ -26,7 +25,9 @@ export function DeployOutcomeToasts({
     /** Service public id → name. */
     names: Record<string, string>;
 }) {
-    const onEvent = (event: DeploymentUpdatedEvent | null) => {
+    const onEvent = (
+        event: App.Data.Broadcasts.DeploymentUpdatedData | null,
+    ) => {
         // Only a status that just changed is an outcome: progress nudges
         // resend the current status of deployments that finished long ago.
         if (
@@ -68,10 +69,10 @@ export function DeployOutcomeToasts({
     return (
         <>
             {environments.map((environment) => (
-                <ChannelEvents<DeploymentUpdatedEvent>
+                <ChannelEvents
                     key={environment}
-                    channel={`environments.${environment}`}
-                    event=".deployment.updated"
+                    channel={channelName('environments', environment)}
+                    event="deployment.updated"
                     pollMs={3_600_000}
                     onEvent={onEvent}
                 />
@@ -93,7 +94,9 @@ type NamedProps = {
  * service from whatever the current page already knows.
  */
 export function ProjectDeployToasts() {
-    const { props } = usePage<ProjectShellProps & NamedProps>();
+    const { props } = usePage<
+        App.Data.Canvas.ProjectShellPropsData & NamedProps
+    >();
     const watched = props.environments
         .filter((item) => item.kind !== 'preview')
         .map((item) => item.id);

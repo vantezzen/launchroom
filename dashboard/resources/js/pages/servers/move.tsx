@@ -1,6 +1,6 @@
 import { Head, Link, router } from '@inertiajs/react';
 import { ArrowRight } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { DeviceImage } from '@/components/devices/device-image';
 import { ChoiceTiles } from '@/components/patterns/choice-tiles';
 import { MetaDivider, MetaLine } from '@/components/patterns/meta-line';
@@ -11,7 +11,6 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { DnsRecords } from '@/features/moves/dns-records';
-import { formatDuration } from '@/features/moves/format';
 import { MovePlanView } from '@/features/moves/move-plan';
 import { MoveProgress } from '@/features/moves/move-progress';
 import { TypedConfirm } from '@/features/moves/typed-confirm';
@@ -20,6 +19,9 @@ import { roleLabels, ServerStatus } from '@/features/servers/server-status';
 import { edit as moveLaunchroom } from '@/routes/move';
 import { create, index, move as moveRoute, show } from '@/routes/servers';
 import { cancel, retire, retry, store } from '@/routes/servers/move';
+import { useLiveProps } from '@/hooks/use-live-props';
+import { formatEstimate, formatMemory } from '@/lib/format';
+import { vocabulary } from '@/lib/vocabulary';
 
 type Props = {
     server: App.Data.Moves.MoveServerData;
@@ -40,7 +42,7 @@ function describe(server: App.Data.Moves.MoveServerData): string[] {
         ),
         server.platform,
         server.diskFreeMb !== null
-            ? `${Math.round(server.diskFreeMb / 1024)} GB free`
+            ? `${formatMemory(server.diskFreeMb)} free`
             : null,
     ].filter((part): part is string => part !== null && part !== '');
 }
@@ -59,25 +61,15 @@ export default function MoveServer({
     move,
     canEnroll,
 }: Props) {
-    const open =
-        move !== null &&
-        ['running', 'ready', 'cancelling'].includes(move.status);
-    const polling =
-        move !== null && ['running', 'cancelling'].includes(move.status);
+    const status =
+        move === null ? null : vocabulary.Moves.ServerMoveStatus[move.status];
+    const open = status?.isOpen ?? false;
     const [backupFirst, setBackupFirst] = useState(false);
 
-    useEffect(() => {
-        if (!polling) {
-            return;
-        }
-
-        const timer = window.setInterval(
-            () => router.reload({ only: ['move', 'server'] }),
-            3000,
-        );
-
-        return () => window.clearInterval(timer);
-    }, [polling]);
+    useLiveProps(['move', 'server'], {
+        while: status?.isAdvancing ?? false,
+        everyMs: 3000,
+    });
 
     const pickTarget = (id: string) =>
         router.visit(moveRoute(server.id, { query: { target: id } }), {
@@ -368,7 +360,7 @@ export default function MoveServer({
                                             <span>
                                                 {plan.downtimeSeconds === 0
                                                     ? 'No downtime'
-                                                    : `Downtime ${formatDuration(plan.downtimeSeconds)}`}
+                                                    : `Downtime ${formatEstimate(plan.downtimeSeconds)}`}
                                             </span>
                                         </p>
                                         <TypedConfirm

@@ -12,11 +12,11 @@ use App\Enums\AuditAction;
 use App\Exceptions\DomainRuleViolation;
 use App\Models\Git\GitHubApp;
 use App\Models\User;
-use App\Services\GitHub\Dto\ManifestConversion;
-use App\Services\GitHub\Exceptions\GitHubRequestFailed;
-use App\Services\GitHub\GitHubApi;
-use App\Services\GitHub\GitHubAppSecrets;
-use App\Services\GitHub\JsonObject;
+use App\Services\Crypto\SealedColumns;
+use App\Services\Git\Providers\GitHub\Dto\ManifestConversion;
+use App\Services\Git\Providers\GitHub\Exceptions\GitHubRequestFailed;
+use App\Services\Git\Providers\GitHub\GitHubApi;
+use App\Support\Json\JsonObject;
 use App\Support\PublicId;
 use Illuminate\Support\Facades\DB;
 
@@ -29,7 +29,7 @@ final readonly class RegisterGitHubApp
 {
     public function __construct(
         private GitHubApi $api,
-        private GitHubAppSecrets $secrets,
+        private SealedColumns $sealed,
         private RecordAuditEvent $audit,
     ) {}
 
@@ -73,7 +73,10 @@ final readonly class RegisterGitHubApp
             // The public id is part of the encryption context, so it exists
             // before the first save.
             $app->public_id = PublicId::generate(GitHubApp::publicIdPrefix());
-            $this->secrets->seal($app, $credentials);
+            $dek = $this->sealed->newKey($app);
+            $this->sealed->seal($app, 'client_secret', $credentials->clientSecret, $dek);
+            $this->sealed->seal($app, 'private_key', $credentials->privateKey, $dek);
+            $this->sealed->seal($app, 'webhook_secret', $credentials->webhookSecret, $dek);
             $app->save();
 
             $this->audit->handle(new AuditEntryData(

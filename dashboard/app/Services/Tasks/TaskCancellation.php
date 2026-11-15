@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Tasks;
 
+use App\Enums\DaemonTaskPurpose;
 use App\Enums\DaemonTaskStatus;
 use App\Models\DaemonTask;
 
@@ -33,15 +34,12 @@ final class TaskCancellation
         }
     }
 
-    /**
-     * Cancels every unfinished task of a deployment (optionally of one purpose).
-     */
-    public function cancelForDeployment(int $deploymentId, ?string $purpose = null): void
+    public function cancelForDeployment(int $deploymentId, ?DaemonTaskPurpose $purpose = null): void
     {
         $tasks = DaemonTask::query()
             ->where('deployment_id', $deploymentId)
-            ->whereIn('status', [DaemonTaskStatus::Pending->value, DaemonTaskStatus::Leased->value])
-            ->when($purpose !== null, static fn ($query) => $query->where('purpose', $purpose))
+            ->open()
+            ->when($purpose instanceof DaemonTaskPurpose, static fn ($query) => $query->where('purpose', $purpose?->value))
             ->get();
 
         foreach ($tasks as $task) {

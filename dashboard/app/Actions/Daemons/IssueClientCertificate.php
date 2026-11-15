@@ -12,6 +12,7 @@ use App\Data\Protocol\V1\ClientCertificate;
 use App\Enums\AuditAction;
 use App\Enums\ClientCertificateMode;
 use App\Exceptions\Daemon\ClientCertificateRefused;
+use App\Models\InstanceSettings;
 use App\Models\Server;
 use App\Models\ServerClientCertificate;
 use App\Services\Daemon\ClientCertificateAuthority;
@@ -107,7 +108,7 @@ final readonly class IssueClientCertificate
      */
     private function authorize(Server $server, ClientCertificatePresence $presence): void
     {
-        if (ClientCertificateMode::current() !== ClientCertificateMode::Require || $presence->verified()) {
+        if (InstanceSettings::current()->clientCertificateMode() !== ClientCertificateMode::Require || $presence->verified()) {
             return;
         }
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Updates;
 
+use App\Actions\Audit\RecordAuditEvent;
 use App\Data\Audit\AuditActor;
 use App\Enums\DaemonTaskStatus;
 use App\Enums\ServerStatus;
@@ -11,7 +12,6 @@ use App\Enums\Updates\ControlPlaneUpdateStatus;
 use App\Enums\Updates\FleetUpdateStatus;
 use App\Enums\Updates\FleetUpdateStepStatus;
 use App\Enums\Updates\UpdateScope;
-use App\Exceptions\DomainRuleViolation;
 use App\Jobs\Updates\RunControlPlaneUpdateJob;
 use App\Models\DaemonTask;
 use App\Models\Server;
@@ -19,7 +19,7 @@ use App\Models\Updates\ControlPlaneUpdate;
 use App\Models\Updates\FleetUpdate;
 use App\Models\Updates\FleetUpdateStep;
 use App\Services\Updates\SelfUpdateTasks;
-use App\Services\Updates\UpdateAudit;
+use App\Support\Refusal;
 use App\Support\Semver;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -45,7 +45,7 @@ final readonly class AdvanceUpdates
 {
     public function __construct(
         private SelfUpdateTasks $tasks,
-        private UpdateAudit $audit,
+        private RecordAuditEvent $audit,
         private StartFleetUpdate $startFleet,
     ) {}
 
@@ -65,7 +65,7 @@ final readonly class AdvanceUpdates
     {
         $finished = DB::transaction(function (): ?ControlPlaneUpdate {
             $update = ControlPlaneUpdate::query()
-                ->whereIn('status', [ControlPlaneUpdateStatus::Pending->value, ControlPlaneUpdateStatus::BackingUp->value, ControlPlaneUpdateStatus::Updating->value])
+                ->whereIn('status', ControlPlaneUpdateStatus::nonTerminal())
                 ->lockForUpdate()
                 ->first();
 
@@ -104,6 +104,12 @@ final readonly class AdvanceUpdates
             }
 
             [$status, $error] = $this->outcome($task);
+
+            if ($status === FleetUpdateStepStatus::RolledBack && is_string($task?->result?->selfUpdate?->reason)) {
+                // The page names the version it went back to; the reason is the rest.
+                $error = $task->result->selfUpdate->reason;
+            }
+
             $update->transitionTo(match ($status) {
                 FleetUpdateStepStatus::Succeeded => ControlPlaneUpdateStatus::Succeeded,
                 FleetUpdateStepStatus::RolledBack => ControlPlaneUpdateStatus::RolledBack,
@@ -114,7 +120,7 @@ final readonly class AdvanceUpdates
         });
 
         if ($finished instanceof ControlPlaneUpdate) {
-            $this->audit->controlPlaneFinished($finished);
+            $this->audit->handle($finished->finishedAuditEntry());
         }
     }
 
@@ -137,15 +143,15 @@ final readonly class AdvanceUpdates
             return;
         }
 
-        try {
-            $fleet = $this->startFleet->handle($update->actor, AuditActor::system());
-        } catch (DomainRuleViolation $e) {
-            if ($e->status === 409) {
-                return; // Something else is running: next minute.
-            }
+        $fleet = $this->startFleet->handle($update->actor, AuditActor::system());
 
+        if ($fleet instanceof Refusal && $fleet->isConflict()) {
+            return; // Something else is running: next minute.
+        }
+
+        if ($fleet instanceof Refusal) {
             // Nothing to roll out (every server is current) or not possible: don't retry.
-            Log::info('No server update after the control-plane update.', ['update' => $update->public_id, 'reason' => $e->getMessage()]);
+            Log::info('No server update after the control-plane update.', ['update' => $update->public_id, 'reason' => $fleet->message]);
             $update->forceFill(['update_servers' => false])->save();
 
             return;
@@ -215,7 +221,7 @@ final readonly class AdvanceUpdates
         });
 
         if ($finished instanceof FleetUpdate) {
-            $this->audit->fleetFinished($finished);
+            $this->audit->handle($finished->finishedAuditEntry());
         }
     }
 
@@ -234,8 +240,7 @@ final readonly class AdvanceUpdates
             return [FleetUpdateStepStatus::Succeeded, null];
         }
 
-        $selfUpdate = $task->result['selfUpdate'] ?? null;
-        $rolledBack = is_array($selfUpdate) && ($selfUpdate['rolledBack'] ?? false) === true;
+        $rolledBack = $task->result?->selfUpdate?->rolledBack === true;
         $error = $task->error ?? ($task->status === DaemonTaskStatus::Cancelled ? 'The update was cancelled.' : 'The update failed.');
 
         return [$rolledBack ? FleetUpdateStepStatus::RolledBack : FleetUpdateStepStatus::Failed, $error];

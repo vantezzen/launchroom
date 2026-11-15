@@ -4,11 +4,15 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Contracts\Crypto\SealedRow;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
+use InvalidArgumentException;
+use LogicException;
 
 /**
  * A project's data-encryption key, wrapped by the KEK (docs/09 R13).
@@ -23,7 +27,7 @@ use Illuminate\Support\Carbon;
  */
 #[Fillable(['project_id', 'version', 'wrapped_dek', 'kek_id'])]
 #[Hidden(['wrapped_dek'])]
-final class ProjectKey extends Model
+final class ProjectKey extends Model implements SealedRow
 {
     /**
      * @return BelongsTo<Project, $this>
@@ -39,5 +43,23 @@ final class ProjectKey extends Model
     protected function casts(): array
     {
         return ['version' => 'integer'];
+    }
+
+    public function sealWrapContext(): string
+    {
+        return 'project:'.($this->project ?? throw new LogicException('A project key needs its project.'))->public_id;
+    }
+
+    public function sealAssociatedData(string $column): string
+    {
+        throw new InvalidArgumentException("{$column} is not a sealed column.");
+    }
+
+    /**
+     * @return Builder<self>
+     */
+    public static function sealedRows(): Builder
+    {
+        return self::query()->with('project');
     }
 }

@@ -131,8 +131,6 @@ final readonly class VolumeRetirements
     }
 
     /**
-     * Moves due retirements to `requested`.
-     *
      * @return list<int> servers whose NodeState must be re-rendered
      */
     public function requestDue(): array

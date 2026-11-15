@@ -53,9 +53,10 @@
 # Environment overrides for image pins (testing / mirrors): LR_DASHBOARD_IMAGE,
 # LR_DAEMON_IMAGE, LR_CADDY_IMAGE, LR_POSTGRES_IMAGE, LR_VALKEY_IMAGE, LR_ZOT_IMAGE.
 #
-# Re-running is safe: .env (secrets) and data/ are kept, compose.yml, the
-# helper script and image pins are replaced, the stack is brought up to date,
-# and the local launchroomd is only enrolled if it is not already.
+# Re-running is safe: .env (secrets) and data/ are kept, compose.yml (with
+# daemon-compose.yml), the helper script and image pins are replaced, the
+# stack is brought up to date, and the local launchroomd is only enrolled if
+# it is not already.
 #
 # Nothing is written outside the install folder, with four exceptions the
 # installer asks about first (or that a flag allows):
@@ -79,19 +80,8 @@
 # images, volumes) labelled launchroom.managed=true.
 set -eu
 
-RELEASE_BASE="${LAUNCHROOM_RELEASE_BASE:-https://github.com/vantezzen/launchroom/releases}"
 # Release list for --unstable (newest first, pre-releases included, no drafts).
 RELEASES_API="${LAUNCHROOM_RELEASES_API:-https://api.github.com/repos/vantezzen/launchroom/releases?per_page=20}"
-# cosign v3.0.2, multi-arch index digest. Run as a container: nothing to install.
-COSIGN_IMAGE="ghcr.io/sigstore/cosign/cosign:v3.0.2@sha256:b29487e48205d875c324c79583e2806d9d269c0fa299e0861bbec023d8430c8b"
-# Release identity (docs/09 R30, docs/11 §2): keyless cosign signatures made
-# by .github/workflows/release.yml of vantezzen/launchroom on the tag
-# v<version>, certified for GitHub Actions' OIDC issuer. The certificate
-# must name exactly "$SIGNER_IDENTITY<version>" for the bundle's VERSION.
-# The same identity is pinned for launchroomd's self-updates in
-# data/daemon/trust.json (written once, never replaced).
-SIGNER_IDENTITY="https://github.com/vantezzen/launchroom/.github/workflows/release.yml@refs/tags/v"
-SIGNER_ISSUER="https://token.actions.githubusercontent.com"
 # UID of the dashboard image's runtime user (owns data/keys).
 DASHBOARD_UID=1000
 
@@ -122,11 +112,107 @@ CREATE_SWAP="${LR_CREATE_SWAP:-0}"
 TTY="${LR_TEST_TTY:-/dev/tty}"
 HOST_ROOT="${LR_TEST_ROOT:-}"
 
-# A terminal we can prompt on (also when the script itself comes from a pipe).
-has_tty() { (: <"$TTY") 2>/dev/null; }
 say() { printf 'launchroom: %s\n' "$*"; }
 warn() { printf 'launchroom: warning: %s\n' "$*" >&2; }
 die() { printf 'launchroom: error: %s\n' "$*" >&2; exit 1; }
+
+# >>> lib/release.sh (generated from deploy/install/lib/release.sh by `make gen-installers`: edit that file)
+# Release download and verification shared by install.sh, server.sh and
+# cli.sh (docs/09 R30). Spliced into each by `make gen-installers`
+# (deploy/install/splice.sh); release tooling (release.sh,
+# deploy/release/build-bundle.sh) sources it. Expects die from the includer.
+
+RELEASE_BASE="${LAUNCHROOM_RELEASE_BASE:-https://github.com/vantezzen/launchroom/releases}"
+# cosign v3.0.2, multi-arch index digest. Run as a container: nothing to install.
+COSIGN_IMAGE="ghcr.io/sigstore/cosign/cosign:v3.0.2@sha256:b29487e48205d875c324c79583e2806d9d269c0fa299e0861bbec023d8430c8b"
+# Release identity (docs/09 R30, docs/11 §2): keyless cosign signatures made
+# by .github/workflows/release.yml of vantezzen/launchroom on the tag
+# v<version>, certified for GitHub Actions' OIDC issuer. The certificate
+# must name exactly "$SIGNER_IDENTITY<version>". launchroomd pins the same
+# identity for its self-updates (trust.json, daemon/internal/update).
+SIGNER_IDENTITY="https://github.com/vantezzen/launchroom/.github/workflows/release.yml@refs/tags/v"
+SIGNER_ISSUER="https://token.actions.githubusercontent.com"
+
+# is_semver V: MAJOR.MINOR.PATCH[-PRERELEASE][+BUILD] without a leading v.
+is_semver() {
+	printf '%s' "$1" | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$'
+}
+
+# is_release_version V: a version launchroom is released under (git tag
+# v<V>, image tag <V>): semver without build metadata, which image tags
+# cannot carry.
+is_release_version() {
+	is_semver "$1" || return 1
+	case "$1" in *+*) return 1 ;; esac
+}
+
+# download URL FILE (FILE - for stdout): HTTPS only, so the release files
+# never come over plain HTTP or a downgraded redirect.
+download() {
+	if command -v curl >/dev/null 2>&1; then
+		curl -fsSL --proto '=https' --tlsv1.2 --retry 3 -o "$2" "$1"
+	elif command -v wget >/dev/null 2>&1; then
+		case "$1" in https://*) ;; *) die "refusing to download $1 (not https)" ;; esac
+		wget -q -O "$2" "$1"
+	else
+		die "neither curl nor wget is installed"
+	fi
+}
+
+sha256_of() {
+	if command -v sha256sum >/dev/null 2>&1; then
+		sha256sum "$1" | awk '{ print $1 }'
+	elif command -v shasum >/dev/null 2>&1; then
+		shasum -a 256 "$1" | awk '{ print $1 }'
+	else
+		die "neither sha256sum nor shasum is installed"
+	fi
+}
+
+# cosign_verify DIR FILE VERSION: verifies DIR/FILE against its keyless
+# signature DIR/FILE.sigstore.json for the exact release identity of
+# VERSION, with the digest-pinned cosign container. Stops on any failure:
+# a bad signature, no network to Sigstore (cosign fetches the trusted root
+# through TUF) or a pull failure. Never reports success it did not check.
+cosign_verify() {
+	# umask 077 makes downloads 0600; the cosign image runs as a non-root
+	# user. The file and its signature are public release files.
+	chmod 0755 "$1" && chmod 0644 "$1/$2" "$1/$2.sigstore.json"
+	had_image="$(docker image ls -q "$COSIGN_IMAGE" 2>/dev/null)"
+	status=0
+	cosign_out="$(docker run --rm --network bridge -v "$(cd "$1" && pwd):/work:ro" "$COSIGN_IMAGE" verify-blob \
+		--bundle "/work/$2.sigstore.json" \
+		--certificate-identity "$SIGNER_IDENTITY$3" \
+		--certificate-oidc-issuer "$SIGNER_ISSUER" \
+		"/work/$2" 2>&1)" || status=$?
+	[ -n "$had_image" ] || docker image rm "$COSIGN_IMAGE" >/dev/null 2>&1 || true
+	if [ "$status" != 0 ]; then
+		printf '%s\n' "$cosign_out" | tail -n 8 | sed 's/^/  cosign: /' >&2
+		die "the signature of $2 could not be verified for $SIGNER_IDENTITY$3 (cosign's output above). Not installing."
+	fi
+}
+
+# write_trust FILE: pins the release identity launchroomd's self-updates are
+# verified against (docs/09 R30, docs/11 §4). Written once: re-running the
+# installer (also from an update) never replaces it, so a later bundle
+# cannot change whom future updates must be signed by.
+write_trust() {
+	[ ! -e "$1" ] || return 0
+	printf '{\n  "issuer": "%s",\n  "identity": "%s",\n  "releaseBase": "%s"\n}\n' \
+		"$SIGNER_ISSUER" "$SIGNER_IDENTITY" "$RELEASE_BASE" >"$1"
+	chmod 0644 "$1"
+}
+
+# write_guard_trust FROM: the same pin in $DIR/guard/trust.json, outside
+# launchroomd's data folder (D49): the update supervisor verifies a release
+# again against this copy, which launchroomd cannot change. Written once.
+write_guard_trust() {
+	[ ! -e "$DIR/guard/trust.json" ] || return 0
+	mkdir -p "$DIR/guard"
+	cp "$1" "$DIR/guard/trust.json"
+	chmod 0644 "$DIR/guard/trust.json"
+}
+# <<< lib/release.sh
 
 usage() { sed -n '2,/^set -eu$/p' "$0" 2>/dev/null | sed -e '$d' -e 's/^# \{0,1\}//'; }
 
@@ -161,14 +247,23 @@ parse_args() {
 	fi
 }
 
-# ---- Checks --------------------------------------------------------------------
-
 # port_in_use PORT: a TCP socket is listening on PORT in this network namespace.
 port_in_use() {
 	hex="$(printf ':%04X' "$1")"
 	awk -v p="$hex" '$4 == "0A" && substr($2, length($2) - 4) == p { found = 1 } END { exit !found }' \
 		/proc/net/tcp /proc/net/tcp6 2>/dev/null
 }
+
+# >>> lib/host.sh (generated from deploy/install/lib/host.sh by `make gen-installers`: edit that file)
+# Host preparation shared by install.sh and server.sh (docs/11 §2.1a):
+# Docker, inotify limits, the BuildKit AppArmor profile and swap. Spliced
+# into both scripts by `make gen-installers` (deploy/install/splice.sh).
+# Expects say/warn/die, TTY, HOST_ROOT and the INSTALL_DOCKER,
+# NO_INSTALL_DOCKER, RAISE_INOTIFY, ALLOW_BUILDKIT_USERNS and CREATE_SWAP
+# switches from the including script.
+
+# A terminal we can prompt on (also when the script itself comes from a pipe).
+has_tty() { (: <"$TTY") 2>/dev/null; }
 
 # ask QUESTION: asks on the terminal; Enter, y or yes is yes. No answer
 # (end of input) is no.
@@ -474,6 +569,19 @@ swap_manual() {
 	} >&2
 }
 
+# host_timezone: the host's IANA time zone for launchroomd (its container
+# cannot see the host's /etc). Informational: it only suggests the server's
+# location in the dashboard. Prints nothing when unknown.
+host_timezone() {
+	tz=""
+	[ ! -r /etc/timezone ] || tz="$(head -n 1 /etc/timezone)"
+	[ -n "$tz" ] || [ ! -L /etc/localtime ] || tz="$(readlink /etc/localtime | sed -n 's#.*zoneinfo/##p')"
+	if printf '%s' "$tz" | grep -Eq '^[A-Za-z][A-Za-z0-9_+-]{0,31}(/[A-Za-z0-9_+-]{1,32}){0,2}$'; then
+		printf '%s' "$tz"
+	fi
+}
+# <<< lib/host.sh
+
 check_prerequisites() {
 	[ "$(uname -s)" = "Linux" ] || die "the control plane runs on Linux (found $(uname -s)). Docker Desktop is only supported for build servers and development."
 	for tool in awk sed tr head base64 grep; do
@@ -504,22 +612,6 @@ check_prerequisites() {
 	fi
 }
 
-# ---- Bundle --------------------------------------------------------------------
-
-download() { # download URL FILE
-	if command -v curl >/dev/null 2>&1; then
-		curl -fsSL --retry 3 -o "$2" "$1"
-	elif command -v wget >/dev/null 2>&1; then
-		wget -q -O "$2" "$1"
-	else
-		die "neither curl nor wget is installed"
-	fi
-}
-
-sha256_of() {
-	if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | awk '{ print $1 }'; else shasum -a 256 "$1" | awk '{ print $1 }'; fi
-}
-
 # resolve_unstable: VERSION = the newest published release, pre-releases
 # included. GitHub's "latest" skips pre-releases, so read the release list
 # (newest first) and take the first tag that is a semantic version.
@@ -534,39 +626,16 @@ resolve_unstable() {
 	say "--unstable: installing $VERSION, the newest release including pre-releases"
 }
 
-# is_semver V: V is MAJOR.MINOR.PATCH[-PRERELEASE][+BUILD] without a leading v.
-is_semver() {
-	printf '%s' "$1" | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$'
-}
-
-# Verifies the bundle's cosign signature (keyless, GitHub Actions identity)
-# with a pinned cosign container: the certificate must name exactly the
-# release workflow on tag v<VERSION>, where VERSION is the version the
-# bundle says it is (read first, grammar-checked, then bound by the
-# signature check). Never reports success it did not check.
-verify_signature() { # verify_signature DIR (with bundle.tar.gz + bundle.tar.gz.sigstore.json)
+# verify_signature DIR: DIR/bundle.tar.gz must carry the release signature
+# of the version it says it is (its VERSION file, grammar-checked first,
+# then bound by the signature) and, unless installing latest, the asked one.
+verify_signature() {
 	bundle_version="$(tar -xzOf "$1/bundle.tar.gz" VERSION 2>/dev/null | tr -d ' \r\n' || true)"
 	is_semver "$bundle_version" || die "the bundle has no valid VERSION. Not installing."
 	if [ "$VERSION" != "latest" ] && [ "$bundle_version" != "$VERSION" ]; then
 		die "asked for version $VERSION but the bundle is version $bundle_version. Not installing."
 	fi
-	# umask 077 makes the downloads 0600 root; the cosign image runs as a
-	# non-root user. The bundle and its signature are public release files.
-	chmod 0755 "$1" && chmod 0644 "$1"/bundle.tar.gz "$1"/bundle.tar.gz.sigstore.json
-	had_image="$(docker image ls -q "$COSIGN_IMAGE" 2>/dev/null)"
-	# Network: cosign fetches Sigstore's trusted root through TUF.
-	cosign_out="$(docker run --rm --network bridge -v "$(cd "$1" && pwd):/work:ro" "$COSIGN_IMAGE" verify-blob \
-		--bundle /work/bundle.tar.gz.sigstore.json \
-		--certificate-identity "$SIGNER_IDENTITY$bundle_version" \
-		--certificate-oidc-issuer "$SIGNER_ISSUER" \
-		/work/bundle.tar.gz 2>&1)" || status=$?
-	[ -n "$had_image" ] || docker image rm "$COSIGN_IMAGE" >/dev/null 2>&1 || true
-	if [ "${status:-0}" != 0 ]; then
-		# cosign's own words: a bad signature, or no network to Sigstore
-		# (it fetches the trusted root through TUF), or a pull failure.
-		printf '%s\n' "$cosign_out" | tail -n 8 | sed 's/^/launchroom:   cosign: /' >&2
-		die "the bundle's cosign signature could not be verified for $SIGNER_IDENTITY$bundle_version (cosign's output above). Not installing."
-	fi
+	cosign_verify "$1" bundle.tar.gz "$bundle_version"
 }
 
 fetch_bundle() {
@@ -608,26 +677,12 @@ fetch_bundle() {
 	BUNDLE="$(cd "$tmp/bundle" && pwd)"
 }
 
-# ---- Folder & .env ---------------------------------------------------------------
-
 env_get() { sed -n "s/^$1=//p" "$DIR/.env" 2>/dev/null | tail -n 1; }
 
 # env_set KEY VALUE: replace or append KEY=VALUE in .env (stays 0600: umask).
 env_set() {
 	{ grep -v "^$1=" "$DIR/.env" 2>/dev/null || true; printf '%s=%s\n' "$1" "$2"; } >"$DIR/.env.tmp"
 	mv "$DIR/.env.tmp" "$DIR/.env"
-}
-
-# host_timezone: the host's IANA time zone for launchroomd (its container
-# cannot see the host's /etc). Informational: it only suggests the server's
-# location in the dashboard. Prints nothing when unknown.
-host_timezone() {
-	tz=""
-	[ ! -r /etc/timezone ] || tz="$(head -n 1 /etc/timezone)"
-	[ -n "$tz" ] || [ ! -L /etc/localtime ] || tz="$(readlink /etc/localtime | sed -n 's#.*zoneinfo/##p')"
-	if printf '%s' "$tz" | grep -Eq '^[A-Za-z][A-Za-z0-9_+-]{0,31}(/[A-Za-z0-9_+-]{1,32}){0,2}$'; then
-		printf '%s' "$tz"
-	fi
 }
 
 rand_alnum() { LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c "$1"; }
@@ -681,6 +736,8 @@ prepare_folder() {
 	migrate_legacy_daemon_dir
 	mkdir -p "$DIR/data/keys" "$DIR/data/postgres" "$DIR/data/valkey" "$DIR/data/zot/storage" \
 		"$DIR/data/daemon" "$DIR/data/backups" "$DIR/data/transfers" "$DIR/data/headscale/lib"
+	# compose.yml extends launchroomd's services from daemon-compose.yml.
+	cp "$BUNDLE/daemon/compose.yml" "$DIR/daemon-compose.yml"
 	cp "$BUNDLE/control-plane/compose.yml" "$DIR/compose.yml"
 	cp "$BUNDLE/control-plane/launchroom" "$DIR/launchroom"
 	chmod 0700 "$DIR/launchroom"
@@ -739,28 +796,6 @@ cleanup_restore() {
 		warn "could not remove $DIR/data/backups/restore and $DIR/data/backups/recovery-kit; delete them by hand (they hold plaintext keys)"
 }
 
-# write_trust FILE: pins the release identity launchroomd's self-updates are
-# verified against (docs/09 R30, docs/11 §4). Written once: re-running the
-# installer (also from an update) never replaces it, so a later bundle
-# cannot change whom future updates must be signed by.
-write_trust() {
-	[ ! -e "$1" ] || return 0
-	printf '{\n  "issuer": "%s",\n  "identity": "%s",\n  "releaseBase": "%s"\n}\n' \
-		"$SIGNER_ISSUER" "$SIGNER_IDENTITY" "$RELEASE_BASE" >"$1"
-	chmod 0644 "$1"
-}
-
-# write_guard_trust FROM: the same pin in guard/trust.json, outside
-# launchroomd's data folder (D49): the update supervisor verifies the release
-# again against this copy, which launchroomd cannot change. Written once
-# (copied from FROM, the pin launchroomd uses).
-write_guard_trust() {
-	[ ! -e "$DIR/guard/trust.json" ] || return 0
-	mkdir -p "$DIR/guard"
-	cp "$1" "$DIR/guard/trust.json"
-	chmod 0644 "$DIR/guard/trust.json"
-}
-
 # apply_url URL: APP_URL, the session cookie flag and the registry's token
 # realm (docs/05 §6), which is the dashboard.
 apply_url() {
@@ -779,9 +814,7 @@ apply_url() {
 	chmod 0644 "$DIR/data/headscale/config.yaml"
 }
 
-# ---- Move (docs/14 §13.4) --------------------------------------------------------
-
-# A move goes into a fresh folder, or continues one it started (its state in
+# A move (docs/14 §13.4) goes into a fresh folder, or continues one it started (its state in
 # data/backups/move). It never overwrites a running install.
 check_move_target() {
 	[ -n "${LR_MOVE_TOKEN:-}" ] || die "--move needs the token from Settings → Move launchroom in the old dashboard"
@@ -883,8 +916,6 @@ move_control_plane() {
 	move_take_over
 	trap - EXIT INT TERM HUP
 }
-
-# ---- Stack -------------------------------------------------------------------------
 
 dc() { (cd "$DIR" && docker compose "$@"); }
 artisan() { dc exec -T dashboard php artisan "$@"; }

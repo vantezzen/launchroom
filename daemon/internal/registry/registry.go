@@ -30,7 +30,7 @@ import (
 )
 
 // DefaultAddress is where the Docker daemon pulls launchroom images from.
-const DefaultAddress = "127.0.0.1:5000"
+const DefaultAddress = state.RegistryAddress
 
 // TokenRequester obtains registry tokens (controlplane.Client).
 type TokenRequester interface {
@@ -173,8 +173,6 @@ func (t *Tokens) PullAuth(host string) func(ctx context.Context, ref string) (st
 		return EncodeAuth(tok)
 	}
 }
-
-// ---- forwarder ----
 
 // maxConns bounds concurrent forwarded connections.
 const maxConns = 512

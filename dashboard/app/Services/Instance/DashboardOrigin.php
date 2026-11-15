@@ -74,22 +74,15 @@ final class DashboardOrigin
         $canonical = $this->canonical();
         $legacy = [];
 
-        foreach (is_array($entries) ? $entries : [] as $entry) {
-            $url = is_string($entry['url'] ?? null) ? Origin::normalize($entry['url']) : null;
+        foreach ($entries ?? [] as $entry) {
+            $url = Origin::normalize($entry->url);
             $host = $url === null ? null : Origin::host($url);
 
             if ($url === null || $host === null || $url === $canonical) {
                 continue;
             }
 
-            try {
-                $since = CarbonImmutable::parse(is_string($entry['since'] ?? null) ? $entry['since'] : 'now');
-                $until = CarbonImmutable::parse(is_string($entry['until'] ?? null) ? $entry['until'] : 'now');
-            } catch (Throwable) {
-                continue;
-            }
-
-            $legacy[] = ['url' => $url, 'host' => $host, 'since' => $since, 'until' => $until];
+            $legacy[] = ['url' => $url, 'host' => $host, 'since' => CarbonImmutable::parse($entry->since), 'until' => CarbonImmutable::parse($entry->until)];
         }
 
         return $legacy;
@@ -119,11 +112,11 @@ final class DashboardOrigin
      */
     public function forServer(Server $server): string
     {
-        $reported = $server->daemon_control_plane ?? [];
+        $reported = $server->daemon_control_plane;
         $known = $this->knownOrigins();
 
-        foreach (['adopted', 'configured'] as $field) {
-            $url = is_string($reported[$field] ?? null) ? Origin::normalize($reported[$field]) : null;
+        foreach ([$reported?->adopted, $reported?->configured] as $field) {
+            $url = $field !== null ? Origin::normalize($field) : null;
 
             if ($url !== null && in_array($url, $known, true)) {
                 return $url;
@@ -158,10 +151,6 @@ final class DashboardOrigin
         return $host === null || Origin::isIp($host) ? null : $host;
     }
 
-    /**
-     * Points the framework at the canonical origin for this request, job or
-     * command.
-     */
     public function apply(bool $console = false): void
     {
         $this->refresh();
@@ -176,7 +165,6 @@ final class DashboardOrigin
         }
 
         $canonical = $this->canonical();
-        // Not switched: APP_URL exactly as configured (only a switch rewrites it).
         $url = $this->isSwitched() ? $canonical : config()->string('launchroom.dashboard.boot_url');
         config(['app.url' => $url, 'launchroom.dashboard.applied_url' => $url]);
 

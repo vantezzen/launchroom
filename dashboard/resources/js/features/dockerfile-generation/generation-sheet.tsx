@@ -13,21 +13,19 @@ import {
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { SheetSection, SidePanel } from '@/components/patterns/sheet';
-import { StepList } from '@/components/steps';
 import type { Step } from '@/components/steps/step-list';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { edit as settingsRoute } from '@/routes/dockerfile-generation';
-import { formatCost, formatMs, useGeneration } from './api';
+import { formatCost, useGeneration } from './api';
 import type { Generation } from './api';
 import { DockerfileDiff } from './dockerfile-diff';
+import { formatBytes, formatMs, plural } from '@/lib/format';
+import { useClipboard } from '@/hooks/use-clipboard';
+import { StepList } from '@/components/steps/step-list';
 
 type Panel = App.Data.Dockerfiles.DockerfileGenerationPanelData;
 type Trigger = App.Enums.Dockerfiles.DockerfileGenerationTrigger;
-
-function plural(count: number, word: string): string {
-    return `${count} ${word}${count === 1 ? '' : 's'}`;
-}
 
 /** Where a failed generation stopped, from its last attempt. */
 function failedStep(generation: Generation): string {
@@ -303,7 +301,7 @@ function FilesSent({ generation }: { generation: Generation }) {
                         >
                             <span className="truncate">{file.path}</span>
                             <span className="shrink-0 text-muted-foreground tabular-nums">
-                                {(file.bytes / 1024).toFixed(1)} KB
+                                {formatBytes(file.bytes)}
                                 {file.truncated ? ' (cut)' : ''}
                             </span>
                         </li>
@@ -327,7 +325,7 @@ function Verified({
     onRestart: (() => void) | null;
     busy: string | null;
 }) {
-    const [copied, setCopied] = useState(false);
+    const [copied, copy] = useClipboard();
     const dockerfile = generation.dockerfile ?? '';
 
     return (
@@ -399,13 +397,9 @@ function Verified({
                             variant="ghost"
                             size="icon-sm"
                             aria-label="Copy Dockerfile"
-                            onClick={() => {
-                                void navigator.clipboard.writeText(dockerfile);
-                                setCopied(true);
-                                window.setTimeout(() => setCopied(false), 1500);
-                            }}
+                            onClick={() => void copy(dockerfile)}
                         >
-                            {copied ? <Check /> : <Copy />}
+                            {copied === dockerfile ? <Check /> : <Copy />}
                         </Button>
                         <Button
                             variant="ghost"

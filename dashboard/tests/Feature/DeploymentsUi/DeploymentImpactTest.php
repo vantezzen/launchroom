@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Enums\DeploymentPurpose;
 use App\Enums\DeploymentStatus;
 use App\Enums\TeamRole;
 use App\Models\Deployment;
@@ -19,12 +20,12 @@ beforeEach(function (): void {
     CarbonImmutable::setTestNow('2026-10-20 12:00:30');
     $this->world = DeploymentUi::make();
     $this->live = $this->world->latest($this->world->web);
-    $this->live->forceFill(['status' => DeploymentStatus::Active, 'commit_sha' => '9f00c2dbbbbbbb', 'finished_at' => CarbonImmutable::parse('2026-10-20 11:30:00')])->save();
+    $this->live->forceFill(['status' => DeploymentStatus::Active, 'commit_sha' => '9f00c2dbbbbbbb', 'finished_at' => CarbonImmutable::parse('2026-10-20 11:30:00'), 'went_live_at' => CarbonImmutable::parse('2026-10-20 11:30:00')])->save();
     $this->previous = $this->live->replicate(['public_id']);
     $this->previous->forceFill([
         'public_id' => PublicId::generate('dpl'), 'status' => DeploymentStatus::Superseded,
         'commit_sha' => '3b7d5e1aaaaaaa', 'image' => 'registry.local/web@sha256:'.str_repeat('a', 64),
-        'queued_at' => CarbonImmutable::parse('2026-10-20 09:00:00'), 'finished_at' => CarbonImmutable::parse('2026-10-20 09:05:00'),
+        'queued_at' => CarbonImmutable::parse('2026-10-20 09:00:00'), 'finished_at' => CarbonImmutable::parse('2026-10-20 09:05:00'), 'went_live_at' => CarbonImmutable::parse('2026-10-20 09:05:00'),
     ])->save();
     $this->instance = ServiceInstance::query()->whereKey($this->live->service_instance_id)->sole();
     $this->instance->forceFill(['active_deployment_id' => $this->live->id])->save();
@@ -85,10 +86,27 @@ test('no comparison without traffic, for deploys that never went live or went li
     expect(resolve(DeploymentImpact::class)->for($this->live))->toBeNull();
 
     trafficMinutes($this->instance, '2026-10-20 10:30:00', '2026-10-20 12:00:00', 60, 0);
-    $this->live->forceFill(['finished_at' => CarbonImmutable::parse('2026-10-20 11:59:30')])->save();
+    $this->live->forceFill(['went_live_at' => CarbonImmutable::parse('2026-10-20 11:59:30')])->save();
     expect(resolve(DeploymentImpact::class)->for($this->live))->toBeNull();
 
     $failed = Deployment::query()->whereKey($this->live->id)->sole();
-    $failed->forceFill(['status' => DeploymentStatus::Failed, 'finished_at' => CarbonImmutable::parse('2026-10-20 11:30:00')])->save();
+    $failed->forceFill(['status' => DeploymentStatus::Failed, 'finished_at' => CarbonImmutable::parse('2026-10-20 11:30:00'), 'went_live_at' => null])->save();
     expect(resolve(DeploymentImpact::class)->for($failed))->toBeNull();
+});
+
+test('a superseded deployment that never served is neither compared nor offered as the rollback', function (): void {
+    trafficMinutes($this->instance, '2026-10-20 10:30:00', '2026-10-20 11:30:00', 60, 0);
+    trafficMinutes($this->instance, '2026-10-20 11:30:00', '2026-10-20 12:00:00', 60, 12);
+    // A prebuild finished after the previous release: superseded, with an image, but never live.
+    $prebuild = $this->previous->replicate(['public_id']);
+    $prebuild->forceFill([
+        'public_id' => PublicId::generate('dpl'), 'purpose' => DeploymentPurpose::Prebuild, 'commit_sha' => 'ccccccccccccc0',
+        'queued_at' => CarbonImmutable::parse('2026-10-20 10:00:00'), 'finished_at' => CarbonImmutable::parse('2026-10-20 10:05:00'), 'went_live_at' => null,
+    ])->save();
+    $this->actingAs($this->world->member(TeamRole::Developer));
+
+    expect(resolve(DeploymentImpact::class)->for($prebuild))->toBeNull()
+        ->and($prebuild->isRollbackTarget())->toBeFalse()
+        ->and($this->previous->isRollbackTarget())->toBeTrue()
+        ->and(resolve(DeploymentImpact::class)->for($this->live)?->rollbackTo?->id)->toBe($this->previous->public_id);
 });

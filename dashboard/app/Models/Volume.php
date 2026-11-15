@@ -7,6 +7,7 @@ namespace App\Models;
 use App\Enums\Backups\VolumeConsistency;
 use App\Models\Concerns\BelongsToTeam;
 use App\Models\Concerns\HasPublicId;
+use App\Support\Protocol\Grammar;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
@@ -50,7 +51,7 @@ final class Volume extends Model
      */
     public function dockerName(): string
     {
-        return 'lr-v_'.substr(hash('sha256', $this->public_id), 0, 16);
+        return Grammar::VOLUME_PREFIX.substr(hash('sha256', $this->public_id), 0, 16);
     }
 
     /**

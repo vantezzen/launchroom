@@ -2,7 +2,7 @@ import { Head } from '@inertiajs/react';
 import { useEffect } from 'react';
 import VisualPrimitives, {
     VISUAL_SECTIONS,
-} from '@/components/charts/visuals.design';
+} from '@/features/design-gallery/visual-primitives';
 
 /**
  * Local-only page for the visual primitives (also on /dev/design). `?theme=

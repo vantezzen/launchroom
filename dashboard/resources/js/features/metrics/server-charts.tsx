@@ -1,19 +1,14 @@
 import { ChartLine } from 'lucide-react';
 import { useMemo } from 'react';
 import type { ReactNode } from 'react';
-import { formatBytes } from '@/components/charts/format';
 import { TimeSeriesChart } from '@/components/charts/time-series-chart';
 import type { TimeSeries } from '@/components/charts/time-series-chart';
 import { EmptyState } from '@/components/patterns/empty-state';
 import { Section } from '@/components/patterns/section';
 import { Skeleton } from '@/components/ui/skeleton';
-import {
-    deployMarkers,
-    formatBandwidth,
-    formatRate,
-    points,
-} from '@/features/metrics/format';
+import { deployMarkers, points } from '@/features/metrics/format';
 import { rangeWords } from '@/lib/observe-scope';
+import { formatBandwidth, formatBytes, formatRate } from '@/lib/format';
 
 type Metrics = App.Data.Metrics.ServerMetricsData;
 

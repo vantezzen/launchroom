@@ -6,9 +6,11 @@ use App\Actions\Deployments\DeployEnvironment;
 use App\Actions\Servers\MarkServerSeen;
 use App\Actions\Servers\MarkStaleServers;
 use App\Actions\Servers\RescheduleDeadServers;
+use App\Actions\Services\AddServiceVolume;
 use App\Actions\Services\UpdateServiceSettings;
 use App\Actions\Variables\CreateVariable;
 use App\Data\Audit\AuditActor;
+use App\Data\Services\AddVolumeData;
 use App\Data\Services\ScalingSettings;
 use App\Data\Services\UpdateServiceSettingsData;
 use App\Data\Variables\VariableInput;
@@ -16,6 +18,7 @@ use App\Data\Variables\VariableTargetData;
 use App\Enums\AuditAction;
 use App\Enums\DeploymentFailureClass;
 use App\Enums\DeploymentStatus;
+use App\Enums\PlacementIssueKind;
 use App\Enums\PlacementStrategy;
 use App\Enums\ServerRole;
 use App\Enums\ServerStatus;
@@ -296,7 +299,6 @@ test('stateless replicas of a dead server move to healthy servers; its NodeState
         ->and(collect(Projects::nodeState($one)['workloads'])->where('service', $web->public_id))->toHaveCount(2)
         ->and(AuditEvent::query()->where('action', AuditAction::ReplicasRescheduled->value)->where('subject_id', $two->public_id)->exists())->toBeTrue();
 
-    // Idempotent.
     expect(resolve(RescheduleDeadServers::class)->handle())->toBe(0);
 });
 
@@ -336,16 +338,33 @@ test('stateful services are never moved: degraded until their server returns', f
     $node = collect(resolve(CanvasGraph::class)->for($production)['nodes'])->firstWhere('id', $postgres->public_id);
 
     expect(Placement::query()->sole()->workload_id)->toBe($placement->workload_id)
-        ->and($instance->placement_issue['kind'])->toBe('stateful_server_down')
-        ->and($instance->placement_issue['serverId'])->toBe($two->public_id)
+        ->and($instance->placement_issue?->kind)->toBe(PlacementIssueKind::StatefulServerDown)
+        ->and($instance->placement_issue?->serverId)->toBe($two->public_id)
         ->and($node->status->label)->toBe('Server down')
-        ->and($node->placementIssue?->kind)->toBe('stateful_server_down')
+        ->and($node->placementIssue?->kind)->toBe(PlacementIssueKind::StatefulServerDown)
         ->and(AuditEvent::query()->where('action', AuditAction::ServiceDegraded->value)->count())->toBe(1);
 
     resolve(MarkServerSeen::class)->handle($two->refresh());
     resolve(RescheduleDeadServers::class)->handle();
 
     expect($instance->refresh()->placement_issue)->toBeNull();
+});
+
+test('an app with a volume is stateful too: degraded with its server, never re-placed', function (): void {
+    [, $one, $two, $project, $production] = twoServers();
+    $web = Projects::image($project, 'web');
+    $instance = scale($web, new ScalingSettings(allowServers: [$two->public_id]));
+    resolve(AddServiceVolume::class)->handle($instance, new AddVolumeData('/data'), AuditActor::system());
+    deployAll($production);
+    reportAll([$one, $two], 3);
+    $placement = Placement::query()->sole();
+    expect($placement->server_id)->toBe($two->id);
+
+    killServer($two, $one);
+    expect(resolve(RescheduleDeadServers::class)->handle())->toBe(0);
+
+    expect(Placement::query()->sole()->server_id)->toBe($two->id)
+        ->and($instance->refresh()->placement_issue?->kind)->toBe(PlacementIssueKind::StatefulServerDown);
 });
 
 test('replicas with nowhere to go stay and mark the service degraded', function (): void {
@@ -361,8 +380,8 @@ test('replicas with nowhere to go stay and mark the service degraded', function 
     $instance = ServiceInstance::query()->where('service_id', $web->id)->sole();
 
     expect(Placement::query()->sole()->server_id)->toBe($two->id)
-        ->and($instance->placement_issue['kind'])->toBe('unplaceable')
-        ->and($instance->placement_issue['message'])->toContain('hel-1: not in the allowed servers');
+        ->and($instance->placement_issue?->kind)->toBe(PlacementIssueKind::Unplaceable)
+        ->and($instance->placement_issue?->message)->toContain('hel-1: not in the allowed servers');
 });
 
 test('scaling up and down is a runtime-only change: no build, the image is reused', function (): void {

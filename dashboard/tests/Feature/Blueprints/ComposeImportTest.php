@@ -37,13 +37,14 @@ test('the compose import is for people who can create projects', function (): vo
     $this->actingAs($this->viewer)->postJson(route('projects.compose.preview'), ['compose' => $this->wordpress])->assertForbidden();
     $this->actingAs($this->viewer)->post(route('projects.compose.store'), ['compose' => $this->wordpress, 'name' => 'Blog'])->assertForbidden();
 
-    $this->actingAs($this->developer)->get(route('projects.compose'))->assertInertia(fn ($page) => $page->component('projects/new-compose'));
+    $this->actingAs($this->developer)->get(route('projects.compose'))->assertInertia(fn ($page) => $page->component('projects/new-compose')->where('maxBytes', 262144));
 });
 
 test('the preview shows the canvas and the notes, never a value', function (): void {
     $response = $this->actingAs($this->developer)->postJson(route('projects.compose.preview'), ['compose' => $this->wordpress])
         ->assertOk()
         ->assertJsonPath('error', null)
+        ->assertJsonPath('suggestedName', 'wordpress')
         ->assertJsonPath('preview.services.0.key', 'wordpress')
         ->assertJsonPath('preview.services.0.group', 'public')
         ->assertJsonPath('preview.services.0.variables.2', ['key' => 'WORDPRESS_DB_PASSWORD', 'secret' => true, 'generated' => false, 'reference' => false])

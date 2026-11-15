@@ -399,9 +399,6 @@ func TestReceiver(t *testing.T) {
 	if s := do(t, http.MethodGet, srv.URL+Path, nil); s != http.StatusNotFound {
 		t.Errorf("GET: %d", s)
 	}
-	if len(c.queue) != 1 {
-		t.Errorf("queued = %d", len(c.queue))
-	}
 	// Overflow is counted, never blocks Coraza.
 	for range QueueSize + 5 {
 		post(Path, []byte("{}"))
@@ -444,29 +441,40 @@ func TestServeLoopbackOnly(t *testing.T) {
 	}
 }
 
-// Run decodes queued records.
+// Run decodes queued records and completes their window. The clock keeps
+// moving until a window completes: whenever Run gets to the record, it lands
+// in a window that completes later (no sleep, no race on the decode).
 func TestRunDecodesQueue(t *testing.T) {
-	c, clk := newCollector(t, time.Now())
+	rec := readRecord(t, "blocked-sqli")
+	clk := &clock{t: recordTime(t, rec)}
 	kicked := make(chan struct{}, 1)
-	c.o.OnWindow = func() {
+	c := New(Options{Now: clk.now, Tick: 10 * time.Millisecond, OnWindow: func() {
 		select {
 		case kicked <- struct{}{}:
 		default:
 		}
-	}
-	c.o.Tick = 10 * time.Millisecond
+	}})
+	c.SetRoutes([]state.RouteSpec{{ID: routeBlock, Hosts: []state.Hostname{"block.localhost"}}})
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go c.Run(ctx)
-	rec := readRecord(t, "blocked-sqli")
-	clk.set(recordTime(t, rec))
-	c.queue <- rec
-	time.Sleep(50 * time.Millisecond)
-	clk.set(recordTime(t, rec).Add(state.WafWindow + grace))
-	select {
-	case <-kicked:
-	case <-time.After(5 * time.Second):
-		t.Fatal("no window completed")
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, Path, bytes.NewReader(rec))
+	req.RemoteAddr = "127.0.0.1:5555"
+	w := httptest.NewRecorder()
+	c.ServeHTTP(w, req)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("status %d", w.Code)
+	}
+	deadline := time.After(5 * time.Second)
+	for done := false; !done; {
+		clk.set(clk.now().Add(state.WafWindow))
+		select {
+		case <-kicked:
+			done = true
+		case <-time.After(20 * time.Millisecond):
+		case <-deadline:
+			t.Fatal("no window completed")
+		}
 	}
 	if p := c.Pending(); len(p) != 1 || p[0].Blocked != 1 {
 		t.Errorf("pending = %+v", p)

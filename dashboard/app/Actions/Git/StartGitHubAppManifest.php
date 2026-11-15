@@ -19,11 +19,14 @@ use Illuminate\Support\Str;
 /**
  * Starts the GitHub App manifest flow (docs/09 R19): a single-use state bound
  * to the team and user (60 min), and the manifest with the minimal
- * permissions. The browser posts it to GitHub, which redirects back to
- * {@see CompleteGitHubAppManifest} with a one-time code.
+ * permissions. The browser posts it to GitHub, which redirects back to the
+ * manifest callback ({@see ConsumeManifestState}, then {@see RegisterGitHubApp})
+ * with a one-time code.
  */
 final readonly class StartGitHubAppManifest
 {
+    public const string STATE_PREFIX = 'lr_ghm_';
+
     public const string STATE_CACHE_PREFIX = 'launchroom:github:manifest:';
 
     /** docs/09 R19. */
@@ -50,7 +53,7 @@ final readonly class StartGitHubAppManifest
     {
         [$webUrl, $apiUrl] = $this->hosts($data->githubUrl);
 
-        $state = OpaqueToken::generate('lr_ghm_');
+        $state = OpaqueToken::generate(self::STATE_PREFIX);
 
         Cache::put(self::STATE_CACHE_PREFIX.OpaqueToken::hash($state), [
             'team_id' => $team->id,

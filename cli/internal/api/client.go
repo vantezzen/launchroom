@@ -105,7 +105,6 @@ func NewIdempotencyKey() string {
 	return "cli-" + hex.EncodeToString(b)
 }
 
-// request describes one API call.
 type request struct {
 	method     string
 	path       string
@@ -490,8 +489,8 @@ func (c *Client) CheckConfig(ctx context.Context, envID, content string, diff bo
 	return r, c.do(ctx, request{method: http.MethodPost, path: "/environments/" + seg(envID) + "/config/" + action, body: map[string]string{"content": content}}, &r, nil)
 }
 
-// SecurityFindings lists findings of the token's team (all pages);
-// level is "action_needed", "worth_knowing" or "" for both.
+// SecurityFindings lists findings of the token's team (all pages); level
+// is one of FindingLevelValues, or "" for every level.
 func (c *Client) SecurityFindings(ctx context.Context, level string) ([]SecurityFinding, error) {
 	var all []SecurityFinding
 	q := url.Values{"limit": {"100"}}

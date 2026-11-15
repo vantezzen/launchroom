@@ -2,22 +2,6 @@ import { ArrowUpRight } from 'lucide-react';
 
 type Problem = App.Data.ConfigAsCode.ConfigFileProblemData;
 
-/** `https://github.com/acme/shop/blob/<sha>/launchroom.json#L14` */
-export function fileLineUrl(
-    repository: string | null,
-    commitSha: string | null,
-    path: string,
-    line: number | null,
-): string | null {
-    if (!repository || !commitSha) {
-        return null;
-    }
-
-    const file = path.split('/').map(encodeURIComponent).join('/');
-
-    return `https://github.com/${repository}/blob/${commitSha}/${file}${line ? `#L${line}` : ''}`;
-}
-
 /**
  * One launchroom.json problem (docs/18 §6): where, what, what to do, and
  * the lines around it with the line marked and a caret under the column.

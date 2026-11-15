@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Services\Git;
 
+use App\Contracts\Git\ApiConnectionProvider;
+use App\Contracts\Git\ConnectionProvider;
 use App\Contracts\Git\GitProvider;
 use App\Contracts\Git\SourceRepository;
 use App\Data\Services\GitSource;
@@ -13,11 +15,13 @@ use App\Models\Git\GitHubRepository;
 use App\Models\Git\GitRepository;
 use App\Models\Team;
 use App\Services\Git\Providers\GiteaProvider;
-use App\Services\Git\Providers\GitHubProvider;
+use App\Services\Git\Providers\GitHub\GitHubProvider;
 use App\Services\Git\Providers\GitLabProvider;
 use App\Services\Git\Providers\PlainGitProvider;
+use App\Services\Git\Providers\UnconnectedGitProvider;
 use App\Support\PublicId;
 use Illuminate\Contracts\Container\Container;
+use LogicException;
 
 /**
  * The provider registry (docs/19 §2): one {@see GitProvider} per kind, and
@@ -26,8 +30,7 @@ use Illuminate\Contracts\Container\Container;
  */
 final readonly class GitProviders
 {
-    /** A picker repository id of any provider. */
-    public const string REPOSITORY_ID_PATTERN = '/^(?:ghr|gir)_[0-7][0-9A-HJKMNP-TV-Z]{25}$/D';
+    public const string REPOSITORY_ID_PATTERN = '/^(?:ghr|gir)_'.PublicId::ULID_PATTERN.'$/D';
 
     public function __construct(
         private Container $container,
@@ -43,9 +46,27 @@ final readonly class GitProviders
         });
     }
 
+    public function connection(GitProviderKind $kind): ConnectionProvider
+    {
+        $provider = $this->for($kind);
+
+        return $provider instanceof ConnectionProvider ? $provider : throw new LogicException("{$kind->label()} has no git connections.");
+    }
+
+    public function api(GitProviderKind $kind): ApiConnectionProvider
+    {
+        $provider = $this->for($kind);
+
+        return $provider instanceof ApiConnectionProvider ? $provider : throw new LogicException("{$kind->label()} connections have no API.");
+    }
+
     public function forSource(GitSource $source): GitProvider
     {
-        return $this->for($source->kind());
+        if ($source->isUnconnectedPlainGit()) {
+            return $this->container->make(UnconnectedGitProvider::class);
+        }
+
+        return $this->for($source->provider);
     }
 
     /**

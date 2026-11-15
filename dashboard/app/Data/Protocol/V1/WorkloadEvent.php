@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace App\Data\Protocol\V1;
 
-use Spatie\LaravelData\Attributes\Validation\In;
+use App\Data\Attributes\PublicIdOf;
+use App\Data\Attributes\UnknownCodeAsNull;
+use App\Enums\WorkloadEventKind;
+use App\Enums\WorkloadEventReason;
 use Spatie\LaravelData\Attributes\Validation\Max;
 use Spatie\LaravelData\Attributes\Validation\Min;
 use Spatie\LaravelData\Attributes\Validation\Regex;
@@ -19,26 +22,21 @@ use Spatie\LaravelData\Optional;
  */
 final class WorkloadEvent extends Data
 {
-    public const array KINDS = ['created', 'create_failed', 'started', 'exited', 'restarted', 'health_passing', 'health_failing', 'stopped', 'removed'];
-
-    public const array REASONS = ['drained', 'not_desired', 'spec_changed', 'duplicate', 'port_not_bound'];
-
     /**
      * @param  list<LogLine>|null|Optional  $output
      */
     public function __construct(
         #[Min(1)]
         public int $seq,
-        #[Regex('/^wl_[0-9A-HJKMNP-TV-Z]{26}$/D')]
+        #[PublicIdOf('wl')]
         public string $workload,
         #[Regex(Report::TIME_PATTERN)]
         public string $at,
-        #[In(self::KINDS)]
-        public string $kind,
-        #[Regex('/^dpl_[0-9A-HJKMNP-TV-Z]{26}$/D')]
+        public WorkloadEventKind $kind,
+        #[PublicIdOf('dpl')]
         public string|Optional $deployment = new Optional,
-        #[In(self::REASONS)]
-        public string|Optional $reason = new Optional,
+        #[UnknownCodeAsNull]
+        public WorkloadEventReason|null|Optional $reason = new Optional,
         public int|null|Optional $exitCode = new Optional,
         public bool|Optional $oomKilled = new Optional,
         #[Min(0)]
@@ -59,8 +57,6 @@ final class WorkloadEvent extends Data
     }
 
     /**
-     * The output lines (already validated).
-     *
      * @return list<LogLine>
      */
     public function lines(): array

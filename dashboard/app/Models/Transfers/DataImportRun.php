@@ -4,12 +4,17 @@ declare(strict_types=1);
 
 namespace App\Models\Transfers;
 
+use App\Broadcasting\ServiceActivityTopic;
+use App\Data\Protocol\V1\DataImportResult;
+use App\Enums\Contracts\HasTransitionTable;
 use App\Enums\Transfers\DataSubject;
 use App\Enums\Transfers\ImportRunStatus;
 use App\Enums\Transfers\ImportSourceKind;
+use App\Events\Broadcasts\ServiceActivityChanged;
 use App\Models\Backups\BackupRun;
 use App\Models\Concerns\BelongsToTeam;
 use App\Models\Concerns\HasPublicId;
+use App\Models\Concerns\HasStatusTransitions;
 use App\Models\DaemonTask;
 use App\Models\ServiceInstance;
 use App\Models\User;
@@ -44,7 +49,7 @@ use Illuminate\Support\Carbon;
  * @property int|null $safety_backup_run_id
  * @property int|null $daemon_task_id
  * @property int|null $actor_id
- * @property array<string, mixed>|null $result protocol DataImportResult
+ * @property DataImportResult|null $result what the import task reported
  * @property string|null $error
  * @property Carbon|null $holding_since
  * @property Carbon|null $started_at
@@ -64,19 +69,20 @@ final class DataImportRun extends Model
 {
     use BelongsToTeam, HasPublicId;
 
+    /** @use HasStatusTransitions<ImportRunStatus> */
+    use HasStatusTransitions;
+
     public static function publicIdPrefix(): string
     {
         return 'imp';
     }
 
     /**
-     * The only way an import's status changes (docs/10 §2.2 rule 3).
+     * @param  ImportRunStatus  $from
+     * @param  ImportRunStatus  $to
      */
-    public function transitionTo(ImportRunStatus $to, ?string $error = null): void
+    protected function recordTransition(HasTransitionTable $from, HasTransitionTable $to, ?string $note): void
     {
-        $this->status->assertCanTransitionTo($to);
-        $this->status = $to;
-
         if ($to === ImportRunStatus::Holding) {
             $this->forceFill(['holding_since' => now()]);
         }
@@ -87,12 +93,10 @@ final class DataImportRun extends Model
 
         if ($to->isTerminal()) {
             $this->forceFill(['finished_at' => now()]);
-            $this->error = $error === null ? null : mb_substr($error, 0, 2048);
+            $this->error = $note;
             // A sealed URL is never kept past the run.
             $this->sealed_source = null;
         }
-
-        $this->save();
     }
 
     /**
@@ -157,10 +161,15 @@ final class DataImportRun extends Model
             'strip_components' => 'integer',
             'owner_uid' => 'integer',
             'owner_gid' => 'integer',
-            'result' => 'array',
+            'result' => DataImportResult::class,
             'holding_since' => 'datetime',
             'started_at' => 'datetime',
             'finished_at' => 'datetime',
         ];
+    }
+
+    protected function transitioned(HasTransitionTable $from, HasTransitionTable $to): void
+    {
+        ServiceActivityChanged::about($this->serviceInstance, ServiceActivityTopic::Imports);
     }
 }

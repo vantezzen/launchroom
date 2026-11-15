@@ -7,6 +7,7 @@ namespace App\Actions\Servers;
 use App\Actions\Audit\RecordAuditEvent;
 use App\Data\Audit\AuditActor;
 use App\Data\Audit\AuditEntryData;
+use App\Data\Servers\PinnedLocationData;
 use App\Data\Servers\ServerLocationInputData;
 use App\Data\Servers\UpdateServerAppearanceData;
 use App\Enums\AuditAction;
@@ -38,16 +39,11 @@ final readonly class UpdateServerAppearance
             }
 
             if (! $data->location instanceof Optional) {
-                $location = $data->location instanceof ServerLocationInputData ? [
-                    'label' => trim($data->location->label),
-                    'latitude' => round($data->location->latitude, 4),
-                    'longitude' => round($data->location->longitude, 4),
-                    'countryCode' => $data->location->countryCode,
-                ] : null;
+                $location = $data->location instanceof ServerLocationInputData ? PinnedLocationData::fromInput($data->location) : null;
 
-                if ($server->location !== $location) {
+                if ($server->location?->toArray() !== $location?->toArray()) {
                     $server->location = $location;
-                    $meta['location'] = $location['label'] ?? null;
+                    $meta['location'] = $location?->label;
                 }
             }
 

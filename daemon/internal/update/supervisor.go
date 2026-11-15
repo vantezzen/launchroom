@@ -17,11 +17,9 @@ import (
 
 	"github.com/moby/moby/client"
 
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
-
-// SupervisorCommand is the launchroomd subcommand that runs RunSupervisor.
-const SupervisorCommand = "update-supervisor"
 
 // pgDump is where the control-plane database is dumped before an update,
 // inside the postgres container (./data/postgres on the host).
@@ -30,8 +28,9 @@ const pgDump = "/var/lib/postgresql/launchroom-pre-upgrade.dump"
 // managed files backed up before an update, relative to the install folder.
 var (
 	daemonManagedFiles = []string{"compose.yml", ".env"}
-	cpManagedFiles     = []string{"compose.yml", ".env", "launchroom", "data/zot/config.json"}
-	cpAppServices      = []string{"dashboard", "horizon", "reverb", "scheduler"}
+	// daemon-compose.yml is what compose.yml's launchroomd and dockerd-guard extend.
+	cpManagedFiles = []string{"compose.yml", "daemon-compose.yml", ".env", "launchroom", "data/zot/config.json"}
+	cpAppServices  = []string{"dashboard", "horizon", "reverb", "scheduler"}
 )
 
 // Supervisor performs the swap described by a plan. It runs in its own
@@ -162,7 +161,9 @@ func (s *Supervisor) run(ctx context.Context, p *Plan) Status {
 	if p.Scope == state.UpdateControlPlane {
 		_ = s.compose(rctx, p, time.Minute, "exec", "-T", "postgres", "rm", "-f", pgDump)
 	}
-	return Status{Outcome: OutcomeRolledBack, Error: fmt.Sprintf("rolled back to %s: %v", p.From, failure)}
+	// Error keeps the English sentence for dashboards that predate
+	// SelfUpdateResult.reason; newer ones word the rollback from the result.
+	return Status{Outcome: OutcomeRolledBack, Error: fmt.Sprintf("rolled back to %s: %v", p.From, failure), Reason: failure.Error()}
 }
 
 // install runs the bundle's installer (the documented upgrade path) in the
@@ -213,7 +214,6 @@ func (s *Supervisor) restoreDatabase(ctx context.Context, p *Plan) error {
 	return nil
 }
 
-// compose runs `docker compose` for the install folder in a helper container.
 func (s *Supervisor) compose(ctx context.Context, p *Plan, timeout time.Duration, args ...string) error {
 	cmd := append([]string{"docker", "compose", "--project-directory", p.ProjectDir, "-p", p.Project}, args...)
 	return s.helperRun(ctx, p, args[0], cmd, nil, timeout)
@@ -229,7 +229,7 @@ func (s *Supervisor) helperRun(ctx context.Context, p *Plan, step string, cmd, e
 	}
 	user, groups := ownerOf(p.ProjectDir), socketGroup(dockerSocket)
 	h := helper{
-		Name: "lr-system-update-" + strings.ToLower(strings.TrimPrefix(string(p.TaskID), "tsk_")) + "-" + step, Image: string(p.ComposeImage),
+		Name: names.UpdaterStep(p.TaskID, step), Image: string(p.ComposeImage),
 		Entrypoint: []string{}, Cmd: cmd, WorkingDir: p.ProjectDir, User: user, GroupAdd: groups, TaskID: string(p.TaskID),
 		// Plain compose output: the helper has a TTY (raw log stream), which
 		// would otherwise get progress bars and colour codes into logs and
@@ -304,8 +304,6 @@ func (s *Supervisor) unchanged(ctx context.Context, p *Plan, updateStart time.Ti
 	started, err := time.Parse(time.RFC3339Nano, res.Container.State.StartedAt)
 	return err == nil && started.Before(updateStart)
 }
-
-// ---- files ----
 
 type savedFile struct {
 	Rel      string

@@ -83,11 +83,7 @@ final readonly class ControlPlaneLoad
      */
     public function compute(CarbonImmutable $now): ?array
     {
-        $serverId = Server::query()
-            ->where('is_control_plane', true)
-            ->whereNull('revoked_at')
-            ->orderBy('id')
-            ->value('id');
+        $serverId = Server::currentControlPlane()?->id;
 
         if ($serverId === null) {
             return null;

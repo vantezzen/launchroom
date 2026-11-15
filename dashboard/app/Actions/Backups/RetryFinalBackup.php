@@ -11,13 +11,11 @@ use App\Models\User;
 use App\Services\Backups\FinalBackups;
 use Illuminate\Support\Facades\DB;
 
-/**
- * Takes the final backups of a blocked deletion again (docs/14 §9.13).
- */
 final readonly class RetryFinalBackup
 {
     public function __construct(
         private FinalBackups $finalBackups,
+        private StartFinalBackups $start,
         private ContinueDeletion $continue,
     ) {}
 
@@ -25,7 +23,7 @@ final readonly class RetryFinalBackup
     {
         $request = DB::transaction(function () use ($request, $user, $actor): DeletionRequest {
             $request = DeletionRequest::query()->whereKey($request->id)->lockForUpdate()->firstOrFail();
-            $this->finalBackups->retry($request, $this->finalBackups->instancesFor($request), $user, $actor);
+            $this->retry($request, $user, $actor);
 
             return $request;
         });
@@ -33,5 +31,25 @@ final readonly class RetryFinalBackup
         if ($request->status === DeletionRequestStatus::Ready) {
             $this->continue->handle($request, $actor);
         }
+    }
+
+    /** blocked → backing_up, or ready when nothing needs a backup any more. */
+    private function retry(DeletionRequest $request, User $user, AuditActor $actor): void
+    {
+        if ($request->status !== DeletionRequestStatus::Blocked) {
+            return;
+        }
+
+        $needed = $this->finalBackups->needed($this->finalBackups->instancesFor($request));
+        $request->forceFill(['backup_run_ids' => []]);
+        $request->transitionTo(DeletionRequestStatus::BackingUp);
+
+        if ($needed === []) {
+            $request->transitionTo(DeletionRequestStatus::Ready);
+
+            return;
+        }
+
+        $this->start->handle($request, $needed, $user, $actor);
     }
 }

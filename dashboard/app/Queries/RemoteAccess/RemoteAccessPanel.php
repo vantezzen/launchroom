@@ -9,17 +9,16 @@ use App\Data\RemoteAccess\RemoteAccessData;
 use App\Data\RemoteAccess\RemoteAccessPanelData;
 use App\Data\Services\DatabaseSource;
 use App\Data\Sessions\SessionReplicaData;
-use App\Enums\Permission;
 use App\Enums\RemoteAccess\RemoteAccessKind;
-use App\Enums\RemoteAccess\RemoteAccessStatus;
 use App\Enums\ServiceKind;
+use App\Enums\TaskBackedAccessStatus;
 use App\Models\Placement;
 use App\Models\RemoteAccess\RemoteAccess;
 use App\Models\ServiceInstance;
 use App\Models\User;
 use App\Models\Volume;
 use App\Services\RemoteAccess\RemoteAccessTargets;
-use App\Services\RemoteAccess\RemoteAccessView;
+use App\Services\Sessions\SessionTargets;
 use App\Support\RemoteAccess\AccessPrefix;
 
 /**
@@ -32,6 +31,7 @@ final readonly class RemoteAccessPanel
 
     public function __construct(
         private RemoteAccessTargets $targets,
+        private SessionTargets $sessions,
     ) {}
 
     public function panel(ServiceInstance $instance, RemoteAccessKind $kind, User $user, ?string $requesterIp, ?string $volumeId = null): ?RemoteAccessPanelData
@@ -55,7 +55,7 @@ final readonly class RemoteAccessPanel
                 default => null,
             };
         } elseif ($kind === RemoteAccessKind::Database) {
-            $source = $this->targets->database($instance);
+            $source = $this->sessions->database($instance);
 
             if (! $source instanceof DatabaseSource) {
                 return null;
@@ -64,7 +64,7 @@ final readonly class RemoteAccessPanel
             $engineLabel = $source->engine->label();
             $placement = $this->targets->databaseReplica($instance);
             $reason = match (true) {
-                ! RemoteAccessTargets::engineSupported($source->engine) => $engineLabel.' has no temporary access yet. Use the Data tab.',
+                ! $this->targets->engineSupported($source->engine) => $engineLabel.' has no temporary access yet. Use the Data tab.',
                 ! $placement instanceof Placement => $engineLabel.' isn’t running on a server that allows temporary access. Deploy it, or update its server in Settings → Updates.',
                 default => null,
             };
@@ -107,14 +107,12 @@ final readonly class RemoteAccessPanel
      */
     private function accesses(ServiceInstance $instance, RemoteAccessKind $kind, User $user, ?Volume $volume): array
     {
-        $everyone = $user->hasTeamPermission($instance->team_id, Permission::ManageMembers);
-
         return array_values(RemoteAccess::query()
             ->where('service_instance_id', $instance->id)
             ->where('kind', $kind->value)
             ->when($volume instanceof Volume, static fn ($query) => $query->where('volume_id', $volume?->id))
-            ->unless($everyone, static fn ($query) => $query->where('user_id', $user->id))
-            ->orderByRaw('CASE WHEN status = ? THEN 1 ELSE 0 END', [RemoteAccessStatus::Ended->value])
+            ->visibleTo($user, $instance->team_id)
+            ->orderByRaw('CASE WHEN status = ? THEN 1 ELSE 0 END', [TaskBackedAccessStatus::Ended->value])
             ->latest('id')
             ->limit(self::RECENT)
             ->get()

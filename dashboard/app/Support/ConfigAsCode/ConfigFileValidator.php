@@ -5,11 +5,13 @@ declare(strict_types=1);
 namespace App\Support\ConfigAsCode;
 
 use App\Data\ConfigAsCode\ConfigFileProblemData;
+use App\Enums\ServiceKind;
 use App\Enums\VariableExposure;
 use App\Enums\VariableType;
 use App\Support\Cron\CronGrammar;
 use App\Support\Hostname;
 use App\Support\Images\ImageReference;
+use App\Support\Services\VolumeMountRules;
 use App\Support\Variables\EnvFileParser;
 use App\Support\Variables\VariableReferences;
 
@@ -22,18 +24,7 @@ use App\Support\Variables\VariableReferences;
  */
 final readonly class ConfigFileValidator
 {
-    /** Settings each kind may have besides kind, name, enabled, scaling, variables. */
-    private const array ALLOWED = [
-        'app' => ['rootDirectory', 'branch', 'build', 'deploy', 'domains', 'volumes', 'connections'],
-        'image' => ['image', 'deploy', 'domains', 'volumes', 'connections'],
-        'database' => ['engine', 'version'],
-        'worker' => ['of', 'branch', 'deploy', 'connections'],
-        'cron' => ['of', 'branch', 'deploy', 'connections'],
-    ];
-
     private const array COMMON = ['kind', 'name', 'enabled', 'scaling', 'variables'];
-
-    private const array FORBIDDEN_MOUNTS = ['/proc', '/sys', '/dev', '/var/run/docker.sock', '/run/docker.sock'];
 
     public function __construct(
         private ConfigSchema $schema,
@@ -94,7 +85,7 @@ final readonly class ConfigFileValidator
         $kind = $service->kind();
         $slug = $service->slug;
         $checked = $override ? array_keys($service->override) : array_keys($service->config);
-        $allowed = [...self::COMMON, ...self::ALLOWED[$kind]];
+        $allowed = [...self::COMMON, ...(ServiceKind::tryFrom($kind)?->configFields() ?? [])];
         $label = $kind === 'app' || $kind === 'image' ? "an {$kind} service" : "a {$kind}";
 
         foreach ($checked as $key) {
@@ -131,8 +122,7 @@ final readonly class ConfigFileValidator
             foreach ($service->group('volumes') as $index => $path) {
                 $path = is_string($path) ? $path : '';
 
-                if (array_any(explode('/', $path), static fn (string $segment): bool => $segment === '.' || $segment === '..')
-                    || array_any(self::FORBIDDEN_MOUNTS, static fn (string $forbidden): bool => $path === $forbidden || str_starts_with($path, $forbidden.'/'))) {
+                if (! VolumeMountRules::isClean($path) || VolumeMountRules::isForbidden($path)) {
                     $errors[] = $problems->at($service->pointerFor('volumes', (string) $index), "\"{$path}\" can't be a volume.", 'Pick a clean path outside /proc, /sys and /dev, like /data.');
                 }
             }

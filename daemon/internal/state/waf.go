@@ -27,7 +27,7 @@ const (
 	maxWafEventRules    = 8
 	maxWafEventTargets  = 8
 	maxWafCategories    = 13
-	maxWafScore         = 10000
+	MaxWafScore         = 10000
 	maxWafStatusMessage = 1024
 	// WafRuleMin and WafRuleMax bound the rule ids an event may name
 	// (CRS's own range).
@@ -362,8 +362,8 @@ func (ev WafEvent) validate(e *errs, p string) {
 	}
 	unique(e, p+".targets", ev.Targets)
 	e.check(p+".clientNetwork", ev.ClientNetwork)
-	if ev.Score < 0 || ev.Score > maxWafScore {
-		e.addf(p+".score", "must be between 0 and %d", maxWafScore)
+	if ev.Score < 0 || ev.Score > MaxWafScore {
+		e.addf(p+".score", "must be between 0 and %d", MaxWafScore)
 	}
 	e.check(p+".reference", ev.Reference)
 }

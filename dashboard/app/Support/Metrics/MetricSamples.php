@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Support\Metrics;
 
 use App\Data\Protocol\V1\Report;
+use App\Support\Hostname;
+use App\Support\PublicId;
 use Carbon\CarbonImmutable;
 use Throwable;
 
@@ -63,7 +65,7 @@ final class MetricSamples
             $workload = $item['workload'] ?? null;
             $at = self::minute($item['at'] ?? null, $now);
 
-            if (! is_string($workload) || preg_match('/^wl_[0-9A-HJKMNP-TV-Z]{26}$/D', $workload) !== 1 || ! $at instanceof CarbonImmutable) {
+            if (! is_string($workload) || ! PublicId::isValid($workload, 'wl') || ! $at instanceof CarbonImmutable) {
                 continue;
             }
 
@@ -96,7 +98,7 @@ final class MetricSamples
             $at = self::minute($item['at'] ?? null, $now);
             $requests = self::int($item['requests'] ?? null, PHP_INT_MAX);
 
-            if (! is_string($route) || preg_match('/^rt_[0-9A-HJKMNP-TV-Z]{26}$/D', $route) !== 1 || ! $at instanceof CarbonImmutable || $requests === null || $requests < 1) {
+            if (! is_string($route) || ! PublicId::isValid($route, 'rt') || ! $at instanceof CarbonImmutable || $requests === null || $requests < 1) {
                 continue;
             }
 
@@ -138,9 +140,6 @@ final class MetricSamples
     /** state.RequestPath: "/" + printable ASCII without "?" and "#", ≤ 128 bytes. */
     public const string PATH_PATTERN = '/^\/[!"$->@-~]{0,127}$/D';
 
-    /** state.Hostname. */
-    public const string HOST_PATTERN = '/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/D';
-
     /**
      * Request analytics of an edge (docs/15 §5.2): one row per (route,
      * 10-minute window) with its top paths and referrer hosts. Whitelisted
@@ -159,7 +158,7 @@ final class MetricSamples
             $at = self::minute($item['at'] ?? null, $now, self::MAX_ANALYTICS_AGE_MINUTES);
             $requests = self::int($item['requests'] ?? null, PHP_INT_MAX);
 
-            if (! is_string($route) || preg_match('/^rt_[0-9A-HJKMNP-TV-Z]{26}$/D', $route) !== 1
+            if (! is_string($route) || ! PublicId::isValid($route, 'rt')
                 || ! $at instanceof CarbonImmutable || $at->minute % 10 !== 0 || $requests === null || $requests < 1) {
                 continue;
             }
@@ -257,7 +256,7 @@ final class MetricSamples
             $host = is_array($item) ? ($item['host'] ?? null) : null;
             $r = is_array($item) ? self::int($item['requests'] ?? null, PHP_INT_MAX) : null;
 
-            if (! is_string($host) || strlen($host) > 253 || preg_match(self::HOST_PATTERN, $host) !== 1 || $r === null || $r < 1 || isset($out[$host])) {
+            if (! is_string($host) || strlen($host) > 253 || preg_match(Hostname::PATTERN, $host) !== 1 || $r === null || $r < 1 || isset($out[$host])) {
                 return null;
             }
 

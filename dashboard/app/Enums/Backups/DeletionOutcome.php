@@ -18,6 +18,9 @@ enum DeletionOutcome: string
     /** A final backup failed or could not start; nothing was deleted. */
     case Blocked = 'blocked';
 
+    /** Another backup or restore of one of its services runs; nothing was deleted, ask again once it finished. */
+    case Busy = 'busy';
+
     public static function forStatus(DeletionRequestStatus $status): self
     {
         return $status === DeletionRequestStatus::Blocked ? self::Blocked : self::WaitingForFinalBackup;

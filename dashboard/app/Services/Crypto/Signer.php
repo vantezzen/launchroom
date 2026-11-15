@@ -40,9 +40,6 @@ final readonly class Signer
         return new self($kid, sodium_crypto_sign_secretkey($keypair), sodium_crypto_sign_publickey($keypair));
     }
 
-    /**
-     * The `X-LR-Signature` header value for $body.
-     */
     public function signatureHeader(string $body): string
     {
         return 'kid='.$this->kid.', sig='.base64_encode(sodium_crypto_sign_detached($body, $this->secretKey));

@@ -15,7 +15,7 @@ This page helps you find which one and fix it.
 
 ## Where to look
 
-- **Servers** shows each server's status: **Online**, **Unreachable** (no contact for over 75 seconds), **Offline** (no contact for 5 minutes), **Pending approval** or **Revoked**.
+- **Servers** shows each server's status: **Online**, **Unreachable** (no contact for over 75 seconds), **Offline** (no contact for 5 minutes), **Waiting for approval** or **Revoked**.
 - A server's **Overview** tab has the **Health** section: one line per check, with a sentence on what to do for anything that isn't fine.
 - On the server itself, launchroomd's log says what it is doing. In the install folder (`./launchroomd` on added servers):
 
@@ -44,7 +44,7 @@ Check these in order:
 3. **Check the dashboard URL.** The command contains the dashboard's address. If you copied it from a dashboard you reach at `localhost` or through an SSH tunnel, other machines can't use it. Move the dashboard to a public address first. See [Dashboard domain](/docs/operations/dashboard-domain).
 4. **Check that the token was still valid.** Join tokens work once and expire after 30 minutes. The page shows "This install link expired before a server used it." in that case. Click **Get a new command** and run the new one. Re-running the installer with a new token is safe as long as the server hasn't enrolled yet.
 5. **Check the server's clock.** See the clock section below.
-6. **Check whether the team requires approval.** If it does, the server shows up as **Pending approval** and waits until an owner or admin compares the key fingerprint and clicks **Approve server**.
+6. **Check whether the team requires approval.** If it does, the server shows up as **Waiting for approval** until an owner or admin compares the key fingerprint and clicks **Approve server**.
 
 ## Server shows Unreachable
 
@@ -136,7 +136,7 @@ Apps can reach the internet. Reaching a machine on your local network (a NAS, a 
 What you do depends on its state:
 
 - **Waiting for its first connection**: on the Add a server page, under "Changed your mind?", click **Remove server**. The command stops working.
-- **Pending approval**: open it and use **Remove** in its Settings tab. It never ran anything.
+- **Waiting for approval**: open it and use **Remove** in its Settings tab. It never ran anything.
 - **Online, Unreachable or Offline, and you want it gone**: Settings tab → Danger zone → **Revoke**. Its key is rejected at once and it needs a new install command to come back.
 - **Dead, and it ran apps or databases**: use **Replace server** at the top of its page instead. launchroom moves its roles and labels to another server, restores its databases there from their latest backups and redeploys the rest. See [Replace a server](/docs/servers/replace-a-server).
 

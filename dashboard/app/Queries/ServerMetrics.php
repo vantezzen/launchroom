@@ -16,6 +16,8 @@ use App\Data\Metrics\ServiceUsageSeriesData;
 use App\Data\Servers\ServerSpecsData;
 use App\Enums\MetricRange;
 use App\Models\Server;
+use App\Queries\Metrics\LatestSample;
+use App\Queries\Metrics\MetricInstances;
 use App\Support\Metrics\Cast;
 use App\Support\Metrics\MetricWindow;
 use Carbon\CarbonImmutable;
@@ -30,9 +32,6 @@ final readonly class ServerMetrics
 {
     /** "Used by" shows this many projects in colour; the rest fold into "Other". */
     public const int TOP_PROJECTS = 4;
-
-    /** A server whose newest minute is older than this has no current values. */
-    public const int CURRENT_WITHIN_MINUTES = 5;
 
     private const array HOST_KEYS = ['cpu_pct', 'mem_used_mb', 'mem_total_mb', 'mem_pct', 'disk_used_mb', 'disk_total_mb', 'disk_pct', 'net_rx_bps', 'net_tx_bps', 'load1'];
 
@@ -206,7 +205,7 @@ final readonly class ServerMetrics
             $current,
             $this->usedBy($usage, $current?->memTotalMb),
             $rows,
-            ProjectMetrics::deploys(array_map(static fn (array $s): int => $s['id'], $services), $window),
+            DeployMarkers::forInstances(array_map(static fn (array $s): int => $s['id'], $services), $window->from()),
             RequestMetrics::data(
                 $traffic,
                 $requests->totals(['server' => $server->id], $window, false)[0] ?? null,
@@ -215,40 +214,6 @@ final readonly class ServerMetrics
                 $count,
             ),
         );
-    }
-
-    /**
-     * Service instance names for metric rows.
-     *
-     * @param  list<int>  $ids
-     * @return list<array{id: int, service_public_id: string, service_name: string, environment_public_id: string, environment_name: string, project_public_id: string, project_name: string, color_slot: int}>
-     */
-    public static function instances(array $ids): array
-    {
-        if ($ids === []) {
-            return [];
-        }
-
-        $rows = DB::table('service_instances as si')
-            ->join('services as s', 's.id', '=', 'si.service_id')
-            ->join('environments as e', 'e.id', '=', 'si.environment_id')
-            ->join('projects as p', 'p.id', '=', 'e.project_id')
-            ->whereIn('si.id', $ids)
-            ->orderBy('s.name')
-            ->get(['si.id', 's.public_id as service_public_id', 's.name as service_name', 'e.public_id as environment_public_id', 'e.name as environment_name', 'p.public_id as project_public_id', 'p.name as project_name', 'p.color_slot'])
-            ->map(static fn (object $row): array => [
-                'id' => Cast::id($row->id ?? null),
-                'service_public_id' => Cast::string($row->service_public_id ?? null),
-                'service_name' => Cast::string($row->service_name ?? null),
-                'environment_public_id' => Cast::string($row->environment_public_id ?? null),
-                'environment_name' => Cast::string($row->environment_name ?? null),
-                'project_public_id' => Cast::string($row->project_public_id ?? null),
-                'project_name' => Cast::string($row->project_name ?? null),
-                'color_slot' => Cast::id($row->color_slot ?? null),
-            ])
-            ->all();
-
-        return array_values($rows);
     }
 
     /**
@@ -307,8 +272,6 @@ final readonly class ServerMetrics
     }
 
     /**
-     * The newest minute per server (≤ 5 minutes old).
-     *
      * @param  list<int>  $serverIds
      * @return array<int, HostUsageNowData>
      */
@@ -318,14 +281,7 @@ final readonly class ServerMetrics
             return [];
         }
 
-        $rows = DB::table('server_metric_samples')
-            ->selectRaw('DISTINCT ON (server_id) server_id, at, cpu_pct, mem_used_mb, mem_total_mb, disk_used_mb, disk_total_mb, net_rx_bps, net_tx_bps, load1, build_cpu_cores')
-            ->whereIn('server_id', $serverIds)
-            ->where('resolution', 1)
-            ->where('at', '>=', $now->subMinutes(self::CURRENT_WITHIN_MINUTES)->toIso8601String())
-            ->orderBy('server_id')
-            ->orderByDesc('at')
-            ->get();
+        $rows = LatestSample::servers($serverIds, $now, ['cpu_pct', 'mem_used_mb', 'mem_total_mb', 'disk_used_mb', 'disk_total_mb', 'net_rx_bps', 'net_tx_bps', 'load1', 'build_cpu_cores'])->get();
 
         $out = [];
 
@@ -354,7 +310,7 @@ final readonly class ServerMetrics
     }
 
     /**
-     * Workload usage of each server's newest workload minute (≤ 5 minutes old).
+     * Workload usage of each server's newest workload minute.
      *
      * @param  list<int>  $serverIds
      * @return array<int, list<array{project_id: int, cpu: float, mem: int}>>
@@ -365,10 +321,8 @@ final readonly class ServerMetrics
             return [];
         }
 
-        $rows = DB::table('workload_metric_samples as w')
+        $rows = LatestSample::workloadsPerServer($now)
             ->whereIn('w.server_id', $serverIds)
-            ->where('w.resolution', 1)
-            ->whereRaw('w.at = (SELECT max(x.at) FROM workload_metric_samples x WHERE x.server_id = w.server_id AND x.resolution = 1 AND x.at >= ?)', [$now->subMinutes(self::CURRENT_WITHIN_MINUTES)->toIso8601String()])
             ->get(['w.server_id', 'w.project_id', 'w.cpu_cores', 'w.mem_mb']);
 
         $out = [];
@@ -447,10 +401,8 @@ final readonly class ServerMetrics
 
         $current = [];
 
-        foreach (DB::table('workload_metric_samples as w')
+        foreach (LatestSample::workloadsPerServer($window->now)
             ->where('w.server_id', $server->id)
-            ->where('w.resolution', 1)
-            ->whereRaw('w.at = (SELECT max(x.at) FROM workload_metric_samples x WHERE x.server_id = w.server_id AND x.resolution = 1 AND x.at >= ?)', [$window->now->subMinutes(self::CURRENT_WITHIN_MINUTES)->toIso8601String()])
             ->groupBy('w.service_instance_id')
             ->selectRaw('w.service_instance_id, sum(w.cpu_cores) as cpu, sum(w.mem_mb) as mem')
             ->get() as $row) {
@@ -487,6 +439,6 @@ final readonly class ServerMetrics
             'mem' => $series[$si['id']]['mem'] ?? $window->empty(),
             'current_cpu' => $current[$si['id']]['cpu'] ?? null,
             'current_mem' => $current[$si['id']]['mem'] ?? null,
-        ], self::instances($ids));
+        ], MetricInstances::named($ids));
     }
 }

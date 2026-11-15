@@ -25,16 +25,13 @@ return [
     | Database Connections
     |--------------------------------------------------------------------------
     |
-    | Below are all of the database connections defined for your application.
-    | An example configuration is provided for each database system which
-    | is supported by Laravel. You're free to add / remove connections.
+    | launchroom is Postgres-only (docs/07-data-model.md). Other drivers were
+    | removed on purpose so nothing silently falls back to SQLite/MySQL.
     |
     */
 
     'connections' => [
 
-        // launchroom is Postgres-only (docs/07-data-model.md). Other drivers were
-        // removed on purpose so nothing silently falls back to SQLite/MySQL.
         'pgsql' => [
             'driver' => 'pgsql',
             'url' => env('DB_URL'),

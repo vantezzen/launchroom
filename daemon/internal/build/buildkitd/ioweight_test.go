@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/vantezzen/launchroom/daemon/internal/docker/dockerfake"
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/policy"
 )
 
@@ -37,7 +38,7 @@ func TestHostWithoutIOWeightStillBuilds(t *testing.T) {
 	if d.refused != 1 {
 		t.Fatalf("refused %d starts, want 1", d.refused)
 	}
-	cc, ok := d.Create(ContainerName)
+	cc, ok := d.Create(names.BuildkitContainer)
 	if !ok || cc.HostConfig.BlkioWeight != 0 || cc.HostConfig.CPUShares != buildCPUShares {
 		t.Fatalf("container resources %+v", cc.HostConfig.Resources)
 	}

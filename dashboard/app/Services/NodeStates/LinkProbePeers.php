@@ -4,9 +4,10 @@ declare(strict_types=1);
 
 namespace App\Services\NodeStates;
 
-use App\Enums\DaemonFeature;
+use App\Enums\NodeStateField;
 use App\Models\Server;
-use App\Queries\MeshServers;
+use App\Support\Crypto\PublicKeyFormat;
+use App\Support\Network\Mesh;
 use Illuminate\Contracts\Database\Query\Builder;
 
 /**
@@ -29,7 +30,7 @@ final readonly class LinkProbePeers
             return null;
         }
 
-        $peers = MeshServers::query()
+        $peers = Server::query()->meshMembers()
             ->whereKeyNot($server->id)
             ->whereNotNull('mesh_ip')
             ->where('measure_links', true)
@@ -42,14 +43,14 @@ final readonly class LinkProbePeers
         $out = [];
 
         foreach ($peers as $peer) {
-            if (! $this->eligible($peer) || $peer->mesh_ip === null || ! str_starts_with($peer->signing_public_key, 'ed25519:')) {
+            if (! $this->eligible($peer) || $peer->mesh_ip === null || PublicKeyFormat::parseEd25519($peer->signing_public_key) === null) {
                 continue;
             }
 
             $out[] = ['serverId' => $peer->public_id, 'ipv4' => $peer->mesh_ip, 'signingKey' => $peer->signing_public_key];
         }
 
-        return array_slice($out, 0, 256);
+        return array_slice($out, 0, Mesh::MAX_LINK_PROBE_PEERS);
     }
 
     private function eligible(Server $server): bool
@@ -57,6 +58,6 @@ final readonly class LinkProbePeers
         return $server->measure_links
             && $server->mesh_ip !== null
             && $server->revoked_at === null
-            && $server->supportsDaemonFeature(DaemonFeature::LinkProbe);
+            && FeatureGate::accepts($server, NodeStateField::LinkProbe);
     }
 }

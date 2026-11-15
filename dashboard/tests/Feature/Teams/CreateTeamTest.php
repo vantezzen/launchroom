@@ -6,7 +6,6 @@ use App\Enums\AuditAction;
 use App\Enums\TeamRole;
 use App\Models\AuditEvent;
 use App\Models\Team;
-use App\Models\User;
 
 beforeEach(function (): void {
     $this->team = Team::factory()->create(['name' => 'Acme']);
@@ -25,7 +24,6 @@ test('an owner or admin creates a team, owns it and switches to it', function (T
     expect($user->current_team_id)->toBe($team->id)
         ->and($user->roleIn($team))->toBe(TeamRole::Owner)
         ->and($team->personal)->toBeFalse()
-        // Still a member of the old team with the old role.
         ->and($user->roleIn($this->team))->toBe($role)
         ->and(AuditEvent::query()->where('action', AuditAction::TeamCreated->value)->where('team_id', $team->id)->count())->toBe(1);
 
@@ -72,5 +70,5 @@ test('the name is required, bounded and free of control characters', function (a
 
 test('guests cannot create teams', function (): void {
     $this->post(route('teams.store'), ['name' => 'x'])->assertRedirect(route('login'));
-    expect(User::query()->count())->toBe(0);
+    expect(Team::query()->count())->toBe(1);
 });

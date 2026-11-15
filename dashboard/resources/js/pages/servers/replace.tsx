@@ -4,10 +4,8 @@ import type { DeviceKind } from '@/components/devices/device-image';
 import { ChoiceTiles } from '@/components/patterns/choice-tiles';
 import { Page, PageHeader } from '@/components/patterns/page';
 import { Section } from '@/components/patterns/section';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import InputError from '@/components/input-error';
-import type { StatusState } from '@/components/status';
-import { Status } from '@/components/status';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
@@ -16,6 +14,10 @@ import { deviceStatus } from '@/features/servers/format';
 import { roleLabels, ServerStatus } from '@/features/servers/server-status';
 import { create, index, show } from '@/routes/servers';
 import { store } from '@/routes/servers/replace';
+import {
+    ReplacementProgress,
+    snapshotAge,
+} from '@/features/servers/replacement-progress';
 
 type Props = {
     server: App.Data.Servers.ReplaceableServerData;
@@ -26,132 +28,6 @@ type Props = {
     canEnroll: boolean;
     devices?: Record<string, string>;
 };
-
-const serviceStates: Record<string, [StatusState, string]> = {
-    pending: ['progress', 'Waiting'],
-    deploying: ['progress', 'Starting on the replacement'],
-    restoring: ['progress', 'Restoring from backup'],
-    restored: ['active', 'Restored'],
-    done: ['active', 'Running'],
-    running: ['active', 'Already running elsewhere'],
-    failed: ['failed', 'Needs attention'],
-    gone: ['idle', 'Removed meanwhile'],
-};
-
-function age(value: string | null): string {
-    if (value === null) {
-        return 'unknown age';
-    }
-
-    const hours = Math.max(
-        0,
-        Math.round((Date.now() - new Date(value).getTime()) / 36e5),
-    );
-
-    return hours < 1
-        ? 'less than an hour old'
-        : hours < 48
-          ? `${hours} h old`
-          : `${Math.round(hours / 24)} days old`;
-}
-
-export function ReplacementProgress({
-    replacement,
-}: {
-    replacement: App.Data.Servers.ServerReplacementData;
-}) {
-    const running = replacement.status === 'running';
-
-    useEffect(() => {
-        if (!running) {
-            return;
-        }
-
-        const timer = window.setInterval(
-            () => router.reload({ only: ['replacement', 'server'] }),
-            3000,
-        );
-
-        return () => window.clearInterval(timer);
-    }, [running]);
-
-    return (
-        <section
-            className="flex flex-col gap-4"
-            aria-labelledby="replacement-progress"
-        >
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                <h2 id="replacement-progress" className="type-heading">
-                    {replacement.newServer} replaces {replacement.oldServer}
-                </h2>
-                <Status
-                    state={
-                        running
-                            ? 'progress'
-                            : replacement.error === null
-                              ? 'active'
-                              : 'warning'
-                    }
-                    label={
-                        running
-                            ? 'In progress'
-                            : replacement.error === null
-                              ? 'Done'
-                              : 'Done with problems'
-                    }
-                />
-            </div>
-            <p className="max-w-[65ch] type-body text-muted-foreground">
-                Roles and labels moved to {replacement.newServer}, and{' '}
-                {replacement.oldServer}’s key was revoked. If it comes back
-                online, it stops its apps. Databases and volumes are restored
-                first, then the services that ran there start.
-            </p>
-            {replacement.error !== null && (
-                <p className="type-body">{replacement.error}</p>
-            )}
-            {replacement.services.length === 0 ? (
-                <p className="type-body text-muted-foreground">
-                    Nothing ran on {replacement.oldServer}.
-                </p>
-            ) : (
-                <ul className="flex flex-col divide-y">
-                    {replacement.services.map((service) => {
-                        const [state, label] = serviceStates[
-                            service.status
-                        ] ?? ['progress', service.status];
-
-                        return (
-                            <li
-                                key={service.instance}
-                                className="flex flex-col gap-1 py-3"
-                            >
-                                <div className="flex flex-wrap items-center justify-between gap-2">
-                                    <span className="type-body">
-                                        {service.name}
-                                    </span>
-                                    <Status state={state} label={label} />
-                                </div>
-                                <span className="type-small text-muted-foreground">
-                                    {service.kind === 'stateful'
-                                        ? service.restore !== null
-                                            ? `Restoring snapshot ${service.restore.snapshot} (${age(service.restore.takenAt)})`
-                                            : 'Not restored: starts empty'
-                                        : 'Re-placed after the data is back'}
-                                </span>
-                                {service.message !== null && (
-                                    <span className="type-mono-small break-words text-muted-foreground">
-                                        {service.message}
-                                    </span>
-                                )}
-                            </li>
-                        );
-                    })}
-                </ul>
-            )}
-        </section>
-    );
-}
 
 /**
  * Servers → (dead server) → Replace server (docs/14 §5.3): pick a
@@ -350,7 +226,7 @@ export default function ReplaceServer({
                                                         <span className="type-small text-muted-foreground">
                                                             {item.snapshot !==
                                                             null
-                                                                ? `Latest backup, ${age(item.backupTakenAt)} (snapshot ${item.snapshot})`
+                                                                ? `Latest backup, ${snapshotAge(item.backupTakenAt)} (snapshot ${item.snapshot})`
                                                                 : (item.reason ??
                                                                   'No backup: it starts empty.')}
                                                         </span>

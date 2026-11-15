@@ -1,8 +1,7 @@
 import { Ban, Cpu, Globe, Hammer, Info, TriangleAlert } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { Section } from '@/components/patterns/section';
-import { formatBytes } from '@/features/backups/format';
-import { formatDuration } from '@/features/moves/format';
+import { formatBytes, formatEstimate } from '@/lib/format';
 
 function Note({
     icon,
@@ -156,7 +155,7 @@ export function MovePlanView({ plan }: { plan: App.Data.Moves.MovePlanData }) {
                                     <span className="type-small tabular-nums">
                                         {item.downtimeSeconds === null
                                             ? 'Down for a few minutes'
-                                            : `Down ${formatDuration(item.downtimeSeconds)}`}
+                                            : `Down ${formatEstimate(item.downtimeSeconds)}`}
                                     </span>
                                 </div>
                                 <span className="flex flex-wrap items-center gap-x-3 gap-y-1 type-small text-muted-foreground">
@@ -194,7 +193,7 @@ export function MovePlanView({ plan }: { plan: App.Data.Moves.MovePlanData }) {
                 >
                     {plan.downtimeSeconds === null
                         ? 'Some sizes are unknown, so the total downtime can’t be estimated.'
-                        : `Total downtime: ${formatDuration(plan.downtimeSeconds)}, spread over ${stateful.length} ${stateful.length === 1 ? 'service' : 'services'}.`}
+                        : `Total downtime: ${formatEstimate(plan.downtimeSeconds)}, spread over ${stateful.length} ${stateful.length === 1 ? 'service' : 'services'}.`}
                     {plan.copyBytes !== null &&
                         ` ${formatBytes(plan.copyBytes)} to copy.`}{' '}
                     Estimates assume about 20 MB/s between the servers.

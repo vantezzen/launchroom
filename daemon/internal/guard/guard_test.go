@@ -21,11 +21,11 @@ import (
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/api/types/network"
 
-	"github.com/vantezzen/launchroom/daemon/internal/ambassadord"
 	"github.com/vantezzen/launchroom/daemon/internal/build/buildkitd"
 	"github.com/vantezzen/launchroom/daemon/internal/docker"
 	"github.com/vantezzen/launchroom/daemon/internal/ingress/caddy"
 	"github.com/vantezzen/launchroom/daemon/internal/mesh"
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/policy"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
@@ -51,7 +51,7 @@ func newFake() *fakeDocker {
 }
 
 func managed() map[string]string {
-	return map[string]string{labelManaged: "true", labelServer: testServer}
+	return map[string]string{names.LabelManaged: "true", names.LabelServer: testServer}
 }
 
 func (f *fakeDocker) addContainer(id, name string, labels map[string]string, binds ...string) {
@@ -153,7 +153,7 @@ func newHarness(t testing.TB, mut ...func(*Options)) *harness {
 	go func() { _ = hs.Serve(l) }()
 	t.Cleanup(func() { _ = hs.Close() })
 	pol := policy.DefaultConfig()
-	pol.SystemImageDigests[policy.SystemCaddy] = append(pol.SystemImageDigests[policy.SystemCaddy], testDigest)
+	pol.SystemImageDigests[names.SystemCaddy] = append(pol.SystemImageDigests[names.SystemCaddy], testDigest)
 	o := Options{Upstream: sock, Policy: pol}
 	for _, m := range mut {
 		m(&o)
@@ -234,23 +234,6 @@ func workload() container.CreateRequest {
 }
 
 const createPath = "/v1.52/containers/create?name=lr-wl_01j9z8x7w6v5t4s3r2q1p0n9m8"
-
-func TestConstantsMatchPackages(t *testing.T) {
-	pairs := [][2]string{
-		{labelManaged, docker.LabelManaged}, {labelServer, docker.LabelServer}, {labelSystem, docker.LabelSystem}, {labelHelper, docker.LabelHelper},
-		{caddyName, caddy.ContainerName}, {caddyDataVolume, caddy.DataVolume}, {caddyConfigVolume, caddy.ConfigVolume},
-		{tailscaleName, mesh.ContainerName}, {tailscaleStateVolume, mesh.StateVolume},
-		{buildkitName, buildkitd.ContainerName}, {buildkitNetwork, buildkitd.NetworkName}, {buildkitStateVolume, buildkitd.StateVolume},
-		{buildkitAppArmor, buildkitd.AppArmorProfile},
-		{ambassadorName, ambassadord.ContainerName}, {ambassadorNetwork, ambassadord.NetworkName}, {ambassadorVolume, ambassadord.ConfigVolume},
-		{systemAmbassador, policy.SystemAmbassador}, {volumeHelperImage, docker.HelperImage}, {volumeHelperMount, docker.HelperMount},
-	}
-	for _, p := range pairs {
-		if p[0] != p[1] {
-			t.Errorf("guard constant %q != package constant %q", p[0], p[1])
-		}
-	}
-}
 
 func TestBuiltContainersPass(t *testing.T) {
 	h := newHarness(t)
@@ -334,7 +317,7 @@ func TestContainerCreateRefusals(t *testing.T) {
 		"tag image":  {func(r *container.CreateRequest) { r.Image = "127.0.0.1:5000/apps/svc:latest" }, "digest"},
 		"registry":   {func(r *container.CreateRequest) { r.Image = "docker.io/evil/x@" + testDigest }, "allowed registry"},
 		"unlabelled": {func(r *container.CreateRequest) { r.Labels = map[string]string{} }, "launchroom.managed"},
-		"bad server": {func(r *container.CreateRequest) { r.Labels[labelServer] = "x" }, "launchroom.managed"},
+		"bad server": {func(r *container.CreateRequest) { r.Labels[names.LabelServer] = "x" }, "launchroom.managed"},
 		"no limits":  {func(r *container.CreateRequest) { r.HostConfig.Memory = 0 }, "limits"},
 		"all ports":  {func(r *container.CreateRequest) { r.HostConfig.PublishAllPorts = true }, "PublishAllPorts"},
 		"public port": {func(r *container.CreateRequest) {
@@ -451,7 +434,7 @@ func TestBuildkitSecurityOptions(t *testing.T) {
 		}
 		return h.srv.CheckCreate(ctx, cc.Name, b)
 	}
-	for _, profile := range []string{"unconfined", buildkitd.AppArmorProfile} {
+	for _, profile := range []string{"unconfined", names.BuildkitAppArmorProfile} {
 		cc := m.ContainerSpec(img, profile)
 		b, _ := json.Marshal(container.CreateRequest{Config: cc.Config, HostConfig: cc.HostConfig, NetworkingConfig: cc.Networking})
 		if err := h.srv.CheckCreate(ctx, cc.Name, b); err != nil {
@@ -475,7 +458,7 @@ func TestBuildkitSecurityOptions(t *testing.T) {
 	}
 	// The profile is the build container's only: a workload asking for it
 	// (or for any other AppArmor profile) is refused by the policy floor.
-	for _, o := range []string{"apparmor=" + buildkitd.AppArmorProfile, "apparmor:unprivileged_userns", "apparmor=docker-default"} {
+	for _, o := range []string{"apparmor=" + names.BuildkitAppArmorProfile, "apparmor:unprivileged_userns", "apparmor=docker-default"} {
 		req := workload()
 		req.HostConfig.SecurityOpt = append(req.HostConfig.SecurityOpt, o)
 		b, _ := json.Marshal(req)
@@ -545,8 +528,8 @@ func TestUpdaterShape(t *testing.T) {
 	})
 	good := func() container.CreateRequest {
 		return container.CreateRequest{
-			Config: &container.Config{Image: img, Entrypoint: []string{supervisorBinary, supervisorCommand}, Cmd: []string{"/opt/lr/data/update/tasks/tsk_01J9Z8X7W6V5T4S3R2Q1P0N9M8/plan.json"}, Tty: true,
-				Labels: map[string]string{labelManaged: "true", labelRole: roleUpdater, "launchroom.update-task": "tsk_01J9Z8X7W6V5T4S3R2Q1P0N9M8"}},
+			Config: &container.Config{Image: img, Entrypoint: []string{names.SupervisorBinary, names.SupervisorCommand}, Cmd: []string{"/opt/lr/data/update/tasks/tsk_01J9Z8X7W6V5T4S3R2Q1P0N9M8/plan.json"}, Tty: true,
+				Labels: map[string]string{names.LabelManaged: "true", names.LabelRole: names.RoleUpdater, names.LabelUpdateTask: "tsk_01J9Z8X7W6V5T4S3R2Q1P0N9M8"}},
 			HostConfig: &container.HostConfig{NetworkMode: "none", GroupAdd: []string{"999"},
 				LogConfig: container.LogConfig{Type: "json-file", Config: map[string]string{"max-size": "10m", "max-file": "3"}},
 				Mounts:    []mount.Mount{{Type: mount.TypeBind, Source: "/var/run/docker.sock", Target: dockerSocket}, {Type: mount.TypeBind, Source: "/opt/lr", Target: "/opt/lr"}}},
@@ -589,7 +572,7 @@ func TestObjectAccess(t *testing.T) {
 	fid := strings.Repeat("2", 64)
 	h.fake.addContainer(id, "lr-wl_x", managed())
 	h.fake.addContainer(fid, "postgres", map[string]string{"com.docker.compose.service": "postgres"})
-	h.fake.addContainer(strings.Repeat("3", 64), "launchroom-dashboard-1", map[string]string{labelManaged: "true", labelRole: "control-plane", "com.docker.compose.service": "dashboard"})
+	h.fake.addContainer(strings.Repeat("3", 64), "launchroom-dashboard-1", map[string]string{names.LabelManaged: "true", names.LabelRole: "control-plane", "com.docker.compose.service": "dashboard"})
 
 	ok(t, h.do(http.MethodGet, "/v1.52/containers/lr-wl_x/json", nil))
 	refused(t, h.do(http.MethodGet, "/v1.52/containers/postgres/json", nil), NotManagedMarker)
@@ -615,7 +598,6 @@ func TestObjectAccess(t *testing.T) {
 	}
 	refused(t, h.do(http.MethodGet, `/v1.52/containers/json?filters=%7B%22before%22%3A%7B%22x%22%3Atrue%7D%7D`, nil), "filter")
 
-	// Volumes and networks.
 	refused(t, h.do(http.MethodDelete, "/v1.52/volumes/lr-v_foreign", nil), NotManagedMarker)
 	ok(t, h.do(http.MethodDelete, "/v1.52/volumes/lr-v_data", nil))
 	refused(t, h.do(http.MethodDelete, "/v1.52/volumes/lr-v_data?force=1", nil), "must be false")
@@ -648,15 +630,15 @@ func TestExecRules(t *testing.T) {
 	h := newHarness(t, func(o *Options) { o.InteractiveSessions = "data" })
 	h.fake.addContainer(strings.Repeat("1", 64), "lr-wl_x", managed())
 	sys := managed()
-	sys[labelSystem] = policy.SystemBuildkit
-	h.fake.addContainer(strings.Repeat("4", 64), buildkitName, sys)
+	sys[names.LabelSystem] = names.SystemBuildkit
+	h.fake.addContainer(strings.Repeat("4", 64), names.BuildkitContainer, sys)
 	ok(t, h.do(http.MethodPost, "/v1.52/containers/lr-wl_x/exec", map[string]any{"Cmd": []string{"pg_dump"}, "User": "postgres", "AttachStdout": true}))
 	refused(t, h.do(http.MethodPost, "/v1.52/containers/lr-wl_x/exec", map[string]any{"Cmd": []string{"sh"}, "Tty": true}), "console sessions are off")
 	refused(t, h.do(http.MethodPost, "/v1.52/containers/lr-wl_x/exec", map[string]any{"Cmd": []string{"sh"}, "Privileged": true}), "Privileged")
 	refused(t, h.do(http.MethodPost, "/v1.52/containers/lr-wl_x/exec", map[string]any{"Cmd": []string{"sh"}, "WorkingDir": "/"}), "WorkingDir")
 	refused(t, h.do(http.MethodPost, "/v1.52/containers/lr-wl_x/exec", map[string]any{"Cmd": []string{}}), "argv")
-	ok(t, h.do(http.MethodPost, "/v1.52/containers/"+buildkitName+"/exec", map[string]any{"Cmd": []string{"buildctl", "dial-stdio"}, "AttachStdin": true}))
-	refused(t, h.do(http.MethodPost, "/v1.52/containers/"+buildkitName+"/exec", map[string]any{"Cmd": []string{"sh"}}), "not allowed in")
+	ok(t, h.do(http.MethodPost, "/v1.52/containers/"+names.BuildkitContainer+"/exec", map[string]any{"Cmd": []string{"buildctl", "dial-stdio"}, "AttachStdin": true}))
+	refused(t, h.do(http.MethodPost, "/v1.52/containers/"+names.BuildkitContainer+"/exec", map[string]any{"Cmd": []string{"sh"}}), "not allowed in")
 
 	h2 := newHarness(t)
 	h2.fake.addContainer(strings.Repeat("1", 64), "lr-wl_x", managed())
@@ -750,16 +732,16 @@ func TestInspectionRoutes(t *testing.T) {
 	wl := strings.Repeat("1", 64)
 	h.fake.addContainer(wl, "lr-wl_x", managed())
 	sys := managed()
-	sys[labelSystem] = policy.SystemCaddy
+	sys[names.LabelSystem] = names.SystemCaddy
 	caddy := strings.Repeat("5", 64)
-	h.fake.addContainer(caddy, caddyName, sys)
+	h.fake.addContainer(caddy, names.CaddyContainer, sys)
 	helper := managed()
-	helper[labelHelper] = "volume"
+	helper[names.LabelHelper] = "volume"
 	h.fake.addContainer(strings.Repeat("6", 64), "lr-vol-0123456789ab", helper)
-	upd := map[string]string{labelManaged: "true", labelRole: roleUpdater, "launchroom.update-task": "tsk_01J9Z8X7W6V5T4S3R2Q1P0N9MK"}
+	upd := map[string]string{names.LabelManaged: "true", names.LabelRole: names.RoleUpdater, names.LabelUpdateTask: "tsk_01J9Z8X7W6V5T4S3R2Q1P0N9MK"}
 	h.fake.addContainer(strings.Repeat("7", 64), "lr-system-update-01j9z8x7w6v5t4s3r2q1p0n9mk", upd)
 	h.fake.addContainer(strings.Repeat("2", 64), "postgres", map[string]string{"com.docker.compose.service": "postgres"})
-	other := map[string]string{labelManaged: "true", labelServer: "srv_OTHER"}
+	other := map[string]string{names.LabelManaged: "true", names.LabelServer: "srv_OTHER"}
 	h.fake.addContainer(strings.Repeat("8", 64), "lr-wl_other", other)
 
 	for _, suffix := range []string{"/changes", "/top"} {

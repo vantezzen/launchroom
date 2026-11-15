@@ -38,7 +38,7 @@ final class RotateProjectKeyCommand extends Command
 
         Log::notice('Project data key rotated.', ['project' => $project->public_id, ...$counts]);
 
-        $this->components->info("Project {$project->public_id} now encrypts with key version {$counts['version']}: re-encrypted {$counts['variables']} variables, {$counts['snapshots']} env snapshots and {$counts['revisions']} revisions".($counts['pruned'] > 0 ? "; deleted {$counts['pruned']} old key versions." : '.'));
+        $this->components->info("Project {$project->public_id} now encrypts with key version {$counts['version']}: re-encrypted {$counts['variables']} variables, {$counts['snapshots']} env snapshots, {$counts['revisions']} revisions, {$counts['queries']} SQL history entries and {$counts['inspections']} inspections".($counts['pruned'] > 0 ? "; deleted {$counts['pruned']} old key versions." : '.'));
         $this->components->warn('Build keys depend on the data key: the next deploy of each service rebuilds once.');
 
         return self::SUCCESS;

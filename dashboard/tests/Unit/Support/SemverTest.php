@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-use App\Support\ImageReference;
+use App\Support\Images\ImageReference;
 use App\Support\Semver;
 
 test('versions compare by semver precedence', function (string $a, string $b, int $expected): void {

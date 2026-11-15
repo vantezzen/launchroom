@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Data\Specs;
 
-use App\Casts\ServiceSourceCast;
 use App\Data\Attributes\ChangeAffects;
 use App\Data\Attributes\Promotion;
 use App\Data\Protocol\V1\PhpExtension;
@@ -12,6 +11,7 @@ use App\Data\Services\BuildSettings;
 use App\Data\Services\DeploySettings;
 use App\Data\Services\ScalingSettings;
 use App\Data\Services\ServiceSource;
+use App\Data\Services\ServiceSources;
 use App\Enums\ChangeEffect;
 use App\Enums\PromotionClass;
 use App\Enums\ServiceKind;
@@ -24,7 +24,7 @@ use Spatie\LaravelData\Data;
 final class ServiceSpec extends Data
 {
     /**
-     * @param  array<string, mixed>  $source  ServiceSourceCast::toArray() shape
+     * @param  array<string, mixed>  $source  ServiceSources::toArray() shape
      * @param  array<string, VariableSpec>  $variables  service variables targeted at this environment
      * @param  array<string, VariableSpec>  $connectionVariables  owned by canvas connections
      * @param  list<string>  $sharedVariableIds  shared variables this service opted into
@@ -62,6 +62,6 @@ final class ServiceSpec extends Data
 
     public function source(): ServiceSource
     {
-        return ServiceSourceCast::fromArray($this->source);
+        return ServiceSources::fromArray($this->source);
     }
 }

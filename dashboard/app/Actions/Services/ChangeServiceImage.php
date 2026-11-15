@@ -11,6 +11,7 @@ use App\Data\Services\ChangeImageData;
 use App\Data\Services\ImageSource;
 use App\Enums\AuditAction;
 use App\Enums\ServiceKind;
+use App\Events\CanvasChanged;
 use App\Exceptions\DomainRuleViolation;
 use App\Models\Service;
 use App\Support\Compose\ComposeTranslator;
@@ -72,6 +73,7 @@ final readonly class ChangeServiceImage
                 subjectId: $service->public_id,
                 meta: ['from' => $before, 'to' => $image],
             ));
+            CanvasChanged::forService($service);
 
             return $service;
         });

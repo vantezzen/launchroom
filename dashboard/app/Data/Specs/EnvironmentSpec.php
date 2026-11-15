@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Data\Specs;
 
+use App\Enums\VariableLayer;
 use Spatie\LaravelData\Data;
 
 /**
@@ -59,6 +60,39 @@ final class EnvironmentSpec extends Data
     public function connectionVariablesOf(ServiceSpec $service): array
     {
         return [...$this->inheritedConnectionVariables($service), ...$service->connectionVariables];
+    }
+
+    /**
+     * The variables $service gets, lowest precedence first (docs/06 §3.1):
+     * opted-in shared < connection-injected (the app's, then its own) <
+     * environment-targeted < branch override. System variables sit below
+     * all of them and aren't variable rows. Folding by key gives the winner.
+     *
+     * @return list<VariableSpec>
+     */
+    public function variablesInPrecedence(ServiceSpec $service): array
+    {
+        $ordered = [];
+
+        foreach ($service->sharedVariableIds as $variableId) {
+            if (isset($this->sharedVariables[$variableId])) {
+                $ordered[] = $this->sharedVariables[$variableId];
+            }
+        }
+
+        foreach ($this->connectionVariablesOf($service) as $variable) {
+            $ordered[] = $variable;
+        }
+
+        foreach (VariableLayer::cases() as $layer) {
+            foreach ($service->variables as $variable) {
+                if ($variable->layer === $layer) {
+                    $ordered[] = $variable;
+                }
+            }
+        }
+
+        return $ordered;
     }
 
     public function serviceBySlug(string $slug): ?ServiceSpec

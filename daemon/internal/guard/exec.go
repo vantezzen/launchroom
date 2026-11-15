@@ -18,6 +18,9 @@ import (
 	"time"
 
 	"github.com/moby/moby/api/types/container"
+
+	"github.com/vantezzen/launchroom/daemon/internal/names"
+	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
 
 // kind of an existing container, for what the guard lets launchroomd do with it.
@@ -36,19 +39,17 @@ const (
 func (c *ctr) kind() kind {
 	l := c.Labels
 	switch {
-	case l[labelManaged] != "true":
+	case l[names.LabelManaged] != "true":
 		return kindForeign
 	case isManaged(l):
 		return kindServer
-	case l[labelRole] == roleUpdater && reTaskLabel.MatchString(l["launchroom.update-task"]):
+	case l[names.LabelRole] == names.RoleUpdater && state.TaskID(l[names.LabelUpdateTask]).Validate() == nil:
 		return kindUpdater
 	case slices.Contains([]string{"launchroomd", "dockerd-guard"}, l["com.docker.compose.service"]):
 		return kindCompose
 	}
 	return kindForeign
 }
-
-// ---- exec ----
 
 // execTable remembers the execs created through the guard: start, resize
 // and inspect work only on those.
@@ -98,7 +99,6 @@ func (t *execTable) get(id string) (execEntry, bool) {
 	return e, ok
 }
 
-// sessionsAllowTTY reports whether LR_INTERACTIVE_SESSIONS allows consoles.
 func (s *Server) sessionsAllowTTY() bool {
 	switch s.o.InteractiveSessions {
 	case "off", "data":
@@ -179,12 +179,12 @@ func (s *Server) checkExec(c *ctr, req *container.ExecCreateRequest) error {
 	}
 	for _, e := range req.Env {
 		k, _, ok := strings.Cut(e, "=")
-		if !ok || !reEnvKey.MatchString(k) || strings.ContainsRune(e, 0) || len(e) > 64<<10 {
+		if !ok || !state.IsEnvName(k) || strings.ContainsRune(e, 0) || len(e) > 64<<10 {
 			return deny("exec environment entry is not NAME=value")
 		}
 	}
 	if req.User != "" && !reUser.MatchString(req.User) {
-		return deny("exec user %q is not allowed", truncate(req.User, 32))
+		return deny("exec user %q is not allowed", state.Shorten(req.User, 32))
 	}
 	cls := c.class()
 	if cls == classAccessHelper {
@@ -203,7 +203,7 @@ func (s *Server) checkExec(c *ctr, req *container.ExecCreateRequest) error {
 			return deny("system container execs run without TTY, user or environment")
 		}
 		if sh.execExact && !slices.Equal(req.Cmd, sh.exec) || !sh.execExact && !slices.Equal(req.Cmd[:min(len(req.Cmd), len(sh.exec))], sh.exec) {
-			return deny("exec %q is not allowed in %s", truncate(req.Cmd[0], 64), c.Name)
+			return deny("exec %q is not allowed in %s", state.Shorten(req.Cmd[0], 64), c.Name)
 		}
 		return nil
 	}
@@ -330,8 +330,6 @@ func splice(client net.Conn, clientBuf *bufio.Reader, up net.Conn, upBuf *bufio.
 	_ = up.Close()
 }
 
-// ---- archives ----
-
 // maxSystemArchive bounds uploads into system containers (configs, certificates).
 const maxSystemArchive = 64 << 20
 
@@ -371,7 +369,7 @@ func (s *Server) archive(w http.ResponseWriter, r *http.Request, q *request) err
 // regular files, every entry inside one of roots.
 func checkTar(r io.Reader, dst string, roots []string) ([]byte, error) {
 	if path.Clean(dst) != dst || !strings.HasPrefix(dst, "/") {
-		return nil, deny("archive destination %q is not clean", truncate(dst, 64))
+		return nil, deny("archive destination %q is not clean", state.Shorten(dst, 64))
 	}
 	tr := tar.NewReader(io.LimitReader(r, maxSystemArchive+1))
 	var buf bytes.Buffer
@@ -386,7 +384,7 @@ func checkTar(r io.Reader, dst string, roots []string) ([]byte, error) {
 			return nil, deny("archive: %v", err)
 		}
 		if h.Typeflag != tar.TypeReg && h.Typeflag != tar.TypeDir {
-			return nil, deny("archive entry %q: only files and directories", truncate(h.Name, 64))
+			return nil, deny("archive entry %q: only files and directories", state.Shorten(h.Name, 64))
 		}
 		full := path.Join(dst, h.Name) //nolint:gosec // G305: the joined path is only compared with the allowed roots, never opened
 		inside := false
@@ -396,7 +394,7 @@ func checkTar(r io.Reader, dst string, roots []string) ([]byte, error) {
 			}
 		}
 		if !inside || strings.Contains(h.Name, "..") {
-			return nil, deny("archive entry %q is outside %v", truncate(h.Name, 64), roots)
+			return nil, deny("archive entry %q is outside %v", state.Shorten(h.Name, 64), roots)
 		}
 		total += int(h.Size)
 		if total > maxSystemArchive {
@@ -430,7 +428,7 @@ func checkTar(r io.Reader, dst string, roots []string) ([]byte, error) {
 // numeric owners either way.
 func (s *Server) helperUpload(w http.ResponseWriter, r *http.Request, q *request, p string) error {
 	if dst := q.query.Get("path"); dst != "/" {
-		return deny("uploads into volume helpers extract at / only, not %q", truncate(dst, 64))
+		return deny("uploads into volume helpers extract at / only, not %q", state.Shorten(dst, 64))
 	}
 	pr, pw := io.Pipe()
 	done := make(chan error, 1)
@@ -465,7 +463,7 @@ func rewriteVolumeTar(dst io.Writer, src io.Reader) error {
 		}
 		name, ok := helperEntryName(h.Name)
 		if !ok {
-			return deny("archive entry %q is outside the volume (data/)", truncate(h.Name, 64))
+			return deny("archive entry %q is outside the volume (data/)", state.Shorten(h.Name, 64))
 		}
 		out := &tar.Header{Name: name, Mode: h.Mode & 0o1777, Uid: h.Uid, Gid: h.Gid, ModTime: h.ModTime, Format: tar.FormatPAX}
 		switch h.Typeflag {
@@ -476,20 +474,20 @@ func rewriteVolumeTar(dst io.Writer, src io.Reader) error {
 			out.Typeflag, out.Name = tar.TypeDir, name+"/"
 		case tar.TypeSymlink:
 			if h.Linkname == "" || strings.ContainsRune(h.Linkname, 0) || len(h.Linkname) > 4096 {
-				return deny("archive entry %q: invalid symlink", truncate(h.Name, 64))
+				return deny("archive entry %q: invalid symlink", state.Shorten(h.Name, 64))
 			}
 			out.Typeflag, out.Linkname = tar.TypeSymlink, h.Linkname
 		case tar.TypeLink:
 			target, ok := helperEntryName(h.Linkname)
 			if !ok || !files[target] {
-				return deny("archive entry %q: hard links only to an earlier file of the archive", truncate(h.Name, 64))
+				return deny("archive entry %q: hard links only to an earlier file of the archive", state.Shorten(h.Name, 64))
 			}
 			out.Typeflag, out.Linkname = tar.TypeLink, target
 			files[name] = true
 		case tar.TypeFifo, tar.TypeXGlobalHeader:
 			continue
 		default:
-			return deny("archive entry %q: type %q is not allowed in a volume (device nodes and special files)", truncate(h.Name, 64), string(h.Typeflag))
+			return deny("archive entry %q: type %q is not allowed in a volume (device nodes and special files)", state.Shorten(h.Name, 64), string(h.Typeflag))
 		}
 		if err := tw.WriteHeader(out); err != nil {
 			return err

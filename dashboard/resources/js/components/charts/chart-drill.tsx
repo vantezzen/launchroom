@@ -1,27 +1,12 @@
 import { Link } from '@inertiajs/react';
 import { ChevronRight } from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
 import {
     Popover,
     PopoverAnchor,
     PopoverContent,
 } from '@/components/ui/popover';
 import { formatWindow } from '@/lib/observe-scope';
-import type { ObserveWindow } from '@/lib/observe-scope';
-
-export type DrillAction = {
-    label: string;
-    href: string;
-    icon?: LucideIcon;
-};
-
-/**
- * What a chart offers for one bucket (design-system §13.8 "Drill-down"):
- * the page builds the links from the bucket's window and its scope,
- * usually "Logs from 14:00 to 15:00", "Errors only" and the deployments
- * around that time. Return [] to make a bucket not selectable.
- */
-export type ChartDrill = (window: ObserveWindow) => DrillAction[];
+import type { DrillAction, ObserveWindow } from '@/lib/observe-scope';
 
 /**
  * The popover a chart opens on a selected bucket: one link per action,

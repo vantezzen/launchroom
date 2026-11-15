@@ -5,7 +5,8 @@ declare(strict_types=1);
 namespace App\Data\RemoteAccess;
 
 use App\Enums\RemoteAccess\RemoteAccessKind;
-use App\Enums\RemoteAccess\RemoteAccessStatus;
+use App\Enums\RemoteAccess\RemoteAccessProtocol;
+use App\Enums\TaskBackedAccessStatus;
 use Spatie\LaravelData\Data;
 
 /**
@@ -22,7 +23,7 @@ final class RemoteAccessData extends Data
     public function __construct(
         public string $id,
         public RemoteAccessKind $kind,
-        public RemoteAccessStatus $status,
+        public TaskBackedAccessStatus $status,
         public bool $isMine,
         public string $userName,
         public string $replicaLabel,
@@ -63,5 +64,8 @@ final class RemoteAccessData extends Data
         public ?string $fileOwner = null,
         /** Someone other than the opener (an owner or admin) ended it. */
         public bool $endedByOther = false,
+        /** Database access: the wire protocol and the engine's command-line client. */
+        public ?RemoteAccessProtocol $protocol = null,
+        public ?string $client = null,
     ) {}
 }

@@ -8,9 +8,9 @@ use App\Data\ConfigAsCode\ConfigFileSettingsData;
 use App\Data\Git\RepositoryRef;
 use App\Data\Services\GitSource;
 use App\Enums\ServiceKind;
+use App\Exceptions\Git\RepositoryFileUnavailable;
 use App\Models\Project;
 use App\Models\Service;
-use App\Services\Git\Exceptions\RepositoryFileUnavailable;
 use App\Services\Git\GitProviders;
 use App\Support\ConfigAsCode\JsonDocument;
 
@@ -49,7 +49,7 @@ final readonly class ConfigFileReader
             $source = $service->source;
 
             if ($source instanceof GitSource) {
-                $sources[$source->provider.':'.$source->repositoryId.':'.$source->fullName] ??= new GitSource($source->repositoryId, $source->fullName, $source->installationId, '', $source->provider, $source->cloneUrl, $source->branch);
+                $sources[$source->provider->value.':'.$source->repositoryId.':'.$source->fullName] ??= new GitSource($source->repositoryId, $source->fullName, $source->installationId, '', $source->provider, $source->cloneUrl, $source->branch);
             }
         }
 
@@ -79,9 +79,6 @@ final readonly class ConfigFileReader
         return $changedFiles !== null && $settings->enabled && in_array($settings->path, $changedFiles, true);
     }
 
-    /**
-     * Whether a push of $repositoryId (provider + connection) concerns the file.
-     */
     public function isConfigRepository(Project $project, GitSource $pushed): bool
     {
         $repository = $this->repository($project);
@@ -93,8 +90,6 @@ final readonly class ConfigFileReader
     }
 
     /**
-     * The file at $ref (a commit SHA), null when there is none.
-     *
      * @throws RepositoryFileUnavailable
      */
     public function read(Project $project, GitSource $repository, string $ref): ?string

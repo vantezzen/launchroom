@@ -194,7 +194,7 @@ export function windowEndText(pitr: PointInTime): string | null {
 }
 
 /** `YYYY-MM-DDTHH:mm:ss` in local time, for a datetime-local input. */
-export function toLocalInput(iso: string): string {
+function toLocalInput(iso: string): string {
     const d = new Date(iso);
     const pad = (n: number) => String(n).padStart(2, '0');
 

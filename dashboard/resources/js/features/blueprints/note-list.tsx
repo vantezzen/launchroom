@@ -10,7 +10,7 @@ const look: Record<
     refused: { icon: X, className: 'text-status-error', label: 'Refused' },
     warning: {
         icon: TriangleAlert,
-        className: 'text-status-warning',
+        className: 'text-status-progress',
         label: 'Check this',
     },
     translated: {

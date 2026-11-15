@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace App\Services\Transfers;
 
+use App\Exceptions\DecryptionFailed;
 use App\Models\Transfers\DataTransfer;
-use App\Services\Crypto\Envelope;
-use App\Services\Crypto\Exceptions\DecryptionFailed;
-use App\Services\Crypto\SecretKey;
+use App\Services\Crypto\SealedColumns;
+use App\Support\PublicId;
 use Illuminate\Support\Facades\File;
 use RuntimeException;
 use SensitiveParameter;
@@ -16,15 +16,16 @@ use SensitiveParameter;
  * Chunk files of transfers (docs/14 §12.1): `<path>/<dtr>/<n>.chunk`, each
  * `nonce(24) || XChaCha20-Poly1305(chunk)` under the transfer's own data key
  * with associated data `transfer|<dtr>|<n>`, so chunks can't be swapped
- * between positions or transfers. The key is wrapped by the KEK (context
- * `transfer:<dtr>`). Plaintext only ever exists in memory, one chunk at a time.
+ * between positions or transfers. The key is the transfer row's sealed data
+ * key (App\Services\Crypto\SealedColumns). Plaintext only ever exists in
+ * memory, one chunk at a time.
  */
 final readonly class TransferStore
 {
     private const int NONCE_BYTES = SODIUM_CRYPTO_AEAD_XCHACHA20POLY1305_IETF_NPUBBYTES;
 
     public function __construct(
-        private Envelope $envelope,
+        private SealedColumns $sealed,
     ) {}
 
     /**
@@ -32,15 +33,13 @@ final readonly class TransferStore
      */
     public function initialise(DataTransfer $transfer): void
     {
-        $dek = $this->envelope->generateDataKey();
-        $transfer->wrapped_dek = $this->envelope->wrap($dek, $this->wrapContext($transfer));
-        $transfer->kek_id = $this->envelope->kekId();
+        $this->sealed->newKey($transfer);
     }
 
     public function put(DataTransfer $transfer, int $index, #[SensitiveParameter] string $plaintext): void
     {
         $nonce = random_bytes(self::NONCE_BYTES);
-        $ciphertext = sodium_crypto_aead_xchacha20poly1305_ietf_encrypt($plaintext, $this->associatedData($transfer, $index), $nonce, $this->dataKey($transfer)->reveal());
+        $ciphertext = sodium_crypto_aead_xchacha20poly1305_ietf_encrypt($plaintext, $this->associatedData($transfer, $index), $nonce, $this->sealed->dataKey($transfer)->reveal());
         $path = $this->chunkPath($transfer, $index);
         File::ensureDirectoryExists(dirname($path), 0700);
 
@@ -68,7 +67,7 @@ final readonly class TransferStore
             throw DecryptionFailed::malformed();
         }
 
-        $plaintext = sodium_crypto_aead_xchacha20poly1305_ietf_decrypt(substr($raw, self::NONCE_BYTES), $this->associatedData($transfer, $index), substr($raw, 0, self::NONCE_BYTES), $this->dataKey($transfer)->reveal());
+        $plaintext = sodium_crypto_aead_xchacha20poly1305_ietf_decrypt(substr($raw, self::NONCE_BYTES), $this->associatedData($transfer, $index), substr($raw, 0, self::NONCE_BYTES), $this->sealed->dataKey($transfer)->reveal());
 
         if ($plaintext === false) {
             throw DecryptionFailed::malformed();
@@ -82,9 +81,6 @@ final readonly class TransferStore
         return is_file($this->chunkPath($transfer, $index));
     }
 
-    /**
-     * Removes every chunk of the transfer.
-     */
     public function delete(DataTransfer $transfer): void
     {
         $this->deleteDirectory($transfer->public_id);
@@ -113,7 +109,7 @@ final readonly class TransferStore
 
             $name = basename($path);
 
-            if (preg_match('/^dtr_[0-9A-HJKMNP-TV-Z]{26}$/D', $name) === 1 && (int) @filemtime($path) < time() - $idleSeconds) {
+            if (PublicId::isValid($name, 'dtr') && (int) @filemtime($path) < time() - $idleSeconds) {
                 $names[] = $name;
             }
         }
@@ -123,7 +119,7 @@ final readonly class TransferStore
 
     public function deleteDirectory(string $publicId): void
     {
-        if (preg_match('/^dtr_[0-9A-HJKMNP-TV-Z]{26}$/D', $publicId) !== 1) {
+        if (! PublicId::isValid($publicId, 'dtr')) {
             return;
         }
 
@@ -142,15 +138,6 @@ final readonly class TransferStore
         return $free === false ? null : (int) $free;
     }
 
-    /**
-     * Re-wraps the data key from one KEK to another (rotate-kek); the caller saves.
-     */
-    public function rewrap(DataTransfer $transfer, Envelope $from, Envelope $to): void
-    {
-        $transfer->wrapped_dek = $from->rewrap($transfer->wrapped_dek, $this->wrapContext($transfer), $to);
-        $transfer->kek_id = $to->kekId();
-    }
-
     public static function root(): string
     {
         return rtrim(config()->string('launchroom.transfers.path'), '/');
@@ -158,21 +145,11 @@ final readonly class TransferStore
 
     private function chunkPath(DataTransfer $transfer, int $index): string
     {
-        if ($index < 0 || preg_match('/^dtr_[0-9A-HJKMNP-TV-Z]{26}$/D', $transfer->public_id) !== 1) {
+        if ($index < 0 || ! PublicId::isValid($transfer->public_id, 'dtr')) {
             throw new RuntimeException('Invalid transfer chunk.');
         }
 
         return self::root().DIRECTORY_SEPARATOR.$transfer->public_id.DIRECTORY_SEPARATOR.$index.'.chunk';
-    }
-
-    private function dataKey(DataTransfer $transfer): SecretKey
-    {
-        return $this->envelope->unwrap($transfer->wrapped_dek, $this->wrapContext($transfer));
-    }
-
-    private function wrapContext(DataTransfer $transfer): string
-    {
-        return 'transfer:'.$transfer->public_id;
     }
 
     private function associatedData(DataTransfer $transfer, int $index): string

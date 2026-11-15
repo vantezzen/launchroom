@@ -4,13 +4,14 @@ declare(strict_types=1);
 
 namespace App\Data\Api;
 
+use App\Support\Crypto\OpaqueToken;
 use Spatie\LaravelData\Attributes\Validation\Regex;
 use Spatie\LaravelData\Data;
 
 final class ClaimCliTokenInput extends Data
 {
     public function __construct(
-        #[Regex('/^[A-Za-z0-9_-]{43}$/D')]
+        #[Regex('/^'.OpaqueToken::BODY.'$/D')]
         public string $deviceCode,
     ) {}
 

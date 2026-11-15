@@ -6,9 +6,9 @@ namespace App\Queries;
 
 use App\Data\Servers\MeshOverviewData;
 use App\Data\Servers\MeshPeerData;
+use App\Data\Servers\MeshReportPeerData;
 use App\Data\Servers\ServerMeshData;
 use App\Enums\Mesh\MeshMode;
-use App\Enums\Mesh\MeshPath;
 use App\Models\InstanceSettings;
 use App\Models\Server;
 use App\Models\User;
@@ -46,7 +46,7 @@ final readonly class ServerMesh
 
     public function controlPlaneIp(): ?string
     {
-        $ip = Server::query()->where('is_control_plane', true)->whereNull('revoked_at')->whereNotNull('mesh_ip')->orderBy('id')->value('mesh_ip');
+        $ip = Server::query()->controlPlane()->whereNotNull('mesh_ip')->latest('id')->value('mesh_ip');
 
         return is_string($ip) ? $ip : null;
     }
@@ -64,15 +64,15 @@ final readonly class ServerMesh
      */
     public function peers(Server $server): array
     {
-        $peers = $server->mesh_status['peers'] ?? [];
+        $peers = $server->mesh_status->peers ?? [];
 
         if ($peers === []) {
             return [];
         }
 
         $known = Server::query()
-            ->whereIn('mesh_ip', array_column($peers, 'ipv4'))
-            ->whereNull('revoked_at')
+            ->whereIn('mesh_ip', array_map(static fn (MeshReportPeerData $peer): string => $peer->ipv4, $peers))
+            ->notRevoked()
             ->get(['id', 'public_id', 'team_id', 'name', 'mesh_ip', 'is_control_plane'])
             ->keyBy('mesh_ip');
 
@@ -80,18 +80,18 @@ final readonly class ServerMesh
         $out = [];
 
         foreach ($peers as $peer) {
-            $match = $known->get($peer['ipv4']);
+            $match = $known->get($peer->ipv4);
             $sameTeam = $match instanceof Server && $match->team_id === $server->team_id;
 
             $out[] = new MeshPeerData(
-                ip: $peer['ipv4'],
+                ip: $peer->ipv4,
                 serverId: $sameTeam ? $match->public_id : null,
                 name: $sameTeam ? $match->name : null,
                 isControlPlane: $match instanceof Server && $match->is_control_plane,
-                online: $peer['online'],
-                path: MeshPath::tryFrom($peer['connection']) ?? MeshPath::Idle,
-                relay: $peer['relay'],
-                lastHandshake: $peer['lastHandshake'] !== null ? CarbonImmutable::parse($peer['lastHandshake']) : null,
+                online: $peer->online,
+                path: $peer->connection,
+                relay: $peer->relay,
+                lastHandshake: $peer->lastHandshake !== null ? CarbonImmutable::parse($peer->lastHandshake) : null,
                 quality: $match instanceof Server ? ($quality[$match->id] ?? null) : null,
             );
         }

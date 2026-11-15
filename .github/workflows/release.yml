@@ -38,7 +38,8 @@ name: release
 # compiled per platform, builds each platform on a native runner and merges
 # them into one index (deploy/images/README.md).
 #   release launchroom-deploy.tar.gz (+ .sha256, .sigstore.json, provenance),
-#           images.env (digests of this release), install.sh
+#           images.env (digests of this release), manifest.json (the
+#           bundle's file list and required images), install.sh
 #   cli     launchroom_<version>_<os>_<arch>.tar.gz|.zip (linux/darwin amd64+arm64,
 #           windows amd64), launchroom_<version>_SHA256SUMS (+ .sigstore.json),
 #           provenance, cli.sh (docs/16-api-and-cli.md §5)
@@ -95,7 +96,7 @@ jobs:
         run: |
           set -eu
           version="$(tr -d ' \n' < VERSION)"
-          echo "$version" | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$' \
+          sh -c '. deploy/install/lib/release.sh && is_release_version "$1"' sh "$version" \
             || { echo "::error::VERSION ($version) is not a semantic version"; exit 1; }
           [ "$TAG" = "v$version" ] || { echo "::error::tag $TAG does not match VERSION $version (expected v$version)"; exit 1; }
           case "$version" in *-*) prerelease=true ;; *) prerelease=false ;; esac
@@ -742,6 +743,7 @@ jobs:
             dist/launchroom-deploy.tar.gz.sha256 \
             dist/launchroom-deploy.tar.gz.sigstore.json \
             dist/images.env \
+            dist/manifest.json \
             dist/install.sh \
             cli-dist/launchroom_* \
             cli-dist/cli.sh \

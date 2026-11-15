@@ -31,7 +31,6 @@ final class PreviewData extends Data
         public string $headCommit,
         public bool $isFork,
         public PreviewStatus $status,
-        public string $statusLabel,
         public ?string $statusReason,
         public ?string $environmentId,
         /** Aggregate of the environment's deployments: building | live | failed | stopped | none. */

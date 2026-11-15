@@ -1,0 +1,44 @@
+[
+    {
+        "startPeriod": 30,
+        "interval": 5,
+        "timeout": 3,
+        "failures": 3,
+        "healthTimeout": 114
+    },
+    {
+        "startPeriod": 0,
+        "interval": 1,
+        "timeout": 1,
+        "failures": 1,
+        "healthTimeout": 90
+    },
+    {
+        "startPeriod": 1,
+        "interval": 1,
+        "timeout": 1,
+        "failures": 1,
+        "healthTimeout": 90
+    },
+    {
+        "startPeriod": 120,
+        "interval": 10,
+        "timeout": 5,
+        "failures": 3,
+        "healthTimeout": 225
+    },
+    {
+        "startPeriod": 3600,
+        "interval": 3600,
+        "timeout": 600,
+        "failures": 100,
+        "healthTimeout": 423660
+    },
+    {
+        "startPeriod": 10,
+        "interval": 2,
+        "timeout": 2,
+        "failures": 5,
+        "healthTimeout": 90
+    }
+]

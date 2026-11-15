@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Data\Protocol\V1;
 
+use App\Data\Protocol\ProtocolDocument;
 use Spatie\LaravelData\Attributes\Validation\In;
 use Spatie\LaravelData\Attributes\Validation\Max;
 use Spatie\LaravelData\Attributes\Validation\Min;
@@ -16,7 +17,7 @@ use Spatie\LaravelData\Optional;
 final class TaskHeartbeat extends Data
 {
     public function __construct(
-        #[In(['launchroom.vantezzen.io/v1'])]
+        #[In([ProtocolDocument::API_VERSION])]
         public string $apiVersion,
         #[In(['TaskHeartbeat'])]
         public string $kind,

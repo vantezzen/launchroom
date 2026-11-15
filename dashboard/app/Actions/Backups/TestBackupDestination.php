@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Actions\Backups;
 
 use App\Enums\Backups\DestinationStatus;
+use App\Exceptions\DecryptionFailed;
 use App\Exceptions\DomainRuleViolation;
 use App\Models\Backups\BackupDestination;
 use App\Services\Backups\DestinationSecrets;
@@ -12,7 +13,6 @@ use App\Services\Backups\EndpointGuard;
 use App\Services\Backups\Process\ProcessFailed;
 use App\Services\Backups\Process\ResticCli;
 use App\Services\Backups\Process\ResticTarget;
-use App\Services\Crypto\Exceptions\DecryptionFailed;
 
 /**
  * "Test destination" (docs/14 §3), run from a queued job on the control

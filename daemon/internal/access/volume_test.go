@@ -19,6 +19,7 @@ import (
 
 	"github.com/vantezzen/launchroom/daemon/internal/docker"
 	"github.com/vantezzen/launchroom/daemon/internal/docker/dockerfake"
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/policy"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 	"github.com/vantezzen/launchroom/daemon/internal/tasks"
@@ -48,7 +49,7 @@ func (d *volDocker) ExecTTY(context.Context, string, docker.TTYOptions) (*docker
 func (d *volDocker) PathExists(context.Context, string, string) (bool, error) { return true, nil }
 func (d *volDocker) ExecStream(ctx context.Context, id string, o docker.ExecOptions) (docker.ExecResult, error) {
 	c, err := d.InspectContainer(ctx, id)
-	if err != nil || c.Labels[docker.LabelHelper] != HelperKind || c.State != "running" {
+	if err != nil || c.Labels[names.LabelHelper] != names.HelperAccess || c.State != "running" {
 		return docker.ExecResult{}, io.ErrClosedPipe
 	}
 	d.execs.Add(1)
@@ -65,7 +66,7 @@ func (d *volDocker) StreamFromContainer(_ context.Context, _ string, src string)
 
 func helpers(t *testing.T, d *volDocker) []docker.Container {
 	t.Helper()
-	cs, err := d.ListContainers(context.Background(), map[string]string{docker.LabelHelper: HelperKind})
+	cs, err := d.ListContainers(context.Background(), map[string]string{names.LabelHelper: names.HelperAccess})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +85,7 @@ func TestVolumeAccessLifecycle(t *testing.T) {
 	}
 	_ = os.WriteFile(filepath.Join(d.box.root, "data", "hello.txt"), []byte("from the volume"), 0o644)
 	labels := docker.ManagedLabels(string(testServer))
-	labels[docker.LabelVolume], labels[docker.LabelService], labels[docker.LabelEnvironment] = string(testVolume), string(testService), string(testEnv)
+	labels[names.LabelVolume], labels[names.LabelService], labels[names.LabelEnvironment] = string(testVolume), string(testService), string(testEnv)
 	d.AddVolume(testVolumeName, labels)
 	var gone atomic.Bool
 	handler := Handler(Options{
@@ -120,14 +121,14 @@ func TestVolumeAccessLifecycle(t *testing.T) {
 	}
 	// Exactly one helper (the probe is gone), with the built-in shape.
 	hs := helpers(t, d)
-	if len(hs) != 1 || hs[0].State != "running" || hs[0].Labels[LabelAccess] != string(spec.Access) {
+	if len(hs) != 1 || hs[0].State != "running" || hs[0].Labels[names.LabelAccess] != string(spec.Access) {
 		t.Fatalf("helpers %+v", hs)
 	}
 	cc, _ := d.Create(hs[0].Name)
 	hc := cc.HostConfig
 	if cc.Config.User != "999:999" || cc.Config.Image != string(testFilesImage) || !cc.Config.NetworkDisabled || cc.Config.Entrypoint[0] != "sleep" ||
 		hc.NetworkMode != "none" || !hc.ReadonlyRootfs || hc.CapDrop[0] != "ALL" || len(hc.Mounts) != 1 ||
-		hc.Mounts[0].Source != testVolumeName || hc.Mounts[0].Target != HelperMount || !hc.Mounts[0].ReadOnly {
+		hc.Mounts[0].Source != testVolumeName || hc.Mounts[0].Target != names.HelperMount || !hc.Mounts[0].ReadOnly {
 		t.Fatalf("helper spec %+v %+v", cc.Config, hc)
 	}
 
@@ -194,15 +195,15 @@ func TestVolumeAccessRefusals(t *testing.T) {
 		image   state.ImageRef
 		refused bool
 	}{
-		"not mounted":     {labels: map[string]string{docker.LabelService: string(testService)}, image: testFilesImage, refused: true},
-		"another service": {mounts: []state.Mount{{Volume: testVolume, Target: "/d"}}, labels: map[string]string{docker.LabelService: "svc_01J9Z8X7W6V5T4S3R2Q1P0N9ZZ"}, image: testFilesImage, refused: true},
-		"system volume":   {mounts: []state.Mount{{Volume: testVolume, Target: "/d"}}, labels: map[string]string{docker.LabelSystem: "caddy"}, image: testFilesImage, refused: true},
+		"not mounted":     {labels: map[string]string{names.LabelService: string(testService)}, image: testFilesImage, refused: true},
+		"another service": {mounts: []state.Mount{{Volume: testVolume, Target: "/d"}}, labels: map[string]string{names.LabelService: "svc_01J9Z8X7W6V5T4S3R2Q1P0N9ZZ"}, image: testFilesImage, refused: true},
+		"system volume":   {mounts: []state.Mount{{Volume: testVolume, Target: "/d"}}, labels: map[string]string{names.LabelSystem: "caddy"}, image: testFilesImage, refused: true},
 		"unpinned image":  {mounts: []state.Mount{{Volume: testVolume, Target: "/d"}}, image: state.ImageRef("docker.io/library/busybox@sha256:" + strings.Repeat("0", 64)), refused: true},
 	} {
 		t.Run(name, func(t *testing.T) {
 			d := &volDocker{Fake: dockerfake.New(string(testServer)), box: newToolBox(t)}
 			labels := docker.ManagedLabels(string(testServer))
-			labels[docker.LabelVolume] = string(testVolume)
+			labels[names.LabelVolume] = string(testVolume)
 			for k, v := range c.labels {
 				labels[k] = v
 			}

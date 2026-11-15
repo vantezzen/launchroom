@@ -18,6 +18,7 @@ use App\Models\User;
 use App\Services\Backups\DestinationSecrets;
 use App\Services\Backups\EndpointGuard;
 use App\Support\PublicId;
+use App\Support\S3\S3Location;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -43,16 +44,16 @@ final readonly class CreateBackupDestination
         }
 
         $endpoint = $this->guard->check($input->endpoint, $input->allowPrivateNetwork);
-        $region = $input->region === null || $input->region === '' ? null : strtolower($input->region);
-        $prefix = trim($input->prefix, '/');
-        $this->guard->checkLocation($input->bucket, $prefix, $region);
+        $location = S3Location::parse($endpoint, $input->bucket, $input->region, $input->prefix);
+        $region = $location->region;
+        $prefix = $location->prefix;
 
         if ($input->accessKeyId === null || $input->accessKeyId === '' || $input->secretAccessKey === null || $input->secretAccessKey === '') {
             throw DomainRuleViolation::on('accessKeyId', 'Enter the access key and secret of an S3 key that can read and write this bucket.');
         }
 
         $destination = DB::transaction(function () use ($team, $input, $user, $actor, $endpoint, $region, $prefix): BackupDestination {
-            if (! $team instanceof Team && BackupDestination::query()->whereNull('team_id')->lockForUpdate()->exists()) {
+            if (! $team instanceof Team && BackupDestination::query()->instanceWide()->lockForUpdate()->exists()) {
                 throw DomainRuleViolation::conflict('The control plane already has a backup destination. Edit it instead.');
             }
 

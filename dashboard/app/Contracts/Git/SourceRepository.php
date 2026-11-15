@@ -6,6 +6,7 @@ namespace App\Contracts\Git;
 
 use App\Data\Git\GitRepositoryData;
 use App\Data\Git\RepositoryRef;
+use App\Data\Services\GitSource;
 use App\Models\Git\GitHubRepository;
 use App\Models\Git\GitRepository;
 
@@ -26,11 +27,9 @@ interface SourceRepository
     public function repositoryDefaultBranch(): ?string;
 
     /**
-     * The `GitSource` array a service built from this repository stores.
-     *
-     * @return array<string, mixed>
+     * The source a service built from this repository stores.
      */
-    public function gitSource(string $rootDirectory = '', ?string $branch = null): array;
+    public function gitSource(string $rootDirectory = '', ?string $branch = null): GitSource;
 
     public function pickerData(): GitRepositoryData;
 }

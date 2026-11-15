@@ -8,6 +8,7 @@ use App\Data\Domains\AppsDomainSetupData;
 use App\Models\InstanceSettings;
 use App\Models\Server;
 use App\Services\Dns\EdgeAddresses;
+use App\Support\GeneratedHostname;
 use App\Support\Network\ServerAddress;
 
 /**
@@ -24,18 +25,17 @@ final readonly class AppsDomainSetup
     public function get(): AppsDomainSetupData
     {
         $settings = InstanceSettings::current();
-        $server = Server::query()->where('is_control_plane', true)->orderBy('id')->first();
+        $server = Server::currentControlPlane();
         $ipv4 = ServerAddress::ipv4($server?->public_ipv4);
         $own = $ipv4 ?? ServerAddress::ipv6($server?->public_ipv6);
         $addresses = $this->edges->addresses(null);
-        $confirmed = $settings->onboarding['domainConfirmed'] ?? null;
 
         return new AppsDomainSetupData(
             domain: $settings->apps_domain,
             addresses: $addresses !== [] ? $addresses : ($own === null ? [] : [$own]),
-            freeWildcard: $ipv4 === null ? null : '*.'.str_replace('.', '-', $ipv4).'.sslip.io',
+            freeWildcard: $ipv4 === null ? null : GeneratedHostname::sslipWildcard($ipv4),
             dashboardHost: (string) parse_url(config()->string('app.url'), PHP_URL_HOST),
-            verified: is_array($confirmed) && $confirmed['domain'] === $settings->apps_domain ? $confirmed['verified'] : null,
+            verified: $settings->onboarding?->verified($settings->apps_domain),
         );
     }
 }

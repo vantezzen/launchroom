@@ -217,16 +217,16 @@ func TestProcScanner(t *testing.T) {
 	if _, err := (ProcScanner{Root: root}).Listeners(43); !errors.Is(err, ErrUnknown) {
 		t.Fatalf("err = %v", err)
 	}
-	if got := Hint(3000, ls); got != "" {
-		t.Errorf("hint %q", got)
+	if code, got := Hint(3000, ls); got != "" || code != "" {
+		t.Errorf("hint %q %q", code, got)
 	}
-	if got := Hint(5173, ls); !strings.Contains(got, "127.0.0.1:5173 only") {
-		t.Errorf("hint %q", got)
+	if code, got := Hint(5173, ls); !strings.Contains(got, "127.0.0.1:5173 only") || code != state.PortHintLoopbackOnly {
+		t.Errorf("hint %q %q", code, got)
 	}
-	if got := Hint(4000, ls); got != "the app listens on 3000, 5173, 8080, not 4000" {
-		t.Errorf("hint %q", got)
+	if code, got := Hint(4000, ls); got != "the app listens on 3000, 5173, 8080, not 4000" || code != state.PortHintWrongPort {
+		t.Errorf("hint %q %q", code, got)
 	}
-	if got := Hint(4000, []Listener{}); !strings.Contains(got, "does not listen") {
-		t.Errorf("hint %q", got)
+	if code, got := Hint(4000, []Listener{}); !strings.Contains(got, "does not listen") || code != state.PortHintNoPort {
+		t.Errorf("hint %q %q", code, got)
 	}
 }

@@ -1,12 +1,13 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { ArrowRight } from 'lucide-react';
 import { useEffect } from 'react';
-import { ChannelEvents } from '@/features/deployments/realtime';
 import { cn } from '@/lib/utils';
 import { openStagedChanges, StagedChangesSheet } from './staged-changes-sheet';
 import { stagedChangesKey, useStagedChanges } from './use-staged-changes';
+import { ChannelEvents } from '@/components/channel-events';
+import { channelName } from '@/lib/realtime';
 
-export type StagedChangesPillProps = {
+type StagedChangesPillProps = {
     project: string;
     environment: string;
     /**
@@ -22,7 +23,7 @@ export type StagedChangesPillProps = {
  * or nothing to show when nothing is staged (also for an environment
  * without services).
  */
-export function useStagedSummary(project: string, environment: string) {
+function useStagedSummary(project: string, environment: string) {
     const { data } = useStagedChanges(project, environment);
     const services = data?.groups.length ?? 0;
     const visible =
@@ -65,8 +66,8 @@ export function StagedChangesPill({
     return (
         <>
             <ChannelEvents
-                channel={`environments.${environment}`}
-                event=".canvas.changed"
+                channel={channelName('environments', environment)}
+                event="canvas.changed"
                 pollMs={30_000}
                 onEvent={refresh}
             />

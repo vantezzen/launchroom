@@ -71,8 +71,6 @@ func limitNodeBuild(p *rpplan.BuildPlan, resources buildkitd.Resources, env map[
 	}
 }
 
-// railpackEnv builds the Railpack environment: non-secret RAILPACK_* config
-// with real values, build-scoped variables with placeholder values.
 func railpackEnv(b state.BuilderSpec, buildEnv []string) map[string]string {
 	env := map[string]string{}
 	for _, n := range buildEnv {
@@ -145,7 +143,6 @@ func planWithRailpack(dir string, env map[string]string, logf func(level, msg st
 	return p, nil
 }
 
-// applyPatch applies a preset's plan patch to the typed Railpack plan.
 func applyPatch(p *rpplan.BuildPlan, patch presets.PlanPatch) error {
 	if patch.StartCommand != "" {
 		p.Deploy.StartCmd = patch.StartCommand
@@ -215,7 +212,6 @@ func applyPatch(p *rpplan.BuildPlan, patch presets.PlanPatch) error {
 	return nil
 }
 
-// buildFileAsset prefixes the plan asset names of preset build files.
 const buildFileAsset = "launchroom:"
 
 // restrictDeploy replaces the deploy layers taken from the app's build
@@ -272,7 +268,6 @@ func summaryPlan(p *rpplan.BuildPlan) ([]byte, error) {
 	return json.Marshal(&cp)
 }
 
-// stepCommands joins a step's exec commands for display.
 func stepCommands(p *rpplan.BuildPlan, name string) string {
 	for _, s := range p.Steps {
 		if s.Name != name {
@@ -288,7 +283,7 @@ func stepCommands(p *rpplan.BuildPlan, name string) string {
 				cmds = append(cmds, n)
 			}
 		}
-		return clipText(strings.Join(cmds, " && "), 4096)
+		return state.Clip(strings.Join(cmds, " && "), 4096)
 	}
 	return ""
 }
@@ -321,7 +316,6 @@ func ident(s string) state.Ident {
 	return v
 }
 
-// railpackSummary fills the summary from Railpack's result.
 func railpackSummary(s *state.BuildSummary, rp *railpackPlan) {
 	res := rp.result
 	s.Builder = state.BuilderRailpack
@@ -349,9 +343,9 @@ func railpackSummary(s *state.BuildSummary, rp *railpackPlan) {
 		if pkg == nil || pkg.ResolvedVersion == nil || len(s.Packages) >= 64 || ident(n) == "" {
 			continue
 		}
-		s.Packages = append(s.Packages, state.ResolvedPackage{Name: ident(n), Version: clipText(*pkg.ResolvedVersion, 128), Source: clipText(pkg.Source, 256)})
+		s.Packages = append(s.Packages, state.ResolvedPackage{Name: ident(n), Version: state.Clip(*pkg.ResolvedVersion, 128), Source: state.Clip(pkg.Source, 256)})
 	}
 	s.InstallCommand = stepCommands(res.Plan, "install")
 	s.BuildCommand = stepCommands(res.Plan, "build")
-	s.StartCommand = clipText(res.Plan.Deploy.StartCmd, 4096)
+	s.StartCommand = state.Clip(res.Plan.Deploy.StartCmd, 4096)
 }

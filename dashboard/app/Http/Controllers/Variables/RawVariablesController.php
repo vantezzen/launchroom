@@ -5,10 +5,10 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Variables;
 
 use App\Actions\Variables\ApplyRawVariables;
+use App\Data\Variables\RawVariablesData;
 use App\Enums\VariableType;
-use App\Events\CanvasChanged;
 use App\Http\Controllers\Controller;
-use App\Http\Controllers\Deployments\ScopesProjectRoutes;
+use App\Http\Routing\RouteScope;
 use App\Models\Environment;
 use App\Models\Project;
 use App\Models\Service;
@@ -29,11 +29,9 @@ use Illuminate\Support\Facades\Gate;
  */
 final class RawVariablesController extends Controller
 {
-    use ScopesProjectRoutes;
-
     public function show(Project $project, Environment $environment, Service $service, EnvironmentVariableRows $rows, VariableStore $store): JsonResponse
     {
-        $this->scopeInstance($project, $environment, $service);
+        RouteScope::instance($project, $environment, $service);
         Gate::authorize('create', [Variable::class, $project]);
 
         $lines = $rows->get($environment, $service)->map(static fn (Variable $variable): string => EnvFileWriter::line(
@@ -46,16 +44,12 @@ final class RawVariablesController extends Controller
             ->header('Cache-Control', 'no-store, private');
     }
 
-    public function update(Request $request, Project $project, Environment $environment, Service $service, #[CurrentUser] User $user, ApplyRawVariables $apply): JsonResponse
+    public function update(Request $request, Project $project, Environment $environment, Service $service, RawVariablesData $data, #[CurrentUser] User $user, ApplyRawVariables $apply): JsonResponse
     {
-        $this->scopeInstance($project, $environment, $service);
+        RouteScope::editable(RouteScope::instance($project, $environment, $service));
         Gate::authorize('create', [Variable::class, $project]);
 
-        $request->validate(['content' => ['present', 'nullable', 'string', 'max:524288']]);
-        $content = $request->string('content')->value();
-
-        $result = $apply->handle($environment, $service, $content, $user, $this->auditActor($request, $user));
-        broadcast(new CanvasChanged($environment->public_id, $service->public_id));
+        $result = $apply->handle($environment, $service, $data->content ?? '', $user, $this->auditActor($request, $user));
 
         return response()->json($result);
     }

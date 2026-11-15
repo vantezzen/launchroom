@@ -54,7 +54,6 @@ export function ServerMap({
     const [ref, width] = useMeasuredWidth<HTMLDivElement>();
     const [hover, setHover] = useState<string | null>(null);
 
-    // Fit the land grid into the box, keeping its aspect ratio.
     const unit =
         width > 0
             ? Math.min(width / LAND_GRID.cols, height / LAND_GRID.rows)

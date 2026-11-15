@@ -2,9 +2,9 @@ import { Head } from '@inertiajs/react';
 import { Page } from '@/components/patterns/page';
 import { ProjectAnalytics } from '@/features/analytics/project-analytics';
 import { ProjectResources } from '@/features/analytics/project-resources';
-import type { ProjectShellProps } from '@/features/projects/types';
+import ProjectLayout from '@/features/app-shell/project-layout';
 
-type Props = ProjectShellProps & {
+type Props = App.Data.Canvas.ProjectShellPropsData & {
     view: App.Enums.AnalyticsView;
     services: App.Data.Metrics.MetricsServiceData[];
     initialService: string | null;
@@ -42,3 +42,5 @@ export default function ProjectAnalyticsPage({
         </>
     );
 }
+
+ProjectAnalyticsPage.layout = ProjectLayout;

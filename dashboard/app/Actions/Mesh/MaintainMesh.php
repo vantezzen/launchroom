@@ -10,7 +10,6 @@ use App\Events\NodeStateInvalidated;
 use App\Models\InstanceSettings;
 use App\Models\Mesh\MeshCredential;
 use App\Models\Server;
-use App\Queries\MeshServers;
 use App\Services\Mesh\Exceptions\HeadscaleUnavailable;
 use App\Services\Mesh\HeadscaleClient;
 use App\Services\Mesh\HeadscaleConnection;
@@ -23,6 +22,8 @@ use Illuminate\Contracts\Database\Query\Builder;
 /**
  * Keeps the built-in mesh converged (scheduled, and after a server joins):
  *
+ * - switches it on once two servers are approved and no mesh is chosen
+ *   ({@see AutoEnableMesh}), in case the job of the approval gave up;
  * - rotates the dashboard's Headscale API key before it expires;
  * - re-applies the ACL policy when it differs from what this version renders
  *   or from what Headscale enforces;
@@ -42,6 +43,7 @@ final readonly class MaintainMesh
 {
     public function __construct(
         private HeadscaleConnection $connection,
+        private AutoEnableMesh $autoEnable,
         private IssueMeshAuthKey $issueKey,
         private MeshSecrets $secrets,
         private MeshTopology $topology,
@@ -49,6 +51,12 @@ final readonly class MaintainMesh
 
     public function handle(): void
     {
+        try {
+            $this->autoEnable->handle();
+        } catch (HeadscaleUnavailable) {
+            return;
+        }
+
         $settings = InstanceSettings::current();
 
         if ($this->topology->mode($settings) !== MeshMode::Embedded) {
@@ -72,7 +80,7 @@ final readonly class MaintainMesh
             }
 
             $nodes = $client->nodes();
-            $servers = MeshServers::query()->orderBy('id')->get();
+            $servers = Server::query()->meshMembers()->orderBy('id')->get();
             $this->adoptLinkedKeys($servers->all(), $nodes);
             $owners = $this->owners($servers->all(), $nodes);
 
@@ -198,7 +206,7 @@ final readonly class MaintainMesh
                 // Its node is gone (or was never linked by identity): the
                 // server is off the mesh until it registers again.
                 $server->forceFill(['mesh_ip' => null, 'mesh_ipv6' => null, 'mesh_node_id' => null])->save();
-                event(new NodeStateInvalidated(array_values(array_unique([$server->id, ...MeshServers::ids()]))));
+                NodeStateInvalidated::mesh([$server->id]);
             }
 
             $pending = $this->secrets->find(MeshSecrets::serverScope($server), MeshCredentialPurpose::PreAuthKey);
@@ -239,7 +247,7 @@ final readonly class MaintainMesh
             // plane's registry address, and every mesh address other servers
             // render: ambassador upstreams, allow-lists, edge upstreams and
             // the certificate storage's allowed edges (docs/05 §3, §5).
-            event(new NodeStateInvalidated(array_values(array_unique([$server->id, ...MeshServers::ids()]))));
+            NodeStateInvalidated::mesh([$server->id]);
         }
 
         $want = MeshPolicy::tags($server);

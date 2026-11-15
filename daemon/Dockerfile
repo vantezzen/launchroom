@@ -7,15 +7,14 @@
 # The Go toolchain only runs in the build stage; hosts never need Go (docs/README D3).
 
 # Base images are pinned by digest (docs/09 R31; checked by deploy/release/check-pinned-images.sh).
+# GO_IMAGE and RESTIC_* are copies of deploy/pins.env (deploy/release/check-pins.sh).
 ARG GO_IMAGE=golang:1.27@sha256:820153096fda4de6ac1b7194d12e416b7dd8f4e9a33d17e0345b111b945162d8
 
 FROM --platform=$BUILDPLATFORM ${GO_IMAGE} AS build
 ARG TARGETOS
 ARG TARGETARCH
 ARG VERSION=0.0.0-dev
-# Index digest (sha256:…) of this release's ghcr.io/vantezzen/launchroom-caddy,
-# compiled into the system-image allow-list (internal/policy, docs/05 §4).
-# Empty for dev builds: they accept the stock caddy:2 digest instead.
+# Index digest (sha256:…) of this release's launchroom-caddy (build.sh).
 ARG CADDY_DIGEST=
 WORKDIR /src
 COPY go.mod go.sum ./
@@ -23,13 +22,7 @@ RUN --mount=type=cache,target=/go/pkg/mod go mod download
 COPY . .
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    set -eu; \
-    for bin in launchroomd:launchroomd dockerd-guard:dockerd-guard ambassador:launchroom-ambassador; do \
-      CGO_ENABLED=0 GOOS="$TARGETOS" GOARCH="$TARGETARCH" \
-        go build -trimpath -buildvcs=false \
-          -ldflags "-s -w -X main.version=${VERSION} -X github.com/vantezzen/launchroom/daemon/internal/policy.launchroomCaddyDigest=${CADDY_DIGEST}" \
-          -o "/out/${bin#*:}" "./cmd/${bin%%:*}"; \
-    done
+    CGO_ENABLED=0 GOOS="$TARGETOS" GOARCH="$TARGETARCH" sh build.sh /out "$VERSION" "$CADDY_DIGEST"
 
 # restic (docs/14 §2): a pinned, checksum-verified static binary. The daemon
 # runs it as a child process with argv only (internal/backup).

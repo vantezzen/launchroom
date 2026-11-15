@@ -21,24 +21,21 @@ import (
 
 	"github.com/vantezzen/launchroom/daemon/internal/atomicfile"
 	"github.com/vantezzen/launchroom/daemon/internal/docker"
+	"github.com/vantezzen/launchroom/daemon/internal/ingress"
 	"github.com/vantezzen/launchroom/daemon/internal/ingress/certstore"
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/policy"
 	"github.com/vantezzen/launchroom/daemon/internal/secret"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
 
-// System container and volume names (generated, fixed per server).
+// Where Caddy's config is kept.
 const (
-	ContainerName = "lr-system-caddy"
-	DataVolume    = "lr-system-caddy-data"
-	ConfigVolume  = "lr-system-caddy-config"
 	// CacheFile is the last applied config inside the cache dir (<data>/caddy).
 	CacheFile = "config.json"
 	// AutosaveFile is Caddy's autosaved config inside its container
 	// (XDG_CONFIG_HOME=/config), which "caddy run --resume" loads at start.
 	AutosaveFile = "/config/caddy/autosave.json"
-	// specVersion changes whenever the built-in container spec changes (forces a recreate).
-	specVersion = "caddy-v1"
 )
 
 // ManagerOptions configures a Manager.
@@ -239,8 +236,17 @@ func NewManager(o ManagerOptions) *Manager {
 func (m *Manager) status(st state.IngressState, routes int, appliedAt *time.Time, msg string) *state.IngressStatus {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return &state.IngressStatus{State: st, Routes: routes, AppliedAt: appliedAt, Message: truncate(msg),
+	return &state.IngressStatus{State: st, Routes: routes, AppliedAt: appliedAt, Message: state.Clip(msg, state.MaxStatusLen),
 		Certificates: slices.Clone(m.certs), Storage: cloneStorage(m.storage), Waf: m.wafStatusLocked()}
+}
+
+// Features are the web firewall while the running, pinned Caddy carries
+// its module (docs/22 §6.1).
+func (m *Manager) Features() []state.DaemonFeature {
+	if m.WafSupport().Available() {
+		return []state.DaemonFeature{state.FeatureWaf}
+	}
+	return nil
 }
 
 // WafSupport is the firewall module of the running Caddy (zero: none, or
@@ -285,17 +291,12 @@ func (m *Manager) wafStatusLocked() *state.WafStatus {
 
 // plainText makes s a single line of printable text of at most n bytes.
 func plainText(s string, n int) string {
-	s = strings.Map(func(r rune) rune {
+	return state.Clip(strings.Map(func(r rune) rune {
 		if r < 0x20 || r == 0x7f || r == utf8.RuneError {
 			return ' '
 		}
 		return r
-	}, s)
-	for len(s) > n {
-		_, size := utf8.DecodeLastRuneInString(s)
-		s = s[:len(s)-size]
-	}
-	return s
+	}, s), n)
 }
 
 func cloneStorage(s *state.CertStorageStatus) *state.CertStorageStatus {
@@ -319,9 +320,14 @@ func (m *Manager) logNotes(notes []string) {
 	}
 }
 
-// Sync converges the system container to sys and loads the rendered route
-// table. It returns nil when Caddy is disabled on this server.
-func (m *Manager) Sync(ctx context.Context, sys state.SystemContainer, routes []Route) *state.IngressStatus {
+// Sync converges the system container to sys and loads the route table,
+// resolving same-server upstreams through resolve. It returns nil when Caddy
+// is disabled on this server.
+func (m *Manager) Sync(ctx context.Context, sys state.SystemContainer, specs []state.RouteSpec, resolve ingress.Resolver) *state.IngressStatus {
+	return m.sync(ctx, sys, ResolveRoutes(specs, resolve))
+}
+
+func (m *Manager) sync(ctx context.Context, sys state.SystemContainer, routes []Route) *state.IngressStatus {
 	if !sys.Enabled {
 		m.o.Ask.SetHosts(nil)
 		if err := m.removeContainer(ctx); err != nil {
@@ -565,7 +571,7 @@ func (m *Manager) setWafWanted(n int) {
 // self-update. Nothing outside the pins ever runs: an unpinned request with
 // no pinned container running fails as before.
 func (m *Manager) image(ctx context.Context, requested state.ImageRef) (state.ImageRef, error) {
-	checkErr := policy.CheckSystemImage(policy.SystemCaddy, requested, m.o.Policy)
+	checkErr := policy.CheckSystemImage(names.SystemCaddy, requested, m.o.Policy)
 	if checkErr == nil {
 		m.setKeptImage(requested, "", nil)
 		return requested, nil
@@ -576,10 +582,10 @@ func (m *Manager) image(ctx context.Context, requested state.ImageRef) (state.Im
 	}
 	for _, c := range cs {
 		current := state.ImageRef(c.Image)
-		if c.Name != ContainerName || c.Labels[docker.LabelSpecHash] != SpecHash(current) {
+		if c.Name != names.CaddyContainer || c.Labels[names.LabelSpecHash] != m.system(current).Hash() {
 			continue
 		}
-		if policy.CheckSystemImage(policy.SystemCaddy, current, m.o.Policy) == nil {
+		if policy.CheckSystemImage(names.SystemCaddy, current, m.o.Policy) == nil {
 			m.setKeptImage(requested, current, checkErr)
 			return current, nil
 		}
@@ -615,7 +621,7 @@ func (m *Manager) waitReady(ctx context.Context) error {
 }
 
 func (m *Manager) list(ctx context.Context) ([]docker.Container, error) {
-	return m.o.Docker.ListContainers(ctx, map[string]string{docker.LabelSystem: policy.SystemCaddy})
+	return m.o.Docker.ListContainers(ctx, map[string]string{names.LabelSystem: names.SystemCaddy})
 }
 
 func (m *Manager) removeContainer(ctx context.Context) error {
@@ -625,7 +631,7 @@ func (m *Manager) removeContainer(ctx context.Context) error {
 	}
 	var errs []error
 	for _, c := range cs {
-		if c.Running {
+		if c.Running() {
 			errs = append(errs, m.o.Docker.StopContainer(ctx, c.ID, 10*time.Second))
 		}
 		errs = append(errs, m.o.Docker.RemoveContainer(ctx, c.ID))
@@ -633,73 +639,9 @@ func (m *Manager) removeContainer(ctx context.Context) error {
 	return errors.Join(errs...)
 }
 
-// SpecHash identifies the built-in container spec for an image.
-func SpecHash(image state.ImageRef) string {
-	sum := sha256.Sum256([]byte(specVersion + "|" + string(image)))
-	return hex.EncodeToString(sum[:16])
-}
-
 func (m *Manager) ensureContainer(ctx context.Context, image state.ImageRef) (docker.Container, error) {
-	hash := SpecHash(image)
-	cs, err := m.list(ctx)
-	if err != nil {
-		return docker.Container{}, err
-	}
-	var current *docker.Container
-	for i := range cs {
-		c := cs[i]
-		if current == nil && c.Name == ContainerName && c.Labels[docker.LabelSpecHash] == hash {
-			current = &cs[i]
-			continue
-		}
-		m.o.Log.Info("replacing system caddy container", "container", c.Name)
-		if c.Running {
-			_ = m.o.Docker.StopContainer(ctx, c.ID, 10*time.Second)
-		}
-		if err := m.o.Docker.RemoveContainer(ctx, c.ID); err != nil {
-			return docker.Container{}, err
-		}
-	}
-	if current == nil {
-		for _, v := range []string{DataVolume, ConfigVolume} {
-			labels := docker.ManagedLabels(m.o.ServerID)
-			labels[docker.LabelVolume] = "system-" + v
-			labels[docker.LabelSystem] = policy.SystemCaddy
-			if err := m.o.Docker.CreateVolume(ctx, docker.VolumeCreate{Name: v, Labels: labels}); err != nil {
-				return docker.Container{}, err
-			}
-		}
-		present, err := m.o.Docker.ImagePresent(ctx, string(image))
-		if err != nil {
-			return docker.Container{}, err
-		}
-		if !present {
-			m.o.Log.Info("pulling system caddy image", "image", image)
-			if err := m.o.Docker.PullImage(ctx, string(image)); err != nil {
-				return docker.Container{}, err
-			}
-		}
-		id, err := m.o.Docker.CreateContainer(ctx, ContainerSpec(m.o.ServerID, image, m.o.Render.AdminListen))
-		if err != nil {
-			return docker.Container{}, err
-		}
-		c, err := m.o.Docker.InspectContainer(ctx, id)
-		if err != nil {
-			return docker.Container{}, err
-		}
-		current = &c
-	}
-	if !current.Running {
-		if err := m.o.Docker.StartContainer(ctx, current.ID); err != nil {
-			return docker.Container{}, err
-		}
-		c, err := m.o.Docker.InspectContainer(ctx, current.ID)
-		if err != nil {
-			return docker.Container{}, err
-		}
-		current = &c
-	}
-	return *current, nil
+	c, _, err := m.system(image).Ensure(ctx, m.o.Docker, m.o.Log)
+	return c, err
 }
 
 // ContainerSpec is the built-in spec of the system Caddy (docs/05 §4). It
@@ -713,42 +655,36 @@ func ContainerSpec(serverID string, image state.ImageRef, adminListen string) *d
 		adminListen = DefaultAdminListen
 	}
 	labels := docker.ManagedLabels(serverID)
-	labels[docker.LabelSystem] = policy.SystemCaddy
-	labels[docker.LabelSpecHash] = SpecHash(image)
+	labels[names.LabelSystem] = names.SystemCaddy
 	memory := int64(1 << 30)
 	pids := int64(4096)
+	hc := policy.BaseHostConfig()
+	hc.NetworkMode = "host"
+	hc.RestartPolicy = container.RestartPolicy{Name: container.RestartPolicyUnlessStopped}
+	hc.CapAdd = []string{"NET_BIND_SERVICE"}
+	hc.Mounts = []mount.Mount{
+		{Type: mount.TypeVolume, Source: names.CaddyDataVolume, Target: "/data"},
+		{Type: mount.TypeVolume, Source: names.CaddyConfigVolume, Target: "/config"},
+	}
+	hc.Resources = container.Resources{Memory: memory, MemorySwap: memory, PidsLimit: &pids}
 	return &docker.ContainerCreate{
-		Name: ContainerName,
+		Name: names.CaddyContainer,
 		Config: &container.Config{
 			Image:  string(image),
 			Cmd:    []string{"caddy", "run", "--resume"},
 			Env:    []string{"CADDY_ADMIN=" + adminListen},
 			Labels: labels,
 		},
-		HostConfig: &container.HostConfig{
-			NetworkMode:   "host",
-			RestartPolicy: container.RestartPolicy{Name: container.RestartPolicyUnlessStopped},
-			CapDrop:       []string{"ALL"},
-			CapAdd:        []string{"NET_BIND_SERVICE"},
-			SecurityOpt:   []string{policy.NoNewPrivileges},
-			LogConfig: container.LogConfig{
-				Type:   policy.LogDriver,
-				Config: map[string]string{"max-size": policy.LogMaxSize, "max-file": policy.LogMaxFile},
-			},
-			Mounts: []mount.Mount{
-				{Type: mount.TypeVolume, Source: DataVolume, Target: "/data"},
-				{Type: mount.TypeVolume, Source: ConfigVolume, Target: "/config"},
-			},
-			Resources: container.Resources{Memory: memory, MemorySwap: memory, PidsLimit: &pids},
-		},
+		HostConfig: hc,
+	}
+}
+
+// system is the Caddy system container for image.
+func (m *Manager) system(image state.ImageRef) docker.SystemContainer {
+	return docker.SystemContainer{
+		Component: names.SystemCaddy, Spec: ContainerSpec(m.o.ServerID, image, m.o.Render.AdminListen),
+		Volumes: []string{names.CaddyDataVolume, names.CaddyConfigVolume}, Pull: true,
 	}
 }
 
 func ptr[T any](v T) *T { return &v }
-
-func truncate(s string) string {
-	if len(s) > 1024 {
-		return s[:1024]
-	}
-	return s
-}

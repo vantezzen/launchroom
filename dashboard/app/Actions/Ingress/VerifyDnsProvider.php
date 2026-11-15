@@ -33,7 +33,7 @@ final readonly class VerifyDnsProvider
             : new DnsProviderCheckData(false, 'No DNS provider is configured.', null, now()->toIso8601ZuluString());
 
         $settings->forceFill([
-            'dns_verification' => $result->toArray(),
+            'dns_verification' => $result,
             'dns_verified_at' => $result->ok ? now() : $settings->dns_verified_at,
         ])->save();
 

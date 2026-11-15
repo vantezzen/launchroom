@@ -59,9 +59,6 @@ type Options struct {
 	// Workload returns the image and environment network of a workload in
 	// the verified NodeState (imports run their throwaway there; D55).
 	Workload func(state.WorkloadID) (WorkloadRuntime, error)
-	// Isolate makes sure the firewall covers the managed networks before an
-	// import's throwaway starts (firewall.Manager.Sync; nil = none, tests).
-	Isolate func(ctx context.Context) error
 	// Transfers fetches uploads and stores exports (nil: imports and exports unsupported).
 	Transfers transfer.Client
 	// TransferDir holds fetched uploads (default DataDir/transfers).
@@ -102,18 +99,15 @@ func New(o Options) *Engine {
 
 func nopLog(string, ...any) {}
 
-// container returns the running container of a workload on this server.
 func (e *Engine) container(ctx context.Context, wl state.WorkloadID) (string, error) {
-	cs, err := e.o.Docker.ListContainers(ctx, map[string]string{docker.LabelWorkload: string(wl)})
+	c, err := docker.WorkloadContainer(ctx, e.o.Docker, wl)
 	if err != nil {
 		return "", err
 	}
-	for _, c := range cs {
-		if c.Running && c.Labels[docker.LabelSystem] == "" {
-			return c.ID, nil
-		}
+	if c == nil || !c.Running() {
+		return "", fmt.Errorf("backup: workload %s has no running container on this server", wl)
 	}
-	return "", fmt.Errorf("backup: workload %s has no running container on this server", wl)
+	return c.ID, nil
 }
 
 func (e *Engine) workloadEnv(wl state.WorkloadID) (map[string]secret.Secret, error) {
@@ -127,7 +121,6 @@ func (e *Engine) workloadEnv(wl state.WorkloadID) (map[string]secret.Secret, err
 	return env, nil
 }
 
-// countingWriter counts bytes written through it.
 type countingWriter struct {
 	w io.Writer
 	n atomic.Int64
@@ -139,7 +132,6 @@ func (c *countingWriter) Write(p []byte) (int, error) {
 	return n, err
 }
 
-// errDumpFailed marks the stream of a failed dump.
 var errDumpFailed = errors.New("dump failed")
 
 // Backup streams the engine's dump of a database workload into a new restic
@@ -547,7 +539,6 @@ func short(id string) string {
 	return id
 }
 
-// firstLines keeps a short, single-line excerpt of a tool's stderr.
 func firstLines(s string) string {
 	s = strings.TrimSpace(s)
 	lines := strings.Split(s, "\n")

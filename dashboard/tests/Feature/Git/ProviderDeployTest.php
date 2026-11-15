@@ -4,13 +4,14 @@ declare(strict_types=1);
 
 use App\Actions\Daemons\LeaseTasks;
 use App\Actions\Deployments\DeployEnvironment;
-use App\Actions\Git\PollConnectionRef;
+use App\Actions\Git\PollTrackedRef;
 use App\Actions\Services\CreateService;
 use App\Data\Audit\AuditActor;
 use App\Data\Git\CommitData;
 use App\Data\Git\DeploymentStatusReport;
 use App\Data\Protocol\V1\LeaseRequest;
 use App\Data\Services\CreateServiceData;
+use App\Data\Services\GitSource;
 use App\Enums\DaemonFeature;
 use App\Enums\Git\DeploymentReportState;
 use App\Enums\Git\GitAuthMethod;
@@ -19,6 +20,7 @@ use App\Enums\Git\GitEventSource;
 use App\Enums\Git\GitProviderKind;
 use App\Enums\ServiceKind;
 use App\Events\Git\GitPushReceived;
+use App\Exceptions\Git\GitConnectionUnusable;
 use App\Jobs\Git\ReportDeploymentStatusJob;
 use App\Models\DaemonTask;
 use App\Models\Deployment;
@@ -28,7 +30,6 @@ use App\Models\Git\GitPullRequestComment;
 use App\Models\Service;
 use App\Models\ServiceInstance;
 use App\Models\Team;
-use App\Services\Git\Exceptions\GitConnectionUnusable;
 use App\Services\Git\GitConnectionTokens;
 use App\Services\Git\GitProviders;
 use Illuminate\Http\Client\Request;
@@ -63,10 +64,10 @@ beforeEach(function (): void {
     ]);
 });
 
-function gpdService(object $test, array $source, string $name = 'web'): Service
+function gpdService(object $test, GitSource $source, string $name = 'web'): Service
 {
     return resolve(CreateService::class)->handle($test->project, CreateServiceData::from([
-        'name' => $name, 'kind' => ServiceKind::App, 'source' => ['type' => 'git', ...$source],
+        'name' => $name, 'kind' => ServiceKind::App, 'source' => $source,
     ]), null, AuditActor::system());
 }
 
@@ -93,7 +94,7 @@ test('GitLab sources resolve the head through the API and clone with the connect
 
     $leased = gpdLease($this);
 
-    expect(gpdOpen($this, $leased[0]->spec->cloneToken->sealed))
+    expect(gpdOpen($this, $leased[0]->spec->inputs->cloneToken->sealed))
         ->toBe(['serverId' => $this->server->public_id, 'taskId' => $task->public_id, 'purpose' => 'clone', 'token' => GitProviderFake::TOKEN]);
 });
 
@@ -124,13 +125,13 @@ test('SSH sources seal the deploy key seed and pin the confirmed host keys', fun
         ->and($task->spec->repo->ref)->toBe('refs/heads/main');
 
     $leased = gpdLease($this);
-    $spec = $leased[0]->spec;
-    $seed = gpdOpen($this, $spec->sshKey->sealed);
+    $spec = $leased[0]->spec->toProtocol();
+    $seed = gpdOpen($this, $spec['sshKey']['sealed']);
 
     expect($seed['purpose'])->toBe('ssh_key')
         ->and(strlen((string) base64_decode($seed['token'], true)))->toBe(32)
-        ->and($spec->repo->knownHosts)->toBe([['type' => 'ssh-ed25519', 'key' => GitProviderFake::hostKey()->key]])
-        ->and(property_exists($spec, 'cloneToken'))->toBeFalse();
+        ->and($spec['repo']['knownHosts'])->toBe([['type' => 'ssh-ed25519', 'key' => GitProviderFake::hostKey()->key]])
+        ->and($spec)->not->toHaveKey('cloneToken');
 });
 
 test('an SSH source whose host keys are not confirmed fails at lease time instead of trusting any key', function (): void {
@@ -141,7 +142,7 @@ test('an SSH source whose host keys are not confirmed fails at lease time instea
     $plain->forceFill(['host_keys_confirmed_at' => null])->save();
 
     expect(gpdLease($this))->toBe([])
-        ->and(DaemonTask::query()->latest('id')->firstOrFail()->result['failure']['class'] ?? null)->toBe('clone_error');
+        ->and(DaemonTask::query()->latest('id')->firstOrFail()->result?->failure?->class)->toBe('clone_error');
 });
 
 test('a push matches services of the same provider and connection only', function (): void {
@@ -223,7 +224,7 @@ test('reporting never throws and never reaches another team’s connection', fun
 
 test('polling records a baseline, then emits a push when the branch moves', function (): void {
     Event::fake([GitPushReceived::class]);
-    $poll = resolve(PollConnectionRef::class);
+    $poll = resolve(PollTrackedRef::class);
 
     expect($poll->handle($this->gitlab, 42, 'refs/heads/main'))->toBeFalse();
 

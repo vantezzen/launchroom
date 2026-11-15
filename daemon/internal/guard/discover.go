@@ -11,8 +11,11 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/policy"
+	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
 
 // Compose labels of the install's containers.
@@ -50,19 +53,49 @@ func (s *Server) probeEngine(ctx context.Context) (engineFacts, error) {
 	return engineFacts{Rootless: slices.Contains(info.SecurityOptions, "name=rootless")}, nil
 }
 
-// DetectRootless reports whether the upstream engine is rootless.
-func (s *Server) DetectRootless(ctx context.Context) (bool, error) {
-	f, err := s.probeEngine(ctx)
-	return f.Rootless, err
+// Discover waits for Docker, then learns the host: whether it runs
+// rootless (edge ports through RootlessKit's API at rootlessKitAPI, if
+// given) and the install's compose project, which allows self-updates.
+// Call it once, before Serve. It returns only when ctx ends first.
+func (s *Server) Discover(ctx context.Context, rootlessKitAPI string) error {
+	var facts engineFacts
+	for i := 0; ; i++ {
+		pctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		f, err := s.probeEngine(pctx)
+		cancel()
+		if err == nil {
+			facts = f
+			break
+		}
+		if i%10 == 0 {
+			s.o.Log.Warn("waiting for Docker", "upstream", s.o.Upstream, "err", err)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(2 * time.Second):
+		}
+	}
+	if facts.Rootless {
+		s.o.Rootless = &RootlessOptions{APISocket: rootlessKitAPI}
+		s.o.Log.Info("rootless Docker host", "edgePorts", rootlessKitAPI != "")
+	}
+	if u, err := s.discoverUpdater(ctx); err != nil {
+		s.o.Log.Warn("self-updates through the guard are disabled", "reason", err)
+	} else {
+		s.o.Updater = u
+		s.o.Log.Info("self-update supervisor allowed", "installFolder", u.ProjectDir)
+	}
+	return nil
 }
 
-// DiscoverUpdater finds the guard's own compose container (by hostname,
+// discoverUpdater finds the guard's own compose container (by hostname,
 // which Docker sets to the container id) and derives the self-update rule:
 // the install folder is its compose working dir, the socket path on the
 // host is the source of its upstream mount, and the supervisor may run the
 // image of the install's launchroomd container. It fails when the guard
 // does not run under compose (then self-updates are refused).
-func (s *Server) DiscoverUpdater(ctx context.Context) (*UpdaterRule, error) {
+func (s *Server) discoverUpdater(ctx context.Context) (*UpdaterRule, error) {
 	host, err := os.Hostname()
 	if err != nil {
 		return nil, err
@@ -112,10 +145,9 @@ func (s *Server) DiscoverUpdater(ctx context.Context) (*UpdaterRule, error) {
 	return rule, nil
 }
 
-// daemonImages returns the image ids of the install's launchroomd containers.
 func (s *Server) daemonImages(ctx context.Context, project string) ([]string, error) {
 	f, _ := json.Marshal(map[string]map[string]bool{"label": {
-		composeProject + "=" + project: true, composeService + "=" + DaemonService: true, labelManaged + "=true": true,
+		composeProject + "=" + project: true, composeService + "=" + DaemonService: true, names.LabelManaged + "=true": true,
 	}})
 	status, raw, err := s.get(ctx, nil, "/containers/json", url.Values{"filters": {string(f)}})
 	if err != nil {
@@ -132,7 +164,7 @@ func (s *Server) daemonImages(ctx context.Context, project string) ([]string, er
 	}
 	var out []string
 	for _, c := range list {
-		if reImageID.MatchString(c.ImageID) && !slices.Contains(out, c.ImageID) {
+		if state.IsImageID(c.ImageID) && !slices.Contains(out, c.ImageID) {
 			out = append(out, c.ImageID)
 		}
 	}
@@ -142,7 +174,6 @@ func (s *Server) daemonImages(ctx context.Context, project string) ([]string, er
 	return out, nil
 }
 
-// splitList parses a comma-separated environment value.
 func splitList(v string) []string {
 	var out []string
 	for _, x := range strings.Split(v, ",") {
@@ -156,7 +187,7 @@ func splitList(v string) []string {
 // PolicyFromEnv builds the guard's policy from its own environment:
 // launchroomd's defaults plus LR_GUARD_ALLOWED_REGISTRIES (extra workload
 // registries, prefixes ending in "/") and system image digests (parsed by
-// the caller with config.ParseSystemImageDigests).
+// config.LoadGuard).
 func PolicyFromEnv(base policy.Config, extraRegistries string, digests map[string][]string) (policy.Config, error) {
 	p := base
 	for _, r := range splitList(extraRegistries) {

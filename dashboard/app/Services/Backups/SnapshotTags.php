@@ -9,7 +9,6 @@ use App\Models\InstanceSettings;
 use App\Models\Server;
 use App\Models\ServiceInstance;
 use App\Models\Volume;
-use App\Support\PublicId;
 
 /**
  * Snapshot tags (docs/14 §2): restore UIs are built from `restic snapshots
@@ -28,7 +27,7 @@ final class SnapshotTags
         $environment = $instance->environment;
 
         return [
-            'instance:'.self::instanceId(),
+            'instance:'.InstanceSettings::instanceId(),
             'kind:database',
             'team:'.$instance->service->project->team->public_id,
             'project:'.$environment->project->public_id,
@@ -65,7 +64,7 @@ final class SnapshotTags
         $environment = $instance->environment;
 
         return [
-            'instance:'.self::instanceId(),
+            'instance:'.InstanceSettings::instanceId(),
             'kind:volume',
             'team:'.$instance->service->project->team->public_id,
             'project:'.$environment->project->public_id,
@@ -97,7 +96,7 @@ final class SnapshotTags
     public static function forControlPlane(string $runId, string $part, BackupReason $reason): array
     {
         return [
-            'instance:'.self::instanceId(),
+            'instance:'.InstanceSettings::instanceId(),
             'kind:control-plane',
             'run:'.$runId,
             'part:'.$part,
@@ -106,26 +105,6 @@ final class SnapshotTags
     }
 
     /**
-     * A stable id for this launchroom instance (survives a control-plane
-     * restore because it lives in the restored database).
-     */
-    public static function instanceId(): string
-    {
-        $settings = InstanceSettings::current();
-
-        if ($settings->instance_id === null) {
-            InstanceSettings::query()->whereKey(InstanceSettings::ID)->whereNull('instance_id')
-                ->update(['instance_id' => PublicId::generate('ins')]);
-            InstanceSettings::forgetCurrent();
-            $settings = InstanceSettings::current();
-        }
-
-        return (string) $settings->instance_id;
-    }
-
-    /**
-     * Value of `key:` in a tag list, or null.
-     *
      * @param  list<string>  $tags
      */
     public static function value(array $tags, string $key): ?string

@@ -4,46 +4,36 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
-use App\Contracts\Git\TrackedRefs;
-use App\Http\Routing\Git\GitRouteBindings;
+use App\Contracts\Git\SshRemotes;
+use App\Http\Routing\TeamScopedBindings;
 use App\Models\Git\GitConnection;
 use App\Models\Git\GitHubApp;
 use App\Models\Git\GitHubInstallation;
 use App\Models\Git\GitHubRepository;
-use App\Models\Git\GitRepository;
-use App\Policies\Git\GitConnectionPolicy;
-use App\Policies\Git\GitHubAppPolicy;
-use App\Policies\Git\GitHubInstallationPolicy;
-use App\Policies\Git\GitHubRepositoryPolicy;
-use App\Policies\Git\GitRepositoryPolicy;
-use App\Services\GitHub\NullTrackedRefs;
+use App\Services\Git\Ssh\PhpseclibSshRemotes;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 
 /**
- * Wiring for the GitHub integration (docs/06 §2, docs/09 R17–R20).
+ * Wiring for the git providers (docs/06 §2, docs/19, docs/09 R17–R20).
  */
 final class GitServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
-        // The core domain binds its own implementation (services' Git sources
-        // × environment triggers); bindIf keeps that one when it exists.
-        $this->app->bindIf(TrackedRefs::class, NullTrackedRefs::class);
+        $this->app->bind(SshRemotes::class, PhpseclibSshRemotes::class);
     }
 
     public function boot(): void
     {
-        Gate::policy(GitHubApp::class, GitHubAppPolicy::class);
-        Gate::policy(GitHubInstallation::class, GitHubInstallationPolicy::class);
-        Gate::policy(GitHubRepository::class, GitHubRepositoryPolicy::class);
-        Gate::policy(GitConnection::class, GitConnectionPolicy::class);
-        Gate::policy(GitRepository::class, GitRepositoryPolicy::class);
-
-        GitRouteBindings::register();
+        TeamScopedBindings::teamOwned([
+            'githubApp' => GitHubApp::class,
+            'githubInstallation' => GitHubInstallation::class,
+            'githubRepository' => GitHubRepository::class,
+            'gitConnection' => GitConnection::class,
+        ]);
 
         // GitHub delivers from a known set of ranges; this only caps abuse of
         // the public endpoint (unsigned requests are rejected before any work).

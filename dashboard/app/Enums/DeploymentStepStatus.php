@@ -10,4 +10,24 @@ enum DeploymentStepStatus: string
     case Succeeded = 'succeeded';
     case Failed = 'failed';
     case Skipped = 'skipped';
+
+    public function label(): string
+    {
+        return match ($this) {
+            self::Running => 'Running',
+            self::Succeeded => 'Succeeded',
+            self::Failed => 'Failed',
+            self::Skipped => 'Skipped',
+        };
+    }
+
+    public function tone(): StatusTone
+    {
+        return match ($this) {
+            self::Running => StatusTone::Progress,
+            self::Succeeded => StatusTone::Active,
+            self::Failed => StatusTone::Failed,
+            self::Skipped => StatusTone::Idle,
+        };
+    }
 }

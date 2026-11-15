@@ -17,35 +17,35 @@ use App\Data\Services\ScheduleSettings;
 use App\Data\Specs\DomainSpec;
 use App\Data\Specs\ServiceSpec;
 use App\Drivers\DatabaseEngines\DatabaseEngines;
-use App\Enums\DaemonFeature;
 use App\Enums\DeploymentStatus;
 use App\Enums\DeploymentTrigger;
 use App\Enums\DomainKind;
 use App\Enums\EnvironmentKind;
+use App\Enums\NodeStateField;
 use App\Enums\ServerRole;
-use App\Enums\ServerStatus;
 use App\Enums\ServiceKind;
+use App\Enums\WorkloadCapability;
 use App\Enums\WorkloadPhase;
 use App\Enums\WorkloadRole;
 use App\Models\Backups\WalArchive;
 use App\Models\Deployment;
-use App\Models\Domain;
 use App\Models\Environment;
 use App\Models\Placement;
 use App\Models\Server;
 use App\Models\ServiceInstance;
 use App\Models\Volume;
 use App\Services\Backups\PointInTimeRecovery;
-use App\Services\Backups\RestoreHolds;
 use App\Services\Crypto\ProjectKeyring;
-use App\Services\Moves\MoveHolds;
+use App\Services\Holds\Holds;
+use App\Services\Holds\MoveHolds;
+use App\Services\Ingress\EdgeServers;
 use App\Services\Previews\PreviewRoutes;
 use App\Services\Previews\PreviewUrls;
 use App\Services\Security\WafRoutes;
-use App\Support\Blueprints\BlueprintValidator;
 use App\Support\Crypto\WorkloadEnvSealer;
 use App\Support\Deployments\EffectiveDeploy;
-use App\Support\Hostname;
+use App\Support\Ingress\DomainRoute;
+use App\Support\Ingress\RouteId;
 use Illuminate\Contracts\Database\Query\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Cache;
@@ -63,21 +63,17 @@ use Illuminate\Support\Facades\Log;
  *   service of the team (multi-edge, docs/05 §4): upstreams are this server's
  *   workloads of the active deployment plus draining ones (the daemon prefers
  *   serving ones) and replicas on other servers through their mesh-published
- *   port (MeshUpstreams; skipped while a replica has none). EdgeRouting
+ *   port (MeshLinks; skipped while a replica has none). EdgeRouting
  *   then applies DNS-01 wildcard certificates and HSTS.
  *
  * Queries are fixed in number (eager loading); no N+1 over placements.
  */
 final readonly class NodeStateContent
 {
-    /** Stop timeout of managed databases (`WorkloadSpec.stop`, D42). */
-    private const string DATABASE_STOP_TIMEOUT = '60s';
-
     public function __construct(
         private ProjectKeyring $keyring,
         private DatabaseEngines $engines,
         private PreviewUrls $previewUrls,
-        private MeshUpstreams $meshUpstreams,
         private EdgeRouting $edgeRouting,
         private MeshLinks $meshLinks,
         private MeshReadiness $meshReadiness,
@@ -106,17 +102,15 @@ final readonly class NodeStateContent
         $volumes = [];
         $workloads = [];
         $previews = new PreviewRoutes($this->previewUrls, $server);
-        // Cross-server links over the mesh (docs/05 §3): published ports, allow-list, ambassadors.
         $links = $this->meshLinks->for($server, array_values($placements->all()));
-        // Restores hold services (volume: the service; database in place: its dependents) until they finished (docs/14 §5.1).
-        $held = RestoreHolds::instanceIds();
+        $held = Holds::instanceIds();
         // Volumes of other services that workloads here mount too (D73).
         $sharedVolumes = $this->sharedVolumes($server, $placements);
         /** @var array<string, string> $sharedOwners volume id => owner service id */
         $sharedOwners = [];
 
         foreach ($placements as $placement) {
-            // A stopped service runs nothing (D68); held ones wait for a restore.
+            // A stopped service runs nothing (D68); held ones wait for their hold to end (docs/14 §5.1).
             if (isset($held[$placement->service_instance_id]) || $placement->serviceInstance->stopped_at !== null) {
                 continue;
             }
@@ -129,8 +123,7 @@ final readonly class NodeStateContent
 
             $workloads[] = $workload;
             $environment = $placement->deployment->environment;
-            // Keyed by network id: each network is declared once.
-            $networks[$environment->networkId()] ??= new NetworkSpec($environment->networkId(), $environment->networkName(), $environment->network_subnet);
+            $networks[$environment->networkId()] ??= NetworkSpec::of($environment);
 
             // Previews sharing a base database also join the base network.
             foreach ($placement->deployment->revision === null ? [] : $previews->sharedNetworks($placement->deployment->revision->spec) as $shared) {
@@ -162,7 +155,7 @@ final readonly class NodeStateContent
 
         // A service moving here is held while its volumes are copied in: they
         // exist before it runs (docs/14 §13.2).
-        foreach ($server->supportsDaemonFeature(DaemonFeature::PreparedVolumes) ? MoveHolds::preparedVolumes($server->id) : [] as $volume) {
+        foreach (MoveHolds::preparedVolumes($server->id) as $volume) {
             $volumes[$volume->public_id] ??= new VolumeSpec($volume->public_id, $volume->dockerName());
         }
 
@@ -172,7 +165,6 @@ final readonly class NodeStateContent
             'networks' => array_values($networks),
             'volumes' => array_values($volumes),
             'workloads' => $workloads,
-            // The web firewall's settings per route (docs/22 §6.3) for edges with the `waf` feature.
             'routes' => $server->hasRole(ServerRole::Edge) ? $this->waf->apply($this->edgeRouting->apply($this->routes($server, array_values($placements->all()), $workloads, $previews), $server), $server) : [],
             // Only listeners on networks this state declares (a workload that
             // can't be rendered yet doesn't declare its network).
@@ -232,7 +224,7 @@ final readonly class NodeStateContent
                 || $volume->serviceInstance->environment_id !== $instance->environment_id
                 || $volume->serviceInstance->service->public_id !== $recorded->sharedFrom
                 || $volume->server_id !== $server->id
-                || ! $server->supportsDaemonFeature(DaemonFeature::SharedVolumes)) {
+                || ! FeatureGate::accepts($server, NodeStateField::SharedVolume)) {
                 Log::warning('Workload left out: its shared volume is not usable on this server', ['workload' => $placement->workload_id, 'volume' => (string) $id, 'server' => $server->public_id]);
 
                 return null;
@@ -256,9 +248,8 @@ final readonly class NodeStateContent
         }
 
         // Scheduled cron services (docs/04 §1): created, started by launchroomd
-        // at every due minute, never restarted. A launchroomd without the
-        // feature keeps running the command continuously, as before.
-        $schedule = $spec->kind === ServiceKind::Cron && $spec->deploy->schedule instanceof ScheduleSettings && $server->supportsDaemonFeature(DaemonFeature::CronSchedule)
+        // at every due minute, never restarted.
+        $schedule = $spec->kind === ServiceKind::Cron && $spec->deploy->schedule instanceof ScheduleSettings && FeatureGate::accepts($server, NodeStateField::WorkloadSchedule)
             ? ['cron' => $spec->deploy->schedule->cron, 'timeZone' => $spec->deploy->schedule->timeZone]
             : null;
 
@@ -296,33 +287,24 @@ final readonly class NodeStateContent
                 ? $placement->drain_until->toImmutable()->utc()->format('Y-m-d\TH:i:s\Z')
                 : null,
             publishOnMesh: $port === null ? null : $meshPort,
-            // Runtime log retention (opt-in per environment), only for daemons that can ship.
-            shipLogs: $environment->retainsRuntimeLogs() && $server->supportsDaemonFeature(DaemonFeature::ShipLogs),
+            shipLogs: $environment->retainsRuntimeLogs(),
             walArchive: $wal['spec'] ?? null,
             walArchiveFingerprint: $wal['fingerprint'] ?? null,
             stop: $stop,
             schedule: $schedule,
-            files: $this->files($server, $spec->deploy->files, $source),
+            files: $this->files($spec->deploy->files, $source),
         );
     }
 
     /**
-     * Config files (D65) for daemons that announced the feature. Managed
-     * databases have none; an older launchroomd gets the workload without
-     * them (and a warning here), as with the other optional features.
+     * Config files (D65); managed databases have none.
      *
      * @param  list<ConfigFile>  $files
      * @return list<array{path: string, content: string}>|null
      */
-    private function files(Server $server, array $files, mixed $source): ?array
+    private function files(array $files, mixed $source): ?array
     {
         if ($files === [] || $source instanceof DatabaseSource) {
-            return null;
-        }
-
-        if (! $server->supportsDaemonFeature(DaemonFeature::ConfigFiles)) {
-            Log::warning('launchroomd on this server does not support config files; update it', ['server' => $server->public_id]);
-
             return null;
         }
 
@@ -343,11 +325,13 @@ final readonly class NodeStateContent
     private function databaseStop(Server $server, mixed $source, array $argv): ?array
     {
         if (! $source instanceof DatabaseSource || $argv['command'] !== null
-            || ! $server->supportsDaemonFeature(DaemonFeature::StopSpec)) {
+            || ! FeatureGate::accepts($server, NodeStateField::WorkloadStop)) {
             return null;
         }
 
-        return ['signal' => $this->engines->for($source->engine)->stopSignal(), 'timeout' => self::DATABASE_STOP_TIMEOUT, 'noInit' => true];
+        $driver = $this->engines->for($source->engine);
+
+        return ['signal' => $driver->stopSignal(), 'timeout' => $driver->stopTimeout(), 'noInit' => true];
     }
 
     /**
@@ -363,7 +347,7 @@ final readonly class NodeStateContent
     private function walArchive(Server $server, Placement $placement, mixed $source, array $mounts, array $argv): ?array
     {
         if (! $source instanceof DatabaseSource || $placement->role !== WorkloadRole::Serving || $argv['command'] !== null
-            || ! $server->supportsDaemonFeature(DaemonFeature::PointInTime)) {
+            || ! FeatureGate::accepts($server, NodeStateField::WorkloadWalArchive)) {
             return null;
         }
 
@@ -387,7 +371,7 @@ final readonly class NodeStateContent
      * Every edge routes every service of the team (docs/05 §4, multi-edge):
      * replicas on this server are workload upstreams; replicas on other
      * servers are mesh upstreams through their mesh-published port
-     * (MeshLinks allocates it, MeshUpstreams renders the address); replicas
+     * (App\Actions\Mesh\AllocateMeshPorts allocates it); replicas
      * on servers without a mesh address are skipped.
      * `prefer_local` when every edge of the team runs a replica (each edge
      * then serves from its own; DNS spreads the clients).
@@ -399,15 +383,13 @@ final readonly class NodeStateContent
     private function routes(Server $server, array $placements, array $workloads, PreviewRoutes $previews): array
     {
         $rendered = array_flip(array_map(static fn (WorkloadSpec $workload): string => $workload->id, $workloads));
-        $edges = $this->teamEdges($server);
+        $edges = EdgeServers::ids($server->team_id);
 
         /** @var array<int, array{environment: Environment, spec: ServiceSpec, upstreams: list<array{workload: string, port: int}|array{address: string}>, local: bool, remote: bool, servers: array<int, true>}> $byInstance */
         $byInstance = [];
         $skipped = [];
 
         $remote = $this->remotePlacements($server);
-        // Web replicas elsewhere get a mesh-published port (docs/05 §3); their servers re-render to publish it.
-        $this->meshLinks->ensurePorts($server, $remote);
 
         foreach ([...$placements, ...$remote] as $placement) {
             $instance = $placement->serviceInstance;
@@ -421,7 +403,7 @@ final readonly class NodeStateContent
             }
 
             $local = $placement->server_id === $server->id;
-            $address = $local ? null : $this->meshUpstreams->address($placement);
+            $address = $local ? null : MeshLinks::upstreamAddress($placement);
 
             if ($local ? ! isset($rendered[$placement->workload_id]) : $address === null) {
                 if (! $local) {
@@ -452,18 +434,13 @@ final readonly class NodeStateContent
             }
 
             foreach ($this->routeGroups($spec) as [$canonical, $hosts]) {
-                $routes[$canonical->hostname] = new RouteSpec(
-                    id: Domain::routeIdFor($canonical->id),
-                    hosts: $hosts,
-                    tls: match (true) {
-                        Hostname::isLocal($canonical->hostname) => 'internal',
-                        $canonical->kind === DomainKind::Custom => 'on_demand',
-                        default => 'acme',
-                    },
+                $routes[$canonical->hostname] = DomainRoute::serving(
+                    RouteId::forDomain($canonical->id),
+                    $canonical->hostname,
+                    $hosts,
+                    onDemand: $canonical->kind === DomainKind::Custom,
+                    indexed: $environment->kind === EnvironmentKind::Production,
                     upstreams: $upstreams,
-                    redirectWwwTo: count($hosts) > 1 ? $canonical->hostname : null,
-                    // docs/06 §5: noindex on every non-production host.
-                    headers: $environment->kind === EnvironmentKind::Production ? null : ['X-Robots-Tag' => 'noindex'],
                     protection: $protection,
                     loadBalancing: $preferLocal ? 'prefer_local' : null,
                 );
@@ -473,7 +450,7 @@ final readonly class NodeStateContent
         // Stopped services (D68): their domains answer with the edge's
         // "stopped" page instead of "no app at this address", also while a
         // Start brings them back (until the new version is routed).
-        if ($server->supportsDaemonFeature(DaemonFeature::ServiceStop)) {
+        if (FeatureGate::accepts($server, NodeStateField::RouteStopped)) {
             foreach ($this->stoppedInstances($server, array_keys($byInstance)) as $instance) {
                 $spec = $instance->environment->lastAppliedRevision?->spec->service($instance->service->public_id);
                 $protection = $previews->protectionFor($instance->environment);
@@ -483,18 +460,12 @@ final readonly class NodeStateContent
                 }
 
                 foreach ($this->routeGroups($spec) as [$canonical, $hosts]) {
-                    $routes[$canonical->hostname] ??= new RouteSpec(
-                        id: Domain::routeIdFor($canonical->id),
-                        hosts: $hosts,
-                        tls: match (true) {
-                            Hostname::isLocal($canonical->hostname) => 'internal',
-                            $canonical->kind === DomainKind::Custom => 'on_demand',
-                            default => 'acme',
-                        },
-                        upstreams: [],
-                        redirectWwwTo: count($hosts) > 1 ? $canonical->hostname : null,
-                        headers: $instance->environment->kind === EnvironmentKind::Production ? null : ['X-Robots-Tag' => 'noindex'],
-                        stopped: true,
+                    $routes[$canonical->hostname] ??= DomainRoute::stopped(
+                        RouteId::forDomain($canonical->id),
+                        $canonical->hostname,
+                        $hosts,
+                        onDemand: $canonical->kind === DomainKind::Custom,
+                        indexed: $instance->environment->kind === EnvironmentKind::Production,
                     );
                 }
             }
@@ -509,7 +480,7 @@ final readonly class NodeStateContent
             }
         }
 
-        foreach ($previews->deploymentRoutes($placements, $rendered, $remote, $this->meshUpstreams->address(...)) as $host => $route) {
+        foreach ($previews->deploymentRoutes($placements, $rendered, $remote, MeshLinks::upstreamAddress(...)) as $host => $route) {
             if (! isset($taken[$host])) {
                 $routes[$host] = $route;
             }
@@ -537,7 +508,7 @@ final readonly class NodeStateContent
                 ->whereNotNull('stopped_at')
                 ->orWhereIn('id', Deployment::query()->select('service_instance_id')
                     ->where('trigger', DeploymentTrigger::Start->value)
-                    ->whereIn('status', DeploymentStatus::values([DeploymentStatus::Queued, ...DeploymentStatus::inFlight()]))))
+                    ->unfinished()))
             ->with(['service', 'environment.lastAppliedRevision'])
             ->orderBy('id')
             ->get()
@@ -557,7 +528,7 @@ final readonly class NodeStateContent
             ->where('team_id', $server->team_id)
             ->where('server_id', '!=', $server->id)
             // Never a revoked server's replicas (its mesh address isn't trusted anymore).
-            ->whereIn('server_id', Server::query()->select('id')->whereIn('status', [ServerStatus::Online->value, ServerStatus::Unreachable->value, ServerStatus::Offline->value]))
+            ->whereIn('server_id', Server::query()->select('id')->approved())
             ->whereIn('phase', [WorkloadPhase::Running->value, WorkloadPhase::Healthy->value, WorkloadPhase::Draining->value])
             ->where(static fn (Builder $query) => $query
                 ->where('role', WorkloadRole::Draining->value)
@@ -584,24 +555,6 @@ final readonly class NodeStateContent
             && $placement->deployment->status === DeploymentStatus::HealthChecking
             && ! $placement->deployment->hold_traffic
             && $this->meshReadiness->ready($placement);
-    }
-
-    /**
-     * Ids of the team's approved edge servers.
-     *
-     * @return list<int>
-     */
-    private function teamEdges(Server $server): array
-    {
-        /** @var list<int> $ids */
-        $ids = Server::query()
-            ->where('team_id', $server->team_id)
-            ->whereIn('status', [ServerStatus::Online->value, ServerStatus::Unreachable->value, ServerStatus::Offline->value])
-            ->whereJsonContains('roles', ServerRole::Edge->value)
-            ->pluck('id')
-            ->all();
-
-        return $ids;
     }
 
     /**
@@ -654,22 +607,15 @@ final readonly class NodeStateContent
 
     /**
      * Capabilities of an app workload: the service's own (within the
-     * allow-list), plus NET_BIND_SERVICE for images Railpack built with its
-     * PHP provider. Their FrankenPHP binary carries that file capability, and
-     * with every capability dropped the kernel refuses to exec it ("Operation
-     * not permitted"), so the app could never start (docs/04 §3.1).
+     * allow-list) plus what its build needs at runtime.
      *
      * @param  list<string>  $requested
      * @return list<string>|null
      */
     private function appCapabilities(array $requested, Deployment $deployment): ?array
     {
-        $capabilities = array_values(array_intersect($requested, BlueprintValidator::CAPABILITIES));
-        $summary = $deployment->plan['summary'] ?? null;
-
-        if (is_array($summary) && ($summary['builder'] ?? null) === 'railpack' && ($summary['provider'] ?? null) === 'php' && ! in_array('NET_BIND_SERVICE', $capabilities, true)) {
-            $capabilities[] = 'NET_BIND_SERVICE';
-        }
+        $capabilities = array_values(array_intersect($requested, WorkloadCapability::values()));
+        $capabilities = array_values(array_unique([...$capabilities, ...$deployment->plan?->runtimeCapabilities() ?? []]));
 
         return $capabilities === [] ? null : $capabilities;
     }

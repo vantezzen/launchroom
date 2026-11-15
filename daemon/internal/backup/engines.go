@@ -4,17 +4,12 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"regexp"
 	"strings"
 
-	"github.com/vantezzen/launchroom/daemon/internal/build"
+	"github.com/vantezzen/launchroom/daemon/internal/dbengine"
 	"github.com/vantezzen/launchroom/daemon/internal/secret"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
-
-// reDBIdent is the grammar for database and user names taken from a
-// workload's env before they are put into argv.
-var reDBIdent = regexp.MustCompile(`^[A-Za-z0-9_]{1,63}$`)
 
 // command is one process run inside the database container: argv plus exec
 // env (credentials only ever travel in env, docs/14 §7).
@@ -50,7 +45,7 @@ func (c command) masked(stderr string) string {
 	if c.stdin != nil {
 		vals = append(vals, strings.TrimSpace(string(c.stdin)))
 	}
-	return build.NewMasker(vals...).Mask(firstLines(stderr))
+	return secret.NewMasker(vals...).Mask(firstLines(stderr))
 }
 
 // engine knows how to dump and restore one database engine. Argv is built
@@ -70,6 +65,30 @@ type engine struct {
 // it consistent (--wal-method=fetch), so it restores without the archive.
 const BaseBackupFile = "postgres-base.tar"
 
+// dumpFacts are what an engine's dumps look like (exports, imports).
+type dumpFacts struct {
+	// family is the server family a dump names ("PostgreSQL"; "" for engines without imports).
+	family string
+	// format is what a live dump of this engine is (imports from a URL;
+	// only engines with imports).
+	format state.DataFormat
+	// export is the native format of an export, gzipped when exportGzip.
+	export     state.DataFormat
+	exportGzip bool
+}
+
+var dumps = map[state.DatabaseEngine]dumpFacts{
+	state.EnginePostgres:   {family: familyPostgres, format: state.FormatPostgresSQL, export: state.FormatPostgresCustom},
+	state.EngineMySQL:      {family: familyMySQL, format: state.FormatMySQLSQL, export: state.FormatMySQLSQL, exportGzip: true},
+	state.EngineMariaDB:    {family: familyMariaDB, format: state.FormatMySQLSQL, export: state.FormatMySQLSQL, exportGzip: true},
+	state.EngineMongoDB:    {family: familyMongoDB, format: state.FormatMongoArchive, export: state.FormatMongoArchive},
+	state.EngineClickHouse: {export: state.FormatClickHouseBackup},
+	state.EngineRedis:      {export: state.FormatRedisRDB},
+	state.EngineValkey:     {export: state.FormatRedisRDB},
+}
+
+func dumpsOf(e state.DatabaseEngine) dumpFacts { return dumps[e] }
+
 // SnapshotFile returns the file name inside snapshots of an engine ("postgres.dump").
 func SnapshotFile(e state.DatabaseEngine) (string, error) {
 	en, err := engineFor(e)
@@ -84,13 +103,13 @@ func engineFor(e state.DatabaseEngine) (*engine, error) {
 	case state.EnginePostgres:
 		return &postgres, nil
 	case state.EngineMySQL:
-		return mysqlEngine("mysql.sql", "mysqldump", "mysql"), nil
+		return mysqlEngine(e, "mysql.sql"), nil
 	case state.EngineMariaDB:
-		return mysqlEngine("mariadb.sql", "mariadb-dump", "mariadb"), nil
+		return mysqlEngine(e, "mariadb.sql"), nil
 	case state.EngineRedis:
-		return redisEngine("redis.rdb", "redis-cli"), nil
+		return redisEngine(e, "redis.rdb"), nil
 	case state.EngineValkey:
-		return redisEngine("valkey.rdb", "valkey-cli"), nil
+		return redisEngine(e, "valkey.rdb"), nil
 	case state.EngineMongoDB:
 		return &mongo, nil
 	case state.EngineClickHouse:
@@ -98,30 +117,6 @@ func engineFor(e state.DatabaseEngine) (*engine, error) {
 	default:
 		return nil, fmt.Errorf("backup: engine %q: %w", e, ErrUnsupported)
 	}
-}
-
-// ident returns a grammar-checked identifier from env (or def).
-func ident(env map[string]secret.Secret, def string, names ...string) (string, error) {
-	v := def
-	for _, n := range names {
-		if s := env[n]; !s.IsZero() {
-			v = s.Reveal()
-			break
-		}
-	}
-	if !reDBIdent.MatchString(v) {
-		return "", fmt.Errorf("backup: %s in the workload env is not a valid database identifier", names[0])
-	}
-	return v, nil
-}
-
-func password(env map[string]secret.Secret, names ...string) (string, error) {
-	for _, n := range names {
-		if s := env[n]; !s.IsZero() {
-			return s.Reveal(), nil
-		}
-	}
-	return "", fmt.Errorf("backup: the workload env has no %s", names[0])
 }
 
 var postgres = engine{
@@ -166,32 +161,22 @@ var postgres = engine{
 	},
 }
 
-func pgConn(env map[string]secret.Secret) (user, db, pw string, err error) {
-	if user, err = ident(env, "postgres", "POSTGRES_USER"); err != nil {
-		return "", "", "", err
-	}
-	if db, err = ident(env, user, "POSTGRES_DB"); err != nil {
-		return "", "", "", err
-	}
-	pw, err = password(env, "POSTGRES_PASSWORD")
-	return user, db, pw, err
+// conn is the service's own login (dbengine.LoginOf).
+func conn(e state.DatabaseEngine, env map[string]secret.Secret) (user, db, pw string, err error) {
+	l, err := dbengine.LoginOf(e, env)
+	return l.User, l.Database, l.Password, err
 }
 
-func mysqlEngine(file, dumpBin, clientBin string) *engine {
-	conn := func(env map[string]secret.Secret) (user, db, pw string, err error) {
-		if user, err = ident(env, "", "MYSQL_USER", "MARIADB_USER"); err != nil {
-			return "", "", "", err
-		}
-		if db, err = ident(env, "", "MYSQL_DATABASE", "MARIADB_DATABASE"); err != nil {
-			return "", "", "", err
-		}
-		pw, err = password(env, "MYSQL_PASSWORD", "MARIADB_PASSWORD")
-		return user, db, pw, err
-	}
+func pgConn(env map[string]secret.Secret) (user, db, pw string, err error) {
+	return conn(state.EnginePostgres, env)
+}
+
+func mysqlEngine(e state.DatabaseEngine, file string) *engine {
+	dumpBin, clientBin := dbengine.Of(e).Dump, dbengine.Client(e)
 	return &engine{
 		file: file,
 		dump: func(env map[string]secret.Secret) (command, error) {
-			user, db, pw, err := conn(env)
+			user, db, pw, err := conn(e, env)
 			if err != nil {
 				return command{}, err
 			}
@@ -201,7 +186,7 @@ func mysqlEngine(file, dumpBin, clientBin string) *engine {
 			}, nil
 		},
 		restore: func(env map[string]secret.Secret) (command, error) {
-			user, db, pw, err := conn(env)
+			user, db, pw, err := conn(e, env)
 			if err != nil {
 				return command{}, err
 			}
@@ -213,11 +198,12 @@ func mysqlEngine(file, dumpBin, clientBin string) *engine {
 	}
 }
 
-func redisEngine(file, cli string) *engine {
+func redisEngine(e state.DatabaseEngine, file string) *engine {
+	cli := dbengine.Client(e)
 	return &engine{
 		file: file,
 		dump: func(env map[string]secret.Secret) (command, error) {
-			pw, err := password(env, "REDIS_PASSWORD")
+			_, _, pw, err := conn(e, env)
 			if err != nil {
 				return command{}, err
 			}
@@ -264,21 +250,15 @@ var mongo = engine{
 }
 
 func mongoAuthArgs(tool, user string) []string {
-	return []string{tool, "--host=127.0.0.1", "--port=27017", "--username=" + user, "--authenticationDatabase=admin", "--quiet"}
+	return []string{tool, "--host=127.0.0.1", "--port=" + dbengine.Of(state.EngineMongoDB).PortText(), "--username=" + user, "--authenticationDatabase=admin", "--quiet"}
 }
 
 func mongoConn(env map[string]secret.Secret) (user, db, pw string, err error) {
-	if user, err = ident(env, "", "MONGO_INITDB_ROOT_USERNAME"); err != nil {
-		return "", "", "", err
-	}
-	if db, err = ident(env, "test", "MONGO_INITDB_DATABASE"); err != nil {
-		return "", "", "", err
-	}
-	pw, err = password(env, "MONGO_INITDB_ROOT_PASSWORD")
-	if err != nil {
+	if user, db, pw, err = conn(state.EngineMongoDB, env); err != nil {
 		return "", "", "", err
 	}
 	if strings.ContainsAny(pw, "\r\n") {
+		// The password is the first line of stdin (mongodump/mongorestore).
 		return "", "", "", fmt.Errorf("backup: MONGO_INITDB_ROOT_PASSWORD contains a line break")
 	}
 	return user, db, pw, nil

@@ -9,7 +9,8 @@ use App\Actions\Backups\DeleteBackupDestination;
 use App\Actions\Backups\UpdateBackupDestination;
 use App\Data\Backups\BackupDestinationInput;
 use App\Http\Controllers\Controller;
-use App\Http\Controllers\Teams\TeamSettingsController;
+use App\Http\Routing\CurrentTeam;
+use App\Http\Toast;
 use App\Jobs\Backups\TestBackupDestinationJob;
 use App\Models\Backups\BackupDestination;
 use App\Models\User;
@@ -26,12 +27,14 @@ final class BackupDestinationController extends Controller
 {
     public function store(Request $request, BackupDestinationInput $input, #[CurrentUser] User $user, CreateBackupDestination $create): RedirectResponse
     {
-        $team = $request->input('scope') === 'instance' ? null : TeamSettingsController::currentTeam($user);
+        $team = $request->input('scope') === 'instance' ? null : CurrentTeam::of($user);
         Gate::authorize('create', [BackupDestination::class, $team]);
 
         $create->handle($team, $input, $user, $this->auditActor($request, $user));
 
-        return back()->with('success', 'Destination added. Testing the connection…');
+        Toast::success('Destination added. Testing the connection…');
+
+        return back();
     }
 
     public function update(Request $request, BackupDestination $backupDestination, BackupDestinationInput $input, #[CurrentUser] User $user, UpdateBackupDestination $update): RedirectResponse
@@ -40,7 +43,9 @@ final class BackupDestinationController extends Controller
 
         $update->handle($backupDestination, $input, $user, $this->auditActor($request, $user));
 
-        return back()->with('success', 'Destination saved.');
+        Toast::success('Destination saved.');
+
+        return back();
     }
 
     public function destroy(Request $request, BackupDestination $backupDestination, #[CurrentUser] User $user, DeleteBackupDestination $delete): RedirectResponse
@@ -49,7 +54,9 @@ final class BackupDestinationController extends Controller
 
         $delete->handle($backupDestination, $this->auditActor($request, $user));
 
-        return back()->with('success', 'Destination removed. Its snapshots stay in the bucket.');
+        Toast::success('Destination removed. Its snapshots stay in the bucket.');
+
+        return back();
     }
 
     public function test(BackupDestination $backupDestination): RedirectResponse
@@ -58,6 +65,8 @@ final class BackupDestinationController extends Controller
 
         dispatch(new TestBackupDestinationJob($backupDestination->id));
 
-        return back()->with('success', 'Testing the connection…');
+        Toast::success('Testing the connection…');
+
+        return back();
     }
 }

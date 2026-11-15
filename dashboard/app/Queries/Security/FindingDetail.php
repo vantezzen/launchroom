@@ -6,9 +6,9 @@ namespace App\Queries\Security;
 
 use App\Data\Security\AdvisoryDetailData;
 use App\Data\Security\FindingCardData;
-use App\Data\Security\FindingCheckData;
 use App\Data\Security\FindingDeploymentData;
 use App\Data\Security\FindingDetailData;
+use App\Data\Security\InvestigatedReplicaData;
 use App\Data\Security\InvestigationDetailData;
 use App\Data\Security\InvestigationLineData;
 use App\Data\Security\InvestigationLinkData;
@@ -82,7 +82,7 @@ final readonly class FindingDetail
             lockfile: $lockfile,
             otherServices: array_values(array_filter(array_map($refs->get(...), $others))),
             domains: array_values(array_map(Cast::string(...), DB::table('domains')->where('service_instance_id', $finding->service_instance_id)->whereIn('kind', ['custom', 'generated'])->orderBy('id')->pluck('hostname')->all())),
-            checks: array_map(static fn (array $c): FindingCheckData => new FindingCheckData($c['rule'], $c['passed'], $c['label']), $finding->checks),
+            checks: array_values($finding->checks->items()),
             dismissedReason: $finding->dismiss_reason?->label(),
             dismissedNote: $finding->dismiss_note,
             dismissedBy: $finding->dismisser?->name,
@@ -118,8 +118,8 @@ final readonly class FindingDetail
     {
         $report = null;
 
-        if (is_array($investigation->report)) {
-            $report = InvestigationReportData::from($investigation->report);
+        if ($investigation->report instanceof InvestigationReportData) {
+            $report = clone $investigation->report;
 
             if (! $networks) {
                 $report->found = array_map(static fn (InvestigationLineData $line): InvestigationLineData => new InvestigationLineData($line->level, $line->text), $report->found);
@@ -133,7 +133,7 @@ final readonly class FindingDetail
             startedBy: $investigation->starter?->name,
             startedAt: $investigation->started_at->toIso8601ZuluString(),
             finishedAt: $investigation->finished_at?->toIso8601ZuluString(),
-            replicas: array_map(static fn (array $r): InvestigationReplicaData => new InvestigationReplicaData($r['serverName'], $r['state'], $r['message'] ?? null), $investigation->replicas),
+            replicas: array_map(static fn (InvestigatedReplicaData $r): InvestigationReplicaData => new InvestigationReplicaData($r->serverName, $r->state, $r->message), array_values($investigation->replicas->items())),
             report: $report,
         );
     }

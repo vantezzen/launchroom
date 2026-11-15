@@ -11,6 +11,8 @@ const access = (over: Partial<Access> = {}): Access =>
         authMethod: 'password',
         port: 40150,
         engine: null,
+        protocol: null,
+        client: null,
         database: null,
         ...over,
     }) as Access;
@@ -45,6 +47,8 @@ describe('snippets', () => {
             access({
                 kind: 'database',
                 engine: 'postgres',
+                protocol: 'postgres',
+                client: 'psql',
                 database: 'app',
                 username: 'lr_tmp_abcdef012345',
             }),
@@ -57,6 +61,23 @@ describe('snippets', () => {
                 .filter((s) => s.value.includes('p'.repeat(32)))
                 .every((s) => s.secret),
         ).toBe(true);
+        expect(list.map((s) => s.id)).toEqual(['url', 'psql']);
+    });
+
+    test('redis-protocol databases use the client the server names', () => {
+        const list = snippets(
+            access({
+                kind: 'database',
+                engine: 'valkey',
+                protocol: 'redis',
+                client: 'valkey-cli',
+            }),
+            '203.0.113.10',
+            'cache',
+        );
+
+        expect(list[0].value).toMatch(/^rediss:\/\//);
+        expect(list[1].label).toBe('valkey-cli');
     });
 });
 

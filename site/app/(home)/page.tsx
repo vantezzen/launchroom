@@ -65,7 +65,6 @@ const faq = [
 export default function HomePage() {
     return (
         <>
-            {/* Hero */}
             <section aria-labelledby="hero-title" className="pt-16 pb-16 sm:pt-24 sm:pb-24">
                 <Container className="flex flex-col items-center text-center">
                     <a
@@ -110,7 +109,6 @@ export default function HomePage() {
                 </Container>
             </section>
 
-            {/* 1 · What it is */}
             <Section tone="frame" labelledBy="what-title">
                 <SectionHeading
                     id="what-title"
@@ -137,7 +135,6 @@ export default function HomePage() {
                 </div>
             </Section>
 
-            {/* 2 · Deploy */}
             <Section id="features" labelledBy="deploy-title">
                 <SectionHeading
                     id="deploy-title"
@@ -154,7 +151,6 @@ export default function HomePage() {
                 </div>
             </Section>
 
-            {/* 3 · Servers */}
             <Section tone="frame" labelledBy="servers-title">
                 <SectionHeading
                     id="servers-title"
@@ -173,7 +169,6 @@ export default function HomePage() {
                 </p>
             </Section>
 
-            {/* 4 · Analytics */}
             <Section labelledBy="analytics-title">
                 <SectionHeading
                     id="analytics-title"
@@ -214,7 +209,6 @@ export default function HomePage() {
                 </div>
             </Section>
 
-            {/* 5 · Security */}
             <Section tone="frame" labelledBy="security-title">
                 <SectionHeading
                     id="security-title"
@@ -277,7 +271,6 @@ export default function HomePage() {
                 </div>
             </Section>
 
-            {/* 6 · One screen */}
             <Section labelledBy="view-title">
                 <SectionHeading id="view-title" label="Overview" title="Everything on one screen." align="center">
                     See each server with its load, and which service takes how much CPU and memory.
@@ -288,7 +281,6 @@ export default function HomePage() {
                 </div>
             </Section>
 
-            {/* 7 · Previews */}
             <Section tone="frame" labelledBy="preview-title">
                 <div className="grid items-center gap-12 lg:grid-cols-2 lg:gap-16">
                     <div className="flex flex-col gap-6">
@@ -304,7 +296,6 @@ export default function HomePage() {
 
             <DemoVideo />
 
-            {/* 8 · Own it */}
             <Section labelledBy="own-title">
                 <div className="grid gap-12 lg:grid-cols-[minmax(0,6fr)_minmax(0,5fr)] lg:gap-16">
                     <div className="flex flex-col gap-8">
@@ -339,7 +330,6 @@ export default function HomePage() {
                 </div>
             </Section>
 
-            {/* FAQ */}
             <Section tone="frame" labelledBy="faq-title">
                 <div className="grid gap-12 lg:grid-cols-[minmax(0,4fr)_minmax(0,8fr)]">
                     <SectionHeading id="faq-title" label="FAQ" title="Questions and answers." />
@@ -362,7 +352,6 @@ export default function HomePage() {
                 </div>
             </Section>
 
-            {/* Final CTA */}
             <section aria-labelledby="cta-title" className="py-24 sm:py-32">
                 <Container className="flex flex-col items-center text-center">
                     <h2 id="cta-title" className="type-section max-w-[20ch] text-balance">

@@ -17,7 +17,7 @@ use App\Models\User;
  */
 final class SecurityFindingPolicy
 {
-    public function viewAny(User $user, Team $team): bool
+    public function viewAny(User $user, Team|int $team): bool
     {
         return $user->hasTeamPermission($team, Permission::View);
     }
@@ -35,6 +35,14 @@ final class SecurityFindingPolicy
     public function reopen(User $user, SecurityFinding $finding): bool
     {
         return $user->hasTeamPermission($finding->team_id, Permission::ManageProjects);
+    }
+
+    /**
+     * Investigate findings and change the firewall of the team's services.
+     */
+    public function manage(User $user, Team $team): bool
+    {
+        return $user->hasTeamPermission($team, Permission::ManageProjects);
     }
 
     public function checkNow(User $user, Team $team): bool

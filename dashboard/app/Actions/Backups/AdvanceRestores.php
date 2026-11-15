@@ -4,14 +4,16 @@ declare(strict_types=1);
 
 namespace App\Actions\Backups;
 
+use App\Data\Protocol\V1\Resources;
+use App\Data\Protocol\V1\Tasks\RestoreRuntime;
 use App\Data\Services\DatabaseSource;
 use App\Enums\Backups\BackupRunStatus;
 use App\Enums\Backups\BackupSubject;
 use App\Enums\Backups\RestoreMode;
 use App\Enums\Backups\RestoreRunStatus;
+use App\Enums\HoldKind;
 use App\Enums\ServerStatus;
 use App\Enums\WorkloadPhase;
-use App\Events\NodeStateInvalidated;
 use App\Models\Backups\RestoreRun;
 use App\Models\Backups\WalArchive;
 use App\Models\Deployment;
@@ -21,9 +23,9 @@ use App\Models\ServiceInstance;
 use App\Models\Volume;
 use App\Services\Backups\BackupTasks;
 use App\Services\Backups\DatabaseWorkloads;
-use App\Services\Backups\DataHolds;
 use App\Services\Backups\PointInTimeRecovery;
-use App\Services\Backups\RestoreHolds;
+use App\Services\Holds\Holds;
+use App\Services\Holds\RestoreHolds;
 use Illuminate\Contracts\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
 use Throwable;
@@ -110,7 +112,7 @@ final readonly class AdvanceRestores
             if (! $target instanceof ServiceInstance) {
                 $held = $run->status === RestoreRunStatus::Restoring ? RestoreHolds::heldBy($run) : [];
                 $run->transitionTo(RestoreRunStatus::Failed, 'The target service no longer exists.');
-                $this->rerender($held);
+                Holds::changed(HoldKind::Restore, $held);
 
                 return true;
             }
@@ -132,7 +134,7 @@ final readonly class AdvanceRestores
                     if ($run->started_at !== null && $run->started_at->lt(now()->subSeconds(config()->integer('launchroom.backups.restore_hold_wait_seconds')))) {
                         $held = RestoreHolds::heldBy($run);
                         $run->transitionTo(RestoreRunStatus::Failed, 'The database stopped before the restore could start. Nothing was restored.');
-                        $this->rerender($held);
+                        Holds::changed(HoldKind::Restore, $held);
 
                         return true;
                     }
@@ -150,16 +152,16 @@ final readonly class AdvanceRestores
             }
 
             // Restoring into a database: its dependents stop first (docs/14 §5.1).
-            $dependents = $run->mode === RestoreMode::InPlace ? RestoreHolds::dependentIds($target) : [];
+            $dependents = $run->mode === RestoreMode::InPlace ? Holds::dependentsOf($target) : [];
 
             if ($dependents !== [] && $run->status !== RestoreRunStatus::Restoring) {
                 $run->transitionTo(RestoreRunStatus::Restoring);
-                $this->rerender($dependents);
+                Holds::changed(HoldKind::Restore, $dependents);
 
                 return true;
             }
 
-            if ($dependents !== [] && ! RestoreHolds::released($dependents)
+            if ($dependents !== [] && ! Holds::released($dependents)
                 && $run->started_at !== null && $run->started_at->gt(now()->subSeconds(config()->integer('launchroom.backups.restore_hold_wait_seconds')))) {
                 return false;
             }
@@ -169,7 +171,7 @@ final readonly class AdvanceRestores
                 $placement->server,
                 $run->team_id,
                 $run->snapshot_id,
-                ['engine' => DatabaseWorkloads::daemonEngine($source), 'workload' => $placement->workload_id],
+                ['engine' => $source->engine->value, 'workload' => $placement->workload_id],
                 $run->mode->value,
             );
 
@@ -183,22 +185,6 @@ final readonly class AdvanceRestores
 
             return true;
         });
-    }
-
-    /**
-     * Re-renders the servers of held (or released) instances: a hold that
-     * starts stops their workloads, one that ends starts them again.
-     *
-     * @param  list<int>  $instanceIds
-     */
-    private function rerender(array $instanceIds): void
-    {
-        DataHolds::advanceDeployments($instanceIds);
-        $servers = RestoreHolds::serverIds($instanceIds);
-
-        if ($servers !== []) {
-            event(new NodeStateInvalidated($servers));
-        }
     }
 
     /**
@@ -238,8 +224,7 @@ final readonly class AdvanceRestores
         $run->transitionTo(RestoreRunStatus::Restoring);
 
         // Holds the service: its workloads leave the server's NodeState.
-        DataHolds::advanceDeployments([$target->id]);
-        event(new NodeStateInvalidated([$server->id]));
+        Holds::changed(HoldKind::Restore, [$target->id], [$server->id]);
 
         return true;
     }
@@ -283,27 +268,24 @@ final readonly class AdvanceRestores
         $task = $this->tasks->pointInTimeRestore(
             $run->destination,
             $server,
-            $run->team_id,
+            $target,
             $run->snapshot_id,
             $volume->public_id,
             $run->mode->value,
             $run->point_in_time?->toImmutable()->utc()->format('Y-m-d\TH:i:s.u\Z'),
             $this->pointInTime->walTags($run->source()->firstOrFail()),
-            [
-                'image' => $deployment->image,
-                'mountPath' => $this->pointInTime->mountPath($source->version),
-                'dataDirectory' => $this->pointInTime->dataDirectory($source->version),
-                'archiveDirectory' => $archive instanceof WalArchive ? $this->pointInTime->archiveDirectory($source->version) : null,
-                'cpus' => $scaling->cpus ?? 1.0,
-                'memoryMb' => max($scaling->memoryMb ?? 1024, 256),
-                'pids' => $scaling?->pids() ?? 512,
-            ],
-            $env,
+            new RestoreRuntime(
+                image: $deployment->image,
+                mountPath: $this->pointInTime->mountPath($source->version),
+                dataDirectory: $this->pointInTime->dataDirectory($source->version),
+                resources: new Resources($scaling->cpus ?? 1.0, max($scaling->memoryMb ?? 1024, 256), $scaling?->pids() ?? 512),
+                archiveDirectory: $archive instanceof WalArchive ? $this->pointInTime->archiveDirectory($source->version) : null,
+            ),
         );
 
         $run->daemon_task_id = $task->id;
         $run->transitionTo(RestoreRunStatus::Restoring);
-        $this->rerender(RestoreHolds::heldBy($run));
+        Holds::changed(HoldKind::Restore, RestoreHolds::heldBy($run));
 
         return true;
     }

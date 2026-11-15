@@ -10,6 +10,8 @@ use App\Exceptions\DomainRuleViolation;
 use App\Services\Http\Exceptions\UnsafeUrl;
 use App\Services\Http\UrlGuard;
 use App\Support\Hostname;
+use App\Support\S3\S3Location;
+use App\Support\Webhooks\WebhookSignature;
 
 /**
  * Turns the add-destination form into a sink's settings (docs/09 R34):
@@ -83,7 +85,7 @@ final readonly class AuditSinkSettings
 
         return [
             'config' => [],
-            'secret' => ['url' => $url, 'signingSecret' => AuditSinkSecrets::generateSigningSecret()],
+            'secret' => ['url' => $url, 'signingSecret' => WebhookSignature::generateSecret()],
             'hint' => strtolower($parts['host']),
         ];
     }
@@ -93,35 +95,13 @@ final readonly class AuditSinkSettings
      */
     private function s3(AuditSinkInput $input, UrlGuard $guard): array
     {
-        $endpoint = rtrim(trim((string) $input->endpoint), '/');
-        $parts = parse_url($endpoint);
-        $schemes = $input->allowPrivateNetwork ? ['https', 'http'] : ['https'];
+        $location = S3Location::parse((string) $input->endpoint, (string) $input->bucket, $input->region, $input->prefix);
 
-        if ($endpoint === '' || ! is_array($parts) || ! in_array($parts['scheme'] ?? '', $schemes, true) || ! isset($parts['host'])
-            || isset($parts['user']) || isset($parts['pass']) || isset($parts['query']) || isset($parts['fragment']) || ($parts['path'] ?? '') !== '') {
+        if (! $input->allowPrivateNetwork && ! str_starts_with($location->endpoint, 'https://')) {
             throw DomainRuleViolation::on('endpoint', 'Enter the endpoint without a bucket or path, e.g. https://s3.eu-central-1.amazonaws.com.');
         }
 
-        $this->vet($guard, $endpoint.'/', 'endpoint', $input->allowPrivateNetwork);
-
-        $bucket = (string) $input->bucket;
-
-        if (preg_match('/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/D', $bucket) !== 1 || str_contains($bucket, '..')) {
-            throw DomainRuleViolation::on('bucket', 'Bucket names are 3–63 lowercase letters, digits, dots and dashes.');
-        }
-
-        $region = trim((string) $input->region);
-        $region = $region === '' ? 'us-east-1' : $region;
-
-        if (preg_match('/^[a-z0-9-]{1,32}$/D', $region) !== 1) {
-            throw DomainRuleViolation::on('region', 'Regions look like eu-central-1.');
-        }
-
-        $prefix = trim((string) $input->prefix, '/');
-
-        if ($prefix !== '' && (preg_match('#^[A-Za-z0-9._/-]{1,200}$#D', $prefix) !== 1 || str_contains($prefix, '..') || str_contains($prefix, '//'))) {
-            throw DomainRuleViolation::on('prefix', 'Use letters, digits, dots, dashes, underscores and slashes.');
-        }
+        $this->vet($guard, $location->endpoint.'/', 'endpoint', $input->allowPrivateNetwork);
 
         $accessKey = trim((string) $input->accessKeyId);
         $secretKey = (string) $input->secretAccessKey;
@@ -137,7 +117,7 @@ final readonly class AuditSinkSettings
             throw DomainRuleViolation::on('lockMode', 'Choose governance or compliance mode.');
         }
 
-        $config = ['endpoint' => strtolower((string) $parts['scheme']).'://'.strtolower($parts['host']).(isset($parts['port']) ? ':'.$parts['port'] : ''), 'bucket' => $bucket, 'region' => $region, 'prefix' => $prefix];
+        $config = ['endpoint' => $location->endpoint, 'bucket' => $location->bucket, 'region' => S3Location::regionOrDefault($location->region), 'prefix' => $location->prefix];
 
         if ($days > 0) {
             $config['retentionDays'] = $days;
@@ -147,7 +127,7 @@ final readonly class AuditSinkSettings
         return [
             'config' => $config,
             'secret' => ['accessKeyId' => $accessKey, 'secretAccessKey' => $secretKey],
-            'hint' => strtolower($parts['host']).'/'.$bucket.($prefix === '' ? '' : '/'.$prefix),
+            'hint' => $location->host().'/'.$location->bucket.($location->prefix === '' ? '' : '/'.$location->prefix),
         ];
     }
 

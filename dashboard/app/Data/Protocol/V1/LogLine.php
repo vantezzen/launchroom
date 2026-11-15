@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Data\Protocol\V1;
 
+use App\Support\Protocol\Limits;
 use Spatie\LaravelData\Attributes\Validation\In;
 use Spatie\LaravelData\Attributes\Validation\Max;
 use Spatie\LaravelData\Attributes\Validation\Regex;
@@ -33,6 +34,6 @@ final class LogLine extends Data
      */
     public static function rules(): array
     {
-        return ['text' => ['present', 'string', 'max:65536']];
+        return ['text' => ['present', 'string', 'max:'.Limits::LOG_LINE_BYTES]];
     }
 }

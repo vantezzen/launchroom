@@ -10,9 +10,11 @@ use App\Data\Services\GitSource;
 use App\Data\Services\ScalingSettings;
 use App\Data\Services\UpdateServiceSettingsData;
 use App\Enums\ConfigAsCode\ConfigTrust;
+use App\Enums\ServiceKind;
 use App\Enums\TeamRole;
 use App\Models\ServiceInstance;
 use App\Models\Team;
+use Tests\Support\GitHubFake;
 use Tests\Support\Projects;
 
 beforeEach(function (): void {
@@ -24,12 +26,17 @@ beforeEach(function (): void {
     $this->project = Projects::create($this->team);
     $this->production = $this->project->production()->sole();
     $this->web = Projects::image($this->project, 'web');
+    // The app whose repository holds launchroom.json; links come from its provider.
+    $installation = GitHubFake::installation(GitHubFake::app($this->team));
+    GitHubFake::repository($installation, 555, 'acme/shop');
+    $this->source = new GitSource(555, 'acme/shop', $installation->id);
+    $this->project->services()->create(['team_id' => $this->team->id, 'slug' => 'shop', 'name' => 'shop', 'kind' => ServiceKind::App, 'source' => $this->source]);
     resolve(DeployEnvironment::class)->handle($this->production, null, AuditActor::system());
     $this->apply = fn (array $web) => resolve(ApplyConfigFile::class)->handle(
         $this->production,
         (string) json_encode(['version' => 1, 'services' => ['web' => ['kind' => 'image', ...$web]]]),
         'launchroom.json',
-        new GitSource(555, 'acme/shop', 1),
+        $this->source,
         str_repeat('c', 40),
         ConfigTrust::Trusted,
         AuditActor::system(),

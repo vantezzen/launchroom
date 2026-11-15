@@ -39,17 +39,11 @@ enum ChangeEffect: string
         };
     }
 
-    /**
-     * The stronger of two effects.
-     */
     public function max(self $other): self
     {
         return $other->rank() > $this->rank() ? $other : $this;
     }
 
-    /**
-     * Whether deploying this effect creates a deployment.
-     */
     public function needsDeployment(): bool
     {
         return in_array($this, [self::Restart, self::Rebuild, self::New], true);

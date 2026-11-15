@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/vantezzen/launchroom/daemon/internal/dbengine"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
 
@@ -30,19 +31,11 @@ type mongo struct {
 }
 
 func newMongo(env envMap, ex execer, container string) (*mongo, error) {
-	user, err := ident(env, "", "MONGO_INITDB_ROOT_USERNAME")
+	l, err := dbengine.LoginOf(state.EngineMongoDB, env)
 	if err != nil {
 		return nil, err
 	}
-	db, err := ident(env, "test", "MONGO_INITDB_DATABASE")
-	if err != nil {
-		return nil, err
-	}
-	pw, err := password(env, "MONGO_INITDB_ROOT_PASSWORD")
-	if err != nil {
-		return nil, err
-	}
-	return &mongo{p: newProc(ex, container, "LR_MONGO_USER="+user, "LR_MONGO_PASSWORD="+pw, "LR_MONGO_DB="+db), db: db}, nil
+	return &mongo{p: newProc(ex, container, "LR_MONGO_USER="+l.User, "LR_MONGO_PASSWORD="+l.Password, "LR_MONGO_DB="+l.Database), db: l.Database}, nil
 }
 
 // mongoMarker prefixes the script's one result line.
@@ -53,7 +46,7 @@ const mongoMarker = "__lr_result__"
 // as ISO 8601 and everything else as relaxed Extended JSON, so key order is kept.
 const mongoScript = `const env = process.env;
 const uri = "mongodb://" + encodeURIComponent(env.LR_MONGO_USER) + ":" + encodeURIComponent(env.LR_MONGO_PASSWORD) +
-  "@127.0.0.1:27017/?authSource=admin&directConnection=true&appName=launchroom";
+  "@127.0.0.1:" + env.LR_MONGO_PORT + "/?authSource=admin&directConnection=true&appName=launchroom";
 const d = new Mongo(uri).getDB(env.LR_MONGO_DB);
 const cellOf = (v) => v === null || v === undefined ? null : typeof v === "string" ? v
   : v._bsontype === "ObjectId" ? v.toHexString() : v instanceof Date ? v.toISOString() : EJSON.stringify(v, {relaxed: true});
@@ -101,7 +94,7 @@ type mongoOutput struct {
 
 func (m *mongo) run(ctx context.Context, extra ...string) (*mongoOutput, *Result) {
 	argv := []string{"mongosh", "--quiet", "--nodb", "--norc", "--eval", mongoScript}
-	r, err := m.p.run(ctx, argv, 0, extra...)
+	r, err := m.p.run(ctx, argv, 0, append(extra, "LR_MONGO_PORT="+dbengine.Of(state.EngineMongoDB).PortText())...)
 	if err != nil {
 		return nil, failed(err.Error())
 	}

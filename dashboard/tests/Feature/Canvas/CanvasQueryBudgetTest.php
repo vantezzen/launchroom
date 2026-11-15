@@ -32,8 +32,6 @@ beforeEach(function (): void {
 });
 
 /**
- * The SQL of every query $request runs.
- *
  * @return list<string>
  */
 function canvasQueries(Closure $request): array

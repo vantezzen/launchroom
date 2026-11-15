@@ -12,11 +12,11 @@ import (
 
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
+	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
 
-	"github.com/moby/moby/api/types/network"
-
 	"github.com/vantezzen/launchroom/daemon/internal/docker"
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/policy"
 	"github.com/vantezzen/launchroom/daemon/internal/reconcile"
 	"github.com/vantezzen/launchroom/daemon/internal/sealed"
@@ -77,7 +77,7 @@ func TestNetworkNotFoundIsRetried(t *testing.T) {
 	pol := policy.DefaultConfig()
 	pol.AllowedRegistries = []string{"docker.io/traefik/"}
 	rec := reconcile.New(reconcile.Options{
-		ServerID: e.serverID, Docker: v, Policy: pol, EnvHashKey: reconcile.EnvHashKey(e.key.Bytes()),
+		ServerID: e.serverID, Docker: v, Policy: pol, EnvHashKey: docker.EnvHashKey(e.key.Bytes()),
 		OpenEnv: func(s *state.WorkloadSpec) (map[string]secret.Secret, error) {
 			return sealed.OpenWorkloadEnv(s.Env, e.key, e.serverID, s.ID)
 		},
@@ -95,7 +95,7 @@ func TestNetworkNotFoundIsRetried(t *testing.T) {
 			t.Fatalf("workload failed: %+v", w)
 		}
 	}
-	cs, err := e.engine.ListContainers(ctx, map[string]string{docker.LabelWorkload: string(wl)})
+	cs, err := e.engine.ListContainers(ctx, map[string]string{names.LabelWorkload: string(wl)})
 	if err != nil || len(cs) != 1 {
 		t.Fatalf("containers %v %v", cs, err)
 	}
@@ -113,9 +113,9 @@ func TestVolumeDeletionAgainstDocker(t *testing.T) {
 		envID = state.EnvironmentID("env_01J9Z8X7W6V5T4S3R2Q1P0N9N4")
 	)
 	labels := docker.ManagedLabels(string(e.serverID))
-	labels[docker.LabelVolume] = string(volID)
-	labels[docker.LabelService] = string(svcID)
-	labels[docker.LabelEnvironment] = string(envID)
+	labels[names.LabelVolume] = string(volID)
+	labels[names.LabelService] = string(svcID)
+	labels[names.LabelEnvironment] = string(envID)
 	if err := e.engine.CreateVolume(ctx, docker.VolumeCreate{Name: "lr-v_itestdel", Labels: labels}); err != nil {
 		t.Fatal(err)
 	}
@@ -123,7 +123,7 @@ func TestVolumeDeletionAgainstDocker(t *testing.T) {
 		t.Fatal(err)
 	}
 	userLabels := docker.ManagedLabels(string(e.serverID))
-	userLabels[docker.LabelTask] = "tsk_01J9Z8X7W6V5T4S3R2Q1P0N9V2"
+	userLabels[names.LabelTask] = "tsk_01J9Z8X7W6V5T4S3R2Q1P0N9V2"
 	user, err := e.api.ContainerCreate(ctx, client.ContainerCreateOptions{Name: "lr-run-itest", Config: &container.Config{Image: string(whoamiImage), Labels: userLabels},
 		HostConfig: &container.HostConfig{Mounts: []mount.Mount{{Type: mount.TypeVolume, Source: "lr-v_itestdel", Target: "/data"}}}})
 	if err != nil {

@@ -80,7 +80,11 @@ func (a *App) session() (*session, error) {
 			return nil, err
 		}
 	}
-	return &session{URL: u, Client: api.New(u, token, a.UserAgent())}, nil
+	c := api.New(u, token, a.UserAgent())
+	if a.Sleep != nil {
+		c.Sleep = a.Sleep
+	}
+	return &session{URL: u, Client: c}, nil
 }
 
 // target is the project/environment/service a command acts on.

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Data\Security;
 
+use App\Support\Protocol\Grammar;
+use App\Support\Protocol\Limits;
 use Spatie\LaravelData\Attributes\Validation\Between;
 use Spatie\LaravelData\Attributes\Validation\Max;
 use Spatie\LaravelData\Attributes\Validation\Regex;
@@ -15,12 +17,12 @@ use Spatie\LaravelData\Data;
  */
 final class AddWafExclusionData extends Data
 {
-    public const string PATH = '/^\/[A-Za-z0-9._~\/-]{0,127}$/D';
+    public const string PATH = Grammar::WAF_PATH_PREFIX;
 
     public const string TARGET = '/^(?:(?:ARGS|REQUEST_COOKIES|REQUEST_HEADERS):[A-Za-z0-9_.-]{1,64}|ARGS_NAMES|REQUEST_COOKIES_NAMES|REQUEST_BODY|XML|FILES)$/D';
 
     public function __construct(
-        #[Between(911000, 944999)]
+        #[Between(Limits::WAF_EXCLUDABLE_MIN, Limits::WAF_EXCLUDABLE_MAX)]
         public int $rule,
         #[Regex(self::PATH)]
         public ?string $path = null,

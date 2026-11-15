@@ -1,6 +1,6 @@
 import Anser from 'anser';
 
-export type AnsiSegment = {
+type AnsiSegment = {
     text: string;
     className: string;
 };

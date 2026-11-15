@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Support\Security;
 
+use App\Data\Security\FindingCheckData;
 use App\Enums\Security\FindingLevel;
 use App\Enums\Security\FindingReason;
 use App\Enums\Security\Severity;
@@ -146,11 +147,8 @@ final class FindingRules
         };
     }
 
-    /**
-     * @return array{rule: string, passed: bool, label: string}
-     */
-    private static function check(string $rule, bool $passed, string $label): array
+    private static function check(string $rule, bool $passed, string $label): FindingCheckData
     {
-        return ['rule' => $rule, 'passed' => $passed, 'label' => $label];
+        return new FindingCheckData($rule, $passed, $label);
     }
 }

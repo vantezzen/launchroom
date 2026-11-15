@@ -68,9 +68,7 @@ final readonly class UpdateRuntimeLogRetention
             return $environment;
         });
 
-        if ($servers !== []) {
-            event(new NodeStateInvalidated($servers));
-        }
+        NodeStateInvalidated::servers($servers);
 
         return $environment;
     }

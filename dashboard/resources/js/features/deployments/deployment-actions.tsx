@@ -18,9 +18,12 @@ import {
     service as serviceDeployments,
 } from '@/routes/deployments';
 import { redeploy as redeployService } from '@/routes/deployments/service';
-import { LIFECYCLE_CONSEQUENCE } from '@/features/service-panel/lifecycle';
-import { shortSha } from './format';
-import { optimisticQueued, rollbackToast } from './optimistic';
+import { shortSha } from '@/lib/format';
+import { LIFECYCLE_CONSEQUENCE } from '@/features/service-lifecycle/lifecycle';
+import {
+    optimisticQueued,
+    rollbackToast,
+} from '@/features/service-lifecycle/optimistic';
 
 type Summary = App.Data.Deployments.DeploymentSummaryData;
 

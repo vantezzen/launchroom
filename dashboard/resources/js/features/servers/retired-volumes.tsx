@@ -7,8 +7,8 @@ import { SidePanel } from '@/components/patterns/sheet';
 import { Status } from '@/components/status';
 import type { StatusState } from '@/components/status';
 import { Button } from '@/components/ui/button';
-import { shortAge } from '@/features/servers/format';
 import { confirm } from '@/routes/servers/retired-volumes';
+import { shortAge } from '@/lib/format';
 
 type RetiredVolume = App.Data.Servers.RetiredVolumeData;
 
@@ -160,7 +160,8 @@ export function RetiredVolumes({
                                                     router.post(
                                                         confirm({
                                                             server: serverId,
-                                                            volume: volume.id,
+                                                            retiredVolume:
+                                                                volume.id,
                                                         }).url,
                                                         {},
                                                         {

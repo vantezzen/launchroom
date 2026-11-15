@@ -4,7 +4,7 @@ import type { SectionId, SettingsArea } from './sections';
 import type { SettingsContext } from './settings-context';
 
 /** Where a result leads: a settings page. */
-export type SettingTarget = SectionId;
+type SettingTarget = SectionId;
 
 /**
  * Every setting of the Settings tab for this service (docs/08 §16), in
@@ -18,18 +18,16 @@ export function settingsIndex(
 ): SettingResult<SettingTarget>[] {
     const { node, settings, canUpdate, canDelete } = context;
     const kind = node.kind;
-    const web = kind === 'app' || kind === 'image';
-    const built = kind === 'app' || kind === 'worker' || kind === 'cron';
+    const { web, built } = node.capabilities;
     const stateful =
         settings.placement?.stateful ??
-        (kind === 'database' || settings.volumes.length > 0);
+        (node.capabilities.stateful || settings.volumes.length > 0);
     const git = settings.source.type === 'git' && !settings.source.parentName;
     const hasPresets = (settings.detected?.presets ?? []).some(
         (preset) => preset.decisions.length > 0,
     );
 
     const drafts: SettingDraft<SettingTarget>[] = [
-        // General
         {
             target: 'general',
             label: 'Name',
@@ -45,7 +43,6 @@ export function settingsIndex(
             anchor: 'slug',
         },
 
-        // Source
         {
             target: 'source',
             label:
@@ -103,7 +100,6 @@ export function settingsIndex(
             when: settings.source.type === 'database',
         },
 
-        // Variables
         {
             target: 'variables',
             label: 'Variables',
@@ -161,7 +157,6 @@ export function settingsIndex(
             anchor: 'system-variables',
         },
 
-        // Build
         {
             target: 'build',
             label: 'Builder',
@@ -229,7 +224,6 @@ export function settingsIndex(
             when: settings.build.builder !== 'dockerfile',
         },
 
-        // Deploy
         {
             target: 'deploy',
             label: built ? 'Start command' : 'Command',
@@ -331,7 +325,6 @@ export function settingsIndex(
             anchor: 'health-timeout',
         },
 
-        // Schedule (cron services)
         {
             target: 'schedule',
             label: 'Schedule',
@@ -384,7 +377,6 @@ export function settingsIndex(
             fallback: 'schedule-mode',
         },
 
-        // Domains
         {
             target: 'domains',
             label: 'Add domain',
@@ -434,7 +426,6 @@ export function settingsIndex(
             fallback: 'domains-list',
         },
 
-        // Web firewall (docs/22 §9.6)
         {
             target: 'firewall',
             label: 'Web firewall',
@@ -452,7 +443,6 @@ export function settingsIndex(
             ],
         },
 
-        // Private network
         {
             target: 'networking',
             label: 'Private address',
@@ -469,7 +459,6 @@ export function settingsIndex(
             anchor: 'private-address',
         },
 
-        // Scaling
         {
             target: 'scaling',
             label: 'Replicas',
@@ -523,7 +512,6 @@ export function settingsIndex(
             anchor: 'labels',
         },
 
-        // Volumes
         {
             target: 'volumes',
             label: settings.volumes.length > 0 ? 'Volumes' : 'Add volume',
@@ -541,7 +529,6 @@ export function settingsIndex(
             fallback: 'volumes-list',
         },
 
-        // Backups (databases and services with volumes)
         {
             target: 'backups',
             label: 'Backups',
@@ -584,7 +571,6 @@ export function settingsIndex(
             anchor: 'move-data',
         },
 
-        // Advanced
         {
             target: 'advanced',
             label: 'Entrypoint',
@@ -662,7 +648,6 @@ export function settingsIndex(
             anchor: 'containers',
         },
 
-        // Danger zone
         {
             target: 'danger',
             label: settings.enabled ? 'Disable service' : 'Enable service',

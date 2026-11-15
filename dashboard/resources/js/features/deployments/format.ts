@@ -1,36 +1,21 @@
 import type { StatusState } from '@/components/status';
-import { relativeTime } from '@/components/time-ago';
-import { elapsedSeconds } from '@/lib/duration';
+import { deploymentStatus } from '@/components/status';
+import { relativeTime, elapsedSeconds } from '@/lib/format';
+import { vocabulary } from '@/lib/vocabulary';
 
 type DeploymentStatus = App.Enums.DeploymentStatus;
 type DeploymentTrigger = App.Enums.DeploymentTrigger;
 
-/**
- * Status → the shared Status component's state (design-system §3: colour
- * only with an icon and label).
- */
-export function deploymentState(status: DeploymentStatus): StatusState {
-    switch (status) {
-        case 'active':
-            return 'active';
-        case 'failed':
-            return 'failed';
-        case 'ready':
-            return 'staged';
-        case 'cancelled':
-        case 'superseded':
-            return 'idle';
-        default:
-            return 'progress';
-    }
+function deploymentState(status: DeploymentStatus): StatusState {
+    return deploymentStatus[status].state;
 }
 
 export function isInProgress(status: DeploymentStatus): boolean {
-    return (
-        deploymentState(status) === 'progress' ||
-        status === 'queued' ||
-        status === 'ready'
-    );
+    return vocabulary.DeploymentStatus[status].isUnfinished;
+}
+
+export function isCancellable(status: DeploymentStatus): boolean {
+    return vocabulary.DeploymentStatus[status].isCancellable;
 }
 
 const triggerLabels: Record<DeploymentTrigger, string> = {
@@ -48,12 +33,6 @@ const triggerLabels: Record<DeploymentTrigger, string> = {
 
 export function triggerLabel(trigger: DeploymentTrigger): string {
     return triggerLabels[trigger];
-}
-
-export { elapsedSeconds, formatDuration } from '@/lib/duration';
-
-export function shortSha(sha: string | null): string | null {
-    return sha === null ? null : sha.slice(0, 7);
 }
 
 export function firstLine(text: string | null): string | null {
@@ -176,20 +155,5 @@ export function deploymentWord(
         return 'Live';
     }
 
-    switch (deployment.status) {
-        case 'queued':
-            return 'Queued';
-        case 'ready':
-            return 'Ready to promote';
-        case 'active':
-            return 'Live';
-        case 'failed':
-            return 'Failed';
-        case 'cancelled':
-            return 'Cancelled';
-        case 'superseded':
-            return 'Superseded';
-        default:
-            return 'Deploying';
-    }
+    return deploymentStatus[deployment.status].label;
 }

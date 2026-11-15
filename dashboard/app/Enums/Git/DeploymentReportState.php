@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Enums\Git;
 
+use App\Enums\DeploymentStatus;
+
 /**
  * A launchroom deployment's state as reported to GitHub (docs/06 §5 "GitHub
  * feedback"). Maps onto Deployment statuses, check runs and the PR comment.
@@ -15,6 +17,17 @@ enum DeploymentReportState: string
     case Success = 'success';
     case Failure = 'failure';
     case Cancelled = 'cancelled';
+
+    public static function forStatus(DeploymentStatus $status): self
+    {
+        return match ($status) {
+            DeploymentStatus::Queued => self::Queued,
+            DeploymentStatus::Active => self::Success,
+            DeploymentStatus::Failed => self::Failure,
+            DeploymentStatus::Cancelled, DeploymentStatus::Superseded => self::Cancelled,
+            DeploymentStatus::Building, DeploymentStatus::Releasing, DeploymentStatus::RollingOut, DeploymentStatus::HealthChecking, DeploymentStatus::Ready, DeploymentStatus::Routing => self::InProgress,
+        };
+    }
 
     public function isFinal(): bool
     {

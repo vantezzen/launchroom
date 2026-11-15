@@ -1,0 +1,62 @@
+[
+    {
+        "name": "My Shop",
+        "fallback": "app",
+        "slug": "my-shop"
+    },
+    {
+        "name": "  Web  API  ",
+        "fallback": "app",
+        "slug": "web-api"
+    },
+    {
+        "name": "a--b__c",
+        "fallback": "app",
+        "slug": "a-b-c"
+    },
+    {
+        "name": "--leading and trailing--",
+        "fallback": "app",
+        "slug": "leading-and-trailing"
+    },
+    {
+        "name": "\u00dcberApp",
+        "fallback": "app",
+        "slug": "berapp"
+    },
+    {
+        "name": "@@@",
+        "fallback": "app",
+        "slug": "app"
+    },
+    {
+        "name": "",
+        "fallback": "project",
+        "slug": "project"
+    },
+    {
+        "name": "",
+        "fallback": "",
+        "slug": ""
+    },
+    {
+        "name": "Next.js",
+        "fallback": "app",
+        "slug": "next-js"
+    },
+    {
+        "name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx y",
+        "fallback": "app",
+        "slug": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    },
+    {
+        "name": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "fallback": "app",
+        "slug": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+        "name": "UPPER_case 42",
+        "fallback": "app",
+        "slug": "upper-case-42"
+    }
+]

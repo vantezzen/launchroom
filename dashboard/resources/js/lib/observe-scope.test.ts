@@ -1,8 +1,10 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, test } from 'vite-plus/test';
 import {
     DEFAULT_RANGE,
     RANGE_SETS,
     rangeOptions,
+    rangeSeconds,
     rangeWords,
     readScope,
     scopeQuery,
@@ -11,7 +13,20 @@ import {
     withScope,
 } from './observe-scope';
 
+const lengths = JSON.parse(
+    readFileSync(
+        new URL('../../../tests/Fixtures/range-lengths.json', import.meta.url),
+        'utf8',
+    ),
+) as Record<string, number | null>;
+
 describe('observe scope', () => {
+    test('range lengths follow the shared vectors (App\\Enums\\Concerns\\HasRangeLength)', () => {
+        for (const [range, seconds] of Object.entries(lengths)) {
+            expect(rangeSeconds(range)).toBe(seconds);
+        }
+    });
+
     test('a range the page has is kept', () => {
         expect(snapRange('7d', RANGE_SETS.resources)).toBe('7d');
         expect(snapRange('15m', RANGE_SETS.logs)).toBe('15m');

@@ -1,7 +1,8 @@
 import { Logo } from '@/components/logo';
 import type { ChoiceTile } from '@/components/patterns/choice-tiles';
+import { labelOf, vocabulary } from '@/lib/vocabulary';
 
-export type ProviderChoice = 'github' | 'gitlab' | 'gitea' | 'git';
+export type ProviderChoice = App.Enums.Git.GitProviderKind;
 
 /** The four places code can live (docs/19 §4), as picker tiles. */
 export const PROVIDER_CHOICES: ChoiceTile<ProviderChoice>[] = [
@@ -43,16 +44,10 @@ export function providerLogo(kind: string): string {
 
 /** Display name of a provider value (`GitSource::provider`, repository `provider`). */
 export function providerLabel(provider: string): string {
-    switch (provider) {
-        case 'github':
-            return 'GitHub';
-        case 'gitlab':
-            return 'GitLab';
-        case 'gitea':
-            return 'Gitea';
-        default:
-            return 'Git';
-    }
+    return (
+        labelOf(vocabulary.Git.GitProviderKind, provider) ??
+        vocabulary.Git.GitProviderKind.git.label
+    );
 }
 
 /**

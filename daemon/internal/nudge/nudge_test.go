@@ -214,11 +214,19 @@ func TestFallsBackToEnrollmentConfigOn404(t *testing.T) {
 	}
 }
 
+// Nudges turned off in the dashboard's config win over the enrollment
+// fallback: no connection.
 func TestNoConfigMeansNoConnection(t *testing.T) {
+	p, srv := newFakePusher(t)
 	cp := &fakeCP{cfg: &state.DaemonConfig{TypeMeta: state.NewTypeMeta(state.KindDaemonConfig)}}
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
-	Run(ctx, Options{CP: cp, ServerID: testServer, ConfigRetry: time.Hour}) // returns when ctx ends
+	Run(ctx, Options{CP: cp, ServerID: testServer, ConfigRetry: time.Millisecond, Fallback: &state.NudgeConfig{Key: "k", URL: wsURL(srv)}})
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.conns != 0 {
+		t.Fatalf("conns = %d", p.conns)
+	}
 }
 
 // TestUnreachableDashboardRetriesWithBackoff: while the dashboard can't be
@@ -278,61 +286,34 @@ func TestServerErrorReconnectsWithBackoff(t *testing.T) {
 	}
 }
 
-func TestEndpoint(t *testing.T) {
-	cp, _ := url.Parse("https://dash.example.com/base")
-	for _, tc := range []struct {
-		cfg  state.NudgeConfig
-		cp   *url.URL
-		want string
-	}{
-		{state.NudgeConfig{Key: "k"}, cp, "wss://dash.example.com/base/app/k?client=launchroomd&flash=false&protocol=7&version=1.0.0"},
-		{state.NudgeConfig{Key: "k", URL: "ws://reverb:6001"}, cp, "ws://reverb:6001/app/k?client=launchroomd&flash=false&protocol=7&version=1.0.0"},
-		{state.NudgeConfig{Key: "k"}, mustURL("http://127.0.0.1:8000"), "ws://127.0.0.1:8000/app/k?client=launchroomd&flash=false&protocol=7&version=1.0.0"},
-	} {
-		got, err := Endpoint(&tc.cfg, tc.cp, "1.0.0")
-		if err != nil || got != tc.want {
-			t.Errorf("Endpoint(%+v) = %q, %v; want %q", tc.cfg, got, err, tc.want)
-		}
-	}
-	if _, err := Endpoint(&state.NudgeConfig{Key: "k"}, nil, "1"); err == nil {
-		t.Error("no URL at all accepted")
-	}
-}
-
 func TestActivityInterval(t *testing.T) {
-	for in, want := range map[int]time.Duration{0: 28 * time.Second, 30: 28 * time.Second, 5: 10 * time.Second, 600: 120 * time.Second} {
+	for in, want := range map[time.Duration]time.Duration{0: 28 * time.Second, 30 * time.Second: 28 * time.Second, 5 * time.Second: 10 * time.Second, 600 * time.Second: 120 * time.Second} {
 		if got := activityInterval(in); got != want {
-			t.Errorf("activityInterval(%d) = %v, want %v", in, got, want)
+			t.Errorf("activityInterval(%v) = %v, want %v", in, got, want)
 		}
 	}
-}
-
-func mustURL(s string) *url.URL {
-	u, err := url.Parse(s)
-	if err != nil {
-		panic(errors.New(s))
-	}
-	return u
 }
 
 // The endpoint follows the client's active base URL (an adopted canonical
 // origin, docs/03 §4.2) when ControlPlaneBase is set.
 func TestEndpointFollowsActiveBase(t *testing.T) {
-	configured, _ := url.Parse("https://1-2-3-4.sslip.io")
-	active := configured
-	o := Options{ControlPlaneURL: configured, ControlPlaneBase: func() *url.URL { return active }}
-	cfg := &state.NudgeConfig{Key: "k"}
-	ep, err := Endpoint(cfg, o.controlPlane(), "1.0.0")
-	if err != nil || !strings.HasPrefix(ep, "wss://1-2-3-4.sslip.io/app/k?") {
-		t.Fatalf("endpoint = %s (%v)", ep, err)
-	}
-	active, _ = url.Parse("https://dash.example.com")
-	ep, err = Endpoint(cfg, o.controlPlane(), "1.0.0")
-	if err != nil || !strings.HasPrefix(ep, "wss://dash.example.com/app/k?") {
-		t.Fatalf("endpoint after adoption = %s (%v)", ep, err)
-	}
-	active = nil
-	if got := o.controlPlane(); got != configured {
-		t.Fatalf("nil active base: %v", got)
+	p, srv := newFakePusher(t)
+	configured, _ := url.Parse("http://127.0.0.1:1")
+	active, _ := url.Parse(srv.URL)
+	cp := &fakeCP{cfg: &state.DaemonConfig{TypeMeta: state.NewTypeMeta(state.KindDaemonConfig), Nudge: &state.NudgeConfig{Key: "k"}}}
+	subscribed := make(chan struct{}, 1)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		Run(ctx, Options{CP: cp, ServerID: testServer, ControlPlaneURL: configured, ControlPlaneBase: func() *url.URL { return active },
+			BackoffMin: 10 * time.Millisecond, BackoffMax: 20 * time.Millisecond, OnSubscribed: func() { subscribed <- struct{}{} }})
+	}()
+	defer func() { cancel(); <-done }()
+	wait(t, subscribed, "subscription on the active base")
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if !strings.HasPrefix(p.paths[0], "/app/k?") {
+		t.Fatalf("path %q", p.paths[0])
 	}
 }

@@ -5,18 +5,23 @@ declare(strict_types=1);
 namespace App\Support\Deployments\Failures;
 
 use App\Data\Deployments\FailureExplanationData;
+use App\Enums\Builds\BuildHintCode;
 use App\Enums\DeploymentFailureClass;
 use App\Enums\FailureFixAction;
+use App\Enums\PortHint;
 use App\Enums\VariableType;
 use Closure;
 
 /**
  * Known deployment failures explained in plain words (docs/04 §6,
  * direction.md §9 "explained failure"). Table-driven: the first entry whose
- * failure class, known-error hint code (from launchroomd's build, see
- * daemon/internal/build/failure.go) or pattern on the failure message / log
- * excerpt matches wins. Unknown failures return null and the page falls back
- * to the generic DeploymentFailureData hint.
+ * failure class and known-error code matches wins. Codes come from
+ * launchroomd (BuildHintCode; PortHint, report.json WorkloadStatus.portHint),
+ * never from its wording. Only
+ * failures launchroomd has no code for (the app's own output: a missing
+ * variable, a refused connection, running out of memory) match a pattern on
+ * the failure message / log excerpt. Unknown failures return null and the
+ * page falls back to the generic DeploymentFailureData hint.
  */
 final class FailureCatalogue
 {
@@ -33,6 +38,10 @@ final class FailureCatalogue
 
             $matches = new FailureMatch;
             $hit = array_intersect($entry['hints'], $context->hintCodes) !== [];
+
+            if ($hit && isset($entry['extract']) && preg_match($entry['extract'], $text, $found) === 1) {
+                $matches = new FailureMatch($found);
+            }
 
             foreach ($entry['patterns'] as $pattern) {
                 if (preg_match($pattern, $text, $found) === 1) {
@@ -66,7 +75,7 @@ final class FailureCatalogue
     }
 
     /**
-     * @return list<array{key: string, classes: list<DeploymentFailureClass>|null, hints: list<string>, patterns: list<string>, explain: Closure(FailureMatch, FailureContext): ?FailureExplanationData}>
+     * @return list<array{key: string, classes: list<DeploymentFailureClass>|null, hints: list<string>, patterns: list<string>, extract?: string, explain: Closure(FailureMatch, FailureContext): ?FailureExplanationData}>
      */
     private static function entries(): array
     {
@@ -77,8 +86,8 @@ final class FailureCatalogue
             [
                 'key' => 'cannot_plan',
                 'classes' => [DeploymentFailureClass::PlanError],
-                'hints' => [],
-                'patterns' => ['/railpack could not plan this app/i'],
+                'hints' => [BuildHintCode::RailpackCannotPlan->value],
+                'patterns' => [],
                 'explain' => static fn (): FailureExplanationData => new FailureExplanationData(
                     key: 'cannot_plan',
                     title: "launchroom couldn't detect how to build this app",
@@ -88,13 +97,11 @@ final class FailureCatalogue
                     params: ['trigger' => 'plan_failed'],
                 ),
             ],
-            // BuildKit on the build server could not be reached (launchroomd's
-            // buildkitd readiness hints, daemon/internal/build/buildkitd/ready.go).
             [
                 'key' => 'buildkit_userns',
                 'classes' => [DeploymentFailureClass::Transient],
-                'hints' => ['buildkit-userns-restricted'],
-                'patterns' => ['/apparmor_restrict_unprivileged_userns/'],
+                'hints' => [BuildHintCode::BuildkitUsernsRestricted->value],
+                'patterns' => [],
                 'explain' => static fn (): FailureExplanationData => new FailureExplanationData(
                     key: 'buildkit_userns',
                     title: 'This server blocks what builds need',
@@ -105,7 +112,7 @@ final class FailureCatalogue
             [
                 'key' => 'buildkit_oom',
                 'classes' => [DeploymentFailureClass::Transient],
-                'hints' => ['buildkit-oom'],
+                'hints' => [BuildHintCode::BuildkitOom->value],
                 'patterns' => [],
                 'explain' => static fn (): FailureExplanationData => new FailureExplanationData(
                     key: 'buildkit_oom',
@@ -117,8 +124,8 @@ final class FailureCatalogue
             [
                 'key' => 'buildkit_unavailable',
                 'classes' => [DeploymentFailureClass::Transient],
-                'hints' => ['buildkit-crash-loop', 'buildkit-not-ready'],
-                'patterns' => ['/buildkitd(?:: not ready| keeps restarting| did not become ready| is not running)/i'],
+                'hints' => [BuildHintCode::BuildkitCrashLoop->value, BuildHintCode::BuildkitNotReady->value],
+                'patterns' => [],
                 'explain' => static fn (): FailureExplanationData => new FailureExplanationData(
                     key: 'buildkit_unavailable',
                     title: 'BuildKit did not start on the build server',
@@ -129,8 +136,8 @@ final class FailureCatalogue
             [
                 'key' => 'no_start_command',
                 'classes' => $build,
-                'hints' => ['no-start-command'],
-                'patterns' => ['/no start command/i'],
+                'hints' => [BuildHintCode::NoStartCommand->value],
+                'patterns' => [],
                 'explain' => static fn (): FailureExplanationData => new FailureExplanationData(
                     key: 'no_start_command',
                     title: 'Nothing says how to start this app',
@@ -143,11 +150,15 @@ final class FailureCatalogue
             [
                 'key' => 'port_mismatch',
                 'classes' => $running,
-                'hints' => [],
-                'patterns' => ['/listens on ([0-9][0-9, ]*), not ([0-9]+)/'],
-                'explain' => static function (FailureMatch $m, FailureContext $c): FailureExplanationData {
-                    $detected = (int) trim(explode(',', $m->group(1))[0]);
-                    $configured = $m->group(2) !== '' ? (int) $m->group(2) : (int) $c->currentPort;
+                'hints' => [PortHint::WrongPort->value],
+                'patterns' => [],
+                'explain' => static function (FailureMatch $m, FailureContext $c): ?FailureExplanationData {
+                    $detected = $c->listening[0] ?? null;
+                    $configured = $c->hintPort ?? $c->currentPort;
+
+                    if ($detected === null || $configured === null) {
+                        return null;
+                    }
 
                     return new FailureExplanationData(
                         key: 'port_mismatch',
@@ -162,13 +173,12 @@ final class FailureCatalogue
             [
                 'key' => 'port_loopback',
                 'classes' => $running,
-                'hints' => [],
-                // launchroomd's hint, and the fail-fast issue's message (D68).
-                'patterns' => ['/listens on 127\.0\.0\.1:([0-9]+) only/', '/listens on 127\.0\.0\.1:([0-9]+), so nothing outside/'],
-                'explain' => static fn (FailureMatch $m): FailureExplanationData => new FailureExplanationData(
+                'hints' => [PortHint::LoopbackOnly->value],
+                'patterns' => [],
+                'explain' => static fn (FailureMatch $m, FailureContext $c): FailureExplanationData => new FailureExplanationData(
                     key: 'port_loopback',
                     title: 'Your app only accepts connections from itself',
-                    cause: "It listens on 127.0.0.1:{$m->group(1)}, which nothing outside its container can reach.",
+                    cause: PortHint::LoopbackOnly->fact($c->hintPort ?? $c->currentPort, []),
                     fix: 'Bind to 0.0.0.0 instead, for example with --host 0.0.0.0 or a HOST variable.',
                     action: FailureFixAction::AddVariable,
                     params: ['name' => 'HOST', 'value' => '0.0.0.0'],
@@ -177,20 +187,20 @@ final class FailureCatalogue
             [
                 'key' => 'no_port',
                 'classes' => $running,
-                'hints' => [],
-                'patterns' => ['/does not listen on any TCP port \(expected ([0-9]+)\)/'],
-                'explain' => static fn (FailureMatch $m): FailureExplanationData => new FailureExplanationData(
+                'hints' => [PortHint::NoPort->value],
+                'patterns' => [],
+                'explain' => static fn (FailureMatch $m, FailureContext $c): FailureExplanationData => new FailureExplanationData(
                     key: 'no_port',
                     title: 'Your app is not listening on any port',
-                    cause: "The server expected it on port {$m->group(1)}, but the process opened no TCP port.",
+                    cause: PortHint::NoPort->fact($c->hintPort ?? $c->currentPort, []),
                     fix: 'Check the start command starts the web server. If this is a background process, turn it into a worker without a port.',
                 ),
             ],
             [
                 'key' => 'out_of_memory_build',
                 'classes' => $build,
-                'hints' => ['out-of-memory'],
-                'patterns' => ['/JavaScript heap out of memory|exit code: 137|signal: killed/i'],
+                'hints' => [BuildHintCode::OutOfMemory->value],
+                'patterns' => [],
                 'explain' => static fn (): FailureExplanationData => new FailureExplanationData(
                     key: 'out_of_memory_build',
                     title: 'The build ran out of memory',
@@ -215,29 +225,31 @@ final class FailureCatalogue
             [
                 'key' => 'pnpm_lockfile',
                 'classes' => $build,
-                'hints' => ['pnpm-outdated-lockfile'],
-                'patterns' => ['/ERR_PNPM_OUTDATED_LOCKFILE/'],
+                'hints' => [BuildHintCode::PnpmOutdatedLockfile->value],
+                'patterns' => [],
                 'explain' => static fn (): FailureExplanationData => self::lockfile('pnpm_lockfile', 'pnpm-lock.yaml', 'pnpm install'),
             ],
             [
                 'key' => 'npm_lockfile',
                 'classes' => $build,
-                'hints' => ['npm-ci-lockfile'],
-                'patterns' => ['/`npm ci` can only install packages when your package\.json and package-lock\.json/'],
+                'hints' => [BuildHintCode::NpmCiLockfile->value],
+                'patterns' => [],
                 'explain' => static fn (): FailureExplanationData => self::lockfile('npm_lockfile', 'package-lock.json', 'npm install'),
             ],
             [
                 'key' => 'yarn_lockfile',
                 'classes' => $build,
-                'hints' => ['yarn-frozen-lockfile'],
-                'patterns' => ['/lockfile needs to be updated|YN0028/i'],
+                'hints' => [BuildHintCode::YarnFrozenLockfile->value],
+                'patterns' => [],
                 'explain' => static fn (): FailureExplanationData => self::lockfile('yarn_lockfile', 'yarn.lock', 'yarn install'),
             ],
             [
                 'key' => 'php_extension',
                 'classes' => $build,
-                'hints' => ['php-extension'],
-                'patterns' => ['/requires ext-([a-z0-9_]+)|PHP extension ([a-z0-9_]+) is missing/i'],
+                'hints' => [BuildHintCode::PhpExtension->value],
+                'patterns' => [],
+                // The code says an extension is missing; its name is only in the log.
+                'extract' => '/requires ext-([a-z0-9_]+)|PHP extension ([a-z0-9_]+) is missing/i',
                 'explain' => static function (FailureMatch $m): FailureExplanationData {
                     $extension = strtolower($m->firstGroup());
                     $named = $extension === '' ? 'A PHP extension' : "The PHP extension {$extension}";
@@ -255,8 +267,8 @@ final class FailureCatalogue
             [
                 'key' => 'native_module',
                 'classes' => $build,
-                'hints' => ['node-gyp-toolchain'],
-                'patterns' => ['/gyp ERR!/'],
+                'hints' => [BuildHintCode::NodeGypToolchain->value],
+                'patterns' => [],
                 'explain' => static fn (): FailureExplanationData => new FailureExplanationData(
                     key: 'native_module',
                     title: 'A native module could not be compiled',

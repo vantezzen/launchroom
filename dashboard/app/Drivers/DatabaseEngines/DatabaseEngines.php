@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Drivers\DatabaseEngines;
 
+use App\Data\Canvas\DatabaseEngineOptionData;
 use App\Enums\DatabaseEngine;
 
 /**
@@ -36,5 +37,15 @@ final readonly class DatabaseEngines
             DatabaseEngine::MongoDb => new MongoDb($this->images),
             DatabaseEngine::ClickHouse => new ClickHouse($this->images),
         };
+    }
+
+    /**
+     * Every engine as the "Add database" pickers offer it.
+     *
+     * @return list<DatabaseEngineOptionData>
+     */
+    public function options(): array
+    {
+        return array_map(fn (DatabaseEngine $engine): DatabaseEngineOptionData => DatabaseEngineOptionData::fromDriver($this->for($engine)), DatabaseEngine::cases());
     }
 }

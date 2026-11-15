@@ -8,6 +8,7 @@ use App\Enums\EnvironmentKind;
 use App\Enums\Permission;
 use App\Models\Environment;
 use App\Models\Project;
+use App\Models\Team;
 use App\Models\User;
 
 final class EnvironmentPolicy
@@ -32,7 +33,16 @@ final class EnvironmentPolicy
      */
     public function deploy(User $user, Environment $environment): bool
     {
-        return $user->hasTeamPermission($environment->team_id, Permission::Deploy);
+        return $this->deployAny($user, $environment->team_id);
+    }
+
+    /**
+     * Whether the user may deploy in any of the team's environments (the
+     * command palette's deploy commands).
+     */
+    public function deployAny(User $user, Team|int $team): bool
+    {
+        return $user->hasTeamPermission($team, Permission::Deploy);
     }
 
     /**

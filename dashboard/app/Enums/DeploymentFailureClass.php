@@ -11,6 +11,8 @@ enum DeploymentFailureClass: string
 {
     case PlanError = 'plan_error';
     case BuildError = 'build_error';
+    /** The build or plan task passed its deadline (waiting for a build slot counts). */
+    case BuildTimeout = 'build_timeout';
     /** Registry or network trouble (retried once by the build wave). */
     case Transient = 'transient';
     case ReleaseError = 'release_error';

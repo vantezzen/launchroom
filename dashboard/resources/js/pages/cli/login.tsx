@@ -6,7 +6,6 @@ import InputError from '@/components/input-error';
 import { MetaDivider } from '@/components/patterns/meta-line';
 import { TimeAgo } from '@/components/time-ago';
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -17,8 +16,14 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import { Spinner } from '@/components/ui/spinner';
+import {
+    AbilityFields,
+    defaultAbilities,
+    lifetimeLabel,
+} from '@/features/api-tokens/ability-fields';
 import { AuthFrame } from '@/features/auth/auth-frame';
 import { approve, deny, show } from '@/routes/cli-login';
+import { noLayout } from '@/lib/pages';
 
 type Props = {
     code: string | null;
@@ -27,10 +32,6 @@ type Props = {
     lifetimes: number[];
     defaultLifetime: number;
 };
-
-function lifetimeLabel(days: number): string {
-    return days === 365 ? '1 year' : `${days} days`;
-}
 
 function Outcome({
     icon,
@@ -182,26 +183,14 @@ function Approve({
     defaultLifetime: number;
 }) {
     const initial = teams.find((team) => team.current) ?? teams[0];
-    const defaultsFor = (team: App.Data.Api.ApiTeamOptionData | undefined) =>
-        (team?.abilities ?? [])
-            .filter((option) => option.available && option.default)
-            .map((option) => option.value);
 
     const form = useForm({
         team: initial?.id ?? '',
-        abilities: defaultsFor(initial),
+        abilities: defaultAbilities(initial),
         expiresInDays: defaultLifetime,
     });
     const [denying, setDenying] = useState(false);
     const team = teams.find((entry) => entry.id === form.data.team);
-
-    const toggle = (ability: App.Enums.ApiAbility, on: boolean) =>
-        form.setData(
-            'abilities',
-            on
-                ? [...form.data.abilities, ability]
-                : form.data.abilities.filter((entry) => entry !== ability),
-        );
 
     const submit = (event: FormEvent) => {
         event.preventDefault();
@@ -255,7 +244,7 @@ function Approve({
                                     form.setData({
                                         ...form.data,
                                         team: value,
-                                        abilities: defaultsFor(next),
+                                        abilities: defaultAbilities(next),
                                     });
                                 }}
                             >
@@ -277,50 +266,17 @@ function Approve({
                         </div>
                     )}
 
-                    <fieldset className="flex flex-col gap-3">
-                        <legend className="mb-3 type-label">The CLI can</legend>
-                        {(team?.abilities ?? []).map((option) => {
-                            const id = `cli-ability-${option.value}`;
-                            const always = option.value === 'read';
-
-                            return (
-                                <div
-                                    key={option.value}
-                                    className="flex items-start gap-3"
-                                >
-                                    <Checkbox
-                                        id={id}
-                                        checked={
-                                            always ||
-                                            form.data.abilities.includes(
-                                                option.value,
-                                            )
-                                        }
-                                        disabled={always || !option.available}
-                                        onCheckedChange={(checked) =>
-                                            toggle(
-                                                option.value,
-                                                checked === true,
-                                            )
-                                        }
-                                        className="mt-0.5"
-                                    />
-                                    <label
-                                        htmlFor={id}
-                                        className="flex flex-col gap-0.5"
-                                    >
-                                        <span className="type-body font-medium">
-                                            {option.label}
-                                        </span>
-                                        <span className="type-small text-muted-foreground">
-                                            {option.description}
-                                        </span>
-                                    </label>
-                                </div>
-                            );
-                        })}
+                    <AbilityFields
+                        legend="The CLI can"
+                        idPrefix="cli-ability"
+                        team={team}
+                        value={form.data.abilities}
+                        onChange={(abilities) =>
+                            form.setData('abilities', abilities)
+                        }
+                    >
                         <InputError message={form.errors.abilities} />
-                    </fieldset>
+                    </AbilityFields>
 
                     <div className="grid gap-2">
                         <Label htmlFor="lifetime">Stays signed in for</Label>
@@ -369,3 +325,5 @@ function Approve({
         </>
     );
 }
+
+CliLogin.layout = noLayout;

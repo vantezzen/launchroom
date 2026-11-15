@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Data\Protocol\V1;
 
+use App\Data\Protocol\ProtocolDocument;
+use App\Support\Protocol\Grammar;
 use Spatie\LaravelData\Attributes\Validation\In;
 use Spatie\LaravelData\Attributes\Validation\Max;
 use Spatie\LaravelData\Attributes\Validation\Min;
@@ -19,17 +21,17 @@ final class EnrollRequest extends Data
      * @param  list<string>  $protocolVersions
      */
     public function __construct(
-        #[In(['launchroom.vantezzen.io/v1'])]
+        #[In([ProtocolDocument::API_VERSION])]
         public string $apiVersion,
         #[In(['EnrollRequest'])]
         public string $kind,
-        #[Regex('/^[A-Za-z0-9_.-]{16,256}$/D'), \SensitiveParameter]
+        #[Regex(Grammar::JOIN_TOKEN), \SensitiveParameter]
         public string $token,
-        #[Regex('/^ed25519:[A-Za-z0-9+\/]{43}=$/D')]
+        #[Regex(Grammar::ED25519_KEY)]
         public string $signingKey,
-        #[Regex('/^x25519:[A-Za-z0-9+\/]{43}=$/D')]
+        #[Regex(Grammar::X25519_KEY)]
         public string $sealingKey,
-        #[Max(64), Regex('/^v?[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/D')]
+        #[Max(64), Regex(Grammar::SEMVER)]
         public string $daemonVersion,
         #[Min(1), Max(8)]
         public array $protocolVersions,

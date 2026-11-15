@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Servers;
 
+use App\Data\Instance\OnboardingStateData;
 use App\Models\InstanceSettings;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
@@ -18,14 +19,14 @@ final class DismissSmallServerHint
     {
         DB::transaction(static function () use ($user): void {
             $settings = InstanceSettings::lockedForUpdate();
-            $onboarding = $settings->onboarding ?? [];
-            $dismissed = array_values(array_filter($onboarding['smallServerHintDismissed'] ?? [], is_int(...)));
+            $onboarding = clone ($settings->onboarding ?? new OnboardingStateData);
+            $dismissed = $onboarding->smallServerHintDismissed;
 
             if (! in_array($user->id, $dismissed, true)) {
                 $dismissed[] = $user->id;
             }
 
-            $onboarding['smallServerHintDismissed'] = $dismissed;
+            $onboarding->smallServerHintDismissed = $dismissed;
             $settings->forceFill(['onboarding' => $onboarding])->save();
         });
     }

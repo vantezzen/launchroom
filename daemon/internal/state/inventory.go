@@ -259,7 +259,6 @@ func (c InventoryComponent) validate(e *errs, p string) {
 	}
 }
 
-// checkPlainText bounds a display string and refuses control characters and invalid UTF-8.
 func checkPlainText(e *errs, p, s string, maxLen int) {
 	checkText(e, p, s, maxLen)
 	if !utf8.ValidString(s) {

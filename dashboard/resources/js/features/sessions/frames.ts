@@ -5,20 +5,21 @@
  * `d2b` frames whose MAC verifies and whose sequence number grows.
  */
 
-import { hmacSha256 } from './hmac';
-import type { Hmac } from './hmac';
+import { hmacSha256 } from '@/lib/hmac';
+import type { Hmac } from '@/lib/hmac';
 
 export const FRAME_EVENT = 'client-frame';
 /** Raw bytes per `in`/`out` frame. */
 export const MAX_DATA = 4096;
+/** Length of a frame's payload string `p`. */
+export const MAX_PAYLOAD = 8192;
 
-const MAC_PREFIX = 'launchroom-session-v1\n';
+export const MAC_PREFIX = 'launchroom-session-v1\n';
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
-export type WireFrame = { p: string; m: string };
+type WireFrame = { p: string; m: string };
 
-/** What the browser sends. */
 export type OutgoingPayload =
     | { t: 'hello'; cols?: number; rows?: number }
     | { t: 'in'; d: string }
@@ -43,7 +44,7 @@ export type IncomingPayload = {
     message?: string;
 };
 
-export function base64UrlEncode(bytes: Uint8Array): string {
+function base64UrlEncode(bytes: Uint8Array): string {
     let binary = '';
 
     for (let i = 0; i < bytes.length; i += 0x8000) {
@@ -124,7 +125,7 @@ export class FrameCodec {
             frame === null ||
             typeof (frame as WireFrame).p !== 'string' ||
             typeof (frame as WireFrame).m !== 'string' ||
-            (frame as WireFrame).p.length > 8192
+            (frame as WireFrame).p.length > MAX_PAYLOAD
         ) {
             return null;
         }

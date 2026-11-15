@@ -108,7 +108,6 @@ final readonly class SwapRestoredService
             return $original;
         });
 
-        // Retire the original here (staged; final backup first when configured).
         $this->remove->handle($original, $actor);
     }
 }

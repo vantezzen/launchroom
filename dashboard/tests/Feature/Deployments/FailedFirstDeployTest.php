@@ -16,8 +16,8 @@ use App\Models\Deployment;
 use App\Models\DeploymentStep;
 use App\Models\Service;
 use App\Models\ServiceInstance;
+use App\Queries\StagedForService;
 use App\Services\Deployments\ReleaseStep;
-use App\Support\Services\StagedForService;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\Support\DeploymentUi;
 use Tests\Support\PreviewFlow;
@@ -51,7 +51,7 @@ function failedFirstDeploy(): DeploymentUi
             'finished_at' => now(),
             'meta' => ['message' => 'The container keeps crashing'],
         ]);
-        $deployment->transitionTo(DeploymentStatus::Failed, DeploymentFailureClass::RuntimeError, 'The container keeps crashing: it exited with code 1 and was restarted 3 times.');
+        $deployment->fail(DeploymentFailureClass::RuntimeError, 'The container keeps crashing: it exited with code 1 and was restarted 3 times.');
     }
 
     return $world;

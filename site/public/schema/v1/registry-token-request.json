@@ -50,7 +50,7 @@
     },
     "task": {
       "type": "string",
-      "pattern": "^tsk_[0-9A-HJKMNP-TV-Z]{26}$",
+      "pattern": "^tsk_[0-7][0-9A-HJKMNP-TV-Z]{25}$",
       "description": "Task is the leased build/plan task the token is for (required for push and cache scopes)."
     }
   },

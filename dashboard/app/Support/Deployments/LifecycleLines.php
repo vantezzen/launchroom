@@ -7,6 +7,8 @@ namespace App\Support\Deployments;
 use App\Data\Protocol\V1\WorkloadEvent;
 use App\Data\Services\HealthcheckSettings;
 use App\Enums\HealthcheckType;
+use App\Enums\WorkloadEventKind;
+use App\Enums\WorkloadEventReason;
 use Illuminate\Support\Str;
 
 /**
@@ -33,8 +35,6 @@ final readonly class LifecycleLines
     ) {}
 
     /**
-     * The line's text and level.
-     *
      * @return array{text: string, level: string}
      */
     public function line(WorkloadEvent $event): array
@@ -44,26 +44,25 @@ final readonly class LifecycleLines
         $failures = is_int($event->failures) ? $event->failures : 0;
         $message = is_string($event->message) ? trim($event->message) : '';
         $code = is_int($event->exitCode) ? $event->exitCode : null;
-        $reason = is_string($event->reason) ? $event->reason : null;
+        $reason = $event->reason instanceof WorkloadEventReason ? $event->reason : null;
 
         return match ($event->kind) {
-            'created' => $this->info("Container created ({$where})"),
-            'create_failed' => $this->error("Couldn't start the container ({$where})".($message === '' ? '' : ": {$message}")),
-            'started' => $this->info("Container started ({$where})"),
-            'exited' => $event->oomKilled === true
+            WorkloadEventKind::Created => $this->info("Container created ({$where})"),
+            WorkloadEventKind::CreateFailed => $this->error("Couldn't start the container ({$where})".($message === '' ? '' : ": {$message}")),
+            WorkloadEventKind::Started => $this->info("Container started ({$where})"),
+            WorkloadEventKind::Exited => $event->oomKilled === true
                 ? $this->error("Out of memory: the container was killed ({$where}). Raise its memory limit in Settings → Scaling.")
                 : ($code === 0 ? $this->info("Container exited with code 0 ({$where})") : $this->error('Container exited'.($code === null ? '' : " with code {$code}")." ({$where})")),
-            'restarted' => $this->warning('Container restarted (attempt '.($restarts + 1).", {$where})"),
-            'health_passing' => $this->info('Health check passed'.$this->probe()." ({$where})"),
-            'health_failing' => $this->error('Health check failed'.$this->probe().($message === '' ? '' : " → {$message}").' ('.$failures.'/'.max(1, $this->healthcheck->failureThreshold ?? 1).", {$where})"),
-            'stopped' => $this->info("Container stopped by launchroom ({$this->because($reason)}, {$where})"),
-            'removed' => $this->info(match ($reason) {
-                'spec_changed' => "Container replaced by launchroom: its settings changed ({$where})",
-                'duplicate' => "Duplicate container removed by launchroom ({$where})",
-                'port_not_bound' => "Container recreated by launchroom to publish its port on the private network ({$where})",
+            WorkloadEventKind::Restarted => $this->warning('Container restarted (attempt '.($restarts + 1).", {$where})"),
+            WorkloadEventKind::HealthPassing => $this->info('Health check passed'.$this->probe()." ({$where})"),
+            WorkloadEventKind::HealthFailing => $this->error('Health check failed'.$this->probe().($message === '' ? '' : " → {$message}").' ('.$failures.'/'.max(1, $this->healthcheck->failureThreshold ?? 1).", {$where})"),
+            WorkloadEventKind::Stopped => $this->info("Container stopped by launchroom ({$this->because($reason)}, {$where})"),
+            WorkloadEventKind::Removed => $this->info(match ($reason) {
+                WorkloadEventReason::SpecChanged => "Container replaced by launchroom: its settings changed ({$where})",
+                WorkloadEventReason::Duplicate => "Duplicate container removed by launchroom ({$where})",
+                WorkloadEventReason::PortNotBound => "Container recreated by launchroom to publish its port on the private network ({$where})",
                 default => "Container removed by launchroom ({$this->because($reason)}, {$where})",
             }),
-            default => $this->info("Container {$event->kind} ({$where})"),
         };
     }
 
@@ -86,12 +85,12 @@ final readonly class LifecycleLines
         return $label === null ? '' : ": {$label}";
     }
 
-    private function because(?string $reason): string
+    private function because(?WorkloadEventReason $reason): string
     {
         return match (true) {
             $this->replacedBy !== null => "replaced by deployment {$this->replacedBy}",
             $this->removedBecause !== null => $this->removedBecause,
-            $reason === 'drained' => 'its drain period ended',
+            $reason === WorkloadEventReason::Drained => 'its drain period ended',
             default => 'no longer needed',
         };
     }

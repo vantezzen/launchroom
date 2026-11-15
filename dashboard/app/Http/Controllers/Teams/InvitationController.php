@@ -10,6 +10,9 @@ use App\Data\Teams\InviteMemberData;
 use App\Data\Teams\InviteMembersData;
 use App\Exceptions\DomainRuleViolation;
 use App\Http\Controllers\Controller;
+use App\Http\Routing\CurrentTeam;
+use App\Http\Toast;
+use App\Models\Team;
 use App\Models\TeamInvitation;
 use App\Models\User;
 use Illuminate\Container\Attributes\CurrentUser;
@@ -17,7 +20,6 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\ValidationException;
-use Inertia\Inertia;
 
 final class InvitationController extends Controller
 {
@@ -26,9 +28,8 @@ final class InvitationController extends Controller
      * own invitation. Addresses that are already members are skipped and
      * named in the result.
      */
-    public function store(Request $request, InviteMembersData $data, #[CurrentUser] User $user, InviteMember $inviteMember): RedirectResponse
+    public function store(Request $request, InviteMembersData $data, #[CurrentUser] User $user, InviteMember $inviteMember, #[CurrentTeam] Team $team): RedirectResponse
     {
-        $team = TeamSettingsController::currentTeam($user);
         Gate::authorize('create', [TeamInvitation::class, $team]);
 
         $field = $data->emails !== null ? 'emails' : 'email';
@@ -58,7 +59,7 @@ final class InvitationController extends Controller
             $message .= ' Already in the team: '.implode(', ', array_keys($skipped)).'.';
         }
 
-        Inertia::flash('toast', ['type' => 'success', 'message' => $message]);
+        Toast::success($message);
 
         return back();
     }

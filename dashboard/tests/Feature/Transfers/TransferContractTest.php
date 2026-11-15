@@ -25,10 +25,10 @@ test('import and export completions decode into the Data mirrors', function (): 
     $import = TaskCompletion::validateAndCreate(transferFixture('task-completion.data-import'));
     $export = TaskCompletion::validateAndCreate(transferFixture('task-completion.data-export'));
 
-    expect($import->dataImport)->toBeInstanceOf(DataImportResult::class)
-        ->and($import->dataImport instanceof DataImportResult ? $import->dataImport->tables : null)->toBe(14)
-        ->and($export->dataExport)->toBeInstanceOf(DataExportResult::class)
-        ->and($export->dataExport instanceof DataExportResult ? $export->dataExport->compressed : null)->toBeTrue();
+    expect($import->results->dataImport)->toBeInstanceOf(DataImportResult::class)
+        ->and($import->results->dataImport instanceof DataImportResult ? $import->results->dataImport->tables : null)->toBe(14)
+        ->and($export->results->dataExport)->toBeInstanceOf(DataExportResult::class)
+        ->and($export->results->dataExport instanceof DataExportResult ? $export->results->dataExport->compressed : null)->toBeTrue();
 });
 
 test('a completion with an unknown format or too many warnings is refused', function (): void {

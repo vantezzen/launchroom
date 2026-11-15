@@ -80,7 +80,6 @@ func peekVersion(raw []byte) int64 {
 	return v.Version
 }
 
-// storeFormat identifies the on-disk envelope.
 const storeFormat = "launchroom.state/v1"
 
 // storedState is the on-disk envelope. Body holds the exact signed bytes

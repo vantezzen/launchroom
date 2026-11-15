@@ -10,6 +10,7 @@ use App\Data\Audit\AuditEntryData;
 use App\Enums\AuditAction;
 use App\Enums\DomainKind;
 use App\Exceptions\DomainRuleViolation;
+use App\Jobs\Domains\VerifyDomainJob;
 use App\Models\Domain;
 use App\Models\InstanceSettings;
 use App\Models\ServiceInstance;
@@ -21,6 +22,7 @@ use Illuminate\Support\Facades\DB;
  * Adds a custom domain to a service instance (docs/05 §5). It applies
  * immediately (ApplyDomainRoutes): the edges start routing it without a
  * deploy. Certificates come from on-demand TLS approved by the edge daemon.
+ * Its DNS is checked right away (VerifyDomainJob), whoever added it.
  */
 final readonly class AddDomain
 {
@@ -69,6 +71,7 @@ final readonly class AddDomain
                 ));
 
                 $this->routes->handle($instance, $actor, "Added {$hostname}");
+                dispatch(new VerifyDomainJob($domain->id))->afterCommit();
 
                 return $domain;
             });

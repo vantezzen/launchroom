@@ -27,8 +27,6 @@ use App\Enums\VariableType;
  */
 final class EnvFileParser
 {
-    private const string KEY = '/^[A-Za-z_][A-Za-z0-9_]{0,255}$/D';
-
     /** Value shapes that are certainly credentials. */
     private const array SECRET_VALUE_PATTERNS = [
         '/-----BEGIN [A-Z ]*PRIVATE KEY-----/',
@@ -78,7 +76,7 @@ final class EnvFileParser
             $key = rtrim(substr($trimmed, 0, $equals));
             $rest = ltrim(substr($trimmed, $equals + 1), " \t");
 
-            if (preg_match(self::KEY, $key) !== 1) {
+            if (! VariableKey::isValid($key)) {
                 $errors[] = ['line' => $lineNumber, 'message' => 'Invalid variable name. Use letters, digits and underscores, not starting with a digit.'];
 
                 continue;

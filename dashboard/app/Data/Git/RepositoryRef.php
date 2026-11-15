@@ -27,7 +27,7 @@ final readonly class RepositoryRef
 
     public static function fromSource(int $teamId, GitSource $source): self
     {
-        return new self($source->kind(), $teamId, $source->installationId, $source->repositoryId, $source->fullName, $source->cloneUrl);
+        return new self($source->provider, $teamId, $source->installationId, $source->repositoryId, $source->fullName, $source->cloneUrl);
     }
 
     /** Stable key for caches and locks. */

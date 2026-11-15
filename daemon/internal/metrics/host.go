@@ -10,25 +10,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/vantezzen/launchroom/daemon/internal/hostinfo"
 )
-
-// skippedPrefixes are virtual interfaces: loopback, Docker bridges and veths,
-// the mesh (tailscale0), tunnels and other container/VM plumbing. What is
-// left is the traffic of the physical (or the VM's) interfaces.
-var skippedPrefixes = []string{
-	"lo", "docker", "br-", "veth", "tailscale", "cni", "flannel", "virbr", "lr-", "tunl", "sit", "ip6tnl", "ip6gre",
-	"gre", "erspan", "ip_vti", "ip6_vti", "nlmon", "dummy", "kube", "cali", "vxlan", "genev", "ifb",
-}
-
-// SkipInterface reports whether name is left out of the network totals.
-func SkipInterface(name string) bool {
-	for _, p := range skippedPrefixes {
-		if strings.HasPrefix(name, p) {
-			return true
-		}
-	}
-	return false
-}
 
 type hostReading struct {
 	cpuPct, load1                          *float64
@@ -124,28 +108,8 @@ func (c *Collector) memory() (total, avail int64, ok bool) {
 	if !ok {
 		return 0, 0, false
 	}
-	total, avail = -1, -1
-	sc := bufio.NewScanner(bytes.NewReader(data))
-	for sc.Scan() {
-		f := strings.Fields(sc.Text())
-		if len(f) < 2 {
-			continue
-		}
-		v, err := strconv.ParseInt(f[1], 10, 64)
-		if err != nil || v < 0 {
-			continue
-		}
-		switch f[0] {
-		case "MemTotal:":
-			total = v >> 10
-		case "MemAvailable:":
-			avail = v >> 10
-		}
-	}
-	if total < 0 || avail < 0 {
-		return 0, 0, false
-	}
-	return total, min(avail, total), true
+	m, ok := hostinfo.ParseMemInfo(data)
+	return m.TotalMB, m.AvailableMB, ok
 }
 
 // netCounters parses /proc/net/dev (receive bytes is the 1st, transmit bytes
@@ -163,7 +127,7 @@ func (c *Collector) netCounters() (map[string]netCounters, bool) {
 			continue
 		}
 		name = strings.TrimSpace(name)
-		if name == "" || strings.Contains(name, "|") || c.o.SkipInterface(name) {
+		if name == "" || strings.Contains(name, "|") || hostinfo.VirtualInterface(name) {
 			continue
 		}
 		f := strings.Fields(rest)

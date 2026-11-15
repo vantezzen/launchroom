@@ -8,8 +8,10 @@ use App\Actions\Audit\RecordAuditEvent;
 use App\Data\Audit\AuditActor;
 use App\Data\Audit\AuditEntryData;
 use App\Data\Variables\RawEditResult;
+use App\Data\Variables\VariableTargetRow;
 use App\Enums\AuditAction;
 use App\Enums\VariableType;
+use App\Events\CanvasChanged;
 use App\Exceptions\DomainRuleViolation;
 use App\Models\Environment;
 use App\Models\Project;
@@ -19,10 +21,8 @@ use App\Models\Variable;
 use App\Models\VariableTarget;
 use App\Queries\EnvironmentVariableRows;
 use App\Queries\ServiceVariablesView;
-use App\Services\Variables\SecretExposureGuard;
 use App\Services\Variables\VariableStore;
 use App\Support\Variables\EnvFileParser;
-use Illuminate\Support\Facades\DB;
 use SensitiveParameter;
 
 /**
@@ -44,7 +44,6 @@ final readonly class ApplyRawVariables
 {
     public function __construct(
         private VariableStore $store,
-        private SecretExposureGuard $exposure,
         private EnvironmentVariableRows $rows,
         private RecordAuditEvent $audit,
     ) {}
@@ -61,12 +60,14 @@ final readonly class ApplyRawVariables
             throw DomainRuleViolation::on('content', implode(' ', array_map(static fn (array $error): string => "Line {$error['line']}: {$error['message']}", $parsed->errors)));
         }
 
-        return DB::transaction(function () use ($environment, $service, $parsed, $user, $actor): RawEditResult {
+        $environment->loadMissing('project');
+
+        return $this->store->write($environment->project, function () use ($environment, $service, $parsed, $user, $actor): RawEditResult {
             $project = Project::query()->whereKey($environment->project_id)->lockForUpdate()->firstOrFail();
 
             /** @var array<string, Variable> $existing */
             $existing = $this->rows->get($environment, $service)->keyBy('key')->all();
-            $here = [['environment_id' => $environment->id, 'all_previews' => false, 'branch_pattern' => null]];
+            $here = [VariableTargetRow::environment($environment->id)];
             $created = [];
             $updated = [];
             $removed = [];
@@ -114,8 +115,6 @@ final readonly class ApplyRawVariables
                 $removed[] = $key;
             }
 
-            $this->exposure->assertNoPublicSecrets($project, [...$created, ...$updated], 'content');
-
             if ($created !== [] || $updated !== [] || $removed !== []) {
                 $this->audit->handle(new AuditEntryData(
                     action: AuditAction::VariablesRawEdited,
@@ -127,8 +126,10 @@ final readonly class ApplyRawVariables
                 ));
             }
 
+            event(new CanvasChanged($environment->public_id, $service->public_id));
+
             return new RawEditResult($created, $updated, $removed, $parsed->warnings);
-        });
+        }, 'content');
     }
 
     private function onlyHere(Variable $variable, Environment $environment): bool
@@ -141,11 +142,7 @@ final readonly class ApplyRawVariables
     {
         $this->store->replaceTargets($variable, array_values($variable->targets
             ->reject(static fn (VariableTarget $target): bool => $target->environment_id === $environment->id)
-            ->map(static fn (VariableTarget $target): array => [
-                'environment_id' => $target->environment_id,
-                'all_previews' => $target->all_previews,
-                'branch_pattern' => $target->branch_pattern,
-            ])
+            ->map(VariableTargetRow::of(...))
             ->all()));
     }
 }

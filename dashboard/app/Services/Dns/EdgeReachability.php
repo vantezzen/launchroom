@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Services\Dns;
 
-use App\Enums\ServerStatus;
 use App\Models\Server;
 use App\Services\Http\Exceptions\ResponseTooLarge;
 use App\Services\Http\Exceptions\UnsafeUrl;
@@ -13,6 +12,7 @@ use App\Services\Http\UrlGuard;
 use App\Support\Crypto\PublicKeyFormat;
 use App\Support\Hostname;
 use App\Support\Network\IpClassifier;
+use App\Support\PublicId;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Factory;
 use Illuminate\Http\Client\Response;
@@ -110,14 +110,13 @@ final readonly class EdgeReachability
         $serverId = is_array($body) && is_string($body['serverId'] ?? null) ? $body['serverId'] : null;
         $signature = is_array($body) && is_string($body['signature'] ?? null) ? base64_decode($body['signature'], true) : false;
 
-        if ($serverId === null || preg_match('/^srv_[0-9A-HJKMNP-TV-Z]{26}$/D', $serverId) !== 1 || $signature === false || strlen($signature) !== SODIUM_CRYPTO_SIGN_BYTES) {
+        if ($serverId === null || ! PublicId::isValid($serverId, 'srv') || $signature === false || strlen($signature) !== SODIUM_CRYPTO_SIGN_BYTES) {
             return ReachabilityResult::failed('the answer was not launchroom’s check');
         }
 
         $server = Server::query()
             ->where('public_id', $serverId)
-            ->whereNull('revoked_at')
-            ->where('status', '!=', ServerStatus::Revoked->value)
+            ->notRevoked()
             ->first();
         $key = $server instanceof Server ? PublicKeyFormat::parseEd25519($server->signing_public_key) : null;
 

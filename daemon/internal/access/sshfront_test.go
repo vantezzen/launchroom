@@ -6,6 +6,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net"
@@ -89,7 +90,6 @@ func (t *fakeTTY) ExitCode(context.Context) (int, error) { return 3, nil }
 
 const testUser = "lr-abcdef0123"
 
-// sshServer starts a front end on 127.0.0.1 and returns its address.
 func sshServer(t *testing.T, o SSHOptions, allow string) (string, *endpoint, *fakeContainer, ssh.PublicKey) {
 	t.Helper()
 	signer, hk, err := NewHostKey()
@@ -213,8 +213,7 @@ func TestSSHPublicKeyShellPTYAndNoForwarding(t *testing.T) {
 		t.Fatal(err)
 	}
 	stdin, _ := s.StdinPipe()
-	var out bytes.Buffer
-	s.Stdout = &out
+	stdout, _ := s.StdoutPipe()
 	if ok, _ := s.SendRequest("auth-agent-req@openssh.com", true, nil); ok {
 		t.Fatal("agent forwarding was allowed")
 	}
@@ -232,16 +231,36 @@ func TestSSHPublicKeyShellPTYAndNoForwarding(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("no resize")
 	}
+	// The input comes back through the terminal before the shell exits.
+	echoed := make(chan error, 1)
+	go func() {
+		var seen []byte
+		buf := make([]byte, 64)
+		for !bytes.Contains(seen, []byte("hello")) {
+			n, err := stdout.Read(buf)
+			if err != nil {
+				echoed <- fmt.Errorf("output %q: %w", seen, err)
+				return
+			}
+			seen = append(seen, buf[:n]...)
+		}
+		echoed <- nil
+		_, _ = io.Copy(io.Discard, stdout)
+	}()
 	_, _ = stdin.Write([]byte("hello\r"))
-	time.Sleep(100 * time.Millisecond)
+	select {
+	case err := <-echoed:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("input not echoed")
+	}
 	_, _ = stdin.Write([]byte("exit\r"))
 	err = s.Wait()
 	var exit *ssh.ExitError
 	if !errors.As(err, &exit) || exit.ExitStatus() != 3 {
 		t.Fatalf("exit %v", err)
-	}
-	if !strings.Contains(out.String(), "hello") {
-		t.Fatalf("output %q", out.String())
 	}
 	c.mu.Lock()
 	first := c.execs[0]

@@ -8,8 +8,7 @@ use App\Enums\Concerns\HasTransitions;
 use App\Enums\Contracts\HasTransitionTable;
 
 /**
- * Test-only status enum exercising {@see HasTransitions}. Also analysed by
- * PHPStan so the trait is type-checked before a real status enum uses it.
+ * Test-only status enum exercising {@see HasTransitions}.
  */
 enum FakeDeploymentStatus: string implements HasTransitionTable
 {

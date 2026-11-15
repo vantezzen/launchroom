@@ -10,7 +10,6 @@ use App\Data\Audit\AuditActor;
 use App\Data\Audit\AuditEntryData;
 use App\Enums\AuditAction;
 use App\Enums\Moves\ControlPlaneMoveStatus;
-use App\Enums\Moves\ServerMoveStatus;
 use App\Exceptions\DomainRuleViolation;
 use App\Models\Moves\ControlPlaneMove;
 use App\Models\Moves\ServerMove;
@@ -46,7 +45,7 @@ final readonly class CancelControlPlaneMove
 
             $serverMove = $move->server_move_id === null ? null : ServerMove::query()->find($move->server_move_id);
 
-            if ($serverMove instanceof ServerMove && in_array($serverMove->status, [ServerMoveStatus::Running, ServerMoveStatus::Ready], true)) {
+            if ($serverMove instanceof ServerMove && $serverMove->status->isUnderway()) {
                 $this->cancelMove->handle($serverMove, $actor, fromControlPlaneMove: true);
             }
 

@@ -7,6 +7,7 @@ namespace App\Support\Security;
 use App\Data\Protocol\V1\Report;
 use App\Enums\Security\WafCategory;
 use App\Support\Metrics\MetricSamples;
+use App\Support\PublicId;
 use Carbon\CarbonImmutable;
 use Throwable;
 
@@ -24,8 +25,6 @@ final class WafSamples
     private const int MAX_AGE_MINUTES = 24 * 60;
 
     private const int MAX_FUTURE_MINUTES = 5;
-
-    private const string ROUTE = '/^rt_[0-9A-HJKMNP-TV-Z]{26}$/D';
 
     private const string TARGET = '/^[A-Z][A-Z_]{0,39}(?::[A-Za-z0-9_.\[\]-]{1,64})?$/D';
 
@@ -64,7 +63,7 @@ final class WafSamples
         $blocked = self::count($item['blocked'] ?? 0);
         $detected = self::count($item['detected'] ?? 0);
 
-        if (! is_string($route) || preg_match(self::ROUTE, $route) !== 1 || ! $at instanceof CarbonImmutable || $blocked === null || $detected === null
+        if (! is_string($route) || ! PublicId::isValid($route, 'rt') || ! $at instanceof CarbonImmutable || $blocked === null || $detected === null
             || $at->second !== 0 || $at->micro !== 0 || $at->minute % 10 !== 0 || $blocked + $detected < 1
             || $at->greaterThan($now->addMinutes(self::MAX_FUTURE_MINUTES)) || $at->lessThan($now->subMinutes(self::MAX_AGE_MINUTES))) {
             return null;

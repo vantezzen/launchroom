@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Data\Protocol\V1;
 
+use App\Data\Protocol\ProtocolDocument;
+use App\Support\Protocol\Grammar;
 use Spatie\LaravelData\Attributes\Validation\In;
 use Spatie\LaravelData\Attributes\Validation\Regex;
 use Spatie\LaravelData\Data;
@@ -14,13 +16,13 @@ use Spatie\LaravelData\Data;
 final class BroadcastAuthRequest extends Data
 {
     public function __construct(
-        #[In(['launchroom.vantezzen.io/v1'])]
+        #[In([ProtocolDocument::API_VERSION])]
         public string $apiVersion,
         #[In(['BroadcastAuthRequest'])]
         public string $kind,
-        #[Regex('/^[0-9]{1,20}\.[0-9]{1,20}$/D')]
+        #[Regex(Grammar::SOCKET_ID)]
         public string $socketId,
-        #[Regex('/^private-(?:daemon\.srv|session\.ses)_[0-9A-HJKMNP-TV-Z]{26}$/D')]
+        #[Regex('/^private-(?:daemon\.srv|session\.ses)_'.Grammar::ULID_BODY.'$/D')]
         public string $channel,
     ) {}
 }

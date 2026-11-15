@@ -10,6 +10,7 @@ use App\Models\Environment;
 use App\Models\Previews\PreviewSettings;
 use App\Models\User;
 use App\Services\Previews\PreviewAccess;
+use App\Services\Previews\PreviewAddress;
 use App\Services\Previews\PreviewUrls;
 use Illuminate\Container\Attributes\CurrentUser;
 use Illuminate\Http\RedirectResponse;
@@ -25,8 +26,8 @@ use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
  * {@see PreviewAccess}).
  *
  * `GET /auth/preview` is Caddy's forward-auth endpoint: no session, no CSRF,
- * it reads the original request from `X-Forwarded-Host`/`-Uri`/`-Method`
- * (set by the edge Caddy, which overwrites client-supplied values) and the
+ * it reads the original request ({@see PreviewAddress}, `X-Forwarded-Method`,
+ * set by the edge Caddy, which overwrites client-supplied values) and the
  * preview host's own cookie. 2xx lets the request through; other answers go
  * to the browser as they are (redirects with Set-Cookie for the preview host).
  * Calling it directly gains nothing: it only ever sets cookies for the host
@@ -39,9 +40,8 @@ final class PreviewAuthController extends Controller
 {
     public function check(Request $request, PreviewUrls $urls, PreviewAccess $access): Response|RedirectResponse
     {
-        $forwardedHost = strtolower(trim((string) $request->headers->get('X-Forwarded-Host', '')));
-        [$host, $port] = $this->splitHost($forwardedHost);
-        $uri = $this->path((string) $request->headers->get('X-Forwarded-Uri', '/')) ?? '/';
+        $address = PreviewAddress::parse((string) $request->headers->get('X-Forwarded-Host', ''), (string) $request->headers->get('X-Forwarded-Uri', '/'));
+        $host = $address->host;
         $method = strtoupper((string) $request->headers->get('X-Forwarded-Method', 'GET'));
 
         $target = $host === null ? null : $urls->resolve($host);
@@ -69,16 +69,14 @@ final class PreviewAuthController extends Controller
             return $this->text(200, 'ok');
         }
 
-        [$cleanUri, $token] = $this->extractToken($uri);
-
-        if ($token !== null) {
-            $cookie = $access->exchange($token, $environment, (string) $host);
+        if ($address->token !== null) {
+            $cookie = $access->exchange($address->token, $environment, (string) $host);
 
             if ($cookie === null) {
                 return $this->denied($request, 403, 'launchroom: this preview link is invalid, was revoked or has expired. Ask for a new one.', 'This link no longer works', 'It is invalid, was revoked or has expired. Ask for a new one.', $host);
             }
 
-            return $this->noStore(new RedirectResponse($this->origin((string) $host, $port).$cleanUri, 302))
+            return $this->noStore(new RedirectResponse($address->origin().$address->path, 302))
                 ->withCookie(new Cookie(
                     config()->string('launchroom.previews.cookie'),
                     $cookie['value'],
@@ -103,110 +101,35 @@ final class PreviewAuthController extends Controller
         }
 
         $start = rtrim(config()->string('app.url'), '/').'/auth/preview/start?'.http_build_query([
-            'host' => $port === null ? $host : "{$host}:{$port}",
-            'path' => $cleanUri,
+            'host' => $address->hostWithPort(),
+            'path' => $address->path,
         ]);
 
         return $this->noStore(new RedirectResponse($start, 302));
     }
 
-    /**
-     * Dashboard side: the signed-in member gets a single-use token for the
-     * preview host and is sent back there.
-     */
     public function start(Request $request, #[CurrentUser] User $user, PreviewUrls $urls, PreviewAccess $access): SymfonyResponse
     {
-        [$host, $port] = $this->splitHost(strtolower($request->string('host')->toString()));
-        $path = $this->path($request->string('path')->toString()) ?? '/';
-        $target = $host === null ? null : $urls->resolve($host);
+        $address = PreviewAddress::parse($request->string('host')->toString(), $request->string('path')->toString());
+        $target = $address->host === null ? null : $urls->resolve($address->host);
         $environment = $target['environment'] ?? null;
 
         // Only ever redirects to a routed preview host the user may view, on
         // the edges' public HTTPS port (no open redirect, no token sent to
         // another port of the host): unknown hosts 404, other teams' previews 403.
         $publicPort = config()->integer('launchroom.previews.https_port');
-        abort_unless($environment instanceof Environment && $environment->kind === EnvironmentKind::Preview && ($port ?? 443) === $publicPort, 404);
+        abort_unless($environment instanceof Environment && $environment->kind === EnvironmentKind::Preview && ($address->port ?? 443) === $publicPort, 404);
         Gate::authorize('view', $environment);
 
-        [$cleanPath] = $this->extractToken($path);
-        $token = $access->mintExchange($environment, (string) $host, $user);
-        $separator = str_contains($cleanPath, '?') ? '&' : '?';
+        $token = $access->mintExchange($environment, (string) $address->host, $user);
 
         // After an Inertia login form the intended URL is fetched by XHR,
         // which can't follow a cross-origin redirect: Inertia::location makes
         // the browser navigate instead (409 + X-Inertia-Location).
-        $response = Inertia::location($this->origin((string) $host, $port).$cleanPath.$separator.PreviewAccess::TOKEN_PARAMETER.'='.$token);
+        $response = Inertia::location($address->urlWithToken($token));
         $response->headers->set('Cache-Control', 'no-store');
 
         return $response;
-    }
-
-    /**
-     * @return array{string|null, int|null} hostname and optional port
-     */
-    private function splitHost(string $value): array
-    {
-        if (preg_match('/^([a-z0-9.-]{1,253})(?::([0-9]{1,5}))?$/D', $value, $m) !== 1) {
-            return [null, null];
-        }
-
-        $port = isset($m[2]) ? (int) $m[2] : null;
-
-        if ($port !== null && ($port < 1 || $port > 65535)) {
-            return [null, null];
-        }
-
-        return [$m[1], $port === 443 ? null : $port];
-    }
-
-    /**
-     * An origin-relative path (with query), or null: no scheme, no `//`
-     * (protocol-relative), no backslashes or control characters.
-     */
-    private function path(string $value): ?string
-    {
-        if ($value === '' || $value[0] !== '/' || str_starts_with($value, '//') || strlen($value) > 4096
-            || preg_match('/[\\\\\x00-\x1f\x7f]/', $value) === 1) {
-            return null;
-        }
-
-        return $value;
-    }
-
-    /**
-     * Splits the token query parameter off a path.
-     *
-     * @return array{string, string|null}
-     */
-    private function extractToken(string $uri): array
-    {
-        $parts = explode('?', $uri, 2);
-
-        if (count($parts) < 2) {
-            return [$uri, null];
-        }
-
-        $token = null;
-        $kept = [];
-
-        foreach (explode('&', $parts[1]) as $pair) {
-            if (str_starts_with($pair, PreviewAccess::TOKEN_PARAMETER.'=')) {
-                $token = urldecode(substr($pair, strlen(PreviewAccess::TOKEN_PARAMETER) + 1));
-
-                continue;
-            }
-
-            if ($pair !== '') {
-                $kept[] = $pair;
-            }
-        }
-
-        return [$parts[0].($kept === [] ? '' : '?'.implode('&', $kept)), $token];
-    }
-
-    private function origin(string $host, ?int $port): string
-    {
-        return 'https://'.$host.($port === null ? '' : ':'.$port);
     }
 
     /**

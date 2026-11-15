@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vantezzen/launchroom/daemon/internal/build"
 	"github.com/vantezzen/launchroom/daemon/internal/docker"
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/secret"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
@@ -39,7 +39,7 @@ type fakeDocker struct {
 func (f *fakeDocker) ListContainers(_ context.Context, labels map[string]string) ([]docker.Container, error) {
 	var out []docker.Container
 	for _, c := range f.containers {
-		if c.Labels[docker.LabelWorkload] == labels[docker.LabelWorkload] {
+		if c.Labels[names.LabelWorkload] == labels[names.LabelWorkload] {
 			out = append(out, c)
 		}
 	}
@@ -79,7 +79,7 @@ func (f *fakeDocker) ImageID(_ context.Context, ref string) (string, error) {
 }
 
 func labels(extra map[string]string) map[string]string {
-	l := map[string]string{docker.LabelManaged: "true", docker.LabelServer: "srv_x", docker.LabelWorkload: string(wl)}
+	l := map[string]string{names.LabelManaged: "true", names.LabelServer: "srv_x", names.LabelWorkload: string(wl)}
 	for k, v := range extra {
 		l[k] = v
 	}
@@ -104,7 +104,7 @@ func options(d *fakeDocker, env map[string]secret.Secret) Options {
 
 func running() docker.Container {
 	return docker.Container{
-		ID: ctrID, Name: "lr-wl_01j9z8x7w6v5t4s3r2q1p0n9n7", Labels: labels(nil), Running: true, ImageID: imageID,
+		ID: ctrID, Name: "lr-wl_01j9z8x7w6v5t4s3r2q1p0n9n7", Labels: labels(nil), State: docker.StateRunning, ImageID: imageID,
 		StartedAt: time.Date(2026, 10, 24, 9, 0, 0, 0, time.UTC), RestartCount: 2, WorkingDir: "/app", User: "node",
 	}
 }
@@ -113,9 +113,9 @@ func TestInspectClassifies(t *testing.T) {
 	d := &fakeDocker{
 		containers: []docker.Container{
 			// A stopped duplicate never hides the running container; system and task containers are skipped.
-			{ID: strings.Repeat("3", 64), Name: "lr-wl_old", Labels: labels(nil), Running: false},
-			{ID: strings.Repeat("4", 64), Name: "lr-system-caddy", Labels: labels(map[string]string{docker.LabelSystem: "caddy"}), Running: true},
-			{ID: strings.Repeat("5", 64), Name: "lr-run-x", Labels: labels(map[string]string{docker.LabelTask: "tsk_x"}), Running: true},
+			{ID: strings.Repeat("3", 64), Name: "lr-wl_old", Labels: labels(nil), State: docker.StateExited},
+			{ID: strings.Repeat("4", 64), Name: "lr-system-caddy", Labels: labels(map[string]string{names.LabelSystem: "caddy"}), State: docker.StateRunning},
+			{ID: strings.Repeat("5", 64), Name: "lr-run-x", Labels: labels(map[string]string{names.LabelTask: "tsk_x"}), State: docker.StateRunning},
 			running(),
 		},
 		images: map[string]string{string(spec.Image): imageID},
@@ -167,7 +167,6 @@ func TestInspectClassifies(t *testing.T) {
 		t.Errorf("container facts: %+v", res)
 	}
 
-	// Collapsed caches.
 	got := map[state.InspectedPath]int{}
 	for _, c := range res.Changes.Collapsed {
 		got[c.Prefix] = c.Count
@@ -218,7 +217,6 @@ func TestInspectClassifies(t *testing.T) {
 		t.Errorf("order: %v", res.Changes.Entries)
 	}
 
-	// Processes.
 	procs := map[int]state.ContainerProcess{}
 	for _, p := range res.Processes.Entries {
 		procs[p.PID] = p
@@ -247,7 +245,7 @@ func TestInspectClassifies(t *testing.T) {
 	}
 
 	// The result is a valid completion.
-	done := state.TaskCompletion{TypeMeta: state.NewTypeMeta(state.KindTaskCompletion), Attempt: 1, Outcome: state.OutcomeSucceeded, ContainerInspection: res}
+	done := state.TaskCompletion{TypeMeta: state.NewTypeMeta(state.KindTaskCompletion), Attempt: 1, Outcome: state.OutcomeSucceeded, TaskResults: state.TaskResults{ContainerInspection: res}}
 	if err := done.Validate(); err != nil {
 		t.Fatalf("completion invalid: %v", err)
 	}
@@ -266,7 +264,7 @@ func TestInspectFailures(t *testing.T) {
 	}
 	// Only a stopped container.
 	stopped := running()
-	stopped.Running = false
+	stopped.State = docker.StateExited
 	d = &fakeDocker{containers: []docker.Container{stopped}}
 	if _, err := Inspect(ctx, options(d, nil), &state.InspectContainerSpec{Workload: wl}); !errors.Is(err, ErrNotRunning) {
 		t.Errorf("stopped: %v", err)
@@ -275,7 +273,7 @@ func TestInspectFailures(t *testing.T) {
 	sys := running()
 	sys.Name = "lr-system-ambassador"
 	helper := running()
-	helper.Labels = labels(map[string]string{docker.LabelHelper: "volume"})
+	helper.Labels = labels(map[string]string{names.LabelHelper: "volume"})
 	d = &fakeDocker{containers: []docker.Container{sys, helper}}
 	if _, err := Inspect(ctx, options(d, nil), &state.InspectContainerSpec{Workload: wl}); err == nil || errors.Is(err, ErrNotRunning) {
 		t.Errorf("system/helper container inspected: %v", err)
@@ -283,7 +281,7 @@ func TestInspectFailures(t *testing.T) {
 	// The container stopped between changes and top.
 	gone := running()
 	d = &fakeDocker{containers: []docker.Container{gone}, topErr: errors.New("is not running")}
-	d.containers[0].Running = true
+	d.containers[0].State = docker.StateRunning
 	opts := options(d, nil)
 	inner := d
 	opts.Docker = &stopAfterList{fakeDocker: inner}
@@ -308,7 +306,7 @@ func (s *stopAfterList) InspectContainer(ctx context.Context, id string) (docker
 	s.inspects++
 	c, err := s.fakeDocker.InspectContainer(ctx, id)
 	if s.inspects > 1 {
-		c.Running = false
+		c.State = docker.StateExited
 	}
 	return c, err
 }
@@ -336,7 +334,7 @@ func TestLimits(t *testing.T) {
 	if len(res.Processes.Entries) != state.MaxInspectionProcesses || !res.Processes.Truncated || res.Processes.Total != 300 || len(res.Processes.Entries[0].Command) != maxCommand {
 		t.Errorf("processes: %d, truncated %v", len(res.Processes.Entries), res.Processes.Truncated)
 	}
-	done := state.TaskCompletion{TypeMeta: state.NewTypeMeta(state.KindTaskCompletion), Attempt: 1, Outcome: state.OutcomeSucceeded, ContainerInspection: res}
+	done := state.TaskCompletion{TypeMeta: state.NewTypeMeta(state.KindTaskCompletion), Attempt: 1, Outcome: state.OutcomeSucceeded, TaskResults: state.TaskResults{ContainerInspection: res}}
 	if err := done.Validate(); err != nil {
 		t.Fatal(err)
 	}
@@ -386,13 +384,6 @@ func TestCollapsePrefix(t *testing.T) {
 	}
 }
 
-func TestMaskValuesMatchRunOnce(t *testing.T) {
-	m := build.NewMasker(maskValues(map[string]secret.Secret{"U": secret.Secret("https://user:hunter22@x.example/")}, []state.EnvName{"U"})...)
-	if got := m.Mask("pw=hunter22 url=https://user:hunter22@x.example/"); strings.Contains(got, "hunter22") {
-		t.Errorf("masked = %q", got)
-	}
-}
-
 // busybox ps (no PPID column): only the first process is the entry; the
 // result says parents are unknown instead of calling every process an entry.
 func TestProcessesWithoutParents(t *testing.T) {
@@ -424,7 +415,7 @@ func TestProcessesWithoutParents(t *testing.T) {
 			t.Errorf("ppid %d", e.PPID)
 		}
 	}
-	done := state.TaskCompletion{TypeMeta: state.NewTypeMeta(state.KindTaskCompletion), Attempt: 1, Outcome: state.OutcomeSucceeded, ContainerInspection: res}
+	done := state.TaskCompletion{TypeMeta: state.NewTypeMeta(state.KindTaskCompletion), Attempt: 1, Outcome: state.OutcomeSucceeded, TaskResults: state.TaskResults{ContainerInspection: res}}
 	if err := done.Validate(); err != nil {
 		t.Fatal(err)
 	}

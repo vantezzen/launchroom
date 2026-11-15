@@ -1,9 +1,9 @@
 import { Head } from '@inertiajs/react';
 import { Page } from '@/components/patterns/page';
-import { LogExplorer } from '@/features/project-logs/log-explorer';
-import type { ProjectShellProps } from '@/features/projects/types';
+import { LogExplorer } from '@/features/log-explorer/log-explorer';
+import ProjectLayout from '@/features/app-shell/project-layout';
 
-type Props = ProjectShellProps & {
+type Props = App.Data.Canvas.ProjectShellPropsData & {
     services: { id: string; name: string; slug: string }[];
 };
 
@@ -43,3 +43,5 @@ export default function ProjectLogs({ project, environment, services }: Props) {
         </>
     );
 }
+
+ProjectLogs.layout = ProjectLayout;

@@ -27,15 +27,15 @@ type NodeState struct {
 	// System lists launchroom's own sibling containers for this server's roles.
 	System SystemSpec `json:"system"`
 	// Networks are the per-(project, environment) bridge networks on this server.
-	Networks []NetworkSpec `json:"networks"`
+	Networks []NetworkSpec `json:"networks" jsonschema:"maxItems=1024"`
 	// Volumes are named, launchroom-labelled volumes on this server.
-	Volumes []VolumeSpec `json:"volumes"`
+	Volumes []VolumeSpec `json:"volumes" jsonschema:"maxItems=1024"`
 	// Workloads are the app containers to run.
-	Workloads []WorkloadSpec `json:"workloads"`
+	Workloads []WorkloadSpec `json:"workloads" jsonschema:"maxItems=1024"`
 	// Ambassadors forward network-local aliases to services on other servers (docs/05 §3).
-	Ambassadors []AmbassadorSpec `json:"ambassadors"`
+	Ambassadors []AmbassadorSpec `json:"ambassadors" jsonschema:"maxItems=1024"`
 	// Routes is the ingress route table (edge servers only; empty elsewhere).
-	Routes []RouteSpec `json:"routes"`
+	Routes []RouteSpec `json:"routes" jsonschema:"maxItems=1024"`
 	// Ingress configures certificate storage and DNS-01 for the edge's Caddy
 	// (edge servers only; omitted when Caddy's defaults suffice).
 	Ingress *IngressSpec `json:"ingress,omitzero" jsonschema:"nullable"`
@@ -44,7 +44,7 @@ type NodeState struct {
 	// DeleteVolumes explicitly asks launchroomd to delete volumes of deleted
 	// environments, services or previews (docs/05 §1.1). Volumes are never
 	// deleted just because they left `volumes`. Omitted when empty.
-	DeleteVolumes []VolumeDeletion `json:"deleteVolumes,omitzero" jsonschema:"nullable"`
+	DeleteVolumes []VolumeDeletion `json:"deleteVolumes,omitzero" jsonschema:"nullable,maxItems=1024"`
 }
 
 // VolumeDeletion is one explicit volume deletion request. launchroomd deletes
@@ -74,12 +74,41 @@ type SystemSpec struct {
 	CertStorage CertStorageMeshSpec `json:"certStorage,omitzero"`
 	// LinkProbe measures the private-network links to the listed peers and
 	// answers their probes on <mesh IP>:7400 (docs/05 §2.1). Omitted when off.
-	LinkProbe LinkProbeSpec `json:"linkProbe,omitzero"`
+	LinkProbe LinkProbeSpec `json:"linkProbe,omitzero" lr:"feature=linkProbe"`
 	// ControlPlane is the dashboard's canonical public origin (docs/03 §4.2);
 	// omitted on the control-plane host and for daemons without the
 	// controlPlaneUrl feature.
-	ControlPlane ControlPlaneSpec `json:"controlPlane,omitzero"`
+	ControlPlane ControlPlaneSpec `json:"controlPlane,omitzero" lr:"feature=controlPlaneUrl"`
 }
+
+// Workload returns the workload with id (nil: not in this document).
+func (s *NodeState) Workload(id WorkloadID) *WorkloadSpec {
+	for i := range s.Workloads {
+		if s.Workloads[i].ID == id {
+			return &s.Workloads[i]
+		}
+	}
+	return nil
+}
+
+// Network returns the network with id (nil: not in this document).
+func (s *NodeState) Network(id NetworkID) *NetworkSpec {
+	for i := range s.Networks {
+		if s.Networks[i].ID == id {
+			return &s.Networks[i]
+		}
+	}
+	return nil
+}
+
+// RegistryAddress is where Docker on every server pulls launchroom's images
+// from: the local registry forwarder (or Zot itself on the control-plane
+// host). EnrollResponse.registry.address carries it.
+const RegistryAddress = "127.0.0.1:5000"
+
+// RegistryMeshPort is where the control-plane host serves the registry on
+// its mesh IP (docs/05 §6).
+const RegistryMeshPort = 5000
 
 // CertStorageMeshPort is where the control-plane host serves its Valkey on
 // its mesh IP (system.certStorage, docs/05 §5).
@@ -113,7 +142,7 @@ type TailscaleSpec struct {
 	LoginServer MeshLoginURL `json:"loginServer,omitzero"`
 	// Tags are ACL tags to advertise (--advertise-tags) such as "tag:lr-edge".
 	// Omitted with the embedded Headscale, whose pre-auth keys carry the tags.
-	Tags []TailscaleTag `json:"tags,omitzero"`
+	Tags []TailscaleTag `json:"tags,omitzero" jsonschema:"maxItems=16"`
 	// AuthKey is a pre-auth key sealed to this daemon (plaintext: MeshAuthKey,
 	// bound to this server). Only present until the server has joined the
 	// mesh; launchroomd uses it when the client needs to log in and never
@@ -146,7 +175,7 @@ type VolumeSpec struct {
 	// other services of the same environment mount it too (a shared volume,
 	// daemon feature sharedVolumes, D73). Without it every workload that
 	// mounts the volume must belong to one service. Never across environments.
-	Service ServiceID `json:"service,omitzero"`
+	Service ServiceID `json:"service,omitzero" lr:"feature=sharedVolumes"`
 }
 
 // WorkloadSpec is one app container (one replica of one service in one deployment).
@@ -171,11 +200,11 @@ type WorkloadSpec struct {
 	// Resources are mandatory limits (policy floor).
 	Resources Resources `json:"resources"`
 	// Capabilities to add on top of cap-drop ALL; must be in the local allow-list.
-	Capabilities []Capability `json:"capabilities,omitzero" jsonschema:"nullable"`
+	Capabilities []Capability `json:"capabilities,omitzero" jsonschema:"nullable,maxItems=16"`
 	// Networks to attach, with DNS aliases (service slugs). The first is the primary network.
-	Networks []NetworkAttachment `json:"networks" jsonschema:"minItems=1"`
+	Networks []NetworkAttachment `json:"networks" jsonschema:"minItems=1,maxItems=16"`
 	// Mounts of named volumes. Bind mounts do not exist in the protocol.
-	Mounts []Mount `json:"mounts,omitzero" jsonschema:"nullable"`
+	Mounts []Mount `json:"mounts,omitzero" jsonschema:"nullable,maxItems=32"`
 	// PublishOnMesh publishes Port on the server's mesh IP when consumed from other servers.
 	PublishOnMesh *MeshPublish `json:"publishOnMesh,omitzero" jsonschema:"nullable"`
 	// Restart is the Docker restart policy.
@@ -187,27 +216,27 @@ type WorkloadSpec struct {
 	// ShipLogs makes launchroomd follow the workload's container logs and
 	// ship them continuously as workload chunks (runtime log retention,
 	// opt-in per environment). It never changes the container.
-	ShipLogs bool `json:"shipLogs,omitzero"`
+	ShipLogs bool `json:"shipLogs,omitzero" lr:"feature=shipLogs"`
 	// WalArchive makes launchroomd ship the WAL segments Postgres archives
 	// into a directory of the workload's volume (point-in-time recovery,
 	// docs/14 §10). It never changes the container.
-	WalArchive *WalArchiveSpec `json:"walArchive,omitzero" jsonschema:"nullable"`
+	WalArchive *WalArchiveSpec `json:"walArchive,omitzero" jsonschema:"nullable" lr:"feature=pointInTime"`
 	// Stop is how the container is stopped (daemon feature "stopSpec";
 	// database engines, docs/03 §8). Omitted: the image's stop signal
 	// through the init process and launchroomd's default grace period.
-	Stop *StopSpec `json:"stop,omitzero" jsonschema:"nullable"`
+	Stop *StopSpec `json:"stop,omitzero" jsonschema:"nullable" lr:"feature=stopSpec"`
 	// Schedule makes the workload a scheduled job (daemon feature
 	// "cronSchedule", cron services): launchroomd creates the container
 	// without starting it and starts it at every due minute of the cron
 	// expression in the time zone, unless the previous run still runs.
 	// Requires restart "no" and no port, health or mesh publication.
-	Schedule *ScheduleSpec `json:"schedule,omitzero" jsonschema:"nullable"`
+	Schedule *ScheduleSpec `json:"schedule,omitzero" jsonschema:"nullable" lr:"feature=cronSchedule"`
 	// Files are literal text files launchroomd writes into the container
 	// after creating it and before starting it (daemon feature
 	// "configFiles"): regular files, mode 0444, owner 0:0, never inside a
 	// mount target. They are config, not secrets: programs read secrets
 	// from the environment.
-	Files []ConfigFile `json:"files,omitzero" jsonschema:"nullable,maxItems=32"`
+	Files []ConfigFile `json:"files,omitzero" jsonschema:"nullable,maxItems=32" lr:"feature=configFiles"`
 }
 
 // CronExpr is a 5-field cron expression (package cronexpr's grammar).
@@ -273,6 +302,9 @@ func (s *StopSpec) validate(e *errs, p string) {
 	}
 }
 
+// MaxHealthDuration bounds a health check's startPeriod, interval and timeout.
+const MaxHealthDuration = time.Hour
+
 // HealthSpec configures an external HTTP or TCP probe against container IP:port.
 type HealthSpec struct {
 	Type HealthType `json:"type"`
@@ -296,7 +328,7 @@ type Resources struct {
 // NetworkAttachment attaches a workload to a network with DNS aliases.
 type NetworkAttachment struct {
 	Network NetworkID `json:"network"`
-	Aliases []Slug    `json:"aliases"`
+	Aliases []Slug    `json:"aliases" jsonschema:"maxItems=16"`
 }
 
 // Mount mounts a named volume declared in NodeState.volumes.
@@ -316,13 +348,13 @@ type AmbassadorSpec struct {
 	Network   NetworkID  `json:"network"`
 	Alias     Slug       `json:"alias"`
 	Port      Port       `json:"port"`
-	Upstreams []AddrPort `json:"upstreams" jsonschema:"minItems=1"`
+	Upstreams []AddrPort `json:"upstreams" jsonschema:"minItems=1,maxItems=64"`
 }
 
 // RouteSpec is an ingress route rendered into Caddy config (docs/05 §4).
 type RouteSpec struct {
 	ID    RouteID    `json:"id"`
-	Hosts []Hostname `json:"hosts" jsonschema:"minItems=1"`
+	Hosts []Hostname `json:"hosts" jsonschema:"minItems=1,maxItems=100"`
 	TLS   TLSMode    `json:"tls"`
 	// RedirectWWWTo redirects every other host of the route to this one (www ↔ apex); must be one of Hosts.
 	RedirectWWWTo Hostname `json:"redirectWwwTo,omitzero"`
@@ -335,7 +367,7 @@ type RouteSpec struct {
 	// Stopped answers every request with the edge's "stopped" page (503)
 	// instead of proxying: the service was stopped in launchroom (D68,
 	// daemon feature serviceStop). A stopped route has no upstreams.
-	Stopped bool `json:"stopped,omitzero"`
+	Stopped bool `json:"stopped,omitzero" lr:"feature=serviceStop"`
 	// Headers are response headers to set (e.g. X-Robots-Tag on non-production).
 	// An empty value removes the header. Values must not contain { or }.
 	Headers map[HeaderName]string `json:"headers,omitzero" jsonschema:"nullable"`
@@ -347,10 +379,10 @@ type RouteSpec struct {
 	// ClientAuth verifies daemon client certificates (mTLS, D50, docs/03
 	// §4.3; daemon feature clientCertificates). Only the dashboard's system
 	// routes on the control-plane server carry it.
-	ClientAuth *RouteClientAuth `json:"clientAuth,omitzero" jsonschema:"nullable"`
+	ClientAuth *RouteClientAuth `json:"clientAuth,omitzero" jsonschema:"nullable" lr:"feature=clientCertificates"`
 	// Waf turns on the web firewall for the route (docs/22 §6, docs/03
 	// §13.3; daemon feature waf). Omitted: off.
-	Waf *RouteWaf `json:"waf,omitzero" jsonschema:"nullable"`
+	Waf *RouteWaf `json:"waf,omitzero" jsonschema:"nullable" lr:"feature=waf"`
 }
 
 // RouteProtection guards a route.
@@ -414,13 +446,13 @@ func (u RouteUpstream) validate(e *errs, p string, workloads map[WorkloadID]bool
 
 // FirewallSpec holds nftables allow-lists.
 type FirewallSpec struct {
-	MeshAllow []MeshAllowRule `json:"meshAllow"`
+	MeshAllow []MeshAllowRule `json:"meshAllow" jsonschema:"maxItems=1024"`
 }
 
 // MeshAllowRule allows a mesh-published port from specific peer mesh IPs.
 type MeshAllowRule struct {
 	Port MeshPort `json:"port"`
-	From []IPAddr `json:"from" jsonschema:"minItems=1"`
+	From []IPAddr `json:"from" jsonschema:"minItems=1,maxItems=256"`
 }
 
 // Validate checks grammar, ranges and cross-references. It does not apply the
@@ -718,7 +750,7 @@ func (h *HealthSpec) validate(e *errs, p string) {
 	}
 	for name, d := range map[string]Duration{"startPeriod": h.StartPeriod, "interval": h.Interval, "timeout": h.Timeout} {
 		e.check(p+"."+name, d)
-		if d.Std() > time.Hour {
+		if d.Std() > MaxHealthDuration {
 			e.addf(p+"."+name, "must be at most 1h")
 		}
 	}

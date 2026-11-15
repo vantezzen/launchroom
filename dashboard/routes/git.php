@@ -15,9 +15,9 @@ use App\Http\Controllers\Git\GitSettingsController;
 use Illuminate\Support\Facades\Route;
 
 /*
-| GitHub integration (docs/06 §2, docs/09 R17–R20). Registered from
+| Git providers (docs/06 §2, docs/19, docs/09 R17–R20). Registered from
 | bootstrap/app.php; the dashboard routes get the `web` group here, the
-| webhook deliberately doesn't (no session, cookies or CSRF).
+| webhooks deliberately don't (no session, cookies or CSRF).
 */
 
 Route::middleware(['web', 'auth', 'verified'])->group(function (): void {
@@ -75,13 +75,19 @@ Route::middleware(['web', 'auth', 'verified'])->group(function (): void {
 });
 
 // Public: authenticated by the connection's secret (fail closed, docs/19 §5).
+// `{connection}` is a git connection's id here, not a canvas connection's:
+// any value reaches the action, which answers a malformed one like a bad
+// signature.
 Route::post('webhooks/gitlab/{connection}', [ConnectionWebhookController::class, 'gitlab'])
+    ->where('connection', '[^/]+')
     ->middleware('throttle:github-webhooks')
     ->name('git.webhooks.gitlab');
 Route::post('webhooks/gitea/{connection}', [ConnectionWebhookController::class, 'gitea'])
+    ->where('connection', '[^/]+')
     ->middleware('throttle:github-webhooks')
     ->name('git.webhooks.gitea');
 Route::post('webhooks/git/{connection}', [ConnectionWebhookController::class, 'git'])
+    ->where('connection', '[^/]+')
     ->middleware('throttle:github-webhooks')
     ->name('git.webhooks.git');
 

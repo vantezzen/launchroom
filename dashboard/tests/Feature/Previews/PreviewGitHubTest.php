@@ -7,7 +7,7 @@ use App\Actions\Previews\SweepOrphanPreviews;
 use App\Actions\Services\CreateService;
 use App\Data\Audit\AuditActor;
 use App\Data\Services\CreateServiceData;
-use App\Enums\Previews\PreviewProvider;
+use App\Enums\Git\GitProviderKind;
 use App\Enums\Previews\PreviewStatus;
 use App\Enums\ServiceKind;
 use App\Models\Previews\Preview;
@@ -76,7 +76,7 @@ test('a pull_request webhook creates the preview with the PR’s changed files; 
     GitHubFake::webhook($this, $this->githubApp, 'pull_request', pgPayload())->assertStatus(202);
 
     $preview = Preview::query()->sole();
-    expect($preview->provider)->toBe(PreviewProvider::GitHub)
+    expect($preview->provider)->toBe(GitProviderKind::GitHub)
         ->and($preview->repository_name)->toBe('octo-org/web')
         ->and($preview->changed_files)->toBe(['src/app.ts', 'README.md'])
         ->and($preview->environment?->slug)->toBe('pr-42');

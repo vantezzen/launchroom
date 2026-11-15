@@ -74,7 +74,6 @@ export function ShotFrame({
     );
 }
 
-/** A card with a cut-out of a screenshot on top and a short text below. */
 export function ShotCard({
     id,
     region,
@@ -108,7 +107,6 @@ export function ShotCard({
     );
 }
 
-/** A plain card with a title and a list of short facts, each with a check. */
 export function CheckCard({
     title,
     items,

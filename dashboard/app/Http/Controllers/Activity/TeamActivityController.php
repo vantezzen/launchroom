@@ -6,13 +6,13 @@ namespace App\Http\Controllers\Activity;
 
 use App\Data\Activity\ActivityFiltersData;
 use App\Data\Canvas\ProjectLinkData;
-use App\Data\Security\AuditVerificationData;
 use App\Http\Controllers\Controller;
-use App\Http\Controllers\Teams\TeamSettingsController;
+use App\Http\Routing\CurrentTeam;
+use App\Models\InstanceSettings;
 use App\Models\Project;
+use App\Models\Team;
 use App\Models\User;
 use App\Queries\TeamActivity;
-use App\Services\Audit\AuditVerificationStatus;
 use Illuminate\Container\Attributes\CurrentUser;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -26,9 +26,8 @@ use Inertia\Response;
  */
 final class TeamActivityController extends Controller
 {
-    public function __invoke(Request $request, #[CurrentUser] User $user, TeamActivity $activity, AuditVerificationStatus $verification): Response
+    public function __invoke(Request $request, #[CurrentUser] User $user, TeamActivity $activity, #[CurrentTeam] Team $team): Response
     {
-        $team = TeamSettingsController::currentTeam($user);
         Gate::authorize('viewAny', [Project::class, $team]);
         $filters = ActivityFiltersData::validateAndCreate($request->query());
 
@@ -51,8 +50,8 @@ final class TeamActivityController extends Controller
             'filters' => ['project' => $filters->project, 'kind' => $filters->kind],
             // "Audit log verified ✓ up to <time>" (docs/09 R34): instance-wide, no details.
             'auditVerification' => $user->is_instance_owner === true
-                ? AuditVerificationData::fromStatus($verification->current())
-                : AuditVerificationData::fromStatus($verification->current())?->withoutDetails(),
+                ? InstanceSettings::current()->audit_verification
+                : InstanceSettings::current()->audit_verification?->withoutDetails(),
         ]);
     }
 }

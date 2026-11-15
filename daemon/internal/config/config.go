@@ -176,14 +176,11 @@ type Config struct {
 	HTTPSRedirectPort int
 	// RegistryUpstream is the registry forwarder target when the NodeState sets none ("" = none).
 	RegistryUpstream string
-	// BuildSlots bounds concurrent builds and plans.
-	BuildSlots int
+	BuildSlots       int
 	// InteractiveSessions is LR_INTERACTIVE_SESSIONS: "on", "console", "data" or "off".
 	InteractiveSessions string
-	// BuildSubnet is the system build network.
-	BuildSubnet netip.Prefix
-	// InsecureGitHosts may be cloned over plain http.
-	InsecureGitHosts []string
+	BuildSubnet         netip.Prefix
+	InsecureGitHosts    []string
 	// BuildkitMemoryMB and BuildkitCPUs limit buildkitd (0 = derived from the host).
 	BuildkitMemoryMB int
 	BuildkitCPUs     float64
@@ -194,9 +191,8 @@ type Config struct {
 	DataTransfers bool
 	// RemoteAccess is LR_REMOTE_ACCESS: "on", "off" or a list of kinds ("ssh,volume").
 	RemoteAccess string
-	// RemoteAccessPorts is LR_REMOTE_ACCESS_PORTS ("lo-hi", checked by internal/access).
-	RemoteAccessPorts string
-	// BackupInsecureHosts may be used as plain-http S3 endpoints.
+	// RemoteAccessPorts is LR_REMOTE_ACCESS_PORTS.
+	RemoteAccessPorts   PortRange
 	BackupInsecureHosts []string
 	// AllowedLocalUpstreams are route address upstreams allowed outside the mesh range.
 	AllowedLocalUpstreams []netip.AddrPort
@@ -205,14 +201,11 @@ type Config struct {
 	// SystemImageDigests are extra accepted system image digests per component.
 	SystemImageDigests map[string][]string
 	// Firewall is "enforce" or "off".
-	Firewall string
-	// FirewallAllowPrivate are private destinations containers may reach.
-	FirewallAllowPrivate []netip.Prefix
-	// MeshInsecureLoginHosts may serve as plain-http mesh login servers (dev only).
+	Firewall               string
+	FirewallAllowPrivate   []netip.Prefix
 	MeshInsecureLoginHosts []string
 	// AmbassadorBinary is the forwarder binary the ambassador image is built from.
 	AmbassadorBinary string
-	// AmbassadorSubnet is the ambassador's own network.
 	AmbassadorSubnet netip.Prefix
 	// CertStorageUpstream is the local Valkey (host:port) served on the mesh
 	// IP when the NodeState asks for it (control-plane host).
@@ -333,6 +326,7 @@ func Load(args []string, env Lookup, readFile func(string) ([]byte, error)) (Con
 	}
 	cfg.SystemImageDigests = digests
 
+	errs = append(errs, loadSwitches(&cfg, get)...)
 	errs = append(errs, loadFirewallConfig(&cfg, get)...)
 	cfg.HostTimezone = strings.TrimSpace(get(EnvHostTimezone))
 	if hostOS := state.HostOS(strings.ToLower(strings.TrimSpace(get(EnvHostOS)))); hostOS.Validate() == nil {
@@ -358,29 +352,28 @@ func Load(args []string, env Lookup, readFile func(string) ([]byte, error)) (Con
 	return cfg, nil
 }
 
+func loadSwitches(cfg *Config, get func(string) string) []error {
+	var errs []error
+	on := func(name string) bool {
+		switch v := strings.ToLower(get(name)); v {
+		case "", "on":
+			return true
+		case "off":
+			return false
+		default:
+			errs = append(errs, fmt.Errorf("config: %s must be on or off, got %q", name, v))
+			return true
+		}
+	}
+	cfg.LinkProbeOff = !on(EnvLinkProbe)
+	cfg.ControlPlaneFollowOff = !on(EnvControlPlaneFollow)
+	cfg.PublicIPDetectOff = !on(EnvPublicIPDetect)
+	cfg.DataTransfers = on(EnvDataTransfers)
+	return errs
+}
+
 func loadFirewallConfig(cfg *Config, get func(string) string) []error {
 	var errs []error
-	switch v := strings.ToLower(get(EnvLinkProbe)); v {
-	case "", "on":
-	case "off":
-		cfg.LinkProbeOff = true
-	default:
-		errs = append(errs, fmt.Errorf("config: %s must be on or off, got %q", EnvLinkProbe, v))
-	}
-	switch v := strings.ToLower(get(EnvControlPlaneFollow)); v {
-	case "", "on":
-	case "off":
-		cfg.ControlPlaneFollowOff = true
-	default:
-		errs = append(errs, fmt.Errorf("config: %s must be on or off, got %q", EnvControlPlaneFollow, v))
-	}
-	switch v := strings.ToLower(get(EnvPublicIPDetect)); v {
-	case "", "on":
-	case "off":
-		cfg.PublicIPDetectOff = true
-	default:
-		errs = append(errs, fmt.Errorf("config: %s must be on or off, got %q", EnvPublicIPDetect, v))
-	}
 	if ips, err := publicip.ParseConfigured(get(EnvPublicIPs)); err != nil {
 		errs = append(errs, fmt.Errorf("config: %s: %w", EnvPublicIPs, err))
 	} else {
@@ -423,12 +416,16 @@ func parseAddrPorts(name, v string) ([]netip.AddrPort, error) {
 
 var reDigest = regexp.MustCompile(`^sha256:[a-f0-9]{64}$`)
 
-// ParseSystemImageDigests parses LR_SYSTEM_IMAGE_DIGESTS (also read by dockerd-guard).
-func ParseSystemImageDigests(v string) (map[string][]string, error) {
-	return parseSystemImageDigests(v)
+func parseInteractiveSessions(v string) (string, error) {
+	switch v = strings.ToLower(v); v {
+	case "":
+		return "on", nil
+	case "on", "console", "data", "off":
+		return v, nil
+	}
+	return "on", fmt.Errorf("config: %s must be on, console, data or off, got %q", EnvInteractiveSessions, v)
 }
 
-// parseSystemImageDigests parses "component=sha256:…,…" (components: caddy, buildkit).
 func parseSystemImageDigests(v string) (map[string][]string, error) {
 	var out map[string][]string
 	for _, item := range strings.Split(v, ",") {
@@ -549,7 +546,6 @@ func FromProcess() (Config, error) {
 	return Load(os.Args[1:], os.LookupEnv, os.ReadFile)
 }
 
-// loadBuildConfig reads the registry forwarder and build settings.
 func loadBuildConfig(cfg *Config, get func(string) string) []error {
 	var errs []error
 	if up := get(EnvRegistryUpstream); up != "" {
@@ -559,25 +555,11 @@ func loadBuildConfig(cfg *Config, get func(string) string) []error {
 		}
 		cfg.RegistryUpstream = up
 	}
-	cfg.InteractiveSessions = "on"
-	if v := strings.ToLower(strings.TrimSpace(get(EnvInteractiveSessions))); v != "" {
-		switch v {
-		case "on", "console", "data", "off":
-			cfg.InteractiveSessions = v
-		default:
-			errs = append(errs, fmt.Errorf("config: %s must be on, console, data or off, got %q", EnvInteractiveSessions, v))
-		}
+	sessions, err := parseInteractiveSessions(get(EnvInteractiveSessions))
+	if err != nil {
+		errs = append(errs, err)
 	}
-	cfg.DataTransfers = true
-	if v := strings.ToLower(strings.TrimSpace(get(EnvDataTransfers))); v != "" {
-		switch v {
-		case "on":
-		case "off":
-			cfg.DataTransfers = false
-		default:
-			errs = append(errs, fmt.Errorf("config: %s must be on or off, got %q", EnvDataTransfers, v))
-		}
-	}
+	cfg.InteractiveSessions = sessions
 	cfg.RemoteAccess = "on"
 	if v := strings.ToLower(strings.TrimSpace(get(EnvRemoteAccess))); v != "" {
 		if remoteAccessValue(v) {
@@ -586,7 +568,14 @@ func loadBuildConfig(cfg *Config, get func(string) string) []error {
 			errs = append(errs, fmt.Errorf("config: %s must be on, off or a comma-separated list of ssh, database and volume, got %q", EnvRemoteAccess, v))
 		}
 	}
-	cfg.RemoteAccessPorts = strings.TrimSpace(get(EnvRemoteAccessPorts))
+	cfg.RemoteAccessPorts = DefaultRemoteAccessPorts
+	if v := get(EnvRemoteAccessPorts); v != "" {
+		pr, err := ParsePortRange(v)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("config: %s: %w", EnvRemoteAccessPorts, err))
+		}
+		cfg.RemoteAccessPorts = pr
+	}
 	cfg.BuildSlots = max(1, runtime.NumCPU()/4)
 	if v := get(EnvBuildSlots); v != "" {
 		n, err := strconv.Atoi(v)
@@ -668,6 +657,23 @@ func loadBuildConfig(cfg *Config, get func(string) string) []error {
 	return errs
 }
 
+// PortRange is a range of local TCP ports.
+type PortRange struct{ Lo, Hi uint16 }
+
+// DefaultRemoteAccessPorts is LR_REMOTE_ACCESS_PORTS' default.
+var DefaultRemoteAccessPorts = PortRange{Lo: 40100, Hi: 40199}
+
+// ParsePortRange parses "lo-hi" (1024 ≤ lo ≤ hi, at most 1000 ports).
+func ParsePortRange(s string) (PortRange, error) {
+	lo, hi, ok := strings.Cut(strings.TrimSpace(s), "-")
+	a, err1 := strconv.ParseUint(strings.TrimSpace(lo), 10, 16)
+	b, err2 := strconv.ParseUint(strings.TrimSpace(hi), 10, 16)
+	if !ok || err1 != nil || err2 != nil || a < 1024 || b < a || b-a >= 1000 {
+		return PortRange{}, fmt.Errorf("must be \"lo-hi\" between 1024 and 65535 with at most 1000 ports, got %q", s)
+	}
+	return PortRange{Lo: uint16(a), Hi: uint16(b)}, nil
+}
+
 // RemoteAccessAllowed reports whether the local policy allows temporary
 // access of kind ("ssh" or "database"): LR_REMOTE_ACCESS allows it and
 // LR_INTERACTIVE_SESSIONS allows the matching session kind (consoles for
@@ -692,8 +698,6 @@ func (c Config) RemoteAccessAllowed(kind string) bool {
 	return c.SessionAllowed("data")
 }
 
-// remoteAccessValue reports whether v is a valid LR_REMOTE_ACCESS: on, off
-// or a list of kinds (ssh, database, volume).
 func remoteAccessValue(v string) bool {
 	if v == "on" || v == "off" {
 		return true

@@ -1,8 +1,8 @@
 import { Link, usePage } from '@inertiajs/react';
 import { Gauge, X } from 'lucide-react';
 import { useState } from 'react';
-import { useDocsUrl } from '@/features/settings/settings-card';
 import { show as serverPage } from '@/routes/servers';
+import { useDocsUrl } from '@/components/settings/settings-card';
 
 const STORAGE_KEY = 'launchroom:load-notice-dismissed-until';
 const DISMISS_HOURS = 6;

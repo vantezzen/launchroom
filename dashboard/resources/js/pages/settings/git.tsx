@@ -16,17 +16,16 @@ import { ManifestRedirect } from '@/features/git/manifest-redirect';
 import { PROVIDER_CHOICES } from '@/features/git/providers';
 import type { ProviderChoice } from '@/features/git/providers';
 import { WebhookReachabilityNote } from '@/features/git/webhook-reachability-note';
+import { destroy as destroyConnection } from '@/routes/git/connections';
+import { destroy } from '@/routes/git/github';
 import {
     LearnMore,
     SettingsBody,
     SettingsCard,
     SettingsRow,
     useDocsUrl,
-} from '@/features/settings/settings-card';
-import { edit } from '@/routes/git';
-import { destroy as destroyConnection } from '@/routes/git/connections';
-import { destroy } from '@/routes/git/github';
-import { index as settingsHome } from '@/routes/settings';
+} from '@/components/settings/settings-card';
+import SettingsLayout from '@/features/settings/settings-layout';
 
 type Props = {
     apps: App.Data.Git.GitHubAppData[];
@@ -317,12 +316,4 @@ export default function GitSettings({
     );
 }
 
-GitSettings.layout = {
-    breadcrumbs: [
-        { title: 'Settings', href: settingsHome() },
-        {
-            title: 'Git',
-            href: edit(),
-        },
-    ],
-};
+GitSettings.layout = SettingsLayout;

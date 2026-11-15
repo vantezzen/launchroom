@@ -77,9 +77,6 @@ function swapFixture(): array
     return [$team, $server, $postgres, $app, $snapshot];
 }
 
-/**
- * Restores $snapshot as a new service and lets the restore finish.
- */
 function finishedRestoreAsNew(Server $server, ServiceInstance $source, string $snapshot): RestoreRun
 {
     $owner = memberOf(Team::query()->findOrFail($source->team_id), TeamRole::Owner);
@@ -148,7 +145,6 @@ test('a restored database is swapped in for the original in its environment only
     // Placements are untouched until Deploy.
     expect(Placement::query()->where('service_instance_id', $postgres->id)->exists())->toBeTrue();
 
-    // A second swap is refused.
     $this->actingAs($developer)->postJson($url, ['confirmation' => 'postgres'])->assertStatus(409);
 
     // Discard undoes it.

@@ -29,8 +29,8 @@ final class OnboardingData extends Data
         public ?string $githubAppName,
         public ?string $appsDomain,
         public array $edgeAddresses,
-        /** What a generated domain looks like without a platform domain. */
-        public ?string $sslipExample,
+        /** The free sslip.io wildcard of the first server ("*.203-0-113-7.sslip.io"). */
+        public ?string $freeWildcard,
         /** Host of the dashboard (the platform domain should differ, cookie isolation). */
         public string $dashboardHost,
         public bool $teamBackupsConfigured,

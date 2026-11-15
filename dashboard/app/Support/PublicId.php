@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Support;
 
+use App\Support\Protocol\Grammar;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
 
@@ -14,11 +15,10 @@ use InvalidArgumentException;
  */
 final class PublicId
 {
-    /** Regex fragment for a prefix: 2–5 lowercase ASCII letters. */
-    public const string PREFIX_PATTERN = '[a-z]{2,5}';
+    /** Regex fragment for a prefix: 2–4 lowercase ASCII letters, as launchroomd accepts (Grammar::PUBLIC_ID). */
+    public const string PREFIX_PATTERN = '[a-z]{2,4}';
 
-    /** Regex fragment for a canonical (uppercase) ULID. */
-    public const string ULID_PATTERN = '[0-7][0-9A-HJKMNP-TV-Z]{25}';
+    public const string ULID_PATTERN = Grammar::ULID_BODY;
 
     public const string SEPARATOR = '_';
 
@@ -29,9 +29,6 @@ final class PublicId
         return $prefix.self::SEPARATOR.Str::ulid()->toBase32();
     }
 
-    /**
-     * Whether $value is a well-formed public ID, optionally with the given prefix.
-     */
     public static function isValid(string $value, ?string $prefix = null): bool
     {
         $prefixPattern = $prefix === null ? self::PREFIX_PATTERN : preg_quote($prefix, '/');
@@ -40,13 +37,17 @@ final class PublicId
     }
 
     /**
-     * Anchored regex for validation rules (`'regex:'.PublicId::regex('prj')`).
+     * Anchored regex for validation rules (`'regex:'.PublicId::regex('prj')`);
+     * several prefixes accept any of them.
      */
-    public static function regex(string $prefix): string
+    public static function regex(string $prefix, string ...$more): string
     {
-        self::assertValidPrefix($prefix);
+        $prefixes = [$prefix, ...$more];
+        array_walk($prefixes, self::assertValidPrefix(...));
 
-        return '/^'.$prefix.self::SEPARATOR.self::ULID_PATTERN.'$/D';
+        $alternatives = count($prefixes) === 1 ? $prefix : '(?:'.implode('|', $prefixes).')';
+
+        return '/^'.$alternatives.self::SEPARATOR.self::ULID_PATTERN.'$/D';
     }
 
     /**
@@ -71,7 +72,7 @@ final class PublicId
     private static function assertValidPrefix(string $prefix): void
     {
         if (preg_match('/^'.self::PREFIX_PATTERN.'$/D', $prefix) !== 1) {
-            throw new InvalidArgumentException("Invalid public ID prefix [{$prefix}]: expected 2-5 lowercase letters.");
+            throw new InvalidArgumentException("Invalid public ID prefix [{$prefix}]: expected 2-4 lowercase letters.");
         }
     }
 }

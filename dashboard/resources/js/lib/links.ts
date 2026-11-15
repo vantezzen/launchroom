@@ -1,15 +1,13 @@
 import { FileWarning, ScrollText } from 'lucide-react';
-import type { DrillAction } from '@/components/charts/chart-drill';
 import { link as deploymentLinkRoute } from '@/routes/deployments';
 import {
     analyticsPage as analyticsRoute,
     logs as projectLogsRoute,
     resourcesPage as resourcesRoute,
 } from '@/routes/projects';
-import { show as serviceRoute } from '@/routes/projects/services';
 import { show as serverRoute, tab as serverTabRoute } from '@/routes/servers';
 import { formatWindow, scopeQuery, windowAround } from './observe-scope';
-import type { ObserveWindow } from './observe-scope';
+import type { ObserveWindow, DrillAction } from './observe-scope';
 
 /**
  * Deep links on the frontend (docs/08 §1 "Observe scope"), the TypeScript
@@ -81,46 +79,6 @@ export function analyticsHref({
     }).url;
 }
 
-/**
- * A service's Analytics (the service panel's link, the node menu, ⌘K):
- * Traffic for a service with a domain, Resources for everything else.
- */
-export function serviceAnalyticsHref({
-    project,
-    environment,
-    service,
-    hasDomain,
-    range,
-}: {
-    project: string;
-    environment: string;
-    service: string;
-    hasDomain: boolean;
-    range?: string | null;
-}): string {
-    return analyticsHref({
-        project,
-        environment,
-        service,
-        range,
-        view: hasDomain ? 'traffic' : 'resources',
-    });
-}
-
-/** A service panel tab with a query (`?q=`, `?from=`, `?range=` …). */
-export function serviceTabHref(
-    project: string,
-    environment: string,
-    service: string,
-    tab: string,
-    query: Query = {},
-): string {
-    return serviceRoute(
-        { project, environment, service, tab },
-        { query: clean(query) },
-    ).url;
-}
-
 /** A deployment by its id alone (`/d/{id}` redirects to its page). */
 export function deploymentHref(deploymentId: string): string {
     return deploymentLinkRoute(deploymentId).url;
@@ -139,32 +97,21 @@ export function serverHref(
 
 /**
  * The drill-down of a chart about one environment or service: the logs of
- * the selected bucket (at least ten minutes around it), and only its errors. `inPanel` keeps the reader in
- * the service panel (its Logs tab) instead of the project's Logs page.
+ * the selected bucket (at least ten minutes around it), and only its errors.
  */
 export function logsDrill({
     project,
     environment,
     service,
-    inPanel = false,
-    errorsLabel = 'Errors only',
 }: {
     project: string;
     environment: string;
     service?: string | null;
-    inPanel?: boolean;
-    errorsLabel?: string;
 }): (window: ObserveWindow) => DrillAction[] {
     return (bucket) => {
-        // A one-minute point opens ten minutes around it, for context.
         const window = windowAround(bucket.from, bucket.to);
         const href = (q?: string) =>
-            inPanel && service
-                ? serviceTabHref(project, environment, service, 'logs', {
-                      ...scopeQuery({ window }),
-                      q,
-                  })
-                : logsHref({ project, environment, service, window, q });
+            logsHref({ project, environment, service, window, q });
 
         return [
             {
@@ -173,7 +120,7 @@ export function logsDrill({
                 icon: ScrollText,
             },
             {
-                label: errorsLabel,
+                label: 'Errors only',
                 href: href('level:error'),
                 icon: FileWarning,
             },

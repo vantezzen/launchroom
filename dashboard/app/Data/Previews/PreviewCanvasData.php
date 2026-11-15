@@ -22,7 +22,6 @@ final class PreviewCanvasData extends Data
         public string $headRef,
         public string $baseName,
         public PreviewStatus $status,
-        public string $statusLabel,
         /** building | live | failed | stopped (the environment's deployments). */
         public string $health,
         public ?string $statusReason,

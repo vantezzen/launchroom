@@ -5,7 +5,7 @@ declare(strict_types=1);
 use App\Enums\AuditAction;
 use App\Enums\DaemonTaskStatus;
 use App\Enums\Permission;
-use App\Enums\Sessions\InteractiveSessionStatus;
+use App\Enums\TaskBackedAccessStatus;
 use App\Enums\TeamRole;
 use App\Models\AuditEvent;
 use App\Models\DaemonTask;
@@ -14,11 +14,11 @@ use App\Models\Server;
 use App\Models\Sessions\DatabaseQuery;
 use App\Models\Sessions\InteractiveSession;
 use App\Models\Team;
-use App\Services\Crypto\ResponseSignature;
 use App\Services\Crypto\Signer;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Log;
 use Tests\Support\FakeDaemon;
+use Tests\Support\ResponseSignature;
 use Tests\Support\Sessions;
 
 // Interactive sessions: Console and Data tabs (docs/03 §11, docs/09 R33).
@@ -94,7 +94,7 @@ test('opening an authorized session creates a ticket and pinned task without an 
         ->and($session->session_key)->toBe($response->json('key'))
         ->and($session->getRawOriginal('session_key'))->not->toContain((string) $response->json('key'))
         ->and($session->toArray())->not->toHaveKeys(['ticket_hash', 'session_key'])
-        ->and($session->status)->toBe(InteractiveSessionStatus::Pending)
+        ->and($session->status)->toBe(TaskBackedAccessStatus::Pending)
         ->and($task->pinned_to_server)->toBeTrue()
         ->and($task->server_id)->toBe($this->server->id)
         ->and($task->max_attempts)->toBe(1)
@@ -123,7 +123,7 @@ test('the lease seals the key to the server and task, opens the session and wipe
     expect($token)->toBe(['serverId' => $this->server->public_id, 'taskId' => $task['id'], 'purpose' => 'session', 'token' => $opened['key']]);
 
     $session = InteractiveSession::query()->where('public_id', $opened['id'])->sole();
-    expect($session->status)->toBe(InteractiveSessionStatus::Open)
+    expect($session->status)->toBe(TaskBackedAccessStatus::Open)
         ->and($session->session_key)->toBeNull();
 });
 
@@ -254,7 +254,7 @@ test('the completion ends the session with an audit entry of duration and reason
 
     $session = InteractiveSession::query()->where('public_id', $opened['id'])->sole();
     $audit = AuditEvent::query()->where('action', AuditAction::ConsoleSessionEnded->value)->sole();
-    expect($session->status)->toBe(InteractiveSessionStatus::Ended)
+    expect($session->status)->toBe(TaskBackedAccessStatus::Ended)
         ->and($session->end_reason?->value)->toBe('exited')
         ->and($session->exit_code)->toBe(0)
         ->and($session->bytes_out)->toBe(3400)
@@ -273,7 +273,7 @@ test('a session is never handed to another launchroomd process', function (): vo
     ], ['Idempotency-Key' => $task['id'].':1'])->assertSuccessful();
 
     expect(DaemonTask::query()->where('public_id', $task['id'])->sole()->status)->toBe(DaemonTaskStatus::Failed)
-        ->and(InteractiveSession::query()->where('public_id', $opened['id'])->sole()->status)->toBe(InteractiveSessionStatus::Ended);
+        ->and(InteractiveSession::query()->where('public_id', $opened['id'])->sole()->status)->toBe(TaskBackedAccessStatus::Ended);
 });
 
 test('ending: the opener and owners/admins can, other developers can’t', function (): void {
@@ -295,7 +295,7 @@ test('ending: the opener and owners/admins can, other developers can’t', funct
     $pending = Sessions::open($this, $admin, $this->instance);
     $this->actingAs($admin)->postJson('/sessions/'.$pending['id'].'/end')->assertNoContent();
     $row = InteractiveSession::query()->where('public_id', $pending['id'])->sole();
-    expect($row->status)->toBe(InteractiveSessionStatus::Ended)->and($row->end_reason?->value)->toBe('closed');
+    expect($row->status)->toBe(TaskBackedAccessStatus::Ended)->and($row->end_reason?->value)->toBe('closed');
 });
 
 test('at most three open sessions per user; a reconnect replaces instead of counting', function (): void {
@@ -322,12 +322,12 @@ test('disconnect then immediate reconnect: the new session is leased at once and
     $secondTask = Sessions::lease($this, $this->daemon);
 
     expect($secondTask['spec']['session'] ?? null)->toBe($second['id'])
-        ->and(InteractiveSession::query()->where('public_id', $second['id'])->sole()->status)->toBe(InteractiveSessionStatus::Open);
+        ->and(InteractiveSession::query()->where('public_id', $second['id'])->sole()->status)->toBe(TaskBackedAccessStatus::Open);
 
     sessionComplete($this, $firstTask, ['endReason' => 'closed', 'bytesIn' => 0, 'bytesOut' => 0]);
 
-    expect(InteractiveSession::query()->where('public_id', $first['id'])->sole()->status)->toBe(InteractiveSessionStatus::Ended)
-        ->and(InteractiveSession::query()->where('public_id', $second['id'])->sole()->status)->toBe(InteractiveSessionStatus::Open);
+    expect(InteractiveSession::query()->where('public_id', $first['id'])->sole()->status)->toBe(TaskBackedAccessStatus::Ended)
+        ->and(InteractiveSession::query()->where('public_id', $second['id'])->sole()->status)->toBe(TaskBackedAccessStatus::Open);
 });
 
 test('reconnecting without ending first replaces the old session of the same kind only', function (): void {
@@ -347,7 +347,7 @@ test('reconnecting without ending first replaces the old session of the same kin
         ->and(collect($this->spy->sent)->pluck('event')->all())->toContain('session.end')
         ->and(InteractiveSession::query()->where('public_id', $data['id'])->sole()->ended_by_id)->toBeNull()
         ->and(InteractiveSession::query()->where('public_id', $theirs['id'])->sole()->ended_by_id)->toBeNull()
-        ->and(InteractiveSession::query()->where('public_id', $again['id'])->sole()->status)->toBe(InteractiveSessionStatus::Pending);
+        ->and(InteractiveSession::query()->where('public_id', $again['id'])->sole()->status)->toBe(TaskBackedAccessStatus::Pending);
 });
 
 test('a session the server couldn’t start says why in the tab and in the log', function (): void {
@@ -359,7 +359,7 @@ test('a session the server couldn’t start says why in the tab and in the log',
     $this->daemon->send($this, 'POST', '/daemon/v1/tasks/'.$task['id'].'/complete', [
         'apiVersion' => 'launchroom.vantezzen.io/v1', 'kind' => 'TaskCompletion', 'attempt' => $task['attempt'], 'outcome' => 'failed',
         'error' => 'this image has no shell (looked for /bin/bash, /bin/ash and /bin/sh)',
-        'session' => ['endReason' => 'error', 'bytesIn' => 0, 'bytesOut' => 0],
+        'session' => ['endReason' => 'error', 'bytesIn' => 0, 'bytesOut' => 0, 'failure' => 'no_shell'],
     ], ['Idempotency-Key' => $task['id'].':'.$task['attempt']])->assertSuccessful();
 
     $this->actingAs($owner)->getJson('/sessions/'.$opened['id'])
@@ -408,7 +408,7 @@ test('granting a developer Console access lets them open one; revoking ends thei
         ->put('/settings/team/members/'.$membership->public_id.'/permissions', ['permissions' => []])
         ->assertRedirect()->assertSessionHasNoErrors();
 
-    expect(InteractiveSession::query()->where('public_id', $opened['id'])->sole()->status)->toBe(InteractiveSessionStatus::Ended);
+    expect(InteractiveSession::query()->where('public_id', $opened['id'])->sole()->status)->toBe(TaskBackedAccessStatus::Ended);
 });
 
 test('a stale grant counts for nothing after a promotion to viewer', function (): void {
@@ -427,7 +427,24 @@ test('removing a member ends their sessions', function (): void {
 
     $this->actingAs($owner)->delete('/settings/team/members/'.$membership->public_id)->assertRedirect();
 
-    expect(InteractiveSession::query()->where('public_id', $opened['id'])->sole()->status)->toBe(InteractiveSessionStatus::Ended);
+    expect(InteractiveSession::query()->where('public_id', $opened['id'])->sole()->status)->toBe(TaskBackedAccessStatus::Ended);
+});
+
+test('deleting an account ends its live sessions on the server before the rows go', function (): void {
+    memberOf($this->team, TeamRole::Owner);
+    $admin = memberOf($this->team, TeamRole::Admin);
+    Sessions::open($this, $admin, $this->instance);
+    $task = Sessions::lease($this, $this->daemon);
+    $pending = Sessions::open($this, $admin, $this->instance, 'data');
+    $pendingTask = InteractiveSession::query()->where('public_id', $pending['id'])->sole()->daemon_task_id;
+
+    $this->spy->sent = [];
+    $this->actingAs($admin)->delete(route('profile.destroy'), ['password' => 'password'])->assertSessionHasNoErrors();
+
+    expect($admin->fresh())->toBeNull()
+        ->and(DaemonTask::query()->where('public_id', $task['id'])->sole()->cancel_requested_at)->not->toBeNull()
+        ->and(DaemonTask::query()->findOrFail($pendingTask)->status)->toBe(DaemonTaskStatus::Cancelled)
+        ->and(collect($this->spy->sent)->pluck('event')->all())->toContain('session.end');
 });
 
 test('sessions no server picks up are ended by the sweep', function (): void {
@@ -437,7 +454,7 @@ test('sessions no server picks up are ended by the sweep', function (): void {
 
     $this->artisan('launchroom:sessions:sweep')->assertSuccessful();
 
-    expect(InteractiveSession::query()->where('public_id', $opened['id'])->sole()->status)->toBe(InteractiveSessionStatus::Ended);
+    expect(InteractiveSession::query()->where('public_id', $opened['id'])->sole()->status)->toBe(TaskBackedAccessStatus::Ended);
 });
 
 test('console recording is an owner switch and is carried into new sessions', function (): void {

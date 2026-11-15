@@ -6,8 +6,8 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
@@ -162,14 +162,13 @@ func encodeResult(res *Result) ([]byte, error) {
 	}
 }
 
-// cell returns a capped copy of v.
+// cell returns v as valid UTF-8, capped at MaxCell (a non-UTF-8 value, e.g.
+// from a SQL_ASCII database, would make json/v2 refuse the whole Result).
 func cell(v string, cut *bool) *string {
+	v = strings.ToValidUTF8(v, "�")
 	if len(v) > MaxCell {
-		v = v[:MaxCell]
-		for !utf8.ValidString(v) && len(v) > 0 {
-			v = v[:len(v)-1]
-		}
 		*cut = true
+		v = state.Clip(v, MaxCell)
 	}
 	return &v
 }
@@ -230,14 +229,10 @@ func newEngineRunner(e state.DatabaseEngine, env envMap, ex execer, container st
 	switch e {
 	case state.EnginePostgres:
 		impl, err = newPostgres(env, ex, container)
-	case state.EngineMySQL:
-		impl, err = newMySQL(env, ex, container, "mysql", false)
-	case state.EngineMariaDB:
-		impl, err = newMySQL(env, ex, container, "mariadb", true)
-	case state.EngineRedis:
-		impl, err = newRedis(env, ex, container, "redis-cli")
-	case state.EngineValkey:
-		impl, err = newRedis(env, ex, container, "valkey-cli")
+	case state.EngineMySQL, state.EngineMariaDB:
+		impl, err = newMySQL(env, ex, container, e)
+	case state.EngineRedis, state.EngineValkey:
+		impl, err = newRedis(env, ex, container, e)
 	case state.EngineMongoDB:
 		impl, err = newMongo(env, ex, container)
 	case state.EngineClickHouse:

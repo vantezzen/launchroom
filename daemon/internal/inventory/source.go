@@ -1,6 +1,7 @@
 package inventory
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -32,7 +33,6 @@ func newNameFacts() *nameFacts {
 	return &nameFacts{main: map[string]bool{}, dev: map[string]bool{}, direct: map[string]bool{}}
 }
 
-// devOnly reports a name found only in development groups.
 func (f *nameFacts) devOnly(name string) bool { return f.dev[name] && !f.main[name] }
 
 // sourceFacts is everything source analysis learned.
@@ -49,9 +49,7 @@ type sourceFacts struct {
 func (s *sourceFacts) note(format string, args ...any) {
 	if len(s.notes) < state.MaxInventoryNotes {
 		n := fmt.Sprintf(format, args...)
-		if len(n) > 256 {
-			n = n[:253] + "..."
-		}
+		n = state.Shorten(n, 253)
 		s.notes = append(s.notes, n)
 	}
 }
@@ -68,7 +66,6 @@ func (s *sourceFacts) addLockfile(rel string, kind state.LockfileKind, packages 
 	s.lockfiles = append(s.lockfiles, state.InventoryLockfile{Path: state.RelPath(rel), Kind: kind, Packages: min(packages, 100000)})
 }
 
-// tree reads files of the checkout.
 type tree struct {
 	root *os.Root
 	// app is the app directory relative to the checkout ("" = root).
@@ -135,7 +132,6 @@ func (t tree) find(names ...string) (rel string, data []byte, err error) {
 	return "", nil, nil
 }
 
-// analyze reads the checkout rooted at root with the app in app.
 func analyze(root *os.Root, app string) *sourceFacts {
 	t := tree{root: root, app: app}
 	s := &sourceFacts{}
@@ -157,8 +153,6 @@ func relTo(base, target string) string {
 	}
 	return strings.TrimPrefix(target, base+"/")
 }
-
-// ---- Go ----
 
 var reGoRequire = regexp.MustCompile(`^\s*(?:require\s+)?([A-Za-z0-9][A-Za-z0-9._~/+-]*)\s+(v[0-9][^\s]*)(\s*//\s*indirect)?`)
 
@@ -194,8 +188,6 @@ func analyzeGo(t tree, s *sourceFacts) {
 	s.addLockfile(rel, state.LockfileGoMod, n)
 }
 
-// ---- Composer ----
-
 func analyzeComposer(t tree, s *sourceFacts) {
 	f := newNameFacts()
 	found := false
@@ -204,7 +196,7 @@ func analyzeComposer(t tree, s *sourceFacts) {
 			Require    map[string]string `json:"require"`
 			RequireDev map[string]string `json:"require-dev"`
 		}
-		if jsonUnmarshal(b, &m) == nil {
+		if json.Unmarshal(b, &m) == nil {
 			found = true
 			for n := range m.Require {
 				f.direct[strings.ToLower(n)] = true
@@ -220,7 +212,7 @@ func analyzeComposer(t tree, s *sourceFacts) {
 			Packages    []struct{ Name string } `json:"packages"`
 			PackagesDev []struct{ Name string } `json:"packages-dev"`
 		}
-		if jsonUnmarshal(b, &m) == nil {
+		if json.Unmarshal(b, &m) == nil {
 			found = true
 			for _, p := range m.Packages {
 				f.main[strings.ToLower(p.Name)] = true
@@ -237,8 +229,6 @@ func analyzeComposer(t tree, s *sourceFacts) {
 		s.composer = f
 	}
 }
-
-// ---- RubyGems ----
 
 var (
 	reGem      = regexp.MustCompile(`^\s*gem\s+['"]([A-Za-z0-9._-]+)['"](.*)$`)

@@ -1,7 +1,9 @@
 package configfile
 
 import (
+	"encoding/json"
 	"errors"
+	"os"
 	"strings"
 	"testing"
 )
@@ -56,5 +58,23 @@ func TestExcerpt(t *testing.T) {
 	want := "     2 │ b\n     3 │ c\n>    4 │ d\n       │   ^\n     5 │ e\n     6 │ f\n"
 	if got != want {
 		t.Fatalf("got\n%s\nwant\n%s", got, want)
+	}
+}
+
+// TestMaxBytesMatchesDashboard pins MaxBytes to the dashboard's limit
+// (protocol/fixtures/cli/config-file.json, read by its JsonDocumentTest too).
+func TestMaxBytesMatchesDashboard(t *testing.T) {
+	data, err := os.ReadFile("../../../protocol/fixtures/cli/config-file.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fx struct {
+		MaxBytes int `json:"maxBytes"`
+	}
+	if err := json.Unmarshal(data, &fx); err != nil {
+		t.Fatal(err)
+	}
+	if fx.MaxBytes != MaxBytes {
+		t.Fatalf("MaxBytes = %d, dashboard %d", MaxBytes, fx.MaxBytes)
 	}
 }

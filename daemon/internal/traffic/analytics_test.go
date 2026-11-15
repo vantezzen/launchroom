@@ -167,21 +167,33 @@ func TestAnalyticsCardinalityCap(t *testing.T) {
 	}
 }
 
+// Past maxKeys distinct keys across all routes, a route's new paths count
+// as "other" even below its own per-route cap.
 func TestAnalyticsGlobalKeyCap(t *testing.T) {
-	a := newAnalytics()
-	now := time.Date(2026, 10, 19, 12, 0, 0, 0, time.UTC)
-	none := func(string) (state.RouteID, bool) { return "", false }
-	routes := maxKeys/maxPathsPerRoute + 2
-	for r := range routes {
-		route := state.RouteID(fmt.Sprintf("rt_01J9Z8X7W6V5T4S3R2Q1P0N%03d", r))
+	clk := &clock{t: time.Date(2026, 10, 19, 12, 0, 10, 0, time.UTC)}
+	c := New(Options{Now: clk.now})
+	n := maxKeys/maxPathsPerRoute + 2
+	routes := make([]state.RouteSpec, n)
+	for r := range n {
+		routes[r] = state.RouteSpec{ID: state.RouteID(fmt.Sprintf("rt_01J9Z8X7W6V5T4S3R2Q1P0N%03d", r)), Hosts: []state.Hostname{state.Hostname(fmt.Sprintf("r%d.example.com", r))}}
+	}
+	c.SetRoutes(routes)
+	for r := range n {
 		for i := range maxPathsPerRoute {
-			l := &accessLine{Status: 200}
-			l.Request.URI = "/p-" + word(i)
-			a.observe(now, route, l, none)
+			c.Observe(analyticsLine(fmt.Sprintf("r%d.example.com", r), "/p-"+word(i), 200, "", ""))
 		}
 	}
-	if a.keys != maxKeys {
-		t.Errorf("tracked keys = %d, want %d", a.keys, maxKeys)
+	clk.set(time.Date(2026, 10, 19, 12, 10, 0, 0, time.UTC))
+	c.Roll()
+	rows := c.PendingAnalytics()
+	if len(rows) != n {
+		t.Fatalf("rows = %d, want %d", len(rows), n)
+	}
+	if first := rows[0]; len(first.Paths) != state.MaxAnalyticsPaths {
+		t.Errorf("first route paths = %d", len(first.Paths))
+	}
+	if last := rows[n-1]; len(last.Paths) != 0 || last.OtherPaths.Requests != maxPathsPerRoute {
+		t.Errorf("route past the global cap: %d paths, other %d", len(last.Paths), last.OtherPaths.Requests)
 	}
 }
 

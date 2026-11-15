@@ -20,7 +20,9 @@ use App\Services\Instance\DashboardOrigin;
 use App\Services\Instance\RecoveryMode;
 use App\Services\Moves\MovePlanner;
 use App\Services\Transfers\TransferStore;
+use App\Support\ByteSize;
 use App\Support\Hostname;
+use App\Support\InstallCommands;
 use Inertia\Inertia;
 
 /**
@@ -44,7 +46,7 @@ final readonly class ControlPlaneMovePage
     public function get(?string $token, bool $checkDns): array
     {
         $move = ControlPlaneMove::open() ?? ControlPlaneMove::query()->where('finished_at', '>', now()->subDay())->latest('id')->first();
-        $source = Server::query()->where('is_control_plane', true)->where('status', '!=', ServerStatus::Revoked->value)->orderByDesc('id')->first();
+        $source = Server::currentControlPlane();
         $serverMove = $move?->server_move_id === null ? null : ServerMove::query()->find($move->server_move_id);
         $planned = $move instanceof ControlPlaneMove && $move->status === ControlPlaneMoveStatus::Joined && $move->source instanceof Server && $move->target instanceof Server;
         $version = config()->string('launchroom.version');
@@ -66,9 +68,9 @@ final readonly class ControlPlaneMovePage
 
     private function command(string $token, string $version): string
     {
-        $flags = preg_match('/^\d+\.\d+\.\d+([-+][0-9A-Za-z.+-]+)?$/D', $version) === 1 ? " --version {$version}" : '';
+        $flags = preg_match('/^\d+\.\d+\.\d+([-+][0-9A-Za-z.+-]+)?$/D', $version) === 1 ? ['--version', $version] : [];
 
-        return "curl -fsSL https://launchroom.vantezzen.io/install | sh -s -- --move {$token}{$flags}";
+        return InstallCommands::controlPlane('--move', $token, ...$flags);
     }
 
     /**
@@ -80,7 +82,7 @@ final readonly class ControlPlaneMovePage
         $url = $this->origin->canonical();
         $host = (string) (parse_url($url, PHP_URL_HOST) ?? '');
         $ipBound = str_ends_with($host, '.sslip.io') || filter_var($host, FILTER_VALIDATE_IP) !== false;
-        $others = $source instanceof Server ? Server::query()->where('team_id', $source->team_id)->whereKeyNot($source->id)->whereIn('status', [ServerStatus::Online->value, ServerStatus::Unreachable->value, ServerStatus::Offline->value])->count() : 0;
+        $others = $source instanceof Server ? Server::query()->where('team_id', $source->team_id)->whereKeyNot($source->id)->approved()->count() : 0;
         $settings = InstanceSettings::current();
 
         $checks[] = new MovePreflightCheckData('server', 'This server', match (true) {
@@ -107,7 +109,7 @@ final readonly class ControlPlaneMovePage
         $free = $this->transfers->freeBytes();
         $checks[] = new MovePreflightCheckData('disk', 'Disk space here', $free !== null && $free < MovePlanner::MARGIN_BYTES ? 'warning' : 'ok', $free === null
             ? 'Data passes through this server’s disk one service at a time.'
-            : 'Data passes through this server’s disk one service at a time; '.MovePlanner::size($free).' are free.');
+            : 'Data passes through this server’s disk one service at a time; '.ByteSize::format($free).' are free.');
 
         $mesh = $settings->mesh_enabled_at !== null || config()->boolean('launchroom.mesh.auto_enable');
         $checks[] = new MovePreflightCheckData('mesh', 'Private network', $mesh ? 'ok' : 'blocker', $mesh

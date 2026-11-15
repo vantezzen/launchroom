@@ -26,7 +26,7 @@ final readonly class CancelTransfer
         DB::transaction(function () use ($transfer): void {
             $inUse = DataImportRun::query()
                 ->where('transfer_id', $transfer->id)
-                ->whereIn('status', [ImportRunStatus::WaitingForSafetyBackup->value, ImportRunStatus::Holding->value, ImportRunStatus::Importing->value])
+                ->whereIn('status', ImportRunStatus::nonTerminal())
                 ->exists();
 
             if ($inUse) {

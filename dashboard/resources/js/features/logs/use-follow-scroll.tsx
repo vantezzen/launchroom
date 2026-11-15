@@ -11,10 +11,10 @@ import { Button } from '@/components/ui/button';
  * the end (deployment logs, oldest first) or the start (the explorer,
  * newest first).
  */
-export type FollowEdge = 'start' | 'end';
+type FollowEdge = 'start' | 'end';
 
 /** How close (px) to the edge still counts as "at the newest line". */
-export const EDGE_SLACK = 24;
+const EDGE_SLACK = 24;
 
 type ScrollBox = {
     scrollTop: number;

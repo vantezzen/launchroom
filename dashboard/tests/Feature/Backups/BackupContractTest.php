@@ -18,7 +18,7 @@ test('backup completion fixtures decode into TaskCompletion', function (string $
     $json = (string) file_get_contents(ProtocolSchemas::root()."/fixtures/v1/{$fixture}.json");
     $completion = TaskCompletion::validateAndCreate(json_decode($json, true, 32, JSON_THROW_ON_ERROR));
 
-    expect($completion->{$field})->toBeInstanceOf($class);
+    expect($completion->results->{$field})->toBeInstanceOf($class);
 })->with([
     'backup' => ['task-completion.backup', 'backup', BackupResult::class],
     'restore' => ['task-completion.restore', 'restore', RestoreResult::class],

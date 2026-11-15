@@ -12,8 +12,14 @@ use App\Data\Audit\AuditActor;
 use App\Data\Canvas\AddServiceData;
 use App\Data\Canvas\CanvasPositionData;
 use App\Data\Services\CreateServiceData;
+use App\Data\Services\DatabaseSource;
+use App\Data\Services\GitSource;
+use App\Data\Services\ImageSource;
+use App\Data\Services\ServiceSource;
 use App\Data\Services\UpdateServiceSettingsData;
+use App\Enums\DatabaseEngine;
 use App\Enums\ServiceKind;
+use App\Events\CanvasChanged;
 use App\Exceptions\DomainRuleViolation;
 use App\Jobs\Git\EnsureRepositoryWebhookJob;
 use App\Models\CanvasLayout;
@@ -89,27 +95,23 @@ final readonly class AddService
                 $this->createConnection->handle($consumer, $service, $defaults->mode, $defaults->style, $user, $actor);
             }
 
+            event(new CanvasChanged($environment->public_id, $service->public_id));
+
             return $service;
         });
     }
 
-    /**
-     * @return array<string, mixed>|null
-     */
-    private function source(Project $project, AddServiceData $data): ?array
+    private function source(Project $project, AddServiceData $data): ?ServiceSource
     {
         return match ($data->kind) {
             ServiceKind::App => $this->gitSource($project, $data),
-            ServiceKind::Image => ['type' => 'image', 'reference' => (string) $data->image],
-            ServiceKind::Database => ['type' => 'database', 'engine' => $data->engine?->value, 'version' => $data->version],
+            ServiceKind::Image => ImageSource::validateAndCreate(['reference' => (string) $data->image]),
+            ServiceKind::Database => ! $data->engine instanceof DatabaseEngine || $data->version === null ? null : new DatabaseSource($data->engine, $data->version),
             ServiceKind::Worker, ServiceKind::Cron => null,
         };
     }
 
-    /**
-     * @return array<string, mixed>
-     */
-    private function gitSource(Project $project, AddServiceData $data): array
+    private function gitSource(Project $project, AddServiceData $data): GitSource
     {
         $team = $project->team;
         $repository = $this->providers->repository($team, (string) $data->repository);

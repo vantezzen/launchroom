@@ -4,6 +4,11 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Data\Protocol\V1\TaskResult;
+use App\Data\Protocol\V1\Tasks\TaskSpec;
+use App\Data\Tasks\TaskSeal;
+use App\Enums\Contracts\HasTransitionTable;
+use App\Enums\DaemonTaskPurpose;
 use App\Enums\DaemonTaskStatus;
 use App\Enums\DaemonTaskType;
 use App\Enums\ServerRole;
@@ -11,14 +16,20 @@ use App\Events\DaemonTaskFinished;
 use App\Events\DaemonTaskQueued;
 use App\Models\Concerns\BelongsToTeam;
 use App\Models\Concerns\HasPublicId;
+use App\Models\Concerns\HasStatusTransitions;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Attributes\Scope;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
+use InvalidArgumentException;
 use stdClass;
 
 /**
- * Imperative work leased by daemons (docs/03 §7, docs/07).
+ * Imperative work leased by daemons (docs/03 §7, docs/07), created only
+ * through App\Services\Tasks\DaemonTasks. `spec` is the stored wire
+ * template; {@see self::taskSpec()} reads it typed.
  *
  * @property int $id
  * @property string $public_id
@@ -36,21 +47,28 @@ use stdClass;
  * @property int $timeout_seconds
  * @property Carbon|null $cancel_requested_at
  * @property int|null $completed_attempt
- * @property array<string, mixed>|null $result
+ * @property TaskResult|null $result
  * @property string|null $error
  * @property string|null $progress
  * @property int|null $deployment_id
- * @property string|null $purpose
- * @property array<string, mixed>|null $seal
+ * @property DaemonTaskPurpose|null $purpose
+ * @property TaskSeal|null $seal
+ * @property list<string> $required_features
+ * @property string|null $required_platform
+ * @property bool $platform_emulation
+ * @property int|null $requested_by_id
  * @property Carbon|null $finished_at
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property-read Server|null $server
  */
-#[Fillable(['team_id', 'server_id', 'pinned_to_server', 'required_role', 'type', 'spec', 'max_attempts', 'timeout_seconds', 'deployment_id', 'purpose', 'seal'])]
+#[Fillable(['team_id', 'server_id', 'pinned_to_server', 'required_role', 'type', 'spec', 'max_attempts', 'timeout_seconds', 'deployment_id', 'purpose', 'seal', 'required_features', 'required_platform', 'platform_emulation', 'requested_by_id'])]
 final class DaemonTask extends Model
 {
     use BelongsToTeam, HasPublicId;
+
+    /** @use HasStatusTransitions<DaemonTaskStatus> */
+    use HasStatusTransitions;
 
     /** @var array<string, mixed> */
     protected $attributes = [
@@ -72,19 +90,33 @@ final class DaemonTask extends Model
     }
 
     /**
-     * The only way a task's status changes (docs/10 §2.2 rule 3).
+     * Tasks still waiting for or held by a server (Pending, Leased).
+     *
+     * @param  Builder<self>  $query
      */
-    public function transitionTo(DaemonTaskStatus $to): void
+    #[Scope]
+    protected function open(Builder $query): void
     {
-        $this->status->assertCanTransitionTo($to);
-        $this->status = $to;
+        $query->whereIn('status', DaemonTaskStatus::nonTerminal());
+    }
 
+    /**
+     * @param  DaemonTaskStatus  $from
+     * @param  DaemonTaskStatus  $to
+     */
+    protected function recordTransition(HasTransitionTable $from, HasTransitionTable $to, ?string $note): void
+    {
         if ($to->isTerminal()) {
             $this->forceFill(['finished_at' => now()]);
         }
+    }
 
-        $this->save();
-
+    /**
+     * @param  DaemonTaskStatus  $from
+     * @param  DaemonTaskStatus  $to
+     */
+    protected function transitioned(HasTransitionTable $from, HasTransitionTable $to): void
+    {
         if ($to->isTerminal()) {
             event(new DaemonTaskFinished($this->id));
         }
@@ -92,6 +124,14 @@ final class DaemonTask extends Model
         if ($to === DaemonTaskStatus::Pending) {
             event(new DaemonTaskQueued($this));
         }
+    }
+
+    /**
+     * @throws InvalidArgumentException when the stored spec doesn't decode
+     */
+    public function taskSpec(): TaskSpec
+    {
+        return TaskSpec::fromStored($this->type, $this->spec);
     }
 
     /**
@@ -123,8 +163,11 @@ final class DaemonTask extends Model
             'deadline_at' => 'datetime',
             'cancel_requested_at' => 'datetime',
             'finished_at' => 'datetime',
-            'result' => 'array',
-            'seal' => 'array',
+            'result' => TaskResult::class,
+            'seal' => TaskSeal::class,
+            'purpose' => DaemonTaskPurpose::class,
+            'required_features' => 'array',
+            'platform_emulation' => 'boolean',
         ];
     }
 }

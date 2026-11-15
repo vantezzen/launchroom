@@ -106,24 +106,125 @@ TTY="${LR_TEST_TTY:-/dev/tty}"
 HOST_ROOT="${LR_TEST_ROOT:-}"
 # macOS engine (docker-desktop, orbstack, colima), set by check_macos.
 MAC_ENGINE=""
-RELEASE_BASE="${LAUNCHROOM_RELEASE_BASE:-https://github.com/vantezzen/launchroom/releases}"
-# Same verification as install.sh (docs/09 R30, docs/11 §2): cosign v3.0.2
-# (digest-pinned container) and the exact release identity for the version.
-COSIGN_IMAGE="ghcr.io/sigstore/cosign/cosign:v3.0.2@sha256:b29487e48205d875c324c79583e2806d9d269c0fa299e0861bbec023d8430c8b"
-SIGNER_IDENTITY="https://github.com/vantezzen/launchroom/.github/workflows/release.yml@refs/tags/v"
-SIGNER_ISSUER="https://token.actions.githubusercontent.com"
 
-# A terminal we can prompt on (also when the script itself comes from a pipe).
-has_tty() { (: <"$TTY") 2>/dev/null; }
 say() { printf 'launchroom: %s\n' "$*"; }
 warn() { printf 'launchroom: warning: %s\n' "$*" >&2; }
 die() { printf 'launchroom: error: %s\n' "$*" >&2; exit 1; }
+
+# >>> lib/release.sh (generated from deploy/install/lib/release.sh by `make gen-installers`: edit that file)
+# Release download and verification shared by install.sh, server.sh and
+# cli.sh (docs/09 R30). Spliced into each by `make gen-installers`
+# (deploy/install/splice.sh); release tooling (release.sh,
+# deploy/release/build-bundle.sh) sources it. Expects die from the includer.
+
+RELEASE_BASE="${LAUNCHROOM_RELEASE_BASE:-https://github.com/vantezzen/launchroom/releases}"
+# cosign v3.0.2, multi-arch index digest. Run as a container: nothing to install.
+COSIGN_IMAGE="ghcr.io/sigstore/cosign/cosign:v3.0.2@sha256:b29487e48205d875c324c79583e2806d9d269c0fa299e0861bbec023d8430c8b"
+# Release identity (docs/09 R30, docs/11 §2): keyless cosign signatures made
+# by .github/workflows/release.yml of vantezzen/launchroom on the tag
+# v<version>, certified for GitHub Actions' OIDC issuer. The certificate
+# must name exactly "$SIGNER_IDENTITY<version>". launchroomd pins the same
+# identity for its self-updates (trust.json, daemon/internal/update).
+SIGNER_IDENTITY="https://github.com/vantezzen/launchroom/.github/workflows/release.yml@refs/tags/v"
+SIGNER_ISSUER="https://token.actions.githubusercontent.com"
+
+# is_semver V: MAJOR.MINOR.PATCH[-PRERELEASE][+BUILD] without a leading v.
+is_semver() {
+	printf '%s' "$1" | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$'
+}
+
+# is_release_version V: a version launchroom is released under (git tag
+# v<V>, image tag <V>): semver without build metadata, which image tags
+# cannot carry.
+is_release_version() {
+	is_semver "$1" || return 1
+	case "$1" in *+*) return 1 ;; esac
+}
+
+# download URL FILE (FILE - for stdout): HTTPS only, so the release files
+# never come over plain HTTP or a downgraded redirect.
+download() {
+	if command -v curl >/dev/null 2>&1; then
+		curl -fsSL --proto '=https' --tlsv1.2 --retry 3 -o "$2" "$1"
+	elif command -v wget >/dev/null 2>&1; then
+		case "$1" in https://*) ;; *) die "refusing to download $1 (not https)" ;; esac
+		wget -q -O "$2" "$1"
+	else
+		die "neither curl nor wget is installed"
+	fi
+}
+
+sha256_of() {
+	if command -v sha256sum >/dev/null 2>&1; then
+		sha256sum "$1" | awk '{ print $1 }'
+	elif command -v shasum >/dev/null 2>&1; then
+		shasum -a 256 "$1" | awk '{ print $1 }'
+	else
+		die "neither sha256sum nor shasum is installed"
+	fi
+}
+
+# cosign_verify DIR FILE VERSION: verifies DIR/FILE against its keyless
+# signature DIR/FILE.sigstore.json for the exact release identity of
+# VERSION, with the digest-pinned cosign container. Stops on any failure:
+# a bad signature, no network to Sigstore (cosign fetches the trusted root
+# through TUF) or a pull failure. Never reports success it did not check.
+cosign_verify() {
+	# umask 077 makes downloads 0600; the cosign image runs as a non-root
+	# user. The file and its signature are public release files.
+	chmod 0755 "$1" && chmod 0644 "$1/$2" "$1/$2.sigstore.json"
+	had_image="$(docker image ls -q "$COSIGN_IMAGE" 2>/dev/null)"
+	status=0
+	cosign_out="$(docker run --rm --network bridge -v "$(cd "$1" && pwd):/work:ro" "$COSIGN_IMAGE" verify-blob \
+		--bundle "/work/$2.sigstore.json" \
+		--certificate-identity "$SIGNER_IDENTITY$3" \
+		--certificate-oidc-issuer "$SIGNER_ISSUER" \
+		"/work/$2" 2>&1)" || status=$?
+	[ -n "$had_image" ] || docker image rm "$COSIGN_IMAGE" >/dev/null 2>&1 || true
+	if [ "$status" != 0 ]; then
+		printf '%s\n' "$cosign_out" | tail -n 8 | sed 's/^/  cosign: /' >&2
+		die "the signature of $2 could not be verified for $SIGNER_IDENTITY$3 (cosign's output above). Not installing."
+	fi
+}
+
+# write_trust FILE: pins the release identity launchroomd's self-updates are
+# verified against (docs/09 R30, docs/11 §4). Written once: re-running the
+# installer (also from an update) never replaces it, so a later bundle
+# cannot change whom future updates must be signed by.
+write_trust() {
+	[ ! -e "$1" ] || return 0
+	printf '{\n  "issuer": "%s",\n  "identity": "%s",\n  "releaseBase": "%s"\n}\n' \
+		"$SIGNER_ISSUER" "$SIGNER_IDENTITY" "$RELEASE_BASE" >"$1"
+	chmod 0644 "$1"
+}
+
+# write_guard_trust FROM: the same pin in $DIR/guard/trust.json, outside
+# launchroomd's data folder (D49): the update supervisor verifies a release
+# again against this copy, which launchroomd cannot change. Written once.
+write_guard_trust() {
+	[ ! -e "$DIR/guard/trust.json" ] || return 0
+	mkdir -p "$DIR/guard"
+	cp "$1" "$DIR/guard/trust.json"
+	chmod 0644 "$DIR/guard/trust.json"
+}
+# <<< lib/release.sh
 
 # Placeholders survive only when the script is run from a bundle, not
 # downloaded from a dashboard.
 unfilled() { case "$1" in *__LAUNCHROOM_*) return 0 ;; *) return 1 ;; esac; }
 
 MAC_ENGINES="OrbStack (orbstack.dev), Docker Desktop (docker.com/products/docker-desktop) or Colima (brew install colima docker docker-compose, then colima start)"
+
+# >>> lib/host.sh (generated from deploy/install/lib/host.sh by `make gen-installers`: edit that file)
+# Host preparation shared by install.sh and server.sh (docs/11 §2.1a):
+# Docker, inotify limits, the BuildKit AppArmor profile and swap. Spliced
+# into both scripts by `make gen-installers` (deploy/install/splice.sh).
+# Expects say/warn/die, TTY, HOST_ROOT and the INSTALL_DOCKER,
+# NO_INSTALL_DOCKER, RAISE_INOTIFY, ALLOW_BUILDKIT_USERNS and CREATE_SWAP
+# switches from the including script.
+
+# A terminal we can prompt on (also when the script itself comes from a pipe).
+has_tty() { (: <"$TTY") 2>/dev/null; }
 
 # ask QUESTION: asks on the terminal; Enter, y or yes is yes. No answer
 # (end of input) is no.
@@ -429,6 +530,19 @@ swap_manual() {
 	} >&2
 }
 
+# host_timezone: the host's IANA time zone for launchroomd (its container
+# cannot see the host's /etc). Informational: it only suggests the server's
+# location in the dashboard. Prints nothing when unknown.
+host_timezone() {
+	tz=""
+	[ ! -r /etc/timezone ] || tz="$(head -n 1 /etc/timezone)"
+	[ -n "$tz" ] || [ ! -L /etc/localtime ] || tz="$(readlink /etc/localtime | sed -n 's#.*zoneinfo/##p')"
+	if printf '%s' "$tz" | grep -Eq '^[A-Za-z][A-Za-z0-9_+-]{0,31}(/[A-Za-z0-9_+-]{1,32}){0,2}$'; then
+		printf '%s' "$tz"
+	fi
+}
+# <<< lib/host.sh
+
 check_prerequisites() {
 	case "$OS" in
 	Linux)
@@ -553,24 +667,6 @@ read_token() {
 	esac
 }
 
-is_semver() {
-	printf '%s' "$1" | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$'
-}
-
-download() { # download URL FILE
-	if command -v curl >/dev/null 2>&1; then
-		curl -fsSL --retry 3 -o "$2" "$1"
-	elif command -v wget >/dev/null 2>&1; then
-		wget -q -O "$2" "$1"
-	else
-		die "neither curl nor wget is installed"
-	fi
-}
-
-sha256_of() {
-	if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | awk '{ print $1 }'; else shasum -a 256 "$1" | awk '{ print $1 }'; fi
-}
-
 # fetch_bundle: downloads the signed release bundle of LR_RELEASE_VERSION,
 # checks its checksum and cosign signature (exact identity for that tag)
 # and sets LR_BUNDLE_DIR to the unpacked bundle. Without a signed release
@@ -603,21 +699,7 @@ fetch_bundle() {
 	if download "$base/launchroom-deploy.tar.gz.sigstore.json" "$tmp/bundle.tar.gz.sigstore.json" 2>/dev/null; then
 		bundle_version="$(tar -xzOf "$tmp/bundle.tar.gz" VERSION 2>/dev/null | tr -d ' \r\n' || true)"
 		[ "$bundle_version" = "$LR_RELEASE_VERSION" ] || die "the bundle is version '$bundle_version', not $LR_RELEASE_VERSION. Not installing."
-		# umask 077 makes the downloads 0600 root; the cosign image runs as a
-		# non-root user. The bundle and its signature are public release files.
-		chmod 0755 "$tmp" && chmod 0644 "$tmp"/bundle.tar.gz "$tmp"/bundle.tar.gz.sigstore.json
-		had_image="$(docker image ls -q "$COSIGN_IMAGE" 2>/dev/null)"
-		cosign_out="$(docker run --rm --network bridge -v "$(cd "$tmp" && pwd):/work:ro" "$COSIGN_IMAGE" verify-blob \
-			--bundle /work/bundle.tar.gz.sigstore.json \
-			--certificate-identity "$SIGNER_IDENTITY$LR_RELEASE_VERSION" \
-			--certificate-oidc-issuer "$SIGNER_ISSUER" \
-			/work/bundle.tar.gz 2>&1)" || status=$?
-		[ -n "$had_image" ] || docker image rm "$COSIGN_IMAGE" >/dev/null 2>&1 || true
-		if [ "${status:-0}" != 0 ]; then
-			# cosign's own words: a bad signature, no network to Sigstore (TUF), or a pull failure.
-			printf '%s\n' "$cosign_out" | tail -n 8 | sed 's/^/launchroom:   cosign: /' >&2
-			die "the bundle's cosign signature could not be verified for $SIGNER_IDENTITY$LR_RELEASE_VERSION (cosign's output above). Not installing."
-		fi
+		cosign_verify "$tmp" bundle.tar.gz "$LR_RELEASE_VERSION"
 		say "bundle signature verified: $SIGNER_IDENTITY$LR_RELEASE_VERSION"
 	elif [ "${LR_ALLOW_UNSIGNED:-}" = 1 ]; then
 		warn "release v$LR_RELEASE_VERSION has no signature; continuing because of LR_ALLOW_UNSIGNED=1 (checksum only)."
@@ -630,25 +712,6 @@ fetch_bundle() {
 	if [ -n "$pinned" ] && [ "$pinned" != "$LR_DAEMON_IMAGE" ]; then
 		die "the dashboard's launchroomd image ($LR_DAEMON_IMAGE) is not the one release v$LR_RELEASE_VERSION pins ($pinned)."
 	fi
-}
-
-# write_trust: pins the release identity launchroomd's self-updates are
-# verified against (docs/11 §4). Written once, never replaced.
-write_trust() {
-	[ ! -e "$DIR/data/trust.json" ] || return 0
-	printf '{\n  "issuer": "%s",\n  "identity": "%s",\n  "releaseBase": "%s"\n}\n' \
-		"$SIGNER_ISSUER" "$SIGNER_IDENTITY" "$RELEASE_BASE" >"$DIR/data/trust.json"
-	chmod 0644 "$DIR/data/trust.json"
-}
-
-# write_guard_trust: the same pin in guard/trust.json, outside launchroomd's
-# data folder (D49): the update supervisor verifies a release again against
-# this copy, which launchroomd cannot change. Written once.
-write_guard_trust() {
-	[ ! -e "$DIR/guard/trust.json" ] || return 0
-	mkdir -p "$DIR/guard"
-	cp "$DIR/data/trust.json" "$DIR/guard/trust.json"
-	chmod 0644 "$DIR/guard/trust.json"
 }
 
 write_compose() {
@@ -665,30 +728,16 @@ LAUNCHROOM_DAEMON_COMPOSE_EOF
 	fi
 }
 
-# set_env KEY VALUE: replace or append KEY=VALUE in .env.
 set_env() {
 	tmp="$DIR/.env.tmp"
 	{ grep -v "^$1=" "$DIR/.env" 2>/dev/null || true; printf '%s=%s\n' "$1" "$2"; } >"$tmp"
 	mv "$tmp" "$DIR/.env"
 }
 
-# unset_env KEY: remove KEY from .env.
 unset_env() {
 	tmp="$DIR/.env.tmp"
 	{ grep -v "^$1=" "$DIR/.env" 2>/dev/null || true; } >"$tmp"
 	mv "$tmp" "$DIR/.env"
-}
-
-# host_timezone: the host's IANA time zone for launchroomd (its container
-# cannot see the host's /etc). Informational: it only suggests the server's
-# location in the dashboard. Prints nothing when unknown.
-host_timezone() {
-	tz=""
-	[ ! -r /etc/timezone ] || tz="$(head -n 1 /etc/timezone)"
-	[ -n "$tz" ] || [ ! -L /etc/localtime ] || tz="$(readlink /etc/localtime | sed -n 's#.*zoneinfo/##p')"
-	if printf '%s' "$tz" | grep -Eq '^[A-Za-z][A-Za-z0-9_+-]{0,31}(/[A-Za-z0-9_+-]{1,32}){0,2}$'; then
-		printf '%s' "$tz"
-	fi
 }
 
 dc() { (cd "$DIR" && docker compose "$@"); }
@@ -726,7 +775,6 @@ parse_args() {
 	done
 }
 
-# docker_is_rootless: the Docker daemon runs rootless (docker info).
 docker_is_rootless() {
 	docker info --format '{{range .SecurityOptions}}{{.}} {{end}}' 2>/dev/null | grep -q 'name=rootless'
 }
@@ -808,8 +856,8 @@ main() {
 	umask 077
 	mkdir -p "$DIR/data"
 	fetch_bundle
-	write_trust
-	write_guard_trust
+	write_trust "$DIR/data/trust.json"
+	write_guard_trust "$DIR/data/trust.json"
 	write_compose
 	rm -rf "$DIR/.tmp"
 	set_env LR_DAEMON_IMAGE "$LR_DAEMON_IMAGE"

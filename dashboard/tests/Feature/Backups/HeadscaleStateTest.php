@@ -9,12 +9,34 @@ function headscaleStateDir(): string
 {
     $dir = sys_get_temp_dir().'/lr-headscale-'.bin2hex(random_bytes(6));
     mkdir($dir, 0700);
+    headscaleDirs($dir);
 
     return $dir;
 }
 
+/**
+ * The directories this test created (parallel workers share the temp dir,
+ * so cleanup never globs it). Called without an argument it hands them over.
+ *
+ * @return list<string>
+ */
+function headscaleDirs(?string $add = null): array
+{
+    static $dirs = [];
+
+    if ($add !== null) {
+        $dirs[] = $add;
+
+        return $dirs;
+    }
+
+    [$taken, $dirs] = [$dirs, []];
+
+    return $taken;
+}
+
 afterEach(function (): void {
-    foreach (glob(sys_get_temp_dir().'/lr-headscale-*') ?: [] as $dir) {
+    foreach (headscaleDirs() as $dir) {
         array_map(unlink(...), glob($dir.'/*') ?: []);
         rmdir($dir);
     }

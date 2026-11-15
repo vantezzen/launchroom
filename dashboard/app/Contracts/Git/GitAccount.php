@@ -22,4 +22,7 @@ interface GitAccount
     public function accountId(): int;
 
     public function accountTeamId(): int;
+
+    /** The full name of one of its repositories (by the provider's numeric id), if launchroom knows it. */
+    public function repositoryName(int $repositoryId): ?string;
 }

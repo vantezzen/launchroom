@@ -4,9 +4,14 @@ declare(strict_types=1);
 
 namespace App\Models\Updates;
 
+use App\Data\Audit\AuditActor;
+use App\Data\Audit\AuditEntryData;
+use App\Enums\AuditAction;
+use App\Enums\Contracts\HasTransitionTable;
 use App\Enums\Updates\ControlPlaneUpdateStatus;
 use App\Models\Backups\BackupRun;
 use App\Models\Concerns\HasPublicId;
+use App\Models\Concerns\HasStatusTransitions;
 use App\Models\DaemonTask;
 use App\Models\Server;
 use App\Models\User;
@@ -50,6 +55,9 @@ final class ControlPlaneUpdate extends Model
 {
     use HasPublicId;
 
+    /** @use HasStatusTransitions<ControlPlaneUpdateStatus> */
+    use HasStatusTransitions;
+
     /** @var array<string, mixed> */
     protected $attributes = [
         'status' => 'pending',
@@ -70,23 +78,19 @@ final class ControlPlaneUpdate extends Model
     }
 
     /**
-     * The only way an update's status changes (docs/10 §2.2 rule 3).
+     * @param  ControlPlaneUpdateStatus  $from
+     * @param  ControlPlaneUpdateStatus  $to
      */
-    public function transitionTo(ControlPlaneUpdateStatus $to, ?string $error = null): void
+    protected function recordTransition(HasTransitionTable $from, HasTransitionTable $to, ?string $note): void
     {
-        $this->status->assertCanTransitionTo($to);
-        $this->status = $to;
-
         if ($to !== ControlPlaneUpdateStatus::Pending) {
             $this->forceFill(['started_at' => $this->started_at ?? now()]);
         }
 
         if ($to->isTerminal()) {
             $this->forceFill(['finished_at' => now()]);
-            $this->error = $error === null ? null : mb_substr($error, 0, 2048);
+            $this->error = $note;
         }
-
-        $this->save();
     }
 
     /**
@@ -142,5 +146,17 @@ final class ControlPlaneUpdate extends Model
             'started_at' => 'datetime',
             'finished_at' => 'datetime',
         ];
+    }
+
+    /** Recorded by the system: updates finish in the background (docs/09 R26). */
+    public function finishedAuditEntry(): AuditEntryData
+    {
+        return new AuditEntryData(
+            action: AuditAction::ControlPlaneUpdateFinished,
+            actor: AuditActor::system(),
+            subjectType: 'control_plane_update',
+            subjectId: $this->public_id,
+            meta: ['from' => $this->from_version, 'to' => $this->to_version, 'status' => $this->status->value],
+        );
     }
 }

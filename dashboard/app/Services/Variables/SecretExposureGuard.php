@@ -17,8 +17,8 @@ use App\Support\Variables\SecretTaint;
  * the project may embed a secret through `${{…}}` references, directly or
  * transitively. Only problems that involve the changed keys are reported, so
  * an unrelated older problem doesn't block every edit (deploys still block on
- * all of them, SpecVariableResolver). Callers run this inside their
- * transaction, after the write, so a refusal rolls the change back.
+ * all of them, SpecVariableResolver). VariableStore::write() runs it before
+ * its transaction commits, so a refusal rolls the change back.
  *
  * It also enforces "production secrets must differ from preview" for the
  * changed keys when the project has it on (ProductionSecretPolicy).
@@ -28,6 +28,7 @@ final readonly class SecretExposureGuard
     public function __construct(
         private CurrentEnvironmentSpec $currentSpec,
         private ProductionSecretPolicy $policy,
+        private SpecVariableResolver $resolver,
     ) {}
 
     /**
@@ -48,7 +49,7 @@ final readonly class SecretExposureGuard
 
         foreach ($environments as $environment) {
             $environment->setRelation('project', $project);
-            $taint = SecretTaint::fromSpec($this->currentSpec->get($environment));
+            $taint = $this->resolver->taint($project, $this->currentSpec->get($environment));
 
             foreach ($taint->publicExposures() as $problem) {
                 if ($this->involves($taint, $problem, $changed)) {

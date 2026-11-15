@@ -4,12 +4,15 @@ declare(strict_types=1);
 
 namespace App\Models\Security;
 
+use App\Data\Security\FindingCheckData;
+use App\Enums\Contracts\HasTransitionTable;
 use App\Enums\Security\DismissReason;
 use App\Enums\Security\FindingLevel;
 use App\Enums\Security\SecurityFindingStatus;
 use App\Enums\Security\Severity;
 use App\Models\Concerns\BelongsToTeam;
 use App\Models\Concerns\HasPublicId;
+use App\Models\Concerns\HasStatusTransitions;
 use App\Models\Deployment;
 use App\Models\Environment;
 use App\Models\Project;
@@ -22,6 +25,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
+use Spatie\LaravelData\DataCollection;
 
 /**
  * One (service instance, advisory group, component version) whose
@@ -48,7 +52,7 @@ use Illuminate\Support\Carbon;
  * @property bool $direct
  * @property FindingLevel $level
  * @property list<string> $reasons
- * @property list<array{rule: string, passed: bool, label: string}> $checks
+ * @property DataCollection<int, FindingCheckData> $checks
  * @property string|null $attack_vector
  * @property Severity $severity
  * @property string|null $cvss_score
@@ -83,6 +87,9 @@ final class SecurityFinding extends Model
 {
     use BelongsToTeam, HasPublicId;
 
+    /** @use HasStatusTransitions<SecurityFindingStatus> */
+    use HasStatusTransitions;
+
     /** @var array<string, mixed> */
     protected $attributes = [
         'status' => 'open',
@@ -101,13 +108,11 @@ final class SecurityFinding extends Model
     }
 
     /**
-     * The only way a finding's status changes (docs/10 §2.2 rule 3).
+     * @param  SecurityFindingStatus  $from
+     * @param  SecurityFindingStatus  $to
      */
-    public function transitionTo(SecurityFindingStatus $to): void
+    protected function recordTransition(HasTransitionTable $from, HasTransitionTable $to, ?string $note): void
     {
-        $this->status->assertCanTransitionTo($to);
-        $this->status = $to;
-
         if ($to === SecurityFindingStatus::Resolved) {
             $this->forceFill(['resolved_at' => now()]);
         }
@@ -115,8 +120,6 @@ final class SecurityFinding extends Model
         if ($to === SecurityFindingStatus::Open) {
             $this->forceFill(['resolved_at' => null, 'dismissed_at' => null, 'dismissed_by' => null, 'dismiss_reason' => null, 'dismiss_note' => null]);
         }
-
-        $this->save();
     }
 
     /**
@@ -185,7 +188,7 @@ final class SecurityFinding extends Model
             'direct' => 'boolean',
             'level' => FindingLevel::class,
             'reasons' => 'array',
-            'checks' => 'array',
+            'checks' => DataCollection::class.':'.FindingCheckData::class.',default',
             'severity' => Severity::class,
             'cvss_score' => 'decimal:1',
             'known_exploited' => 'boolean',
@@ -200,6 +203,18 @@ final class SecurityFinding extends Model
             'dismiss_reason' => DismissReason::class,
             'notified_at' => 'datetime',
         ];
+    }
+
+    /**
+     * Open findings someone should act on (the sidebar badge, the panel chip,
+     * alerts).
+     *
+     * @param  Builder<self>  $query
+     */
+    #[Scope]
+    protected function actionNeeded(Builder $query): void
+    {
+        $query->where('status', SecurityFindingStatus::Open)->where('level', FindingLevel::ActionNeeded);
     }
 
     /**

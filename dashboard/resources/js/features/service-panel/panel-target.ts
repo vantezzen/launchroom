@@ -5,7 +5,10 @@
 
 type Node = App.Data.Canvas.CanvasNodeData;
 type Panel = App.Data.Canvas.ServicePanelData;
-export type Target = { tab: string; section: string | null };
+export type Target = {
+    tab: App.Enums.ServicePanelTab;
+    section: App.Enums.ServiceSettingsSection | null;
+};
 /** The panel drawn on click while its request runs (docs/08 §2). */
 export type Pending = Target & { visit: number; serviceId: string };
 
@@ -20,7 +23,12 @@ export function targetFor(explicit?: string): Target {
         return { tab: 'settings', section: 'variables' };
     }
 
-    return { tab: explicit ?? 'deployments', section: null };
+    // Tab names arrive as strings from links and node icons; the route 404s
+    // anything that isn't a tab.
+    return {
+        tab: (explicit ?? 'deployments') as App.Enums.ServicePanelTab,
+        section: null,
+    };
 }
 
 /**

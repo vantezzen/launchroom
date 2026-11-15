@@ -16,6 +16,7 @@ use App\Data\Api\ServiceResource;
 use App\Data\Transfers\TransferVolumeData;
 use App\Enums\DeploymentStatus;
 use App\Enums\DomainKind;
+use App\Enums\EnvironmentKind;
 use App\Enums\ServerRole;
 use App\Models\Deployment;
 use App\Models\Domain;
@@ -32,15 +33,6 @@ use App\Models\Volume;
  */
 final class ApiResources
 {
-    /** Statuses after which nothing happens on its own (`finished`). */
-    private const array SETTLED = [
-        DeploymentStatus::Active,
-        DeploymentStatus::Failed,
-        DeploymentStatus::Cancelled,
-        DeploymentStatus::Superseded,
-        DeploymentStatus::Ready,
-    ];
-
     public function project(Project $project): ProjectResource
     {
         $project->loadMissing('environments');
@@ -51,7 +43,7 @@ final class ApiResources
             slug: $project->slug,
             createdAt: $project->created_at?->toIso8601String() ?? '',
             environments: array_values($project->environments
-                ->sortBy(static fn (Environment $environment): string => $environment->kind->value === 'production' ? '0' : '1'.$environment->name)
+                ->sortBy(static fn (Environment $environment): string => $environment->kind === EnvironmentKind::Production ? '0' : '1'.$environment->name)
                 ->map(static fn (Environment $environment): EnvironmentRefData => new EnvironmentRefData($environment->public_id, $environment->name, $environment->slug, $environment->kind))
                 ->all()),
             dashboardUrl: route('projects.show', [$project->public_id]),
@@ -88,7 +80,7 @@ final class ApiResources
 
         $status = match (true) {
             $instance->stopped_at !== null => 'stopped',
-            $latest !== null && ! $this->finished($latest->status) => $latest->status->value,
+            $latest !== null && ! $latest->status->isSettled() => $latest->status->value,
             $active !== null => 'live',
             $latest !== null => $latest->status->value,
             default => 'not_deployed',
@@ -130,7 +122,7 @@ final class ApiResources
             serviceId: $service->public_id,
             serviceName: $service->name,
             status: $deployment->status,
-            finished: $this->finished($deployment->status),
+            finished: $deployment->status->isSettled(),
             trigger: $deployment->trigger,
             commit: $deployment->commit_sha === null ? null : new ApiCommitData(
                 sha: $deployment->commit_sha,
@@ -177,10 +169,5 @@ final class ApiResources
             certExpiresAt: $domain->cert_expires_at?->toIso8601String(),
             hsts: $domain->hsts,
         );
-    }
-
-    public function finished(DeploymentStatus $status): bool
-    {
-        return in_array($status, self::SETTLED, true);
     }
 }

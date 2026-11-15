@@ -20,7 +20,7 @@ import { revoke } from '@/routes/servers';
 import { destroy as cancelEnrollment } from '@/routes/servers/enrollments';
 
 /** What gets removed: an enrolment nobody used yet, or a connected server still waiting for approval. */
-export type PendingTarget =
+type PendingTarget =
     | { kind: 'enrollment'; id: string; name: string | null }
     | { kind: 'server'; id: string; name: string };
 
@@ -43,7 +43,7 @@ function copy(target: PendingTarget) {
 }
 
 /** The confirmation for removing a pending server (card menu and pages). */
-export function RemovePendingDialog({
+function RemovePendingDialog({
     target,
     open,
     onOpenChange,

@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Data\Alerts;
 
 use App\Enums\Alerts\AlertRule;
-use App\Services\Alerts\ResolvedRule;
 use Spatie\LaravelData\Data;
 
 /**

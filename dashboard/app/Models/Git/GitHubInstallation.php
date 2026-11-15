@@ -88,6 +88,13 @@ final class GitHubInstallation extends Model implements GitAccount
         return $this->team_id;
     }
 
+    public function repositoryName(int $repositoryId): ?string
+    {
+        $name = $this->repositories()->where('github_repo_id', $repositoryId)->value('full_name');
+
+        return is_string($name) ? $name : null;
+    }
+
     /**
      * @param  Builder<self>  $query
      */

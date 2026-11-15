@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Data\Protocol\V1;
 
-use Spatie\LaravelData\Attributes\Validation\In;
+use App\Enums\Updates\UpdateScope;
 use Spatie\LaravelData\Attributes\Validation\Max;
 use Spatie\LaravelData\Data;
 
@@ -14,16 +14,16 @@ use Spatie\LaravelData\Data;
  */
 final class SelfUpdateResult extends Data
 {
-    /**
-     * @param  'daemon'|'control_plane'  $scope
-     */
     public function __construct(
-        #[In(['daemon', 'control_plane'])]
-        public string $scope,
+        public UpdateScope $scope,
         #[Max(64)]
         public string $fromVersion,
         #[Max(64)]
         public string $toVersion,
+        /** The new version did not become healthy and fromVersion runs again. */
         public bool $rolledBack,
+        /** Why the new version was rolled back (secret-free). */
+        #[Max(4096)]
+        public ?string $reason = null,
     ) {}
 }

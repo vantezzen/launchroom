@@ -14,6 +14,7 @@ use App\Actions\Services\CreateService;
 use App\Actions\Services\UpdateServiceSettings;
 use App\Actions\Variables\CreateVariable;
 use App\Data\Audit\AuditActor;
+use App\Data\ConfigAsCode\ConfigApplyOutcome;
 use App\Data\Environments\CreateEnvironmentData;
 use App\Data\Environments\EnvironmentTriggers;
 use App\Data\Git\CommitData;
@@ -28,6 +29,7 @@ use App\Data\Services\UpdateServiceSettingsData;
 use App\Data\Specs\ChangeItem;
 use App\Data\Specs\StagedChanges;
 use App\Data\Variables\VariableInput;
+use App\Enums\Backups\DeletionRequestStatus;
 use App\Enums\ConfigAsCode\ConfigFileStatus;
 use App\Enums\ConfigAsCode\ConfigTrust;
 use App\Enums\ConnectionMode;
@@ -38,6 +40,7 @@ use App\Enums\Git\GitEventSource;
 use App\Enums\ServiceKind;
 use App\Enums\VariableType;
 use App\Events\Git\GitPushReceived;
+use App\Models\Backups\DeletionRequest;
 use App\Models\ConfigAsCode\EnvironmentConfigFile;
 use App\Models\Deployment;
 use App\Models\Domain;
@@ -49,7 +52,6 @@ use App\Models\ServiceInstance;
 use App\Models\Team;
 use App\Models\Variable;
 use App\Queries\CurrentEnvironmentSpec;
-use App\Services\ConfigAsCode\ConfigApplyOutcome;
 use App\Services\ConfigAsCode\ConfigExporter;
 use App\Support\Changes\SpecDiff;
 use Illuminate\Http\Client\Request;
@@ -219,8 +221,8 @@ test('a push with an invalid file fails with the problems and stages nothing', f
     expect($deployment->status)->toBe(DeploymentStatus::Failed)
         ->and($deployment->failure_class)->toBe(DeploymentFailureClass::ConfigError)
         ->and($deployment->failure_message)->toBe('launchroom.json has a problem: "port" should be a whole number. (line 4, column 49)')
-        ->and($deployment->config_errors['errors'][0])->toMatchArray(['line' => 4, 'column' => 49, 'path' => 'services.web.deploy.port', 'hint' => 'Remove the quotes: 3000.'])
-        ->and($deployment->config_errors['commitSha'])->toBe(CF_SHA)
+        ->and($deployment->config_errors?->errors[0]->toArray())->toMatchArray(['line' => 4, 'column' => 49, 'path' => 'services.web.deploy.port', 'hint' => 'Remove the quotes: 3000.'])
+        ->and($deployment->config_errors?->commitSha)->toBe(CF_SHA)
         ->and(cfStaged($this->production)->isEmpty())->toBeTrue()
         ->and(EnvironmentConfigFile::query()->sole()->status)->toBe(ConfigFileStatus::Invalid);
 });
@@ -322,7 +324,7 @@ test('name and image are shared, so only production\'s file changes them', funct
     $outcome = cfApply($staging, (string) json_encode(['version' => 1, 'services' => ['web' => ['kind' => 'app', 'name' => 'Storefront']]]));
 
     expect($this->web->refresh()->name)->toBe('web')
-        ->and($outcome->record->ignored[0]['message'])->toContain('name is shared by every environment and follows production');
+        ->and($outcome->record->ignored[0]->message)->toContain('name is shared by every environment and follows production');
 
     cfApply($this->production, (string) json_encode(['version' => 1, 'services' => ['web' => ['kind' => 'app', 'name' => 'Storefront']]]));
 
@@ -336,7 +338,7 @@ test('preview and fork files can\'t change domains, placement, scaling beyond th
         'miner' => ['kind' => 'image', 'image' => 'evil/miner:latest'],
     ]]), $trust);
     $instance = cfInstance($staging, $this->web);
-    $ignored = array_column($outcome->record->ignored, 'message');
+    $ignored = array_column($outcome->record->ignored->toArray(), 'message');
 
     expect($outcome->invalid())->toBeFalse()
         ->and(Domain::query()->where('hostname', 'evil.example.com')->exists())->toBeFalse()
@@ -411,4 +413,22 @@ test('every dashboard serves the schema publicly', function (): void {
 
     expect($response->baseResponse)->toBeInstanceOf(BinaryFileResponse::class)
         ->and(json_decode((string) file_get_contents($response->baseResponse->getFile()->getPathname()), true)['$id'])->toBe('https://launchroom.vantezzen.io/schema/launchroom.v1.json');
+});
+
+test('a file that lists a service staged for removal keeps it and cancels the removal\'s final backup gate', function (): void {
+    $instance = cfInstance($this->production, $this->web);
+    $instance->forceFill(['removed_at' => now()])->save();
+    $request = DeletionRequest::query()->create([
+        'team_id' => $this->team->id,
+        'subject_type' => DeletionRequest::SERVICE_INSTANCE,
+        'subject_id' => $instance->id,
+        'subject_public_id' => $instance->public_id,
+        'subject_name' => 'web',
+    ]);
+
+    $outcome = cfApply($this->production, (string) json_encode(['version' => 1, 'services' => ['web' => ['kind' => 'app']]]));
+
+    expect($outcome->invalid())->toBeFalse()
+        ->and($instance->refresh()->removed_at)->toBeNull()
+        ->and($request->refresh()->status)->toBe(DeletionRequestStatus::Cancelled);
 });

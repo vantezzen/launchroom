@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Actions\Deployments;
 
 use App\Actions\Audit\RecordAuditEvent;
-use App\Contracts\BuildOrchestrator;
 use App\Data\Audit\AuditActor;
 use App\Data\Audit\AuditEntryData;
 use App\Enums\AuditAction;
@@ -14,6 +13,7 @@ use App\Events\NodeStateInvalidated;
 use App\Exceptions\DomainRuleViolation;
 use App\Jobs\AdvanceDeploymentJob;
 use App\Models\Deployment;
+use App\Services\Builds\BuildOrchestrator;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -65,18 +65,10 @@ final readonly class CancelDeployment
                 meta: [],
             ));
 
-            $next = Deployment::query()
-                ->where('service_instance_id', $deployment->service_instance_id)
-                ->where('status', DeploymentStatus::Queued->value)
-                ->orderBy('id')
-                ->value('id');
-
-            return is_int($next) ? $next : null;
+            return Deployment::nextQueuedId($deployment->service_instance_id);
         });
 
-        if ($servers !== []) {
-            event(new NodeStateInvalidated($servers));
-        }
+        NodeStateInvalidated::servers($servers);
 
         if ($next !== null) {
             dispatch(new AdvanceDeploymentJob($next));

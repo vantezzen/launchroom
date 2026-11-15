@@ -7,6 +7,7 @@ namespace App\Services\Previews;
 use App\Data\Protocol\V1\NetworkSpec;
 use App\Data\Protocol\V1\RouteSpec;
 use App\Data\Specs\EnvironmentSpec;
+use App\Enums\DeploymentStatus;
 use App\Enums\EnvironmentKind;
 use App\Enums\WorkloadRole;
 use App\Models\Deployment;
@@ -17,7 +18,9 @@ use App\Models\Server;
 use App\Models\Service;
 use App\Services\Instance\DashboardOrigin;
 use App\Support\Deployments\EffectiveDeploy;
-use App\Support\Hostname;
+use App\Support\Ingress\DomainRoute;
+use App\Support\Ingress\RouteId;
+use App\Support\Protocol\Grammar;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -36,8 +39,6 @@ use Illuminate\Support\Facades\Log;
  */
 final class PreviewRoutes
 {
-    public const string STRIP_HEADER = 'X-Launchroom-Bypass';
-
     /** @var array<int, array{forwardAuth: array{url: string, stripHeaders: list<string>}}|false|null> */
     private array $protection = [];
 
@@ -80,7 +81,7 @@ final class PreviewRoutes
             return $this->protection[$environment->id] = false;
         }
 
-        return $this->protection[$environment->id] = ['forwardAuth' => ['url' => $url, 'stripHeaders' => [self::STRIP_HEADER]]];
+        return $this->protection[$environment->id] = ['forwardAuth' => ['url' => $url, 'stripHeaders' => [config()->string('launchroom.previews.bypass_header')]]];
     }
 
     /**
@@ -110,7 +111,7 @@ final class PreviewRoutes
             // its URL once it passed its health checks.
             $live = $placement->role === WorkloadRole::Draining
                 || $placement->deployment_id === $placement->serviceInstance->active_deployment_id
-                || $deployment->status->value === 'ready';
+                || $deployment->status === DeploymentStatus::Ready;
 
             if (! $live || $spec === null || $port === null || ! $spec->kind->isWeb()) {
                 continue;
@@ -147,12 +148,13 @@ final class PreviewRoutes
                 continue;
             }
 
-            $routes[$host] = new RouteSpec(
-                id: 'rt_'.substr($deployment->public_id, strlen('dpl_')),
-                hosts: [$host],
-                tls: Hostname::isLocal($host) ? 'internal' : 'on_demand',
+            $routes[$host] = DomainRoute::serving(
+                RouteId::forDeployment($deployment->public_id),
+                $host,
+                [$host],
+                onDemand: true,
+                indexed: false,
                 upstreams: $upstreams,
-                headers: ['X-Robots-Tag' => 'noindex'],
                 protection: $protection,
             );
         }
@@ -207,6 +209,6 @@ final class PreviewRoutes
             default => resolve(DashboardOrigin::class)->forServer($this->server).'/auth/preview',
         };
 
-        return preg_match('#^https?://[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*(?::[1-9][0-9]{0,4})?/auth/preview$#D', $url) === 1 ? $url : null;
+        return preg_match(Grammar::FORWARD_AUTH_URL, $url) === 1 ? $url : null;
     }
 }

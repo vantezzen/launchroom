@@ -35,7 +35,7 @@ final class InteractiveSessionController extends Controller
     public function show(InteractiveSession $interactiveSession, #[CurrentUser] User $user): JsonResponse
     {
         Gate::authorize('view', $interactiveSession);
-        $interactiveSession->loadMissing(['user:id,name', 'server:id,name', 'daemonTask:id,error']);
+        $interactiveSession->loadMissing(['user:id,name', 'server:id,name', 'daemonTask:id,error,result']);
 
         return response()->json(SessionTabs::item($interactiveSession, $user))->header('Cache-Control', 'no-store, private');
     }

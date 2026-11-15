@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"maps"
 	"net/http"
@@ -100,6 +101,71 @@ func TestParseBundle(t *testing.T) {
 	bad["not gzip"] = []byte("plain")
 	for name, tarball := range bad {
 		if _, err := ParseBundle(tarball); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+}
+
+// withManifest adds a manifest.json like build-bundle.sh writes (the
+// helper mode 0755 for control-plane/launchroom, install.sh 0644 here, so
+// the modes are seen to come from the manifest).
+func withManifest(t *testing.T, files map[string][]byte, required ...string) map[string][]byte {
+	t.Helper()
+	type entry struct {
+		Path   string `json:"path"`
+		Mode   string `json:"mode"`
+		SHA256 string `json:"sha256"`
+	}
+	m := struct {
+		Version        string   `json:"version"`
+		RequiredImages []string `json:"requiredImages"`
+		Files          []entry  `json:"files"`
+	}{Version: strings.TrimSpace(string(files["VERSION"])), RequiredImages: required}
+	for _, name := range sortedKeys(files) {
+		sum := sha256.Sum256(files[name])
+		mode := "0644"
+		if name == "control-plane/launchroom" || name == "install/server.sh" {
+			mode = "0755"
+		}
+		m.Files = append(m.Files, entry{Path: name, Mode: mode, SHA256: hex.EncodeToString(sum[:])})
+	}
+	raw, err := json.Marshal(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := maps.Clone(files)
+	out["manifest.json"] = raw
+	return out
+}
+
+func TestParseBundleWithManifest(t *testing.T) {
+	files := withManifest(t, bundleFiles("1.2.3"), "LR_DAEMON_IMAGE", "LR_DASHBOARD_IMAGE")
+	b, err := ParseBundle(makeTarball(t, files))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(t.TempDir(), "bundle")
+	if err := b.Extract(dir); err != nil {
+		t.Fatal(err)
+	}
+	for name, want := range map[string]os.FileMode{"install/server.sh": 0o755, "install/install.sh": 0o644, "control-plane/launchroom": 0o755} {
+		if st, err := os.Stat(filepath.Join(dir, filepath.FromSlash(name))); err != nil || st.Mode().Perm() != want {
+			t.Errorf("%s: %v %v, want %v", name, st, err, want)
+		}
+	}
+
+	bad := map[string]map[string][]byte{}
+	bad["required image missing"] = withManifest(t, bundleFiles("1.2.3"), "LR_CADDY_IMAGE")
+	tampered := withManifest(t, bundleFiles("1.2.3"))
+	tampered["install/server.sh"] = []byte("#!/bin/sh\nevil\n")
+	bad["digest mismatch"] = tampered
+	unlisted := withManifest(t, bundleFiles("1.2.3"))
+	unlisted["extra.sh"] = []byte("x")
+	bad["unlisted file"] = unlisted
+	bad["other version"] = withManifest(t, bundleFiles("1.2.3"))
+	bad["other version"]["VERSION"] = []byte("1.2.4\n")
+	for name, f := range bad {
+		if _, err := ParseBundle(makeTarball(t, f)); err == nil {
 			t.Errorf("%s: accepted", name)
 		}
 	}

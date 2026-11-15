@@ -43,13 +43,4 @@ final class HealthcheckSettings extends Data
     {
         return new self(HealthcheckType::None);
     }
-
-    /**
-     * Upper bound for a new workload to become healthy, after which the
-     * deployment fails with `health_timeout`.
-     */
-    public function deadlineSeconds(): int
-    {
-        return $this->startPeriodSeconds + ($this->intervalSeconds + $this->timeoutSeconds) * $this->failureThreshold + 120;
-    }
 }

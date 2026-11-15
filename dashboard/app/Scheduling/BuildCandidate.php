@@ -28,13 +28,11 @@ final readonly class BuildCandidate
         public array $emulated = [],
     ) {}
 
-    /** It can build images for $platform (natively, emulated, or unknown platform). */
     public function builds(string $platform): bool
     {
         return $this->platform === null || $this->platform === $platform || in_array($platform, $this->emulated, true);
     }
 
-    /** It builds $platform without emulation (or its platform is unknown). */
     public function native(string $platform): bool
     {
         return $this->platform === null || $this->platform === $platform;

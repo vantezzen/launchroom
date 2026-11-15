@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Middleware;
 
+use App\Http\Routing\RouteFamily;
 use App\Services\Instance\DashboardOrigin;
 use App\Support\Origin;
 use Closure;
@@ -33,12 +34,6 @@ use Symfony\Component\HttpFoundation\Response;
  */
 final readonly class UseDashboardOrigin
 {
-    /** @var list<string> */
-    private const array DAEMON_PATHS = ['daemon/*', 'move/*', 'auth/preview', 'registry/token', 'up', '.well-known/launchroom/*'];
-
-    /** @var list<string> */
-    private const array TRANSITION_PATHS = ['api/*', 'cli/*', 'webhooks/*', 'install/*'];
-
     public function __construct(
         private DashboardOrigin $origin,
     ) {}
@@ -56,8 +51,10 @@ final readonly class UseDashboardOrigin
             return $next($request);
         }
 
+        $family = RouteFamily::of($request);
+
         if ($host === $this->origin->pendingHost()) {
-            return $request->is('.well-known/launchroom/*', 'up') ? $next($request) : $this->redirect($request);
+            return $family->answersOnPendingOrigin() ? $next($request) : $this->redirect($request);
         }
 
         foreach ($this->origin->legacy() as $legacy) {
@@ -65,8 +62,8 @@ final readonly class UseDashboardOrigin
                 continue;
             }
 
-            if ($request->is(...self::DAEMON_PATHS)
-                || ($legacy['until']->isFuture() && $request->is(...self::TRANSITION_PATHS))) {
+            if ($family->answersOnEveryOrigin()
+                || ($legacy['until']->isFuture() && $family->answersDuringOriginTransition())) {
                 return $next($request);
             }
 

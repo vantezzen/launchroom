@@ -23,32 +23,36 @@ const POSTGRES_FIRST = /laravel|rails|django|phoenix|adonis/i;
 const QUEUE = /queue|worker|horizon|sidekiq|celery|bull/i;
 
 /**
- * The engine that fits what was detected, for a quiet "Recommended" mark:
- * Postgres for the usual web frameworks, Redis when a queue worker was
- * found. Never one the repository already asks for.
+ * The engines that fit what was detected, for a quiet "Recommended" mark:
+ * the first relational engine (Postgres) for the usual web frameworks, the
+ * first key-value engine (Redis) when a queue worker was found. Never one
+ * of a kind the repository already asks for.
  */
-export function recommendedEngines(
+function recommendedEngines(
+    engines: Engine[],
     frameworks: string[],
     processes: string[],
     taken: string[],
 ): string[] {
-    const picks: string[] = [];
+    const takenCategories = engines
+        .filter((item) => taken.includes(item.engine))
+        .map((item) => item.category);
+    const pick = (category: Engine['category']): string[] => {
+        const first = engines.find((item) => item.category === category);
 
-    if (
-        frameworks.some((framework) => POSTGRES_FIRST.test(framework)) &&
-        !taken.some((engine) => engine === 'postgres' || engine === 'mysql')
-    ) {
-        picks.push('postgres');
-    }
+        return first && !takenCategories.includes(category)
+            ? [first.engine]
+            : [];
+    };
 
-    if (
-        processes.some((process) => QUEUE.test(process)) &&
-        !taken.some((engine) => engine === 'redis' || engine === 'valkey')
-    ) {
-        picks.push('redis');
-    }
-
-    return picks;
+    return [
+        ...(frameworks.some((framework) => POSTGRES_FIRST.test(framework))
+            ? pick('relational')
+            : []),
+        ...(processes.some((process) => QUEUE.test(process))
+            ? pick('key_value')
+            : []),
+    ];
 }
 
 /**
@@ -75,6 +79,7 @@ export function DatabasePicker({
     const selectedApps = apps.filter((app) => app.selected);
     const detected = databases.filter((db) => db.reason !== null);
     const recommended = recommendedEngines(
+        engines,
         frameworks,
         processes,
         detected.map((db) => db.engine),

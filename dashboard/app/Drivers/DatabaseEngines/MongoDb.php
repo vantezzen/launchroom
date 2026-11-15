@@ -7,6 +7,7 @@ namespace App\Drivers\DatabaseEngines;
 use App\Data\Services\HealthcheckSettings;
 use App\Enums\ConnectionStyle;
 use App\Enums\DatabaseEngine;
+use App\Enums\RemoteAccess\RemoteAccessProtocol;
 use App\Enums\VariableType;
 use App\Support\Images\ImageReference;
 
@@ -41,7 +42,7 @@ final readonly class MongoDb implements DatabaseEngineDriver
 
     public function defaultVersion(): string
     {
-        return '8.0';
+        return $this->images->defaultVersion($this->engine());
     }
 
     public function image(string $version): ImageReference
@@ -54,9 +55,19 @@ final readonly class MongoDb implements DatabaseEngineDriver
         return 27017;
     }
 
+    public function category(): DatabaseEngineCategory
+    {
+        return DatabaseEngineCategory::Document;
+    }
+
     public function volumeMountPath(string $version): string
     {
         return '/data/db';
+    }
+
+    public function dataDirectory(string $version): string
+    {
+        return $this->volumeMountPath($version);
     }
 
     public function variables(): array
@@ -78,6 +89,38 @@ final readonly class MongoDb implements DatabaseEngineDriver
     public function exportedKeys(): array
     {
         return ['MONGO_URL', 'DATABASE_URL', 'MONGOHOST', 'MONGOPORT', 'MONGOUSER', 'MONGOPASSWORD', 'MONGODATABASE'];
+    }
+
+    public function exportedKey(ConnectionPart $part): ?string
+    {
+        return match ($part) {
+            ConnectionPart::Url => 'MONGO_URL',
+            ConnectionPart::Host => 'MONGOHOST',
+            ConnectionPart::Port => 'MONGOPORT',
+            ConnectionPart::User => 'MONGOUSER',
+            ConnectionPart::Password => 'MONGOPASSWORD',
+            ConnectionPart::Database => 'MONGODATABASE',
+            ConnectionPart::NativePort => null,
+        };
+    }
+
+    public function imageEnvAliases(): array
+    {
+        return [
+            'user' => ['MONGO_INITDB_ROOT_USERNAME', 'MONGODB_ROOT_USER', 'MONGODB_USERNAME'],
+            'password' => ['MONGO_INITDB_ROOT_PASSWORD', 'MONGODB_ROOT_PASSWORD', 'MONGODB_PASSWORD'],
+            'database' => ['MONGO_INITDB_DATABASE', 'MONGODB_DATABASE'],
+        ];
+    }
+
+    public function nativeSchemes(): array
+    {
+        return [];
+    }
+
+    public function urlQuery(): array
+    {
+        return ['authSource' => 'admin'];
     }
 
     public function connectionVariables(ConnectionStyle $style, string $slug): array
@@ -119,6 +162,11 @@ final readonly class MongoDb implements DatabaseEngineDriver
         return 'SIGTERM';
     }
 
+    public function stopTimeout(): string
+    {
+        return '60s';
+    }
+
     public function entrypoint(): ?array
     {
         return null;
@@ -129,19 +177,45 @@ final readonly class MongoDb implements DatabaseEngineDriver
         return null;
     }
 
-    public function dumpCommand(): array
+    public function client(): ?string
     {
-        // The password is read from stdin (never argv); launchroomd builds the argv.
-        return ['mongodump', '--archive', '--gzip', '--authenticationDatabase=admin', '--username=app', '--db=app'];
+        return null;
     }
 
-    public function restoreCommand(): array
+    public function phpExtension(): string
     {
-        return ['mongorestore', '--archive', '--gzip', '--drop', '--authenticationDatabase=admin', '--username=app', '--nsInclude=app.*'];
+        return 'mongodb';
     }
 
-    public function dumpFileExtension(): string
+    public function exportFileExtension(): string
     {
         return 'archive';
+    }
+
+    public function importFormat(): DumpImport
+    {
+        return new DumpImport(
+            engine: $this->engine(),
+            formats: ['mongodb_archive'],
+            formatsHint: 'mongodump --archive, optionally gzipped (.archive, .gz)',
+            urlSchemes: ['mongodb', 'mongodb+srv'],
+            urlExample: 'mongodb://user:password@db.example.com:27017/app',
+            objects: 'collections',
+        );
+    }
+
+    public function restorable(): bool
+    {
+        return true;
+    }
+
+    public function pointInTimeRecoveryFrom(): null
+    {
+        return null;
+    }
+
+    public function remoteAccess(): ?RemoteAccessProtocol
+    {
+        return null;
     }
 }

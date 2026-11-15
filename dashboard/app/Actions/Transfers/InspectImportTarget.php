@@ -18,6 +18,7 @@ use App\Services\Transfers\ImportInspections;
 use App\Services\Transfers\ImportTarget;
 use App\Services\Transfers\SourceUrl;
 use App\Services\Transfers\TransferTasks;
+use App\Support\Crypto\TaskSealer;
 
 /**
  * Looks at an import's target before anything is chosen (docs/14 §12.5): a
@@ -56,8 +57,8 @@ final readonly class InspectImportTarget
             $sealed = null;
 
             if ($input->sourceUrl !== null && $input->sourceUrl !== '') {
-                $url = SourceUrl::parse($input->sourceUrl, $target->engine());
-                $sealed = $this->tasks->sealSourceUrl($placement->server, $taskId, $url->url);
+                $url = SourceUrl::parse($input->sourceUrl, $target->import());
+                $sealed = TaskSealer::env($placement->server->sealing_public_key, $placement->server->public_id, $taskId, ['SOURCE_URL' => $url->url]);
                 $this->audit->handle(new AuditEntryData(
                     action: AuditAction::DataImportSourceChecked,
                     actor: $actor,

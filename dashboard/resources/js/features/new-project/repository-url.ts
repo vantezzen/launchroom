@@ -2,6 +2,7 @@
  * Client-side mirror of `App\Support\Git\PublicRepositoryUrl` (docs/19
  * §4.3) for live feedback while typing: provider mark, "looks complete"
  * and the error sentence. The server checks again; this never decides.
+ * tests/Fixtures/repository-url-vectors.json keeps both equal.
  */
 export type RepositoryProvider = 'github' | 'gitlab' | 'codeberg' | 'git';
 

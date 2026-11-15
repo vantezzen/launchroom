@@ -145,8 +145,5 @@ func simplify(err error) error {
 	case strings.Contains(msg, "no route to host"):
 		return errors.New("no route to host")
 	}
-	if len(msg) > 200 {
-		msg = msg[:200]
-	}
-	return errors.New(msg)
+	return errors.New(state.Clip(msg, 200))
 }

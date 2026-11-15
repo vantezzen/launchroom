@@ -7,14 +7,14 @@ namespace App\Actions\Git;
 use App\Data\Git\WebhookRequest;
 use App\Enums\Git\WebhookDeliveryStatus;
 use App\Enums\Git\WebhookReceipt;
-use App\Jobs\Git\ProcessGitHubWebhookJob;
+use App\Exceptions\DecryptionFailed;
+use App\Jobs\Git\ProcessWebhookDeliveryJob;
 use App\Models\Git\GitHubApp;
 use App\Models\Git\WebhookDelivery;
-use App\Services\Crypto\Exceptions\DecryptionFailed;
-use App\Services\GitHub\Exceptions\InvalidGitHubPayload;
-use App\Services\GitHub\GitHubAppSecrets;
-use App\Services\GitHub\JsonObject;
-use App\Services\GitHub\WebhookSignature;
+use App\Services\Crypto\SealedColumns;
+use App\Services\Git\Providers\GitHub\WebhookSignature;
+use App\Support\Json\InvalidJsonPayload;
+use App\Support\Json\JsonObject;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -29,7 +29,7 @@ use Illuminate\Support\Facades\Log;
 final readonly class ReceiveGitHubWebhook
 {
     public function __construct(
-        private GitHubAppSecrets $secrets,
+        private SealedColumns $sealed,
     ) {}
 
     public function handle(WebhookRequest $request): WebhookReceipt
@@ -52,7 +52,7 @@ final readonly class ReceiveGitHubWebhook
             $action = $payload->stringOrNull('action');
             $installationId = $payload->objectOrNull('installation')?->intOrNull('id');
             $repositoryId = $payload->objectOrNull('repository')?->intOrNull('id');
-        } catch (InvalidGitHubPayload) {
+        } catch (InvalidJsonPayload) {
             return WebhookReceipt::Invalid;
         }
 
@@ -81,7 +81,7 @@ final readonly class ReceiveGitHubWebhook
             return WebhookReceipt::Accepted;
         }
 
-        dispatch(new ProcessGitHubWebhookJob($delivery->id, $request->rawBody));
+        dispatch(new ProcessWebhookDeliveryJob($delivery->id, $request->rawBody));
 
         return WebhookReceipt::Accepted;
     }
@@ -99,7 +99,7 @@ final readonly class ReceiveGitHubWebhook
 
         foreach ($candidates as $app) {
             try {
-                $secret = $this->secrets->webhookSecret($app);
+                $secret = $this->sealed->reveal($app, 'webhook_secret');
             } catch (DecryptionFailed) {
                 Log::error('GitHub webhook secret could not be decrypted', ['github_app' => $app->public_id]);
 

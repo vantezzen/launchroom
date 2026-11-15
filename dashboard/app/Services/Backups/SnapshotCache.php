@@ -61,20 +61,14 @@ final class SnapshotCache
             return;
         }
 
-        $result = $task->result['snapshots'] ?? null;
-        $list = is_array($result) && is_array($result['snapshots'] ?? null) ? $result['snapshots'] : [];
         $snapshots = [];
 
-        foreach ($list as $snapshot) {
-            if (! is_array($snapshot) || ! is_string($snapshot['id'] ?? null) || ! is_string($snapshot['time'] ?? null)) {
-                continue;
-            }
-
+        foreach ($task->result?->snapshots->snapshots ?? [] as $snapshot) {
             $snapshots[] = [
-                'id' => $snapshot['id'],
-                'time' => $snapshot['time'],
-                'tags' => array_values(array_filter(is_array($snapshot['tags'] ?? null) ? $snapshot['tags'] : [], is_string(...))),
-                'sizeBytes' => is_int($snapshot['sizeBytes'] ?? null) ? $snapshot['sizeBytes'] : null,
+                'id' => $snapshot->id,
+                'time' => $snapshot->time,
+                'tags' => array_values(array_filter($snapshot->tags, is_string(...))),
+                'sizeBytes' => is_int($snapshot->sizeBytes) ? $snapshot->sizeBytes : null,
             ];
         }
 

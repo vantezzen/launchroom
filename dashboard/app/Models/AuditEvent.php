@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Models;
 
-use App\Actions\Audit\RecordAuditEvent;
 use App\Enums\ActorType;
 use App\Enums\AuditAction;
 use Illuminate\Database\Eloquent\Attributes\DateFormat;
@@ -15,7 +14,7 @@ use LogicException;
 
 /**
  * One append-only, hash-chained audit entry (docs/07). Written only by
- * {@see RecordAuditEvent}; a database trigger rejects
+ * RecordAuditEvent; a database trigger rejects
  * UPDATE and DELETE.
  *
  * @property int $id

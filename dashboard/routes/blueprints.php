@@ -5,7 +5,6 @@ declare(strict_types=1);
 use App\Http\Controllers\Blueprints\CatalogController;
 use App\Http\Controllers\Blueprints\ComposeImportController;
 use App\Http\Controllers\Blueprints\TemplateController;
-use App\Support\PublicId;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -15,8 +14,6 @@ use Illuminate\Support\Facades\Route;
 
 Route::middleware(['web', 'auth', 'verified'])
     ->where([
-        'project' => PublicId::routePattern('prj'),
-        'environment' => PublicId::routePattern('env'),
         'template' => '[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?',
     ])
     ->group(function (): void {

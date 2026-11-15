@@ -9,6 +9,7 @@ import (
 	"maps"
 
 	"github.com/vantezzen/launchroom/daemon/internal/docker"
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 	"github.com/vantezzen/launchroom/daemon/internal/transfer"
 )
@@ -31,7 +32,7 @@ func (e *Engine) inspectVolume(ctx context.Context, name string) (volumeRoot, er
 	defer remove()
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	src, err := e.o.Volumes.StreamFromContainer(ctx, hid, docker.HelperMount)
+	src, err := e.o.Volumes.StreamFromContainer(ctx, hid, names.HelperMount)
 	if err != nil {
 		return volumeRoot{}, err
 	}

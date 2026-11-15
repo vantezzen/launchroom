@@ -16,7 +16,6 @@ import {
     SelectItem,
     SelectTrigger,
 } from '@/components/ui/select';
-import type { ProjectShellProps } from '@/features/projects/types';
 import {
     displayValue,
     EffectBadge,
@@ -24,11 +23,13 @@ import {
 import { cn } from '@/lib/utils';
 import { canvas, settings } from '@/routes/projects';
 import { show, store } from '@/routes/promotions';
+import { shortSha } from '@/lib/format';
+import ProjectLayout from '@/features/app-shell/project-layout';
 
 type Comparison = App.Data.Promotions.PromotionComparisonData;
 type Item = App.Data.Promotions.PromotionItem;
 
-type Props = ProjectShellProps & {
+type Props = App.Data.Canvas.ProjectShellPropsData & {
     comparison: Comparison | null;
     cards: {
         from: App.Data.Promotions.PromotionEnvironmentCardData;
@@ -564,7 +565,9 @@ function Comparison({
                                         <span>
                                             {image.name}{' '}
                                             <span className="type-mono-small text-muted-foreground">
-                                                {image.commitSha?.slice(0, 7)}
+                                                {shortSha(
+                                                    image.commitSha ?? null,
+                                                )}
                                             </span>
                                         </span>
                                         <span className="type-small text-muted-foreground">
@@ -823,3 +826,5 @@ export default function PromotePage({
         </>
     );
 }
+
+PromotePage.layout = ProjectLayout;

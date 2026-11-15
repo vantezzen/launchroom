@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Data\Protocol\V1;
 
+use App\Support\Protocol\Grammar;
 use Spatie\LaravelData\Attributes\Validation\In;
 use Spatie\LaravelData\Attributes\Validation\Min;
 use Spatie\LaravelData\Attributes\Validation\Regex;
@@ -23,7 +24,7 @@ final class DataExportResult extends Data
         public int $sizeBytes,
         #[Min(0)]
         public int $chunks,
-        #[Regex('/^[a-f0-9]{64}$/')]
+        #[Regex(Grammar::HEX64)]
         public string $sha256,
         #[Min(0)]
         public int $durationMs,

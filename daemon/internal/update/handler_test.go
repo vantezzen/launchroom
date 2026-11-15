@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/vantezzen/launchroom/daemon/internal/state"
-	"github.com/vantezzen/launchroom/daemon/internal/tasks"
 )
 
 func selfUpdateTask(version string, scope state.UpdateScope) state.Task {
@@ -85,5 +84,4 @@ func TestHandlerReportsRecordedStatus(t *testing.T) {
 	if err == nil || res.SelfUpdate == nil || !res.SelfUpdate.RolledBack {
 		t.Fatalf("res=%+v err=%v", res.SelfUpdate, err)
 	}
-	_ = tasks.ErrHandoff
 }

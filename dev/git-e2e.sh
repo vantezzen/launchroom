@@ -24,7 +24,7 @@ set -u
 
 cd "$(dirname "$0")/.." || exit 1
 
-COMPOSE="docker compose --project-directory dev --env-file dev/.env -f dev/compose.yml"
+COMPOSE="sh dev/bin/compose.sh"
 TIMEOUT="${LR_E2E_TIMEOUT:-600}"
 FORGEJO="http://127.0.0.1:${LR_DEV_FORGEJO_PORT:-3300}"
 ADMIN=lr-admin
@@ -33,10 +33,8 @@ RUN="$(date +%s)"
 REPO="hello-$RUN"
 PROJECT="forgejo-$RUN"
 
-passed=0
-failed=0
-pass() { passed=$((passed + 1)); printf '  PASS  %s\n' "$1"; }
-fail() { failed=$((failed + 1)); printf '  FAIL  %s\n' "$1"; [ -z "${2:-}" ] || printf '%s\n' "$2" | sed 's/^/        /'; }
+# shellcheck source=dev/bin/checks.sh
+. dev/bin/checks.sh
 artisan() { $COMPOSE exec -T dashboard php artisan "$@"; }
 api() { # api METHOD PATH [JSON]
 	curl -fsS -X "$1" -H "Authorization: token $TOKEN" -H 'Content-Type: application/json' ${3:+--data "$3"} "$FORGEJO/api/v1$2"

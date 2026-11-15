@@ -15,6 +15,7 @@ use App\Http\Daemon\ProtocolPayload;
 use App\Http\Daemon\ProtocolResponse;
 use App\Services\Crypto\ControlPlaneKeys;
 use App\Services\Daemon\DaemonNudger;
+use App\Support\Images\RegistryLayout;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 
@@ -37,7 +38,7 @@ final class EnrollController extends Controller
             serverId: $server->public_id,
             status: $server->status === ServerStatus::PendingApproval ? 'pending_approval' : 'active',
             controlPlaneKeys: $keys->trusted(),
-            registry: new RegistryInfo(config()->string('launchroom.daemon.registry_address')),
+            registry: new RegistryInfo(RegistryLayout::host()),
             pollIntervals: new PollIntervals($intervals['state'], $intervals['tasks']),
             nudge: $nudger->config(),
         ), 201);

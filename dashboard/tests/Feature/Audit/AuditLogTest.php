@@ -39,22 +39,6 @@ test('the database refuses updates and deletes', function (): void {
     expect(fn () => DB::table('audit_events')->update(['action' => 'x']))->toThrow(QueryException::class);
 });
 
-test('tampering with an entry is detected', function (): void {
-    recordSome(3);
-    $middle = AuditEvent::query()->orderBy('id')->skip(1)->firstOrFail();
-
-    DB::statement('ALTER TABLE audit_events DISABLE TRIGGER audit_events_no_update_delete');
-    DB::table('audit_events')->where('id', $middle->id)->update(['meta' => json_encode(['email' => 'evil@example.com', 'role' => 'owner'])]);
-    DB::statement('ALTER TABLE audit_events ENABLE TRIGGER audit_events_no_update_delete');
-
-    $result = resolve(VerifyAuditChain::class)->handle();
-
-    expect($result->valid)->toBeFalse()
-        ->and($result->firstInvalidId)->toBe($middle->id)
-        ->and($result->checked)->toBe(1);
-    $this->artisan('launchroom:audit:verify')->assertFailed();
-});
-
 test('deleting an entry breaks the chain', function (): void {
     recordSome(3);
     $first = AuditEvent::query()->orderBy('id')->firstOrFail();

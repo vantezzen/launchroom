@@ -49,7 +49,6 @@ final readonly class SetDnsProvider
             $replaced = $given !== [];
 
             if ($provider instanceof DnsProvider) {
-                // Stored values only carry over while the provider stays.
                 $stored = $before === $provider ? ($this->credentials->get() ?? []) : [];
                 $values = [];
 
@@ -72,7 +71,6 @@ final readonly class SetDnsProvider
 
             $settings->forceFill([
                 'dns_provider' => $provider,
-                // New credentials or provider need a new check.
                 'dns_verified_at' => $replaced || ! $provider instanceof DnsProvider ? null : $settings->dns_verified_at,
                 'dns_verification' => $replaced || ! $provider instanceof DnsProvider ? null : $settings->dns_verification,
             ])->save();
@@ -86,15 +84,13 @@ final readonly class SetDnsProvider
                 meta: ['from' => $before?->value, 'to' => $provider?->value, 'tokenReplaced' => $replaced, 'fieldsReplaced' => array_keys($given)],
             ));
 
-            event(new NodeStateInvalidated($this->edges->ids()));
+            NodeStateInvalidated::servers($this->edges->ids());
 
             return $settings;
         });
     }
 
     /**
-     * The non-empty values for the provider's fields, checked by grammar.
-     *
      * @param  array<string, string|null>  $credentials
      * @return array<string, string>
      */

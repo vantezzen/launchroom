@@ -7,29 +7,31 @@ import {
     Lock,
 } from 'lucide-react';
 import { useState } from 'react';
-import { ObjectCard, UrlCard } from '@/components/cards';
+import { ObjectCard } from '@/components/cards/object-card';
+import { UrlCard } from '@/features/previews/url-card';
 import { EmptyState } from '@/components/patterns/empty-state';
 import { MetaLine } from '@/components/patterns/meta-line';
 import { Page, PageHeader } from '@/components/patterns/page';
 import { Section } from '@/components/patterns/section';
 import { Status } from '@/components/status';
 import { Button } from '@/components/ui/button';
-import { compactUntil, plural } from '@/features/canvas/format';
 import { ShareLinksDialog } from '@/features/previews/share-links';
 import { previewState } from '@/features/previews/status';
 import { EnvironmentLiveUpdates } from '@/features/projects/environment-live-updates';
-import type { ProjectShellProps } from '@/features/projects/types';
 import { canvas, settings } from '@/routes/projects';
 import { approve } from '@/routes/projects/previews';
+import { compactUntil, plural } from '@/lib/format';
+import ProjectLayout from '@/features/app-shell/project-layout';
 
 type Preview = App.Data.Previews.PreviewData;
 
-type Props = ProjectShellProps & {
+type Props = App.Data.Canvas.ProjectShellPropsData & {
     previews: Preview[];
     enabled: boolean;
     canShare: boolean;
     canApprove: boolean;
     canManage: boolean;
+    shareLinkDays: App.Data.Forms.NumberRangeData;
 };
 
 /** One quiet line per database: how this preview got its data. */
@@ -67,10 +69,12 @@ function PreviewTile({
     project,
     preview,
     canShare,
+    shareLinkDays,
 }: {
     project: string;
     preview: Preview;
     canShare: boolean;
+    shareLinkDays: App.Data.Forms.NumberRangeData;
 }) {
     const [sharing, setSharing] = useState(false);
     const open = preview.status !== 'closed' && preview.status !== 'expired';
@@ -195,6 +199,7 @@ function PreviewTile({
                     open={sharing}
                     onOpenChange={setSharing}
                     canShare={canShare}
+                    daysRange={shareLinkDays}
                 />
             )}
         </>
@@ -294,6 +299,7 @@ export default function ProjectPreviews({
     canShare,
     canApprove,
     canManage,
+    shareLinkDays,
 }: Props) {
     const environments = previews
         .map((preview) => preview.environmentId)
@@ -379,6 +385,7 @@ export default function ProjectPreviews({
                                     project={project.id}
                                     preview={preview}
                                     canShare={canShare}
+                                    shareLinkDays={shareLinkDays}
                                 />
                             ))}
                         </div>
@@ -412,3 +419,5 @@ export default function ProjectPreviews({
         </>
     );
 }
+
+ProjectPreviews.layout = ProjectLayout;

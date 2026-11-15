@@ -4,17 +4,20 @@ declare(strict_types=1);
 
 namespace App\Models\Dockerfiles;
 
+use App\Contracts\Crypto\SealedRow;
 use App\Enums\Dockerfiles\AiProvider;
+use App\Models\Concerns\HasSealedSecret;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Attributes\Table;
 use Illuminate\Database\Eloquent\Attributes\WithoutIncrementing;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
+use InvalidArgumentException;
 
 /**
  * The instance's model provider for Dockerfile generation (docs/20 §1),
  * singleton id = 1. The API key only exists envelope encrypted
- * (App\Services\Dockerfiles\AiProviderSecrets); `api_key_last4` is the
+ * (App\Services\Crypto\SealedColumns); `api_key_last4` is the
  * only part shown.
  *
  * @property int $id
@@ -33,8 +36,10 @@ use Illuminate\Support\Carbon;
 #[Hidden(['api_key_ciphertext', 'wrapped_dek'])]
 #[Table(name: 'ai_provider_settings')]
 #[WithoutIncrementing]
-final class AiProviderSettings extends Model
+final class AiProviderSettings extends Model implements SealedRow
 {
+    use HasSealedSecret;
+
     public const int ID = 1;
 
     /** @var array<string, mixed> */
@@ -77,5 +82,18 @@ final class AiProviderSettings extends Model
             'provider' => AiProvider::class,
             'key_set_at' => 'datetime',
         ];
+    }
+
+    public function sealWrapContext(): string
+    {
+        return 'ai_provider:'.$this->provider->value;
+    }
+
+    public function sealAssociatedData(string $column): string
+    {
+        return match ($column) {
+            'api_key_ciphertext' => 'ai_provider|'.$this->provider->value,
+            default => throw new InvalidArgumentException("{$column} is not a sealed column."),
+        };
     }
 }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Data\Canvas;
 
+use App\Enums\CanvasEdgeType;
 use App\Enums\ConnectionMode;
 use App\Enums\ConnectionStyle;
 use Spatie\LaravelData\Data;
@@ -20,8 +21,7 @@ final class CanvasEdgeData extends Data
      */
     public function __construct(
         public string $id,
-        /** `connection`, `process` or `inherited`. */
-        public string $type,
+        public CanvasEdgeType $type,
         public string $source,
         public string $target,
         public array $variables = [],

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Support\Images;
 
+use App\Support\Protocol\Grammar;
+
 /**
  * A parsed, normalized OCI image reference:
  * `postgres:18` → registry `docker.io`, repository `library/postgres`, tag `18`.
@@ -15,7 +17,13 @@ namespace App\Support\Images;
  */
 final readonly class ImageReference
 {
+    /** A content digest: `sha256:<64 hex>`, the only algorithm launchroom pins. */
+    public const string DIGEST_BODY = 'sha256:'.Grammar::HEX64_BODY;
+
     private const string COMPONENT = '[a-z0-9]+(?:(?:\.|_|__|-+)[a-z0-9]+)*';
+
+    /** The protocol's ImageRef grammar (daemon/internal/state/scalars.go): `registry/path@sha256:<64 hex>`, no tag. */
+    private const string DIGEST_PINNED = Grammar::IMAGE_REF;
 
     private function __construct(
         public string $registry,
@@ -23,6 +31,17 @@ final readonly class ImageReference
         public ?string $tag,
         public ?string $digest,
     ) {}
+
+    /** Whether $reference is a fully qualified, digest-pinned reference as launchroomd accepts it. */
+    public static function isDigestPinned(string $reference): bool
+    {
+        return strlen($reference) <= 512 && preg_match(self::DIGEST_PINNED, $reference) === 1;
+    }
+
+    public static function isDigest(string $digest): bool
+    {
+        return preg_match('/^'.self::DIGEST_BODY.'$/D', $digest) === 1;
+    }
 
     public static function tryParse(string $reference): ?self
     {
@@ -35,7 +54,7 @@ final readonly class ImageReference
         if (str_contains($reference, '@')) {
             [$reference, $digest] = explode('@', $reference, 2);
 
-            if (preg_match('/^sha256:[a-f0-9]{64}$/D', $digest) !== 1) {
+            if (! self::isDigest($digest)) {
                 return null;
             }
         }

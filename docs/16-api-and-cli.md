@@ -69,8 +69,11 @@ Security center (D63): read-only endpoints under `/api/v1/security/…` and `…
 
 - `lines`: `id: <cursor>`, `data: {"lines": [...], "cursor": N}` (deployment) or `{"entries": [...], "cursor": N}` (environment);
 - `status`: `{"status": "building", "finished": false}` when a deployment's status changes;
-- `end`: the deployment finished (the stream closes);
+- `end`: `{"status": "active"}` (the deployment's final status), the deployment finished (the stream closes);
+- `reconnect`: `{"cursor": N}`, the server ends the stream (below);
 - a `: ping` comment every 15 s.
+
+Each payload is a Data class (`App\Data\Api\Events`), sent as an `App\Http\Api\ServerSentEvent`; an operation lists its events in `#[ApiOperation(events: […])]` and the OpenAPI document carries them as `x-launchroom-events` (event name → schema) on the stream's response.
 
 The server polls the stored chunks once a second and closes the stream after 5 minutes (`event: reconnect`); clients reconnect with `Last-Event-ID` (or `?after=`) and lose nothing. Keeping one PHP worker per open stream is the price of not adding a second realtime path (Reverb needs a session); the 5-minute bound and the `api` rate limit keep it small.
 
@@ -90,7 +93,7 @@ The dashboard serves the document at `GET /api/v1/openapi.json` (public: no secr
 
 ### 3.1 Where it lives
 
-A separate Go module **`cli/`** (`github.com/vantezzen/launchroom/cli`, binary `launchroom`), not a command inside `daemon/`: launchroomd's module pulls in Docker, BuildKit, nftables and sigstore, which a laptop tool must not ship (binary size, vulnerability surface, cross-compiling to darwin/windows). The CLI depends on the standard library, `cobra`, `golang.org/x/term` and `zalando/go-keyring`. It talks to the API only (generated-JSON contract, §2.4); it never talks to launchroomd.
+A separate Go module **`cli/`** (`github.com/vantezzen/launchroom/cli`, binary `launchroom`), not a command inside `daemon/`: launchroomd's module pulls in Docker, BuildKit, nftables and sigstore, which a laptop tool must not ship (binary size, vulnerability surface, cross-compiling to darwin/windows). The CLI depends on the standard library, `cobra`, `golang.org/x/term` and `zalando/go-keyring`. It talks to the API only (generated-JSON contract, §2.4); it never talks to launchroomd. The CLI is checked against `dashboard/resources/api/openapi.json`: the enum values it uses (deployment, import, export and transfer statuses, log ranges and sources, finding levels, …) are generated into `cli/internal/api/enums_gen.go` (`make gen-cli`, part of `make gen`; a test fails when the file is stale), together with the status tones of enums that have a `tone()` (`x-launchroom-tones`), so `deploy` and `status` show a status the way the dashboard does, and a test compares every field of its hand-written models with the schema it decodes or sends (missing properties, types, nullability). CI runs the CLI job whenever the OpenAPI document changes. Lifecycle comes from the API (`finished` on deployments and import runs), never from a status list in the CLI. The server-sent event payloads are in the OpenAPI document too (`x-launchroom-events`), and the CLI's event structs are checked against them like its models.
 
 ### 3.2 Commands
 
@@ -133,7 +136,7 @@ The release workflow has a `cli` job (same tag, same protected `release` environ
 
 ### 5.3 Install
 
-`deploy/install/cli.sh` (POSIX sh, shellcheck'd): detects OS/arch, downloads the archive, checksum file and its signature from the GitHub release (`latest` or `--version`), verifies the checksum, verifies the signature with `cosign` when it is installed (exact identity; a present but invalid signature always stops), and installs `launchroom` into `~/.local/bin` (or `--dir`). Linux and macOS only (Windows takes the zip). `latest` is resolved from the `/releases/latest` redirect; `LR_CLI_RELEASE_BASE` points it at another release host (tests). Without cosign it installs on the checksum alone and says so. The settings page and the README show:
+`deploy/install/cli.sh` (POSIX sh, shellcheck'd, release code shared with the server installers through `deploy/install/lib/release.sh`): detects OS/arch, downloads the archive, checksum file and its signature from the GitHub release (`latest` or `--version`), verifies the signature against the exact release identity ([09](09-security.md) R30) with `cosign` when it is installed, else with the installers' digest-pinned cosign container through Docker, then the archive's checksum, and installs `launchroom` into `~/.local/bin` (or `--dir`). Linux and macOS only (Windows takes the zip). `latest` is resolved from the `/releases/latest` redirect; `LAUNCHROOM_RELEASE_BASE` points it at another release host (`<base>/download/v<version>/<file>`, tests). It fails closed like the server installers: a release without a signature, or a machine with neither cosign nor Docker, installs only with `--allow-unsigned` (`LR_ALLOW_UNSIGNED=1`, checksum only, said so); a present signature that does not verify always stops (`make test-cli-sh`). The settings page and the README show:
 
 ```sh
 curl -fsSL https://github.com/vantezzen/launchroom/releases/latest/download/cli.sh | sh

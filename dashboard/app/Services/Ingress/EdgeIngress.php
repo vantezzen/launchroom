@@ -5,13 +5,15 @@ declare(strict_types=1);
 namespace App\Services\Ingress;
 
 use App\Data\Protocol\V1\IngressSpec;
-use App\Enums\DaemonFeature;
 use App\Enums\DnsProvider;
 use App\Enums\IngressCredentialPurpose;
+use App\Enums\NodeStateField;
 use App\Models\InstanceSettings;
 use App\Models\Server;
+use App\Services\NodeStates\FeatureGate;
 use App\Support\Crypto\IngressSecretSealer;
 use App\Support\Hostname;
+use App\Support\Network\IpClassifier;
 
 /**
  * The edge-wide certificate setup of a server's NodeState (`ingress`,
@@ -23,8 +25,6 @@ use App\Support\Hostname;
  */
 final readonly class EdgeIngress
 {
-    public const string STORAGE_ADDRESS_PATTERN = '/^(?:\d{1,3}(?:\.\d{1,3}){3}|\[[0-9a-f:]+\]):\d{1,5}$/Di';
-
     private const string PREFIX_PATTERN = '/^[a-z0-9][a-z0-9_-]{0,62}$/D';
 
     public function __construct(
@@ -74,7 +74,7 @@ final readonly class EdgeIngress
 
         // A launchroomd that predates a provider would refuse the whole NodeState.
         if ($server instanceof Server && $settings->dns_provider?->needsDaemonFeature() === true
-            && ! $server->supportsDaemonFeature(DaemonFeature::DnsProviders)) {
+            && ! FeatureGate::accepts($server, NodeStateField::IngressDnsProvider)) {
             return null;
         }
         $domain = $settings->apps_domain;
@@ -99,7 +99,7 @@ final readonly class EdgeIngress
     {
         $config = $this->modulesAvailable() ? $this->certStorage->config() : null;
 
-        if ($config === null || preg_match(self::STORAGE_ADDRESS_PATTERN, $config['address']) !== 1
+        if ($config === null || ! IpClassifier::isAddressPort($config['address'])
             || $config['password'] === '' || preg_match(self::PREFIX_PATTERN, $config['keyPrefix']) !== 1) {
             return null;
         }
@@ -128,12 +128,13 @@ final readonly class EdgeIngress
     private function storage(Server $server): ?array
     {
         $config = $this->storageConfig();
+        // Provisioned outside rendering (App\Actions\Ingress\ProvisionCertStorage).
+        $key = $config === null ? null : $this->secrets->get(IngressCredentialPurpose::StorageKey);
 
-        if ($config === null) {
+        if ($config === null || $key === null) {
             return null;
         }
 
-        $key = $this->secrets->ensure(IngressCredentialPurpose::StorageKey, self::generateStorageKey(...));
         $values = array_filter(['username' => $config['username'], 'password' => $config['password'], 'encryptionKey' => $key], static fn (string $value): bool => $value !== '');
 
         return [

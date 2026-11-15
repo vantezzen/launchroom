@@ -1,6 +1,6 @@
 import { Link } from '@inertiajs/react';
 import { Archive, CopyPlus, Download, History, RefreshCw } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useState } from 'react';
 import type { ReactNode } from 'react';
 import { toast } from 'sonner';
 import { MetaLine } from '@/components/patterns/meta-line';
@@ -8,7 +8,7 @@ import type { StatusState } from '@/components/status';
 import { EmptyState } from '@/components/patterns/empty-state';
 import { OptionCards } from '@/components/patterns/option-cards';
 import { Section } from '@/components/patterns/section';
-import { Status, StatusIcon } from '@/components/status';
+import { Status, StatusIcon, backupRunStatus } from '@/components/status';
 import { TimeAgo } from '@/components/time-ago';
 import { Button } from '@/components/ui/button';
 import {
@@ -30,7 +30,7 @@ import {
 } from '@/components/ui/select';
 import { Spinner } from '@/components/ui/spinner';
 import { RemoteAccessButton } from '@/features/remote-access/remote-access';
-import { BackupRequestFailed, backupsApi } from '@/features/backups/api';
+import { RequestFailed, requestJson } from '@/lib/http';
 import { BackupHealthStatus } from '@/features/backups/backup-health';
 import { BackupTrend } from '@/features/backups/backup-trend';
 import {
@@ -39,13 +39,17 @@ import {
     pointLabel,
     windowEndText,
 } from '@/features/backups/point-in-time';
-import { formatBytes, reasonLabel } from '@/features/backups/format';
+import { reasonLabel } from '@/features/backups/format';
 import { cn } from '@/lib/utils';
+import { vocabulary } from '@/lib/vocabulary';
 import { PendingDeletion } from '@/features/backups/pending-deletion';
 import { MoveDataSection } from '@/features/data-transfer/move-data-section';
 import type { SnapshotDownload } from '@/features/data-transfer/move-data-section';
 import { lookup } from '@/routes/backups/services';
 import { settings as backupSettings } from '@/routes/backups';
+import { formatBytes } from '@/lib/format';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { ServiceActivityEvents } from '@/components/channel-events';
 
 type Data = App.Data.Backups.ServiceBackupsData;
 type Snapshot = App.Data.Backups.SnapshotData;
@@ -55,25 +59,11 @@ type Verification = App.Data.Backups.BackupVerificationData;
 /** The timeline entry that stands for "any point in time" (PITR). */
 const POINT_IN_TIME = 'point-in-time';
 
-export type BackupsTabProps = {
+type BackupsTabProps = {
     /** Public ids: prj_…, env_…, svc_… */
     project: string;
     environment: string;
     service: string;
-};
-
-const runStates: Record<App.Enums.Backups.BackupRunStatus, StatusState> = {
-    pending: 'progress',
-    running: 'progress',
-    succeeded: 'active',
-    failed: 'failed',
-};
-
-const runLabels: Record<App.Enums.Backups.BackupRunStatus, string> = {
-    pending: 'Queued',
-    running: 'Running',
-    succeeded: 'Succeeded',
-    failed: 'Failed',
 };
 
 const verificationStates: Record<
@@ -109,20 +99,22 @@ function restoreState(status: App.Enums.Backups.RestoreRunStatus): StatusState {
     return status === 'failed' ? 'failed' : 'progress';
 }
 
+function backupsKey(project: string, environment: string, service: string) {
+    return ['backups', project, environment, service] as const;
+}
+
+/** Waiting on something without a `service.activity` event (backup and restore runs have one). */
 function isBusy(data: Data): boolean {
     return (
         data.listingStatus === 'pending' ||
         data.deletion?.status === 'backing_up' ||
-        data.verification?.status === 'pending' ||
-        data.verification?.status === 'running' ||
-        data.runs.some(
-            (run) => run.status === 'pending' || run.status === 'running',
-        ) ||
-        data.restores.some(
-            (restore) =>
-                restore.status !== 'succeeded' && restore.status !== 'failed',
-        )
+        (data.verification !== null && isVerifying(data.verification))
     );
+}
+
+function isVerifying(verification: Verification): boolean {
+    return !vocabulary.Backups.VerificationStatus[verification.status]
+        .isTerminal;
 }
 
 /**
@@ -134,15 +126,13 @@ function isBusy(data: Data): boolean {
  * and runs. A staged removal waiting for its final backup sits on top.
  *
  * The body of the settings page (`BackupsSection`). Fetches its own data (JSON,
- * team-scoped on the server) and polls while something runs.
+ * team-scoped on the server, shared query cache) and refetches on `service.activity`.
  */
 export function ServiceBackups({
     project,
     environment,
     service,
 }: BackupsTabProps) {
-    const [data, setData] = useState<Data | null>(null);
-    const [error, setError] = useState<string | null>(null);
     const [busyAction, setBusyAction] = useState<string | null>(null);
     const [restoring, setRestoring] = useState<Restoring | null>(null);
     const [swapping, setSwapping] = useState<RestoreRun | null>(null);
@@ -158,54 +148,29 @@ export function ServiceBackups({
         () => setSnapshotDownload(null),
         [],
     );
-    const abort = useRef<AbortController | null>(null);
-
-    const url = useMemo(
-        () => lookup({ project, environment, service }).url,
-        [project, environment, service],
-    );
-
-    const load = useCallback(async () => {
-        abort.current?.abort();
-        const controller = new AbortController();
-        abort.current = controller;
-
-        try {
-            setData(
-                await backupsApi<Data>(
-                    'get',
-                    url,
-                    undefined,
-                    controller.signal,
-                ),
-            );
-            setError(null);
-        } catch (e) {
-            if (!controller.signal.aborted) {
-                setError(
-                    e instanceof BackupRequestFailed
-                        ? e.message
-                        : 'Backups could not be loaded.',
-                );
-            }
-        }
-    }, [url]);
-
-    useEffect(() => {
-        void load();
-
-        return () => abort.current?.abort();
-    }, [load]);
-
-    useEffect(() => {
-        if (data === null || !isBusy(data)) {
-            return;
-        }
-
-        const timer = window.setTimeout(() => void load(), 4000);
-
-        return () => window.clearTimeout(timer);
-    }, [data, load]);
+    const queryClient = useQueryClient();
+    const key = backupsKey(project, environment, service);
+    const query = useQuery({
+        queryKey: key,
+        queryFn: ({ signal }) =>
+            requestJson<Data>(
+                'get',
+                lookup({ project, environment, service }).url,
+                undefined,
+                signal,
+            ),
+        refetchInterval: (current) =>
+            current.state.data && isBusy(current.state.data) ? 4000 : false,
+        retry: false,
+    });
+    const data = query.data ?? null;
+    const error =
+        query.error === null
+            ? null
+            : query.error instanceof RequestFailed
+              ? query.error.message
+              : 'Backups could not be loaded.';
+    const setData = (next: Data) => queryClient.setQueryData(key, next);
 
     const act = async (
         name: string,
@@ -217,7 +182,7 @@ export function ServiceBackups({
         setBusyAction(name);
 
         try {
-            setData(await backupsApi<Data>(method, target, body));
+            setData(await requestJson<Data>(method, target, body));
 
             if (success) {
                 toast.success(success);
@@ -226,9 +191,7 @@ export function ServiceBackups({
             return true;
         } catch (e) {
             toast.error(
-                e instanceof BackupRequestFailed
-                    ? e.message
-                    : 'The request failed.',
+                e instanceof RequestFailed ? e.message : 'The request failed.',
             );
 
             return false;
@@ -286,10 +249,18 @@ export function ServiceBackups({
 
     return (
         <div className="flex flex-col gap-8">
+            <ServiceActivityEvents
+                environment={environment}
+                service={service}
+                topic="backups"
+                onChange={() =>
+                    void queryClient.invalidateQueries({ queryKey: key })
+                }
+            />
             {data.deletion !== null && (
                 <PendingDeletion
                     request={data.deletion}
-                    onChange={() => void load()}
+                    onChange={() => void query.refetch()}
                 />
             )}
 
@@ -596,6 +567,8 @@ export function ServiceBackups({
             )}
 
             <MoveDataSection
+                environment={environment}
+                service={service}
                 serviceInstanceId={data.serviceInstanceId}
                 snapshotDownload={snapshotDownload}
                 onSnapshotDownloadHandled={clearSnapshotDownload}
@@ -674,8 +647,10 @@ export function ServiceBackups({
                             >
                                 <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
                                     <Status
-                                        state={runStates[run.status]}
-                                        label={`${subjectLabels[run.subject] !== '' ? `${subjectLabels[run.subject]} (${run.reasonLabel.toLowerCase()})` : `${run.reasonLabel} backup`} ${runLabels[run.status].toLowerCase()}`}
+                                        state={
+                                            backupRunStatus[run.status].state
+                                        }
+                                        label={`${subjectLabels[run.subject] !== '' ? `${subjectLabels[run.subject]} (${reasonLabel(run.reason).toLowerCase()})` : `${reasonLabel(run.reason)} backup`} ${backupRunStatus[run.status].label.toLowerCase()}`}
                                     />
                                     <MetaLine className="type-small text-muted-foreground tabular-nums">
                                         {run.sizeBytes !== null &&
@@ -935,7 +910,7 @@ function SwapDialog({
 }
 
 /** "Today, 05:08" · "Yesterday, 05:08" · "17 Oct, 05:08". */
-export function snapshotTime(iso: string): string {
+function snapshotTime(iso: string): string {
     const date = new Date(iso);
     const now = new Date();
     const day = new Date(date.getFullYear(), date.getMonth(), date.getDate());
@@ -1138,8 +1113,7 @@ function VerifiedFact({
 
 /** The newest verification in History: what was restored and what the checks found. */
 function VerificationItem({ verification }: { verification: Verification }) {
-    const running =
-        verification.status === 'pending' || verification.status === 'running';
+    const running = isVerifying(verification);
     const findings = [
         verification.tables !== null
             ? `${verification.tables} ${verification.tables === 1 ? 'table' : 'tables'}`

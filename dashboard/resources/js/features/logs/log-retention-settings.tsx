@@ -10,8 +10,8 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
-import { SettingsCard, SettingsRow } from '@/features/settings/settings-card';
 import { logRetention } from '@/routes/projects';
+import { SettingsCard, SettingsRow } from '@/components/settings/settings-card';
 
 type Retention = App.Data.Logs.EnvironmentLogRetentionData;
 type Options = { days: number[]; maxMb: number[] };

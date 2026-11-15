@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Support\Logs;
 
+use App\Enums\LogLineLevel;
+
 /**
  * The level of a log line, guessed from its text (lines carry no level):
  * error keywords, warnings, debug, else info. Stored with each line at
@@ -13,8 +15,6 @@ namespace App\Support\Logs;
  */
 final class LogLevel
 {
-    public const array LEVELS = ['error', 'warning', 'info', 'debug'];
-
     public static function guess(string $text): string
     {
         $plain = (string) preg_replace('/\e\[[0-9;]*m/', '', $text);
@@ -37,7 +37,7 @@ final class LogLevel
     {
         $level = $line['level'] ?? null;
 
-        if (is_string($level) && in_array($level, self::LEVELS, true)) {
+        if (is_string($level) && LogLineLevel::tryFrom($level) instanceof LogLineLevel) {
             return $level;
         }
 

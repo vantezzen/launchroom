@@ -10,6 +10,7 @@ use App\Actions\Transfers\SweepDatabasePreparations;
 use App\Data\Audit\AuditActor;
 use App\Enums\DaemonFeature;
 use App\Enums\DaemonTaskType;
+use App\Enums\DeploymentPurpose;
 use App\Enums\DeploymentStatus;
 use App\Enums\TeamRole;
 use App\Enums\Transfers\ImportRunStatus;
@@ -89,7 +90,8 @@ test('import before the first deploy: the database runs alone, imports, stops, a
     $prepared = Deployment::query()->where('service_instance_id', $db->id)->sole();
 
     expect($prepared->hold_traffic)->toBeTrue()
-        ->and(DatabasePreparations::is($prepared))->toBeTrue()
+        ->and($prepared->purpose)->toBe(DeploymentPurpose::PrepareImport)
+        ->and($prepared->prepared_until?->isFuture())->toBeTrue()
         ->and($db->environment->refresh()->last_applied_revision_id)->toBeNull()
         ->and(Placement::query()->where('service_instance_id', $web->id)->exists())->toBeFalse()
         ->and(AuditEvent::query()->where('action', 'data.import_prepared')->exists())->toBeTrue();

@@ -53,11 +53,19 @@ final class User extends Authenticatable implements MustVerifyEmail, PasskeyUser
     ];
 
     /**
+     * Bumped by every membership write in this process (Membership's model
+     * events), so a memoized role never outlives a change.
+     */
+    private static int $membershipVersion = 0;
+
+    /**
      * Per-instance memo of team roles (team id => role|null); never persisted.
      *
      * @var array<int, TeamRole|null>
      */
     private array $teamRoles = [];
+
+    private int $teamRolesVersion = 0;
 
     /**
      * Per-instance memo of individually granted permissions (team id => list).
@@ -130,6 +138,10 @@ final class User extends Authenticatable implements MustVerifyEmail, PasskeyUser
             return null;
         }
 
+        if ($this->teamRolesVersion !== self::$membershipVersion) {
+            $this->forgetTeamRoles();
+        }
+
         if (! array_key_exists($teamId, $this->teamRoles)) {
             $membership = Membership::query()
                 ->where('team_id', $teamId)
@@ -176,13 +188,20 @@ final class User extends Authenticatable implements MustVerifyEmail, PasskeyUser
         return ! $token instanceof ApiToken || ApiAbility::allows($token->abilities, $permission);
     }
 
+    public static function membershipsChanged(): void
+    {
+        self::$membershipVersion++;
+    }
+
     /**
-     * Forget memoized roles (after a membership change in the same request).
+     * Forget memoized roles. Writes in this process do it by themselves;
+     * long-lived checks call it to see changes made elsewhere.
      */
     public function forgetTeamRoles(): void
     {
         $this->teamRoles = [];
         $this->teamGrants = [];
+        $this->teamRolesVersion = self::$membershipVersion;
     }
 
     public function hasTwoFactorEnabled(): bool
@@ -191,8 +210,6 @@ final class User extends Authenticatable implements MustVerifyEmail, PasskeyUser
     }
 
     /**
-     * Get the attributes that should be cast.
-     *
      * @return array<string, string>
      */
     protected function casts(): array

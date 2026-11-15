@@ -79,9 +79,12 @@ func TestPingAndTransfer(t *testing.T) {
 func TestRoundRecordsMeasurements(t *testing.T) {
 	a, b := newDaemon(t, idA), newDaemon(t, idB)
 	_, port := serve(t, b, Peer{ID: a.id, IP: loopback, Key: a.pub})
-	p := prober(a, port)
+	// Peers joined "earlier" than the first transfer delay: the transfer is due now.
+	shift := -(firstTransferMax + time.Minute)
+	p := NewProber(ProberOptions{Self: a.id, Sign: a.sign, Port: port, LocalIP: func() netip.Addr { return loopback },
+		Now: func() time.Time { return time.Now().Add(shift) }})
 	p.SetPeers([]Peer{{ID: b.id, IP: loopback, Key: b.pub}})
-	p.nextXfer[b.id] = time.Now().Add(-time.Second) // due now
+	shift = 0
 	if !p.Round(context.Background()) {
 		t.Fatal("round measured nothing")
 	}

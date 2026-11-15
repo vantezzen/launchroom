@@ -7,11 +7,12 @@ namespace App\Http\Controllers\Git;
 use App\Actions\Git\CompleteGitProviderConnection;
 use App\Exceptions\DomainRuleViolation;
 use App\Http\Controllers\Controller;
+use App\Http\Toast;
 use App\Models\User;
+use App\Support\Protocol\Grammar;
 use Illuminate\Container\Attributes\CurrentUser;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Inertia\Inertia;
 
 /**
  * The OAuth redirect target for GitLab and Gitea/Forgejo applications
@@ -26,7 +27,7 @@ final class GitOAuthController extends Controller
         $state = $request->query('state');
         $code = $request->query('code');
 
-        if (! is_string($state) || preg_match('/^[a-f0-9]{64}$/D', $state) !== 1 || ! is_string($code) || $code === '' || strlen($code) > 1024) {
+        if (! is_string($state) || preg_match(Grammar::HEX64, $state) !== 1 || ! is_string($code) || $code === '' || strlen($code) > 1024) {
             $message = is_string($request->query('error_description')) ? mb_substr($request->query('error_description'), 0, 200) : 'The sign-in was cancelled.';
 
             return to_route('git.edit')->withErrors(['git' => $message]);
@@ -38,7 +39,7 @@ final class GitOAuthController extends Controller
             return to_route('git.edit')->withErrors(['git' => $e->getMessage()]);
         }
 
-        Inertia::flash('toast', ['type' => 'success', 'message' => "Connected {$connection->name}. Your repositories show up when you import a project."]);
+        Toast::success("Connected {$connection->name}. Your repositories show up when you import a project.");
 
         return to_route('git.edit');
     }

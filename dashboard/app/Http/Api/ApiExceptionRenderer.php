@@ -9,6 +9,7 @@ use App\Exceptions\DomainRuleViolation;
 use App\Exceptions\GitHeadUnavailable;
 use App\Exceptions\MissingApiAbility;
 use App\Exceptions\UnresolvedReferences;
+use App\Http\Routing\RouteFamily;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Http\JsonResponse;
@@ -27,10 +28,9 @@ final class ApiExceptionRenderer
 {
     public static function register(Exceptions $exceptions): void
     {
-        // Expected refusals, not errors worth a log line.
         $exceptions->dontReport([ApiError::class, MissingApiAbility::class]);
 
-        $exceptions->render(static fn (Throwable $e, Request $request): ?JsonResponse => $request->is('api/v1', 'api/v1/*') ? self::render($e) : null);
+        $exceptions->render(static fn (Throwable $e, Request $request): ?JsonResponse => RouteFamily::of($request) === RouteFamily::Api ? self::render($e) : null);
     }
 
     public static function render(Throwable $e): JsonResponse

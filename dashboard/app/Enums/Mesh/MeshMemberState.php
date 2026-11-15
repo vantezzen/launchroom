@@ -18,14 +18,4 @@ enum MeshMemberState: string
     case Connected = 'connected';
 
     case Error = 'error';
-
-    public static function fromReported(?string $state): self
-    {
-        return match ($state) {
-            'connected' => self::Connected,
-            'starting', 'needs_login' => self::Connecting,
-            'error' => self::Error,
-            default => self::Off,
-        };
-    }
 }

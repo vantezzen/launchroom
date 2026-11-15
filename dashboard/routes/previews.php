@@ -5,7 +5,6 @@ declare(strict_types=1);
 use App\Http\Controllers\Previews\PreviewAuthController;
 use App\Http\Controllers\Previews\PreviewController;
 use App\Http\Controllers\Previews\PreviewSettingsController;
-use App\Support\PublicId;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -20,12 +19,6 @@ Route::get('auth/preview', [PreviewAuthController::class, 'check'])
     ->name('previews.auth');
 
 Route::middleware(['web', 'auth', 'verified'])
-    ->where([
-        'project' => PublicId::routePattern('prj'),
-        'service' => PublicId::routePattern('svc'),
-        'preview' => PublicId::routePattern('prv'),
-        'shareLink' => PublicId::routePattern('psl'),
-    ])
     ->group(function (): void {
         Route::get('auth/preview/start', [PreviewAuthController::class, 'start'])
             ->middleware('throttle:60,1')

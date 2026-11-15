@@ -20,14 +20,6 @@ use App\Models\ServiceInstance;
 final class DatabaseWorkloads
 {
     /**
-     * Daemon engine names (protocol DatabaseEngine) by dashboard engine.
-     */
-    public static function daemonEngine(DatabaseSource $source): string
-    {
-        return $source->engine->value;
-    }
-
-    /**
      * Why $server's launchroomd can't run backup, restore or verification
      * tasks of this engine (it predates the engine, D47), or null.
      */
@@ -57,7 +49,7 @@ final class DatabaseWorkloads
             ->where('service_instance_id', $instance->id)
             ->where('deployment_id', $instance->active_deployment_id)
             ->where('role', WorkloadRole::Serving->value)
-            ->whereIn('phase', [WorkloadPhase::Healthy->value, WorkloadPhase::Running->value])
+            ->whereIn('phase', WorkloadPhase::serving())
             ->with('server')
             ->orderBy('slot')
             ->first();

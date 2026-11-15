@@ -7,7 +7,7 @@ import { endSentence } from './format';
 import type { DataResult } from './result-types';
 import { SessionClient } from './session-client';
 
-export type DataPhase =
+type DataPhase =
     | { kind: 'idle'; error: string | null }
     | { kind: 'connecting' }
     | { kind: 'live' }

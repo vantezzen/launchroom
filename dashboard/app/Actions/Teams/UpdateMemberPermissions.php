@@ -5,11 +5,11 @@ declare(strict_types=1);
 namespace App\Actions\Teams;
 
 use App\Actions\Audit\RecordAuditEvent;
-use App\Actions\Sessions\EndUserSessions;
 use App\Data\Audit\AuditActor;
 use App\Data\Audit\AuditEntryData;
 use App\Enums\AuditAction;
 use App\Enums\Permission;
+use App\Events\Teams\MemberAccessChanged;
 use App\Exceptions\DomainRuleViolation;
 use App\Models\Membership;
 use App\Models\User;
@@ -24,7 +24,6 @@ final readonly class UpdateMemberPermissions
 {
     public function __construct(
         private RecordAuditEvent $audit,
-        private EndUserSessions $endSessions,
     ) {}
 
     /**
@@ -73,7 +72,7 @@ final readonly class UpdateMemberPermissions
         });
 
         if ($revoked) {
-            $this->endSessions->handle($membership->team_id, $membership->user_id);
+            event(new MemberAccessChanged($membership->team_id, $membership->user_id));
         }
     }
 }

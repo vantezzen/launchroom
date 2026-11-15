@@ -157,7 +157,7 @@ func Fetch(ctx context.Context, c Client, ref state.TransferRef, task state.Task
 	for i := int(have); i < ref.Chunks; i++ {
 		want := min(ref.ChunkBytes, ref.SizeBytes-int64(i)*ref.ChunkBytes)
 		var chunk []byte
-		err := retry(ctx, o.Backoff, func() error {
+		err := controlplane.Retry(ctx, controlplane.Backoff{Attempts: Retries, Initial: o.Backoff}, func() error {
 			var err error
 			chunk, err = c.FetchTransferChunk(ctx, ref.ID, i, ref.ChunkBytes)
 			if err == nil && int64(len(chunk)) != want {
@@ -203,32 +203,6 @@ func Sweep(dir string, now time.Time) {
 		if fi, err := e.Info(); err == nil && now.Sub(fi.ModTime()) > sweepAge {
 			_ = os.Remove(filepath.Join(dir, e.Name()))
 		}
-	}
-}
-
-// retry runs fn up to Retries times with exponential backoff. Answers the
-// dashboard gave on purpose (4xx other than 408/429) and signature failures
-// are not retried.
-func retry(ctx context.Context, backoff time.Duration, fn func() error) error {
-	var err error
-	for attempt := 1; ; attempt++ {
-		if err = fn(); err == nil {
-			return nil
-		}
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-		var api *controlplane.APIError
-		var sig *controlplane.SignatureError
-		if errors.As(err, &sig) || errors.As(err, &api) && !api.Retryable() || attempt >= Retries {
-			return err
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(backoff):
-		}
-		backoff *= 2
 	}
 }
 
@@ -286,7 +260,7 @@ func (u *Uploader) flush() error {
 		return nil
 	}
 	chunk := u.buf
-	err := retry(u.ctx, u.backoff, func() error { return u.c.PutTransferChunk(u.ctx, u.id, u.n, chunk) })
+	err := controlplane.Retry(u.ctx, controlplane.Backoff{Attempts: Retries, Initial: u.backoff}, func() error { return u.c.PutTransferChunk(u.ctx, u.id, u.n, chunk) })
 	if err != nil {
 		u.err = fmt.Errorf("transfer: uploading chunk %d: %w", u.n+1, err)
 		return u.err

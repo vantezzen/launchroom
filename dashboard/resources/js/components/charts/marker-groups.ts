@@ -17,7 +17,7 @@ export type MarkerGroup = {
 };
 
 /** Markers closer than this (px) share one tick. */
-export const MERGE_PX = 8;
+const MERGE_PX = 8;
 /** Minimum space between two labels (px). */
 const LABEL_GAP = 6;
 /** Distance between the tick and its label (px). */

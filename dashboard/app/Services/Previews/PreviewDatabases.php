@@ -4,15 +4,14 @@ declare(strict_types=1);
 
 namespace App\Services\Previews;
 
-use App\Actions\Previews\AdvancePreviews;
+use App\Data\Previews\PreviewDatabaseStateData;
 use App\Enums\Backups\BackupRunStatus;
 use App\Enums\Backups\RestoreMode;
 use App\Enums\Backups\RestoreRunStatus;
+use App\Enums\DaemonTaskPurpose;
 use App\Enums\DaemonTaskStatus;
-use App\Enums\DaemonTaskType;
 use App\Enums\EnvironmentKind;
 use App\Enums\PreviewStrategy;
-use App\Enums\ServerRole;
 use App\Models\Backups\BackupRun;
 use App\Models\Backups\RestoreRun;
 use App\Models\DaemonTask;
@@ -24,13 +23,12 @@ use App\Models\Previews\PreviewSettings;
 use App\Models\ServiceInstance;
 use App\Models\Team;
 use App\Services\Backups\DatabaseWorkloads;
-use App\Support\Deployments\EffectiveDeploy;
-use App\Support\Variables\SecretTaint;
+use App\Services\Tasks\RunOnceTasks;
 use Illuminate\Contracts\Database\Query\Builder;
 
 /**
  * Data preparation of a preview's databases (docs/06 §5, docs/14 §6), run
- * under the preview's row lock by {@see AdvancePreviews}:
+ * under the preview's row lock by AdvancePreviews:
  *
  *     waiting → restoring → [sanitizing] → ready   (or failed)
  *
@@ -45,7 +43,9 @@ use Illuminate\Contracts\Database\Query\Builder;
  */
 final readonly class PreviewDatabases
 {
-    public const string PURPOSE_SANITIZE = 'sanitize';
+    public function __construct(
+        private RunOnceTasks $runOnce,
+    ) {}
 
     /**
      * Advances every clone of the preview. Returns whether all of its
@@ -53,9 +53,7 @@ final readonly class PreviewDatabases
      */
     public function advance(Preview $preview, Environment $environment): ?bool
     {
-        $data = $preview->data;
-        /** @var array<string, array<string, mixed>> $databases */
-        $databases = is_array($data['databases'] ?? null) ? $data['databases'] : [];
+        $databases = $preview->data->databases;
         $ready = true;
         $failed = false;
 
@@ -77,15 +75,15 @@ final readonly class PreviewDatabases
             }
 
             $id = $instance->service->public_id;
-            $state = $databases[$id] ?? ['strategy' => PreviewStrategy::Clone->value, 'state' => 'waiting'];
+            $state = $databases[$id] ?? new PreviewDatabaseStateData(strategy: PreviewStrategy::Clone, state: 'waiting');
             $state = $this->step($preview, $instance, $state);
             $databases[$id] = $state;
 
-            $ready = $ready && $state['state'] === 'ready';
-            $failed = $failed || $state['state'] === 'failed';
+            $ready = $ready && $state->state === 'ready';
+            $failed = $failed || $state->state === 'failed';
         }
 
-        $preview->data = [...$data, 'databases' => $databases];
+        $preview->data = $preview->data->changed(['databases' => $databases]);
         $preview->save();
 
         return $failed ? null : $ready;
@@ -143,13 +141,9 @@ final readonly class PreviewDatabases
         return max(1, $mb) * 1024 * 1024;
     }
 
-    /**
-     * @param  array<string, mixed>  $state
-     * @return array<string, mixed>
-     */
-    private function step(Preview $preview, ServiceInstance $instance, array $state): array
+    private function step(Preview $preview, ServiceInstance $instance, PreviewDatabaseStateData $state): PreviewDatabaseStateData
     {
-        return match ($state['state'] ?? 'waiting') {
+        return match ($state->state ?? 'waiting') {
             'waiting' => $this->startRestore($preview, $instance, $state),
             'restoring' => $this->afterRestore($instance, $state),
             'sanitizing' => $this->afterSanitize($state),
@@ -157,17 +151,13 @@ final readonly class PreviewDatabases
         };
     }
 
-    /**
-     * @param  array<string, mixed>  $state
-     * @return array<string, mixed>
-     */
-    private function startRestore(Preview $preview, ServiceInstance $instance, array $state): array
+    private function startRestore(Preview $preview, ServiceInstance $instance, PreviewDatabaseStateData $state): PreviewDatabaseStateData
     {
         $source = $instance->previewCloneSource;
         $settings = PreviewSettings::forProject($preview->project);
 
         if (! $source instanceof ServiceInstance || $source->team_id !== $instance->team_id) {
-            return [...$state, 'state' => 'failed', 'message' => 'The clone source no longer exists. Pick another one under Settings → Previews.'];
+            return $state->changed(['state' => 'failed', 'message' => 'The clone source no longer exists. Pick another one under Settings → Previews.']);
         }
 
         // The preview's own database must run first (restore-as-new target).
@@ -179,7 +169,7 @@ final readonly class PreviewDatabases
         $refusal = $this->check($source, $run, $settings, $this->limitBytes($instance->team_id))[1];
 
         if ($refusal !== null || ! $run instanceof BackupRun || $run->snapshot_id === null) {
-            return [...$state, 'state' => 'failed', 'message' => $refusal ?? 'The source database has no backup to clone.'];
+            return $state->changed(['state' => 'failed', 'message' => $refusal ?? 'The source database has no backup to clone.']);
         }
 
         $restore = new RestoreRun([
@@ -194,23 +184,19 @@ final readonly class PreviewDatabases
         $restore->size_bytes = $run->size_bytes;
         $restore->save();
 
-        return [...$state, 'state' => 'restoring', 'restoreRun' => $restore->public_id, 'source' => $source->public_id, 'snapshot' => substr($run->snapshot_id, 0, 12), 'sizeBytes' => $run->size_bytes];
+        return $state->changed(['state' => 'restoring', 'restoreRun' => $restore->public_id, 'source' => $source->public_id, 'snapshot' => substr($run->snapshot_id, 0, 12), 'sizeBytes' => $run->size_bytes]);
     }
 
-    /**
-     * @param  array<string, mixed>  $state
-     * @return array<string, mixed>
-     */
-    private function afterRestore(ServiceInstance $instance, array $state): array
+    private function afterRestore(ServiceInstance $instance, PreviewDatabaseStateData $state): PreviewDatabaseStateData
     {
-        $run = RestoreRun::query()->where('public_id', is_string($state['restoreRun'] ?? null) ? $state['restoreRun'] : '')->where('team_id', $instance->team_id)->first();
+        $run = RestoreRun::query()->where('public_id', $state->restoreRun ?? '')->where('team_id', $instance->team_id)->first();
 
         if (! $run instanceof RestoreRun) {
-            return [...$state, 'state' => 'failed', 'message' => 'The clone’s restore disappeared.'];
+            return $state->changed(['state' => 'failed', 'message' => 'The clone’s restore disappeared.']);
         }
 
         if ($run->status === RestoreRunStatus::Failed) {
-            return [...$state, 'state' => 'failed', 'message' => 'Restoring the clone failed: '.($run->error ?? 'unknown error')];
+            return $state->changed(['state' => 'failed', 'message' => 'Restoring the clone failed: '.($run->error ?? 'unknown error')]);
         }
 
         if ($run->status !== RestoreRunStatus::Succeeded) {
@@ -220,42 +206,39 @@ final readonly class PreviewDatabases
         $command = $instance->preview_sanitize_command;
 
         if ($command === null || $command === []) {
-            return [...$state, 'state' => 'ready'];
+            return $state->changed(['state' => 'ready']);
         }
 
         $task = $this->sanitize($instance, $command);
 
         return $task instanceof DaemonTask
-            ? [...$state, 'state' => 'sanitizing', 'task' => $task->public_id]
-            : [...$state, 'state' => 'failed', 'message' => 'The sanitize command could not be scheduled (the database isn’t running).'];
+            ? $state->changed(['state' => 'sanitizing', 'task' => $task->public_id])
+            : $state->changed(['state' => 'failed', 'message' => 'The sanitize command could not be scheduled (the database isn’t running).']);
     }
 
-    /**
-     * @param  array<string, mixed>  $state
-     * @return array<string, mixed>
-     */
-    private function afterSanitize(array $state): array
+    private function afterSanitize(PreviewDatabaseStateData $state): PreviewDatabaseStateData
     {
-        $task = DaemonTask::query()->where('public_id', is_string($state['task'] ?? null) ? $state['task'] : '')->first();
+        $task = DaemonTask::query()->where('public_id', $state->task ?? '')->first();
 
         if (! $task instanceof DaemonTask) {
-            return [...$state, 'state' => 'failed', 'message' => 'The sanitize task disappeared.'];
+            return $state->changed(['state' => 'failed', 'message' => 'The sanitize task disappeared.']);
         }
 
-        $exit = is_array($task->result['runOnce'] ?? null) ? ($task->result['runOnce']['exitCode'] ?? null) : null;
+        $exit = $task->result?->runOnce?->exitCode;
 
         return match ($task->status) {
             DaemonTaskStatus::Pending, DaemonTaskStatus::Leased => $state,
             DaemonTaskStatus::Succeeded => $exit === 0
-                ? [...$state, 'state' => 'ready']
-                : [...$state, 'state' => 'failed', 'message' => 'The sanitize command exited with code '.(is_int($exit) ? $exit : '?').'; the apps were not started.'],
-            default => [...$state, 'state' => 'failed', 'message' => 'The sanitize command could not run: '.($task->error ?? 'unknown error')],
+                ? $state->changed(['state' => 'ready'])
+                : $state->changed(['state' => 'failed', 'message' => 'The sanitize command exited with code '.(is_int($exit) ? $exit : '?').'; the apps were not started.']),
+            default => $state->changed(['state' => 'failed', 'message' => 'The sanitize command could not run: '.($task->error ?? 'unknown error')]),
         };
     }
 
     /**
      * The sanitize command as a one-off container from the database's image,
-     * on the preview network, with the database's env (its credentials).
+     * on the preview network, with the database's env (its credentials). Not
+     * tied to the database's deployment (it is long active).
      *
      * @param  list<string>  $command
      */
@@ -264,40 +247,11 @@ final readonly class PreviewDatabases
         $placement = DatabaseWorkloads::servingPlacement($instance);
         $deployment = $placement instanceof Placement ? Deployment::query()->whereKey($placement->deployment_id)->with(['revision', 'environment'])->first() : null;
         $spec = $deployment?->revision?->spec->service($instance->service->public_id);
-
-        if (! $placement instanceof Placement || ! $deployment instanceof Deployment || $spec === null || $deployment->image === null) {
+        if (! $placement instanceof Placement || ! $deployment instanceof Deployment || $spec === null) {
             return null;
         }
 
-        $environment = $deployment->environment;
-        $timeout = config()->integer('launchroom.deployments.release_timeout_seconds');
-        $mask = SecretTaint::fromSpec($deployment->revision->spec)->taintedKeys($spec->slug);
-        $argv = EffectiveDeploy::for($spec, $deployment)->argv($command);
-
-        return DaemonTask::query()->create([
-            'team_id' => $instance->team_id,
-            'server_id' => $placement->server_id,
-            'pinned_to_server' => true,
-            'required_role' => ServerRole::Runtime,
-            'type' => DaemonTaskType::RunOnce,
-            'purpose' => self::PURPOSE_SANITIZE,
-            'spec' => json_decode(json_encode([
-                'service' => $instance->service->public_id,
-                'environment' => $environment->public_id,
-                'deployment' => $deployment->public_id,
-                'image' => $deployment->image,
-                ...array_filter($argv, static fn (?array $value): bool => $value !== null),
-                ...($mask === [] ? [] : ['maskEnv' => array_slice($mask, 0, 1024)]),
-                'network' => ['id' => $environment->networkId(), 'name' => $environment->networkName(), 'subnet' => $environment->network_subnet],
-                'timeout' => $timeout.'s',
-                'resources' => ['cpus' => $spec->scaling->cpus, 'memoryMb' => $spec->scaling->memoryMb, 'pids' => $spec->scaling->pids()],
-            ], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR), false, 64, JSON_THROW_ON_ERROR),
-            'seal' => ['env' => ['deployment' => $deployment->id, 'keys' => null, 'defaults' => true]],
-            'max_attempts' => 1,
-            'timeout_seconds' => $timeout + 120,
-            // Not tied to the database's deployment (it is long active).
-            'deployment_id' => null,
-        ]);
+        return $this->runOnce->command($deployment, $spec, $command, $placement->server, DaemonTaskPurpose::Sanitize, null);
     }
 
     private function latestBackup(ServiceInstance $instance): ?BackupRun

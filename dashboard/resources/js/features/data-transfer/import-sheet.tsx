@@ -1,5 +1,12 @@
 import { Archive, FileUp, Link2, RotateCcw, TriangleAlert } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+    useCallback,
+    useEffect,
+    useEffectEvent,
+    useMemo,
+    useRef,
+    useState,
+} from 'react';
 import { toast } from 'sonner';
 import { MetaLine } from '@/components/patterns/meta-line';
 import { OptionCards } from '@/components/patterns/option-cards';
@@ -13,17 +20,12 @@ import { Progress } from '@/components/ui/progress';
 import { Spinner } from '@/components/ui/spinner';
 import { show as showTransfer } from '@/routes/transfers';
 import { inspection as inspectionRoute } from '@/routes/transfers/services';
-import { TransferRequestFailed, transfersApi } from './api';
+import { RequestFailed, requestJson } from '@/lib/http';
 import type { Inspection, ServiceTransfers, Transfer } from './api';
-import {
-    engineFormats,
-    formatBytes,
-    rate,
-    timeLeft,
-    urlExamples,
-} from './format';
+import { rate, timeLeft } from './format';
 import { uploadFile } from './upload';
 import type { UploadProgress } from './upload';
+import { formatBytes } from '@/lib/format';
 
 export type ImportTarget = {
     /** Public id of the volume (volume imports); null for the database. */
@@ -45,7 +47,7 @@ type Checked = {
 };
 
 function messageOf(error: unknown, fallback: string): string {
-    return error instanceof TransferRequestFailed || error instanceof Error
+    return error instanceof RequestFailed || error instanceof Error
         ? error.message
         : fallback;
 }
@@ -60,7 +62,7 @@ async function waitForInspection(
     signal: AbortSignal,
 ): Promise<Inspection> {
     for (let attempt = 0; attempt < 120; attempt++) {
-        const result = await transfersApi<Inspection>(
+        const result = await requestJson<Inspection>(
             'get',
             inspectionRoute({
                 serviceInstance: data.serviceInstanceId,
@@ -92,7 +94,7 @@ async function prepareDatabase(
     signal: AbortSignal,
     onServer: (server: string | null) => void,
 ): Promise<void> {
-    let state = await transfersApi<ServiceTransfers>(
+    let state = await requestJson<ServiceTransfers>(
         'post',
         data.urls.prepare,
         {},
@@ -115,7 +117,7 @@ async function prepareDatabase(
 
         onServer(preparation.serverName);
         await new Promise((resolve) => window.setTimeout(resolve, 2000));
-        state = await transfersApi<ServiceTransfers>(
+        state = await requestJson<ServiceTransfers>(
             'get',
             data.urls.self,
             undefined,
@@ -146,7 +148,6 @@ export function ImportSheet({
     const open = target !== null;
     const volume = target?.volume ?? null;
     const isVolume = data.subject === 'volume';
-    const engine = data.engine ?? 'postgres';
     const [sourceKind, setSourceKind] = useState<'file' | 'url'>('file');
     const [upload, setUpload] = useState<Upload>({ state: 'idle' });
     const [url, setUrl] = useState('');
@@ -190,7 +191,7 @@ export function ImportSheet({
     /** Closing without an import stops a database started for it. */
     const close = useCallback(() => {
         if (preparing) {
-            void transfersApi('delete', data.urls.prepare, {}).catch(
+            void requestJson('delete', data.urls.prepare, {}).catch(
                 () => undefined,
             );
         }
@@ -199,13 +200,7 @@ export function ImportSheet({
         onClose();
     }, [preparing, data.urls.prepare, reset, onClose]);
 
-    // Look at the target as soon as the sheet opens.
-    useEffect(() => {
-        if (!open) {
-            return;
-        }
-
-        const controller = new AbortController();
+    const lookAtTarget = useEffectEvent((controller: AbortController) => {
         abort.current = controller;
         setTargetCheck({ state: 'pending' });
 
@@ -221,7 +216,7 @@ export function ImportSheet({
                     setStarting(false);
                 }
 
-                const started = await transfersApi<Inspection>(
+                const started = await requestJson<Inspection>(
                     'post',
                     data.urls.inspect,
                     { volume: volume?.id ?? null },
@@ -260,14 +255,14 @@ export function ImportSheet({
         // While the sheet is open, the started database keeps waiting.
         const keepalive = preparing
             ? window.setInterval(() => {
-                  void transfersApi('post', data.urls.prepare, {}).catch(
+                  void requestJson('post', data.urls.prepare, {}).catch(
                       () => undefined,
                   );
               }, PREPARE_KEEPALIVE_MS)
             : null;
 
         if (target?.transferId) {
-            void transfersApi<Transfer>(
+            void requestJson<Transfer>(
                 'get',
                 showTransfer(target.transferId).url,
                 undefined,
@@ -281,6 +276,17 @@ export function ImportSheet({
                 .catch(() => undefined);
         }
 
+        return keepalive;
+    });
+
+    useEffect(() => {
+        if (!open) {
+            return;
+        }
+
+        const controller = new AbortController();
+        const keepalive = lookAtTarget(controller);
+
         return () => {
             controller.abort();
 
@@ -288,7 +294,6 @@ export function ImportSheet({
                 window.clearInterval(keepalive);
             }
         };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [open]);
 
     const startUpload = (file: File) => {
@@ -336,7 +341,7 @@ export function ImportSheet({
         setUrlCheck({ state: 'pending' });
 
         try {
-            const started = await transfersApi<Inspection>(
+            const started = await requestJson<Inspection>(
                 'post',
                 data.urls.inspect,
                 { sourceUrl: url },
@@ -482,7 +487,7 @@ export function ImportSheet({
         setBusy(true);
 
         try {
-            await transfersApi('post', data.urls.imports, {
+            await requestJson('post', data.urls.imports, {
                 transfer: sourceKind === 'file' ? transfer?.id : null,
                 sourceUrl: sourceKind === 'url' ? url.trim() : null,
                 replace: replacing,
@@ -637,7 +642,7 @@ export function ImportSheet({
                                 <span className="type-small text-muted-foreground">
                                     {isVolume
                                         ? '.tar, .tar.gz or .zip'
-                                        : (engineFormats[engine] ?? '')}
+                                        : (data.importFormat?.formats ?? '')}
                                 </span>
                             </button>
                         )}
@@ -710,7 +715,9 @@ export function ImportSheet({
                                 autoComplete="off"
                                 spellCheck={false}
                                 className="font-mono"
-                                placeholder={urlExamples[engine] ?? ''}
+                                placeholder={
+                                    data.importFormat?.urlExample ?? ''
+                                }
                                 value={url}
                                 onChange={(event) => {
                                     setUrl(event.target.value);
@@ -781,7 +788,7 @@ export function ImportSheet({
                                 ? `${name} is empty.`
                                 : isVolume
                                   ? `${name} already has files.`
-                                  : `${data.serviceName} has ${inspection.tables ?? 0} ${data.engine === 'mongodb' ? 'collections' : 'tables'}${
+                                  : `${data.serviceName} has ${inspection.tables ?? 0} ${data.importFormat?.objects ?? 'tables'}${
                                         inspection.sizeBytes
                                             ? ` (${formatBytes(inspection.sizeBytes)})`
                                             : ''

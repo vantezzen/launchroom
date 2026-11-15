@@ -25,9 +25,11 @@ use App\Data\Protocol\V1\TaskCompletion;
 use App\Data\Protocol\V1\TaskHeartbeat;
 use App\Data\Protocol\V1\TaskHeartbeatResult;
 use App\Data\Protocol\V1\TaskLease;
+use App\Data\Protocol\V1\Tasks\LogsSpec;
 use App\Data\Protocol\V1\VolumeSpec;
 use App\Data\Protocol\V1\WorkloadSpec;
 use App\Enums\DaemonTaskType;
+use App\Enums\WorkloadPhase;
 use Carbon\CarbonImmutable;
 use Tests\Support\ProtocolSchemas;
 
@@ -71,7 +73,7 @@ test('rendered NodeStates are schema-valid with and without system containers', 
 
 test('rendered enroll responses, leases and heartbeat results are schema-valid', function (): void {
     $enroll = new EnrollResponse('srv_01J9Z8X7W6V5T4S3R2Q1P0N9MK', 'active', ['cp-1' => 'ed25519:Kay64UG8yvCyLhqU000LxzYeUm0L/hLIl5S8kyKWbdc='], new RegistryInfo('127.0.0.1:5000'), new PollIntervals('30s', '10s'));
-    $lease = new TaskLease([new Task('tsk_01J9Z8X7W6V5T4S3R2Q1P0N9P0', DaemonTaskType::Logs, CarbonImmutable::now(), 1, CarbonImmutable::now()->addHour(), (object) ['workload' => 'wl_01J9Z8X7W6V5T4S3R2Q1P0N9N7', 'tail' => 0, 'follow' => true])]);
+    $lease = new TaskLease([new Task('tsk_01J9Z8X7W6V5T4S3R2Q1P0N9P0', DaemonTaskType::Logs, CarbonImmutable::now(), 1, CarbonImmutable::now()->addHour(), new LogsSpec('wl_01J9Z8X7W6V5T4S3R2Q1P0N9N7', 0, true))]);
     $heartbeat = new TaskHeartbeatResult(CarbonImmutable::now(), false);
 
     expect(ProtocolSchemas::errors('enroll-response', ProtocolJson::encode($enroll)))->toBe([])
@@ -93,7 +95,7 @@ test('Go request fixtures decode into the PHP Data objects', function (): void {
     expect($enroll->host->hostname)->toBe('web-1')
         ->and($enroll->host->memoryMb)->toBe(8192)
         ->and($report->workloads)->toHaveCount(2)
-        ->and($report->workloads[0]->phase)->toBe('healthy');
+        ->and($report->workloads[0]->phase)->toBe(WorkloadPhase::Healthy);
 });
 
 test('the realtime nudge fixtures decode into and render from the PHP Data objects', function (): void {
@@ -118,18 +120,6 @@ test('Go response fixtures round-trip through the PHP Data objects', function ()
     );
 
     expect(json_decode(ProtocolJson::encode($enroll), true))->toEqual($response);
-
-    $lease = json_decode(protocolFixture('task-lease.build'), false);
-    $tasks = array_map(static fn (object $task): Task => new Task(
-        $task->id,
-        DaemonTaskType::from($task->type),
-        CarbonImmutable::parse($task->leaseExpiresAt),
-        $task->attempt,
-        CarbonImmutable::parse($task->deadline),
-        $task->spec,
-    ), $lease->tasks);
-
-    expect(json_decode(ProtocolJson::encode(new TaskLease($tasks)), true))->toEqual(json_decode(protocolFixture('task-lease.build'), true));
 
     $state = json_decode(protocolFixture('node-state.web-postgres'), false);
     $system = $state->system;

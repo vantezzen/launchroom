@@ -10,17 +10,19 @@ use App\Data\Servers\CreateEnrollmentData;
 use App\Data\Servers\EnrollmentData;
 use App\Enums\ServerRole;
 use App\Http\Controllers\Controller;
-use App\Http\Controllers\Teams\TeamSettingsController;
+use App\Http\Routing\CurrentTeam;
+use App\Http\Toast;
 use App\Models\Server;
 use App\Models\ServerEnrollment;
+use App\Models\Team;
 use App\Models\User;
 use App\Queries\ServerRoleHints;
 use App\Services\Crypto\Signer;
+use App\Support\InstallCommands;
 use Illuminate\Container\Attributes\CurrentUser;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
-use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -33,12 +35,8 @@ final class ServerEnrollmentController extends Controller
 {
     private const string TOKEN_FLASH_KEY = 'launchroom.join_token';
 
-    /** "What kind of machine is it?" tiles of the add-server wizard. */
-    private const array MACHINES = ['cloud', 'dedicated', 'home', 'mac', 'board'];
-
-    public function create(#[CurrentUser] User $user, ServerRoleHints $roleHints): Response
+    public function create(ServerRoleHints $roleHints, #[CurrentTeam] Team $team): Response
     {
-        $team = TeamSettingsController::currentTeam($user);
         Gate::authorize('create', [Server::class, $team]);
 
         return Inertia::render('servers/create', [
@@ -50,14 +48,11 @@ final class ServerEnrollmentController extends Controller
         ]);
     }
 
-    public function store(Request $request, CreateEnrollmentData $data, #[CurrentUser] User $user, CreateEnrollment $createEnrollment): RedirectResponse
+    public function store(Request $request, CreateEnrollmentData $data, #[CurrentUser] User $user, CreateEnrollment $createEnrollment, #[CurrentTeam] Team $team): RedirectResponse
     {
-        $team = TeamSettingsController::currentTeam($user);
         Gate::authorize('create', [Server::class, $team]);
 
-        // The machine picked in the wizard only shapes copy and the waiting picture.
-        $request->validate(['machine' => ['nullable', 'string', Rule::in(self::MACHINES)]]);
-        $machine = $request->filled('machine') ? $request->string('machine')->toString() : null;
+        $machine = $data->machine;
 
         // A Mac never serves traffic (D53); enrollment drops the role anyway, this says so up front.
         if ($machine === 'mac' && in_array(ServerRole::Edge, $data->serverRoles(), true)) {
@@ -83,30 +78,27 @@ final class ServerEnrollmentController extends Controller
         $token = $request->session()->get(self::TOKEN_FLASH_KEY);
 
         $machine = $request->query('machine');
+        $controlPlaneUrl = rtrim(config()->string('app.url'), '/');
 
         return Inertia::render('servers/enrollment', [
-            'machine' => is_string($machine) && in_array($machine, self::MACHINES, true) ? $machine : null,
+            'machine' => is_string($machine) && in_array($machine, CreateEnrollmentData::MACHINES, true) ? $machine : null,
             // Approve right in the waiting card (docs/03 §3) when approval is required.
             'canApprove' => $enrollment->server !== null && Gate::allows('approve', $enrollment->server),
             // A server that never connected can be removed (its join token is deleted).
             'canCancel' => Gate::allows('delete', $enrollment),
             'enrollment' => EnrollmentData::fromEnrollment($enrollment),
-            'joinToken' => is_string($token) ? $token : null,
-            'controlPlaneUrl' => rtrim(config()->string('app.url'), '/'),
-            'controlPlaneKey' => $signer->publicKey(),
+            'command' => is_string($token) ? InstallCommands::server($controlPlaneUrl, $token, $signer->publicKey()) : null,
+            'controlPlaneUrl' => $controlPlaneUrl,
         ]);
     }
 
-    /**
-     * Remove a server that was added but never connected: its join token stops working.
-     */
     public function destroy(Request $request, ServerEnrollment $enrollment, #[CurrentUser] User $user, CancelEnrollment $cancelEnrollment): RedirectResponse
     {
         Gate::authorize('delete', $enrollment);
 
         $cancelEnrollment->handle($enrollment, $this->auditActor($request, $user));
 
-        Inertia::flash('toast', ['type' => 'success', 'message' => __('Removed. Its install command no longer works.')]);
+        Toast::success(__('Removed. Its install command no longer works.'));
 
         return to_route('servers.index');
     }

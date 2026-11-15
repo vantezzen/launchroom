@@ -6,8 +6,8 @@ namespace App\Actions\Git;
 
 use App\Models\Git\GitHubApp;
 use App\Models\Git\GitHubInstallation;
-use App\Services\GitHub\Dto\InstallationInfo;
-use App\Services\GitHub\GitHubClientFactory;
+use App\Services\Git\Providers\GitHub\Dto\InstallationInfo;
+use App\Services\Git\Providers\GitHub\GitHubClientFactory;
 
 /**
  * The team's installation a verified webhook refers to. Unknown installations

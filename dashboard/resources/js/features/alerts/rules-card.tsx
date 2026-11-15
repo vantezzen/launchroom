@@ -4,8 +4,8 @@ import InputError from '@/components/input-error';
 import { UnsavedBar } from '@/components/patterns/unsaved-bar';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
-import { SettingsCard, SettingsRow } from '@/features/settings/settings-card';
 import { update } from '@/routes/notifications/rules';
+import { SettingsCard, SettingsRow } from '@/components/settings/settings-card';
 
 type Rule = App.Data.Alerts.AlertRuleData;
 type Row = {

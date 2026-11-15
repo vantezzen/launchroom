@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace App\Services\Audit\Transports;
 
 use App\Models\AuditSink;
+use App\Models\InstanceSettings;
 use App\Services\Audit\AuditBatch;
 use App\Services\Audit\AuditDeliveryFailed;
-use App\Services\Backups\SnapshotTags;
 use App\Services\Http\Exceptions\UnsafeUrl;
 use App\Services\Http\UrlGuard;
 use App\Support\AuditChain;
@@ -46,7 +46,7 @@ final readonly class SyslogTransport implements AuditSinkTransport
 
     public function test(AuditSink $sink): string
     {
-        $line = json_encode(['type' => 'test', 'instance' => SnapshotTags::instanceId(), 'sink' => $sink->public_id], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+        $line = json_encode(['type' => 'test', 'instance' => InstanceSettings::instanceId(), 'sink' => $sink->public_id], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
         $this->send($sink, self::frame(CarbonImmutable::now()->utc()->format(AuditChain::TIME_FORMAT), 'test', $line));
 
         return 'Connected and sent a test message. Check that your receiver shows it.';

@@ -10,7 +10,7 @@ A failed build never takes your site down. The previous deployment keeps serving
 ## Reading a failed build
 
 - The card title starts with **Build failed:** followed by the explanation, for example "Build failed: pnpm-lock.yaml is out of date". When launchroom doesn't recognise the error, the title is "Build failed" and the card shows the first line of the error message.
-- The label next to the title is the failure class: `plan_error` (launchroom could not work out how to build the app), `build_error` (a build step exited with an error), `config_error` (a setting or the repository content is wrong), `transient` (registry or network trouble, retried once automatically).
+- The label next to the title is the failure class: `plan_error` (launchroom could not work out how to build the app), `build_error` (a build step exited with an error), `config_error` (a setting or the repository content is wrong), `build_timeout` (the build didn't finish before its deadline), `transient` (registry or network trouble, retried once automatically).
 - The **Build** step opens at the first error. **Jump to line** takes you to that line in **Steps**; **Expand all** opens every step.
 - The service's **Settings → Build** page shows what launchroom detected: framework, package manager, versions and where each came from, and the install, build and start commands. **Detect again** re-reads the branch head after you push a fix.
 
@@ -141,7 +141,7 @@ The deployment sits on **Build** with nothing happening, or the plan preview say
 - If every build server is busy, wait, or cancel builds you don't need. A newer push to the same service replaces queued builds of older commits.
 - Add a second build server to spread the load.
 
-Builds stop after two hours by default; instance owners can set `LAUNCHROOM_BUILD_TIMEOUT` in seconds to change it. Waiting for a build slot does not consume that time. A build that hits its deadline fails with a timeout.
+Builds stop after two hours by default; instance owners can set `LAUNCHROOM_BUILD_TIMEOUT` in seconds to change it. Builds waiting in the dashboard's queue don't use up that time. The deadline starts when a server picks the build up, so time it then spends waiting for a free build slot on that server counts. A build that hits its deadline fails with **Build timed out** and the class `build_timeout`.
 
 ## The clone fails
 

@@ -18,6 +18,8 @@ use App\Services\Backups\RecoveryKitDocument;
 use App\Services\Backups\RestoredControlPlaneRuns;
 use App\Services\Backups\RestoredKeyFiles;
 use App\Services\Backups\SnapshotTags;
+use App\Support\Protocol\Grammar;
+use App\Support\S3\S3Location;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -193,8 +195,9 @@ final class RestoreControlPlaneCommand extends Command
             throw new RuntimeException('The endpoint uses plain http; pass --allow-http if that is intended (LAN/dev only).');
         }
 
-        $prefix = trim($prefix, '/');
-        $guard->checkLocation((string) $bucket, $prefix, $region === '' ? null : $region);
+        $location = S3Location::parse($endpoint, (string) $bucket, $region, $prefix);
+        $prefix = $location->prefix;
+        $region = $location->region;
 
         $credentials = new DestinationCredentials(
             (string) $this->value(null, $kit['access-key-id'] ?? null, 'restore.access_key_id', 'S3 access key id', true),
@@ -204,7 +207,7 @@ final class RestoreControlPlaneCommand extends Command
 
         $repository = 's3:'.$endpoint.'/'.$bucket.($prefix === '' ? '' : '/'.$prefix);
 
-        return new ResticTarget($repository, $region === '' ? null : $region, $credentials);
+        return new ResticTarget($repository, $region, $credentials);
     }
 
     /**
@@ -301,7 +304,7 @@ final class RestoreControlPlaneCommand extends Command
         }
 
         foreach ($runs as $run) {
-            if ($run['run'] === $wanted || (preg_match('/^[a-f0-9]{8,64}$/D', $wanted) === 1 && (str_starts_with($run['database']['id'], $wanted) || str_starts_with($run['keys']['id'], $wanted)))) {
+            if ($run['run'] === $wanted || (preg_match(Grammar::SNAPSHOT_ID, $wanted) === 1 && (str_starts_with($run['database']['id'], $wanted) || str_starts_with($run['keys']['id'], $wanted)))) {
                 return $run;
             }
         }

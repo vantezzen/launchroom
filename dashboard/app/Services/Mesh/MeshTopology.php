@@ -7,14 +7,15 @@ namespace App\Services\Mesh;
 use App\Data\Protocol\V1\TailscaleSpec;
 use App\Enums\Mesh\MeshCredentialPurpose;
 use App\Enums\Mesh\MeshMode;
+use App\Exceptions\DecryptionFailed;
 use App\Models\InstanceSettings;
 use App\Models\Mesh\MeshCredential;
 use App\Models\Server;
 use App\Models\ServerEnrollment;
 use App\Models\User;
-use App\Services\Crypto\Exceptions\DecryptionFailed;
 use App\Services\Instance\DashboardOrigin;
 use App\Support\Crypto\MeshKeySealer;
+use App\Support\Network\Mesh;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -42,9 +43,6 @@ final readonly class MeshTopology
         return $settings->mesh_enabled_at === null ? null : $settings->mesh_mode;
     }
 
-    /**
-     * Whether the embedded Headscale exists on this install.
-     */
     public static function embeddedAvailable(): bool
     {
         return is_string(config('launchroom.mesh.headscale_url')) && config('launchroom.mesh.headscale_url') !== '';
@@ -153,14 +151,13 @@ final readonly class MeshTopology
         }
 
         $controlPlaneIp = Server::query()
-            ->where('is_control_plane', true)
-            ->whereNull('revoked_at')
+            ->controlPlane()
             ->whereNotNull('mesh_ip')
-            ->orderBy('id')
+            ->latest('id')
             ->value('mesh_ip');
 
         return is_string($controlPlaneIp) && filter_var($controlPlaneIp, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false
-            ? [$controlPlaneIp.':'.config()->integer('launchroom.mesh.registry_port'), false]
+            ? [$controlPlaneIp.':'.Mesh::REGISTRY_PORT, false]
             : [null, false];
     }
 

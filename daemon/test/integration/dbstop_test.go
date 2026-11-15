@@ -15,6 +15,7 @@ import (
 
 	"github.com/vantezzen/launchroom/daemon/internal/docker"
 	"github.com/vantezzen/launchroom/daemon/internal/health"
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/policy"
 	"github.com/vantezzen/launchroom/daemon/internal/reconcile"
 	"github.com/vantezzen/launchroom/daemon/internal/sealed"
@@ -151,7 +152,7 @@ func testDatabaseStop(t *testing.T, eng dbStopEngine) {
 	t.Cleanup(mon.Close)
 	e.rec = reconcile.New(reconcile.Options{
 		ServerID: e.serverID, Docker: e.engine, Policy: pol, Health: mon,
-		EnvHashKey: reconcile.EnvHashKey(e.key.Bytes()),
+		EnvHashKey: docker.EnvHashKey(e.key.Bytes()),
 		OpenEnv: func(s *state.WorkloadSpec) (map[string]secret.Secret, error) {
 			return sealed.OpenWorkloadEnv(s.Env, e.key, e.serverID, s.ID)
 		},
@@ -217,7 +218,7 @@ func testDatabaseStop(t *testing.T, eng dbStopEngine) {
 		}); err != nil {
 			t.Fatal(err)
 		}
-		if c, err := e.engine.InspectContainer(ctx, id); eng.logFile != "" && err == nil && c.Running {
+		if c, err := e.engine.InspectContainer(ctx, id); eng.logFile != "" && err == nil && c.Running() {
 			var out strings.Builder
 			if _, err := e.engine.ExecStream(ctx, id, docker.ExecOptions{Argv: []string{"cat", eng.logFile}, Stdout: &out}); err == nil {
 				b.WriteString(out.String())
@@ -234,7 +235,7 @@ func testDatabaseStop(t *testing.T, eng dbStopEngine) {
 				return false
 			}
 			c, err := e.engine.InspectContainer(ctx, st.ContainerID)
-			return err == nil && c.Running && c.Labels[docker.LabelDeployment] == string(ns.Workloads[0].Deployment)
+			return err == nil && c.Running() && c.Labels[names.LabelDeployment] == string(ns.Workloads[0].Deployment)
 		})
 		id := status(e.rec, wl).ContainerID
 		deadline := time.Now().Add(4 * time.Minute)
@@ -250,7 +251,6 @@ func testDatabaseStop(t *testing.T, eng dbStopEngine) {
 		}
 		return id
 	}
-	// reconcileTimed runs one pass and returns how long it took.
 	reconcileTimed := func(ns *state.NodeState) time.Duration {
 		t.Helper()
 		began := time.Now()
@@ -299,8 +299,8 @@ func testDatabaseStop(t *testing.T, eng dbStopEngine) {
 		t.Fatal(err)
 	}
 	t.Logf("%s stopped in %s (exit code %d)", eng.name, took.Round(time.Millisecond), c.ExitCode)
-	if c.Running || c.ExitCode != 0 {
-		t.Fatalf("after the stop: running=%v exit code %d:\n%s", c.Running, c.ExitCode, logs(first))
+	if c.Running() || c.ExitCode != 0 {
+		t.Fatalf("after the stop: running=%v exit code %d:\n%s", c.Running(), c.ExitCode, logs(first))
 	}
 	if after := strings.Count(logs(first), eng.stopped); eng.stopped != "" && after != before+1 {
 		t.Fatalf("no clean shutdown in the log (%q %d → %d):\n%s", eng.stopped, before, after, logs(first))

@@ -4,11 +4,12 @@ declare(strict_types=1);
 
 namespace App\Actions\Transfers;
 
+use App\Enums\HoldKind;
 use App\Enums\Transfers\DataSubject;
 use App\Enums\Transfers\ImportRunStatus;
 use App\Models\Transfers\DataImportRun;
-use App\Services\Backups\RestoreHolds;
-use App\Services\Transfers\ImportHolds;
+use App\Services\Holds\Holds;
+use App\Services\Holds\ImportHolds;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
@@ -44,9 +45,9 @@ final readonly class FailStuckImports
                     }
 
                     $held = ImportHolds::heldBy($run);
-                    $running = $run->subject === DataSubject::Database ? RestoreHolds::running($held) : [];
+                    $running = $run->subject === DataSubject::Database ? Holds::running($held) : [];
                     $run->transitionTo(ImportRunStatus::Failed, ImportHolds::overdueReason($run, $running));
-                    ImportHolds::release($run, $held);
+                    Holds::changed(HoldKind::Import, $held, ImportHolds::alsoServers($run));
 
                     return true;
                 }) ? 1 : 0;

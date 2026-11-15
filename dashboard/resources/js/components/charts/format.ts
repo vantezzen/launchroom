@@ -1,35 +1,6 @@
 /** Number formatting shared by the charts (design-system §10: compact, tabular). */
 
-const compact = new Intl.NumberFormat('en', {
-    notation: 'compact',
-    maximumFractionDigits: 1,
-});
-
-export function formatCompact(value: number): string {
-    return compact.format(value);
-}
-
-export function formatPercent(value: number, digits = 0): string {
-    return `${value.toFixed(digits)}%`;
-}
-
-/** Bytes with one decimal under 10 ("4.1 GB", "512 MB"). */
-export function formatBytes(bytes: number): string {
-    const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
-    let value = Math.abs(bytes);
-    let unit = 0;
-
-    while (value >= 1024 && unit < units.length - 1) {
-        value /= 1024;
-        unit++;
-    }
-
-    const digits = value < 10 && unit > 0 ? 1 : 0;
-
-    return `${(Math.sign(bytes) * value).toFixed(digits)} ${units[unit]}`;
-}
-
-export function formatClock(ms: number, withSeconds = false): string {
+function formatClock(ms: number, withSeconds = false): string {
     const date = new Date(ms);
 
     return date.toLocaleTimeString('en-GB', {
@@ -39,7 +10,7 @@ export function formatClock(ms: number, withSeconds = false): string {
     });
 }
 
-export function formatDay(ms: number): string {
+function formatDay(ms: number): string {
     return new Date(ms).toLocaleDateString('en-GB', {
         day: 'numeric',
         month: 'short',

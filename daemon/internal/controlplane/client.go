@@ -204,6 +204,49 @@ func IsRetryable(err error) bool {
 	return !errors.As(err, &sig) && !errors.As(err, &dec)
 }
 
+// IsLeaseLost reports whether the dashboard no longer holds the task
+// attempt the request was about (re-queued, cancelled or gone).
+func IsLeaseLost(err error) bool {
+	var api *APIError
+	return errors.As(err, &api) && (api.Status == http.StatusNotFound || api.Status == http.StatusConflict || api.Status == http.StatusGone)
+}
+
+// Backoff is a retry schedule: up to Attempts tries, waiting Initial after
+// the first failure and twice as long after each further one, at most Max
+// (0: no cap).
+type Backoff struct {
+	Attempts int
+	Initial  time.Duration
+	Max      time.Duration
+}
+
+// Retry runs fn until it succeeds, fails with an error that is not worth
+// retrying (IsRetryable), ctx ends or the attempts are used up. It returns
+// fn's last error (joined with ctx's when ctx ended).
+func Retry(ctx context.Context, b Backoff, fn func() error) error {
+	wait := b.Initial
+	for attempt := 1; ; attempt++ {
+		err := fn()
+		switch {
+		case err == nil || !IsRetryable(err) || attempt >= b.Attempts:
+			return err
+		case ctx.Err() != nil:
+			return errors.Join(err, ctx.Err())
+		}
+		t := time.NewTimer(wait)
+		select {
+		case <-ctx.Done():
+			t.Stop()
+			return errors.Join(err, ctx.Err())
+		case <-t.C:
+		}
+		wait *= 2
+		if b.Max > 0 && wait > b.Max {
+			wait = b.Max
+		}
+	}
+}
+
 // SignatureError means a response failed signature verification.
 type SignatureError struct{ Err error }
 
@@ -629,8 +672,6 @@ func (c *Client) post(ctx context.Context, path string, body any, h http.Header)
 // Trusted returns the control-plane key set this client verifies responses
 // with (also used for signed session commands, docs/03 §11.2).
 func (c *Client) Trusted() identity.KeySet { return c.trusted }
-
-// ---- Canonical origin and failover (docs/03 §4.2) ----
 
 // SetPreferred makes requests go to u first (the verified canonical origin)
 // and fail over to the configured base URL; nil clears it.

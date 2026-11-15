@@ -8,6 +8,7 @@ use App\Actions\Registry\ConfigureRegistryStorage;
 use App\Actions\Registry\RemoveRegistryStorage;
 use App\Data\Registry\RegistryStorageInput;
 use App\Http\Controllers\Controller;
+use App\Http\Toast;
 use App\Models\User;
 use App\Queries\RegistrySettings;
 use Illuminate\Container\Attributes\CurrentUser;
@@ -38,7 +39,9 @@ final class RegistrySettingsController extends Controller
 
         $configure->handle($input, $user, $this->auditActor($request, $user));
 
-        return back()->with('success', 'Registry storage saved. Run '.RegistrySettings::APPLY_COMMAND.' on the control-plane server to use it.');
+        Toast::success('Registry storage saved. Run '.RegistrySettings::APPLY_COMMAND.' on the control-plane server to use it.');
+
+        return back();
     }
 
     public function destroy(Request $request, #[CurrentUser] User $user, RemoveRegistryStorage $remove): RedirectResponse
@@ -47,6 +50,8 @@ final class RegistrySettingsController extends Controller
 
         $remove->handle($user, $this->auditActor($request, $user));
 
-        return back()->with('success', 'The registry goes back to local storage after '.RegistrySettings::APPLY_COMMAND.'.');
+        Toast::success('The registry goes back to local storage after '.RegistrySettings::APPLY_COMMAND.'.');
+
+        return back();
     }
 }

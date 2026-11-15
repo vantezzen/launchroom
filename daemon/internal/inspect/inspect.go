@@ -10,13 +10,11 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"net/url"
 	"path"
 	"slices"
 	"strings"
 	"time"
 
-	"github.com/vantezzen/launchroom/daemon/internal/build"
 	"github.com/vantezzen/launchroom/daemon/internal/docker"
 	"github.com/vantezzen/launchroom/daemon/internal/secret"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
@@ -50,16 +48,16 @@ var ErrNotRunning = errors.New("the container isn't running")
 
 // Handler returns the handler for "inspect_container" tasks.
 func Handler(o Options) tasks.Handler {
-	return func(ctx context.Context, t state.Task) (tasks.Result, error) {
+	return func(ctx context.Context, t state.Task) (state.TaskResults, error) {
 		spec, ok := t.Spec.(*state.InspectContainerSpec)
 		if !ok {
-			return tasks.Result{}, errors.New("inspect_container handler got another spec")
+			return state.TaskResults{}, errors.New("inspect_container handler got another spec")
 		}
 		res, err := Inspect(ctx, o, spec)
 		if err != nil {
-			return tasks.Result{}, err
+			return state.TaskResults{}, err
 		}
-		return tasks.Result{ContainerInspection: res}, nil
+		return state.TaskResults{ContainerInspection: res}, nil
 	}
 }
 
@@ -76,13 +74,13 @@ func Inspect(ctx context.Context, o Options, spec *state.InspectContainerSpec) (
 	if err != nil {
 		return nil, err
 	}
-	masker := build.NewMasker()
+	masker := secret.NewMasker()
 	if len(spec.MaskEnv) > 0 {
 		env, err := o.Env(wl)
 		if err != nil {
 			return nil, fmt.Errorf("workload env: %w", err)
 		}
-		masker = build.NewMasker(maskValues(env, spec.MaskEnv)...)
+		masker = secret.NewMasker(secret.MaskValues(env, spec.MaskEnv)...)
 	}
 
 	res := &state.ContainerInspectionResult{
@@ -109,7 +107,7 @@ func Inspect(ctx context.Context, o Options, spec *state.InspectContainerSpec) (
 
 	top, err := o.Docker.ContainerTop(ctx, c.ID)
 	if err != nil {
-		if again, ierr := o.Docker.InspectContainer(ctx, c.ID); ierr == nil && !again.Running {
+		if again, ierr := o.Docker.InspectContainer(ctx, c.ID); ierr == nil && !again.Running() {
 			return nil, ErrNotRunning
 		}
 		return nil, fmt.Errorf("container processes: %w", err)
@@ -130,35 +128,23 @@ func Inspect(ctx context.Context, o Options, spec *state.InspectContainerSpec) (
 // this server, labelled with the workload, never a system, task or helper
 // container.
 func target(ctx context.Context, d Docker, wl state.WorkloadID) (docker.Container, error) {
-	cs, err := d.ListContainers(ctx, map[string]string{docker.LabelWorkload: string(wl)})
+	c, err := docker.WorkloadContainer(ctx, d, wl)
+	switch {
+	case err != nil:
+		return docker.Container{}, err
+	case c == nil:
+		return docker.Container{}, fmt.Errorf("no container of %s on this server", wl)
+	case !c.Running():
+		return docker.Container{}, ErrNotRunning
+	}
+	full, err := d.InspectContainer(ctx, c.ID)
 	if err != nil {
 		return docker.Container{}, err
 	}
-	stopped := false
-	for _, c := range cs {
-		l := c.Labels
-		if l[docker.LabelManaged] != "true" || l[docker.LabelWorkload] != string(wl) || l[docker.LabelSystem] != "" ||
-			l[docker.LabelTask] != "" || l[docker.LabelHelper] != "" || strings.HasPrefix(c.Name, "lr-system-") {
-			continue
-		}
-		if !c.Running {
-			stopped = true
-			continue
-		}
-		full, err := d.InspectContainer(ctx, c.ID)
-		if err != nil {
-			return docker.Container{}, err
-		}
-		if !full.Running {
-			stopped = true
-			continue
-		}
-		return full, nil
-	}
-	if stopped {
+	if !full.Running() {
 		return docker.Container{}, ErrNotRunning
 	}
-	return docker.Container{}, fmt.Errorf("no container of %s on this server", wl)
+	return full, nil
 }
 
 // classifyChanges collapses cache locations, flags and orders the rest and
@@ -284,7 +270,7 @@ func fileType(m fs.FileMode) state.FileType {
 
 // classifyProcesses flags, masks and bounds the process list (sorted by
 // PID). Without parent PIDs only the first process is the entry.
-func classifyProcesses(ps []process, parentsKnown bool, added map[string]bool, m *build.Masker) state.ContainerProcesses {
+func classifyProcesses(ps []process, parentsKnown bool, added map[string]bool, m *secret.Masker) state.ContainerProcesses {
 	out := state.ContainerProcesses{Total: len(ps), Entries: []state.ContainerProcess{}, ParentsUnknown: !parentsKnown && len(ps) > 0}
 	pids := map[int]bool{}
 	commands := map[int]string{}
@@ -312,25 +298,4 @@ func parentCommand(parentsKnown bool, p process, commands map[int]string) string
 		return ""
 	}
 	return commands[p.ppid]
-}
-
-// maskValues are the values to mask for names: each value, plus the
-// password of a URL value (as run_once logs, docs/09 R16).
-func maskValues(env map[string]secret.Secret, names []state.EnvName) []string {
-	var out []string
-	for _, n := range names {
-		v, ok := env[string(n)]
-		if !ok {
-			continue
-		}
-		raw := v.Reveal()
-		out = append(out, raw)
-		if u, err := url.Parse(raw); err == nil && u.User != nil {
-			if pw, set := u.User.Password(); set {
-				out = append(out, pw)
-			}
-		}
-	}
-	slices.Sort(out)
-	return slices.Compact(out)
 }

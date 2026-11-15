@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/vantezzen/launchroom/daemon/internal/docker"
-	"github.com/vantezzen/launchroom/daemon/internal/policy"
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
 
@@ -48,9 +48,9 @@ func (c *Collector) sampleWorkloads(ctx context.Context, now time.Time) workload
 	}
 	var jobs []job
 	for _, ct := range ctrs {
-		wl := state.WorkloadID(ct.Labels[docker.LabelWorkload])
-		buildkit := ct.Labels[docker.LabelSystem] == policy.SystemBuildkit
-		if !ct.Running || (!buildkit && (wl == "" || wl.Validate() != nil)) {
+		wl := state.WorkloadID(ct.Labels[names.LabelWorkload])
+		buildkit := ct.Labels[names.LabelSystem] == names.SystemBuildkit
+		if !ct.Running() || (!buildkit && (wl == "" || wl.Validate() != nil)) {
 			continue
 		}
 		jobs = append(jobs, job{ct.ID, wl})

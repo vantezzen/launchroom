@@ -2,21 +2,17 @@
 
 declare(strict_types=1);
 
-use App\Data\Protocol\ProtocolJson;
 use App\Data\Protocol\V1\LogBatch;
-use App\Data\Protocol\V1\Task;
 use App\Data\Protocol\V1\TaskCompletion;
-use App\Data\Protocol\V1\TaskLease;
-use App\Enums\DaemonTaskType;
-use Carbon\CarbonImmutable;
+use App\Data\Protocol\V1\TaskResult;
+use App\Enums\Updates\UpdateScope;
 use Illuminate\Validation\ValidationException;
-use Spatie\LaravelData\Optional;
 use Tests\Support\ProtocolSchemas;
 
 /*
 | Contract tests for build/plan/run_once (docs/04 §12–13, protocol CHANGELOG):
-| the Go completion fixtures decode into the PHP Data mirrors, and lease
-| documents for every task type round-trip schema-valid.
+| the Go completion fixtures decode into the PHP Data mirrors and re-encode
+| schema-valid (the lease fixtures: TaskSpecContractTest).
 */
 
 function taskFixture(string $name): string
@@ -30,17 +26,17 @@ test('build, plan, failed-build and run_once completions decode into the Data mi
     $failed = TaskCompletion::validateAndCreate(json_decode(taskFixture('task-completion.build-failed'), true));
     $runOnce = TaskCompletion::validateAndCreate(json_decode(taskFixture('task-completion.run-once'), true));
 
-    expect($build->build instanceof Optional ? null : $build->build?->summary?->presets[0]->decisions[0]->id)->toBe('port-contract')
-        ->and($build->build instanceof Optional ? null : $build->build?->attestations)->toBe(['sbom', 'provenance'])
-        ->and($build->build instanceof Optional ? null : $build->build?->secretsHash)->toMatch('/^[a-f0-9]{64}$/')
-        ->and($plan->plan instanceof Optional ? null : $plan->plan?->summary->releaseCommand)->toBe(['php', 'artisan', 'migrate', '--force'])
-        ->and($plan->plan instanceof Optional ? null : $plan->plan?->summary->processes[0]->args)->toBe(['php', 'artisan', 'horizon'])
-        ->and($plan->plan instanceof Optional ? null : $plan->plan?->summary->runtimeEnv)->toBe(['RAILPACK_SKIP_MIGRATIONS' => 'true'])
-        ->and($plan->plan instanceof Optional ? null : $plan->plan?->summary->phpExtensions[0]->name)->toBe('pdo_pgsql')
-        ->and($failed->failure instanceof Optional ? null : $failed->failure?->class)->toBe('build_error')
-        ->and($failed->failure instanceof Optional ? null : $failed->failure?->hints[0]->code)->toBe('npm-ci-lockfile')
-        ->and($failed->failure instanceof Optional ? null : $failed->failure?->summary?->port)->toBe(3000)
-        ->and($runOnce->runOnce instanceof Optional ? null : $runOnce->runOnce?->exitCode)->toBe(1);
+    expect($build->results->build?->summary?->presets[0]->decisions[0]->id)->toBe('port-contract')
+        ->and($build->results->build?->attestations)->toBe(['sbom', 'provenance'])
+        ->and($build->results->build?->secretsHash)->toMatch('/^[a-f0-9]{64}$/')
+        ->and($plan->results->plan?->summary->releaseCommand)->toBe(['php', 'artisan', 'migrate', '--force'])
+        ->and($plan->results->plan?->summary->processes[0]->args)->toBe(['php', 'artisan', 'horizon'])
+        ->and($plan->results->plan?->summary->runtimeEnv)->toBe(['RAILPACK_SKIP_MIGRATIONS' => 'true'])
+        ->and($plan->results->plan?->summary->phpExtensions[0]->name)->toBe('pdo_pgsql')
+        ->and($failed->results->failure?->class)->toBe('build_error')
+        ->and($failed->results->failure?->hints[0]->code)->toBe('npm-ci-lockfile')
+        ->and($failed->results->failure?->summary?->port)->toBe(3000)
+        ->and($runOnce->results->runOnce?->exitCode)->toBe(1);
 });
 
 test('stored completion results re-encode schema-valid', function (string $fixture): void {
@@ -52,9 +48,9 @@ test('stored completion results re-encode schema-valid', function (string $fixtu
 
 test('the self_update completion decodes into the SelfUpdateResult mirror', function (): void {
     $completion = TaskCompletion::validateAndCreate(json_decode(taskFixture('task-completion.self-update'), true));
-    $result = $completion->selfUpdate instanceof Optional ? null : $completion->selfUpdate;
+    $result = $completion->results->selfUpdate;
 
-    expect($result?->scope)->toBe('daemon')
+    expect($result?->scope)->toBe(UpdateScope::Daemon)
         ->and($result?->fromVersion)->toBe('0.1.0')
         ->and($result?->toVersion)->toBe('0.2.0')
         ->and($result?->rolledBack)->toBeTrue();
@@ -62,7 +58,7 @@ test('the self_update completion decodes into the SelfUpdateResult mirror', func
 
 test('the Next.js adapter report decodes into the BuildSummary mirror', function (): void {
     $completion = TaskCompletion::validateAndCreate(json_decode(taskFixture('task-completion.build-next'), true));
-    $next = $completion->build instanceof Optional ? null : $completion->build?->summary?->next;
+    $next = $completion->results->build?->summary?->next;
 
     expect($next?->nextVersion)->toBe('16.4.2')
         ->and($next?->adapterVersion)->toBe('0.1.0')
@@ -80,23 +76,6 @@ test('an out-of-range Next.js report is rejected', function (): void {
 
     TaskCompletion::validateAndCreate($document);
 })->throws(ValidationException::class);
-
-test('plan and run_once lease fixtures round-trip through the PHP task document', function (string $fixture): void {
-    $lease = json_decode(taskFixture($fixture), false);
-    $tasks = array_map(static fn (object $task): Task => new Task(
-        $task->id,
-        DaemonTaskType::from($task->type),
-        CarbonImmutable::parse($task->leaseExpiresAt),
-        $task->attempt,
-        CarbonImmutable::parse($task->deadline),
-        $task->spec,
-    ), $lease->tasks);
-
-    $encoded = ProtocolJson::encode(new TaskLease($tasks));
-
-    expect(ProtocolSchemas::errors('task-lease', $encoded))->toBe([])
-        ->and(json_decode($encoded, true))->toEqual(json_decode(taskFixture($fixture), true));
-})->with(['task-lease.plan', 'task-lease.plan-php', 'task-lease.run-once', 'task-lease.build']);
 
 test('step-grouped build log lines are accepted', function (): void {
     $batch = LogBatch::validateAndCreate(['apiVersion' => 'launchroom.vantezzen.io/v1', 'kind' => 'LogBatch', 'chunks' => [[
@@ -127,3 +106,17 @@ function stripNulls(array $value): array
 
     return $out;
 }
+
+test('the stored result carries every result field of the completion schema', function (): void {
+    $schema = json_decode((string) file_get_contents(ProtocolSchemas::root().'/schema/v1/task-completion.json'), true, 64, JSON_THROW_ON_ERROR);
+    $envelope = ['apiVersion', 'kind', 'attempt', 'outcome', 'error'];
+    $ownTables = ['inventory', 'containerInspection'];
+    $results = array_values(array_diff(array_keys($schema['properties']), $envelope, $ownTables));
+
+    expect(TaskResult::fields())->toEqualCanonicalizing($results);
+
+    $completion = TaskCompletion::validateAndCreate(json_decode(taskFixture('task-completion.build'), true));
+
+    expect($completion->results->isEmpty())->toBeFalse()
+        ->and(TaskCompletion::validateAndCreate(['apiVersion' => 'launchroom.vantezzen.io/v1', 'kind' => 'TaskCompletion', 'attempt' => 1, 'outcome' => 'succeeded'])->results->isEmpty())->toBeTrue();
+});

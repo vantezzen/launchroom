@@ -12,6 +12,7 @@ import (
 
 	"github.com/vantezzen/launchroom/daemon/internal/docker"
 	"github.com/vantezzen/launchroom/daemon/internal/docker/dockerfake"
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
 
@@ -58,17 +59,6 @@ tailscale0: %d 1 0 0 0 0 0 0 %d 1 0 0 0 0 0 0
 type clock struct{ t time.Time }
 
 func (c *clock) now() time.Time { return c.t }
-
-func TestSkipInterface(t *testing.T) {
-	for name, skip := range map[string]bool{
-		"lo": true, "docker0": true, "br-45687e908daf": true, "veth1": true, "tailscale0": true, "tunl0": true,
-		"eth0": false, "enp1s0": false, "wlan0": false, "ens3": false, "bond0": false,
-	} {
-		if SkipInterface(name) != skip {
-			t.Errorf("%s: want skip=%v", name, skip)
-		}
-	}
-}
 
 func TestHostMinuteAggregation(t *testing.T) {
 	p := newFakeProc(t)
@@ -188,7 +178,7 @@ func TestWorkloadStats(t *testing.T) {
 	start := func(name, wl string) string {
 		labels := docker.ManagedLabels(testServer)
 		if wl != "" {
-			labels[docker.LabelWorkload] = wl
+			labels[names.LabelWorkload] = wl
 		}
 		cc := &docker.ContainerCreate{Name: name, Config: &container.Config{Image: "img", Labels: labels}}
 		id, err := fake.CreateContainer(ctx, cc)
@@ -204,7 +194,8 @@ func TestWorkloadStats(t *testing.T) {
 	a := start("lr-a", wlA)
 	b := start("lr-b", wlB)
 	sys := start("lr-system-caddy", "") // no workload label: not a workload
-	other := fake.AddUnmanagedContainer("someone-else", map[string]string{docker.LabelWorkload: wlA})
+	// Not launchroom's: never counted for wlA.
+	fake.AddUnmanagedContainer("someone-else", map[string]string{names.LabelWorkload: wlA})
 
 	clk := &clock{time.Date(2026, 10, 19, 12, 0, 0, 0, time.UTC)}
 	c := New(Options{ProcRoot: t.TempDir(), Now: clk.now, Containers: fake, Stats: fake})
@@ -249,9 +240,6 @@ func TestWorkloadStats(t *testing.T) {
 	if len(last) != 2 || *last[0].CPUCores != 0.25 || *last[1].CPUCores != 1 {
 		t.Fatalf("12:01 %+v", last)
 	}
-	if _, err := fake.ContainerStats(ctx, other); err == nil {
-		t.Fatal("unmanaged containers must be refused")
-	}
 	rep := state.Report{TypeMeta: state.NewTypeMeta(state.KindReport), ServerID: testServer, ObservedAt: clk.t, Seq: 1, Workloads: []state.WorkloadStatus{}, Metrics: m}
 	if err := rep.Validate(); err != nil {
 		t.Fatal(err)
@@ -262,7 +250,7 @@ func TestBuildCPUIsHostUsageNotAWorkload(t *testing.T) {
 	fake := dockerfake.New(testServer)
 	fake.AddImage("img")
 	labels := docker.ManagedLabels(testServer)
-	labels[docker.LabelSystem] = "buildkit"
+	labels[names.LabelSystem] = "buildkit"
 	ctx := context.Background()
 	id, err := fake.CreateContainer(ctx, &docker.ContainerCreate{Name: "lr-system-buildkit", Config: &container.Config{Image: "img", Labels: labels}})
 	if err != nil {

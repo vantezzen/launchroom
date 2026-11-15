@@ -11,12 +11,13 @@ description: The launchroom command line tool. Sign in from the browser, deploy,
 curl -fsSL https://github.com/vantezzen/launchroom/releases/latest/download/cli.sh | sh
 ```
 
-The script picks the right build for Linux or macOS (amd64 or arm64), verifies its checksum and, if `cosign` is installed, its signature, then installs `launchroom` into `~/.local/bin`. Options:
+The script picks the right build for Linux or macOS (amd64 or arm64), verifies its checksum and the release signature, then installs `launchroom` into `~/.local/bin`. It checks the signature with `cosign` if it is installed, otherwise with the cosign container through Docker. If neither is available, it stops without installing. Options:
 
 | Option | Default | |
 |---|---|---|
 | `--version x.y.z` | latest | Install a specific release |
 | `--dir PATH` | `~/.local/bin` | Install somewhere else |
+| `--allow-unsigned` | off | Install on the checksum alone when the signature can't be checked (development builds only) |
 
 Pass them after `sh -s --`, for example `… | sh -s -- --dir /usr/local/bin`. On Windows, download the `.zip` from the GitHub release.
 
@@ -131,7 +132,7 @@ launchroom logs --deployment dpl_…      # one deployment's log
 | Option | Values |
 |---|---|
 | `-f`, `--follow` | Keep following new lines (reconnects automatically) |
-| `--since` | `15m`, `1h` (default), `24h`, `7d` |
+| `--since` | `15m`, `1h` (default), `24h`, `7d`, `30d` |
 | `--source` | `all` (default), `build`, `runtime` |
 | `--deployment` | One deployment's log |
 

@@ -6,7 +6,7 @@
       "properties": {
         "access": {
           "type": "string",
-          "pattern": "^acc_[0-9A-HJKMNP-TV-Z]{26}$"
+          "pattern": "^acc_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
         },
         "kind": {
           "type": "string",
@@ -18,7 +18,7 @@
         },
         "workload": {
           "type": "string",
-          "pattern": "^wl_[0-9A-HJKMNP-TV-Z]{26}$"
+          "pattern": "^wl_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
         },
         "engine": {
           "type": "string",
@@ -85,7 +85,7 @@
         },
         "volume": {
           "type": "string",
-          "pattern": "^vol_[0-9A-HJKMNP-TV-Z]{26}$",
+          "pattern": "^vol_[0-7][0-9A-HJKMNP-TV-Z]{25}$",
           "description": "Volume is the volume a volume access serves (volume only). The\nworkload must mount it in the verified NodeState."
         },
         "image": {
@@ -186,6 +186,7 @@
                 "pattern": "^[a-z][a-z0-9_-]{0,31}:[A-Za-z0-9_.-]{1,128}$"
               },
               "type": "array",
+              "maxItems": 32,
               "description": "Tags restrict forget to snapshots with all of these tags."
             },
             {
@@ -219,6 +220,7 @@
             "pattern": "^[a-z][a-z0-9_-]{0,31}:[A-Za-z0-9_.-]{1,128}$"
           },
           "type": "array",
+          "maxItems": 32,
           "description": "Tags restrict the listing to snapshots with all of these tags."
         }
       },
@@ -253,6 +255,7 @@
             "pattern": "^[a-z][a-z0-9_-]{0,31}:[A-Za-z0-9_.-]{1,128}$"
           },
           "type": "array",
+          "maxItems": 32,
           "description": "Tags are restic snapshot tags (\"key:value\")."
         }
       },
@@ -282,11 +285,11 @@
         },
         "workload": {
           "type": "string",
-          "pattern": "^wl_[0-9A-HJKMNP-TV-Z]{26}$"
+          "pattern": "^wl_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
         },
         "volume": {
           "type": "string",
-          "pattern": "^vol_[0-9A-HJKMNP-TV-Z]{26}$"
+          "pattern": "^vol_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
         },
         "consistency": {
           "type": "string",
@@ -304,15 +307,15 @@
       "properties": {
         "service": {
           "type": "string",
-          "pattern": "^svc_[0-9A-HJKMNP-TV-Z]{26}$"
+          "pattern": "^svc_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
         },
         "environment": {
           "type": "string",
-          "pattern": "^env_[0-9A-HJKMNP-TV-Z]{26}$"
+          "pattern": "^env_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
         },
         "deployment": {
           "type": "string",
-          "pattern": "^dpl_[0-9A-HJKMNP-TV-Z]{26}$",
+          "pattern": "^dpl_[0-7][0-9A-HJKMNP-TV-Z]{25}$",
           "description": "Deployment is required for build tasks (it tags the image); plan tasks\nrun outside a deployment (service created, build settings changed) and may omit it."
         },
         "repo": {
@@ -523,7 +526,7 @@
         },
         "workload": {
           "type": "string",
-          "pattern": "^wl_[0-9A-HJKMNP-TV-Z]{26}$",
+          "pattern": "^wl_[0-7][0-9A-HJKMNP-TV-Z]{25}$",
           "description": "Workload: dump the running database (live)."
         },
         "snapshot": {
@@ -615,7 +618,7 @@
         },
         "workload": {
           "type": "string",
-          "pattern": "^wl_[0-9A-HJKMNP-TV-Z]{26}$"
+          "pattern": "^wl_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
         },
         "source": {
           "oneOf": [
@@ -699,7 +702,7 @@
       "properties": {
         "workload": {
           "type": "string",
-          "pattern": "^wl_[0-9A-HJKMNP-TV-Z]{26}$",
+          "pattern": "^wl_[0-7][0-9A-HJKMNP-TV-Z]{25}$",
           "description": "Workload is the replica's workload id; it must be in the server's\nverified NodeState."
         },
         "maskEnv": {
@@ -783,7 +786,7 @@
         },
         "service": {
           "type": "string",
-          "pattern": "^svc_[0-9A-HJKMNP-TV-Z]{26}$",
+          "pattern": "^svc_[0-7][0-9A-HJKMNP-TV-Z]{25}$",
           "description": "Service is required for images in an apps/ repository and must be\nthat repository's service: the task's registry pull token covers\nexactly it (docs/03 §4.5). Omitted for mirrored images."
         },
         "source": {
@@ -810,7 +813,7 @@
       "properties": {
         "workload": {
           "type": "string",
-          "pattern": "^wl_[0-9A-HJKMNP-TV-Z]{26}$"
+          "pattern": "^wl_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
         },
         "since": {
           "oneOf": [
@@ -846,7 +849,7 @@
       "properties": {
         "id": {
           "type": "string",
-          "pattern": "^net_[0-9A-HJKMNP-TV-Z]{26}$"
+          "pattern": "^net_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
         },
         "name": {
           "type": "string",
@@ -904,15 +907,15 @@
       "properties": {
         "service": {
           "type": "string",
-          "pattern": "^svc_[0-9A-HJKMNP-TV-Z]{26}$"
+          "pattern": "^svc_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
         },
         "environment": {
           "type": "string",
-          "pattern": "^env_[0-9A-HJKMNP-TV-Z]{26}$"
+          "pattern": "^env_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
         },
         "deployment": {
           "type": "string",
-          "pattern": "^dpl_[0-9A-HJKMNP-TV-Z]{26}$",
+          "pattern": "^dpl_[0-7][0-9A-HJKMNP-TV-Z]{25}$",
           "description": "Deployment is required for build tasks (it tags the image); plan tasks\nrun outside a deployment (service created, build settings changed) and may omit it."
         },
         "repo": {
@@ -1175,6 +1178,7 @@
                 "pattern": "^[a-z][a-z0-9_-]{0,31}:[A-Za-z0-9_.-]{1,128}$"
               },
               "type": "array",
+              "maxItems": 32,
               "description": "WalTags select the WAL snapshots to replay after the base backup (base_backup only)."
             },
             {
@@ -1273,15 +1277,15 @@
       "properties": {
         "service": {
           "type": "string",
-          "pattern": "^svc_[0-9A-HJKMNP-TV-Z]{26}$"
+          "pattern": "^svc_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
         },
         "environment": {
           "type": "string",
-          "pattern": "^env_[0-9A-HJKMNP-TV-Z]{26}$"
+          "pattern": "^env_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
         },
         "deployment": {
           "type": "string",
-          "pattern": "^dpl_[0-9A-HJKMNP-TV-Z]{26}$"
+          "pattern": "^dpl_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
         },
         "image": {
           "type": "string",
@@ -1424,7 +1428,7 @@
       "properties": {
         "session": {
           "type": "string",
-          "pattern": "^ses_[0-9A-HJKMNP-TV-Z]{26}$"
+          "pattern": "^ses_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
         },
         "kind": {
           "type": "string",
@@ -1435,11 +1439,11 @@
         },
         "workload": {
           "type": "string",
-          "pattern": "^wl_[0-9A-HJKMNP-TV-Z]{26}$"
+          "pattern": "^wl_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
         },
         "channel": {
           "type": "string",
-          "pattern": "^private-(?:daemon\\.srv_|session\\.ses_)[0-9A-HJKMNP-TV-Z]{26}$"
+          "pattern": "^private-(?:daemon\\.srv_|session\\.ses_)[0-7][0-9A-HJKMNP-TV-Z]{25}$"
         },
         "key": {
           "$ref": "#/$defs/Sealed",
@@ -1505,7 +1509,7 @@
       "properties": {
         "id": {
           "type": "string",
-          "pattern": "^dtr_[0-9A-HJKMNP-TV-Z]{26}$"
+          "pattern": "^dtr_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
         },
         "sizeBytes": {
           "type": "integer",
@@ -1541,7 +1545,7 @@
       "properties": {
         "id": {
           "type": "string",
-          "pattern": "^dtr_[0-9A-HJKMNP-TV-Z]{26}$"
+          "pattern": "^dtr_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
         },
         "chunkBytes": {
           "type": "integer",
@@ -1613,6 +1617,7 @@
                 "pattern": "^[a-z][a-z0-9_-]{0,31}:[A-Za-z0-9_.-]{1,128}$"
               },
               "type": "array",
+              "maxItems": 32,
               "description": "WalTags select the WAL snapshots replayed after the base backup (base_backup only)."
             },
             {
@@ -1648,7 +1653,7 @@
       "properties": {
         "volume": {
           "type": "string",
-          "pattern": "^vol_[0-9A-HJKMNP-TV-Z]{26}$"
+          "pattern": "^vol_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
         },
         "consistency": {
           "type": "string",
@@ -1693,7 +1698,7 @@
         },
         "volume": {
           "type": "string",
-          "pattern": "^vol_[0-9A-HJKMNP-TV-Z]{26}$"
+          "pattern": "^vol_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
         },
         "file": {
           "oneOf": [
@@ -2084,7 +2089,7 @@
   "properties": {
     "id": {
       "type": "string",
-      "pattern": "^tsk_[0-9A-HJKMNP-TV-Z]{26}$"
+      "pattern": "^tsk_[0-7][0-9A-HJKMNP-TV-Z]{25}$"
     },
     "type": {
       "type": "string",

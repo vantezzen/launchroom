@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Git;
 
-use App\Services\Git\Exceptions\GitConnectionUnusable;
+use App\Exceptions\Git\GitConnectionUnusable;
 use App\Services\Http\SafeHttpClient;
 use App\Support\Git\RefAdvertisement;
 use Illuminate\Contracts\Cache\Repository as Cache;
@@ -55,7 +55,7 @@ final readonly class PublicGitRemote
             throw new GitConnectionUnusable("{$host} asked launchroom to slow down. It checks again in a few minutes.");
         }
 
-        $client = $privateNetwork ? $this->http->withPrivateNetwork() : $this->http;
+        $client = ($privateNetwork ? $this->http->withPrivateNetwork() : $this->http)->withTimeout(config()->integer('launchroom.git.refs_timeout_seconds'));
 
         try {
             $v2 = $client->postRaw($url.'/git-upload-pack', $this->lsRefsRequest($prefix), 'application/x-git-upload-pack-request', [

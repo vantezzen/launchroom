@@ -1,6 +1,6 @@
 import { useForm } from '@inertiajs/react';
 import { FolderTree, GitBranch, Package } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useEffectEvent, useState } from 'react';
 import type { FormEvent, ReactNode } from 'react';
 import InputError from '@/components/input-error';
 import { Logo } from '@/components/logo';
@@ -13,14 +13,14 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { providerLabel, providerLogo } from '@/features/git/providers';
-import { ServiceGlyph } from '@/features/canvas/service-glyph';
-import { SettingsCard, SettingsRow } from '@/features/settings/settings-card';
 import { cn } from '@/lib/utils';
 import services from '@/routes/projects/services';
-import { CopyButton } from './general-section';
 import { OverrideRow } from './override-row';
 import { SaveRow, SettingsPage } from './section';
 import type { SettingsContext } from './settings-context';
+import { ServiceGlyph } from '@/components/service-glyph';
+import { SettingsCard, SettingsRow } from '@/components/settings/settings-card';
+import { CopyButton } from '@/components/copy-button';
 
 /** The thing the service runs, as an object: logo, name in mono, chips. */
 function SourceHero({
@@ -92,13 +92,16 @@ function ChangeImageDialog({
     const form = useForm({ image: current });
     const image = form.data.image.trim();
 
+    const reseed = useEffectEvent(() => {
+        form.setDefaults({ image: current });
+        form.reset();
+        form.clearErrors();
+    });
+
     useEffect(() => {
         if (open) {
-            form.setDefaults({ image: current });
-            form.reset();
-            form.clearErrors();
+            reseed();
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [open]);
 
     const submit = (event: FormEvent) => {

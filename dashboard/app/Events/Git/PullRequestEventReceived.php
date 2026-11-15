@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Events\Git;
 
+use App\Enums\Git\PullRequestAction;
 use App\Models\Git\GitConnection;
 use App\Models\Git\GitHubInstallation;
 use Illuminate\Contracts\Events\ShouldDispatchAfterCommit;
@@ -11,7 +12,7 @@ use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 
 /**
- * A pull request changed on GitHub (verified webhook). Fork detection uses
+ * A pull request changed (verified webhook of any provider, docs/19 §5). Fork detection uses
  * repository ids, never `author_association` (docs/09 R20);
  * a PR from a deleted fork has no head repository and counts as a fork.
  * Fork PRs get no previews unless a maintainer approves (docs/09 R20):
@@ -33,7 +34,7 @@ final class PullRequestEventReceived implements ShouldDispatchAfterCommit
         /** The account it arrived through (GitHub installation or git connection, docs/19 §2). */
         public GitHubInstallation|GitConnection $installation,
         public int $repositoryId,
-        public string $action,
+        public PullRequestAction $action,
         public int $number,
         public string $title,
         public string $headSha,

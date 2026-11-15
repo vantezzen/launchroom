@@ -20,7 +20,7 @@ final class ConsumeManifestState
 {
     public function handle(User $user, string $state): ManifestState
     {
-        if (preg_match('/^lr_ghm_[A-Za-z0-9_-]{43}$/D', $state) !== 1) {
+        if (! OpaqueToken::isWellFormed($state, StartGitHubAppManifest::STATE_PREFIX)) {
             throw DomainRuleViolation::on('github', 'This GitHub App setup link is invalid. Start again from Settings → Git.');
         }
 

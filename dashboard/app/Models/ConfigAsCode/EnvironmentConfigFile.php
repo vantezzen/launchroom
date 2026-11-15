@@ -13,6 +13,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
+use Spatie\LaravelData\DataCollection;
 
 /**
  * The last read of an environment's launchroom.json (docs/18 §8): which
@@ -26,9 +27,9 @@ use Illuminate\Support\Carbon;
  * @property string|null $commit_sha
  * @property ConfigFileStatus $status
  * @property ManagedConfigData $managed
- * @property list<array<string, mixed>> $errors
- * @property list<array<string, mixed>> $warnings
- * @property list<array<string, mixed>> $ignored
+ * @property DataCollection<int, ConfigFileProblemData> $errors
+ * @property DataCollection<int, ConfigFileProblemData> $warnings
+ * @property DataCollection<int, ConfigFileProblemData> $ignored
  * @property string|null $content_hash
  * @property Carbon $checked_at
  * @property Carbon|null $applied_at
@@ -60,28 +61,9 @@ final class EnvironmentConfigFile extends Model
      */
     public function problems(string $column = 'errors'): array
     {
-        $rows = $this->{$column};
-        $problems = [];
+        $problems = $this->{$column};
 
-        foreach (is_array($rows) ? $rows : [] as $row) {
-            if (is_array($row)) {
-                $problems[] = ConfigFileProblemData::from($row);
-            }
-        }
-
-        return $problems;
-    }
-
-    /**
-     * Link to the file at its commit (GitHub), at $line.
-     */
-    public function webUrl(?int $line = null): ?string
-    {
-        if ($this->repository === null || $this->commit_sha === null) {
-            return null;
-        }
-
-        return "https://github.com/{$this->repository}/blob/{$this->commit_sha}/".implode('/', array_map(rawurlencode(...), explode('/', $this->path))).($line === null ? '' : "#L{$line}");
+        return $problems instanceof DataCollection ? array_values(array_filter($problems->all(), static fn (mixed $problem): bool => $problem instanceof ConfigFileProblemData)) : [];
     }
 
     /**
@@ -92,9 +74,9 @@ final class EnvironmentConfigFile extends Model
         return [
             'status' => ConfigFileStatus::class,
             'managed' => ManagedConfigData::class,
-            'errors' => 'array',
-            'warnings' => 'array',
-            'ignored' => 'array',
+            'errors' => DataCollection::class.':'.ConfigFileProblemData::class.',default',
+            'warnings' => DataCollection::class.':'.ConfigFileProblemData::class.',default',
+            'ignored' => DataCollection::class.':'.ConfigFileProblemData::class.',default',
             'checked_at' => 'datetime',
             'applied_at' => 'datetime',
         ];

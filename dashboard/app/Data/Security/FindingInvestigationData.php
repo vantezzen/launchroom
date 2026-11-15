@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Data\Security;
 
+use App\Enums\Security\InvestigationStatus;
 use Spatie\LaravelData\Data;
 
 /**
@@ -16,8 +17,7 @@ final class FindingInvestigationData extends Data
      */
     public function __construct(
         public string $id,
-        /** `running`, `completed`, `partial` or `failed`. */
-        public string $status,
+        public InvestigationStatus $status,
         public string $startedAt,
         public ?string $finishedAt,
         public array $summary,

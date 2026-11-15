@@ -33,8 +33,6 @@ final class StagedChanges extends Data
     }
 
     /**
-     * Items whose path equals one of $paths or lies below it.
-     *
      * @param  list<string>  $paths
      * @return list<ChangeItem>
      */

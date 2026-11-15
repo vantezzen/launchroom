@@ -21,11 +21,6 @@ final class ConfigFileRules
 
     public const int MAX_TOTAL_BYTES = 256 * 1024;
 
-    private const string PATH = '/^\/[A-Za-z0-9._@+=,-]+(?:\/[A-Za-z0-9._@+=,-]+)*$/D';
-
-    /** Kernel and device trees: never written. */
-    private const array FORBIDDEN_TREES = ['/proc', '/sys', '/dev'];
-
     /** Files Docker manages itself (bind-mounted into every container). */
     private const array FORBIDDEN_FILES = ['/etc/hosts', '/etc/hostname', '/etc/resolv.conf'];
 
@@ -92,13 +87,12 @@ final class ConfigFileRules
      */
     public static function pathError(string $path, array $mounts = []): ?string
     {
-        if (preg_match(self::PATH, $path) !== 1 || strlen($path) > 255
-            || array_any(explode('/', $path), static fn (string $segment): bool => $segment === '.' || $segment === '..')) {
+        if (preg_match(VolumeMountRules::PATH, $path) !== 1 || strlen($path) > VolumeMountRules::MAX_LENGTH || ! VolumeMountRules::isClean($path)) {
             return "“{$path}” isn’t a valid file path: use an absolute path like /etc/app/config.yml.";
         }
 
         if (in_array($path, self::FORBIDDEN_FILES, true)
-            || array_any(self::FORBIDDEN_TREES, static fn (string $tree): bool => $path === $tree || str_starts_with($path, $tree.'/'))) {
+            || VolumeMountRules::isForbidden($path)) {
             return "{$path} can’t be a config file: Docker and the kernel manage it.";
         }
 

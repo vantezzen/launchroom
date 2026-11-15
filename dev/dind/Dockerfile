@@ -5,7 +5,8 @@
 # container) into the `launchroom-dev_daemon-bin` volume, which is mounted here
 # read-only at /opt/launchroom/bin. entrypoint.sh restarts launchroomd whenever
 # that binary changes, so the edit loop is: change Go code → `make dev-daemon`.
-ARG DIND_IMAGE=docker:29-dind
+# The dind base comes from deploy/pins.env (LR_DIND_IMAGE, passed by compose).
+ARG DIND_IMAGE
 FROM ${DIND_IMAGE}
 
 # Host-matching UID/GID of the dev `go` container: pre-creating the mount point

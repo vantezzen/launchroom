@@ -52,8 +52,7 @@ final class ProjectController extends Controller
         $environments = Environment::query()
             ->where('project_id', $project->id)
             ->with(['project', 'lastAppliedRevision'])
-            ->orderByRaw("CASE kind WHEN 'production' THEN 0 WHEN 'persistent' THEN 1 ELSE 2 END")
-            ->orderBy('name')
+            ->inDisplayOrder()
             ->get();
 
         return ApiResponse::list($environments->map($resources->environment(...)));

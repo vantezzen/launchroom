@@ -38,6 +38,14 @@ final class ApiTokenOptions
         return $lifetimes;
     }
 
+    public static function defaultLifetime(): int
+    {
+        $days = config()->integer('api.default_token_days');
+        $lifetimes = self::lifetimes();
+
+        return in_array($days, $lifetimes, true) ? $days : $lifetimes[0];
+    }
+
     /**
      * @return list<ApiTeamOptionData>
      */
@@ -76,6 +84,7 @@ final class ApiTokenOptions
             description: $ability->description(),
             available: $role->can($ability->grants() ?? Permission::View),
             default: in_array($ability, ApiAbility::defaults(), true),
+            locked: $ability->alwaysGranted(),
         ), ApiAbility::cases());
     }
 

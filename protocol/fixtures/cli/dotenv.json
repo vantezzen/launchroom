@@ -1,0 +1,71 @@
+{
+  "description": "`.env` lines the CLI writes (cli/internal/dotenv) and the dashboard writes (App\\Support\\Variables\\EnvFileWriter); each side's parser reads every line back to its value, and both accept the same variable names. Read by the CLI's dotenv test and the dashboard's EnvFileParserTest.",
+  "lines": [
+    {
+      "key": "PLAIN",
+      "value": "plain",
+      "line": "PLAIN=plain"
+    },
+    {
+      "key": "URL",
+      "value": "postgres://u:p@db:5432/x",
+      "line": "URL=postgres://u:p@db:5432/x"
+    },
+    {
+      "key": "SPACE",
+      "value": "has space",
+      "line": "SPACE=\"has space\""
+    },
+    {
+      "key": "QUOTE",
+      "value": "quote\"back\\slash",
+      "line": "QUOTE=\"quote\\\"back\\\\slash\""
+    },
+    {
+      "key": "MULTI",
+      "value": "multi\nline\ttab\r",
+      "line": "MULTI=\"multi\\nline\\ttab\\r\""
+    },
+    {
+      "key": "REF",
+      "value": "${{ secret(3) }}",
+      "line": "REF=\"${{ secret(3) }}\""
+    },
+    {
+      "key": "EMPTY",
+      "value": "",
+      "line": "EMPTY="
+    },
+    {
+      "key": "HASH",
+      "value": "#hash",
+      "line": "HASH=\"#hash\""
+    },
+    {
+      "key": "EQUALS",
+      "value": "a=b=c",
+      "line": "EQUALS=a=b=c"
+    },
+    {
+      "key": "UNICODE",
+      "value": "é unicode ✓",
+      "line": "UNICODE=\"é unicode ✓\""
+    }
+  ],
+  "validKeys": [
+    "A",
+    "_X",
+    "DATABASE_URL",
+    "a1",
+    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  ],
+  "invalidKeys": [
+    "",
+    "1A",
+    "A-B",
+    "A B",
+    "A=B",
+    "$(id)",
+    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  ]
+}

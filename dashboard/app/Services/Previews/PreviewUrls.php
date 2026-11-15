@@ -10,6 +10,7 @@ use App\Models\Environment;
 use App\Models\Project;
 use App\Models\Service;
 use App\Services\Domains\GeneratedDomains;
+use App\Support\GeneratedHostname;
 use App\Support\Hostname;
 
 /**
@@ -18,7 +19,7 @@ use App\Support\Hostname;
  * - **immutable per-deployment URLs** `{service}-{shortid}.{project}.{apps}`
  *   (sslip: `{service}-{shortid}-{project}.{ip}.sslip.io`), where shortid is
  *   the lowercased last 8 characters of the deployment's ULID, routed to that
- *   deployment's workloads while they run (active or draining);
+ *   deployment's workloads while they run (active, staged or draining);
  * - **branch aliases** for previews `{service}-git-{branch}.{project}.{apps}`.
  *
  * Labels longer than 63 characters are truncated with a hash suffix.
@@ -31,7 +32,7 @@ final readonly class PreviewUrls
 
     public static function shortId(Deployment $deployment): string
     {
-        return strtolower(substr($deployment->public_id, -8));
+        return GeneratedHostname::deploymentQualifier($deployment->public_id);
     }
 
     public function deploymentHostname(Service $service, Deployment $deployment, Project $project): ?string
@@ -66,14 +67,14 @@ final readonly class PreviewUrls
             return ['environment' => $domain->serviceInstance->environment, 'deployment' => null];
         }
 
-        $first = explode('.', $host)[0];
+        $shortId = GeneratedHostname::deploymentQualifierIn($host);
 
-        if (preg_match('/-([0-9a-z]{8})(?:-|$)/', $first, $m) !== 1) {
+        if ($shortId === null) {
             return null;
         }
 
         $candidates = Deployment::query()
-            ->whereRaw('lower(right(public_id, 8)) = ?', [$m[1]])
+            ->whereRaw('lower(right(public_id, ?)) = ?', [strlen($shortId), $shortId])
             ->with(['serviceInstance.service', 'environment.project'])
             ->limit(5)
             ->get();

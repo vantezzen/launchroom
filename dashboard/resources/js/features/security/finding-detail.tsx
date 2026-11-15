@@ -28,8 +28,9 @@ import {
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Textarea } from '@/components/ui/textarea';
-import { requestJson } from '@/features/projects/http';
+import { requestJson } from '@/lib/http';
 import { cn } from '@/lib/utils';
+import { vocabulary } from '@/lib/vocabulary';
 import {
     data as findingData,
     dismiss as dismissRoute,
@@ -39,12 +40,13 @@ import {
 import { SeverityLine } from './finding-card';
 import { ECOSYSTEM_LABEL, longDate, SCOPE_LABEL } from './format';
 import { InvestigationReport } from './investigation-report';
+import { securityKeys } from './query-keys';
 
 type Detail = App.Data.Security.FindingDetailData;
 
 export function useFindingDetail(id: string | null, initial?: Detail) {
     return useQuery({
-        queryKey: ['security-finding', id],
+        queryKey: securityKeys.finding(id),
         queryFn: ({ signal }) =>
             requestJson<Detail>(
                 'get',
@@ -468,11 +470,9 @@ export function FindingMenu({
     );
 }
 
-const REASONS = [
-    { value: 'not_used', label: 'We don’t use the affected code' },
-    { value: 'mitigated', label: 'Mitigated another way' },
-    { value: 'accepted', label: 'Accepted risk' },
-] as const;
+const REASONS = Object.entries(vocabulary.Security.DismissReason).map(
+    ([value, { label }]) => ({ value, label }),
+);
 
 function DismissDialog({
     open,
@@ -572,8 +572,7 @@ export function FindingSheet({
     const client = useQueryClient();
     const { data } = useFindingDetail(id);
     const refresh = () => {
-        void client.invalidateQueries({ queryKey: ['security-finding', id] });
-        void client.invalidateQueries({ queryKey: ['security'] });
+        void client.invalidateQueries({ queryKey: securityKeys.all });
     };
 
     return (

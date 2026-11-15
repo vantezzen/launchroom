@@ -9,7 +9,7 @@ use App\Data\Audit\AuditActor;
 use App\Data\Audit\AuditEntryData;
 use App\Data\Services\RemoveVolumeData;
 use App\Enums\AuditAction;
-use App\Enums\ServiceKind;
+use App\Events\CanvasChanged;
 use App\Exceptions\DomainRuleViolation;
 use App\Models\ServiceInstance;
 use App\Models\Volume;
@@ -49,7 +49,7 @@ final readonly class RemoveServiceVolume
                 throw DomainRuleViolation::on('volume', 'This volume is already removed with the next deploy.');
             }
 
-            if (! in_array($instance->service->kind, [ServiceKind::App, ServiceKind::Image], true)) {
+            if (! $instance->service->kind->ownsVolumes()) {
                 throw DomainRuleViolation::on('volume', 'A database keeps its data on this volume. Remove the database instead.');
             }
 
@@ -79,6 +79,7 @@ final readonly class RemoveServiceVolume
                 subjectId: $instance->service->public_id,
                 meta: ['volume' => $volume->public_id, 'mountPath' => $volume->mount_path, 'instance' => $instance->public_id, 'staged' => $staged],
             ));
+            CanvasChanged::forInstance($instance);
 
             return $staged;
         });

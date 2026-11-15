@@ -5,15 +5,14 @@ declare(strict_types=1);
 namespace App\Actions\Servers;
 
 use App\Actions\Instance\DashboardDomain\RecordDashboardCertificate;
+use App\Data\Ingress\IngressReportData;
 use App\Data\Protocol\V1\CertificateStatus;
-use App\Data\Protocol\V1\CertStorageStatus;
 use App\Data\Protocol\V1\IngressStatus;
 use App\Enums\CertStatus;
 use App\Enums\DomainKind;
 use App\Events\NodeStateInvalidated;
 use App\Models\Domain;
 use App\Models\Server;
-use App\Services\Ingress\EdgeServers;
 use Carbon\CarbonImmutable;
 use Spatie\LaravelData\Optional;
 
@@ -37,23 +36,13 @@ final readonly class RecordCertificates
     private const int TRUST_OTHER_EDGE_MINUTES = 15;
 
     public function __construct(
-        private EdgeServers $edges,
         private RecordDashboardCertificate $dashboardCertificate,
     ) {}
 
     public function handle(Server $server, IngressStatus $ingress): void
     {
-        $storage = $ingress->storage instanceof CertStorageStatus ? $ingress->storage : null;
         $server->forceFill([
-            'ingress_status' => array_filter([
-                'state' => $ingress->state,
-                'routes' => $ingress->routes,
-                'storage' => $storage instanceof CertStorageStatus ? array_filter([
-                    'state' => $storage->state,
-                    'mirrored' => $storage->mirrored,
-                    'message' => $storage->message instanceof Optional ? null : mb_substr($storage->message, 0, 1024),
-                ], static fn (mixed $value): bool => $value !== null) : null,
-            ], static fn (mixed $value): bool => $value !== null),
+            'ingress_status' => IngressReportData::fromProtocol($ingress),
             'ingress_status_at' => now(),
         ])->save();
 
@@ -81,7 +70,7 @@ final readonly class RecordCertificates
 
         foreach ($domains as $domain) {
             $report = $byHost[$domain->hostname];
-            $state = CertStatus::from($report->state);
+            $state = $report->state;
             $wasIssued = $domain->cert_status === CertStatus::Issued;
 
             if ($wasIssued && $state !== CertStatus::Issued && $domain->cert_server_id !== null && $domain->cert_server_id !== $server->id
@@ -107,7 +96,7 @@ final readonly class RecordCertificates
         }
 
         if ($flipped) {
-            event(new NodeStateInvalidated($this->edges->ids($server->team_id)));
+            NodeStateInvalidated::edges($server->team_id);
         }
     }
 

@@ -2,10 +2,10 @@ import { ChevronRight, Plus } from 'lucide-react';
 import { AlertsChip } from '@/components/attention-chip';
 import { Status } from '@/components/status';
 import { Button } from '@/components/ui/button';
-import { compactAge } from './format';
 import { GROUPS, groupOf } from './groups';
-import { ServiceGlyph } from './service-glyph';
-import { StagedChip } from './service-node';
+import { compactAge } from '@/lib/format';
+import { ServiceGlyph } from '@/components/service-glyph';
+import { StagedChip } from '@/features/staged-changes/effects';
 
 /**
  * The canvas on phones (design-system §4.3): services as cards grouped

@@ -5,50 +5,58 @@ declare(strict_types=1);
 namespace App\Actions\Backups;
 
 use App\Data\Audit\AuditActor;
+use App\Data\Backups\SafetySnapshot;
 use App\Enums\Backups\BackupReason;
-use App\Enums\ServiceKind;
-use App\Exceptions\DomainRuleViolation;
+use App\Enums\Backups\BackupSubject;
 use App\Models\Backups\BackupDestination;
 use App\Models\Backups\BackupRun;
 use App\Models\ServiceInstance;
 use App\Models\User;
+use App\Models\Volume;
+use App\Services\Backups\BackupSubjects;
+use App\Support\Refusal;
 
 /**
- * Automatic safety snapshot before a risky operation on a database
- * (docs/14 §3): deleting a database service, restoring into it, an engine
- * upgrade, a production deploy with a release command (opt-in). Other code
- * calls this; it never blocks the operation it protects:
+ * Automatic safety snapshot before a risky operation on a service's data
+ * (docs/14 §3): an import, a server move, deleting or restoring into it. It
+ * never blocks the operation it protects: whatever can't be backed up (no
+ * data, no destination, not running) is skipped, and the outcome says why.
+ * Databases get a dump, other services one snapshot per volume on a server
+ * (or only $volume). The destination is the one its backups use: the
+ * schedule's, else the team's default.
  *
- *     $run = resolve(TakeSafetySnapshot::class)->handle($instance, BackupReason::PreDelete, $user, $actor);
- *     // null: not a database, no destination configured, or not running.
+ * Callers that must wait for the snapshot watch the runs' status. A restore
+ * in place takes its own, required snapshot (StartRestore). The
+ * control-plane equivalent is {@see StartControlPlaneBackup}.
  *
- * Callers that must wait for the snapshot (restore-into) watch the run's
- * status. The control-plane equivalent is {@see StartControlPlaneBackup}
- * with BackupReason::PreUpgrade (`php artisan launchroom:backups:control-plane
- * --reason=pre_upgrade --wait` for the upgrade flow).
- *
- * There is no local fallback destination: without a team destination
- * the snapshot is skipped (the UI already nags until one exists).
+ * There is no local fallback destination: without one the snapshot is
+ * skipped (the UI already nags until one exists).
  */
 final readonly class TakeSafetySnapshot
 {
     public function __construct(
-        private StartDatabaseBackup $start,
+        private StartBackupRun $runs,
     ) {}
 
-    public function handle(ServiceInstance $instance, BackupReason $reason, ?User $user, AuditActor $actor): ?BackupRun
+    public function handle(ServiceInstance $instance, BackupReason $reason, ?User $user, AuditActor $actor, ?Volume $volume = null): SafetySnapshot
     {
-        $instance->loadMissing('service');
+        $subject = BackupSubjects::for($instance);
 
-        if ($instance->service->kind !== ServiceKind::Database || ! BackupDestination::defaultFor($instance->team_id) instanceof BackupDestination) {
-            return null;
+        if (! $subject instanceof BackupSubject) {
+            return new SafetySnapshot(skipped: [Refusal::on('service', 'This service has no data to back up.')]);
         }
 
-        try {
-            return $this->start->handle($instance, $reason, $user, $actor);
-        } catch (DomainRuleViolation) {
-            // Not running (nothing to lose) or no usable destination.
-            return null;
+        if (! BackupDestination::forService($instance) instanceof BackupDestination) {
+            return new SafetySnapshot(skipped: [Refusal::on('destination', 'There is no backup destination.')]);
         }
+
+        $results = $subject === BackupSubject::Database
+            ? [$this->runs->handle($instance, null, $reason, $user, $actor)]
+            : array_map(fn (Volume $each): BackupRun|Refusal => $this->runs->handle($instance, $each, $reason, $user, $actor), $volume instanceof Volume ? [$volume] : BackupSubjects::placedVolumes($instance));
+
+        return new SafetySnapshot(
+            array_values(array_filter($results, static fn (mixed $result): bool => ! $result instanceof Refusal)),
+            array_values(array_filter($results, static fn (mixed $result): bool => $result instanceof Refusal)),
+        );
     }
 }

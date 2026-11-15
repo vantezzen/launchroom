@@ -11,7 +11,7 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import { Spinner } from '@/components/ui/spinner';
-import { requestJson, RequestFailed } from '@/features/projects/http';
+import { requestJson, RequestFailed } from '@/lib/http';
 import { DetectedPlan } from '@/features/service-settings/detected-plan';
 import { usePlanPreview } from './use-plan-preview';
 import { cn } from '@/lib/utils';

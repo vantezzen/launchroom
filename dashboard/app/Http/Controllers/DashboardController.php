@@ -21,7 +21,6 @@ final class DashboardController extends Controller
 {
     public function __invoke(#[CurrentUser] User $user, OnboardingChecklist $checklist): RedirectResponse
     {
-        // After `install.sh --restore` the dashboard opens in recovery mode (docs/14 §5.2).
         if ($user->is_instance_owner && RecoveryMode::active()) {
             return to_route('recovery.show');
         }

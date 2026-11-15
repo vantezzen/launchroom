@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Data\Teams;
 
-use App\Enums\Permission;
 use Spatie\LaravelData\Data;
 
 /**
@@ -15,13 +14,13 @@ final class TeamContextData extends Data
 {
     /**
      * @param  list<TeamData>  $all
-     * @param  list<Permission>  $permissions
      */
     public function __construct(
         public ?TeamData $current,
         public array $all,
-        public array $permissions,
         /** May create another team (TeamPolicy::create). */
         public bool $canCreateTeam = false,
+        /** Team-wide log search (TeamPolicy::searchLogs). */
+        public bool $canSearchLogs = false,
     ) {}
 }

@@ -113,7 +113,7 @@ test('a database’s volume opens read-only; writes are refused', function (): v
     $task = DaemonTask::query()->where('type', 'access')->sole();
     expect($json['password'])->toMatch('/^[A-Za-z0-9]{32}$/')
         ->and((array) $task->spec)->not->toHaveKey('allowWrites')
-        ->and($task->seal)->toBe(['accessPassword' => ['access' => $json['id']]]);
+        ->and($task->seal?->accessPassword?->access)->toBe($json['id']);
 });
 
 test('volumes are found through the service: other services’, removed and unplaced ones are not', function (): void {

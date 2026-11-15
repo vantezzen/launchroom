@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { Check, GitCommitHorizontal, GitPullRequest, KeyRound, Lock, ShieldCheck } from 'lucide-react';
 import { Status, StatusIcon, StatusPill, type StatusState } from '@/components/status';
 import { cn } from '@/lib/cn';
+import { installCommand } from '@/lib/shared';
 
 /*
  * Static recreations of dashboard pieces (deployment steps, server cards,
@@ -139,7 +140,6 @@ export function PromoteDiff({ className }: { className?: string }) {
     );
 }
 
-/** A pull request preview card. */
 export function PreviewCard({ className }: { className?: string }) {
     return (
         <Panel
@@ -161,7 +161,6 @@ export function PreviewCard({ className }: { className?: string }) {
     );
 }
 
-/** The recovery kit and backup status. */
 export function RecoveryCard({ className }: { className?: string }) {
     const rows = [
         { label: 'Control plane', value: 'Backed up 12 min ago' },
@@ -196,7 +195,7 @@ export function RecoveryCard({ className }: { className?: string }) {
                 ))}
             </ul>
             <div className="border-t border-border bg-recessed px-5 py-3 font-mono text-[12px] break-all text-muted-foreground">
-                curl -fsSL https://launchroom.vantezzen.io/install | sh -s -- --restore
+                {installCommand} -s -- --restore
             </div>
         </Panel>
     );

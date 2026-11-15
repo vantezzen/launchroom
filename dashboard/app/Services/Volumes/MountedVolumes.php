@@ -19,24 +19,14 @@ use Illuminate\Database\Eloquent\Collection;
 final class MountedVolumes
 {
     /**
-     * Own volumes (staged removals left out) and shared ones whose volume
-     * isn't removed.
-     *
      * @return Collection<int, Volume>
      */
     public static function for(ServiceInstance $instance): Collection
     {
-        $instance->loadMissing(['volumes', 'volumeMounts.volume']);
-        $shared = $instance->volumeMounts
-            ->map(static fn (VolumeMount $mount): Volume => $mount->volume)
-            ->filter(static fn (Volume $volume): bool => $volume->removed_at === null && $volume->service_instance_id !== $instance->id);
-
-        return new Collection([...$instance->volumes->all(), ...$shared->values()->all()]);
+        return $instance->mountedVolumes();
     }
 
     /**
-     * The volumes of other services the instance mounts.
-     *
      * @return Collection<int, Volume>
      */
     public static function shared(ServiceInstance $instance): Collection

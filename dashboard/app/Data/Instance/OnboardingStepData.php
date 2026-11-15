@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Data\Instance;
 
+use App\Enums\Instance\OnboardingStep;
+use App\Enums\Instance\OnboardingStepStatus;
 use Spatie\LaravelData\Data;
 
 /**
@@ -12,10 +14,8 @@ use Spatie\LaravelData\Data;
 final class OnboardingStepData extends Data
 {
     public function __construct(
-        /** `server`, `github`, `domain`, `backups` or `project`. */
-        public string $id,
-        /** `done`, `pending` or `skipped`. */
-        public string $status,
+        public OnboardingStep $id,
+        public OnboardingStepStatus $status,
         public bool $skippable,
     ) {}
 }

@@ -19,8 +19,11 @@ import (
 
 	"github.com/vantezzen/launchroom/daemon/internal/docker"
 	"github.com/vantezzen/launchroom/daemon/internal/docker/dockerfake"
+	"github.com/vantezzen/launchroom/daemon/internal/ingress"
+	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/policy"
 	"github.com/vantezzen/launchroom/daemon/internal/state"
+	"github.com/vantezzen/launchroom/daemon/internal/traffic"
 )
 
 var update = flag.Bool("update", false, "rewrite golden files")
@@ -75,13 +78,13 @@ func routeSpecs() []state.RouteSpec {
 	}
 }
 
-func resolver(eps map[state.WorkloadID]Endpoint) Resolver {
-	return func(id state.WorkloadID) (Endpoint, bool) { ep, ok := eps[id]; return ep, ok }
+func resolver(eps map[state.WorkloadID]ingress.Endpoint) ingress.Resolver {
+	return func(id state.WorkloadID) (ingress.Endpoint, bool) { ep, ok := eps[id]; return ep, ok }
 }
 
 func TestResolveRoutes(t *testing.T) {
 	ip := netip.MustParseAddr
-	routes := ResolveRoutes(routeSpecs(), resolver(map[state.WorkloadID]Endpoint{
+	routes := ResolveRoutes(routeSpecs(), resolver(map[state.WorkloadID]ingress.Endpoint{
 		wlA: {Addr: ip("10.231.4.5"), Serving: true, Ready: true},
 		wlB: {Addr: ip("10.231.4.6"), Serving: false, Ready: true}, // draining: not used while A is ready
 		wlC: {Addr: ip("10.231.5.2"), Serving: true, Ready: false}, // not healthy: no upstream → 503
@@ -93,7 +96,7 @@ func TestResolveRoutes(t *testing.T) {
 		t.Errorf("route 1: %v", routes[1].Dial)
 	}
 	// Draining fallback when no serving workload is ready.
-	routes = ResolveRoutes(routeSpecs()[:1], resolver(map[state.WorkloadID]Endpoint{
+	routes = ResolveRoutes(routeSpecs()[:1], resolver(map[state.WorkloadID]ingress.Endpoint{
 		wlA: {Addr: ip("10.231.4.5"), Serving: true, Ready: false},
 		wlB: {Addr: ip("10.231.4.6"), Serving: false, Ready: true},
 	}))
@@ -104,7 +107,7 @@ func TestResolveRoutes(t *testing.T) {
 
 func TestRenderGolden(t *testing.T) {
 	ip := netip.MustParseAddr
-	routes := ResolveRoutes(routeSpecs(), resolver(map[state.WorkloadID]Endpoint{
+	routes := ResolveRoutes(routeSpecs(), resolver(map[state.WorkloadID]ingress.Endpoint{
 		wlA: {Addr: ip("10.231.4.5"), Serving: true, Ready: true},
 		wlB: {Addr: ip("10.231.4.6"), Serving: true, Ready: true},
 	}))
@@ -285,22 +288,22 @@ func TestManagerLifecycle(t *testing.T) {
 	d := dockerfake.New(srvID)
 	admin := &fakeAdmin{}
 	ask := &Ask{}
-	image := state.ImageRef("docker.io/library/caddy@" + policy.DefaultSystemImageDigests[policy.SystemCaddy][0])
+	image := state.ImageRef("docker.io/library/caddy@" + policy.DefaultSystemImageDigests[names.SystemCaddy][0])
 	dir := t.TempDir()
 	m := NewManager(ManagerOptions{ServerID: srvID, Docker: d, Admin: admin, Policy: policy.DefaultConfig(), Render: renderOpts, CacheDir: dir, Ask: ask})
 	routes := ResolveRoutes(routeSpecs()[1:2], resolver(nil))
 
-	st := m.Sync(ctx, state.SystemContainer{Enabled: true, Image: image}, routes)
+	st := m.sync(ctx, state.SystemContainer{Enabled: true, Image: image}, routes)
 	if st == nil || st.State != state.IngressApplied || st.Routes != 1 {
 		t.Fatalf("status %+v", st)
 	}
 	calls := d.Calls()
-	for _, want := range []string{"create-volume " + DataVolume, "pull " + string(image), "create " + ContainerName, "start " + ContainerName} {
+	for _, want := range []string{"create-volume " + names.CaddyDataVolume, "pull " + string(image), "create " + names.CaddyContainer, "start " + names.CaddyContainer} {
 		if !slices.Contains(calls, want) {
 			t.Errorf("missing %q in %v", want, calls)
 		}
 	}
-	cc, _ := d.Create(ContainerName)
+	cc, _ := d.Create(names.CaddyContainer)
 	if cc.HostConfig.NetworkMode != "host" || !slices.Contains(cc.HostConfig.CapDrop, "ALL") || cc.HostConfig.Privileged {
 		t.Errorf("container spec: %+v", cc.HostConfig)
 	}
@@ -312,25 +315,25 @@ func TestManagerLifecycle(t *testing.T) {
 	}
 
 	// Unchanged → no reload, no docker calls.
-	m.Sync(ctx, state.SystemContainer{Enabled: true, Image: image}, routes)
+	m.sync(ctx, state.SystemContainer{Enabled: true, Image: image}, routes)
 	if len(admin.loads) != 1 || len(d.Calls()) != 0 {
 		t.Fatalf("reloaded unchanged config (%d loads)", len(admin.loads))
 	}
 	// Changed routes → reload.
-	m.Sync(ctx, state.SystemContainer{Enabled: true, Image: image}, nil)
+	m.sync(ctx, state.SystemContainer{Enabled: true, Image: image}, nil)
 	if len(admin.loads) != 2 {
 		t.Fatal("changed config not loaded")
 	}
 	// Load failure is reported.
 	admin.err = &AdminStatusError{Method: "POST", Path: "/load", Status: 400, Body: "boom"}
-	st = m.Sync(ctx, state.SystemContainer{Enabled: true, Image: image}, routes)
+	st = m.sync(ctx, state.SystemContainer{Enabled: true, Image: image}, routes)
 	if st.State != state.IngressFailed || !strings.Contains(st.Message, "boom") {
 		t.Fatalf("%+v", st)
 	}
 	admin.err = nil
 
 	// Disabled → container removed (volumes kept).
-	if st := m.Sync(ctx, state.SystemContainer{}, nil); st != nil {
+	if st := m.sync(ctx, state.SystemContainer{}, nil); st != nil {
 		t.Fatalf("%+v", st)
 	}
 	cs, _ := d.ListContainers(ctx, nil)
@@ -352,7 +355,7 @@ func TestManagerRefusesUnpinnedImage(t *testing.T) {
 	m := NewManager(ManagerOptions{ServerID: srvID, Docker: d, Admin: &fakeAdmin{}, Policy: policy.DefaultConfig(), Render: renderOpts, CacheDir: t.TempDir(), Ask: &Ask{}})
 	bad := state.ImageRef("docker.io/library/caddy@sha256:" + strings.Repeat("b", 64))
 	d.AddImage(string(bad))
-	st := m.Sync(t.Context(), state.SystemContainer{Enabled: true, Image: bad}, ResolveRoutes(routeSpecs()[1:2], resolver(nil)))
+	st := m.sync(t.Context(), state.SystemContainer{Enabled: true, Image: bad}, ResolveRoutes(routeSpecs()[1:2], resolver(nil)))
 	if st == nil || st.State != state.IngressFailed || !strings.Contains(st.Message, "pinned") {
 		t.Fatalf("%+v", st)
 	}
@@ -374,17 +377,17 @@ func TestManagerKeepsPinnedImageForUnpinnedRequest(t *testing.T) {
 	d.AddImage(string(current))
 	d.AddImage(string(next))
 	pol := policy.DefaultConfig()
-	pol.SystemImageDigests[policy.SystemCaddy] = []string{strings.TrimPrefix(string(current), "ghcr.io/vantezzen/launchroom-caddy@")}
+	pol.SystemImageDigests[names.SystemCaddy] = []string{strings.TrimPrefix(string(current), "ghcr.io/vantezzen/launchroom-caddy@")}
 	m := NewManager(ManagerOptions{ServerID: srvID, Docker: d, Admin: admin, Policy: pol, Render: renderOpts, CacheDir: t.TempDir(), Ask: ask})
 	routes := ResolveRoutes(routeSpecs()[1:2], resolver(nil))
 
-	if st := m.Sync(ctx, state.SystemContainer{Enabled: true, Image: current}, routes); st.State != state.IngressApplied {
+	if st := m.sync(ctx, state.SystemContainer{Enabled: true, Image: current}, routes); st.State != state.IngressApplied {
 		t.Fatalf("%+v", st)
 	}
 	before, _ := d.ListContainers(ctx, nil)
 
 	more := ResolveRoutes(routeSpecs()[0:2], resolver(nil))
-	st := m.Sync(ctx, state.SystemContainer{Enabled: true, Image: next}, more)
+	st := m.sync(ctx, state.SystemContainer{Enabled: true, Image: next}, more)
 	if st.State != state.IngressApplied || st.Routes != len(more) {
 		t.Fatalf("routes not applied with the kept image: %+v", st)
 	}
@@ -397,8 +400,8 @@ func TestManagerKeepsPinnedImageForUnpinnedRequest(t *testing.T) {
 	}
 
 	// The self-updated binary pins the new image: it replaces the old one.
-	m.o.Policy.SystemImageDigests[policy.SystemCaddy] = []string{strings.TrimPrefix(string(next), "ghcr.io/vantezzen/launchroom-caddy@")}
-	if st := m.Sync(ctx, state.SystemContainer{Enabled: true, Image: next}, more); st.State != state.IngressApplied {
+	m.o.Policy.SystemImageDigests[names.SystemCaddy] = []string{strings.TrimPrefix(string(next), "ghcr.io/vantezzen/launchroom-caddy@")}
+	if st := m.sync(ctx, state.SystemContainer{Enabled: true, Image: next}, more); st.State != state.IngressApplied {
 		t.Fatalf("%+v", st)
 	}
 	cs, _ = d.ListContainers(ctx, nil)
@@ -407,8 +410,8 @@ func TestManagerKeepsPinnedImageForUnpinnedRequest(t *testing.T) {
 	}
 
 	// Neither image pinned: refused, nothing changes.
-	m.o.Policy.SystemImageDigests[policy.SystemCaddy] = nil
-	if st := m.Sync(ctx, state.SystemContainer{Enabled: true, Image: current}, more); st.State != state.IngressFailed {
+	m.o.Policy.SystemImageDigests[names.SystemCaddy] = nil
+	if st := m.sync(ctx, state.SystemContainer{Enabled: true, Image: current}, more); st.State != state.IngressFailed {
 		t.Fatalf("%+v", st)
 	}
 	cs, _ = d.ListContainers(ctx, nil)
@@ -419,10 +422,10 @@ func TestManagerKeepsPinnedImageForUnpinnedRequest(t *testing.T) {
 
 func TestManagerNeverAdoptsUnmanagedVolume(t *testing.T) {
 	d := dockerfake.New(srvID)
-	d.AddUnmanagedVolume(DataVolume)
-	image := state.ImageRef("docker.io/library/caddy@" + policy.DefaultSystemImageDigests[policy.SystemCaddy][0])
+	d.AddUnmanagedVolume(names.CaddyDataVolume)
+	image := state.ImageRef("docker.io/library/caddy@" + policy.DefaultSystemImageDigests[names.SystemCaddy][0])
 	m := NewManager(ManagerOptions{ServerID: srvID, Docker: d, Admin: &fakeAdmin{}, Policy: policy.DefaultConfig(), Render: renderOpts})
-	st := m.Sync(t.Context(), state.SystemContainer{Enabled: true, Image: image}, nil)
+	st := m.sync(t.Context(), state.SystemContainer{Enabled: true, Image: image}, nil)
 	if st.State != state.IngressFailed || !strings.Contains(st.Message, docker.ErrNotManaged.Error()) {
 		t.Fatalf("%+v", st)
 	}
@@ -494,7 +497,7 @@ func TestForwardAuthStripsPreviewCookie(t *testing.T) {
 }
 
 func TestRenderAccessLog(t *testing.T) {
-	routes := ResolveRoutes(routeSpecs(), resolver(map[state.WorkloadID]Endpoint{}))
+	routes := ResolveRoutes(routeSpecs(), resolver(map[state.WorkloadID]ingress.Endpoint{}))
 	o := renderOpts
 	o.AccessLogAddress = "127.0.0.1:2022"
 	cfg, err := Render(routes, o)
@@ -528,7 +531,7 @@ func TestRenderAccessLog(t *testing.T) {
 		t.Errorf("access writer = %v", acc.Writer)
 	}
 	if acc.Encoder.Format != "filter" || acc.Encoder.Fields["request>headers"]["filter"] != "delete" || acc.Encoder.Fields["request>remote_ip"]["filter"] != "delete" || acc.Encoder.Fields["request>uri"]["filter"] != "regexp" ||
-		acc.Encoder.Fields[AccessFieldReferer]["filter"] != "regexp" || acc.Encoder.Fields[AccessFieldAgent]["filter"] != "regexp" {
+		acc.Encoder.Fields[traffic.FieldReferer]["filter"] != "regexp" || acc.Encoder.Fields[traffic.FieldAgent]["filter"] != "regexp" {
 		t.Errorf("access encoder = %+v", acc.Encoder)
 	}
 	if !slices.Equal(acc.Include, []string{"http.log.access.lr-access"}) || !slices.Equal(def.Exclude, acc.Include) || def.Writer["output"] != "stderr" {

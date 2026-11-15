@@ -87,7 +87,7 @@ function revealSetting(page: Element, anchors: string[]): boolean {
     return true;
 }
 
-export type SettingsShellProps<Id extends string> = {
+type SettingsShellProps<Id extends string> = {
     /** The nav landmark's name ("Settings", "Project settings"). */
     label: string;
     groups: SettingsNavGroup<Id>[];

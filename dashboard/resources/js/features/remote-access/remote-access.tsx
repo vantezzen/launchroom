@@ -1,7 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query';
 import {
     Check,
-    Copy,
     Database,
     Download,
     Eye,
@@ -39,7 +38,6 @@ import {
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
-import { useClipboard } from '@/hooks/use-clipboard';
 import { useNow } from '@/hooks/use-now';
 import { cn } from '@/lib/utils';
 import {
@@ -48,6 +46,7 @@ import {
     rememberedKey,
     startAccess,
     usePanel,
+    remoteAccessKeys,
 } from './api';
 import type { Access, AccessKind, Panel, ServiceRef } from './api';
 import {
@@ -57,6 +56,8 @@ import {
     groupHex,
     snippets,
 } from './connection';
+import { CopyButton } from '@/components/copy-button';
+import { ServiceActivityEvents } from '@/components/channel-events';
 
 type KindCopy = {
     button: string;
@@ -151,6 +152,12 @@ export function RemoteAccessButton({
                     </span>
                 )}
             </Button>
+            <ServiceActivityEvents
+                environment={serviceRef.environment}
+                service={serviceRef.service}
+                topic="remote_access"
+                onChange={() => void query.refetch()}
+            />
             <Dialog open={open} onOpenChange={setOpen}>
                 <DialogContent className="max-h-[calc(100dvh-2rem)] gap-0 overflow-y-auto p-0 sm:max-w-[640px]">
                     <AccessDialog
@@ -240,8 +247,6 @@ function AccessDialog({
     );
 }
 
-// ---- header ----
-
 /** What the access opens: icon tile, title, the target in one quiet line. */
 function Header({
     kind,
@@ -290,8 +295,6 @@ function Header({
         </div>
     );
 }
-
-// ---- states without an access ----
 
 function Unavailable({ reason }: { reason: string | null }) {
     return (
@@ -372,8 +375,6 @@ function EndedAccess({
     );
 }
 
-// ---- starting ----
-
 function StartForm({
     serviceRef,
     kind,
@@ -440,7 +441,7 @@ function StartForm({
             }
 
             await queryClient.invalidateQueries({
-                queryKey: ['remote-access', kind],
+                queryKey: remoteAccessKeys.kind(kind),
             });
             onStarted();
         } catch (failure) {
@@ -743,8 +744,6 @@ function FormRow({
     );
 }
 
-// ---- running ----
-
 function LiveAccess({
     access,
     kind,
@@ -774,7 +773,6 @@ function LiveAccess({
             await endAccess(access.id);
         } finally {
             refresh();
-            window.setTimeout(refresh, 3000);
         }
     };
 
@@ -1185,33 +1183,10 @@ function OtherAccess({
     );
 }
 
-// ---- values ----
-
 function mask(value: string): string {
     return value
         .replace(/:[^:@/]+@/, ':••••••••@')
         .replace(/^[A-Za-z0-9]{24,}$/, '••••••••••••••••');
-}
-
-function CopyButton({ value, label }: { value: string; label: string }) {
-    const [copied, doCopy] = useClipboard();
-
-    return (
-        <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="size-8 shrink-0"
-            aria-label={copied === value ? 'Copied' : `Copy ${label}`}
-            onClick={() => void doCopy(value)}
-        >
-            {copied === value ? (
-                <Check className="size-4 text-status-ok" />
-            ) : (
-                <Copy className="size-4" />
-            )}
-        </Button>
-    );
 }
 
 function RevealButton({
@@ -1261,7 +1236,11 @@ function CopyValue({
                     onToggle={() => setShown(!shown)}
                 />
             )}
-            <CopyButton value={value} label={label} />
+            <CopyButton
+                value={value}
+                label={label}
+                className="text-foreground"
+            />
         </div>
     );
 }
@@ -1290,7 +1269,11 @@ function CodeBlock({
                     onToggle={() => setShown(!shown)}
                 />
             )}
-            <CopyButton value={value} label={label} />
+            <CopyButton
+                value={value}
+                label={label}
+                className="text-foreground"
+            />
         </div>
     );
 }

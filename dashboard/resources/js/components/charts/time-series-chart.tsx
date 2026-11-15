@@ -3,14 +3,14 @@ import { useId, useMemo, useState } from 'react';
 import type { KeyboardEvent, PointerEvent, ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 import { ChartDrillPopover } from './chart-drill';
-import type { ChartDrill } from './chart-drill';
 import { formatTick, formatTooltipTime, niceMax } from './format';
 import { groupMarkers, LABEL_OFFSET } from './marker-groups';
 import { MarkerLayer } from './marker-layer';
 import { colorForSlot, MAX_SERIES, OTHER, SIGNAL } from './palette';
 import { useMeasuredWidth } from './use-measure';
+import type { ChartDrill } from '@/lib/observe-scope';
 
-export type TimePoint = { t: number; v: number | null };
+type TimePoint = { t: number; v: number | null };
 
 export type TimeSeries = {
     key: string;
@@ -31,7 +31,7 @@ export type ChartMarker = {
     href?: string;
 };
 
-export type TimeSeriesChartProps = {
+type TimeSeriesChartProps = {
     series: TimeSeries[];
     /** Accessible title, also the table caption. */
     title: string;

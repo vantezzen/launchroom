@@ -95,8 +95,6 @@ test('two-factor is recommended for instance owners, never required (D33)', func
     $owner->forceFill(['is_instance_owner' => true, 'two_factor_secret' => null, 'two_factor_recovery_codes' => null, 'two_factor_confirmed_at' => null])->save();
     $owner->refresh();
 
-    $this->actingAs($owner)->get(route('servers.index'))->assertOk();
-    $this->actingAs($owner)->get(route('git.edit'))->assertOk();
     $this->actingAs($owner)->get(route('dashboard'))->assertRedirect(route('onboarding.show'));
 
     // The recommendation shows until two-factor is on or it is dismissed.

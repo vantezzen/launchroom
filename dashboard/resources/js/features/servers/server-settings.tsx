@@ -21,13 +21,13 @@ import {
     toRows,
 } from '@/features/scheduling/labels-editor';
 import type { LabelRow } from '@/features/scheduling/labels-editor';
+import { update as updateAppearance } from '@/routes/servers/appearance';
+import { update as updateSettings } from '@/routes/servers/settings';
 import {
     SettingsBody,
     SettingsCard,
     SettingsRow,
-} from '@/features/settings/settings-card';
-import { update as updateAppearance } from '@/routes/servers/appearance';
-import { update as updateSettings } from '@/routes/servers/settings';
+} from '@/components/settings/settings-card';
 
 type Server = App.Data.Servers.ServerDetailData;
 

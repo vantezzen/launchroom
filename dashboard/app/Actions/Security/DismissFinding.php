@@ -11,7 +11,6 @@ use App\Data\Audit\AuditEntryData;
 use App\Data\Security\DismissFindingData;
 use App\Enums\Alerts\AlertRule;
 use App\Enums\AuditAction;
-use App\Enums\Security\FindingLevel;
 use App\Enums\Security\SecurityFindingStatus;
 use App\Exceptions\DomainRuleViolation;
 use App\Models\Security\SecurityFinding;
@@ -64,8 +63,7 @@ final readonly class DismissFinding
 
         $stillUrgent = SecurityFinding::query()
             ->where('service_instance_id', $finding->service_instance_id)
-            ->where('status', SecurityFindingStatus::Open->value)
-            ->where('level', FindingLevel::ActionNeeded->value)
+            ->actionNeeded()
             ->exists();
 
         if (! $stillUrgent) {

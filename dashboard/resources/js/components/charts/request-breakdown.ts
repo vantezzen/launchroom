@@ -7,7 +7,7 @@
  * and stripes, so they never read as the app's own 4xx. Problem classes are
  * hatched as the non-colour cue.
  */
-export type RequestClass =
+type RequestClass =
     | 'success'
     | 'redirect'
     | 'clientError'
@@ -16,7 +16,7 @@ export type RequestClass =
     | 'serverError'
     | 'upgrade';
 
-export type RequestClassStyle = {
+type RequestClassStyle = {
     label: string;
     /** Short form for tiles and chips. */
     short: string;

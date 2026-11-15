@@ -41,7 +41,12 @@ afterEach(function (): void {
 
 function runOnceTask(Server $server, string $service, bool $leased = true): DaemonTask
 {
-    $task = DaemonTask::query()->create(['team_id' => $server->team_id, 'type' => DaemonTaskType::RunOnce, 'spec' => (object) ['service' => $service]]);
+    $task = DaemonTask::query()->create(['team_id' => $server->team_id, 'type' => DaemonTaskType::RunOnce, 'spec' => (object) [
+        'service' => $service, 'environment' => 'env_01j9z8x7w6v5t4s3r2q1p0n9n3', 'deployment' => 'dep_01j9z8x7w6v5t4s3r2q1p0n9n4',
+        'image' => 'registry.launchroom.internal/apps/'.strtolower($service).':'.str_repeat('a', 40),
+        'network' => ['id' => 'net', 'name' => 'lr-e_net', 'subnet' => '10.210.0.0/24'], 'timeout' => '15m',
+        'resources' => ['cpus' => 1.0, 'memoryMb' => 512, 'pids' => 256],
+    ]]);
 
     if ($leased) {
         $task->forceFill(['server_id' => $server->id, 'attempt' => 1, 'leased_at' => now(), 'lease_expires_at' => now()->addMinute(), 'deadline_at' => now()->addMinutes(15)]);

@@ -8,6 +8,7 @@ use App\Actions\Audit\RecordAuditEvent;
 use App\Data\Audit\AuditActor;
 use App\Data\Audit\AuditEntryData;
 use App\Enums\AuditAction;
+use App\Events\CanvasChanged;
 use App\Exceptions\DomainRuleViolation;
 use App\Models\Variable;
 use Illuminate\Support\Facades\DB;
@@ -24,7 +25,7 @@ final readonly class DeleteVariable
 
     public function handle(Variable $variable, AuditActor $actor): void
     {
-        if ($variable->connection_id !== null) {
+        if ($variable->isManagedByConnection()) {
             throw DomainRuleViolation::on('variable', 'This variable belongs to a connection. Remove the connection instead.');
         }
 
@@ -39,6 +40,7 @@ final readonly class DeleteVariable
                 subjectId: $variable->public_id,
                 meta: ['key' => $variable->key],
             ));
+            CanvasChanged::forProject($variable->project_id);
         });
     }
 }

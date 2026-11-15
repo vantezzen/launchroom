@@ -4,11 +4,9 @@ declare(strict_types=1);
 
 namespace App\Contracts\Git;
 
-use App\Services\Git\Exceptions\GitConnectionUnusable;
-use App\Services\Git\Ssh\PhpseclibSshRemotes;
+use App\Exceptions\Git\GitConnectionUnusable;
 use App\Support\Git\HostKey;
 use App\Support\Git\SshUrl;
-use Illuminate\Container\Attributes\Bind;
 use SensitiveParameter;
 
 /**
@@ -17,7 +15,6 @@ use SensitiveParameter;
  * (`git-upload-pack` over an exec channel, authenticated with the deploy
  * key, host key pinned). Nothing runs on the dashboard's own host.
  */
-#[Bind(PhpseclibSshRemotes::class)]
 interface SshRemotes
 {
     /**

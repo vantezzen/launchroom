@@ -3,9 +3,9 @@ import { useState } from 'react';
 import InputError from '@/components/input-error';
 import { TimeRangeSelect } from '@/components/charts/time-range-select';
 import { Switch } from '@/components/ui/switch';
-import { SettingsCard, SettingsRow } from '@/features/settings/settings-card';
 import { settings as backupSettings } from '@/routes/backups';
 import { preferences as savePreferences } from '@/routes/updates';
+import { SettingsCard, SettingsRow } from '@/components/settings/settings-card';
 
 type Channel = 'stable' | 'beta';
 

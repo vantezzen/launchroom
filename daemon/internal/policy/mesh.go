@@ -31,12 +31,6 @@ func CheckMeshLoginServer(u state.MeshLoginURL, insecureHosts []string) error {
 	return violation("mesh", "login server %s uses plain http; only https is allowed (or list the host in LR_MESH_INSECURE_LOGIN_HOSTS for local development)", u)
 }
 
-// SystemAmbassador is the ambassador system container (docs/05 §3). Its
-// image is not chosen by the dashboard: launchroomd builds it locally from
-// its own launchroom-ambassador binary (internal/ambassadord), so there is
-// no digest to pin.
-const SystemAmbassador = "ambassador"
-
 // MeshPeer reports whether ip may appear in a mesh allow-list: a mesh
 // address (WireGuard binds it to a peer key, so it is authenticated).
 func MeshPeer(ip netip.Addr) bool {

@@ -16,6 +16,7 @@ import (
 
 	"github.com/vantezzen/launchroom/cli/internal/api"
 	"github.com/vantezzen/launchroom/cli/internal/exitcode"
+	"github.com/vantezzen/launchroom/cli/internal/fsutil"
 	"github.com/vantezzen/launchroom/cli/internal/output"
 )
 
@@ -23,20 +24,7 @@ import (
 // `volume export`. Files go through the dashboard in chunks; uploads resume
 // where they stopped.
 
-// dataPollEvery is how often import and export runs are polled.
-var dataPollEvery = 2 * time.Second
-
-// dataSleep waits between polls; tests replace it.
-var dataSleep = func(ctx context.Context, d time.Duration) error {
-	t := time.NewTimer(d)
-	defer t.Stop()
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-t.C:
-		return nil
-	}
-}
+const dataPollEvery = 2 * time.Second
 
 func (a *App) dbCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -147,8 +135,6 @@ func (a *App) confirmReplace(svc *api.Service, yes bool) (string, error) {
 	return ans, nil
 }
 
-// ---- uploads ----
-
 // uploadState remembers transfers per local file so an upload resumes.
 type uploadState struct {
 	Uploads map[string]uploadEntry `json:"uploads"`
@@ -182,17 +168,11 @@ func (a *App) loadUploads() uploadState {
 }
 
 func (a *App) saveUploads(st uploadState) {
-	if err := os.MkdirAll(a.ConfigDir, 0o700); err != nil {
-		return
-	}
 	raw, err := json.MarshalIndent(st, "", "  ")
 	if err != nil {
 		return
 	}
-	tmp := a.uploadsFile() + ".tmp"
-	if err := os.WriteFile(tmp, raw, 0o600); err == nil {
-		_ = os.Rename(tmp, a.uploadsFile())
-	}
+	_ = fsutil.WriteFileAtomic(a.uploadsFile(), raw, 0o600)
 }
 
 func (a *App) forgetUpload(path string, info fs.FileInfo) {
@@ -212,7 +192,7 @@ func (a *App) upload(ctx context.Context, s *session, t *target, path string, in
 	if e, ok := st.Uploads[key]; ok && e.URL == s.URL {
 		got, err := s.Client.Transfer(ctx, e.Transfer)
 		switch {
-		case err == nil && got.SizeBytes == info.Size() && (got.Status == "receiving" || got.Status == "ready"):
+		case err == nil && got.SizeBytes == info.Size() && (got.Status == api.TransferStatusReceiving || got.Status == api.TransferStatusReady):
 			tr, resumed = got, true
 		case err != nil && !api.IsStatus(err, 404) && !api.IsStatus(err, 410):
 			return api.Transfer{}, err
@@ -229,7 +209,7 @@ func (a *App) upload(ctx context.Context, s *session, t *target, path string, in
 		st.Uploads[key] = uploadEntry{URL: s.URL, Transfer: tr.ID}
 		a.saveUploads(st)
 	}
-	if tr.Status == "ready" {
+	if tr.Status == api.TransferStatusReady {
 		if !p.JSON {
 			p.Info("%s was uploaded already.", filepath.Base(path))
 		}
@@ -363,22 +343,20 @@ func (g *progress) finish(done int64) {
 	_ = done
 }
 
-// ---- imports ----
-
 var importSteps = map[string]string{
-	"waiting_for_safety_backup": "Taking a safety snapshot",
-	"holding":                   "Stopping the apps that use it",
-	"importing":                 "Importing",
+	api.ImportRunStatusWaitingForSafetyBackup: "Taking a safety snapshot",
+	api.ImportRunStatusHolding:                "Stopping the apps that use it",
+	api.ImportRunStatusImporting:              "Importing",
 }
 
 func (a *App) followImport(ctx context.Context, s *session, run api.ImportRun) error {
 	p := a.Printer
 	lastLine := ""
 	for {
-		if !p.JSON && !run.Finished() {
+		if !p.JSON && !run.Finished {
 			line := importSteps[run.Status]
 			if line == "" {
-				line = words(run.Status)
+				line = output.StatusLabel(run.Status)
 			}
 			if run.Step != nil && *run.Step != "" {
 				line += ": " + *run.Step
@@ -388,10 +366,10 @@ func (a *App) followImport(ctx context.Context, s *session, run api.ImportRun) e
 				lastLine = line
 			}
 		}
-		if run.Finished() {
+		if run.Finished {
 			break
 		}
-		if err := dataSleep(ctx, dataPollEvery); err != nil {
+		if err := s.Client.Sleep(ctx, dataPollEvery); err != nil {
 			return err
 		}
 		next, err := s.Client.Import(ctx, run.ID)
@@ -403,8 +381,8 @@ func (a *App) followImport(ctx context.Context, s *session, run api.ImportRun) e
 	if err := p.Result(run, func(w io.Writer) { printImportOutcome(a, w, run) }); err != nil {
 		return err
 	}
-	if run.Status != "succeeded" {
-		msg := "the import " + words(run.Status)
+	if run.Status != api.ImportRunStatusSucceeded {
+		msg := "the import " + output.StatusLabel(run.Status)
 		if run.Error != nil && *run.Error != "" {
 			msg = *run.Error
 		}
@@ -416,17 +394,14 @@ func (a *App) followImport(ctx context.Context, s *session, run api.ImportRun) e
 	return nil
 }
 
-// words turns a status into words ("waiting_for_target" → "waiting for target").
-func words(s string) string { return strings.ReplaceAll(s, "_", " ") }
-
 func printImportOutcome(a *App, w io.Writer, run api.ImportRun) {
 	p := a.Printer
 	switch run.Status {
-	case "succeeded":
+	case api.ImportRunStatusSucceeded:
 		line := "Imported"
 		if r := run.Result; r != nil {
 			switch run.Subject {
-			case "volume":
+			case api.DataSubjectVolume:
 				line += fmt.Sprintf(" %d %s", r.Files, plural(int(r.Files), "file", "files"))
 			default:
 				noun := "tables"
@@ -449,15 +424,13 @@ func printImportOutcome(a *App, w io.Writer, run api.ImportRun) {
 			}
 		}
 	default:
-		msg := "The import " + words(run.Status) + "."
+		msg := "The import " + output.StatusLabel(run.Status) + "."
 		if run.Error != nil && *run.Error != "" {
 			msg = *run.Error
 		}
 		_, _ = fmt.Fprintf(w, "%s %s\n", p.Bad("✕"), msg)
 	}
 }
-
-// ---- exports ----
 
 func (a *App) dbExportCmd() *cobra.Command {
 	var out, snapshot string
@@ -546,7 +519,7 @@ func (a *App) export(ctx context.Context, s *session, t *target, req api.ExportR
 		return err
 	}
 	shown := ""
-	for run.Status == "preparing" {
+	for run.Status == api.ExportRunStatusPreparing {
 		if !p.JSON {
 			line := "Preparing the download"
 			if run.SizeBytes > 0 {
@@ -557,15 +530,15 @@ func (a *App) export(ctx context.Context, s *session, t *target, req api.ExportR
 				shown = line
 			}
 		}
-		if err := dataSleep(ctx, dataPollEvery); err != nil {
+		if err := s.Client.Sleep(ctx, dataPollEvery); err != nil {
 			return err
 		}
 		if run, err = s.Client.Export(ctx, run.ID); err != nil {
 			return err
 		}
 	}
-	if run.Status != "ready" {
-		msg := "the export " + words(run.Status)
+	if run.Status != api.ExportRunStatusReady {
+		msg := "the export " + output.StatusLabel(run.Status)
 		if run.Error != nil && *run.Error != "" {
 			msg = *run.Error
 		}
@@ -682,8 +655,6 @@ func writeDownload(ctx context.Context, path string, body io.Reader, want int64,
 	}
 	return n, nil
 }
-
-// ---- formatting ----
 
 func humanBytes(n int64) string {
 	const unit = 1000

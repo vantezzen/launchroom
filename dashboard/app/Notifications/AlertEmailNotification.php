@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Notifications;
 
+use App\Data\Alerts\AlertMessage;
 use App\Enums\Alerts\AlertDeliveryEvent;
-use App\Services\Alerts\AlertMessage;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 

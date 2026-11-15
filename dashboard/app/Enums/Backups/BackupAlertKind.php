@@ -19,6 +19,21 @@ enum BackupAlertKind: string
     /** Point-in-time recovery is on and WAL is not reaching the destination. */
     case WalLagging = 'wal_archive';
 
+    public function label(): string
+    {
+        return match ($this) {
+            self::Failed => 'Backup failed',
+            self::VerificationFailed => 'Backup check failed',
+            self::Overdue => 'Backup overdue',
+            self::WalLagging => 'Archiving behind',
+        };
+    }
+
+    public static function ofSubject(string $subjectKey): ?self
+    {
+        return self::tryFrom(explode(':', $subjectKey, 2)[0]);
+    }
+
     public function critical(): bool
     {
         return $this === self::Failed || $this === self::VerificationFailed;

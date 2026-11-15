@@ -259,17 +259,26 @@ func closeAll(l *listener, only map[*upstream]bool) {
 	})
 }
 
+// serve accepts until the listener closes. A failing Accept (out of file
+// descriptors) is retried with a doubling wait, like net/http's server.
 func (s *Server) serve(l *listener) {
+	var wait time.Duration
 	for {
 		c, err := l.ln.Accept()
 		if err != nil {
 			if errors.Is(err, net.ErrClosed) || s.ctx.Err() != nil {
 				return
 			}
-			s.o.Log.Warn("accept failed", "listen", l.addr, "err", err)
-			time.Sleep(100 * time.Millisecond)
+			wait = min(max(2*wait, 5*time.Millisecond), time.Second)
+			s.o.Log.Warn("accept failed", "listen", l.addr, "err", err, "retryIn", wait)
+			select {
+			case <-s.ctx.Done():
+				return
+			case <-time.After(wait):
+			}
 			continue
 		}
+		wait = 0
 		go s.handle(l, c)
 	}
 }

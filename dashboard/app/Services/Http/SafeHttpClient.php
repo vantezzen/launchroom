@@ -43,9 +43,12 @@ final readonly class SafeHttpClient
         return new self($this->http, $this->guard->withPrivateNetwork(), $this->connectTimeoutSeconds, $this->timeoutSeconds, $this->maxResponseBytes);
     }
 
+    public function withTimeout(int $seconds): self
+    {
+        return new self($this->http, $this->guard, $this->connectTimeoutSeconds, $seconds, $this->maxResponseBytes);
+    }
+
     /**
-     * Checks a URL without fetching it (and returns where it would connect).
-     *
      * @throws UnsafeUrl
      */
     public function check(string $url): ResolvedTarget
@@ -158,8 +161,6 @@ final readonly class SafeHttpClient
     }
 
     /**
-     * Guzzle/curl options that enforce the policy for a vetted target.
-     *
      * @return array<string, mixed>
      */
     public function transportOptions(ResolvedTarget $target): array

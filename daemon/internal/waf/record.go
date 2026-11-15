@@ -97,7 +97,7 @@ func decode(body []byte, now time.Time) (event, bool) {
 			evaluated = true
 			if s := reTotalScore.FindStringSubmatch(d.Msg); s != nil {
 				n, _ := strconv.Atoi(s[1])
-				ev.score = max(ev.score, min(n, 10000))
+				ev.score = max(ev.score, min(n, state.MaxWafScore))
 			}
 			continue
 		}

@@ -5,14 +5,14 @@ declare(strict_types=1);
 namespace App\Data\Protocol\V1;
 
 use App\Data\Protocol\ProtocolJson;
+use App\Data\Protocol\V1\Tasks\TaskSpec;
 use App\Enums\DaemonTaskType;
 use App\Models\DaemonTask;
 use Carbon\CarbonImmutable;
 use Spatie\LaravelData\Data;
 
 /**
- * One leased task (protocol/schema/v1/task.json). The spec is stored as the
- * typed wire object it was created from.
+ * One leased task (protocol/schema/v1/task.json).
  */
 final class Task extends Data
 {
@@ -22,13 +22,13 @@ final class Task extends Data
         public CarbonImmutable $leaseExpiresAt,
         public int $attempt,
         public CarbonImmutable $deadline,
-        public object $spec,
+        public TaskSpec $spec,
     ) {}
 
     /**
-     * @param  object|null  $spec  the spec as materialized for the leasing server (secrets sealed); default: the stored template
+     * @param  TaskSpec  $spec  the spec as materialized for the leasing server (secrets sealed)
      */
-    public static function fromTask(DaemonTask $task, ?object $spec = null): self
+    public static function fromTask(DaemonTask $task, TaskSpec $spec): self
     {
         return new self(
             $task->public_id,
@@ -36,7 +36,7 @@ final class Task extends Data
             ($task->lease_expires_at ?? now())->toImmutable(),
             $task->attempt,
             ($task->deadline_at ?? now())->toImmutable(),
-            $spec ?? $task->spec,
+            $spec,
         );
     }
 
@@ -51,7 +51,7 @@ final class Task extends Data
             'leaseExpiresAt' => ProtocolJson::time($this->leaseExpiresAt),
             'attempt' => $this->attempt,
             'deadline' => ProtocolJson::time($this->deadline),
-            'spec' => $this->spec,
+            'spec' => $this->spec->toProtocol(),
         ];
     }
 }

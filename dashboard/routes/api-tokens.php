@@ -5,7 +5,6 @@ declare(strict_types=1);
 use App\Http\Controllers\ApiTokens\ApiDocsController;
 use App\Http\Controllers\ApiTokens\ApiTokenController;
 use App\Http\Controllers\ApiTokens\CliLoginController;
-use App\Support\PublicId;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -21,7 +20,6 @@ Route::middleware(['web', 'auth', 'verified'])->group(function (): void {
         ->middleware('throttle:10,1')
         ->name('api-tokens.store');
     Route::delete('settings/api-tokens/{apiToken}', [ApiTokenController::class, 'destroy'])
-        ->where('apiToken', PublicId::routePattern('tok'))
         ->name('api-tokens.destroy');
 
     Route::get('cli/login', [CliLoginController::class, 'show'])

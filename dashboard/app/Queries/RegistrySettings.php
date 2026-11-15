@@ -6,9 +6,9 @@ namespace App\Queries;
 
 use App\Data\Registry\RegistrySettingsData;
 use App\Data\Registry\RegistryStorageData;
+use App\Exceptions\DecryptionFailed;
 use App\Models\InstanceSettings;
 use App\Models\Registry\RegistryStorage;
-use App\Services\Crypto\Exceptions\DecryptionFailed;
 use App\Services\Registry\ZotConfig;
 
 /**

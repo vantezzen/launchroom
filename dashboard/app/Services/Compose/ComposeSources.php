@@ -6,14 +6,15 @@ namespace App\Services\Compose;
 
 use App\Contracts\Git\SourceRepository;
 use App\Data\Blueprints\ComposeImportData;
+use App\Drivers\DatabaseEngines\DatabaseEngines;
 use App\Exceptions\DomainRuleViolation;
 use App\Models\Team;
-use App\Services\Blueprints\EngineVersions;
 use App\Services\Git\GitProviders;
 use App\Support\Compose\ComposeRejected;
 use App\Support\Compose\ComposeTranslation;
 use App\Support\Compose\ComposeTranslator;
 use App\Support\Compose\TranslationOptions;
+use App\Support\Protocol\Grammar;
 use App\Support\Variables\EnvFileParser;
 
 /**
@@ -26,7 +27,7 @@ final readonly class ComposeSources
     public function __construct(
         private GitProviders $providers,
         private RepositoryComposeFiles $repositoryFiles,
-        private EngineVersions $engines,
+        private DatabaseEngines $engines,
     ) {}
 
     /**
@@ -45,7 +46,7 @@ final readonly class ComposeSources
         foreach ($data->files as $file => $content) {
             $normalized = ltrim(preg_replace('#^\./#', '', (string) $file) ?? '', '/');
 
-            if (preg_match('#^[A-Za-z0-9_.@+=,-]+(?:/[A-Za-z0-9_.@+=,-]+)*$#D', $normalized) === 1) {
+            if (preg_match(Grammar::REL_PATH, $normalized) === 1) {
                 $files[$normalized] = $content;
             }
         }
@@ -88,7 +89,6 @@ final readonly class ComposeSources
 
         $translation = ComposeTranslator::translate($compose, $this->options($data, $values, $files, $databases, $repository instanceof SourceRepository));
 
-        // Repository imports read the env files the services name from the branch.
         if ($repository instanceof SourceRepository && $translation->missingFiles !== []) {
             $found = $this->repositoryFiles->files($repository, (string) $data->branch, $translation->missingFiles);
 
@@ -108,12 +108,12 @@ final readonly class ComposeSources
     private function options(ComposeImportData $data, array $values, array $files, array $databases, bool $repository): TranslationOptions
     {
         return new TranslationOptions(
+            engines: $this->engines,
             values: $values,
             files: $files,
             databases: $databases,
             convertBindMounts: $data->convertBindMounts,
             repository: $repository,
-            engines: $this->engines->all(),
             name: $data->name,
         );
     }

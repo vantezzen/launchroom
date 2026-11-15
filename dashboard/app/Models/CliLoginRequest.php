@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Enums\CliLoginStatus;
+use App\Enums\Contracts\HasTransitionTable;
 use App\Models\Concerns\HasPublicId;
+use App\Models\Concerns\HasStatusTransitions;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Model;
@@ -46,6 +48,9 @@ final class CliLoginRequest extends Model
 {
     use HasPublicId;
 
+    /** @use HasStatusTransitions<CliLoginStatus> */
+    use HasStatusTransitions;
+
     public static function publicIdPrefix(): string
     {
         return 'cli';
@@ -80,22 +85,35 @@ final class CliLoginRequest extends Model
         'status' => 'pending',
     ];
 
-    /**
-     * The one way a request's status changes (docs/10 §2.2 rule 3), with
-     * the columns that change along with it.
-     *
-     * @param  array<string, mixed>  $attributes
-     */
-    public function transitionTo(CliLoginStatus $to, array $attributes = []): void
-    {
-        $this->status->assertCanTransitionTo($to);
-        $this->status = $to;
-        $this->forceFill($attributes)->save();
-    }
-
     public function isExpired(): bool
     {
         return $this->expires_at->isPast();
+    }
+
+    public function approve(User $user, Team $team, int $tokenId, string $tokenCiphertext): void
+    {
+        $this->forceFill(['user_id' => $user->id, 'team_id' => $team->id, 'personal_access_token_id' => $tokenId, 'token_ciphertext' => $tokenCiphertext]);
+        $this->transitionTo(CliLoginStatus::Approved);
+    }
+
+    public function deny(User $user): void
+    {
+        $this->forceFill(['user_id' => $user->id]);
+        $this->transitionTo(CliLoginStatus::Denied);
+    }
+
+    /**
+     * @param  CliLoginStatus  $from
+     * @param  CliLoginStatus  $to
+     */
+    protected function recordTransition(HasTransitionTable $from, HasTransitionTable $to, ?string $note): void
+    {
+        match ($to) {
+            CliLoginStatus::Approved, CliLoginStatus::Denied => $this->forceFill(['decided_at' => now()]),
+            // The plaintext token is kept only until the CLI picks it up.
+            CliLoginStatus::Consumed => $this->forceFill(['token_ciphertext' => null, 'consumed_at' => now()]),
+            default => null,
+        };
     }
 
     /**

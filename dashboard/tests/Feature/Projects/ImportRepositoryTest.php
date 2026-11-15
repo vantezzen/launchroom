@@ -94,7 +94,7 @@ test('plan previews work before the project exists', function (): void {
         ->and($task->spec->rootDir ?? null)->toBe('apps/web');
 
     // Ready: the plan's worker processes and the databases its code references.
-    $task->forceFill(['status' => DaemonTaskStatus::Succeeded, 'result' => ['plan' => ['summary' => [
+    $task->forceFill(['status' => DaemonTaskStatus::Succeeded, 'result' => ['plan' => ['durationMs' => 1200, 'summary' => [
         'builder' => 'railpack', 'builderReason' => 'railpack', 'framework' => 'express', 'port' => 3000,
         'processes' => [['name' => 'worker', 'args' => ['node', 'worker.js']]],
         'envReferences' => ['DATABASE_URL', 'REDIS_URL', 'STRIPE_KEY'],
@@ -106,7 +106,7 @@ test('plan previews work before the project exists', function (): void {
         ->assertJsonPath('suggestions.databases.1.engine', 'redis');
 
     // Laravel's config references every driver: no database guesses from code.
-    $task->forceFill(['result' => ['plan' => ['summary' => [
+    $task->forceFill(['result' => ['plan' => ['durationMs' => 1200, 'summary' => [
         'builder' => 'railpack', 'builderReason' => 'preset', 'framework' => 'laravel',
         'processes' => [['name' => 'queue', 'args' => ['php', 'artisan', 'queue:work', '--tries=3']], ['name' => 'scheduler', 'args' => ['php', 'artisan', 'schedule:work']]],
         'envReferences' => ['DB_HOST', 'DB_DATABASE', 'REDIS_HOST'],

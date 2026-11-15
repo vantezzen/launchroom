@@ -1,8 +1,6 @@
-import { api, RequestFailed } from '@/features/variables/api';
+import { requestJson, xsrfToken } from '@/lib/http';
 import sessions from '@/routes/sessions';
 import serviceSessions from '@/routes/sessions/services';
-
-export { api, RequestFailed };
 
 export type SessionKind = App.Enums.Sessions.InteractiveSessionKind;
 export type ServiceRef = {
@@ -25,18 +23,22 @@ export function openSession(
         rows: number;
     },
 ): Promise<App.Data.Sessions.OpenedSessionData> {
-    return api('post', serviceSessions.open({ ...ref, kind }).url, body);
+    return requestJson(
+        'post',
+        serviceSessions.open({ ...ref, kind }).url,
+        body,
+    );
 }
 
 export function sendCommand(
     session: string,
     command: Record<string, unknown>,
 ): Promise<{ op: string }> {
-    return api('post', sessions.commands(session).url, command);
+    return requestJson('post', sessions.commands(session).url, command);
 }
 
 export function endSession(session: string): Promise<null> {
-    return api('post', sessions.end(session).url, {});
+    return requestJson('post', sessions.end(session).url, {});
 }
 
 /** One session as the Recent sessions list shows it (status, end, failure). */
@@ -44,17 +46,11 @@ export function fetchSession(
     session: string,
     signal?: AbortSignal,
 ): Promise<App.Data.Sessions.SessionHistoryItemData> {
-    return api('get', sessions.show(session).url, undefined, signal);
+    return requestJson('get', sessions.show(session).url, undefined, signal);
 }
 
 export function fetchRecording(session: string): Promise<{ lines: string[] }> {
-    return api('post', sessions.recording(session).url, {});
-}
-
-function xsrfToken(): string | null {
-    const match = document.cookie.match(/(?:^|;\s*)XSRF-TOKEN=([^;]+)/);
-
-    return match ? decodeURIComponent(match[1]) : null;
+    return requestJson('post', sessions.recording(session).url, {});
 }
 
 /**
@@ -86,7 +82,7 @@ export function authorizeChannel(
     socketId: string,
     ticket: string,
 ): Promise<{ auth: string }> {
-    return api('post', sessions.authorize(session).url, {
+    return requestJson('post', sessions.authorize(session).url, {
         socket_id: socketId,
         ticket,
     });

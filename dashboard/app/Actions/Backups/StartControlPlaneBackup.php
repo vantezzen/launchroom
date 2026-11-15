@@ -40,7 +40,7 @@ final readonly class StartControlPlaneBackup
     public function handle(BackupReason $reason, ?User $user, AuditActor $actor, bool $dispatch = true): BackupRun
     {
         $run = DB::transaction(function () use ($reason, $user, $actor): BackupRun {
-            $destination = BackupDestination::query()->whereNull('team_id')->lockForUpdate()->first();
+            $destination = BackupDestination::query()->instanceWide()->lockForUpdate()->first();
 
             if (! $destination instanceof BackupDestination) {
                 throw DomainRuleViolation::on('destination', 'Add a control-plane backup destination in Settings → Backups first.');
@@ -52,7 +52,7 @@ final readonly class StartControlPlaneBackup
 
             $inFlight = BackupRun::query()
                 ->where('subject', BackupSubject::ControlPlane->value)
-                ->whereIn('status', [BackupRunStatus::Pending->value, BackupRunStatus::Running->value])
+                ->whereIn('status', BackupRunStatus::nonTerminal())
                 ->first();
 
             // A run whose process died (worker killed, host lost) never

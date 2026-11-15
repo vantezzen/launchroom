@@ -25,7 +25,7 @@ import type {
  * - any other non-Inertia error: at most one error dialog at a time.
  */
 
-export type ResponseKind =
+type ResponseKind =
     | 'ok'
     | 'unreachable'
     | 'version-change'
@@ -122,7 +122,7 @@ const PROBE_TIMEOUT_MS = 5000;
 const SLOW_VISIT_MS = 6000;
 
 /** GET /up/version: tiny, sessionless, never cached. */
-export const probeServer: Probe = async () => {
+const probeServer: Probe = async () => {
     try {
         const response = await fetch(versionUrl, {
             cache: 'no-store',
@@ -204,7 +204,7 @@ function scheduleProbe(): void {
 }
 
 /** The server didn't answer: show the banner and keep probing. */
-export function markUnreachable(): void {
+function markUnreachable(): void {
     setState('reconnecting');
     scheduleProbe();
 }

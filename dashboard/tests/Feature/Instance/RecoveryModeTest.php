@@ -45,7 +45,7 @@ test('bootstrap-local --recovery keeps the previous control-plane server for the
     expect($output['token'])->toBeString()
         ->and($this->previous->refresh()->status)->toBe(ServerStatus::Online)
         ->and($this->previous->is_control_plane)->toBeFalse()
-        ->and(InstanceSettings::current()->recovery_state['previousControlPlaneServerId'] ?? null)->toBe($this->previous->id);
+        ->and(InstanceSettings::current()->recovery_state?->previousControlPlaneServerId)->toBe($this->previous->id);
 
     $this->actingAs($this->owner)->get(route('dashboard'))->assertRedirect(route('recovery.show'));
     $this->actingAs($this->owner)->get(route('projects.index'))->assertInertia(fn ($page) => $page->where('recoveryMode', true));
@@ -79,15 +79,16 @@ test('the checklist replaces the previous control-plane server with the new one,
         ->and($this->previous->replaced_by_server_id)->toBe($current->id)
         ->and($current->refresh()->is_control_plane)->toBeTrue()
         ->and($current->labels)->toBe(['tier' => 'main'])
-        ->and(InstanceSettings::current()->recovery_state['replacementId'] ?? null)->toBe($replacement->id);
+        ->and(InstanceSettings::current()->recovery_state?->replacementId)->toBe($replacement->id);
 
     $this->actingAs($this->owner)->get(route('recovery.show'))
         ->assertInertia(fn ($page) => $page->where('replacement.id', $replacement->public_id));
 
-    $this->actingAs($this->owner)->post(route('recovery.finish'), ['open' => ['dns']])->assertRedirect(route('servers.index'));
+    // What was left open is decided here, not taken from the request.
+    $this->actingAs($this->owner)->post(route('recovery.finish'), ['open' => ['<forged>', 'dns']])->assertRedirect(route('servers.index'));
 
     expect(InstanceSettings::current()->recovery_state)->toBeNull()
-        ->and(AuditEvent::query()->where('action', AuditAction::RecoveryFinished->value)->sole()->meta)->toMatchArray(['open' => ['dns']]);
+        ->and(AuditEvent::query()->where('action', AuditAction::RecoveryFinished->value)->sole()->meta['open'])->toBe([]);
     $this->actingAs($this->owner)->get('/')->assertRedirect();
     $this->actingAs($this->owner)->get(route('projects.index'))->assertInertia(fn ($page) => $page->where('recoveryMode', false));
 });
@@ -110,6 +111,6 @@ test('the recovery helpers show which servers reconnected and which images are m
     Server::query()->whereKey($this->previous->id)->update(['last_seen_at' => now()->subDay()]);
 
     $this->actingAs($this->owner)->get(route('recovery.show', ['images' => 1]))
-        ->assertInertia(fn ($page) => $page->where('servers', fn ($servers): bool => collect($servers)->firstWhere('id', $other->public_id)['reconnected'] === true)
-            ->where('images.missing', []));
+        ->assertInertia(fn ($page) => $page->where('checks.servers', fn ($servers): bool => collect($servers)->firstWhere('id', $other->public_id)['reconnected'] === true)
+            ->where('checks.images.missing', [])->where('checks.imagesOk', true));
 });

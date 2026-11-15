@@ -7,10 +7,10 @@ namespace App\Support\Deployments;
 use App\Data\Protocol\V1\BuildSummary;
 use App\Data\Services\HealthcheckSettings;
 use App\Data\Specs\ServiceSpec;
+use App\Enums\Builds\ChosenBuilder;
 use App\Enums\HealthcheckType;
 use App\Enums\ServiceKind;
 use App\Models\Deployment;
-use Throwable;
 
 /**
  * The deploy settings a deployment actually runs with (docs/04 §13
@@ -66,7 +66,7 @@ final readonly class EffectiveDeploy
 
     public static function for(ServiceSpec $spec, ?Deployment $deployment): self
     {
-        return self::from($spec, $deployment instanceof Deployment ? self::summaryOf($deployment) : null);
+        return self::from($spec, $deployment instanceof Deployment ? $deployment->plan?->summary : null);
     }
 
     public static function from(ServiceSpec $spec, ?BuildSummary $summary): self
@@ -108,24 +108,6 @@ final readonly class EffectiveDeploy
             }
         }
 
-        return new self($port, $health, $start, $release === [] ? null : $release, $env, $summary?->builder === 'railpack');
-    }
-
-    /**
-     * The build summary stored with a built deployment (`deployments.plan.summary`).
-     */
-    public static function summaryOf(Deployment $deployment): ?BuildSummary
-    {
-        $summary = $deployment->plan['summary'] ?? null;
-
-        if (! is_array($summary)) {
-            return null;
-        }
-
-        try {
-            return BuildSummary::from($summary);
-        } catch (Throwable) {
-            return null;
-        }
+        return new self($port, $health, $start, $release === [] ? null : $release, $env, $summary?->builder === ChosenBuilder::Railpack);
     }
 }

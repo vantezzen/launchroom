@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/vantezzen/launchroom/cli/internal/text"
 )
 
 // Data import and export (docs/14 §12, D55). Tokens need the opt-in
@@ -20,7 +22,7 @@ type Transfer struct {
 	ID             string  `json:"id"`
 	Purpose        string  `json:"purpose"`
 	Direction      string  `json:"direction"`
-	Status         string  `json:"status"` // receiving | ready | failed | expired
+	Status         string  `json:"status"`
 	FileName       string  `json:"fileName"`
 	SizeBytes      int64   `json:"sizeBytes"`
 	ChunkBytes     int64   `json:"chunkBytes"`
@@ -31,7 +33,7 @@ type Transfer struct {
 	SourceVersion  *string `json:"sourceVersion"`
 	Detail         *string `json:"detail"`
 	Error          *string `json:"error"`
-	CreatedAt      string  `json:"createdAt"`
+	CreatedAt      *string `json:"createdAt"`
 	ExpiresAt      *string `json:"expiresAt"`
 }
 
@@ -73,30 +75,26 @@ type ImportRun struct {
 	Step           *string       `json:"step"`
 	Result         *ImportResult `json:"result"`
 	Error          *string       `json:"error"`
-	CreatedAt      string        `json:"createdAt"`
+	CreatedAt      *string       `json:"createdAt"`
 	StartedAt      *string       `json:"startedAt"`
 	FinishedAt     *string       `json:"finishedAt"`
-}
-
-// Finished reports whether the import ended.
-func (r ImportRun) Finished() bool {
-	return r.Status == "succeeded" || r.Status == "failed" || r.Status == "cancelled"
+	Finished       bool          `json:"finished"`
 }
 
 // ExportRun is one export (download) of a database or volume.
 type ExportRun struct {
 	ID         string     `json:"id"`
 	Subject    string     `json:"subject"`
-	Source     string     `json:"source"` // live | snapshot
+	Source     string     `json:"source"`
 	Snapshot   *string    `json:"snapshot"`
 	Volume     *VolumeRef `json:"volume"`
-	Status     string     `json:"status"` // preparing | ready | failed | expired
+	Status     string     `json:"status"`
 	FileName   string     `json:"fileName"`
 	SizeBytes  int64      `json:"sizeBytes"`
 	Format     *string    `json:"format"`
 	Compressed bool       `json:"compressed"`
 	Error      *string    `json:"error"`
-	CreatedAt  string     `json:"createdAt"`
+	CreatedAt  *string    `json:"createdAt"`
 	ReadyAt    *string    `json:"readyAt"`
 	ExpiresAt  *string    `json:"expiresAt"`
 }
@@ -109,7 +107,7 @@ type DownloadLink struct {
 
 // CreateTransferRequest starts an upload.
 type CreateTransferRequest struct {
-	Purpose   string `json:"purpose"` // database_import | volume_import
+	Purpose   string `json:"purpose"`
 	FileName  string `json:"fileName"`
 	SizeBytes int64  `json:"sizeBytes"`
 	Volume    string `json:"volume,omitempty"`
@@ -288,8 +286,5 @@ func AttachmentName(header string) string {
 		return r
 	}, name)
 	name = strings.TrimLeft(name, ". ")
-	if len(name) > 200 {
-		name = name[:200]
-	}
-	return name
+	return text.Clip(name, 200)
 }

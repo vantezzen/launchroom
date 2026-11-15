@@ -45,6 +45,7 @@ use App\Queries\CurrentEnvironmentSpec;
 use App\Services\Variables\SpecVariableResolver;
 use App\Services\Variables\VariableStore;
 use App\Support\Changes\SpecDiff;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\ValidationException;
 use Tests\Support\Projects;
 
@@ -300,4 +301,20 @@ test('turning a secret into config requires permission to reveal secrets', funct
     $downgrade(memberOf($team, TeamRole::Admin));
 
     expect($secret->refresh()->type)->toBe(VariableType::Config);
+});
+
+test('the policy allows retyping a secret as config only to members who may reveal it', function (): void {
+    $team = Team::factory()->create();
+    $project = Projects::create($team);
+    $production = $project->production()->sole();
+    $secret = resolve(CreateVariable::class)->handle($project, Projects::image($project), variableInput('API_TOKEN', 'tok_123', $production, VariableType::Secret), null, AuditActor::system());
+    $developer = memberOf($team, TeamRole::Developer);
+    $admin = memberOf($team, TeamRole::Admin);
+
+    expect(Gate::forUser($developer)->allows('update', $secret))->toBeTrue()
+        ->and(Gate::forUser($developer)->allows('update', [$secret, VariableType::Secret]))->toBeTrue()
+        ->and(Gate::forUser($developer)->allows('update', [$secret, VariableType::Config]))->toBeFalse()
+        ->and(Gate::forUser($admin)->allows('update', [$secret, VariableType::Config]))->toBeTrue()
+        ->and(Gate::forUser(null)->allows('retype', [$secret, VariableType::Config]))->toBeFalse()
+        ->and(Gate::forUser(null)->allows('retype', [$secret, VariableType::Secret]))->toBeTrue();
 });

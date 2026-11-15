@@ -6,6 +6,7 @@ namespace App\Actions\Transfers;
 
 use App\Data\Services\DatabaseSource;
 use App\Enums\Backups\BackupRunStatus;
+use App\Enums\HoldKind;
 use App\Enums\Transfers\DataSubject;
 use App\Enums\Transfers\ImportRunStatus;
 use App\Enums\Transfers\TransferStatus;
@@ -14,9 +15,9 @@ use App\Models\Server;
 use App\Models\Transfers\DataImportRun;
 use App\Models\Transfers\DataTransfer;
 use App\Models\Volume;
-use App\Services\Backups\RestoreHolds;
+use App\Services\Holds\Holds;
+use App\Services\Holds\ImportHolds;
 use App\Services\Transfers\DatabasePreparations;
-use App\Services\Transfers\ImportHolds;
 use App\Services\Transfers\ImportTarget;
 use App\Services\Transfers\TransferTasks;
 use Illuminate\Support\Facades\DB;
@@ -50,7 +51,7 @@ final readonly class AdvanceImports
 
         /** @var list<int> $ids */
         $ids = DataImportRun::query()
-            ->whereIn('status', [ImportRunStatus::WaitingForSafetyBackup->value, ImportRunStatus::Holding->value])
+            ->whereIn('status', ImportRunStatus::waiting())
             ->orderBy('id')
             ->pluck('id')
             ->all();
@@ -89,7 +90,7 @@ final readonly class AdvanceImports
                 }
 
                 $run->transitionTo(ImportRunStatus::Holding);
-                ImportHolds::release($run, ImportHolds::heldBy($run));
+                Holds::changed(HoldKind::Import, ImportHolds::heldBy($run), ImportHolds::alsoServers($run));
                 // Nothing to wait for (no held services): start right away.
                 $this->start($run);
 
@@ -117,7 +118,7 @@ final readonly class AdvanceImports
         // Never import long after the hold began (a run that got stuck, for
         // example before an update): fail it, the services start again.
         if (ImportHolds::overdue($run)) {
-            return $this->fail($run, $held, ImportHolds::overdueReason($run, $run->subject === DataSubject::Database ? RestoreHolds::running($held) : []));
+            return $this->fail($run, $held, ImportHolds::overdueReason($run, $run->subject === DataSubject::Database ? Holds::running($held) : []));
         }
 
         if ($run->subject === DataSubject::Volume) {
@@ -128,7 +129,7 @@ final readonly class AdvanceImports
             }
 
             // launchroomd waits until nothing uses the volume; give the held service a moment first.
-            if (! RestoreHolds::released($held) && ! $waited) {
+            if (! Holds::released($held) && ! $waited) {
                 return false;
             }
 
@@ -159,7 +160,7 @@ final readonly class AdvanceImports
 
             // Wait for every held service to stop, a failed or never
             // started one counts as stopped; {@see FailStuckImports} ends the wait.
-            if (! RestoreHolds::released($held)) {
+            if (! Holds::released($held)) {
                 return false;
             }
 
@@ -190,7 +191,7 @@ final readonly class AdvanceImports
     private function fail(DataImportRun $run, array $held, string $error): bool
     {
         $run->transitionTo(ImportRunStatus::Failed, $error);
-        ImportHolds::release($run, $held);
+        Holds::changed(HoldKind::Import, $held, ImportHolds::alsoServers($run));
 
         return true;
     }

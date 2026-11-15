@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Data\Templates;
 
+use App\Support\PublicId;
 use Spatie\LaravelData\Attributes\Validation\Max;
 use Spatie\LaravelData\Attributes\Validation\Min;
 use Spatie\LaravelData\Data;
@@ -36,7 +37,7 @@ final class UseTemplateData extends Data
         return [
             'inputs' => ['sometimes', 'array', 'max:6'],
             'inputs.*' => ['nullable', 'string', 'max:255'],
-            'repository' => ['nullable', 'string', 'regex:/^(?:ghr|gir)_[0-7][0-9A-HJKMNP-TV-Z]{25}$/D'],
+            'repository' => ['nullable', 'string', 'regex:'.PublicId::regex('ghr', 'gir')],
             'branch' => ['nullable', 'string', 'required_with:repository'],
         ];
     }

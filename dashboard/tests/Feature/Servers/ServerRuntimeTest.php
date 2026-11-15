@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Data\Servers\ServerRuntimeData;
+use App\Enums\Servers\CapabilityReason;
 use App\Enums\Servers\CapabilityState;
 use App\Enums\Servers\DockerEngine;
 use App\Enums\Servers\DockerMode;
@@ -147,11 +148,13 @@ test('the Network tab shows the runtime to the team and nobody else', function (
             ->has('runtime.capabilities', 3)
             ->where('runtime.capabilities.1.name', 'clientAddresses')
             ->where('runtime.capabilities.1.state', 'degraded')
-            ->has('runtime.reportedAt'));
+            ->has('runtime.reportedAt')
+            ->has('capabilities', 3)
+            ->where('capabilities.1.explanation', 'Rootless Docker hides visitor addresses behind its port forwarder.'));
 
     // Other tabs don't load it.
     $this->actingAs($this->viewer)->get(route('servers.show', $this->server->public_id))
-        ->assertInertia(fn ($page) => $page->missing('runtime'));
+        ->assertInertia(fn ($page) => $page->missing('runtime')->missing('capabilities'));
 
     $outsider = memberOf(Team::factory()->create(), TeamRole::Owner);
     $this->actingAs($outsider)->get(route('servers.tab', [$this->server->public_id, 'network']))->assertNotFound();
@@ -168,4 +171,36 @@ test('a build server blocked by Ubuntu\'s user-namespace restriction says how to
 
     expect($runtime?->capability(RuntimeCapability::Builds))->toBe(CapabilityState::Unavailable)
         ->and($runtime?->capabilities[0]->message)->toBe($message);
+});
+
+test('capability rows are worded from the reason, with the facts and the engine name', function (): void {
+    $this->daemon->send($this, 'POST', '/daemon/v1/reports', runtimeReport($this->server, 1, [
+        'docker' => 'rootful', 'guard' => true, 'hostOs' => 'darwin', 'engine' => 'orbstack',
+        'capabilities' => [
+            ['name' => 'edgePorts', 'state' => 'unavailable', 'reason' => 'vm'],
+            ['name' => 'firewall', 'state' => 'unavailable', 'reason' => 'error', 'message' => 'nft: permission denied'],
+            ['name' => 'builds', 'state' => 'unavailable', 'reason' => 'userns_blocked', 'message' => 'sudo apparmor_parser -r'],
+            ['name' => 'mesh', 'state' => 'degraded', 'reason' => 'wormhole', 'message' => 'peers relayed'],
+            ['name' => 'workloads', 'state' => 'full'],
+        ],
+    ]))->assertNoContent();
+
+    $runtime = $this->server->refresh()->runtime;
+
+    expect($runtime?->capabilities[0]->reason)->toBe(CapabilityReason::Vm)
+        // A reason from a newer server is dropped; its facts stay.
+        ->and($runtime?->capabilities[3]->reason)->toBeNull()
+        ->and(array_map(static fn ($row) => $row->explanation, $runtime?->rows() ?? []))->toBe([
+            "Docker runs in OrbStack's Linux VM here, so ports 80 and 443 open inside the VM, not on your network. Let a public server serve traffic.",
+            'nft: permission denied',
+            'Ubuntu’s user-namespace restriction blocks builds here. Run the launchroom installer on this server again, or run: sudo apparmor_parser -r',
+            'peers relayed',
+            null,
+        ]);
+});
+
+test('reports with a malformed capability reason are rejected', function (): void {
+    $this->daemon->send($this, 'POST', '/daemon/v1/reports', runtimeReport($this->server, 1, [
+        'docker' => 'rootful', 'guard' => true, 'capabilities' => [['name' => 'mesh', 'state' => 'full', 'reason' => 'VM; drop']],
+    ]))->assertUnprocessable();
 });

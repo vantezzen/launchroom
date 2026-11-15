@@ -12,7 +12,6 @@ use App\Models\Git\GitHubApp;
 use App\Models\Git\GitHubRepository;
 use App\Models\Git\GitRepository;
 use App\Models\Team;
-use App\Services\Git\Providers\ApiGitProvider;
 use App\Support\Git\PublicRepositoryUrl;
 use Illuminate\Support\Facades\Log;
 use Throwable;
@@ -58,7 +57,7 @@ final readonly class ConnectedRepositoryLookup
     {
         $connections = GitConnection::query()
             ->where('team_id', $team->id)
-            ->whereIn('provider', [GitProviderKind::GitLab->value, GitProviderKind::Gitea->value])
+            ->whereIn('provider', GitProviderKind::apiConnections())
             ->where('status', GitConnectionStatus::Active->value)
             ->orderBy('id')
             ->get()
@@ -79,16 +78,9 @@ final readonly class ConnectedRepositoryLookup
             return $cached;
         }
 
-        // Not seen yet: one search through the first connection on that host.
         $connection = $connections->first();
-        $provider = $this->providers->for($connection->provider);
-
-        if (! $provider instanceof ApiGitProvider) {
-            return null;
-        }
-
         try {
-            $found = $provider->searchConnection($connection, $url->name());
+            $found = $this->providers->connection($connection->provider)->searchConnection($connection, $url->name());
         } catch (Throwable $e) {
             Log::warning('Looking up a pasted repository failed', ['connection' => $connection->public_id, 'error' => $e->getMessage()]);
 
