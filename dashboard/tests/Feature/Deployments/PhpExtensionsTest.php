@@ -28,7 +28,6 @@ use App\Models\ServiceInstance;
 use App\Models\Team;
 use App\Queries\CurrentEnvironmentSpec;
 use App\Support\BuildKey;
-use App\Support\CanonicalJson;
 use App\Support\Changes\SpecDiff;
 use Illuminate\Contracts\Database\Query\Builder;
 use Illuminate\Validation\ValidationException;
@@ -158,13 +157,8 @@ test('connecting a database to a deployed PHP app is a rebuild that says why, wi
 
     $oldKey = BuildKey::compute($before->service($app->public_id), PX_SHA, 'mac');
     $newKey = BuildKey::compute($after->service($app->public_id), PX_SHA, 'mac');
-    $service = $after->service($app->public_id);
-    $service->phpExtensions = [];
-    // Services without extensions keep the key they had before D71.
-    $legacy = hash('sha256', CanonicalJson::encode(['v' => 1, 'commit' => PX_SHA, 'source' => $service->source, 'build' => $service->build->toArray(), 'branch' => null, 'secrets' => 'mac']));
 
-    expect($newKey)->not->toBe($oldKey)
-        ->and(BuildKey::compute($service, PX_SHA, 'mac'))->toBe($legacy);
+    expect($newKey)->not->toBe($oldKey);
 });
 
 test('only allow-listed extensions and engines are accepted', function (): void {

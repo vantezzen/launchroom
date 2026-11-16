@@ -83,7 +83,7 @@ export function ServiceLogs({
                 autoLive={
                     running ? (keepsLogs ? 'when-empty' : 'now') : undefined
                 }
-                className="h-[calc(100dvh-252px)] min-h-[420px]"
+                className="h-[calc(100dvh-284px)] min-h-[420px] flex-none"
             />
         </div>
     );

@@ -8,9 +8,15 @@ import {
     useFollowScroll,
 } from '@/features/logs/use-follow-scroll';
 import { LevelBadge } from './level-badge';
+import { structuredLine } from './structured';
 import type { LogEntry } from './types';
 
 const ROW = 28;
+// Columns follow the table's own width (it sits next to the details or in
+// the service panel), not the viewport: the day from 672 px, the
+// milliseconds from 448 px, the source from 512 px.
+const TIME_COLUMN = 'w-16 shrink-0 @md/table:w-24 @2xl/table:w-40';
+const SOURCE_COLUMN = 'shrink-0 @max-lg/table:hidden';
 
 const dayFormat = new Intl.DateTimeFormat('en-GB', {
     month: 'short',
@@ -57,6 +63,7 @@ const LogRow = memo(function LogRow({
     onSelect: (index: number) => void;
 }) {
     const time = splitTime(entry.time);
+    const error = entry.level === 'error';
 
     return (
         <div
@@ -66,30 +73,37 @@ const LogRow = memo(function LogRow({
             aria-selected={selected}
             onClick={() => onSelect(index)}
             className={cn(
-                'absolute top-0 left-0 flex w-full cursor-default items-center gap-3 border-l-2 border-transparent px-4 type-mono-small hover:bg-(--hover)/70',
-                selected && 'border-foreground bg-(--hover)',
-                entry.level === 'error' &&
-                    !selected &&
-                    'max-sm:border-(--status-error)',
+                'absolute top-0 left-0 flex w-full cursor-default items-center gap-3 px-4 type-mono-small',
+                error
+                    ? 'bg-status-error-soft/70 text-status-error hover:bg-status-error-soft'
+                    : 'hover:bg-foreground/[0.04]',
+                selected && 'bg-foreground/[0.08] hover:bg-foreground/[0.08]',
             )}
             style={{ transform: `translateY(${start}px)`, height: ROW }}
         >
             <span
                 role="gridcell"
-                className="w-40 shrink-0 text-muted-foreground tabular-nums max-sm:w-20"
+                className={cn(
+                    TIME_COLUMN,
+                    'tabular-nums',
+                    !error && 'text-muted-foreground',
+                )}
             >
-                <span className="max-sm:hidden">{time.day} </span>
-                <span className="text-foreground">{time.clock}</span>
-                <span className="max-sm:hidden">.{time.ms}</span>
+                <span className="hidden @2xl/table:inline">{time.day} </span>
+                <span className={error ? undefined : 'text-foreground'}>
+                    {time.clock}
+                </span>
+                <span className="hidden @md/table:inline">.{time.ms}</span>
             </span>
-            <span role="gridcell" className="w-16 shrink-0 max-sm:sr-only">
+            <span role="gridcell" className="w-16 shrink-0">
                 <LevelBadge level={entry.level} />
             </span>
             {!hideService && (
                 <span
                     role="gridcell"
                     className={cn(
-                        'shrink-0 truncate max-md:hidden',
+                        SOURCE_COLUMN,
+                        'truncate',
                         context ? 'w-48' : 'w-28',
                     )}
                     title={
@@ -99,13 +113,21 @@ const LogRow = memo(function LogRow({
                     }
                 >
                     {context && (
-                        <span className="text-muted-foreground">
+                        <span
+                            className={
+                                error ? undefined : 'text-muted-foreground'
+                            }
+                        >
                             {contextOf(entry, context)} /{' '}
                         </span>
                     )}
                     {entry.service}
                     {entry.replica && (
-                        <span className="text-muted-foreground">
+                        <span
+                            className={
+                                error ? undefined : 'text-muted-foreground'
+                            }
+                        >
                             {' '}
                             #{entry.replica}
                         </span>
@@ -119,7 +141,10 @@ const LogRow = memo(function LogRow({
                     entry.stream === 'system' && 'text-muted-foreground',
                 )}
             >
-                <AnsiText text={entry.message} highlight={highlight} />
+                <AnsiText
+                    text={structuredLine(entry.message).summary}
+                    highlight={highlight}
+                />
             </span>
         </div>
     );
@@ -160,8 +185,10 @@ type LogTableProps = {
 /**
  * Virtualized log table (design-system §5.5): fixed 28 px rows
  * (scrolls 100k lines without layout work), time with the seconds emphasised,
- * level chip, service + replica, message as ANSI-toned text (never HTML).
- * One tab stop: ↑/↓ move the selection, Enter opens it, Home/End jump.
+ * level chip, service + replica, message as ANSI-toned text (never HTML);
+ * a JSON line shows its `msg`. Error lines are red on a faint red wash and
+ * keep their level chip. One tab stop: ↑/↓ move the selection and keep it
+ * in view, Home/End jump. The caller draws the frame around it.
  */
 export function LogTable({
     entries,
@@ -227,6 +254,26 @@ export function LogTable({
         }
     }, [entries, follow, live]);
 
+    // Keep the selected line in view: after ↑/↓, prev/next in the details
+    // and when the message pane opens under the list and makes it shorter.
+    useLayoutEffect(() => {
+        const element = scrollRef.current;
+
+        if (!element || selectedIndex < 0) {
+            return;
+        }
+
+        const top = selectedIndex * ROW;
+
+        if (top < element.scrollTop) {
+            element.scrollTop = top;
+        } else if (top + ROW > element.scrollTop + element.clientHeight) {
+            element.scrollTop = top + ROW - element.clientHeight;
+        }
+        // Only when the selection moves, not on every new live line.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [selectedId]);
+
     if (entries.length === 0) {
         return <>{empty}</>;
     }
@@ -246,26 +293,24 @@ export function LogTable({
             event.preventDefault();
             const next = moves[event.key];
             onSelect(entries[next]);
-            virtualizer.scrollToIndex(next, { align: 'auto' });
         }
     };
 
     return (
-        <div className={cn('flex min-h-0 flex-col', className)}>
+        <div
+            className={cn('@container/table flex min-h-0 flex-col', className)}
+        >
             <div
                 aria-hidden="true"
-                className="flex h-8 shrink-0 items-center gap-3 border-b px-4 type-small text-muted-foreground"
+                className="flex h-8 shrink-0 items-center gap-3 border-b bg-(--recessed) px-4 type-small text-muted-foreground"
             >
-                <span className="w-40 shrink-0 max-sm:w-20">Time</span>
-                <span className="w-16 shrink-0 max-sm:sr-only">Level</span>
+                <span className={TIME_COLUMN}>Time</span>
+                <span className="w-16 shrink-0">Level</span>
                 {!hideService && (
                     <span
-                        className={cn(
-                            'shrink-0 max-md:hidden',
-                            context ? 'w-48' : 'w-28',
-                        )}
+                        className={cn(SOURCE_COLUMN, context ? 'w-48' : 'w-28')}
                     >
-                        {context ? 'Where' : 'Service'}
+                        {context ? 'Where' : 'Source'}
                     </span>
                 )}
                 <span>Message</span>

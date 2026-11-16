@@ -159,7 +159,7 @@ active ─▶ superseded (a newer deployment went live)
 ## 7. Image reuse and "build once, promote everywhere"
 
 Every config field is classified **build-affecting** or **runtime-only**:
-- Build-affecting: commit SHA, root dir, builder choice and overrides, Railpack version, build-scoped variable values (via the secrets hash), target platform, the PHP extensions added for connected databases (§3.1).
+- Build-affecting: commit SHA, root dir, builder choice and overrides, Railpack version, build-scoped variable values (via the secrets hash), target platform, the PHP extensions added for connected databases (§3.1), and launchroomd's build recipe (`vocabulary.json` `constants.buildRecipe` = `presets.Recipe()`: a recipe version for what launchroomd adds to Railpack images, such as the PHP server adjustments of §3.2, plus every preset's version). A release that changes the recipe rebuilds each service once on its next deploy; without it, redeploying the same commit kept an image built the old way (no generated secrets in its summary, the old PHP server config).
 - Runtime-only: runtime variables, replicas, resources, domains, healthcheck, start command (for Railpack-built images the start command is in the image, but launchroom overrides it at container create).
 
 The build key is the hash of the build-affecting inputs. If an image with that key exists, the deployment **skips the build**. Consequences:

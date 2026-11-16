@@ -68,6 +68,7 @@ export const limits = {
 
 export const protocolConstants = {
     apiVersion: "launchroom.vantezzen.io/v1",
+    buildRecipe: "r2 laravel2 django2 python-web1 nextjs2 static-spa1 node-server1",
     meshRange: "100.64.0.0/10",
     networkPrefix: "lr-e_",
     registryAddress: "127.0.0.1:5000",

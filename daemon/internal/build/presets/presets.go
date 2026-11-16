@@ -93,6 +93,23 @@ func All() []Preset {
 	return []Preset{laravel{}, django{}, pythonASGI{}, nextjs{}, staticSPA{}, nodeServer{}}
 }
 
+// recipeVersion counts changes to what launchroomd adds to Railpack images
+// outside the presets (the PHP server adjustments, D85). Bump it with any
+// such change so existing images are rebuilt instead of reused.
+const recipeVersion = 2
+
+// Recipe names how launchroomd turns a Railpack plan into an image: the
+// recipe version and every preset's version. The dashboard puts it in the
+// build key (docs/04 §7), so a release that changes the recipe rebuilds
+// images on their next deploy instead of reusing ones built the old way.
+func Recipe() string {
+	parts := []string{"r" + strconv.Itoa(recipeVersion)}
+	for _, p := range All() {
+		parts = append(parts, p.Name()+strconv.Itoa(p.Version()))
+	}
+	return strings.Join(parts, " ")
+}
+
 // ByName returns a preset by name.
 func ByName(name string) (Preset, bool) {
 	for _, p := range All() {

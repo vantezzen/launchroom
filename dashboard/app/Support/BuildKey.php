@@ -7,13 +7,16 @@ namespace App\Support;
 use App\Data\Protocol\V1\PhpExtension;
 use App\Data\Specs\EnvironmentSpec;
 use App\Data\Specs\ServiceSpec;
+use App\Support\Protocol\Grammar;
 
 /**
  * The build key (docs/04 §7): a hash of every build-affecting input. Equal
  * keys mean an existing image can be reused instead of rebuilding.
  *
  * Inputs: commit SHA, source (repository, root directory), build settings
- * (builder, overrides, Railpack version), branch override, the PHP extensions
+ * (builder, overrides, Railpack version), launchroomd's build recipe (its
+ * presets and image adjustments, so a release that changes them rebuilds
+ * instead of reusing old images), branch override, the PHP extensions
  * added for connected databases (docs/04 §3.1; only when there are any, so
  * existing keys stay valid), and a keyed MAC of the build-scoped variable
  * values (so the key never makes secrets guessable).
@@ -58,6 +61,7 @@ final class BuildKey
             'build' => $service->build->toArray(),
             'branch' => $service->branchOverride,
             'secrets' => $buildSecretsMac,
+            'recipe' => Grammar::BUILD_RECIPE,
             ...($service->phpExtensions === [] ? [] : ['phpExtensions' => array_map(static fn (PhpExtension $extension): array => $extension->toArray(), $service->phpExtensions)]),
         ]));
     }

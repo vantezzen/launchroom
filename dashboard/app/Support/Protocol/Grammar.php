@@ -156,6 +156,8 @@ final class Grammar
 
     public const string API_VERSION = 'launchroom.vantezzen.io/v1';
 
+    public const string BUILD_RECIPE = 'r2 laravel2 django2 python-web1 nextjs2 static-spa1 node-server1';
+
     public const string MESH_RANGE = '100.64.0.0/10';
 
     public const string NETWORK_PREFIX = 'lr-e_';

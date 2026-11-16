@@ -19,6 +19,7 @@ import (
 
 	"github.com/invopop/jsonschema"
 
+	"github.com/vantezzen/launchroom/daemon/internal/build/presets"
 	"github.com/vantezzen/launchroom/daemon/internal/names"
 	"github.com/vantezzen/launchroom/daemon/internal/policy"
 	"github.com/vantezzen/launchroom/daemon/internal/secret"
@@ -101,12 +102,14 @@ func Generate(moduleRoot string) (map[string][]byte, error) {
 }
 
 // vocabulary is state's vocabulary plus the host-side facts other packages
-// own: the generated network/volume name prefixes and the mesh range.
+// own: the generated network/volume name prefixes, the mesh range and the
+// build recipe.
 func vocabulary() state.Vocabulary {
 	v := state.ProtocolVocabulary()
 	v.Constants["networkPrefix"] = names.NetworkPrefix
 	v.Constants["volumePrefix"] = names.VolumePrefix
 	v.Constants["meshRange"] = policy.MeshRange.String()
+	v.Constants["buildRecipe"] = presets.Recipe()
 	return v
 }
 

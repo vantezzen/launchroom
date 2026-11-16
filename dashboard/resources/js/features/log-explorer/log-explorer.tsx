@@ -1,7 +1,8 @@
-import { http, Link } from '@inertiajs/react';
+import { http } from '@inertiajs/react';
 import { useQuery } from '@tanstack/react-query';
 import { Radio, ScrollText, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useIsMobile } from '@/hooks/use-mobile';
 import { schedulePoll } from '@/hooks/use-live-props';
 import { Histogram } from '@/components/charts/histogram';
 import { TimeRangeSelect } from '@/components/charts/time-range-select';
@@ -33,7 +34,7 @@ import {
 import { stop as stopTailRoute } from '@/routes/projects/logs/tail';
 import { bucketEntries, countFacets } from '@/features/log-explorer/facets';
 import { FilterRail } from '@/features/log-explorer/filter-rail';
-import { LogDetail } from '@/features/log-explorer/log-detail';
+import { LogDetail, LogMessagePane } from '@/features/log-explorer/log-detail';
 import { LogTable } from '@/features/log-explorer/log-table';
 import {
     matchesQuery,
@@ -69,6 +70,8 @@ const RETRY_MS = 30_000;
 const MAX_LIVE = 20_000;
 /** Wait this long after the last keystroke before searching on the server. */
 const SEARCH_DEBOUNCE_MS = 300;
+/** Where the message pane under the list shows the message instead of the details. */
+const WIDE_HIDDEN = '@[760px]/logs:hidden';
 
 /** The server's line → the explorer's row. */
 function toEntry(entry: Entry): LogEntry & {
@@ -98,8 +101,10 @@ type Row = ReturnType<typeof toEntry>;
 
 /**
  * The log explorer (direction §9.8): query bar, range, Live; the histogram with deploy markers and errors stacked in
- * red; the filter rail with counts; the virtualised table (newest first);
- * the detail drawer (right column on wide screens, a sheet on phones).
+ * red; the filter rail with counts; the virtualised table (newest first)
+ * in a bordered container. A selected line splits it: list over the
+ * message pane, "Log details" on the right (over the list when the
+ * container is narrow, a sheet on phones).
  *
  * Search runs on the server (docs/08 §12): `GET …/-/logs?q=` returns the
  * newest 5,000 matching lines of the range, how many match and the
@@ -183,6 +188,7 @@ export function LogExplorer({
     const autoLiveChecked = useRef(autoLive !== 'when-empty');
     const [following, setFollowing] = useState<number | null>(null);
     const [selectedId, setSelectedId] = useState<string | null>(null);
+    const [messageOpen, setMessageOpen] = useState(true);
     const cursor = useRef(0);
     const args = { project: project ?? '', environment: environment ?? '' };
     const canLive = scope === 'environment' && span === null;
@@ -414,6 +420,9 @@ export function LogExplorer({
     const markers = useMemo(() => deployMarkers(page?.markers), [page]);
     const selected = visible.find((row) => row.id === selectedId) ?? null;
     const index = selected ? visible.indexOf(selected) : -1;
+    // Phones get the details in a sheet; elsewhere they open in place.
+    const isPhone = useIsMobile();
+    const inPlace = selected !== null && !isPhone;
 
     const changeQuery = (next: string) => {
         setQuery(next);
@@ -455,61 +464,6 @@ export function LogExplorer({
         }
     };
 
-    const facts = (row: Row) => [
-        {
-            label: 'Time',
-            value: new Date(row.time).toLocaleString('en-GB', {
-                hour12: false,
-            }),
-            mono: true,
-        },
-        ...(row.project ? [{ label: 'Project', value: row.project }] : []),
-        ...(row.environment
-            ? [{ label: 'Environment', value: row.environment }]
-            : []),
-        ...(row.deployment
-            ? [
-                  {
-                      label: 'Deployment',
-                      value: row.deploymentId ? (
-                          <Link
-                              href={deploymentHref(row.deploymentId)}
-                              className="text-signal underline-offset-4 hover:underline"
-                          >
-                              {row.deployment}
-                          </Link>
-                      ) : (
-                          row.deployment
-                      ),
-                      mono: true,
-                  },
-              ]
-            : []),
-        ...(row.replica
-            ? [{ label: 'Replica', value: row.replica, mono: true }]
-            : []),
-        ...(row.server
-            ? [
-                  {
-                      label: 'Server',
-                      value: row.serverId ? (
-                          <Link
-                              href={serverHref(row.serverId)}
-                              className="text-signal underline-offset-4 hover:underline"
-                          >
-                              {row.server}
-                          </Link>
-                      ) : (
-                          row.server
-                      ),
-                      mono: true,
-                  },
-              ]
-            : []),
-        ...(row.stream
-            ? [{ label: 'Stream', value: row.stream, mono: true }]
-            : []),
-    ];
     const similar = (row: Row) => {
         const head = row.message.replace(/\d+/g, '#').slice(0, 48);
 
@@ -518,86 +472,101 @@ export function LogExplorer({
         ).length;
     };
 
-    const detail = selected && (
-        <LogDetail
-            entry={selected}
-            facts={facts(selected)}
-            onClose={() => setSelectedId(null)}
-            onPrevious={
-                index > 0
-                    ? () => setSelectedId(visible[index - 1].id)
-                    : undefined
-            }
-            onNext={
-                index < visible.length - 1
-                    ? () => setSelectedId(visible[index + 1].id)
-                    : undefined
-            }
-            footer={
-                <div className="flex flex-col gap-3">
-                    <p className="type-small text-muted-foreground">
-                        {(() => {
-                            const count = similar(selected);
+    const closeDetail = () => setSelectedId(null);
+    // `sheet`: the phone sheet names it and closes it; the in-place panel
+    // shows the message only while the container is too narrow for the
+    // message pane under the list.
+    const detail = (sheet: boolean) =>
+        selected && (
+            <LogDetail
+                entry={selected}
+                hrefs={{
+                    deployment: selected.deploymentId
+                        ? deploymentHref(selected.deploymentId)
+                        : null,
+                    server: selected.serverId
+                        ? serverHref(selected.serverId)
+                        : null,
+                }}
+                title={sheet ? null : 'Log details'}
+                onClose={sheet ? undefined : closeDetail}
+                messageClassName={sheet ? undefined : WIDE_HIDDEN}
+                className={sheet ? undefined : 'h-full'}
+                onPrevious={
+                    index > 0
+                        ? () => setSelectedId(visible[index - 1].id)
+                        : undefined
+                }
+                onNext={
+                    index < visible.length - 1
+                        ? () => setSelectedId(visible[index + 1].id)
+                        : undefined
+                }
+                footer={
+                    <div className="flex flex-col gap-3">
+                        <p className="type-small text-muted-foreground">
+                            {(() => {
+                                const count = similar(selected);
 
-                            return count > 1
-                                ? `${count} similar lines in this range.`
-                                : 'The only line like this in this range.';
-                        })()}
-                    </p>
-                    {(!service || selected.deployment) && (
-                        <div className="flex flex-wrap gap-2">
-                            {!service && (
-                                <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={() =>
-                                        changeQuery(
-                                            toggleFilter(
-                                                query,
-                                                'service',
-                                                selected.service,
-                                            ),
+                                return count > 1
+                                    ? `${count} similar lines in this range.`
+                                    : 'The only line like this in this range.';
+                            })()}
+                        </p>
+                        {(!service || selected.deployment) && (
+                            <div className="flex flex-wrap gap-2">
+                                {!service && (
+                                    <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={() =>
+                                            changeQuery(
+                                                toggleFilter(
+                                                    query,
+                                                    'service',
+                                                    selected.service,
+                                                ),
+                                            )
+                                        }
+                                    >
+                                        {parsed.filters.some(
+                                            (f) =>
+                                                f.key === 'service' &&
+                                                f.value === selected.service,
                                         )
-                                    }
-                                >
-                                    {parsed.filters.some(
-                                        (f) =>
-                                            f.key === 'service' &&
-                                            f.value === selected.service,
-                                    )
-                                        ? `All services`
-                                        : `Only ${selected.service}`}
-                                </Button>
-                            )}
-                            {selected.deployment && (
-                                <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={() =>
-                                        changeQuery(
-                                            toggleFilter(
-                                                query,
-                                                'deployment',
-                                                selected.deployment ?? '',
-                                            ),
+                                            ? `All services`
+                                            : `Only ${selected.service}`}
+                                    </Button>
+                                )}
+                                {selected.deployment && (
+                                    <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={() =>
+                                            changeQuery(
+                                                toggleFilter(
+                                                    query,
+                                                    'deployment',
+                                                    selected.deployment ?? '',
+                                                ),
+                                            )
+                                        }
+                                    >
+                                        {parsed.filters.some(
+                                            (f) =>
+                                                f.key === 'deployment' &&
+                                                f.value === selected.deployment,
                                         )
-                                    }
-                                >
-                                    {parsed.filters.some(
-                                        (f) =>
-                                            f.key === 'deployment' &&
-                                            f.value === selected.deployment,
-                                    )
-                                        ? 'Every deployment'
-                                        : 'Only this deployment'}
-                                </Button>
-                            )}
-                        </div>
-                    )}
-                </div>
-            }
-        />
-    );
+                                            ? 'Every deployment'
+                                            : 'Only this deployment'}
+                                    </Button>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                }
+            />
+        );
 
     const empty = loading ? (
         <p className="p-6 type-body text-muted-foreground" aria-live="polite">
@@ -660,7 +629,12 @@ export function LogExplorer({
 
     return (
         <div className={cn('flex min-h-0 flex-1 flex-col', className)}>
-            <div className="flex flex-col gap-3 border-b px-4 py-3 sm:px-6">
+            <div
+                className={cn(
+                    'flex flex-col gap-3 py-3',
+                    !service && 'px-4 sm:px-6',
+                )}
+            >
                 <div className="flex flex-wrap items-start gap-2">
                     <QueryBar
                         value={query}
@@ -766,14 +740,12 @@ export function LogExplorer({
 
             <div
                 className={cn(
-                    // One row bounded by the explorer's height: the lines,
-                    // filters and detail each scroll on their own.
-                    'grid min-h-0 flex-1 grid-cols-1 grid-rows-[minmax(0,1fr)]',
-                    !service && 'md:grid-cols-[220px_minmax(0,1fr)]',
-                    selected &&
-                        (service
-                            ? 'xl:grid-cols-[minmax(0,1fr)_340px]'
-                            : 'xl:grid-cols-[220px_minmax(0,1fr)_340px]'),
+                    // One row bounded by the explorer's height: the filters,
+                    // the lines, the message and the details each scroll on
+                    // their own; the page never does.
+                    'grid min-h-0 flex-1 grid-cols-1 grid-rows-[minmax(0,1fr)] gap-4',
+                    service ? 'pb-1' : 'px-4 pb-4 sm:px-6',
+                    !service && 'md:grid-cols-[200px_minmax(0,1fr)]',
                 )}
             >
                 {!service && (
@@ -785,47 +757,83 @@ export function LogExplorer({
                                 toggleFilter(query, group as QueryKey, value),
                             )
                         }
-                        className="overflow-auto border-r px-4 py-4 max-md:hidden"
+                        className="min-h-0 overflow-auto pr-1 max-md:hidden"
                     />
                 )}
-                <LogTable
-                    entries={visible}
-                    selectedId={selectedId}
-                    onSelect={(entry) => setSelectedId(entry.id)}
-                    highlight={parsed.text.join(' ')}
-                    hideService={Boolean(service)}
-                    context={
-                        scope === 'team'
-                            ? 'project'
-                            : scope === 'project'
-                              ? 'environment'
-                              : null
-                    }
-                    empty={empty}
-                    live={live && canLive}
-                    className="min-h-[320px]"
-                />
-                {selected && (
-                    <div className="min-h-0 overflow-auto border-l max-xl:hidden">
-                        {detail}
+                <div
+                    // Wide (container ≥ 760 px): list over the message pane,
+                    // details in a column on the right. Narrower (the
+                    // service panel), the details cover the list.
+                    className="@container/logs relative flex min-h-0 flex-col overflow-hidden rounded-xl border bg-card"
+                    onKeyDown={(event) => {
+                        if (event.key === 'Escape' && selected) {
+                            event.preventDefault();
+                            closeDetail();
+                        }
+                    }}
+                >
+                    <div
+                        className={cn(
+                            'grid min-h-0 flex-1 grid-cols-1 grid-rows-[minmax(0,1fr)]',
+                            inPlace &&
+                                '@[760px]/logs:grid-cols-[minmax(0,1fr)_380px] @[1100px]/logs:grid-cols-[minmax(0,1fr)_440px]',
+                        )}
+                    >
+                        <div
+                            className={cn(
+                                'grid min-h-0 min-w-0 grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)]',
+                                inPlace &&
+                                    (messageOpen
+                                        ? '@[760px]/logs:grid-rows-[minmax(0,58fr)_minmax(0,42fr)]'
+                                        : '@[760px]/logs:grid-rows-[minmax(0,1fr)_auto]'),
+                            )}
+                        >
+                            <LogTable
+                                entries={visible}
+                                selectedId={selectedId}
+                                onSelect={(entry) => setSelectedId(entry.id)}
+                                highlight={parsed.text.join(' ')}
+                                hideService={Boolean(service)}
+                                context={
+                                    scope === 'team'
+                                        ? 'project'
+                                        : scope === 'project'
+                                          ? 'environment'
+                                          : null
+                                }
+                                empty={empty}
+                                live={live && canLive}
+                            />
+                            {inPlace && selected && (
+                                <LogMessagePane
+                                    entry={selected}
+                                    open={messageOpen}
+                                    onToggle={() =>
+                                        setMessageOpen((open) => !open)
+                                    }
+                                    className="hidden @[760px]/logs:flex"
+                                />
+                            )}
+                        </div>
+                        {inPlace && (
+                            <div className="absolute inset-0 z-10 min-h-0 bg-card @[760px]/logs:static @[760px]/logs:border-l">
+                                {detail(false)}
+                            </div>
+                        )}
                     </div>
-                )}
+                </div>
             </div>
 
-            <div className="xl:hidden">
+            {isPhone && (
                 <SidePanel
-                    open={
-                        selected !== null &&
-                        typeof window !== 'undefined' &&
-                        window.innerWidth < 1280
-                    }
-                    onOpenChange={(open) => !open && setSelectedId(null)}
-                    title="Log line"
+                    open={selected !== null}
+                    onOpenChange={(open) => !open && closeDetail()}
+                    title="Log details"
                     size="md"
                 >
-                    {detail}
+                    {detail(true)}
                 </SidePanel>
-            </div>
+            )}
         </div>
     );
 }
