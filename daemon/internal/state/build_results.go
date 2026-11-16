@@ -18,6 +18,10 @@ const (
 	maxRuntimeEnv   = 64
 	maxSummaryText  = 1024
 	maxBuildEnvRefs = 1024
+	maxGenerated    = 8
+	// Lengths of a generated secret (characters for alnum, else bytes).
+	minGeneratedLength = 16
+	maxGeneratedLength = 128
 )
 
 // ResolvedPackage is a toolchain/package version Railpack resolved and where it came from.
@@ -49,6 +53,16 @@ type ProcessSuggestion struct {
 	Name Slug `json:"name"`
 	// Args is the argv to run in the image (never a shell string).
 	Args []string `json:"args" jsonschema:"minItems=1,maxItems=64"`
+}
+
+// GeneratedSecret is a runtime secret the app can't start without (Laravel's
+// APP_KEY). The dashboard creates it once per service and environment as a
+// secret variable with a random value when the service has none (D86).
+type GeneratedSecret struct {
+	Name EnvName `json:"name"`
+	// Length is characters for alnum, random bytes for the other encodings.
+	Length   int            `json:"length" jsonschema:"minimum=16,maximum=128"`
+	Encoding SecretEncoding `json:"encoding"`
 }
 
 // BuildWarning is a non-fatal finding shown with the plan.
@@ -88,6 +102,8 @@ type BuildSummary struct {
 	ReleaseCommand []string `json:"releaseCommand,omitzero" jsonschema:"nullable,minItems=1,maxItems=64"`
 	// HealthPath is the suggested HTTP health check path.
 	HealthPath HTTPPath `json:"healthPath,omitzero"`
+	// GeneratedSecrets are runtime secrets the dashboard creates when the service has none (names and shapes only).
+	GeneratedSecrets []GeneratedSecret `json:"generatedSecrets,omitzero" jsonschema:"nullable,maxItems=8"`
 	// BuildEnv names the build-scoped variables passed as BuildKit secrets (names only).
 	BuildEnv []EnvName `json:"buildEnv,omitzero" jsonschema:"nullable,maxItems=1024"`
 	// EnvReferences are variable names referenced in the source (cheap static scan).
@@ -242,6 +258,20 @@ func (s *BuildSummary) validate(e *errs, p string) {
 	checkArgv(e, p+".releaseCommand", s.ReleaseCommand)
 	if s.HealthPath != "" {
 		e.check(p+".healthPath", s.HealthPath)
+	}
+	checkCount(e, p+".generatedSecrets", len(s.GeneratedSecrets), 0, maxGenerated)
+	seenSecrets := map[EnvName]bool{}
+	for i, g := range s.GeneratedSecrets {
+		gp := idx(p+".generatedSecrets", i)
+		e.check(gp+".name", g.Name)
+		e.check(gp+".encoding", g.Encoding)
+		if g.Length < minGeneratedLength || g.Length > maxGeneratedLength {
+			e.addf(gp+".length", "must be between %d and %d", minGeneratedLength, maxGeneratedLength)
+		}
+		if seenSecrets[g.Name] {
+			e.addf(gp+".name", "is listed twice")
+		}
+		seenSecrets[g.Name] = true
 	}
 	checkCount(e, p+".buildEnv", len(s.BuildEnv), 0, maxBuildEnvRefs)
 	for i, n := range s.BuildEnv {

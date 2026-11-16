@@ -20,7 +20,7 @@ if [ -x "$dst" ] && [ "$(cat "$dst.sha256" 2>/dev/null)" = "$sum" ]; then
 fi
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
-curl -fsSL -o "$tmp/restic.bz2" "https://github.com/restic/restic/releases/download/v${version}/restic_${version}_linux_${arch}.bz2"
+curl -fsSL --retry 5 --retry-all-errors --retry-delay 2 -o "$tmp/restic.bz2" "https://github.com/restic/restic/releases/download/v${version}/restic_${version}_linux_${arch}.bz2"
 echo "$sum  $tmp/restic.bz2" | sha256sum -c - >/dev/null
 # No bunzip2 in the golang image; perl's core IO::Uncompress::Bunzip2 is.
 perl -MIO::Uncompress::Bunzip2=bunzip2,\$Bunzip2Error -e 'bunzip2($ARGV[0] => $ARGV[1]) or die "bunzip2: $Bunzip2Error\n"' "$tmp/restic.bz2" "$tmp/restic"

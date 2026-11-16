@@ -766,7 +766,9 @@ export function LogExplorer({
 
             <div
                 className={cn(
-                    'grid min-h-0 flex-1 grid-cols-1',
+                    // One row bounded by the explorer's height: the lines,
+                    // filters and detail each scroll on their own.
+                    'grid min-h-0 flex-1 grid-cols-1 grid-rows-[minmax(0,1fr)]',
                     !service && 'md:grid-cols-[220px_minmax(0,1fr)]',
                     selected &&
                         (service

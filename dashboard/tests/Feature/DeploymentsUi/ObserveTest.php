@@ -172,6 +172,14 @@ test('log levels are guessed from the text', function (string $text, string $lev
     ['WARN 2 deprecated subdependencies', 'warning'],
     ['[debug] cache hit', 'debug'],
     ['process did not complete successfully: exit code: 1', 'error'],
+    ['{"level":"debug","ts":1794819518.78,"logger":"http.handlers.php","msg":"request handling finished"}', 'debug'],
+    ['{"level":"info","msg":"retrying after error"}', 'info'],
+    ['{"level":50,"msg":"boom"}', 'error'],
+    ['{"severity":"WARNING","message":"slow query"}', 'warning'],
+    ['[2026-11-16 10:00:00] production.ERROR: Undefined variable $user', 'error'],
+    ['[2026-11-16 10:00:00] production.DEBUG: cache miss', 'debug'],
+    ['[2026-11-16 10:00:00] production.INFO: Login failed for test@example.com', 'info'],
+    ['time=2026-11-16T10:00:00Z level=WARN msg="disk almost full"', 'warning'],
 ]);
 
 test('fix and redeploy stages the port and deploys it when nothing else is staged', function (): void {

@@ -4,6 +4,13 @@ All changes to launchroomd ↔ dashboard contract. Format: one section per proto
 
 ## v1 (unreleased)
 
+### Generated secrets (2026-11-16, D86)
+
+Additive, launchroomd → dashboard only, so no daemon feature: an older launchroomd never sends it, and the dashboard updates before its servers.
+
+- `BuildSummary.generatedSecrets?: [GeneratedSecret]` (≤ 8, unique by name): `{name (EnvName), length (16–128: characters for alnum, else random bytes), encoding (SecretEncoding: alnum|base64|base64url|hex)}`. Runtime secrets a preset says the app can't start without; the dashboard creates each one as `${{ secret(length[, encoding]) }}` when the service has none in the deployment's environment. The Laravel preset (version 2) declares `APP_KEY` (32, alnum) through its decision `app-key`, which replaces the warning of the same code; the Django preset (version 2) declares the variable its settings read `SECRET_KEY` from (50, alnum, decision `secret-key`).
+- Fixture `task-completion.plan.json` (`summary.generatedSecrets`). Design: docs/04 §3, docs/06 §3.1.
+
 ### Vocabulary and unknown codes (2026-11-15, D76)
 
 No schema change for existing fields.

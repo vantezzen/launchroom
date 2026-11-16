@@ -45,6 +45,9 @@ func TestBuildLaravelWithPostgresDriver(t *testing.T) {
 	if s.Provider != "php" || !slices.Equal(s.PhpExtensions, inputs.Builder.PhpExtensions) {
 		t.Fatalf("summary provider %q, phpExtensions %+v", s.Provider, s.PhpExtensions)
 	}
+	if !slices.Equal(s.GeneratedSecrets, []state.GeneratedSecret{{Name: "APP_KEY", Length: 32, Encoding: state.SecretAlnum}}) {
+		t.Errorf("summary generatedSecrets %+v, want APP_KEY (D86)", s.GeneratedSecrets)
+	}
 	if !strings.Contains(sink.all(), "Adds PHP extensions: pdo_pgsql (for postgres)") {
 		t.Errorf("build log does not say which extensions it adds")
 	}
@@ -65,11 +68,12 @@ func TestBuildLaravelWithPostgresDriver(t *testing.T) {
 	wl := state.WorkloadID("wl_01J9Z8X7W6V5T4S3R2Q1P0N9P8")
 	netID := state.NetworkID("net_01J9Z8X7W6V5T4S3R2Q1P0N9P9")
 	// What the Laravel connection style injects (docs/06 §3.2), plus file-free
-	// sessions and cache: there is no database server in this test.
+	// sessions and cache: there is no database server in this test. APP_KEY
+	// has the shape the dashboard generates (secret(32), D86).
 	env := map[string]secret.Secret{
 		"PORT": "8080", "DB_CONNECTION": "pgsql", "DB_HOST": "postgres", "DB_PORT": "5432",
 		"DB_DATABASE": "app", "DB_USERNAME": "app", "DB_PASSWORD": "secret-password",
-		"APP_KEY": "base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=", "SESSION_DRIVER": "array", "CACHE_STORE": "array", "LOG_CHANNEL": "stderr",
+		"APP_KEY": "Zq3V8kTn1XcR5bLw9HmJ2pYd6sFg4AeU", "SESSION_DRIVER": "array", "CACHE_STORE": "array", "LOG_CHANNEL": "stderr",
 	}
 	envSealed, err := sealed.SealWorkloadEnv(state.WorkloadEnv{ServerID: be.serverID, WorkloadID: wl, Env: env}, be.key.PublicKey(), rand.Reader)
 	if err != nil {

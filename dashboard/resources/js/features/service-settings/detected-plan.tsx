@@ -322,7 +322,8 @@ export function DetectedPlan({
 
             {(plan.buildVariables.length > 0 ||
                 plan.runtimeVariableCount > 0 ||
-                plan.envReferences.length > 0) && (
+                plan.envReferences.length > 0 ||
+                plan.generatedSecrets.length > 0) && (
                 <div className="flex flex-col gap-1 type-small text-muted-foreground">
                     {plan.buildVariables.length > 0 && (
                         <p>
@@ -340,6 +341,14 @@ export function DetectedPlan({
                             </span>
                             {plan.envReferences.length > 12 &&
                                 ` and ${plan.envReferences.length - 12} more`}
+                        </p>
+                    )}
+                    {plan.generatedSecrets.length > 0 && (
+                        <p>
+                            Created as secrets on the next deploy:{' '}
+                            <span className="font-mono text-foreground">
+                                {plan.generatedSecrets.join(', ')}
+                            </span>
                         </p>
                     )}
                     {plan.runtimeVariableCount > 0 && (

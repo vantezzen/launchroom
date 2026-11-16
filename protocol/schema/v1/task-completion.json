@@ -407,6 +407,21 @@
           "pattern": "^/[A-Za-z0-9._~!$\u0026'()*+,;=:@%/?-]*$",
           "description": "HealthPath is the suggested HTTP health check path."
         },
+        "generatedSecrets": {
+          "oneOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/GeneratedSecret"
+              },
+              "type": "array",
+              "maxItems": 8,
+              "description": "GeneratedSecrets are runtime secrets the dashboard creates when the service has none (names and shapes only)."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "buildEnv": {
           "oneOf": [
             {
@@ -985,6 +1000,37 @@
         "gid"
       ],
       "description": "FileOwner is a numeric owner for imported files."
+    },
+    "GeneratedSecret": {
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,255}$"
+        },
+        "length": {
+          "type": "integer",
+          "maximum": 128,
+          "minimum": 16,
+          "description": "Length is characters for alnum, random bytes for the other encodings."
+        },
+        "encoding": {
+          "type": "string",
+          "enum": [
+            "alnum",
+            "base64",
+            "base64url",
+            "hex"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "name",
+        "length",
+        "encoding"
+      ],
+      "description": "GeneratedSecret is a runtime secret the app can't start without (Laravel's APP_KEY)."
     },
     "ImageDistro": {
       "properties": {

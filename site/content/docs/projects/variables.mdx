@@ -76,6 +76,13 @@ A value that consists of only a generator creates a random secret once, when the
 The length is between 8 and 1024. Generated values are stored as secrets and never change on later deploys. Every
 environment, including each preview and every copied environment, gets its own value.
 
+Some frameworks can't start without a secret key. When a Laravel app has no `APP_KEY`, or a Django app reads
+`SECRET_KEY` from the environment and has none, launchroom creates it on the next deploy as a secret variable with a
+generated value, one per environment. Queue workers and schedulers get a reference to their app's key. It is an
+ordinary variable: reveal, rotate or delete it like any other. A key you set yourself always wins. If you delete the
+generated one, the next deploy creates a new one, so if you manage the key outside launchroom, remove the "Generate
+APP_KEY" decision under **Settings → Build & deploy**.
+
 ## Targeting
 
 A variable applies to the environments it targets. The editor shows them as chips on each row. One row can apply to

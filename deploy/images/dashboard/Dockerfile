@@ -62,11 +62,11 @@ RUN set -eux; \
     esac; \
     apt-get update; \
     apt-get install -y --no-install-recommends ca-certificates curl gnupg bzip2; \
-    curl -fsSL -o /tmp/restic.bz2 "https://github.com/restic/restic/releases/download/v${RESTIC_VERSION}/restic_${RESTIC_VERSION}_linux_${arch}.bz2"; \
+    curl -fsSL --retry 5 --retry-all-errors --retry-delay 2 -o /tmp/restic.bz2 "https://github.com/restic/restic/releases/download/v${RESTIC_VERSION}/restic_${RESTIC_VERSION}_linux_${arch}.bz2"; \
     echo "${restic_sha}  /tmp/restic.bz2" | sha256sum -c -; \
     bunzip2 -c /tmp/restic.bz2 > /usr/local/bin/restic; \
     chmod 0755 /usr/local/bin/restic; \
-    curl -fsSL -o /tmp/pgdg.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc; \
+    curl -fsSL --retry 5 --retry-all-errors --retry-delay 2 -o /tmp/pgdg.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc; \
     gpg --batch --with-colons --show-keys /tmp/pgdg.asc | grep -q "^fpr:::::::::${PGDG_KEY_FINGERPRINT}:\$"; \
     gpg --batch --dearmor -o /usr/share/keyrings/pgdg.gpg /tmp/pgdg.asc; \
     . /etc/os-release; \

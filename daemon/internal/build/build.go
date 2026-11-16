@@ -455,6 +455,7 @@ func (b *Builder) resolve(dir, work string, job *Job, envNames []string, sink Lo
 		s.Processes = preset.Processes
 		s.ReleaseCommand = preset.ReleaseCommand
 		s.HealthPath = state.HTTPPath(preset.HealthPath)
+		s.GeneratedSecrets = preset.GeneratedSecrets
 		s.Warnings = append(s.Warnings, preset.Warnings...)
 		if preset.Port != 0 {
 			port = preset.Port
@@ -473,6 +474,10 @@ func (b *Builder) resolve(dir, work string, job *Job, envNames []string, sink Lo
 	if rp.info.Provider == "php" && len(bs.PhpExtensions) > 0 {
 		s.PhpExtensions = slices.Clone(bs.PhpExtensions)
 		sink.Line("plan", state.StreamStdout, "Adds PHP extensions: "+describePhpExtensions(bs.PhpExtensions))
+	}
+	if rp.info.Provider == "php" {
+		_, err := root.Lstat(phpCaddyfileAsset)
+		adjustPhpPlan(rp.result.Plan, err == nil, s, sink)
 	}
 	if preset != nil && preset.Framework != "" {
 		s.Framework = ident(preset.Framework)

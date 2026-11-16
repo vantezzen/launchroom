@@ -7,6 +7,7 @@ namespace App\Actions\Deployments;
 use App\Actions\Mesh\AllocateMeshPorts;
 use App\Actions\Servers\RenderNodeState;
 use App\Actions\Transfers\EndDatabasePreparation;
+use App\Actions\Variables\GenerateDeclaredSecrets;
 use App\Contracts\ImageDigestResolver;
 use App\Data\Deployments\StepOutcome;
 use App\Data\Holds\Hold;
@@ -21,6 +22,7 @@ use App\Enums\WorkloadPhase;
 use App\Enums\WorkloadRole;
 use App\Events\NodeStateInvalidated;
 use App\Exceptions\DesiredStateInvalid;
+use App\Exceptions\DomainRuleViolation;
 use App\Exceptions\ImageResolutionFailed;
 use App\Jobs\AdvanceDeploymentJob;
 use App\Models\Deployment;
@@ -116,6 +118,7 @@ final readonly class AdvanceDeployment
         private MeshReadiness $meshReadiness,
         private EndDatabasePreparation $endPreparation,
         private AllocateMeshPorts $meshPorts,
+        private GenerateDeclaredSecrets $generatedSecrets,
     ) {}
 
     public function handle(int $deploymentId): void
@@ -442,6 +445,14 @@ final readonly class AdvanceDeployment
                 $deployment->transitionTo(DeploymentStatus::Superseded);
 
                 return true;
+            }
+
+            // Secrets the build says the app needs (APP_KEY, D86), before
+            // the release command or a workload runs with the env.
+            try {
+                $this->generatedSecrets->handle($deployment);
+            } catch (DomainRuleViolation $e) {
+                Log::warning('A declared secret could not be generated.', ['deployment' => $deployment->public_id, 'reason' => $e->getMessage()]);
             }
 
             return $this->releaseOrRollOut($deployment, $spec);

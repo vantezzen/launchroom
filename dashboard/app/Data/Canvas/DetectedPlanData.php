@@ -7,6 +7,7 @@ namespace App\Data\Canvas;
 use App\Data\Protocol\V1\AppliedPreset;
 use App\Data\Protocol\V1\BuildSummary;
 use App\Data\Protocol\V1\BuildWarning;
+use App\Data\Protocol\V1\GeneratedSecret;
 use App\Data\Protocol\V1\NextBuildInfo;
 use App\Data\Protocol\V1\PhpExtension;
 use App\Data\Protocol\V1\ResolvedPackage;
@@ -49,6 +50,7 @@ final class DetectedPlanData extends Data
      * @param  list<string>  $buildVariables  variables baked in at build time
      * @param  list<string>  $envReferences  variables the code references
      * @param  list<string>  $missingVariables  referenced in code but not defined
+     * @param  list<string>  $generatedSecrets  secrets launchroom creates at deploy when the service has none (D86)
      * @param  list<string>  $warnings
      * @param  array<string, mixed>|null  $planJson  Railpack's build plan (View plan JSON)
      * @param  list<string>  $phpExtensions
@@ -80,6 +82,7 @@ final class DetectedPlanData extends Data
         public int $runtimeVariableCount = 0,
         public array $envReferences = [],
         public array $missingVariables = [],
+        public array $generatedSecrets = [],
         public array $warnings = [],
         public ?array $planJson = null,
         /** The Next.js adapter's build report (builds only; plan previews don't run the build). */
@@ -119,6 +122,7 @@ final class DetectedPlanData extends Data
         }
 
         $references = self::names($summary->envReferences ?? []);
+        $generated = self::names(array_map(static fn (GeneratedSecret $secret): string => $secret->name, $summary->generatedSecrets ?? []));
         $buildVariables = self::names($summary->buildEnv ?? []);
 
         return new self(
@@ -144,9 +148,10 @@ final class DetectedPlanData extends Data
             runtimeVariableCount: count($summary->runtimeEnv ?? []),
             envReferences: $references,
             missingVariables: $definedKeys === null ? [] : array_values(array_filter(
-                array_diff($references, $definedKeys, self::PROVIDED, array_keys($summary->runtimeEnv ?? [])),
+                array_diff($references, $definedKeys, self::PROVIDED, array_keys($summary->runtimeEnv ?? []), $generated),
                 static fn (string $name): bool => ! str_starts_with($name, 'LAUNCHROOM_'),
             )),
+            generatedSecrets: $definedKeys === null ? $generated : array_values(array_diff($generated, $definedKeys)),
             warnings: array_map(static fn (BuildWarning $warning): string => $warning->message, $summary->warnings ?? []),
             planJson: $summary->plan,
             next: $summary->next,

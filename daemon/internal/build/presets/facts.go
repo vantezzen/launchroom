@@ -71,6 +71,8 @@ type DjangoFacts struct {
 	WSGI       string
 	ASGI       string
 	StaticRoot bool
+	// SecretKeyEnv is the variable SECRET_KEY is read from ("DJANGO_SECRET_KEY"), if the settings read it from the environment.
+	SecretKeyEnv string
 }
 
 // PythonApp is an app object like `app = FastAPI()` in a module.
@@ -276,7 +278,9 @@ var (
 	reWSGI       = regexp.MustCompile(`(?m)^\s*WSGI_APPLICATION\s*=\s*['"]([A-Za-z0-9_.]+)['"]`)
 	reASGI       = regexp.MustCompile(`(?m)^\s*ASGI_APPLICATION\s*=\s*['"]([A-Za-z0-9_.]+)['"]`)
 	reStaticRoot = regexp.MustCompile(`(?m)^\s*STATIC_ROOT\s*=`)
-	reSettingsEn = regexp.MustCompile(`DJANGO_SETTINGS_MODULE['"]?\s*,\s*['"]([A-Za-z0-9_]+)\.settings`)
+	// SECRET_KEY = os.environ["X"], os.environ.get("X", …), os.getenv("X"), env("X") (django-environ), config("X") (python-decouple).
+	reSecretKeyEnv = regexp.MustCompile(`(?m)^\s*SECRET_KEY\s*=\s*(?:os\.environ(?:\.get)?|os\.getenv|env(?:\.str)?|config)\s*[\[(]\s*['"]([A-Z_][A-Z0-9_]*)['"]`)
+	reSettingsEn   = regexp.MustCompile(`DJANGO_SETTINGS_MODULE['"]?\s*,\s*['"]([A-Za-z0-9_]+)\.settings`)
 )
 
 func gatherDjango(fsys fs.FS) DjangoFacts {
@@ -312,6 +316,9 @@ func gatherDjango(fsys fs.FS) DjangoFacts {
 		}
 		if reStaticRoot.MatchString(s) {
 			d.StaticRoot = true
+		}
+		if m := reSecretKeyEnv.FindStringSubmatch(s); m != nil && d.SecretKeyEnv == "" {
+			d.SecretKeyEnv = m[1]
 		}
 	}
 	return d

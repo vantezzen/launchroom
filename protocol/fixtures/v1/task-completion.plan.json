@@ -16,10 +16,11 @@
       "presets": [
         {
           "name": "laravel",
-          "version": 1,
+          "version": 2,
           "decisions": [
             { "id": "release-migrations", "title": "Run migrations once per deploy" },
-            { "id": "horizon", "title": "Horizon worker process", "detail": "php artisan horizon" }
+            { "id": "horizon", "title": "Horizon worker process", "detail": "php artisan horizon" },
+            { "id": "app-key", "title": "Generate APP_KEY" }
           ]
         }
       ],
@@ -30,10 +31,10 @@
       ],
       "releaseCommand": ["php", "artisan", "migrate", "--force"],
       "healthPath": "/up",
+      "generatedSecrets": [{ "name": "APP_KEY", "length": 32, "encoding": "alnum" }],
       "phpExtensions": [
         { "name": "pdo_pgsql", "for": "postgres" }
-      ],
-      "warnings": [{ "code": "app-key", "message": "Laravel needs APP_KEY at runtime. Generate one in the service variables if it is not set." }]
+      ]
     }
   }
 }

@@ -38,7 +38,7 @@ RUN set -eu; \
       arm64) sum="$RESTIC_SHA256_ARM64" ;; \
       *) echo "unsupported arch $TARGETARCH" >&2; exit 1 ;; \
     esac; \
-    curl -fsSL -o /tmp/restic.bz2 "https://github.com/restic/restic/releases/download/v${RESTIC_VERSION}/restic_${RESTIC_VERSION}_linux_${TARGETARCH}.bz2"; \
+    curl -fsSL --retry 5 --retry-all-errors --retry-delay 2 -o /tmp/restic.bz2 "https://github.com/restic/restic/releases/download/v${RESTIC_VERSION}/restic_${RESTIC_VERSION}_linux_${TARGETARCH}.bz2"; \
     echo "$sum  /tmp/restic.bz2" | sha256sum -c -; \
     bunzip2 -c /tmp/restic.bz2 > /usr/local/bin/restic; \
     chmod 0755 /usr/local/bin/restic

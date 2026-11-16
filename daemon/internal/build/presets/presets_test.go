@@ -7,8 +7,10 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"testing/fstest"
 
 	"github.com/vantezzen/launchroom/daemon/internal/build/nextadapter"
+	"github.com/vantezzen/launchroom/daemon/internal/state"
 )
 
 func repo(t *testing.T, name string, buildEnv ...string) Facts {
@@ -152,6 +154,12 @@ func TestPresetTable(t *testing.T) {
 				if r.HealthPath != "/up" || r.Port != 8080 {
 					t.Fatalf("health %s port %d", r.HealthPath, r.Port)
 				}
+				if !slices.Equal(r.GeneratedSecrets, []state.GeneratedSecret{{Name: "APP_KEY", Length: 32, Encoding: state.SecretAlnum}}) {
+					t.Fatalf("generated secrets = %+v", r.GeneratedSecrets)
+				}
+				if !slices.Contains(decisionIDs(r), "app-key") || slices.Contains(warningCodes(r), "app-key") {
+					t.Fatalf("APP_KEY is a removable decision, not a warning: decisions %v warnings %v", decisionIDs(r), warningCodes(r))
+				}
 			},
 		},
 		{
@@ -195,6 +203,9 @@ func TestPresetTable(t *testing.T) {
 				}
 				if len(r.Processes) != 2 || r.Processes[0].Args[2] != "mysite" {
 					t.Fatalf("celery processes = %+v", r.Processes)
+				}
+				if !slices.Equal(r.GeneratedSecrets, []state.GeneratedSecret{{Name: "SECRET_KEY", Length: 50, Encoding: state.SecretAlnum}}) {
+					t.Fatalf("generated secrets = %+v (settings read SECRET_KEY from the environment)", r.GeneratedSecrets)
 				}
 			},
 		},
@@ -240,8 +251,11 @@ func TestDisabledDecisionsAndForcing(t *testing.T) {
 	if r.ReleaseCommand != nil || r.Plan.DeployVariables["RAILPACK_SKIP_MIGRATIONS"] != "" {
 		t.Fatalf("disabled decision still applied: %+v", r.Effect)
 	}
-	if slices.Contains(decisionIDs(r), "release-migrations") || slices.Contains(warningCodes(r), "app-key") {
-		t.Fatal("disabled decision/warning still listed")
+	if slices.Contains(decisionIDs(r), "release-migrations") || slices.Contains(decisionIDs(r), "app-key") {
+		t.Fatal("disabled decision still listed")
+	}
+	if r.GeneratedSecrets != nil {
+		t.Fatalf("removed app-key decision still generates %+v", r.GeneratedSecrets)
 	}
 	if r.HealthPath != "/up" {
 		t.Fatal("defaults must survive removed decisions")
@@ -283,6 +297,32 @@ func TestGatherEnvRefs(t *testing.T) {
 	for name, want := range cases {
 		if got := repo(t, name).EnvRefs; !slices.Equal(got, want) {
 			t.Errorf("%s: env refs = %v, want %v", name, got, want)
+		}
+	}
+}
+
+func TestDjangoSecretKeyEnv(t *testing.T) {
+	for settings, want := range map[string]string{
+		`SECRET_KEY = os.environ["DJANGO_SECRET_KEY"]`:                  "DJANGO_SECRET_KEY",
+		`SECRET_KEY = os.getenv('SECRET_KEY')`:                          "SECRET_KEY",
+		`SECRET_KEY = env("DJANGO_SECRET_KEY")`:                         "DJANGO_SECRET_KEY",
+		`SECRET_KEY = env.str("SECRET_KEY", default="x")`:               "SECRET_KEY",
+		`SECRET_KEY = config("SECRET_KEY")`:                             "SECRET_KEY",
+		`SECRET_KEY = "django-insecure-abc"`:                            "",
+		`# SECRET_KEY = os.environ["OLD"]` + "\nSECRET_KEY = 'literal'": "",
+	} {
+		fsys := fstest.MapFS{
+			"manage.py":        {Data: []byte(`os.environ.setdefault("DJANGO_SETTINGS_MODULE", "site.settings")`)},
+			"site/settings.py": {Data: []byte(settings + "\nWSGI_APPLICATION = \"site.wsgi.application\"\n")},
+			"requirements.txt": {Data: []byte("django\ngunicorn\n")},
+		}
+		f := Gather(fsys, nil)
+		if f.Django.SecretKeyEnv != want {
+			t.Errorf("%s: SecretKeyEnv = %q, want %q", settings, f.Django.SecretKeyEnv, want)
+		}
+		r, _ := Resolve(f, Info{Provider: "python"}, "", nil)
+		if got := slices.Contains(decisionIDs(r), "secret-key"); got != (want != "") {
+			t.Errorf("%s: secret-key decision = %v", settings, got)
 		}
 	}
 }

@@ -52,6 +52,8 @@ type Effect struct {
 	ReleaseCommand []string
 	HealthPath     string
 	Port           int
+	// GeneratedSecrets are runtime secrets the dashboard creates when the service has none.
+	GeneratedSecrets []state.GeneratedSecret
 }
 
 // Decision is one removable preset decision (a UI chip) and its effect.
@@ -173,6 +175,11 @@ func merge(dst *Effect, src Effect) {
 	}
 	if src.HealthPath != "" {
 		dst.HealthPath = src.HealthPath
+	}
+	for _, g := range src.GeneratedSecrets {
+		if !slices.ContainsFunc(dst.GeneratedSecrets, func(have state.GeneratedSecret) bool { return have.Name == g.Name }) {
+			dst.GeneratedSecrets = append(dst.GeneratedSecrets, g)
+		}
 	}
 	if src.Port != 0 {
 		dst.Port = src.Port

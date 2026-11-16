@@ -237,3 +237,27 @@ func (PhpExtensionName) ProtocolSchema() ScalarSchema { return enumSchema(phpExt
 func (v PhpExtensionName) Validate() error {
 	return checkEnum("php extension", string(v), phpExtensionNames)
 }
+
+// SecretEncoding is how a generated secret's random value is written: the
+// encodings of the dashboard's secret() generator (docs/06 §3.1).
+type SecretEncoding string
+
+// Encodings of a generated secret.
+const (
+	// SecretAlnum is n random alphanumeric characters.
+	SecretAlnum SecretEncoding = "alnum"
+	// SecretBase64, SecretBase64URL and SecretHex encode n random bytes.
+	SecretBase64    SecretEncoding = "base64"
+	SecretBase64URL SecretEncoding = "base64url"
+	SecretHex       SecretEncoding = "hex"
+)
+
+var secretEncodings = []string{string(SecretAlnum), string(SecretBase64), string(SecretBase64URL), string(SecretHex)}
+
+// ProtocolSchema implements SchemaDescriber.
+func (SecretEncoding) ProtocolSchema() ScalarSchema { return enumSchema(secretEncodings) }
+
+// Validate checks the value.
+func (v SecretEncoding) Validate() error {
+	return checkEnum("secret encoding", string(v), secretEncodings)
+}

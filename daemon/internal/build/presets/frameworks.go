@@ -20,7 +20,9 @@ const NextAdapterDecision = "deployment-adapter"
 type laravel struct{}
 
 func (laravel) Name() string { return "laravel" }
-func (laravel) Version() int { return 1 }
+
+// Version 2: APP_KEY is generated (decision app-key) instead of a warning.
+func (laravel) Version() int { return 2 }
 
 func (laravel) Match(f Facts, i Info) bool {
 	return f.Files["artisan"] && (f.ComposerRequire["laravel/framework"] || i.Metadata["phpFramework"] == "laravel")
@@ -66,15 +68,24 @@ func (laravel) Propose(f Facts, _ Info) Proposal {
 			Effect: Effect{Processes: []state.ProcessSuggestion{{Name: "reverb", Args: []string{"php", "artisan", "reverb:start", "--host=0.0.0.0", "--port=8080"}}}},
 		})
 	}
-	p.Decisions = append(p.Decisions, Decision{ID: "health-up", Title: "Health check on /up", Effect: Effect{HealthPath: "/up"}})
-	p.Warnings = append(p.Warnings, Warning{Code: "app-key", Message: "Laravel needs APP_KEY at runtime. Generate one in the service variables if it is not set."})
+	p.Decisions = append(p.Decisions,
+		Decision{ID: "health-up", Title: "Health check on /up", Effect: Effect{HealthPath: "/up"}},
+		Decision{
+			ID: "app-key", Title: "Generate APP_KEY",
+			Detail: "Laravel can't start without APP_KEY. When the service has none, launchroom creates one as a secret variable per environment, kept across deploys.",
+			// 32 alphanumeric characters are a valid AES-256-CBC key for Laravel's encrypter.
+			Effect: Effect{GeneratedSecrets: []state.GeneratedSecret{{Name: "APP_KEY", Length: 32, Encoding: state.SecretAlnum}}},
+		},
+	)
 	return p
 }
 
 type django struct{}
 
 func (django) Name() string { return "django" }
-func (django) Version() int { return 1 }
+
+// Version 2: SECRET_KEY is generated when the settings read it from the environment.
+func (django) Version() int { return 2 }
 
 func (django) Match(f Facts, _ Info) bool {
 	return f.Files["manage.py"] && f.PythonDeps["django"]
@@ -126,6 +137,13 @@ func (django) Propose(f Facts, _ Info) Proposal {
 		})
 	} else {
 		p.Warnings = append(p.Warnings, Warning{Code: "static-root-missing", Message: "STATIC_ROOT is not set, so static files are not collected. Set STATIC_ROOT and serve them with whitenoise."})
+	}
+	if d.SecretKeyEnv != "" {
+		p.Decisions = append(p.Decisions, Decision{
+			ID: "secret-key", Title: "Generate " + d.SecretKeyEnv,
+			Detail: "Your settings read SECRET_KEY from " + d.SecretKeyEnv + ". When the service has none, launchroom creates one as a secret variable per environment, kept across deploys.",
+			Effect: Effect{GeneratedSecrets: []state.GeneratedSecret{{Name: state.EnvName(d.SecretKeyEnv), Length: 50, Encoding: state.SecretAlnum}}},
+		})
 	}
 	if f.PythonDeps["celery"] && project != "" {
 		p.Decisions = append(p.Decisions,

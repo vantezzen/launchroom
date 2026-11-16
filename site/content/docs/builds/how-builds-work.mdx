@@ -41,8 +41,8 @@ Presets are versioned and compose with Railpack instead of replacing it.
 | Preset | What it does |
 |---|---|
 | **Next.js** | Sets `HOSTNAME=0.0.0.0`, `PORT` and turns telemetry off. Generates a `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY` per service. On Next.js 16.2 and later, builds through the launchroom deployment adapter (below). Warns about the ISR cache when you run more than one replica. |
-| **Laravel** | Moves migrations into the release command `php artisan migrate --force`, runs `optimize` at container start instead of build so secrets don't land in `bootstrap/cache`, suggests queue (or Horizon), scheduler and Reverb processes, and uses `/up` as the health path. |
-| **Django** | Starts with gunicorn (uvicorn or daphne for ASGI) from your settings, runs `collectstatic` when `STATIC_ROOT` is set, makes `migrate --noinput` the release command and suggests Celery worker and beat processes. |
+| **Laravel** | Moves migrations into the release command `php artisan migrate --force`, runs `optimize` at container start instead of build so secrets don't land in `bootstrap/cache`, suggests queue (or Horizon), scheduler and Reverb processes, uses `/up` as the health path, and creates `APP_KEY` as a secret variable when the app has none ([generated values](/docs/projects/variables#generated-values)). |
+| **Django** | Starts with gunicorn (uvicorn or daphne for ASGI) from your settings, runs `collectstatic` when `STATIC_ROOT` is set, makes `migrate --noinput` the release command, suggests Celery worker and beat processes, and creates `SECRET_KEY` when your settings read it from the environment. |
 | **FastAPI, Flask, Litestar** | Finds the app object (`main.py`, `app.py`, `app/main.py`, …) and sets the start command, using `fastapi run` when `fastapi[standard]` is installed. |
 | **Static SPAs** (Vite, Create React App, Angular, static Astro, Next.js export) | Builds, then serves the output folder with Caddy on port 8080. |
 | **Node servers** (Express, Fastify, Hono, Nest) | Warns about a hard-coded `listen(3000)` or a missing start script. |
@@ -63,6 +63,17 @@ A PHP app only gets the database drivers its `composer.json` asks for. An app wr
 Your repository stays as it is. The build log and the detected panel show what was added, for example "Adds PHP extensions: pdo_pgsql (for postgres)". Connecting a new database therefore rebuilds the app, and the staged changes say why: "adds the PostgreSQL driver (pdo_pgsql)". A worker or cron runs its app's image, so its connections count for the app.
 
 If the app builds from your own Dockerfile, install the extensions there (for example with `install-php-extensions pdo_pgsql`). launchroom shows a warning naming the ones it would need.
+
+### HTTPS and logs for PHP apps
+
+Railpack serves PHP apps with FrankenPHP. launchroom adjusts its configuration a little for every PHP app it builds with Railpack (Laravel, Symfony or plain PHP):
+
+- **PHP knows the request came over HTTPS.** launchroom terminates HTTPS in front of the app, so the app itself only sees plain HTTP. launchroom sets `$_SERVER['HTTPS']` to `on` for requests that came in over HTTPS, so `asset()`, `url()` and redirects produce `https://` links without a `TrustProxies` setup.
+- **Logs stay readable.** FrankenPHP logs at info level instead of writing a debug line for every request.
+
+The build log says "Adjusted the PHP server for launchroom". If your repository has its own `Caddyfile`, launchroom leaves it as it is. To get the same behaviour there, set `env HTTPS` in `php_server` from the `X-Forwarded-Proto` header, which launchroom always sets itself and never takes from the client.
+
+Behind launchroom, `REMOTE_ADDR` is the address of launchroom's proxy. The visitor's address is in `X-Forwarded-For`, which launchroom also sets itself. Laravel reads it once you trust the proxy, for example with `$middleware->trustProxies(at: '*')` in `bootstrap/app.php`.
 
 ### The Next.js adapter
 

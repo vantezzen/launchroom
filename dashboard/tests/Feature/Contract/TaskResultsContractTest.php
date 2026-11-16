@@ -33,6 +33,7 @@ test('build, plan, failed-build and run_once completions decode into the Data mi
         ->and($plan->results->plan?->summary->processes[0]->args)->toBe(['php', 'artisan', 'horizon'])
         ->and($plan->results->plan?->summary->runtimeEnv)->toBe(['RAILPACK_SKIP_MIGRATIONS' => 'true'])
         ->and($plan->results->plan?->summary->phpExtensions[0]->name)->toBe('pdo_pgsql')
+        ->and($plan->results->plan?->summary->generatedSecrets[0]->expression())->toBe('${{ secret(32) }}')
         ->and($failed->results->failure?->class)->toBe('build_error')
         ->and($failed->results->failure?->hints[0]->code)->toBe('npm-ci-lockfile')
         ->and($failed->results->failure?->summary?->port)->toBe(3000)
@@ -76,6 +77,17 @@ test('an out-of-range Next.js report is rejected', function (): void {
 
     TaskCompletion::validateAndCreate($document);
 })->throws(ValidationException::class);
+
+test('a generated secret of an unknown encoding or out-of-range length is rejected', function (array $secret): void {
+    $document = json_decode(taskFixture('task-completion.plan'), true);
+    $document['plan']['summary']['generatedSecrets'] = [$secret];
+
+    TaskCompletion::validateAndCreate($document);
+})->with([
+    'encoding' => [['name' => 'APP_KEY', 'length' => 32, 'encoding' => 'raw']],
+    'length' => [['name' => 'APP_KEY', 'length' => 8, 'encoding' => 'alnum']],
+    'name' => [['name' => 'APP KEY', 'length' => 32, 'encoding' => 'alnum']],
+])->throws(ValidationException::class);
 
 test('step-grouped build log lines are accepted', function (): void {
     $batch = LogBatch::validateAndCreate(['apiVersion' => 'launchroom.vantezzen.io/v1', 'kind' => 'LogBatch', 'chunks' => [[

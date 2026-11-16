@@ -23,6 +23,7 @@ final class BuildSummary extends Data
      * @param  array<string, string>|null  $runtimeEnv
      * @param  list<ProcessSuggestion>|null  $processes
      * @param  list<string>|null  $releaseCommand
+     * @param  list<GeneratedSecret>|null  $generatedSecrets
      * @param  list<string>|null  $buildEnv
      * @param  list<string>|null  $envReferences
      * @param  list<BuildWarning>|null  $warnings
@@ -57,6 +58,8 @@ final class BuildSummary extends Data
         public ?array $releaseCommand = null,
         #[Max(1024)]
         public ?string $healthPath = null,
+        /** Runtime secrets created when the service has none (GenerateDeclaredSecrets, D86). */
+        public ?array $generatedSecrets = null,
         public ?array $buildEnv = null,
         public ?array $envReferences = null,
         public ?array $warnings = null,
@@ -77,6 +80,7 @@ final class BuildSummary extends Data
             'runtimeEnv.*' => ['string', 'max:4096'],
             'releaseCommand' => ['nullable', 'array', 'min:1', 'max:64'],
             'releaseCommand.*' => ['string', 'max:4096'],
+            'generatedSecrets' => ['nullable', 'array', 'max:8'],
             'buildEnv' => ['nullable', 'array', 'max:1024'],
             'buildEnv.*' => ['string', 'max:256'],
             'envReferences' => ['nullable', 'array', 'max:256'],
