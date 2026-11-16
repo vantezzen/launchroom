@@ -11,14 +11,15 @@ going down leaves the rest serving. On every deploy it replaces them one at a ti
 
 ## The scaling page
 
-Open the service's **Settings → Scaling**. The page starts with the current state, for example "3 replicas · control plane, server-2", then
+Open the service's **Settings → Scaling**. The page starts with the current state, for example "3 replicas on control plane, server-2", then
 one card per server that runs apps, with the replicas on it and its CPU and memory against capacity. Each change is
 checked against the scheduler as you type. The cards show where the replicas would go (new ones dashed, removed ones
 hollow) or why they wouldn't fit.
 
-Scaling settings belong to one environment, so production can run three replicas while staging runs one. Saving stages
-the change (**Save for next deploy**). The next deploy restarts the service with the existing image and doesn't
-rebuild. Compare & promote treats scaling as environment-specific and copies it to another environment only when you
+Scaling settings belong to one environment, so production can run three replicas while staging runs one. **Save** is a
+split button: **Save and apply** (the default) restarts the service now with the existing image and applies whatever
+else is staged in the environment. **Save for later** keeps the change staged until the next deploy or until you apply
+it. Neither rebuilds. Compare & promote treats scaling as environment-specific and copies it to another environment only when you
 check it.
 
 ## Replicas
@@ -35,14 +36,17 @@ To find a single setting, type it into the search field at the top of the settin
 
 ## Size of each replica
 
-Two sliders set the limits per replica:
+Pick a size for each replica:
 
-| Limit | Range | Default |
+| Size | CPU | Memory |
 |---|---|---|
-| CPU | 0.05 to 1024 cores (0.5 = half a core) | 1 core |
-| Memory | 16 MB to 1 TB | 512 MB |
+| Small | 0.5 core | 512 MB |
+| Medium | 1 core | 1 GB |
+| Large | 2 cores | 4 GB |
 
-The sliders end at the biggest server the service may run on. A replica that goes over its memory limit is restarted.
+A size that no server the service may run on can give says **Bigger than any server**. **Custom** opens two sliders,
+CPU from 0.05 to 1024 cores and memory from 16 MB to 1 TB, which end at the biggest server the service may run on. The
+default is 1 core and 512 MB. A replica that goes over its memory limit is restarted.
 Previews cap each replica at half a CPU by default.
 
 Limits are caps, not reservations. A service that idles at 80 MB only uses 80 MB, whatever its limit, so the limits of

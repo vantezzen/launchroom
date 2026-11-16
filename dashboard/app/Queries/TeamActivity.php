@@ -56,7 +56,7 @@ final class TeamActivity
         $kinds = $filters->kind === null ? null : ActivityFiltersData::GROUPS[$filters->kind];
         $wants = static fn (string $kind): bool => $kinds === null || in_array($kind, $kinds, true);
         // Alerts (docs/15 §3.6) include servers, so they don't need a project.
-        $alerts = $wants('alert') ? $this->alerts($teamId, $projects, $filters->project !== null) : [];
+        $alerts = $wants('alert') ? $this->alerts($teamId, $projects, $filters->project !== null, $filters->state === 'open') : [];
 
         if ($projects->isEmpty()) {
             return $alerts;
@@ -311,15 +311,16 @@ final class TeamActivity
     /**
      * Alerts as activity (docs/15 §3.6): when each opened, open or resolved,
      * with its summary (or how long it lasted). A project filter keeps the
-     * project's alerts only.
+     * project's alerts only; `$openOnly` the ones still firing.
      *
      * @param  Collection<int, Project>  $projects
      * @return list<ActivityEntryData>
      */
-    private function alerts(int $teamId, Collection $projects, bool $projectOnly): array
+    private function alerts(int $teamId, Collection $projects, bool $projectOnly, bool $openOnly): array
     {
         $alerts = Alert::query()
             ->where('team_id', $teamId)
+            ->when($openOnly, static fn ($q) => $q->where('status', AlertStatus::Firing->value))
             ->when($projectOnly, static fn ($q) => $q->whereIn('project_id', $projects->keys()->all()))
             ->with(['project:id,public_id,name', 'environment:id,public_id,name'])
             ->latest('opened_at')

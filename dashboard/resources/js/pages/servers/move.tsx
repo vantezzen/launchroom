@@ -187,32 +187,22 @@ export default function MoveServer({
                                                 <TypedConfirm
                                                     trigger={`Retire ${server.name}`}
                                                     title={`Retire ${server.name}?`}
-                                                    description={
-                                                        <>
-                                                            <span>
-                                                                {
-                                                                    move.target
-                                                                        .name
-                                                                }{' '}
-                                                                takes over its
-                                                                roles and
-                                                                labels.{' '}
-                                                                {server.name}{' '}
-                                                                stops its apps
-                                                                and its key is
-                                                                revoked.
-                                                            </span>
-                                                            <span>
-                                                                Switch DNS
-                                                                first: traffic
-                                                                that still
-                                                                reaches{' '}
-                                                                {server.name}{' '}
-                                                                fails
-                                                                afterwards.
-                                                            </span>
-                                                        </>
-                                                    }
+                                                    object={{
+                                                        name: server.name,
+                                                        detail: `to ${move.target.name}`,
+                                                    }}
+                                                    goesHeading="Ends"
+                                                    goes={[
+                                                        `${server.name}’s apps stop`,
+                                                        'Its key is revoked',
+                                                        'Traffic that still reaches it fails, so switch DNS first',
+                                                    ]}
+                                                    kept={[
+                                                        `Everything that moved keeps running on ${move.target.name}`,
+                                                        `${move.target.name} takes over its roles and labels`,
+                                                        'Its disk isn’t touched',
+                                                    ]}
+                                                    description={null}
                                                     expected={server.name}
                                                     confirmLabel="Retire server"
                                                     form={retire.form({

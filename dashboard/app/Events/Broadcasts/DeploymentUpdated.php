@@ -27,6 +27,11 @@ final readonly class DeploymentUpdated implements ShouldBroadcast
         public string $serviceId,
         public string $status,
         public bool $statusChanged = false,
+        /** The membership public id of whoever started it: also nudge their own channel. */
+        public ?string $memberId = null,
+        public ?string $projectId = null,
+        public ?string $serviceName = null,
+        public ?string $commitSha = null,
     ) {}
 
     /**
@@ -37,6 +42,7 @@ final readonly class DeploymentUpdated implements ShouldBroadcast
         return [
             Channel::Environment->private($this->environmentId),
             Channel::Deployment->private($this->deploymentId),
+            ...($this->memberId === null ? [] : [Channel::Member->private($this->memberId)]),
         ];
     }
 
@@ -56,6 +62,9 @@ final readonly class DeploymentUpdated implements ShouldBroadcast
             $this->serviceId,
             DeploymentStatus::from($this->status),
             $this->statusChanged,
+            $this->projectId,
+            $this->serviceName,
+            $this->commitSha,
         )->toArray();
     }
 }

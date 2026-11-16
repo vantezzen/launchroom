@@ -149,6 +149,7 @@ test('a repository import reads compose.yaml from the branch and builds its serv
     $this->actingAs($this->developer)->postJson(route('projects.compose.preview'), ['source' => 'repository', 'repository' => $repository->public_id, 'branch' => 'main'])
         ->assertOk()
         ->assertJsonPath('path', 'compose.yaml')
+        ->assertJsonPath('suggestedName', 'shop')
         ->assertJsonPath('preview.services.0.kind', 'app')
         ->assertJsonPath('preview.services.1.subtitle', 'Worker of api');
 

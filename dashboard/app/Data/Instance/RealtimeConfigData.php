@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Data\Instance;
 
+use App\Models\Membership;
+use App\Models\User;
 use Spatie\LaravelData\Data;
 
 /**
@@ -21,9 +23,11 @@ final class RealtimeConfigData extends Data
         public ?int $port,
         /** `http` or `https`. */
         public ?string $scheme,
+        /** The signed-in member's own channel id (`members.<id>`) in the current team: deployments they started. */
+        public ?string $member = null,
     ) {}
 
-    public static function current(): ?self
+    public static function current(?User $user = null): ?self
     {
         $key = config('broadcasting.connections.reverb.key');
 
@@ -40,6 +44,20 @@ final class RealtimeConfigData extends Data
             host: is_string($host) && $host !== '' ? $host : null,
             port: is_numeric($port) && (int) $port > 0 && (int) $port < 65536 ? (int) $port : null,
             scheme: in_array($scheme, ['http', 'https'], true) ? $scheme : null,
+            member: self::member($user),
         );
+    }
+
+    private static function member(?User $user): ?string
+    {
+        $teamId = $user?->getAttributes()['current_team_id'] ?? null;
+
+        if (! $user instanceof User || ! is_int($teamId)) {
+            return null;
+        }
+
+        $member = Membership::query()->where('team_id', $teamId)->where('user_id', $user->id)->value('public_id');
+
+        return is_string($member) ? $member : null;
     }
 }

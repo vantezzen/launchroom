@@ -36,7 +36,8 @@ When a pull request opens, launchroom:
 4. Deploys the apps at the pull request's head commit.
 
 Each new push to the pull request deploys its new head commit. Previews are listed on the project's **Previews** tab and
-under their own heading in the environment switcher. Open one to see its canvas with the pull request on top.
+under their own heading in the environment switcher. The tab shows open pull requests as cards with their address and
+state, and closed or expired previews as short rows below them. Open one to see its canvas with the pull request on top.
 
 **Focused previews**: when services have watch paths, launchroom builds only the services whose files the pull request
 changed. The rest run the commit the base environment runs and reuse their existing image without a build. The preview

@@ -16,6 +16,7 @@ final class ServerPlacementData extends Data
     /**
      * @param  array<string, string>  $labels
      * @param  list<ServerWorkloadData>  $workloads
+     * @param  list<string>  $volumes  services whose data lives on this server ("postgres (shop / production)")
      */
     public function __construct(
         public array $labels,
@@ -31,5 +32,7 @@ final class ServerPlacementData extends Data
         public array $workloads,
         /** Measure private-network links to its peers (docs/05 §2.1). */
         public bool $measureLinks = true,
+        /** Services whose volumes live here: the revoke dialog lists them (docs/08 §14). */
+        public array $volumes = [],
     ) {}
 }

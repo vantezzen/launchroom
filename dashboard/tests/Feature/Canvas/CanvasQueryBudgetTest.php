@@ -105,8 +105,9 @@ test('the service panel runs a fixed number of queries and builds the environmen
 
     $after = canvasQueries(fn () => $this->actingAs($this->developer)->get($url)->assertOk()->assertInertia(fn ($page) => $page->where('panel.tab', $tab)));
 
+    // Settings: 70 since the shell's open-alert count and server line (D87), one query each on every page.
     expect(count($after))->toBe(count($before))
-        ->and(count($after))->toBeLessThanOrEqual($tab === 'settings' ? 68 : 55)
+        ->and(count($after))->toBeLessThanOrEqual($tab === 'settings' ? 70 : 55)
         ->and(specBuilds($after))->toBe(1);
 })->with(['deployments', 'logs', 'settings']);
 

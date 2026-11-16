@@ -9,6 +9,7 @@ use App\Enums\ServerStatus;
 use App\Enums\StatusTone;
 use App\Enums\TeamRole;
 use App\Models\Deployment;
+use App\Models\Project;
 use App\Models\Server;
 use App\Models\ServiceInstance;
 use App\Queries\ProjectSummaries;
@@ -46,11 +47,12 @@ test('a healthy team needs nothing and the attention list is deferred', function
             ->etc());
 });
 
-test('a failed service is named on its card, links to why, and its project comes first', function (): void {
+test('a failed service is named on its card and links to why', function (): void {
     $world = DeploymentUi::make();
-    // "aaa" sorts before "shop" by name: problems must still win.
     $healthy = Projects::create($world->team, 'aaa');
     Projects::image($healthy, 'site');
+    // Cards sort by recent activity: "aaa" was last touched before shop's deploys.
+    Project::query()->whereKey($healthy->id)->update(['updated_at' => now()->subDays(30)]);
     $failed = failWeb($world);
     $href = route('deployments.show', $world->deploymentArgs($failed), absolute: false);
 

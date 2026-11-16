@@ -1,8 +1,16 @@
 import { useReactFlow, useViewport } from '@xyflow/react';
-import { LayoutGrid, Maximize, Minus, Plus, Search } from 'lucide-react';
+import {
+    LayoutGrid,
+    Map as MapIcon,
+    Maximize,
+    Minus,
+    Plus,
+    Search,
+} from 'lucide-react';
 import type { ComponentProps, ReactNode } from 'react';
 import { openCommandPalette } from '@/features/command-palette/command-palette';
 import { prefersReducedMotion } from '@/lib/motion';
+import { modShortcut } from '@/lib/platform';
 import { cn } from '@/lib/utils';
 
 function ToolButton({
@@ -39,11 +47,14 @@ function Divider() {
 export function CanvasToolbar({
     onAdd,
     onTidy,
+    map,
     staged,
     className,
 }: {
     onAdd?: () => void;
     onTidy?: () => void;
+    /** The overview map: whether it shows, and the button that flips it (wide screens). */
+    map?: { shown: boolean; onToggle: () => void };
     /** The staged changes' "Review & apply" (StagedToolbarButton), last. */
     staged?: ReactNode;
     className?: string;
@@ -87,6 +98,19 @@ export function CanvasToolbar({
                     <LayoutGrid aria-hidden="true" className="size-4" />
                 </ToolButton>
             )}
+            {map && (
+                <ToolButton
+                    label={map.shown ? 'Hide the map' : 'Show the map'}
+                    aria-pressed={map.shown}
+                    onClick={map.onToggle}
+                    className={cn(
+                        'hidden lg:inline-flex',
+                        map.shown && 'bg-hover text-foreground',
+                    )}
+                >
+                    <MapIcon aria-hidden="true" className="size-4" />
+                </ToolButton>
+            )}
             <Divider />
             <ToolButton
                 label="Zoom out"
@@ -110,11 +134,11 @@ export function CanvasToolbar({
             <ToolButton
                 // The visible text (⌘K) is part of the name (axe
                 // label-content-name-mismatch).
-                label="Search and commands ⌘K"
+                label={`Search and commands ${modShortcut('K')}`}
                 onClick={() => openCommandPalette()}
             >
                 <Search aria-hidden="true" className="size-4" />
-                <kbd className="font-sans type-small">⌘K</kbd>
+                <kbd className="font-sans type-small">{modShortcut('K')}</kbd>
             </ToolButton>
             {staged}
         </div>

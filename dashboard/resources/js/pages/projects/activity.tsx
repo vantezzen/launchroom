@@ -6,7 +6,11 @@ import ProjectLayout from '@/features/app-shell/project-layout';
 
 type Props = App.Data.Canvas.ProjectShellPropsData & {
     entries: App.Data.Activity.ActivityEntryData[];
-    filters: { project: string | null; kind: string | null };
+    filters: {
+        project: string | null;
+        kind: string | null;
+        state?: string | null;
+    };
 };
 
 /**

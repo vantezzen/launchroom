@@ -57,6 +57,8 @@ function instantDeploymentProps(
         servers: [],
         supersededBy: null,
         expectsRelease: preview.expectsRelease ?? false,
+        newer: null,
+        older: null,
     };
 
     return {

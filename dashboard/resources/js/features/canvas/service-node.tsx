@@ -36,6 +36,8 @@ import {
 } from '@/lib/format';
 import { ServiceGlyph } from '@/components/service-glyph';
 import { StagedChip } from '@/features/staged-changes/effects';
+import { openStagedChanges } from '@/features/staged-changes/staged-changes-sheet';
+import { describeCron, parseCron } from '@/features/service-settings/cron';
 
 /**
  * What a node's toolbar can do, provided by the canvas (service-canvas.tsx):
@@ -74,6 +76,17 @@ function placementLine(node: App.Data.Canvas.CanvasNodeData): string | null {
     return node.replicas > 1 ? `×${node.replicas}` : null;
 }
 
+/** "Weekdays at 03:30" for a cron's expression; the expression itself if it can't be put in words. */
+function scheduleLine(cron: string | null): string | null {
+    if (cron === null) {
+        return null;
+    }
+
+    const parsed = parseCron(cron);
+
+    return 'cron' in parsed ? describeCron(parsed.cron) : cron;
+}
+
 /**
  * A service on the canvas (design-system §6 "Canvas node", direction §9.4):
  * logo, name and one subtitle; the status line with its open alerts as an
@@ -82,8 +95,10 @@ function placementLine(node: App.Data.Canvas.CanvasNodeData): string | null {
  * req/min) and the error rate, else the CPU sparkline and memory; then
  * placement. Hovering, focusing or selecting a node shows its toolbar
  * (panel tabs, the live URL, the menu). Selected: 2 px foreground ring. Staged:
- * dashed signal outline + chip. Degraded: amber ring + chip. Failed: only
- * the status line turns red.
+ * dashed signal outline + chip, and what is staged in words ("1 variable
+ * and 2 settings", opens the review). A staged removal: dimmed, name struck
+ * through, "Removed when applied". Degraded: amber ring + chip. Failed:
+ * only the status line turns red.
  */
 export const ServiceNode = memo(function ServiceNode({
     data,
@@ -96,6 +111,7 @@ export const ServiceNode = memo(function ServiceNode({
     const fact =
         data.domain ?? data.privateAddress?.replace(/^https?:\/\//, '');
     const placement = placementLine(data);
+    const schedule = data.kind === 'cron' ? scheduleLine(data.schedule) : null;
     const cpu = usage?.cpuCores ?? [];
     const hasCpu = cpu.some((value) => value !== null && value > 0);
     const memory = usage?.currentMemMb ?? null;
@@ -111,7 +127,7 @@ export const ServiceNode = memo(function ServiceNode({
         memory !== null ||
         placement !== null ||
         data.volume !== null ||
-        data.kind === 'cron';
+        schedule !== null;
 
     return (
         <div
@@ -145,7 +161,13 @@ export const ServiceNode = memo(function ServiceNode({
                         }
                     />
                     <div className="flex min-w-0 flex-1 flex-col">
-                        <span className="truncate type-label text-[14px] leading-5 font-semibold">
+                        <span
+                            className={cn(
+                                'truncate type-label text-[14px] leading-5 font-semibold',
+                                data.removed &&
+                                    'line-through decoration-muted-foreground',
+                            )}
+                        >
                             {data.name}
                         </span>
                         <span className="truncate type-small text-muted-foreground">
@@ -195,6 +217,32 @@ export const ServiceNode = memo(function ServiceNode({
                             />
                         )}
                     </div>
+                    {data.removed ? (
+                        <span className="type-small text-status-error">
+                            Removed when applied
+                        </span>
+                    ) : (
+                        data.stagedSummary && (
+                            <button
+                                type="button"
+                                title="Review the staged changes"
+                                className="nodrag nopan inline-flex min-w-0 items-center gap-1.5 self-start rounded-sm type-small text-signal hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                                onClick={(event) => {
+                                    event.stopPropagation();
+                                    openStagedChanges();
+                                }}
+                            >
+                                <span
+                                    aria-hidden="true"
+                                    className="size-1.5 shrink-0 rounded-full border border-dashed border-signal"
+                                />
+                                <span className="truncate">
+                                    {data.stagedSummary}
+                                </span>
+                                <span className="sr-only"> staged</span>
+                            </button>
+                        )
+                    )}
                     {data.kind === 'database' && data.backup ? (
                         <BackupHealthStatus
                             health={data.backup}
@@ -271,7 +319,9 @@ export const ServiceNode = memo(function ServiceNode({
                             </span>
                         </span>
                     )}
-                    {data.kind === 'cron' && <span>Cron</span>}
+                    {schedule && (
+                        <span className="min-w-0 truncate">{schedule}</span>
+                    )}
                     {placement && (
                         <span className="ml-auto min-w-0 truncate">
                             {placement}

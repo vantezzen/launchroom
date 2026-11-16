@@ -1,5 +1,6 @@
 import { router, usePage } from '@inertiajs/react';
 import { Check, ChevronsUpDown, Plus } from 'lucide-react';
+import { StatusIcon } from '@/components/status';
 import { useState } from 'react';
 import {
     DropdownMenu,
@@ -16,15 +17,18 @@ import {
     useSidebar,
 } from '@/components/ui/sidebar';
 import { CreateTeamDialog } from '@/features/teams/create-team-dialog';
+import { index as servers } from '@/routes/servers';
 import { current } from '@/routes/teams';
 
 /**
  * The team selector in the sidebar header (design-system §13.2): the team's
- * initial, name and role; the menu lists every team and, for owners and
- * admins, "Create team".
+ * name and, under it, how its servers are ("2 servers online", "1 server
+ * down"; the role for people who can't see servers). The menu starts with
+ * the team and your role, links the servers' line to Servers, then lists
+ * every team and, for owners and admins, "Create team".
  */
 export function TeamSwitcher() {
-    const { teams } = usePage().props;
+    const { teams, fleet } = usePage().props;
     const { isMobile, state } = useSidebar();
     const [creating, setCreating] = useState(false);
 
@@ -33,6 +37,9 @@ export function TeamSwitcher() {
     }
 
     const active = teams.current;
+    const role = active.role
+        ? active.role.charAt(0).toUpperCase() + active.role.slice(1)
+        : null;
 
     return (
         <SidebarMenu className="min-w-0 flex-1">
@@ -55,12 +62,24 @@ export function TeamSwitcher() {
                                 <span className="truncate type-label">
                                     {active.name}
                                 </span>
-                                <span className="truncate type-small text-muted-foreground">
-                                    {active.role
-                                        ? active.role.charAt(0).toUpperCase() +
-                                          active.role.slice(1)
-                                        : ''}
-                                </span>
+                                {fleet ? (
+                                    <span
+                                        className="flex min-w-0 items-center gap-1.5 type-small text-muted-foreground"
+                                        data-test="team-fleet"
+                                    >
+                                        <StatusIcon
+                                            state={fleet.state}
+                                            className="size-3"
+                                        />
+                                        <span className="truncate">
+                                            {fleet.label}
+                                        </span>
+                                    </span>
+                                ) : (
+                                    <span className="truncate type-small text-muted-foreground">
+                                        {role}
+                                    </span>
+                                )}
                             </span>
                             <ChevronsUpDown className="ml-auto size-4 group-data-[collapsible=icon]:hidden" />
                         </SidebarMenuButton>
@@ -74,6 +93,31 @@ export function TeamSwitcher() {
                                 : 'bottom'
                         }
                     >
+                        <DropdownMenuLabel className="flex flex-col gap-0.5">
+                            <span className="truncate type-label">
+                                {active.name}
+                            </span>
+                            {role && (
+                                <span className="type-small font-normal text-muted-foreground">
+                                    You’re{' '}
+                                    {role === 'Admin' || role === 'Owner'
+                                        ? 'an'
+                                        : 'a'}{' '}
+                                    {role.toLowerCase()}
+                                </span>
+                            )}
+                        </DropdownMenuLabel>
+                        {fleet && (
+                            <DropdownMenuItem
+                                onSelect={() => router.visit(servers())}
+                            >
+                                <StatusIcon state={fleet.state} />
+                                <span className="flex-1 truncate">
+                                    {fleet.label}
+                                </span>
+                            </DropdownMenuItem>
+                        )}
+                        <DropdownMenuSeparator />
                         <DropdownMenuLabel className="type-small text-muted-foreground">
                             Teams
                         </DropdownMenuLabel>

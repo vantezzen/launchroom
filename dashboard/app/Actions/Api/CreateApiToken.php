@@ -18,6 +18,7 @@ use App\Models\User;
 use App\Queries\Api\ApiTokenOptions;
 use App\Support\Api\NewApiToken;
 use Illuminate\Support\Facades\DB;
+use SensitiveParameter;
 
 /**
  * Issues a personal access token bound to one of the user's teams (docs/16
@@ -68,6 +69,7 @@ final readonly class CreateApiToken
                 'team_id' => $team->id,
                 'client' => $client,
                 'created_ip' => $actor->ip,
+                'hint' => $this->hint($secret),
                 'tokenable_type' => $user->getMorphClass(),
                 'tokenable_id' => $user->id,
             ])->save();
@@ -88,5 +90,14 @@ final readonly class CreateApiToken
 
             return new NewApiToken($token, $token->id.'|'.$secret);
         });
+    }
+
+    /**
+     * `lr_pat_…a1b2`: the configured prefix and the secret's last four
+     * characters (Sanctum's CRC32 checksum), nothing that helps guess it.
+     */
+    private function hint(#[SensitiveParameter] string $secret): string
+    {
+        return config()->string('sanctum.token_prefix').'…'.mb_substr($secret, -4);
     }
 }

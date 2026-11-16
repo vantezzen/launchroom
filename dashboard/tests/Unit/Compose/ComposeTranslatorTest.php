@@ -377,3 +377,21 @@ test('configs with inline content become read-only config files (D65)', function
         ->and($db->public)->toBeFalse()
         ->and(BlueprintValidator::errors($translation->blueprint))->toBe([]);
 });
+
+test('the suggested project name comes from the file, the repository, then the public image', function (): void {
+    $unnamed = <<<'YAML'
+        services:
+          web:
+            image: ghcr.io/umami-software/umami:3.4.0
+            ports: ["3000:3000"]
+          db:
+            image: postgres:17
+        YAML;
+    $named = "name: analytics\n".$unnamed;
+    $digest = str_replace('ghcr.io/umami-software/umami:3.4.0', 'nginx@sha256:'.str_repeat('a', 64), $unnamed);
+
+    expect(ComposeTranslator::suggestedName(bpCompose($named)->blueprint, 'acme/stats'))->toBe('analytics')
+        ->and(ComposeTranslator::suggestedName(bpCompose($unnamed)->blueprint, 'acme/stats'))->toBe('stats')
+        ->and(ComposeTranslator::suggestedName(bpCompose($unnamed)->blueprint))->toBe('umami')
+        ->and(ComposeTranslator::suggestedName(bpCompose($digest)->blueprint))->toBe('nginx');
+});

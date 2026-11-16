@@ -87,7 +87,12 @@ export default function ReplaceServer({
                 />
 
                 {replacement !== null && (
-                    <ReplacementProgress replacement={replacement} />
+                    <ReplacementProgress
+                        replacement={replacement}
+                        oldDevice={kind(server.id)}
+                        newDevice={kind(replacement.newServerId)}
+                        serving={server.roles.includes('edge')}
+                    />
                 )}
 
                 {replacement === null && blockedReason !== null && (

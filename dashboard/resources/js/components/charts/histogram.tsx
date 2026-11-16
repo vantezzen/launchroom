@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type { KeyboardEvent } from 'react';
 import { cn } from '@/lib/utils';
 import { formatTick, formatTooltipTime } from './format';
@@ -26,6 +26,8 @@ type HistogramProps = {
     height?: number;
     /** Click/Enter on a bucket (e.g. narrow the log range to it). */
     onSelect?: (bucket: HistogramBucket) => void;
+    /** Drag across buckets to pick a window (epoch ms); a plain click stays `onSelect`. */
+    onBrush?: (window: { from: number; to: number }) => void;
     /** Highlighted bucket range (e.g. the selected log line's minute). */
     highlight?: number | null;
     unit?: string;
@@ -41,8 +43,9 @@ const AXIS = 18;
  * one-line readout; Enter/click selects the bucket. Markers a few pixels
  * apart share one tick with a count ("3 deploys"), labels that would collide
  * are left out, and hovering, focusing or tapping a tick lists its events.
- * Renders nothing without buckets; all-zero buckets keep the axis so
- * "no lines" reads as a fact.
+ * With `onBrush`, dragging across two or more buckets shades the span
+ * and picks it as a window. Renders nothing without buckets; all-zero
+ * buckets keep the axis so "no lines" reads as a fact.
  */
 export function Histogram({
     buckets,
@@ -50,6 +53,7 @@ export function Histogram({
     markers = [],
     height = 72,
     onSelect,
+    onBrush,
     highlight = null,
     unit = 'lines',
     className,
@@ -57,6 +61,11 @@ export function Histogram({
     const [ref, width] = useMeasuredWidth<HTMLDivElement>();
     const [active, setActive] = useState<number | null>(null);
     const [activeMarker, setActiveMarker] = useState<number | null>(null);
+    // Drag to pick a window: the bucket where it started and where it is.
+    const [brush, setBrush] = useState<{ from: number; to: number } | null>(
+        null,
+    );
+    const dragged = useRef(false);
 
     if (buckets.length === 0) {
         return null;
@@ -82,6 +91,22 @@ export function Histogram({
         (_, index) => t0 + (span * index) / 4,
     );
     const current = active !== null ? buckets[active] : null;
+    const indexAt = (clientX: number, rect: DOMRect) =>
+        Math.min(
+            buckets.length - 1,
+            Math.max(
+                0,
+                Math.floor(
+                    ((clientX - rect.left) / rect.width) * buckets.length,
+                ),
+            ),
+        );
+    const brushed = brush
+        ? {
+              first: Math.min(brush.from, brush.to),
+              last: Math.max(brush.from, brush.to),
+          }
+        : null;
     const groups =
         width > 0
             ? groupMarkers(
@@ -121,20 +146,60 @@ export function Histogram({
                 role="img"
                 aria-label={`${label}: ${totalLines} ${unit}${totalErrors ? `, ${totalErrors} errors` : ''}. Use the arrow keys to read buckets.`}
                 tabIndex={0}
-                className="relative w-full rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-(--signal)"
+                className={cn(
+                    'relative w-full rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-(--signal)',
+                    onBrush && 'cursor-crosshair touch-pan-y select-none',
+                )}
                 style={{ height }}
                 onKeyDown={onKeyDown}
                 onBlur={() => setActive(null)}
                 onPointerLeave={() => setActive(null)}
+                onPointerDown={(event) => {
+                    if (!onBrush || event.button !== 0) {
+                        return;
+                    }
+
+                    const rect = event.currentTarget.getBoundingClientRect();
+                    const index = indexAt(event.clientX, rect);
+                    event.currentTarget.setPointerCapture(event.pointerId);
+                    dragged.current = false;
+                    setBrush({ from: index, to: index });
+                }}
                 onPointerMove={(event) => {
                     const rect = event.currentTarget.getBoundingClientRect();
-                    const index = Math.floor(
-                        ((event.clientX - rect.left) / rect.width) *
-                            buckets.length,
-                    );
-                    setActive(Math.min(buckets.length - 1, Math.max(0, index)));
+                    const index = indexAt(event.clientX, rect);
+                    setActive(index);
+
+                    if (brush && index !== brush.to) {
+                        setBrush({ from: brush.from, to: index });
+                    }
                 }}
+                onPointerUp={() => {
+                    if (!brush || !onBrush) {
+                        return;
+                    }
+
+                    const first = Math.min(brush.from, brush.to);
+                    const last = Math.max(brush.from, brush.to);
+                    setBrush(null);
+
+                    if (last > first) {
+                        dragged.current = true;
+                        onBrush({
+                            from: buckets[first].start,
+                            to: buckets[last].end,
+                        });
+                    }
+                }}
+                onPointerCancel={() => setBrush(null)}
                 onClick={() => {
+                    // The click that ends a drag is not a bucket pick.
+                    if (dragged.current) {
+                        dragged.current = false;
+
+                        return;
+                    }
+
                     if (active !== null && onSelect) {
                         onSelect(buckets[active]);
                     }
@@ -155,6 +220,22 @@ export function Histogram({
                             strokeWidth={1}
                             style={{ stroke: 'var(--border)' }}
                         />
+                        {brushed && brushed.last > brushed.first && (
+                            <rect
+                                x={brushed.first * slot}
+                                y={0}
+                                width={
+                                    (brushed.last - brushed.first + 1) * slot
+                                }
+                                height={plotH}
+                                style={{
+                                    fill: 'var(--signal-soft)',
+                                    stroke: 'var(--signal)',
+                                }}
+                                strokeWidth={1}
+                                strokeDasharray="3 2"
+                            />
+                        )}
                         {buckets.map((bucket, index) => {
                             const h =
                                 bucket.total === 0

@@ -36,6 +36,7 @@ use App\Support\Security\InvestigationSummary;
 use App\Support\Security\LifecycleProducts;
 use App\Support\Security\VersionOrder;
 use Carbon\CarbonImmutable;
+use Illuminate\Contracts\Database\Query\Builder as QueryBuilder;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
@@ -136,6 +137,21 @@ final readonly class SecurityOverview
             requests: $this->requests($team, $range, $now, $scope),
         );
 
+        // Dismissed and recently fixed findings stay findable (docs/22 §9.2).
+        $past = SecurityFinding::query()
+            ->where('team_id', $team->id)
+            ->where(static fn (QueryBuilder $q) => $q->where('status', SecurityFindingStatus::Dismissed->value)
+                ->orWhere(static fn (QueryBuilder $q) => $q->where('status', SecurityFindingStatus::Resolved->value)->where('resolved_at', '>=', $now->subDays(30))))
+            ->when($scope instanceof SecurityScope, static fn ($q) => $q->whereIn('service_instance_id', $scoped))
+            ->orderByRaw('coalesce(resolved_at, dismissed_at) desc nulls last')
+            ->limit(100)
+            ->get();
+        $refs->load($team->id, array_values(array_unique(array_map(static fn (SecurityFinding $f): int => $f->service_instance_id, $past->all()))));
+        $pastTitles = $this->titles(self::advisoryIds($past->all()));
+        $pastCards = fn (SecurityFindingStatus $status): array => array_values(array_filter(
+            array_map(fn (SecurityFinding $f): ?FindingCardData => $this->card($f, $refs, $pastTitles, null), $past->where('status', $status)->take(50)->all()),
+        ));
+
         return new SecurityPageData(
             hasServices: $live !== [],
             checkedAt: $osv->last_success_at?->toIso8601ZuluString(),
@@ -156,6 +172,8 @@ final readonly class SecurityOverview
                 ->when($scope instanceof SecurityScope, static fn ($q) => $q->whereIn('service_instance_id', $scoped))
                 ->count(),
             scope: $scope?->data,
+            dismissedFindings: $pastCards(SecurityFindingStatus::Dismissed),
+            fixedFindings: $pastCards(SecurityFindingStatus::Resolved),
         );
     }
 

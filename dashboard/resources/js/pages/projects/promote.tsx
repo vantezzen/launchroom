@@ -3,7 +3,12 @@ import { EmptyState } from '@/components/patterns/empty-state';
 import { MetaLine } from '@/components/patterns/meta-line';
 import { Page, PageHeader } from '@/components/patterns/page';
 import { TimeAgo } from '@/components/time-ago';
-import { ArrowLeftRight, ArrowRight, TriangleAlert } from 'lucide-react';
+import {
+    ArrowLeftRight,
+    ArrowRight,
+    ArrowUpRight,
+    TriangleAlert,
+} from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -266,6 +271,113 @@ function ItemRow({
             </div>
             <EffectBadge effect={item.effect} />
         </li>
+    );
+}
+
+/**
+ * The selected changes as counts (DPL-7): the same signs as the rows,
+ * then the number, then the word.
+ */
+function KindTiles({ items }: { items: Item[] }) {
+    const kinds: App.Enums.ChangeKind[] = ['added', 'changed', 'removed'];
+
+    return (
+        <dl className="grid grid-cols-3 gap-2">
+            {kinds.map((kind) => {
+                const total = items.filter((item) => item.kind === kind).length;
+
+                return (
+                    <div
+                        key={kind}
+                        className="flex flex-col gap-0.5 rounded-lg border bg-recessed px-2.5 py-2"
+                    >
+                        <dt className="sr-only">{kindSign[kind].label}</dt>
+                        <dd className="flex items-baseline gap-1.5">
+                            <span
+                                aria-hidden="true"
+                                className={cn(
+                                    'type-mono',
+                                    total === 0
+                                        ? 'text-muted-foreground'
+                                        : kind === 'added'
+                                          ? 'text-status-ok'
+                                          : kind === 'changed'
+                                            ? 'text-signal'
+                                            : 'text-status-error',
+                                )}
+                            >
+                                {kindSign[kind].sign}
+                            </span>
+                            <span className="type-heading tabular-nums">
+                                {total}
+                            </span>
+                        </dd>
+                        <span
+                            aria-hidden="true"
+                            className="type-small text-muted-foreground"
+                        >
+                            {kindSign[kind].label.toLowerCase()}
+                        </span>
+                    </div>
+                );
+            })}
+        </dl>
+    );
+}
+
+/**
+ * Which code moves (DPL-7): what the target runs now, then what it gets,
+ * with the provider's compare view when there is one.
+ */
+function CommitRange({
+    image,
+    from,
+    to,
+}: {
+    image: App.Data.Promotions.PromotionImageData;
+    from: string;
+    to: string;
+}) {
+    return (
+        <span className="flex min-w-0 flex-col gap-0.5 type-small text-muted-foreground">
+            {image.targetCommitSha && (
+                <span className="flex min-w-0 items-baseline gap-1.5">
+                    <span className="shrink-0">{to}</span>
+                    <span className="shrink-0 type-mono-small text-foreground">
+                        {shortSha(image.targetCommitSha)}
+                    </span>
+                    <span className="truncate">
+                        {image.targetCommitMessage}
+                    </span>
+                </span>
+            )}
+            <span className="flex min-w-0 items-baseline gap-1.5">
+                <span className="shrink-0">
+                    {image.targetCommitSha ? (
+                        <>
+                            <span aria-hidden="true">→ </span>
+                            <span className="sr-only">becomes </span>
+                        </>
+                    ) : null}
+                    {from}
+                </span>
+                <span className="shrink-0 type-mono-small text-foreground">
+                    {shortSha(image.commitSha ?? null)}
+                </span>
+                <span className="truncate">{image.commitMessage}</span>
+            </span>
+            {image.compareUrl && (
+                <a
+                    href={image.compareUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-0.5 self-start text-foreground underline-offset-4 hover:underline"
+                >
+                    Compare commits
+                    <ArrowUpRight aria-hidden="true" className="size-3" />
+                </a>
+            )}
+        </span>
     );
 }
 
@@ -562,14 +674,12 @@ function Comparison({
                                         htmlFor={`image-${image.serviceId}`}
                                         className="flex flex-col items-start gap-0.5 type-body font-normal"
                                     >
-                                        <span>
-                                            {image.name}{' '}
-                                            <span className="type-mono-small text-muted-foreground">
-                                                {shortSha(
-                                                    image.commitSha ?? null,
-                                                )}
-                                            </span>
-                                        </span>
+                                        <span>{image.name}</span>
+                                        <CommitRange
+                                            image={image}
+                                            from={from}
+                                            to={to}
+                                        />
                                         <span className="type-small text-muted-foreground">
                                             {image.sameInputs
                                                 ? 'Build inputs match, so the image is reused.'
@@ -596,13 +706,18 @@ function Comparison({
                         )}{' '}
                         to {to}
                     </p>
+                    <KindTiles
+                        items={comparison.items.filter((item) =>
+                            selected.has(item.path),
+                        )}
+                    />
                     {restarts.length > 0 && (
                         <p className="type-small text-muted-foreground">
-                            Deploying restarts{' '}
+                            Restarts{' '}
                             {restarts.length > 1
                                 ? `${restarts.slice(0, -1).join(', ')} and ${restarts.at(-1)}`
-                                : restarts[0]}{' '}
-                            in {to}.
+                                : restarts[0]}
+                            .
                             {comparison.targetHasStagedChanges &&
                                 ` ${to}’s staged changes deploy with it.`}
                         </p>
@@ -615,15 +730,6 @@ function Comparison({
                             {error}
                         </p>
                     )}
-                    {missingValues.length > 0 && (
-                        <p className="type-small text-muted-foreground">
-                            Enter the {to} value for{' '}
-                            {missingValues
-                                .map((item) => item.key ?? item.label)
-                                .join(', ')}
-                            , or copy it.
-                        </p>
-                    )}
                     {comparison.canPromote ? (
                         <div className="flex flex-col gap-2">
                             {canDeploy && (
@@ -633,6 +739,15 @@ function Comparison({
                                 >
                                     Promote and deploy
                                 </Button>
+                            )}
+                            {missingValues.length > 0 && (
+                                <p className="type-small text-muted-foreground">
+                                    Fill in{' '}
+                                    {missingValues
+                                        .map((item) => item.key ?? item.label)
+                                        .join(', ')}{' '}
+                                    first, or copy the value from {from}.
+                                </p>
                             )}
                             <Button
                                 variant={canDeploy ? 'outline' : 'default'}

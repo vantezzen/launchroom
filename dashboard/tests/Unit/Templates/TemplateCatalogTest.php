@@ -128,7 +128,18 @@ test('the file must follow the schema', function (string $from, string $to, stri
     ['category: analytics', "category: analytics\nrepositories: [https://github.com/Acme/App.git]", 'repositories.0 must be a canonical'],
     ['category: analytics', "category: analytics\nrepositories: [http://github.com/acme/app]", 'repositories.0 must be a canonical'],
     ['category: analytics', 'category: analytics'."\nrepositories: https://github.com/acme/app", 'repositories must be a list'],
+    ['category: analytics', "category: analytics\nstarter: https://github.com/Acme/App.git", 'starter must be a canonical'],
+    ['category: analytics', "category: analytics\nstarter: https://github.com/acme/app", 'starter only applies to templates with a repository input'],
 ]);
+
+test('stacks can name a public starter repository to deploy without your own code', function (): void {
+    $summary = collect(resolve(TemplateCatalog::class)->summaries())->firstWhere('id', 'laravel-mysql-redis');
+
+    expect($summary)->toBeInstanceOf(TemplateSummaryData::class)
+        ->and($summary->needsRepository)->toBeTrue()
+        ->and($summary->starter)->toBe('https://github.com/laravel/laravel')
+        ->and(collect(resolve(TemplateCatalog::class)->summaries())->firstWhere('id', 'umami')?->starter)->toBeNull();
+});
 
 test('a template names its upstream repositories, matched however the URL is pasted (D70)', function (): void {
     $template = tplParse(str_replace('category: analytics', "category: analytics\nrepositories: [https://github.com/acme/demo, https://codeberg.org/acme/demo]", TPL_DEMO));

@@ -1,6 +1,5 @@
 import { Head, usePage } from '@inertiajs/react';
 import { useRef, useState } from 'react';
-import { ConfirmAction } from '@/components/confirm-action';
 import { CopyValue } from '@/components/copy-value';
 import InputError from '@/components/input-error';
 import { ChoiceTiles } from '@/components/patterns/choice-tiles';
@@ -16,8 +15,6 @@ import { ManifestRedirect } from '@/features/git/manifest-redirect';
 import { PROVIDER_CHOICES } from '@/features/git/providers';
 import type { ProviderChoice } from '@/features/git/providers';
 import { WebhookReachabilityNote } from '@/features/git/webhook-reachability-note';
-import { destroy as destroyConnection } from '@/routes/git/connections';
-import { destroy } from '@/routes/git/github';
 import {
     LearnMore,
     SettingsBody,
@@ -157,15 +154,6 @@ export default function GitSettings({
         </section>
     );
 
-    const removable = [
-        ...apps
-            .filter((app) => app.canManage)
-            .map((app) => ({ kind: 'app' as const, app })),
-        ...connections
-            .filter((connection) => connection.canManage)
-            .map((connection) => ({ kind: 'connection' as const, connection })),
-    ];
-
     return (
         <>
             <Head title="Git" />
@@ -257,58 +245,6 @@ export default function GitSettings({
                         >
                             <CreateGitHubAppForm primary={false} />
                         </SettingsRow>
-                    )}
-                </SettingsCard>
-            )}
-
-            {removable.length > 0 && (
-                <SettingsCard title="Danger zone">
-                    {removable.map((item) =>
-                        item.kind === 'app' ? (
-                            <SettingsRow
-                                key={item.app.id}
-                                label={`Disconnect ${item.app.name}`}
-                                description="Services stop receiving pushes until GitHub is connected again."
-                            >
-                                <ConfirmAction
-                                    trigger="Disconnect"
-                                    title={`Disconnect ${item.app.name}?`}
-                                    description="launchroom deletes the app’s credentials, installations and repository list. Services that deploy from these repositories stop receiving pushes and can’t build until GitHub is connected again. The app itself stays on GitHub, where you can delete it."
-                                    confirmLabel="Disconnect GitHub App"
-                                    form={destroy.form(item.app.id)}
-                                    destructive
-                                />
-                            </SettingsRow>
-                        ) : (
-                            <SettingsRow
-                                key={item.connection.id}
-                                label={`${item.connection.status === 'pending' ? 'Remove' : 'Disconnect'} ${item.connection.name}`}
-                                description={
-                                    item.connection.status === 'pending'
-                                        ? 'Its setup was never finished, so nothing uses it yet.'
-                                        : 'Services from it stop receiving pushes and can’t build until it is connected again.'
-                                }
-                            >
-                                <ConfirmAction
-                                    trigger={
-                                        item.connection.status === 'pending'
-                                            ? 'Remove'
-                                            : 'Disconnect'
-                                    }
-                                    title={`Disconnect ${item.connection.name}?`}
-                                    description={
-                                        item.connection.provider === 'git'
-                                            ? 'launchroom deletes the deploy key and the pinned host key. Remove the deploy key from the git server too.'
-                                            : `launchroom deletes its token and repository list and removes the webhooks it added on ${item.connection.host}. Revoke the application there if you no longer need it.`
-                                    }
-                                    confirmLabel="Disconnect"
-                                    form={destroyConnection.form(
-                                        item.connection.id,
-                                    )}
-                                    destructive
-                                />
-                            </SettingsRow>
-                        ),
                     )}
                 </SettingsCard>
             )}

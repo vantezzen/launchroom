@@ -27,6 +27,7 @@ import {
     stopService,
 } from '@/features/service-lifecycle/actions';
 import { DeployButton } from '@/features/service-lifecycle/deploy-button';
+import { useStagedBarShown } from './service-staged-bar';
 
 type Controls = App.Data.Canvas.ServiceControlsData;
 
@@ -43,7 +44,8 @@ type MenuAction = 'redeploy' | 'restart' | 'stop';
  * a service so nothing moves when its state changes.
  *
  * - Primary: Deploy (apps and images), Review & apply while the service
- *   has staged changes, Start while it is stopped. Databases, workers and
+ *   has staged changes (none while the panel's staged bar shows: that bar
+ *   is where they apply), Start while it is stopped. Databases, workers and
  *   crons have nothing new to deploy, so theirs is an outline Redeploy once
  *   they run.
  * - `⋯`: Redeploy… (apps and images), Restart… and Stop…. They never
@@ -72,6 +74,8 @@ export function ServiceControls({
     const [confirming, setConfirming] = useState<MenuAction | null>(null);
     // Set on select, read when the menu closes (before the next render).
     const opening = useRef(false);
+    // The panel's staged bar is the one home of "apply" while it shows.
+    const barShown = useStagedBarShown();
 
     if (!controls.canControl) {
         return null;
@@ -143,7 +147,7 @@ export function ServiceControls({
                 Redeploy
             </Button>
         )
-    ) : (
+    ) : controls.staged && barShown ? null : (
         <DeployButton
             project={project}
             environment={environment}

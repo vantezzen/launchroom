@@ -175,6 +175,45 @@ final class ComposeTranslator
     }
 
     /**
+     * The project name the import suggests (docs/17 §2.1): the file's own
+     * top-level `name:`, else the repository it came from ("acme/umami" →
+     * "umami"), else the image of the first public service without registry,
+     * owner and tag ("ghcr.io/umami-software/umami:3.4.0" → "umami"), else
+     * null (the caller falls back to the first service's name).
+     */
+    public static function suggestedName(ProjectBlueprint $blueprint, ?string $repositoryFullName = null): ?string
+    {
+        if ($blueprint->name !== self::UNNAMED) {
+            return $blueprint->name;
+        }
+
+        $candidates = [];
+
+        if ($repositoryFullName !== null) {
+            $candidates[] = $repositoryFullName;
+        }
+
+        foreach ($blueprint->services as $service) {
+            if ($service->public && $service->image !== null) {
+                $candidates[] = preg_replace('/[@:][^\/]*$/', '', $service->image) ?? '';
+
+                break;
+            }
+        }
+
+        foreach ($candidates as $candidate) {
+            $segments = explode('/', trim($candidate, " /\t\n"));
+            $name = mb_substr(trim(end($segments)), 0, 100);
+
+            if ($name !== '' && $name !== self::UNNAMED) {
+                return $name;
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * @throws ComposeRejected
      */
     public static function translate(string $yaml, TranslationOptions $options): ComposeTranslation

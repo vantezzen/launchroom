@@ -265,7 +265,12 @@ function ContainerSettings({ context }: { context: SettingsContext }) {
                     dirty={form.isDirty}
                     processing={form.processing}
                     onReset={() => form.reset()}
-                    label="Save for next deploy"
+                    stages="restart"
+                    fields={form.data}
+                    labels={{
+                        entrypoint: ['Entrypoint', 'entrypoint'],
+                        capabilities: ['Capabilities', 'capabilities'],
+                    }}
                 />
             )}
         </form>

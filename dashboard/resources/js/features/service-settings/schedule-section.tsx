@@ -1,6 +1,6 @@
 import { useForm } from '@inertiajs/react';
 import { CalendarClock, Infinity as Continuous } from 'lucide-react';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
 import InputError from '@/components/input-error';
 import { MetaLine } from '@/components/patterns/meta-line';
@@ -18,11 +18,14 @@ import services from '@/routes/projects/services';
 import {
     CRON_PRESETS,
     describeCron,
+    fromBuilder,
     isValidTimeZone,
     nextRuns,
     normalizeCron,
     parseCron,
+    toBuilder,
 } from './cron';
+import { ScheduleBuilder } from './schedule-builder';
 import { IconTile, SaveRow, SettingsPage } from './section';
 import type { SettingsContext } from './settings-context';
 import { relativeTime } from '@/lib/format';
@@ -87,11 +90,12 @@ function formatRun(date: Date, timeZone: string) {
 }
 
 /**
- * Schedule (cron services): when launchroomd starts the job's command. A
- * cron expression with presets, the schedule in words and its next five
- * runs in the chosen time zone. launchroomd keeps the schedule while the
- * dashboard is unreachable; a run still going when the next one is due
- * makes that one skip (docs/04 §1).
+ * Schedule (cron services): when launchroomd starts the job's command.
+ * Presets, then the schedule as fields (Simple) or as a cron expression
+ * (Cron, which opens first for expressions the fields can't show), the
+ * schedule in words and its next five runs in the chosen time zone.
+ * launchroomd keeps the schedule while the dashboard is unreachable; a run
+ * still going when the next one is due makes that one skip (docs/04 §1).
  */
 export function ScheduleSection({ context }: { context: SettingsContext }) {
     const { settings, canUpdate } = context;
@@ -118,6 +122,13 @@ export function ScheduleSection({ context }: { context: SettingsContext }) {
             : [];
     }, [cron, data.timeZone]);
     const sentence = 'cron' in parsed ? describeCron(parsed.cron) : null;
+    const builder = toBuilder(cron);
+    // Fields first; the cron field for what they can't show.
+    const [editor, setEditor] = useState<'simple' | 'cron'>(() =>
+        toBuilder(data.cron) ? 'simple' : 'cron',
+    );
+    const [cronOnly, setCronOnly] = useState(false);
+    const shownEditor = editor === 'simple' && builder ? 'simple' : 'cron';
     const zoneOptions = useMemo(() => zones(data.timeZone), [data.timeZone]);
 
     const submit = (event: FormEvent) => {
@@ -246,6 +257,7 @@ export function ScheduleSection({ context }: { context: SettingsContext }) {
                                                         preset.cron,
                                                     );
                                                     form.clearErrors('cron');
+                                                    setCronOnly(false);
                                                 }}
                                                 className={cn(
                                                     'h-8 rounded-full border px-3 type-label transition-colors duration-fast focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:opacity-60',
@@ -261,58 +273,120 @@ export function ScheduleSection({ context }: { context: SettingsContext }) {
                                 </div>
                             </SettingsBody>
 
-                            <SettingsRow
-                                setting="schedule-cron"
-                                label="Cron expression"
-                                description="Minute, hour, day, month and weekday. Numbers, *, ranges (1-5), lists (1,15) and steps (*/10)."
-                                htmlFor="schedule-cron"
-                                align="start"
-                            >
-                                <div className="flex w-full flex-col gap-1.5 sm:w-64">
-                                    <Input
-                                        id="schedule-cron"
-                                        value={data.cron}
-                                        disabled={!canUpdate}
-                                        spellCheck={false}
-                                        autoComplete="off"
-                                        aria-invalid={'error' in parsed}
-                                        className="font-mono text-[14px] tracking-[0.08em]"
-                                        onChange={(event) => {
-                                            form.setData(
-                                                'cron',
-                                                event.target.value,
-                                            );
-                                            form.clearErrors('cron');
+                            <SettingsBody className="flex flex-col gap-4 border-t">
+                                <div className="flex flex-wrap items-center justify-between gap-3">
+                                    <span className="type-label">
+                                        {shownEditor === 'simple'
+                                            ? 'Runs'
+                                            : 'Cron expression'}
+                                    </span>
+                                    <TimeRangeSelect<'simple' | 'cron'>
+                                        label="Edit the schedule as"
+                                        value={shownEditor}
+                                        onChange={(next) => {
+                                            if (next === 'simple' && !builder) {
+                                                setCronOnly(true);
+
+                                                return;
+                                            }
+
+                                            setCronOnly(false);
+                                            setEditor(next);
                                         }}
-                                    />
-                                    <div
-                                        aria-hidden="true"
-                                        className="grid grid-cols-5 gap-1 px-1 text-[11px] leading-4 text-muted-foreground"
-                                    >
-                                        {FIELD_NAMES.map((name, index) => (
-                                            <span
-                                                key={name}
-                                                className="flex flex-col"
-                                            >
-                                                <span className="truncate font-mono text-foreground/80">
-                                                    {cron.split(' ')[index] ??
-                                                        '–'}
-                                                </span>
-                                                {name}
-                                            </span>
-                                        ))}
-                                    </div>
-                                    <InputError
-                                        message={
-                                            ('error' in parsed
-                                                ? parsed.error
-                                                : undefined) ??
-                                            form.errors.cron ??
-                                            error('cron')
-                                        }
+                                        options={[
+                                            {
+                                                value: 'simple',
+                                                label: 'Simple',
+                                            },
+                                            { value: 'cron', label: 'Cron' },
+                                        ]}
                                     />
                                 </div>
-                            </SettingsRow>
+                                {cronOnly && shownEditor === 'cron' && (
+                                    <p className="type-small text-muted-foreground">
+                                        This expression only fits the cron
+                                        field. Pick a preset to start over with
+                                        fields.
+                                    </p>
+                                )}
+                                {shownEditor === 'simple' && builder && (
+                                    <>
+                                        <ScheduleBuilder
+                                            value={builder}
+                                            disabled={!canUpdate}
+                                            onChange={(next) => {
+                                                form.setData(
+                                                    'cron',
+                                                    fromBuilder(next),
+                                                );
+                                                form.clearErrors('cron');
+                                            }}
+                                        />
+                                        <p className="flex items-center gap-2 type-small text-muted-foreground">
+                                            As cron
+                                            <code className="rounded-md bg-hover px-1.5 py-0.5 type-mono-small text-foreground">
+                                                {cron}
+                                            </code>
+                                        </p>
+                                    </>
+                                )}
+                            </SettingsBody>
+
+                            {shownEditor === 'cron' && (
+                                <SettingsRow
+                                    setting="schedule-cron"
+                                    label="Cron expression"
+                                    description="Minute, hour, day, month and weekday. Numbers, *, ranges (1-5), lists (1,15) and steps (*/10)."
+                                    htmlFor="schedule-cron"
+                                    align="start"
+                                >
+                                    <div className="flex w-full flex-col gap-1.5 sm:w-64">
+                                        <Input
+                                            id="schedule-cron"
+                                            value={data.cron}
+                                            disabled={!canUpdate}
+                                            spellCheck={false}
+                                            autoComplete="off"
+                                            aria-invalid={'error' in parsed}
+                                            className="font-mono text-[14px] tracking-[0.08em]"
+                                            onChange={(event) => {
+                                                form.setData(
+                                                    'cron',
+                                                    event.target.value,
+                                                );
+                                                form.clearErrors('cron');
+                                            }}
+                                        />
+                                        <div
+                                            aria-hidden="true"
+                                            className="grid grid-cols-5 gap-1 px-1 text-[11px] leading-4 text-muted-foreground"
+                                        >
+                                            {FIELD_NAMES.map((name, index) => (
+                                                <span
+                                                    key={name}
+                                                    className="flex flex-col"
+                                                >
+                                                    <span className="truncate font-mono text-foreground/80">
+                                                        {cron.split(' ')[
+                                                            index
+                                                        ] ?? '–'}
+                                                    </span>
+                                                    {name}
+                                                </span>
+                                            ))}
+                                        </div>
+                                        <InputError
+                                            message={
+                                                ('error' in parsed
+                                                    ? parsed.error
+                                                    : undefined) ??
+                                                form.errors.cron ??
+                                                error('cron')
+                                            }
+                                        />
+                                    </div>
+                                </SettingsRow>
+                            )}
 
                             <SettingsRow
                                 setting="schedule-time-zone"
@@ -434,7 +508,13 @@ export function ScheduleSection({ context }: { context: SettingsContext }) {
                             form.reset();
                             form.clearErrors();
                         }}
-                        label="Save for next deploy"
+                        stages="restart"
+                        fields={form.data}
+                        labels={{
+                            mode: ['Schedule', 'schedule-mode'],
+                            cron: ['Schedule', 'schedule'],
+                            timeZone: ['Time zone', 'schedule-time-zone'],
+                        }}
                     />
                 )}
             </form>

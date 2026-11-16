@@ -9,17 +9,19 @@ Restoring a database takes a few clicks. By default the restore goes next to the
 
 ## Restore a database
 
-Open the database's **Settings → Backups** and pick a snapshot from the list. Each snapshot shows its time, size and the reason it was taken (scheduled, before a deploy, before a delete and so on). For PostgreSQL with [point-in-time recovery](/docs/databases/point-in-time-recovery), you can pick any second instead. Then choose how to restore.
+Open the database's **Settings → Backups**. Each snapshot in the list shows its time, the reason it was taken (scheduled, before a deploy, before a delete and so on), its id and its size. Choose **Restore…** on the snapshot's row. For PostgreSQL with [point-in-time recovery](/docs/databases/point-in-time-recovery), you can restore to any second from the point-in-time card instead.
+
+The restore dialog shows the facts (the snapshot's time with its time zone, the size and the name of the new service, or the service it restores into) and a short list of what will happen. Then choose how to restore.
 
 ### As a new service
 
 This is the default and the option to use first. launchroom adds a new database named like `orders-db-restored-2026-10-17` next to the original, with the same engine and version, in the same environment only. It deploys the copy and restores the snapshot into it. Nothing existing changes. Restoring as a new service needs permission to manage the project and deploy.
 
-The copy has its own generated credentials. Inspect it in the [Data tab](/docs/observability/console-and-data) or connect a test app to it.
+The copy has its own generated credentials. For a day after the restore, a card at the top of the Backups page says the copy is ready, with **Look at its data** (the copy's [Data tab](/docs/observability/console-and-data)) and **Swap it in for …**. You can also connect a test app to it.
 
 ### Swap it in
 
-When the copy looks right, choose **Swap in…** next to the finished restore on the original’s Backups page and type the original's name. In that environment:
+When the copy looks right, choose **Swap it in for …** on that card, or **Swap in…** next to the finished restore in the original’s history, and type the original's name. In that environment:
 
 - every service connected to the original gets the same connection to the copy, so its `DATABASE_URL` and other injected variables now point at the copy
 - the original's own connections and its domains move to the copy

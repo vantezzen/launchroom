@@ -23,5 +23,12 @@ final class PromotionImageData extends Data
         public ?string $commitSha,
         public bool $sameInputs,
         public array $differences,
+        /** The first line of the source commit's message. */
+        public ?string $commitMessage = null,
+        /** What the target runs now (null: the service isn't live there yet). */
+        public ?string $targetCommitSha = null,
+        public ?string $targetCommitMessage = null,
+        /** The commit range on the git provider (target → source), when it has one. */
+        public ?string $compareUrl = null,
     ) {}
 }

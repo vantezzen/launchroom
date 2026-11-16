@@ -402,7 +402,7 @@ Only changes made in the source **since the base** are offered. Items where the 
 
 ### 6.4 Images and code
 
-- **Also promote images** lists built services whose source deployment is active with an image the target doesn't run yet, with the build inputs that differ (build settings, branch override, build-scoped variable values compared as MACs).
+- **Also promote images** lists built services whose source deployment is active with an image the target doesn't run yet, with the build inputs that differ (build settings, branch override, build-scoped variable values compared as MACs), and the commit range: the target's live commit and message → the source's (`PromotionImageData` `targetCommitSha`, `targetCommitMessage`, `commitMessage`), plus the provider's compare URL when it has one.
 - Selected services are pinned on the promotion (`images`: deployment, commit, ref). The target's next Deploy creates a `promote` deployment of exactly that commit for them (also when nothing else changed) and marks the pins applied. The staged changes page lists pending pins.
 - With equal inputs the build key matches and the source's image is reused ([04](04-build-and-deploy.md) §7). Otherwise the same commit is rebuilt with the target's build-scoped variables, and the dialog says why.
 - If production deploys from tags or `main`, the usual flow is: merge or tag in git (code), and promote config in launchroom. Promoting images directly is for teams that want "exactly what we tested in staging" (build once, promote everywhere).

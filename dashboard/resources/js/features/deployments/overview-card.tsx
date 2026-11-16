@@ -14,10 +14,13 @@ import {
     deploymentStatusState,
     deploymentWord,
     firstLine,
+    isInProgress,
     triggerLabel,
 } from '@/features/deployments/format';
 import { cn } from '@/lib/utils';
-import { DeploymentStage } from './deployment-stage';
+import { DeploymentStage, DeploymentSummaryStrip } from './deployment-stage';
+import { Link } from '@inertiajs/react';
+import { show as serverPage } from '@/routes/servers';
 import { shortSha } from '@/lib/format';
 import { CopyButton } from '@/components/copy-button';
 
@@ -41,9 +44,13 @@ function Fact({
 }
 
 /**
- * Overview card (direction §9.7): the stage left (`DeploymentStage`),
- * facts right (status, duration, environment, built on; source; domains),
- * and a quiet footer with when, revision and the raw deployment id.
+ * Overview card (direction §9.7). While a deployment is under way, the
+ * stage sits left (`DeploymentStage`: servers, build server, step bar) and
+ * the facts right. A finished one has no picture to show: the summary
+ * strip (headline, how long, the step bar) runs across the top and the
+ * facts get the full width (DPL-1). A push that failed on launchroom.json
+ * ran nothing: only status, source and what it would have served (DPL-4).
+ * A quiet footer holds when, revision and the raw deployment id.
  */
 export function OverviewCard({
     detail,
@@ -58,60 +65,95 @@ export function OverviewCard({
     const deployment = detail.deployment;
     const branch = branchName(deployment.gitRef);
     const message = firstLine(deployment.commitMessage);
+    const configOnly = detail.configErrors !== null;
+    const staged =
+        !configOnly &&
+        (pending ||
+            isInProgress(deployment.status) ||
+            deployment.status === 'ready');
 
     return (
         <section
             aria-label="Overview"
             className="overflow-hidden rounded-[14px] border bg-card shadow-card"
         >
-            <div className="grid gap-6 p-5 lg:grid-cols-[minmax(0,340px)_minmax(0,1fr)] lg:gap-8">
-                {pending ? (
-                    <div
-                        aria-hidden="true"
-                        className="rounded-[10px] border bg-recessed lg:h-full lg:min-h-60"
-                    />
-                ) : (
-                    <DeploymentStage detail={detail} />
+            {!staged && !configOnly && (
+                <DeploymentSummaryStrip detail={detail} />
+            )}
+            <div
+                className={cn(
+                    'grid gap-6 p-5',
+                    staged &&
+                        'lg:grid-cols-[minmax(0,340px)_minmax(0,1fr)] lg:gap-8',
                 )}
+            >
+                {staged &&
+                    (pending ? (
+                        <div
+                            aria-hidden="true"
+                            className="rounded-[10px] border bg-recessed lg:h-full lg:min-h-60"
+                        />
+                    ) : (
+                        <DeploymentStage detail={detail} />
+                    ))}
                 <dl className="grid min-w-0 grid-cols-2 content-start gap-x-6 gap-y-6 sm:grid-cols-4">
                     <Fact label="Status">
                         <span aria-live="polite">
-                            <Status
-                                state={deploymentStatusState(deployment)}
-                                label={deploymentWord(deployment)}
-                            />
+                            {configOnly ? (
+                                <Status state="failed" label="Not deployed" />
+                            ) : (
+                                <Status
+                                    state={deploymentStatusState(deployment)}
+                                    label={deploymentWord(deployment)}
+                                />
+                            )}
                         </span>
                     </Fact>
-                    <Fact label="Duration">
-                        {deployment.durationSeconds !== null ? (
-                            <Duration seconds={deployment.durationSeconds} />
-                        ) : (
-                            <Elapsed
-                                since={deployment.startedAt}
-                                until={deployment.finishedAt}
-                                fallback={
-                                    <span className="text-muted-foreground">
-                                        Not started
-                                    </span>
-                                }
-                            />
-                        )}
-                    </Fact>
-                    <Fact label="Environment">{environmentName}</Fact>
-                    <Fact label="Built on">
-                        {pending
-                            ? null
-                            : (detail.builtOn ?? (
-                                  <span className="text-muted-foreground">
-                                      {deployment.status === 'building'
-                                          ? 'Waiting for a build server'
-                                          : deployment.trigger === 'rollback' ||
-                                              deployment.trigger === 'manual'
-                                            ? 'Reused image'
-                                            : 'No build'}
-                                  </span>
-                              ))}
-                    </Fact>
+                    {!configOnly && (
+                        <>
+                            <Fact label="Duration">
+                                {deployment.durationSeconds !== null ? (
+                                    <Duration
+                                        seconds={deployment.durationSeconds}
+                                    />
+                                ) : (
+                                    <Elapsed
+                                        since={deployment.startedAt}
+                                        until={deployment.finishedAt}
+                                        fallback={
+                                            <span className="text-muted-foreground">
+                                                Not started
+                                            </span>
+                                        }
+                                    />
+                                )}
+                            </Fact>
+                            <Fact label="Environment">{environmentName}</Fact>
+                            <Fact label="Built on">
+                                {pending ? null : detail.buildServer ? (
+                                    <Link
+                                        href={serverPage(detail.buildServer.id)}
+                                        className="underline-offset-4 hover:underline"
+                                    >
+                                        {detail.buildServer.name}
+                                    </Link>
+                                ) : (
+                                    (detail.builtOn ?? (
+                                        <span className="text-muted-foreground">
+                                            {deployment.status === 'building'
+                                                ? 'Waiting for a build server'
+                                                : deployment.trigger ===
+                                                        'rollback' ||
+                                                    deployment.trigger ===
+                                                        'manual'
+                                                  ? 'Reused image'
+                                                  : 'No build'}
+                                        </span>
+                                    ))
+                                )}
+                            </Fact>
+                        </>
+                    )}
                     <Fact label="Source" className="col-span-2 sm:col-span-4">
                         {deployment.commitSha ? (
                             <span className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">

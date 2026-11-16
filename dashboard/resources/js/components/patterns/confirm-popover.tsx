@@ -20,6 +20,8 @@ type ConfirmPopoverProps = {
     title?: ReactNode;
     /** The consequence in one sentence. */
     consequence: ReactNode;
+    /** Optional block between the title and the consequence (rollback: now live → target). */
+    body?: ReactNode;
     confirmLabel: string;
     onConfirm: () => void | Promise<unknown>;
     /** `destructive` for removals (outline red). */
@@ -44,6 +46,7 @@ export function ConfirmPopover({
     children,
     title,
     consequence,
+    body,
     confirmLabel,
     onConfirm,
     tone = 'default',
@@ -92,6 +95,7 @@ export function ConfirmPopover({
             <PopoverContent align={align} className="flex w-80 flex-col gap-3">
                 <div className="flex flex-col gap-1">
                     {title && <p className="type-label">{title}</p>}
+                    {body && <div className="py-1">{body}</div>}
                     <p className="type-body text-muted-foreground">
                         {consequence}
                     </p>

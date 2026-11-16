@@ -5,39 +5,59 @@ import {
     Check,
     ChevronDown,
     ChevronsUpDown,
+    FolderKanban,
     History,
+    Plus,
+    Settings2,
     TriangleAlert,
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
 import { PillTabs } from '@/components/patterns/pill-tabs';
 import type { PillTab } from '@/components/patterns/pill-tabs';
 import { TopBar } from '@/components/patterns/top-bar';
 import { ProjectIcon } from '@/components/project-icon';
-import { Status } from '@/components/status';
+import { Status, StatusIcon } from '@/components/status';
 import { Button } from '@/components/ui/button';
+import {
+    Command,
+    CommandEmpty,
+    CommandGroup,
+    CommandInput,
+    CommandItem,
+    CommandList,
+    CommandSeparator,
+} from '@/components/ui/command';
 import {
     DropdownMenu,
     DropdownMenuContent,
     DropdownMenuItem,
-    DropdownMenuLabel,
-    DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import {
+    Popover,
+    PopoverContent,
+    PopoverTrigger,
+} from '@/components/ui/popover';
+import { readRecent } from '@/features/command-palette/recent';
 import { AutoDeployPausedBanner } from '@/features/projects/auto-deploy-paused-banner';
-import { requestJson } from '@/lib/http';
+import { EnvironmentLiveUpdates } from '@/features/projects/environment-live-updates';
 import {
     environmentSwitchHref,
     projectSwitchHref,
 } from '@/features/projects/switch-targets';
 import { StagedChangesPill } from '@/features/staged-changes/staged-changes-pill';
 import { useLocationSearch } from '@/hooks/use-observe-scope';
+import { requestJson } from '@/lib/http';
 import { analyticsHref, logsHref } from '@/lib/links';
 import { liveReload } from '@/lib/live-reload';
 import { readScope } from '@/lib/observe-scope';
+import { cn } from '@/lib/utils';
 import { project as projectDeployments } from '@/routes/deployments';
 import {
     activity,
     canvas,
+    importMethod as newProject,
     index,
     previews as projectPreviews,
     settings,
@@ -46,6 +66,15 @@ import {
 import { hint, show as promote } from '@/routes/promotions';
 
 type Hint = { count: number; to: { id: string; name: string } | null };
+type Environment = App.Data.Canvas.EnvironmentData;
+type NodeStatus = App.Data.Canvas.NodeStatusData;
+
+/** Group headings and rows like ⌘K's (the switchers are small palettes). */
+const COMMAND_CLASSES =
+    '[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:type-small [&_[cmdk-group-heading]]:text-muted-foreground max-sm:[&_[cmdk-item]]:min-h-11';
+
+/** Past this many environments the environment menu gets a filter field. */
+const FILTER_ENVIRONMENTS_FROM = 8;
 
 /**
  * "Never hide a single point of failure" (docs/02 §5): calm badge while all
@@ -97,15 +126,17 @@ function SinglePointOfFailure({
 }
 
 /**
- * "staging has 6 changes that aren't in production · Compare" (docs/06
- * §6.1), fetched when the switcher opens.
+ * "staging has 6 changes not in production, Compare" (docs/06 §6.1),
+ * fetched when the switcher opens.
  */
 function PromotionHint({
     project,
     environment,
+    onSelect,
 }: {
     project: string;
-    environment: App.Data.Canvas.EnvironmentData;
+    environment: Environment;
+    onSelect: (url: string) => void;
 }) {
     const { data: state } = useQuery({
         queryKey: ['promotion-hint', environment.id],
@@ -124,29 +155,59 @@ function PromotionHint({
     }
 
     return (
-        <>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-                className="flex-col items-start gap-0.5"
-                onSelect={() =>
-                    router.visit(
-                        promote(project, {
-                            query: {
-                                from: environment.id,
-                                to: state.to?.id ?? '',
-                            },
-                        }),
-                    )
-                }
-            >
-                <span className="type-small text-muted-foreground">
-                    {environment.name} has {state.count}{' '}
-                    {state.count === 1 ? 'change' : 'changes'} not in{' '}
-                    {state.to.name}
-                </span>
-                <span className="type-label">Compare</span>
-            </DropdownMenuItem>
-        </>
+        <CommandItem
+            value="compare changes not in"
+            className="flex-col items-start gap-0.5"
+            onSelect={() =>
+                onSelect(
+                    promote(project, {
+                        query: {
+                            from: environment.id,
+                            to: state.to?.id ?? '',
+                        },
+                    }).url,
+                )
+            }
+        >
+            <span className="type-small text-muted-foreground">
+                {environment.name} has {state.count}{' '}
+                {state.count === 1 ? 'change' : 'changes'} not in{' '}
+                {state.to.name}
+            </span>
+            <span className="type-label">Compare</span>
+        </CommandItem>
+    );
+}
+
+/** The environment status worth showing in the bar: only when it needs you. */
+function needsYou(status: NodeStatus | undefined): status is NodeStatus {
+    return (
+        status !== undefined &&
+        (status.state === 'failed' ||
+            status.state === 'warning' ||
+            status.reason === 'not_deployed')
+    );
+}
+
+/** The Deployments tab's live state: icon plus words for screen readers. */
+function DeployIndicator({
+    health,
+}: {
+    health: App.Data.Canvas.EnvironmentHealthData | null;
+}) {
+    if (!health || (!health.deploying && !health.deployFailed)) {
+        return null;
+    }
+
+    const state = health.deploying ? 'progress' : 'failed';
+
+    return (
+        <span className="inline-flex items-center">
+            <StatusIcon state={state} className="size-3" />
+            <span className="sr-only">
+                {health.deploying ? '(deploying)' : '(last deploy failed)'}
+            </span>
+        </span>
     );
 }
 
@@ -167,6 +228,7 @@ function ProjectTabs({
 }) {
     const active = tabs.find((tab) => tab.active);
     const current = active?.label ?? pageLabel ?? 'Canvas';
+    const busy = tabs.some((tab) => tab.indicator);
 
     return (
         <>
@@ -182,23 +244,37 @@ function ProjectTabs({
                     <Button
                         variant="ghost"
                         size="sm"
-                        className="max-w-32 shrink-0 gap-1 px-2 type-label @4xl:hidden"
+                        className="max-w-36 shrink-0 gap-1 px-2 type-label @4xl:hidden"
                         aria-label={`Project page: ${current}`}
                     >
                         <span className="truncate">{current}</span>
+                        {busy && !active?.indicator && (
+                            <span
+                                aria-hidden="true"
+                                className="size-1.5 shrink-0 rounded-full bg-signal"
+                            />
+                        )}
                         <ChevronDown
                             aria-hidden="true"
                             className="size-3.5 shrink-0 text-muted-foreground"
                         />
                     </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="start" className="w-48">
+                <DropdownMenuContent align="start" className="w-52">
                     {tabs.map((tab) => (
                         <DropdownMenuItem
                             key={tab.label}
                             onSelect={() => router.visit(tab.href)}
                         >
-                            <span className="flex-1">{tab.label}</span>
+                            <span className="flex flex-1 items-center gap-1.5">
+                                {tab.label}
+                                {tab.count !== undefined && tab.count > 0 && (
+                                    <span className="text-muted-foreground tabular-nums">
+                                        {tab.count}
+                                    </span>
+                                )}
+                                {tab.indicator}
+                            </span>
                             {tab.active && (
                                 <Check
                                     aria-label="Current page"
@@ -213,12 +289,28 @@ function ProjectTabs({
     );
 }
 
+/** Project ids in the order they were last visited (⌘K's Recent). */
+function recentProjectIds(): string[] {
+    const ids: string[] = [];
+
+    for (const visit of readRecent()) {
+        if (visit.project && !ids.includes(visit.project)) {
+            ids.push(visit.project);
+        }
+    }
+
+    return ids;
+}
+
 /**
  * Project top bar (design-system §4.1, direction §3.2): one 52 px row with
  * `project ▾ / environment ▾`, the project tabs inline (Canvas,
  * Deployments, Logs, Analytics, Previews, Settings) and the staged-changes
- * button right. Project activity lives in the project menu (the team Activity page
- * in the sidebar is the main feed).
+ * button right. The environment switcher says when the open environment
+ * needs you (failed, needs attention, not deployed); the Deployments tab
+ * shows a running or failed deploy. Both switchers are small palettes:
+ * type to filter, ↑↓ and ↵. Project activity lives in the project menu (the
+ * team Activity page in the sidebar is the main feed).
  */
 export function ProjectTopBar() {
     const page = usePage<
@@ -232,9 +324,12 @@ export function ProjectTopBar() {
         abilities,
         edgeOverview,
         projectStatuses,
+        environmentHealth,
+        environmentStatuses,
     } = page.props;
     const onCanvas = page.component === 'projects/canvas';
-    const [switcherOpen, setSwitcherOpen] = useState(false);
+    const [projectOpen, setProjectOpen] = useState(false);
+    const [environmentOpen, setEnvironmentOpen] = useState(false);
     const [phoneOpen, setPhoneOpen] = useState(false);
     const persistent = environments.filter((item) => item.kind !== 'preview');
     const previews = environments.filter((item) => item.kind === 'preview');
@@ -245,6 +340,8 @@ export function ProjectTopBar() {
     );
     const scope = observing ? readScope(search) : null;
     const carried = { range: scope?.range, service: scope?.service };
+    const status = environmentHealth?.status;
+    const shownStatus = needsYou(status) ? status : null;
 
     const tabs: Tab[] = [
         {
@@ -258,6 +355,12 @@ export function ProjectTopBar() {
             label: 'Deployments',
             href: projectDeployments(project.id).url,
             active: page.component.startsWith('projects/deployments'),
+            indicator:
+                environmentHealth &&
+                (environmentHealth.deploying ||
+                    environmentHealth.deployFailed) ? (
+                    <DeployIndicator health={environmentHealth} />
+                ) : undefined,
         },
         // Logs and Analytics keep the observe scope (range and service)
         // between each other (docs/08 §1).
@@ -296,117 +399,144 @@ export function ProjectTopBar() {
         },
     ];
 
-    const projectItems = (
-        <>
-            <LoadProjectStatuses loaded={projectStatuses !== undefined} />
-            <DropdownMenuLabel className="type-small text-muted-foreground">
-                Projects
-            </DropdownMenuLabel>
-            {projects.map((item) => (
-                <DropdownMenuItem
-                    key={item.id}
-                    {...switchTo(
-                        projectSwitchHref(page.component, page.url, item),
-                    )}
-                >
-                    <ProjectIcon name={item.name} iconUrl={item.iconUrl} />
-                    <span className="flex-1 truncate">{item.name}</span>
-                    <ProjectStatus
-                        status={
-                            projectStatuses?.find(
-                                (entry) => entry.projectId === item.id,
-                            )?.status
-                        }
-                    />
-                    {item.id === project.id && (
-                        <Check
-                            aria-label="Current project"
-                            className="size-4"
-                        />
-                    )}
-                </DropdownMenuItem>
-            ))}
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-                onSelect={() => router.visit(activity(project.id))}
-            >
-                <History aria-hidden="true" className="size-4" />
-                Project activity
-            </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => router.visit(index())}>
-                All projects
-            </DropdownMenuItem>
-        </>
+    const close = () => {
+        setProjectOpen(false);
+        setEnvironmentOpen(false);
+        setPhoneOpen(false);
+    };
+    const visit = (url: string) => {
+        close();
+        router.visit(url);
+    };
+
+    const projectGroups = (
+        <ProjectRows
+            open={projectOpen || phoneOpen}
+            projects={projects}
+            current={project.id}
+            statuses={projectStatuses}
+            hrefFor={(item) =>
+                projectSwitchHref(page.component, page.url, item)
+            }
+            onVisit={visit}
+            footer={
+                <CommandGroup forceMount>
+                    <CommandItem
+                        forceMount
+                        value="new project"
+                        onSelect={() => visit(newProject().url)}
+                    >
+                        <Plus aria-hidden="true" />
+                        New project
+                    </CommandItem>
+                    <CommandItem
+                        forceMount
+                        value="all projects"
+                        onSelect={() => visit(index().url)}
+                    >
+                        <FolderKanban aria-hidden="true" />
+                        All projects
+                    </CommandItem>
+                    <CommandItem
+                        forceMount
+                        value="project activity"
+                        onSelect={() => visit(activity(project.id).url)}
+                    >
+                        <History aria-hidden="true" />
+                        Project activity
+                    </CommandItem>
+                </CommandGroup>
+            }
+        />
     );
 
-    const environmentItems = (
+    const environmentHref = (item: Environment) =>
+        environmentSwitchHref(page.component, project.id, item.id, page.url);
+    const environmentStatus = (item: Environment) =>
+        item.id === environment?.id && status
+            ? status
+            : environmentStatuses?.find(
+                  (entry) => entry.environmentId === item.id,
+              )?.status;
+    const environmentRow = (item: Environment) => (
+        <EnvironmentItem
+            key={item.id}
+            href={environmentHref(item)}
+            item={item}
+            status={environmentStatus(item)}
+            current={item.id === environment?.id}
+            onVisit={visit}
+        />
+    );
+
+    const environmentGroups = (
         <>
-            <DropdownMenuLabel className="type-small text-muted-foreground">
-                Environments
-            </DropdownMenuLabel>
-            {persistent.map((item) => (
-                <EnvironmentItem
-                    key={item.id}
-                    href={environmentSwitchHref(
-                        page.component,
-                        project.id,
-                        item.id,
-                        page.url,
-                    )}
-                    item={item}
-                    current={item.id === environment?.id}
-                />
-            ))}
+            {(environmentOpen || phoneOpen) && <LoadEnvironmentStatuses />}
+            <CommandGroup heading="Environments">
+                {persistent.map(environmentRow)}
+            </CommandGroup>
             {previews.length > 0 && (
-                <>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuLabel className="type-small text-muted-foreground">
-                        Previews
-                    </DropdownMenuLabel>
-                    {previews.map((item) => (
-                        <EnvironmentItem
-                            key={item.id}
-                            href={environmentSwitchHref(
-                                page.component,
-                                project.id,
-                                item.id,
-                                page.url,
-                            )}
-                            item={item}
-                            current={item.id === environment?.id}
+                <CommandGroup heading="Previews">
+                    {previews.map(environmentRow)}
+                </CommandGroup>
+            )}
+            <CommandSeparator className="my-1" />
+            <CommandGroup forceMount>
+                {(environmentOpen || phoneOpen) &&
+                    environment &&
+                    environment.kind === 'persistent' && (
+                        <PromotionHint
+                            project={project.id}
+                            environment={environment}
+                            onSelect={visit}
                         />
-                    ))}
-                </>
-            )}
-            {(switcherOpen || phoneOpen) &&
-                environment &&
-                environment.kind === 'persistent' && (
-                    <PromotionHint
-                        project={project.id}
-                        environment={environment}
-                    />
+                    )}
+                {persistent.length > 1 && (
+                    <CommandItem
+                        forceMount
+                        value="compare and promote"
+                        onSelect={() => visit(promote(project.id).url)}
+                    >
+                        <ArrowRightLeft aria-hidden="true" />
+                        Compare & promote
+                    </CommandItem>
                 )}
-            <DropdownMenuSeparator />
-            {persistent.length > 1 && (
-                <DropdownMenuItem
-                    onSelect={() => router.visit(promote(project.id))}
+                {abilities.manage && (
+                    <CommandItem
+                        forceMount
+                        value="new environment"
+                        onSelect={() =>
+                            visit(
+                                settings(
+                                    {
+                                        project: project.id,
+                                        section: 'environments',
+                                    },
+                                    { query: { add: 'environment' } },
+                                ).url,
+                            )
+                        }
+                    >
+                        <Plus aria-hidden="true" />
+                        New environment
+                    </CommandItem>
+                )}
+                <CommandItem
+                    forceMount
+                    value="manage environments"
+                    onSelect={() =>
+                        visit(
+                            settings({
+                                project: project.id,
+                                section: 'environments',
+                            }).url,
+                        )
+                    }
                 >
-                    <ArrowRightLeft aria-hidden="true" className="size-4" />
-                    Compare & promote
-                </DropdownMenuItem>
-            )}
-            <DropdownMenuItem
-                onSelect={() =>
-                    router.visit(
-                        settings({
-                            project: project.id,
-                            section: 'environments',
-                        }),
-                    )
-                }
-            >
-                Manage environments
-            </DropdownMenuItem>
+                    <Settings2 aria-hidden="true" />
+                    Manage environments
+                </CommandItem>
+            </CommandGroup>
         </>
     );
 
@@ -418,8 +548,12 @@ export function ProjectTopBar() {
     };
     const pageLabel = pageLabels[page.component] ?? null;
     // On the canvas the floating toolbar carries "Review & apply" (§13.9);
-    // the top bar keeps it everywhere else.
+    // the top bar keeps it everywhere else. Compare & promote lists the
+    // changes itself, so the pill would only say it twice there.
     const stagedInToolbar = onCanvas && (page.props.nodes?.length ?? 0) > 0;
+    const onPromote = page.component === 'projects/promote';
+    const environmentName = environment?.name ?? 'Environment';
+    const statusWords = shownStatus ? `, ${shownStatus.label}` : '';
 
     return (
         <TopBar
@@ -428,7 +562,7 @@ export function ProjectTopBar() {
                     {edgeOverview?.singlePointOfFailure && (
                         <SinglePointOfFailure overview={edgeOverview} />
                     )}
-                    {environment && (
+                    {environment && !onPromote && (
                         <StagedChangesPill
                             project={project.id}
                             environment={environment.id}
@@ -447,18 +581,24 @@ export function ProjectTopBar() {
                 ) : undefined
             }
         >
+            {environment && (
+                <EnvironmentLiveUpdates
+                    environments={[environment.id]}
+                    only={['environmentHealth']}
+                />
+            )}
             <nav
                 aria-label="Project and environment"
                 className="flex min-w-0 shrink items-center gap-0.5"
             >
                 {/* Phones: one switcher, project over environment, so both
                     names get the full width instead of truncating. */}
-                <DropdownMenu open={phoneOpen} onOpenChange={setPhoneOpen}>
-                    <DropdownMenuTrigger asChild>
+                <Popover open={phoneOpen} onOpenChange={setPhoneOpen}>
+                    <PopoverTrigger asChild>
                         <Button
                             variant="ghost"
                             className="h-11 min-w-0 justify-start gap-2 px-1.5 sm:hidden"
-                            aria-label={`${project.name}, ${environment?.name ?? 'no environment'}: switch project or environment`}
+                            aria-label={`${project.name}, ${environmentName}${statusWords}: switch project or environment`}
                         >
                             <ProjectIcon
                                 name={project.name}
@@ -468,8 +608,16 @@ export function ProjectTopBar() {
                                 <span className="max-w-full truncate type-label">
                                     {project.name}
                                 </span>
-                                <span className="max-w-full truncate type-small text-muted-foreground">
-                                    {environment?.name ?? 'Environment'}
+                                <span className="flex max-w-full min-w-0 items-center gap-1 type-small text-muted-foreground">
+                                    {shownStatus && (
+                                        <StatusIcon
+                                            state={shownStatus.state}
+                                            className="size-3"
+                                        />
+                                    )}
+                                    <span className="truncate">
+                                        {environmentName}
+                                    </span>
                                 </span>
                             </span>
                             <ChevronsUpDown
@@ -477,19 +625,20 @@ export function ProjectTopBar() {
                                 className="size-3.5 shrink-0 text-muted-foreground"
                             />
                         </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent
-                        align="start"
-                        className="w-[min(18rem,calc(100vw-2rem))]"
+                    </PopoverTrigger>
+                    <SwitcherContent
+                        className="w-[min(20rem,calc(100vw-2rem))]"
+                        placeholder="Find project or environment…"
+                        empty="Nothing found."
                     >
-                        {environmentItems}
-                        <DropdownMenuSeparator />
-                        {projectItems}
-                    </DropdownMenuContent>
-                </DropdownMenu>
+                        {environmentGroups}
+                        <CommandSeparator className="my-1" />
+                        {projectGroups}
+                    </SwitcherContent>
+                </Popover>
 
-                <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
+                <Popover open={projectOpen} onOpenChange={setProjectOpen}>
+                    <PopoverTrigger asChild>
                         <Button
                             variant="ghost"
                             size="sm"
@@ -506,11 +655,15 @@ export function ProjectTopBar() {
                                 className="size-3.5 text-muted-foreground"
                             />
                         </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="start" className="w-64">
-                        {projectItems}
-                    </DropdownMenuContent>
-                </DropdownMenu>
+                    </PopoverTrigger>
+                    <SwitcherContent
+                        className="w-80"
+                        placeholder="Find project…"
+                        empty="No project matches."
+                    >
+                        {projectGroups}
+                    </SwitcherContent>
+                </Popover>
 
                 <span
                     aria-hidden="true"
@@ -519,30 +672,55 @@ export function ProjectTopBar() {
                     /
                 </span>
 
-                <DropdownMenu
-                    open={switcherOpen}
-                    onOpenChange={setSwitcherOpen}
+                <Popover
+                    open={environmentOpen}
+                    onOpenChange={setEnvironmentOpen}
                 >
-                    <DropdownMenuTrigger asChild>
+                    <PopoverTrigger asChild>
                         <Button
                             variant="ghost"
                             size="sm"
                             className="hidden min-w-0 gap-1.5 px-2 type-label sm:inline-flex"
                             disabled={!environment && environments.length === 0}
+                            aria-label={
+                                shownStatus
+                                    ? `${environmentName}${statusWords}`
+                                    : undefined
+                            }
                         >
-                            <span className="truncate">
-                                {environment?.name ?? 'Environment'}
-                            </span>
+                            <span className="truncate">{environmentName}</span>
+                            {shownStatus && (
+                                <span
+                                    className="flex min-w-0 items-center gap-1 type-small font-normal text-muted-foreground"
+                                    data-test="environment-status"
+                                >
+                                    <StatusIcon
+                                        state={shownStatus.state}
+                                        className="size-3"
+                                    />
+                                    <span className="hidden truncate @5xl:inline">
+                                        {shownStatus.label}
+                                    </span>
+                                </span>
+                            )}
                             <ChevronsUpDown
                                 aria-hidden="true"
                                 className="size-3.5 text-muted-foreground"
                             />
                         </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="start" className="w-64">
-                        {environmentItems}
-                    </DropdownMenuContent>
-                </DropdownMenu>
+                    </PopoverTrigger>
+                    <SwitcherContent
+                        className="w-72"
+                        placeholder={
+                            environments.length >= FILTER_ENVIRONMENTS_FROM
+                                ? 'Find environment…'
+                                : null
+                        }
+                        empty="No environment matches."
+                    >
+                        {environmentGroups}
+                    </SwitcherContent>
+                </Popover>
             </nav>
 
             <span
@@ -556,14 +734,137 @@ export function ProjectTopBar() {
 }
 
 /**
+ * A switcher's popover: a small palette. Without a filter field the list
+ * itself takes focus, so ↑↓ and ↵ still work.
+ */
+function SwitcherContent({
+    className,
+    placeholder,
+    empty,
+    children,
+}: {
+    className?: string;
+    /** The filter field's placeholder; null hides the field. */
+    placeholder: string | null;
+    empty: string;
+    children: ReactNode;
+}) {
+    const root = useRef<HTMLDivElement>(null);
+
+    return (
+        <PopoverContent
+            align="start"
+            className={cn('overflow-hidden p-0', className)}
+            onOpenAutoFocus={(event) => {
+                // Touch screens: no keyboard popping up over the list.
+                const touch = window.matchMedia('(pointer: coarse)').matches;
+
+                if (placeholder === null || touch) {
+                    event.preventDefault();
+                    root.current?.focus();
+                }
+            }}
+        >
+            <Command
+                ref={root}
+                tabIndex={-1}
+                loop
+                className={cn(COMMAND_CLASSES, 'outline-hidden')}
+            >
+                {placeholder !== null && (
+                    <CommandInput placeholder={placeholder} />
+                )}
+                <CommandList>
+                    <CommandEmpty>{empty}</CommandEmpty>
+                    {children}
+                </CommandList>
+            </Command>
+        </PopoverContent>
+    );
+}
+
+/**
+ * The project menu's rows: projects visited lately first (⌘K's Recent),
+ * then the rest by name, each with its status (production's, or the open
+ * environment's for this project).
+ */
+function ProjectRows({
+    open,
+    projects,
+    current,
+    statuses,
+    hrefFor,
+    onVisit,
+    footer,
+}: {
+    open: boolean;
+    projects: App.Data.Canvas.ProjectLinkData[];
+    current: string;
+    statuses: App.Data.Canvas.ProjectStatusData[] | undefined;
+    hrefFor: (item: App.Data.Canvas.ProjectLinkData) => string;
+    onVisit: (url: string) => void;
+    footer: ReactNode;
+}) {
+    const [recent, setRecent] = useState<string[]>([]);
+
+    useEffect(() => {
+        if (open) {
+            setRecent(recentProjectIds());
+        }
+    }, [open]);
+
+    const recentProjects = recent
+        .filter((id) => id !== current)
+        .map((id) => projects.find((item) => item.id === id))
+        .filter((item) => item !== undefined)
+        .slice(0, 3);
+    const rest = projects.filter((item) => !recentProjects.includes(item));
+    const row = (item: App.Data.Canvas.ProjectLinkData) => (
+        <CommandItem
+            key={item.id}
+            value={`${item.name} ${item.id}`}
+            {...switchTo(hrefFor(item), onVisit)}
+        >
+            <ProjectIcon name={item.name} iconUrl={item.iconUrl} />
+            <span className="flex-1 truncate">{item.name}</span>
+            <ProjectStatus
+                status={
+                    statuses?.find((entry) => entry.projectId === item.id)
+                        ?.status
+                }
+            />
+            {item.id === current && (
+                <Check aria-label="Current project" className="size-4" />
+            )}
+        </CommandItem>
+    );
+
+    return (
+        <>
+            {open && <LoadProjectStatuses loaded={statuses !== undefined} />}
+            {recentProjects.length > 0 && (
+                <CommandGroup heading="Recent">
+                    {recentProjects.map(row)}
+                </CommandGroup>
+            )}
+            <CommandGroup
+                heading={
+                    recentProjects.length > 0 ? 'All projects' : 'Projects'
+                }
+            >
+                {rest.map(row)}
+            </CommandGroup>
+            <CommandSeparator className="my-1" />
+            {footer}
+        </>
+    );
+}
+
+/**
  * A project's status in the switcher (production's, or this environment's
  * for the current project).
  */
-function ProjectStatus({
-    status,
-}: {
-    status: App.Data.Canvas.NodeStatusData | undefined;
-}) {
+function ProjectStatus({ status }: { status: NodeStatus | undefined }) {
     if (!status || status.reason === 'no_services') {
         return null;
     }
@@ -588,24 +889,31 @@ function LoadProjectStatuses({ loaded }: { loaded: boolean }) {
     return null;
 }
 
+/** Fresh environment statuses each time the environment menu opens. */
+function LoadEnvironmentStatuses() {
+    useEffect(() => {
+        liveReload(['environmentStatuses']);
+    }, []);
+
+    return null;
+}
+
 /**
  * A switcher entry: opens `href`, and starts loading it while the pointer
- * or the keyboard rests on it.
+ * rests on it.
  */
-function switchTo(href: string) {
+function switchTo(href: string, onVisit: (url: string) => void) {
     let timer: number | undefined;
-    const prefetch = () => {
-        window.clearTimeout(timer);
-        timer = window.setTimeout(
-            () => router.prefetch(href, {}, { cacheFor: '5s' }),
-            75,
-        );
-    };
 
     return {
-        onSelect: () => router.visit(href),
-        onPointerEnter: prefetch,
-        onFocus: prefetch,
+        onSelect: () => onVisit(href),
+        onPointerEnter: () => {
+            window.clearTimeout(timer);
+            timer = window.setTimeout(
+                () => router.prefetch(href, {}, { cacheFor: '5s' }),
+                75,
+            );
+        },
         onPointerLeave: () => window.clearTimeout(timer),
     };
 }
@@ -613,27 +921,50 @@ function switchTo(href: string) {
 function EnvironmentItem({
     href,
     item,
+    status,
     current,
+    onVisit,
 }: {
     /** The same page in this environment where it has one (switch-targets.ts). */
     href: string;
-    item: App.Data.Canvas.EnvironmentData;
+    item: Environment;
+    status: NodeStatus | undefined;
     current: boolean;
+    onVisit: (url: string) => void;
 }) {
     const trigger =
         item.branch ?? (item.tagPattern ? `tags ${item.tagPattern}` : null);
+    // A name like "main" or "live" says nothing about production: the tag does.
+    const productionTag =
+        item.kind === 'production' && item.name.toLowerCase() !== 'production';
 
     return (
-        <DropdownMenuItem {...switchTo(href)}>
-            <span className="flex-1 truncate">{item.name}</span>
+        <CommandItem
+            value={`${item.name} ${item.branch ?? ''} ${item.id}`}
+            {...switchTo(href, onVisit)}
+        >
+            {status && status.reason !== 'no_services' ? (
+                <span className="flex size-4 items-center justify-center">
+                    <StatusIcon state={status.state} />
+                    <span className="sr-only">{status.label}</span>
+                </span>
+            ) : (
+                <span aria-hidden="true" className="size-4" />
+            )}
+            <span className="min-w-0 flex-1 truncate">{item.name}</span>
+            {productionTag && (
+                <span className="shrink-0 rounded-sm border px-1 type-small text-muted-foreground">
+                    Production
+                </span>
+            )}
             {trigger && (
-                <span className="type-mono-small text-muted-foreground">
+                <span className="max-w-24 shrink-0 truncate type-mono-small text-muted-foreground">
                     {trigger}
                 </span>
             )}
             {current && (
                 <Check aria-label="Current environment" className="size-4" />
             )}
-        </DropdownMenuItem>
+        </CommandItem>
     );
 }

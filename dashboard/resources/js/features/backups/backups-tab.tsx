@@ -1,5 +1,15 @@
 import { Link } from '@inertiajs/react';
-import { Archive, CopyPlus, Download, History, RefreshCw } from 'lucide-react';
+import {
+    Archive,
+    Check,
+    ChevronRight,
+    CopyPlus,
+    Download,
+    History,
+    RefreshCw,
+    TriangleAlert,
+    X,
+} from 'lucide-react';
 import { useCallback, useState } from 'react';
 import type { ReactNode } from 'react';
 import { toast } from 'sonner';
@@ -33,31 +43,27 @@ import { RemoteAccessButton } from '@/features/remote-access/remote-access';
 import { RequestFailed, requestJson } from '@/lib/http';
 import { BackupHealthStatus } from '@/features/backups/backup-health';
 import { BackupTrend } from '@/features/backups/backup-trend';
+import { PointInTimeCard, pointLabel } from '@/features/backups/point-in-time';
+import { reasonLabel, zonedTime } from '@/features/backups/format';
 import {
-    PointInTimeCard,
-    PointInTimePicker,
-    pointLabel,
-    windowEndText,
-} from '@/features/backups/point-in-time';
-import { reasonLabel } from '@/features/backups/format';
+    backupsKey,
+    useServiceBackups,
+} from '@/features/backups/use-service-backups';
 import { cn } from '@/lib/utils';
 import { vocabulary } from '@/lib/vocabulary';
 import { PendingDeletion } from '@/features/backups/pending-deletion';
 import { MoveDataSection } from '@/features/data-transfer/move-data-section';
 import type { SnapshotDownload } from '@/features/data-transfer/move-data-section';
-import { lookup } from '@/routes/backups/services';
+import servicePanel from '@/routes/projects/services';
 import { settings as backupSettings } from '@/routes/backups';
 import { formatBytes } from '@/lib/format';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import { ServiceActivityEvents } from '@/components/channel-events';
 
 type Data = App.Data.Backups.ServiceBackupsData;
 type Snapshot = App.Data.Backups.SnapshotData;
 type RestoreRun = App.Data.Backups.RestoreRunData;
 type Verification = App.Data.Backups.BackupVerificationData;
-
-/** The timeline entry that stands for "any point in time" (PITR). */
-const POINT_IN_TIME = 'point-in-time';
 
 type BackupsTabProps = {
     /** Public ids: prj_…, env_…, svc_… */
@@ -99,19 +105,6 @@ function restoreState(status: App.Enums.Backups.RestoreRunStatus): StatusState {
     return status === 'failed' ? 'failed' : 'progress';
 }
 
-function backupsKey(project: string, environment: string, service: string) {
-    return ['backups', project, environment, service] as const;
-}
-
-/** Waiting on something without a `service.activity` event (backup and restore runs have one). */
-function isBusy(data: Data): boolean {
-    return (
-        data.listingStatus === 'pending' ||
-        data.deletion?.status === 'backing_up' ||
-        (data.verification !== null && isVerifying(data.verification))
-    );
-}
-
 function isVerifying(verification: Verification): boolean {
     return !vocabulary.Backups.VerificationStatus[verification.status]
         .isTerminal;
@@ -120,10 +113,12 @@ function isVerifying(verification: Verification): boolean {
 /**
  * Service settings → Backups for databases and services with volumes
  * (docs/08 §16, docs/14 §2, §5.1; design-system §13.9 "Backups"): a protection
- * card (health, schedule sentence, Back up now), the snapshot timeline
- * (pick one), restore as option cards ("As a new service" default, "Into
- * this service" with typed confirmation), and one history list of restores
- * and runs. A staged removal waiting for its final backup sits on top.
+ * card (health, schedule sentence, Back up now), point-in-time recovery with
+ * its own Restore…, the snapshot timeline where each snapshot carries its
+ * own Restore…, and one history list of restores and runs. The restore
+ * dialog holds the choice (as a new service, default, or into this service
+ * with typed confirmation). A staged removal waiting for its final backup
+ * and a fresh "restored copy is ready" card sit on top.
  *
  * The body of the settings page (`BackupsSection`). Fetches its own data (JSON,
  * team-scoped on the server, shared query cache) and refetches on `service.activity`.
@@ -136,12 +131,7 @@ export function ServiceBackups({
     const [busyAction, setBusyAction] = useState<string | null>(null);
     const [restoring, setRestoring] = useState<Restoring | null>(null);
     const [swapping, setSwapping] = useState<RestoreRun | null>(null);
-    const [selectedId, setSelectedId] = useState<string | null>(null);
-    const [restoreMode, setRestoreMode] =
-        useState<App.Enums.Backups.RestoreMode>('new_service');
     const [allSnapshots, setAllSnapshots] = useState(false);
-    /** ISO time picked for a point-in-time restore (null: the newest point). */
-    const [pointInTime, setPointInTime] = useState<string | null>(null);
     const [snapshotDownload, setSnapshotDownload] =
         useState<SnapshotDownload | null>(null);
     const clearSnapshotDownload = useCallback(
@@ -149,20 +139,9 @@ export function ServiceBackups({
         [],
     );
     const queryClient = useQueryClient();
-    const key = backupsKey(project, environment, service);
-    const query = useQuery({
-        queryKey: key,
-        queryFn: ({ signal }) =>
-            requestJson<Data>(
-                'get',
-                lookup({ project, environment, service }).url,
-                undefined,
-                signal,
-            ),
-        refetchInterval: (current) =>
-            current.state.data && isBusy(current.state.data) ? 4000 : false,
-        retry: false,
-    });
+    const ref = { project, environment, service };
+    const key = backupsKey(ref);
+    const query = useServiceBackups(ref);
     const data = query.data ?? null;
     const error =
         query.error === null
@@ -226,26 +205,12 @@ export function ServiceBackups({
         data.restoreSupported &&
         (data.canRestoreAsNew || data.canRestoreInPlace);
     const pitr = data.pointInTime;
-    const pitrRestorable =
-        pitr !== null && pitr.enabled && pitr.windowStart !== null;
-    const pitrSelected =
-        pitrRestorable &&
-        (selectedId === POINT_IN_TIME ||
-            (selectedId === null && data.snapshots.length === 0));
-    const selected = pitrSelected
-        ? null
-        : (data.snapshots.find((snapshot) => snapshot.id === selectedId) ??
-          data.snapshots[0] ??
-          null);
-    const mode: App.Enums.Backups.RestoreMode =
-        restoreMode === 'in_place' && data.canRestoreInPlace
-            ? 'in_place'
-            : data.canRestoreAsNew
-              ? 'new_service'
-              : 'in_place';
     const shownSnapshots = allSnapshots
         ? data.snapshots
         : data.snapshots.slice(0, 6);
+    const defaultMode: App.Enums.Backups.RestoreMode = data.canRestoreAsNew
+        ? 'new_service'
+        : 'in_place';
 
     return (
         <div className="flex flex-col gap-8">
@@ -263,6 +228,13 @@ export function ServiceBackups({
                     onChange={() => void query.refetch()}
                 />
             )}
+
+            <RestoredCard
+                data={data}
+                project={project}
+                environment={environment}
+                onSwap={setSwapping}
+            />
 
             <ProtectionCard
                 data={data}
@@ -305,6 +277,15 @@ export function ServiceBackups({
                                     : 'Point-in-time recovery is off.',
                                 'put',
                             )
+                        }
+                        onRestore={
+                            canRestore
+                                ? (at) =>
+                                      setRestoring({
+                                          pointInTime: at ?? 'newest',
+                                          mode: defaultMode,
+                                      })
+                                : undefined
                         }
                     />
                 )}
@@ -427,31 +408,31 @@ export function ServiceBackups({
                     </p>
                 )}
 
-                {data.snapshots.length === 0 && !pitrRestorable ? (
+                {data.snapshots.length === 0 ? (
                     <EmptyState icon={Archive}>
                         Snapshots appear here after the first backup.
                     </EmptyState>
                 ) : (
                     <SnapshotTimeline
-                        pointInTime={
-                            pitrRestorable && pitr !== null
-                                ? {
-                                      pitr,
-                                      selected: pitrSelected,
-                                      value: pointInTime,
-                                      onChange: setPointInTime,
-                                  }
-                                : null
-                        }
                         snapshots={shownSnapshots}
-                        selectedId={
+                        onRestore={
                             canRestore
-                                ? pitrSelected
-                                    ? POINT_IN_TIME
-                                    : (selected?.id ?? null)
-                                : null
+                                ? (snapshot) =>
+                                      setRestoring({
+                                          snapshot,
+                                          mode: defaultMode,
+                                      })
+                                : undefined
                         }
-                        onSelect={canRestore ? setSelectedId : undefined}
+                        onDownload={
+                            data.canRestoreInPlace
+                                ? (snapshot) =>
+                                      setSnapshotDownload({
+                                          id: snapshot.id,
+                                          label: snapshot.id.slice(0, 8),
+                                      })
+                                : undefined
+                        }
                         more={
                             !allSnapshots && data.snapshots.length > 6
                                 ? data.snapshots.length - 6
@@ -469,102 +450,6 @@ export function ServiceBackups({
                     </p>
                 )}
             </Section>
-
-            {canRestore && (selected !== null || pitrSelected) && (
-                <Section
-                    level={4}
-                    data-setting="restore"
-                    title="Restore"
-                    description={
-                        pitrSelected
-                            ? pointInTime === null
-                                ? 'To the newest point'
-                                : `To ${pointLabel(pointInTime)}:${String(new Date(pointInTime).getSeconds()).padStart(2, '0')}`
-                            : selected !== null
-                              ? `Snapshot from ${snapshotTime(selected.time)}`
-                              : undefined
-                    }
-                >
-                    <OptionCards
-                        label="How to restore"
-                        value={mode}
-                        onChange={setRestoreMode}
-                        options={[
-                            ...(data.canRestoreAsNew
-                                ? [
-                                      {
-                                          value: 'new_service' as const,
-                                          title: 'As a new service',
-                                          description: `Adds a copy next to ${data.serviceName}. Nothing existing changes.`,
-                                          media: (
-                                              <CopyPlus
-                                                  aria-hidden="true"
-                                                  className="size-5 text-muted-foreground"
-                                              />
-                                          ),
-                                      },
-                                  ]
-                                : []),
-                            ...(data.canRestoreInPlace
-                                ? [
-                                      {
-                                          value: 'in_place' as const,
-                                          title: `Into ${data.serviceName}`,
-                                          description:
-                                              'Replaces its data. A safety snapshot is taken first.',
-                                          media: (
-                                              <History
-                                                  aria-hidden="true"
-                                                  className="size-5 text-muted-foreground"
-                                              />
-                                          ),
-                                      },
-                                  ]
-                                : []),
-                        ]}
-                    />
-                    <div className="flex flex-wrap gap-2">
-                        <Button
-                            variant={
-                                mode === 'in_place' ? 'outline' : 'default'
-                            }
-                            onClick={() =>
-                                setRestoring(
-                                    pitrSelected
-                                        ? {
-                                              pointInTime:
-                                                  pointInTime ?? 'newest',
-                                              mode,
-                                          }
-                                        : selected !== null
-                                          ? { snapshot: selected, mode }
-                                          : null,
-                                )
-                            }
-                        >
-                            {mode === 'in_place'
-                                ? `Restore into ${data.serviceName}…`
-                                : 'Restore as a new service…'}
-                        </Button>
-                        {selected !== null &&
-                            !pitrSelected &&
-                            data.canRestoreInPlace && (
-                                <Button
-                                    variant="ghost"
-                                    onClick={() =>
-                                        setSnapshotDownload({
-                                            id: selected.id,
-                                            label: selected.id.slice(0, 8),
-                                        })
-                                    }
-                                >
-                                    <Download aria-hidden="true" />
-                                    Download this backup
-                                </Button>
-                            )}
-                    </div>
-                </Section>
-            )}
 
             <MoveDataSection
                 environment={environment}
@@ -696,6 +581,11 @@ export function ServiceBackups({
                 data={data}
                 restoring={restoring}
                 busy={busyAction === 'restore'}
+                onModeChange={(mode) =>
+                    setRestoring((current) =>
+                        current === null ? null : { ...current, mode },
+                    )
+                }
                 onClose={() => setRestoring(null)}
                 onConfirm={async (confirmation) => {
                     if (restoring === null) {
@@ -738,29 +628,99 @@ type Restoring =
     | { snapshot: Snapshot; mode: App.Enums.Backups.RestoreMode }
     | { pointInTime: string; mode: App.Enums.Backups.RestoreMode };
 
+/** The name StartRestore gives the copy (`<name>-restored-<date>`, docs/14 §9). */
+function restoredName(serviceName: string): string {
+    // The server names it by its own (UTC) date.
+    return `${serviceName.slice(0, 40)}-restored-${new Date().toISOString().slice(0, 10)}`;
+}
+
+/**
+ * The restore dialog (docs/14 §9, DAT-1/2): how (option cards, "As a new
+ * service" first), the facts (from when, size, the new service's name) and
+ * a short list of what will happen. Into the service asks for the typed
+ * name; as a new service doesn't, since nothing existing changes.
+ */
 function RestoreDialog({
     data,
     restoring,
     busy,
+    onModeChange,
     onClose,
     onConfirm,
 }: {
     data: Data;
     restoring: Restoring | null;
     busy: boolean;
+    onModeChange: (mode: App.Enums.Backups.RestoreMode) => void;
     onClose: () => void;
     onConfirm: (confirmation: string | null) => Promise<void>;
 }) {
     const [typed, setTyped] = useState('');
     const inPlace = restoring?.mode === 'in_place';
-    const taken =
+    const name = data.serviceName;
+    const volume = data.subject === 'volume';
+    const copyName = restoredName(name);
+    const from =
         restoring === null
             ? ''
             : 'snapshot' in restoring
-              ? `the snapshot from ${new Date(restoring.snapshot.time).toLocaleString()}`
+              ? zonedTime(restoring.snapshot.time)
               : restoring.pointInTime === 'newest'
-                ? 'the newest point (the last change that reached the backup destination)'
-                : `its state at ${new Date(restoring.pointInTime).toLocaleString()}`;
+                ? 'The newest point'
+                : zonedTime(restoring.pointInTime);
+    const size =
+        restoring !== null && 'snapshot' in restoring
+            ? restoring.snapshot.sizeBytes
+            : null;
+    const facts: { label: string; value: ReactNode }[] = [
+        {
+            label: 'From',
+            value:
+                restoring !== null && !('snapshot' in restoring) ? (
+                    <>
+                        {from}
+                        <span className="block type-small text-muted-foreground">
+                            Point in time
+                        </span>
+                    </>
+                ) : (
+                    from
+                ),
+        },
+        ...(size !== null ? [{ label: 'Size', value: formatBytes(size) }] : []),
+        ...(restoring !== null &&
+        'snapshot' in restoring &&
+        restoring.snapshot.mountPath !== null
+            ? [{ label: 'Volume', value: restoring.snapshot.mountPath }]
+            : []),
+        inPlace
+            ? { label: 'Into', value: name }
+            : { label: 'New service', value: copyName },
+    ];
+    const steps: { text: string; warn?: boolean }[] = inPlace
+        ? [
+              { text: `A safety snapshot of ${name} is taken first.` },
+              {
+                  text: volume
+                      ? `${name} stops while the files in its volume are replaced.`
+                      : `${name} stops while its data is replaced, and so do the services connected to it.`,
+                  warn: true,
+              },
+              {
+                  text: 'Everything starts again when the restore is done.',
+              },
+          ]
+        : [
+              { text: `${name} keeps running and isn’t changed.` },
+              {
+                  text: volume
+                      ? `${copyName} is added in this environment, with the same settings and the restored files.`
+                      : `${copyName} is added in this environment with the restored data.`,
+              },
+              {
+                  text: `You can look at it first, then swap it in for ${name}.`,
+              },
+          ];
 
     return (
         <Dialog
@@ -772,21 +732,86 @@ function RestoreDialog({
                 }
             }}
         >
-            <DialogContent>
-                <DialogTitle>
-                    {inPlace
-                        ? `Restore into ${data.serviceName}?`
-                        : 'Restore as a new service?'}
-                </DialogTitle>
-                <DialogDescription>
-                    {data.subject === 'volume'
-                        ? inPlace
-                            ? `This replaces the files in ${restoring !== null && 'snapshot' in restoring ? (restoring.snapshot.mountPath ?? 'the volume') : 'the volume'} with ${taken}. A safety snapshot is taken first. ${data.serviceName} stops while the volume is replaced and starts again afterwards.`
-                            : `This adds a copy of ${data.serviceName} (same settings and variables), in this environment only, and restores ${taken} into its volume. Nothing existing is changed.`
-                        : inPlace
-                          ? `This replaces the data in ${data.serviceName} with ${taken}. A safety snapshot is taken first. ${data.serviceName} and the services connected to it stop during the restore and start again afterwards.`
-                          : `This adds a new database next to ${data.serviceName}, in this environment only, and restores ${taken} into it. Nothing existing is changed.`}
+            <DialogContent className="sm:max-w-lg">
+                <DialogTitle>Restore {name}</DialogTitle>
+                <DialogDescription className="sr-only">
+                    Pick how to restore, check what will happen, then confirm.
                 </DialogDescription>
+
+                {data.canRestoreAsNew && data.canRestoreInPlace && (
+                    <OptionCards
+                        label="How to restore"
+                        value={restoring?.mode ?? 'new_service'}
+                        onChange={(mode) => {
+                            setTyped('');
+                            onModeChange(mode);
+                        }}
+                        options={[
+                            {
+                                value: 'new_service' as const,
+                                title: 'As a new service',
+                                description: 'Nothing existing changes.',
+                                media: (
+                                    <CopyPlus
+                                        aria-hidden="true"
+                                        className="size-5 text-muted-foreground"
+                                    />
+                                ),
+                            },
+                            {
+                                value: 'in_place' as const,
+                                title: `Into ${name}`,
+                                description: 'Replaces its data.',
+                                media: (
+                                    <History
+                                        aria-hidden="true"
+                                        className="size-5 text-muted-foreground"
+                                    />
+                                ),
+                            },
+                        ]}
+                    />
+                )}
+
+                <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-6 gap-y-2 rounded-lg border bg-recessed px-4 py-3">
+                    {facts.map((fact) => (
+                        <div key={fact.label} className="contents">
+                            <dt className="type-small text-muted-foreground">
+                                {fact.label}
+                            </dt>
+                            <dd className="type-mono-small break-words">
+                                {fact.value}
+                            </dd>
+                        </div>
+                    ))}
+                </dl>
+
+                <ul className="flex flex-col gap-1.5" aria-label="What happens">
+                    {steps.map((step) => (
+                        <li
+                            key={step.text}
+                            className={cn(
+                                'flex items-start gap-2 type-body',
+                                step.warn
+                                    ? 'text-status-progress'
+                                    : 'text-foreground',
+                            )}
+                        >
+                            {step.warn ? (
+                                <TriangleAlert
+                                    aria-hidden="true"
+                                    className="mt-0.5 size-4 shrink-0"
+                                />
+                            ) : (
+                                <Check
+                                    aria-hidden="true"
+                                    className="mt-0.5 size-4 shrink-0 text-muted-foreground"
+                                />
+                            )}
+                            <span>{step.text}</span>
+                        </li>
+                    ))}
+                </ul>
 
                 {inPlace && (
                     <div className="flex flex-col gap-2">
@@ -830,6 +855,134 @@ function RestoreDialog({
                 </DialogFooter>
             </DialogContent>
         </Dialog>
+    );
+}
+
+const DISMISSED_KEY = 'launchroom.backups.restored-dismissed';
+
+function readDismissed(): string[] {
+    try {
+        const raw = window.localStorage.getItem(DISMISSED_KEY);
+        const parsed: unknown = raw === null ? [] : JSON.parse(raw);
+
+        return Array.isArray(parsed)
+            ? parsed.filter((v): v is string => typeof v === 'string')
+            : [];
+    } catch {
+        return [];
+    }
+}
+
+/**
+ * After a restore as a new service (DAT-7): the copy is ready, and the two
+ * next steps (look at its data, swap it in) sit right here instead of in
+ * History. Shown for a day after it finished; dismissing it is remembered
+ * in this browser.
+ */
+function RestoredCard({
+    data,
+    project,
+    environment,
+    onSwap,
+}: {
+    data: Data;
+    project: string;
+    environment: string;
+    onSwap: (restore: RestoreRun) => void;
+}) {
+    const [dismissed, setDismissed] = useState(readDismissed);
+    const restore = data.restores.find(
+        (r) => r.mode === 'new_service' && r.status === 'succeeded',
+    );
+
+    if (
+        restore === undefined ||
+        restore !== data.restores[0] ||
+        restore.targetServiceId === null ||
+        restore.finishedAt === null ||
+        Date.now() - new Date(restore.finishedAt).getTime() > 86_400_000 ||
+        dismissed.includes(restore.id)
+    ) {
+        return null;
+    }
+
+    const copy = restore.targetServiceName ?? 'The restored copy';
+    const dismiss = () => {
+        const next = [...dismissed, restore.id].slice(-20);
+        setDismissed(next);
+
+        try {
+            window.localStorage.setItem(DISMISSED_KEY, JSON.stringify(next));
+        } catch {
+            // Remembering is a convenience; the card still hides now.
+        }
+    };
+    const target = {
+        project,
+        environment,
+        service: restore.targetServiceId,
+    };
+
+    return (
+        <div className="overflow-hidden rounded-xl border bg-card shadow-card">
+            <div className="flex items-start justify-between gap-3 px-5 pt-4 pb-3">
+                <div className="flex min-w-0 flex-col gap-0.5">
+                    <Status state="active" label={`${copy} is ready`} />
+                    <p className="type-small text-muted-foreground">
+                        {restore.restoredTo !== null
+                            ? `Restored to ${zonedTime(restore.restoredTo)}`
+                            : restore.pointInTime
+                              ? restore.requestedTime !== null
+                                  ? `Restored to ${zonedTime(restore.requestedTime)}`
+                                  : 'Restored to the newest point'
+                              : `Restored from snapshot ${restore.shortSnapshotId}`}
+                    </p>
+                </div>
+                <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label="Dismiss"
+                    onClick={dismiss}
+                >
+                    <X />
+                </Button>
+            </div>
+            <ul className="divide-y border-t">
+                <li>
+                    <Link
+                        href={servicePanel.show({
+                            ...target,
+                            tab:
+                                data.subject === 'volume' ? 'settings' : 'data',
+                        })}
+                        className="flex items-center justify-between gap-3 px-5 py-3 type-body transition-colors duration-fast hover:bg-hover"
+                    >
+                        {data.subject === 'volume'
+                            ? `Open ${copy}`
+                            : 'Look at its data'}
+                        <ChevronRight
+                            aria-hidden="true"
+                            className="size-4 text-muted-foreground"
+                        />
+                    </Link>
+                </li>
+                {restore.swapUrl !== null && (
+                    <li>
+                        <button
+                            type="button"
+                            onClick={() => onSwap(restore)}
+                            className="flex w-full items-center justify-between gap-3 px-5 py-3 text-left type-body transition-colors duration-fast hover:bg-hover"
+                        >
+                            {`Swap it in for ${data.serviceName}…`}
+                            <ChevronRight
+                                aria-hidden="true"
+                                className="size-4 text-muted-foreground"
+                            />
+                        </button>
+                    </li>
+                )}
+            </ul>
+        </div>
     );
 }
 
@@ -1165,174 +1318,81 @@ function VerificationItem({ verification }: { verification: Verification }) {
 
 /**
  * Snapshots as a vertical timeline: a dot on a hairline rail, when, why,
- * how big. Picking one (radio) sets what "Restore" restores. With
- * point-in-time recovery the newest entry is "Any point in time": its
- * stretch of the rail is solid, and picking it opens the time picker.
+ * how big, and the snapshot's own Restore… (and download) at the end of
+ * its row, so restoring starts from the thing restored from (DAT-1).
  */
 function SnapshotTimeline({
     snapshots,
-    selectedId,
-    onSelect,
+    onRestore,
+    onDownload,
     more,
     onShowAll,
-    pointInTime,
 }: {
     snapshots: Snapshot[];
-    selectedId: string | null;
-    onSelect?: (id: string) => void;
+    onRestore?: (snapshot: Snapshot) => void;
+    onDownload?: (snapshot: Snapshot) => void;
     more: number;
     onShowAll: () => void;
-    pointInTime: {
-        pitr: App.Data.Backups.PointInTimeData;
-        selected: boolean;
-        value: string | null;
-        onChange: (value: string | null) => void;
-    } | null;
 }) {
     return (
         <div className="flex flex-col gap-2">
-            <div
-                role={onSelect ? 'radiogroup' : 'list'}
-                aria-label="Snapshots"
-                className="relative flex flex-col"
-            >
+            <ul aria-label="Snapshots" className="relative flex flex-col">
                 <span
                     aria-hidden="true"
                     className="absolute top-4 bottom-4 left-[19px] w-px bg-border"
                 />
-                {pointInTime !== null && (
-                    <div role={onSelect ? undefined : 'listitem'}>
-                        {(() => {
-                            const active = pointInTime.selected;
-                            const body = (
-                                <>
-                                    <span
-                                        aria-hidden="true"
-                                        className={cn(
-                                            'relative z-10 size-2.5 shrink-0 rounded-full border-2 transition-colors duration-fast',
-                                            active
-                                                ? 'border-signal bg-signal'
-                                                : 'border-foreground bg-card',
-                                        )}
-                                    />
-                                    <span className="flex min-w-0 flex-1 flex-col">
-                                        <span className="type-body">
-                                            Any point in time
-                                        </span>
-                                        <span className="truncate type-small text-muted-foreground">
-                                            {pointInTime.pitr.windowStart !==
-                                                null &&
-                                                `From ${pointLabel(pointInTime.pitr.windowStart)} to `}
-                                            {windowEndText(pointInTime.pitr) ??
-                                                (pointInTime.pitr
-                                                    .lastArchivedAt !== null ? (
-                                                    <TimeAgo
-                                                        value={
-                                                            pointInTime.pitr
-                                                                .lastArchivedAt
-                                                        }
-                                                    />
-                                                ) : (
-                                                    'now'
-                                                ))}
-                                        </span>
-                                    </span>
-                                    <span className="type-small text-muted-foreground">
-                                        Continuous
-                                    </span>
-                                </>
-                            );
-
-                            return onSelect ? (
-                                <button
-                                    type="button"
-                                    role="radio"
-                                    aria-checked={active}
-                                    onClick={() => onSelect(POINT_IN_TIME)}
-                                    className={cn(
-                                        'flex w-full items-center gap-4 rounded-lg px-3.5 py-2.5 text-left transition-colors duration-fast focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
-                                        active
-                                            ? 'bg-hover'
-                                            : 'hover:bg-hover/60',
-                                    )}
-                                >
-                                    {body}
-                                </button>
-                            ) : (
-                                <div className="flex items-center gap-4 px-3.5 py-2.5">
-                                    {body}
-                                </div>
-                            );
-                        })()}
-                        {pointInTime.selected && (
-                            <PointInTimePicker
-                                pitr={pointInTime.pitr}
-                                value={pointInTime.value}
-                                onChange={pointInTime.onChange}
-                            />
-                        )}
-                    </div>
-                )}
-                {snapshots.map((snapshot) => {
-                    const active = snapshot.id === selectedId;
-                    const body = (
-                        <>
-                            <span
-                                aria-hidden="true"
-                                className={cn(
-                                    'relative z-10 size-2.5 shrink-0 rounded-full border-2 bg-card transition-colors duration-fast',
-                                    active
-                                        ? 'border-signal bg-signal'
-                                        : 'border-border-strong',
-                                )}
-                            />
-                            <span className="flex min-w-0 flex-1 flex-col">
-                                <span className="type-body">
-                                    {capitalise(snapshotTime(snapshot.time))}
+                {snapshots.map((snapshot) => (
+                    <li
+                        key={snapshot.id}
+                        className="flex items-center gap-4 rounded-lg px-3.5 py-2 transition-colors duration-fast hover:bg-hover/60"
+                    >
+                        <span
+                            aria-hidden="true"
+                            className="relative z-10 size-2.5 shrink-0 rounded-full border-2 border-border-strong bg-card"
+                        />
+                        <span className="flex min-w-0 flex-1 flex-col">
+                            <span className="type-body">
+                                {capitalise(snapshotTime(snapshot.time))}
+                            </span>
+                            <MetaLine className="type-small text-muted-foreground">
+                                {reasonLabel(snapshot.reason)}
+                                {snapshot.mountPath}
+                                <span className="type-mono-small">
+                                    {snapshot.shortId}
                                 </span>
-                                <MetaLine className="type-small text-muted-foreground">
-                                    {reasonLabel(snapshot.reason)}
-                                    {snapshot.mountPath}
-                                    <span className="type-mono-small">
-                                        {snapshot.shortId}
+                                {snapshot.sizeBytes !== null && (
+                                    <span className="tabular-nums">
+                                        {formatBytes(snapshot.sizeBytes)}
                                     </span>
-                                </MetaLine>
-                            </span>
-                            <span className="type-small text-muted-foreground tabular-nums">
-                                {formatBytes(snapshot.sizeBytes)}
-                            </span>
-                        </>
-                    );
-
-                    return (
-                        <div
-                            key={snapshot.id}
-                            role={onSelect ? undefined : 'listitem'}
-                        >
-                            {onSelect ? (
-                                <button
-                                    type="button"
-                                    role="radio"
-                                    aria-checked={active}
-                                    onClick={() => onSelect(snapshot.id)}
-                                    className={cn(
-                                        'flex w-full items-center gap-4 rounded-lg px-3.5 py-2.5 text-left transition-colors duration-fast focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
-                                        active
-                                            ? 'bg-hover'
-                                            : 'hover:bg-hover/60',
-                                    )}
+                                )}
+                            </MetaLine>
+                        </span>
+                        <span className="flex shrink-0 items-center gap-1">
+                            {onDownload && (
+                                <Button
+                                    variant="ghost"
+                                    size="icon-sm"
+                                    aria-label={`Download the snapshot from ${snapshotTime(snapshot.time)}`}
+                                    title="Download this backup"
+                                    onClick={() => onDownload(snapshot)}
                                 >
-                                    {body}
-                                </button>
-                            ) : (
-                                <div className="flex items-center gap-4 px-3.5 py-2.5">
-                                    {body}
-                                </div>
+                                    <Download />
+                                </Button>
                             )}
-                        </div>
-                    );
-                })}
-            </div>
+                            {onRestore && (
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    aria-label={`Restore the snapshot from ${snapshotTime(snapshot.time)}`}
+                                    onClick={() => onRestore(snapshot)}
+                                >
+                                    Restore…
+                                </Button>
+                            )}
+                        </span>
+                    </li>
+                ))}
+            </ul>
             {more > 0 && (
                 <div>
                     <Button variant="ghost" size="sm" onClick={onShowAll}>

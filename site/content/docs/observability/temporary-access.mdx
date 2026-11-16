@@ -51,7 +51,7 @@ Volumes also open **read-only** unless you switch on **Allow changes**.
 <Step>
 ### Start access
 
-After a few seconds the dialog shows the host, port, user and password, each with a copy button, and ready-made commands for `ssh`, `sftp` and `scp`, a `~/.ssh/config` block, or the database's connection URL. It counts down until the access ends.
+After a few seconds the dialog shows the host, port, user and password, each with a copy button, and ready-made commands for `ssh`, `sftp` and `scp`, a `~/.ssh/config` block, or the database's connection URL. For PostgreSQL, Redis and Valkey, a **.env** tab has the same details as variables to paste into your app's `.env`: `DB_*` and `DATABASE_URL` for PostgreSQL, `REDIS_*` and `REDIS_URL` for Redis and Valkey. The password stays masked until you reveal it. The dialog counts down until the access ends.
 </Step>
 </Steps>
 

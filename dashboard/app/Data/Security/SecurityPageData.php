@@ -19,6 +19,8 @@ final class SecurityPageData extends Data
      * @param  list<RuntimeCardData>  $runtimes
      * @param  list<RuntimeCardData>  $baseImages
      * @param  list<string>  $notices  inventories that couldn't be read, sources failing for days (Worth knowing)
+     * @param  list<FindingCardData>  $dismissedFindings  marked not affected, newest first (at most 50)
+     * @param  list<FindingCardData>  $fixedFindings  resolved in the last 30 days, newest first (at most 50)
      */
     public function __construct(
         public bool $hasServices,
@@ -40,5 +42,7 @@ final class SecurityPageData extends Data
         public int $dismissed,
         /** The project or service the page is narrowed to; null for the whole team. */
         public ?SecurityScopeData $scope = null,
+        public array $dismissedFindings = [],
+        public array $fixedFindings = [],
     ) {}
 }

@@ -29,8 +29,13 @@ Under **Schedule**, **Runs** has two options:
 - **Continuously**: runs the command all the time and restarts it when it exits, like a worker.
 
 For a schedule, pick a preset (Every 5 minutes, Every 15 minutes, Hourly, Every 6 hours, Daily at 03:00, Weekdays at
-09:00, Weekly on Monday, Monthly on the 1st) or write the cron expression yourself. The page shows the schedule as a
-sentence ("Every weekday at 03:30"), checks it as you type and lists the **Next runs**.
+09:00, Weekly on Monday, Monthly on the 1st), or build your own with **Simple** or **Cron**:
+
+- **Simple** builds the schedule from fields: every few minutes, every few hours at a given minute, every day at a time
+  (with weekday chips to pick only some days) or every month on a day at a time. It shows the cron expression it writes.
+- **Cron** is a field for the expression itself. It opens first when the saved expression doesn't fit the Simple fields.
+
+The page shows the schedule as a sentence ("Every weekday at 03:30"), checks it as you type and lists the **Next runs**.
 
 ### Cron expressions
 
@@ -81,7 +86,8 @@ it, and `launchroomd` on that server starts it at every due minute. As a result:
 - **Between runs, the job counts as healthy.** It has no port, no domain and no health check. A run ends when the command
   exits.
 
-A schedule change is a staged change like any setting and takes effect with the next deploy.
+A schedule change is a staged change like any setting. **Save and apply** puts it into effect now, and **Save for
+later** keeps it staged until the next deploy.
 
 ## Logs of runs
 

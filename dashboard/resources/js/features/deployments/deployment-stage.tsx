@@ -6,7 +6,7 @@ import { Logo } from '@/components/logo';
 import { MetaLine } from '@/components/patterns/meta-line';
 import { StatusIcon } from '@/components/status';
 import type { StatusState } from '@/components/status';
-import { STEP_STATUS_LABEL } from '@/components/steps/step-icon';
+import { StepIcon, STEP_STATUS_LABEL } from '@/components/steps/step-icon';
 import {
     deploymentWord,
     isInProgress,
@@ -38,21 +38,20 @@ const STEP_LABELS: Record<string, string> = {
 };
 
 /**
- * The overview card's stage (docs/08 §12, design-system §13.9 "Deployment
- * detail"): what happened to this deployment, as a picture, for every kind
- * of service.
+ * The overview card's stage while a deployment is under way (docs/08 §12,
+ * design-system §13.9 "Deployment detail"): what is happening, as a
+ * picture, for every kind of service.
  *
- * - **Where it runs** while its replicas exist (live, rolling out, ready):
- *   the servers as device renders with one logo tile per replica standing
- *   on them (solid when running, dashed amber while starting, red with ✕
- *   when failing).
- * - **The build server** while it builds, or with ✕ when the build failed.
- * - Then the **rollout timeline**: one lane per step, each bar placed at
- *   its start and as long as it took, so overlapping steps (health checks
- *   during the roll out) and the step that took longest read at a glance.
- *   A running step grows against the service's typical deploy.
- * - A footer with the outcome: how long it took, what still serves after a
- *   failure, what replaced it and how long it served.
+ * - **Where it runs** while its replicas come up (rolling out, ready): the
+ *   servers as device renders with one logo tile per replica standing on
+ *   them (solid when running, dashed amber while starting, red with ✕ when
+ *   failing).
+ * - **The build server** while it builds.
+ * - Then the steps as one segmented bar (`StepBar`) and a footer with how
+ *   long it has been running against the typical deploy.
+ *
+ * Finished deployments have no stage: `DeploymentSummaryStrip` puts the
+ * headline, the outcome and the bar across the top of the card (DPL-1).
  */
 export function DeploymentStage({ detail }: { detail: Detail }) {
     const rows = stepRows(detail);
@@ -61,8 +60,35 @@ export function DeploymentStage({ detail }: { detail: Detail }) {
     return (
         <div className="flex min-w-0 flex-col overflow-hidden rounded-[10px] border bg-recessed lg:h-full lg:min-h-60">
             {scene ?? <StoryCaption detail={detail} rows={rows} />}
-            <Timeline detail={detail} rows={rows} compact={scene !== null} />
+            <StepBar
+                detail={detail}
+                rows={rows}
+                className={cn(
+                    'px-4',
+                    scene ? 'pt-1 pb-3' : 'flex-1 justify-center py-4',
+                )}
+            />
             <Outcome detail={detail} rows={rows} />
+        </div>
+    );
+}
+
+/**
+ * A finished deployment's run in one strip (DPL-1): what happened ("Live on
+ * hetzner-1", "Stopped at Health check", "Replaced by c663a95"), how long
+ * it took, and the steps as one segmented bar. The Steps section is the
+ * one per-step list.
+ */
+export function DeploymentSummaryStrip({ detail }: { detail: Detail }) {
+    const rows = stepRows(detail);
+
+    return (
+        <div className="flex flex-col gap-3 border-b px-5 py-4">
+            <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+                <StoryCaption detail={detail} rows={rows} bare />
+                <Outcome detail={detail} rows={rows} bare />
+            </div>
+            <StepBar detail={detail} rows={rows} />
         </div>
     );
 }
@@ -71,13 +97,21 @@ function Caption({
     state,
     children,
     right,
+    bare = false,
 }: {
     state: StatusState;
     children: ReactNode;
     right?: ReactNode;
+    /** In the summary strip: no padding of its own. */
+    bare?: boolean;
 }) {
     return (
-        <div className="flex min-w-0 items-center justify-between gap-3 px-4 pt-3.5 type-small">
+        <div
+            className={cn(
+                'flex min-w-0 items-center justify-between gap-3 type-small',
+                !bare && 'px-4 pt-3.5',
+            )}
+        >
             <span className="flex min-w-0 items-center gap-1.5 font-medium text-foreground">
                 <StatusIcon state={state} className="size-3" />
                 <span className="truncate">{children}</span>
@@ -172,21 +206,35 @@ function sceneFor(detail: Detail, rows: StepRow[]): ReactNode | null {
 }
 
 /** The headline when the stage is the timeline alone. */
-function StoryCaption({ detail, rows }: { detail: Detail; rows: StepRow[] }) {
+function StoryCaption({
+    detail,
+    rows,
+    bare = false,
+}: {
+    detail: Detail;
+    rows: StepRow[];
+    bare?: boolean;
+}) {
     const deployment = detail.deployment;
     const step = decidingStep(rows);
     const where = step ? STEP_LABELS[step.section] : null;
+    const servers =
+        detail.servers.length === 0
+            ? null
+            : detail.servers.length === 1
+              ? detail.servers[0].name
+              : plural(detail.servers.length, 'server');
 
     switch (deployment.status) {
         case 'failed':
             return (
-                <Caption state="failed">
+                <Caption state="failed" bare={bare}>
                     {where ? `Stopped at ${where}` : 'Failed before it started'}
                 </Caption>
             );
         case 'cancelled':
             return (
-                <Caption state="idle">
+                <Caption state="idle" bare={bare}>
                     {where
                         ? `Canceled during ${where}`
                         : 'Canceled before it started'}
@@ -194,7 +242,7 @@ function StoryCaption({ detail, rows }: { detail: Detail; rows: StepRow[] }) {
             );
         case 'superseded':
             return (
-                <Caption state="idle">
+                <Caption state="idle" bare={bare}>
                     {detail.supersededBy ? (
                         <>
                             Replaced by{' '}
@@ -213,6 +261,7 @@ function StoryCaption({ detail, rows }: { detail: Detail; rows: StepRow[] }) {
         default:
             return (
                 <Caption
+                    bare={bare}
                     state={
                         deployment.stopped
                             ? 'idle'
@@ -222,7 +271,9 @@ function StoryCaption({ detail, rows }: { detail: Detail; rows: StepRow[] }) {
                               : 'progress'
                     }
                 >
-                    {deploymentWord(deployment)}
+                    {servers && !deployment.stopped
+                        ? `${deploymentWord(deployment)} on ${servers}`
+                        : deploymentWord(deployment)}
                 </Caption>
             );
     }
@@ -512,131 +563,158 @@ function typicalSeconds(detail: Detail): number | null {
 }
 
 const BAR_TONE: Partial<Record<string, string>> = {
-    succeeded: 'bg-foreground/40',
+    succeeded: 'bg-foreground/35',
     running: 'bg-status-progress',
     failed: 'bg-status-error',
     canceled: 'bg-status-idle',
 };
 
+type Segment = { row: StepRow; seconds: number };
+
 /**
- * The rollout as lanes: one per step of the pipeline, its bar placed at
- * the step's start and as wide as it took (at least a sliver, so instant
- * steps still show). Steps that never ran keep their lane, quiet.
+ * The steps as one segmented bar (DPL-1): each step that ran is a segment
+ * as wide as it took (at least a sliver, so instant steps still show). The
+ * failed or running step is named under its segment with its icon, so the
+ * state never rests on the colour alone. The Steps section below is the
+ * one per-step list; this is the shape of the run at a glance. While it
+ * runs, a quiet remainder stands for the rest of the service's typical
+ * deploy.
  */
-function Timeline({
+export function StepBar({
     detail,
     rows,
-    compact,
+    className,
 }: {
     detail: Detail;
     rows: StepRow[];
-    compact: boolean;
+    className?: string;
 }) {
     const deployment = detail.deployment;
     const running =
         isInProgress(deployment.status) && deployment.status !== 'ready';
     const now = useNow(running);
-    const started = rows
-        .map((row) => row.startedAt)
-        .filter((value): value is string => value !== null)
-        .map((value) => Date.parse(value));
+    const segments: Segment[] = rows
+        .filter((row) => row.startedAt !== null)
+        .map((row) => ({
+            row,
+            seconds:
+                row.status === 'running' && row.startedAt
+                    ? Math.max(0, (now - Date.parse(row.startedAt)) / 1000)
+                    : (row.seconds ?? 0),
+        }));
 
-    if (rows.length === 0) {
-        return compact ? null : <div className="flex-1" />;
+    if (segments.length === 0) {
+        return null;
     }
 
-    const start = started.length > 0 ? Math.min(...started) : now;
-    const end = Math.max(
-        start + 1000,
-        ...rows.map((row) =>
-            row.startedAt === null
-                ? start
-                : row.finishedAt !== null
-                  ? Date.parse(row.finishedAt)
-                  : now,
-        ),
+    const ran = segments.reduce((sum, segment) => sum + segment.seconds, 0);
+    const typical = running ? typicalSeconds(detail) : null;
+    const remainder =
+        typical !== null && typical > ran
+            ? typical - ran
+            : running
+              ? ran * 0.15
+              : 0;
+    const total = Math.max(1, ran + remainder);
+    const grow = (seconds: number) => Math.max(seconds, total * 0.015);
+    const marked = segments.find(
+        (segment) =>
+            segment.row.status === 'failed' || segment.row.status === 'running',
     );
-    const typical = typicalSeconds(detail);
-    const span = running
-        ? Math.max((end - start) * 1.15, (typical ?? 0) * 1000)
-        : end - start;
-    const percent = (ms: number) => `${Math.min(100, (ms / span) * 100)}%`;
+    const label = segments
+        .map(
+            (segment) =>
+                `${STEP_LABELS[segment.row.section]} ${STEP_STATUS_LABEL[segment.row.status].toLowerCase()}, ${formatDuration(Math.round(segment.seconds))}`,
+        )
+        .join('; ');
 
     return (
-        <ol
-            aria-label="Rollout timeline"
-            className={cn(
-                'flex flex-col px-4',
-                compact
-                    ? 'gap-1.5 pt-2 pb-3'
-                    : 'flex-1 justify-center gap-2.5 py-4',
-            )}
-        >
-            {rows.map((row) => {
-                const from =
-                    row.startedAt === null ? null : Date.parse(row.startedAt);
-                const to =
-                    row.finishedAt !== null
-                        ? Date.parse(row.finishedAt)
-                        : row.status === 'running'
-                          ? now
-                          : from;
-                const ran = from !== null && to !== null;
+        <div className={cn('flex min-w-0 flex-col gap-1.5', className)}>
+            <div
+                role="img"
+                aria-label={`Steps: ${label}`}
+                className="flex h-2 w-full gap-0.5"
+            >
+                {segments.map((segment) => (
+                    <span
+                        key={segment.row.section}
+                        title={`${STEP_LABELS[segment.row.section]}: ${formatDuration(Math.round(segment.seconds))}`}
+                        className={cn(
+                            'min-w-1 rounded-full',
+                            BAR_TONE[segment.row.status] ?? 'bg-foreground/25',
+                        )}
+                        style={{
+                            flexGrow: grow(segment.seconds),
+                            flexBasis: 0,
+                        }}
+                    />
+                ))}
+                {remainder > 0 && (
+                    <span
+                        aria-hidden="true"
+                        className="rounded-full bg-hover"
+                        style={{ flexGrow: remainder, flexBasis: 0 }}
+                    />
+                )}
+            </div>
+            {
+                <div aria-hidden="true" className="flex w-full gap-0.5">
+                    {segments.map((segment) => {
+                        const at =
+                            segments
+                                .slice(0, segments.indexOf(segment))
+                                .reduce(
+                                    (sum, item) => sum + grow(item.seconds),
+                                    0,
+                                ) / total;
 
-                return (
-                    <li
-                        key={row.section}
-                        className="grid grid-cols-[92px_minmax(0,1fr)_48px] items-center gap-3 type-small"
-                    >
-                        <span
-                            className={cn(
-                                'truncate',
-                                row.status === 'failed'
-                                    ? 'text-status-error'
-                                    : ran
-                                      ? 'text-foreground'
-                                      : 'text-muted-foreground',
-                            )}
-                        >
-                            {STEP_LABELS[row.section]}
-                        </span>
-                        <span
-                            className={cn(
-                                'relative block overflow-hidden rounded-full bg-hover',
-                                compact ? 'h-1' : 'h-1.5',
-                            )}
-                        >
-                            {ran && (
-                                <span
-                                    className={cn(
-                                        'absolute inset-y-0 min-w-1 rounded-full',
-                                        BAR_TONE[row.status] ??
-                                            'bg-foreground/25',
+                        return (
+                            <span
+                                key={segment.row.section}
+                                className={cn(
+                                    'flex min-w-1 type-small whitespace-nowrap',
+                                    at > 0.6 && 'justify-end',
+                                )}
+                                style={{
+                                    flexGrow: grow(segment.seconds),
+                                    flexBasis: 0,
+                                }}
+                            >
+                                {segment !== marked &&
+                                    !marked &&
+                                    grow(segment.seconds) / total >= 0.18 && (
+                                        <span className="truncate text-muted-foreground tabular-nums">
+                                            {STEP_LABELS[segment.row.section]}{' '}
+                                            {formatDuration(
+                                                Math.round(segment.seconds),
+                                            )}
+                                        </span>
                                     )}
-                                    style={{
-                                        left: percent(from - start),
-                                        width: percent(to - from),
-                                    }}
-                                />
-                            )}
-                        </span>
-                        <span className="text-right text-muted-foreground tabular-nums">
-                            {row.status === 'running' && row.startedAt ? (
-                                <Elapsed since={row.startedAt} />
-                            ) : ran ? (
-                                formatDuration(
-                                    Math.round(
-                                        ((to ?? 0) - (from ?? 0)) / 1000,
-                                    ),
-                                )
-                            ) : (
-                                STEP_STATUS_LABEL[row.status]
-                            )}
-                        </span>
-                    </li>
-                );
-            })}
-        </ol>
+                                {segment === marked && (
+                                    <span
+                                        className={cn(
+                                            'inline-flex items-center gap-1',
+                                            segment.row.status === 'failed'
+                                                ? 'text-status-error'
+                                                : 'text-foreground',
+                                        )}
+                                    >
+                                        <StepIcon
+                                            status={segment.row.status}
+                                            size={12}
+                                        />
+                                        {STEP_LABELS[segment.row.section]}
+                                    </span>
+                                )}
+                            </span>
+                        );
+                    })}
+                    {remainder > 0 && (
+                        <span style={{ flexGrow: remainder, flexBasis: 0 }} />
+                    )}
+                </div>
+            }
+        </div>
     );
 }
 
@@ -654,7 +732,16 @@ function servedFor(seconds: number): string {
 }
 
 /** The footer: how long it took, and what serves now. */
-function Outcome({ detail, rows }: { detail: Detail; rows: StepRow[] }) {
+function Outcome({
+    detail,
+    rows,
+    bare = false,
+}: {
+    detail: Detail;
+    rows: StepRow[];
+    /** In the summary strip: no footer frame. */
+    bare?: boolean;
+}) {
     const deployment = detail.deployment;
     const now = useNow(deployment.stopped !== null, 60_000);
     const running =
@@ -695,7 +782,12 @@ function Outcome({ detail, rows }: { detail: Detail; rows: StepRow[] }) {
     }
 
     return (
-        <MetaLine className="border-t bg-card px-4 py-2.5 type-small text-muted-foreground tabular-nums">
+        <MetaLine
+            className={cn(
+                'type-small text-muted-foreground tabular-nums',
+                !bare && 'border-t bg-card px-4 py-2.5',
+            )}
+        >
             {hasTime && (
                 <span>
                     {verb}{' '}
@@ -711,19 +803,18 @@ function Outcome({ detail, rows }: { detail: Detail; rows: StepRow[] }) {
             {running && typical !== null && (
                 <span>usually {formatDuration(Math.round(typical))}</span>
             )}
-            {(deployment.status === 'failed' ||
-                deployment.status === 'cancelled') &&
-                detail.serving && (
-                    <span className="truncate">
-                        Still serving{' '}
-                        <DeploymentLink
-                            detail={detail}
-                            target={detail.serving}
-                            fallback="the previous version"
-                            sameCommit="the deploy from"
-                        />
-                    </span>
-                )}
+            {/* A failure's reassurance is the failure card's first line. */}
+            {deployment.status === 'cancelled' && detail.serving && (
+                <span className="truncate">
+                    Still serving{' '}
+                    <DeploymentLink
+                        detail={detail}
+                        target={detail.serving}
+                        fallback="the previous version"
+                        sameCommit="the deploy from"
+                    />
+                </span>
+            )}
             {served !== null && served > 0 && (
                 <span>Served for {servedFor(served)}</span>
             )}

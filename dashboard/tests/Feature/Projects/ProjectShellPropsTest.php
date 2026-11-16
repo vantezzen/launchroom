@@ -6,6 +6,7 @@ use App\Data\Canvas\ProjectShellPropsData;
 use App\Enums\TeamRole;
 use App\Models\Team;
 use App\Queries\ProjectShell;
+use Inertia\DeferProp;
 use Inertia\OptionalProp;
 use Tests\Support\Projects;
 
@@ -15,7 +16,7 @@ test('the project shell props are exactly ProjectShellPropsData', function (): v
     $project = Projects::create($team);
 
     $shared = ProjectShell::props($project, null);
-    $resolved = array_map(fn (mixed $value): mixed => $value instanceof Closure || $value instanceof OptionalProp ? $value() : $value, $shared);
+    $resolved = array_map(fn (mixed $value): mixed => $value instanceof Closure || $value instanceof OptionalProp || $value instanceof DeferProp ? $value() : $value, $shared);
 
     $properties = array_map(
         fn (ReflectionParameter $parameter): string => $parameter->getName(),

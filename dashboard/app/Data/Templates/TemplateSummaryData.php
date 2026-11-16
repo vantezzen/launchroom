@@ -31,5 +31,7 @@ final class TemplateSummaryData extends Data
         /** Built from the user's repository (stacks). */
         public bool $needsRepository,
         public array $notes = [],
+        /** A public starter repository stacks can deploy without your own code ("https://github.com/laravel/laravel"). */
+        public ?string $starter = null,
     ) {}
 }

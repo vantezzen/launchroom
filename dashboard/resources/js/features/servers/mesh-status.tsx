@@ -1,6 +1,7 @@
 import { labels as wordsOf, vocabulary } from '@/lib/vocabulary';
 import { Status } from '@/components/status';
 import type { StatusState } from '@/components/status';
+import { meshMemberProblems } from '@/features/servers/problems';
 
 const states: Record<App.Enums.Mesh.MeshMemberState, StatusState> = {
     off: 'idle',
@@ -11,9 +12,9 @@ const states: Record<App.Enums.Mesh.MeshMemberState, StatusState> = {
 
 const labels: Record<App.Enums.Mesh.MeshMemberState, string> = {
     off: 'Not connected',
-    connecting: 'Connecting',
+    connecting: meshMemberProblems.connecting.label,
     connected: 'Connected',
-    error: 'Error',
+    error: meshMemberProblems.error.label,
 };
 
 export const pathLabels: Record<App.Enums.Mesh.MeshPath, string> = {
@@ -28,15 +29,20 @@ export const pathLabels: Record<App.Enums.Mesh.MeshPath, string> = {
  */
 export function MeshStatus({
     mesh,
+    showPath = true,
 }: {
     mesh: App.Data.Servers.ServerMeshData | null;
+    /** False where the path is shown next to it already (Settings → Network). */
+    showPath?: boolean;
 }) {
     if (mesh === null) {
         return <Status state="idle" label="Not connected" />;
     }
 
     const path =
-        mesh.state === 'connected' && mesh.pathToControlPlane !== null
+        showPath &&
+        mesh.state === 'connected' &&
+        mesh.pathToControlPlane !== null
             ? pathLabels[mesh.pathToControlPlane]
             : undefined;
 

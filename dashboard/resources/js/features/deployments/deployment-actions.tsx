@@ -19,6 +19,8 @@ import {
 } from '@/routes/deployments';
 import { redeploy as redeployService } from '@/routes/deployments/service';
 import { shortSha } from '@/lib/format';
+import { RollbackRows } from './rollback-rows';
+import type { RollbackSide } from './rollback-rows';
 import { LIFECYCLE_CONSEQUENCE } from '@/features/service-lifecycle/lifecycle';
 import {
     optimisticQueued,
@@ -52,7 +54,12 @@ export function serviceDeploymentsUrl(
 }
 
 export type PendingAction =
-    | { kind: 'rollback'; deployment: Summary }
+    | {
+          kind: 'rollback';
+          deployment: Summary;
+          /** What serves now, shown above the target (DPL-8). */
+          current?: RollbackSide | null;
+      }
     | { kind: 'redeploy'; deployment: Summary }
     | {
           kind: 'redeploy-service';
@@ -66,6 +73,7 @@ export type PendingAction =
 
 function describe(action: PendingAction): {
     title: string;
+    body?: ReactNode;
     description: ReactNode;
     confirm: string;
     destructive?: boolean;
@@ -74,6 +82,12 @@ function describe(action: PendingAction): {
         case 'rollback':
             return {
                 title: `Roll back ${action.deployment.serviceName} to ${shortSha(action.deployment.commitSha) ?? action.deployment.id}?`,
+                body: (
+                    <RollbackRows
+                        current={action.current ?? null}
+                        target={action.deployment}
+                    />
+                ),
                 description: (
                     <>
                         Traffic moves back to this deployment’s image and
@@ -209,6 +223,7 @@ export function DeploymentActionDialog({
                 {text && action && (
                     <>
                         <DialogTitle>{text.title}</DialogTitle>
+                        {text.body}
                         <DialogDescription>
                             {text.description}
                         </DialogDescription>

@@ -55,7 +55,7 @@ Check these in order:
 - **Machine and Docker.** Check `docker compose ps` in the install folder. Both `launchroomd` and `dockerd-guard` should be running.
 - **launchroomd's log.** Repeated connection errors point at the network. `401` answers point at the clock or a revoked key.
 - **A moved dashboard.** Servers follow a new dashboard domain automatically once they can verify it, and fall back to the address they were installed with. If that old address no longer reaches the dashboard either, re-run the server's install command with the new address.
-- **Client certificates set to Require.** Servers without a valid certificate can't reach the dashboard. Settings → Security lists each server's readiness. See [Client certificates](/docs/teams-and-security/client-certificates).
+- **Client certificates set to Require.** Servers without a valid certificate can't reach the dashboard. Settings → Certificates & audit lists each server's readiness. See [Client certificates](/docs/teams-and-security/client-certificates).
 - **A sleeping laptop or desktop.** This is expected. It comes back **Online** when it wakes.
 
 ## Clock out of sync
@@ -107,7 +107,7 @@ On a server with rootless Docker, install with `--rootless` (the installer refus
   echo 'net.ipv4.ip_unprivileged_port_start=80' | sudo tee /etc/sysctl.d/90-unprivileged-ports.conf
   ```
 
-- **Some features run degraded.** The server's **Network** tab lists its **Capabilities**: apps see an internal address instead of the visitor's, the firewall covers container traffic but not the server's own interfaces, and private network links are often relayed. Without `/dev/net/tun` the server can't join the private network at all, and without cgroup v2 delegation CPU and memory limits aren't enforced.
+- **Some features run degraded.** The server's **Network** tab lists them under **What this server can do**: apps see an internal address instead of the visitor's, the firewall covers container traffic but not the server's own interfaces, and private network links are often relayed. Without `/dev/net/tun` the server can't join the private network at all, and without cgroup v2 delegation CPU and memory limits aren't enforced.
 
 See [Rootless Docker](/docs/servers/rootless-docker) for the full list.
 

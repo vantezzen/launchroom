@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Data\Canvas\ProjectSummaryData;
 use App\Enums\DeploymentFailureClass;
 use App\Enums\DeploymentStatus;
 use App\Enums\DeploymentStepName;
@@ -35,6 +36,20 @@ test('projects get palette slots in creation order, reusing the least-used slot'
     Project::query()->where('team_id', $team->id)->where('color_slot', 3)->update(['color_slot' => 1]);
     expect(Projects::create($team, 'next')->color_slot)->toBe(3)
         ->and(Projects::create(Team::factory()->create(), 'other')->color_slot)->toBe(0);
+});
+
+test('projects sort by recent activity, then by name', function (): void {
+    $team = Team::factory()->create();
+    $old = Projects::create($team, 'aaa-old');
+    $recent = Projects::create($team, 'zzz-recent');
+    $tie = Projects::create($team, 'bbb-tie');
+    $then = now()->subDays(20)->startOfMinute();
+    Project::query()->whereKey([$old->id, $tie->id])->update(['updated_at' => $then]);
+    Project::query()->whereKey($recent->id)->update(['updated_at' => now()->subMinute()]);
+
+    $names = array_map(static fn (ProjectSummaryData $summary): string => $summary->name, resolve(ProjectSummaries::class)->for($team));
+
+    expect($names)->toBe(['zzz-recent', 'aaa-old', 'bbb-tie']);
 });
 
 test('the projects page carries the card data: slot, domain, last deploy, 14 days and a mini canvas', function (): void {

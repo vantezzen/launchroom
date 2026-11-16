@@ -38,7 +38,8 @@ export default function AppLayout({
     return (
         <AppShell>
             <AppSidebar />
-            <SidebarInset className="min-w-0 overflow-x-clip">
+            {/* Phones: room for the bottom bar (PhoneNav). */}
+            <SidebarInset className="min-w-0 overflow-x-clip pb-(--phone-nav-h) md:pb-0">
                 <TopBarSlotProvider>
                     <FloatingBarProvider>
                         <TopBar>

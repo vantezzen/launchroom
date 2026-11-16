@@ -63,7 +63,8 @@ export function countFacets(entries: LogEntry[]): FilterGroup[] {
             label: 'Deployment',
             options: count((entry) => entry.deployment).map(([value, n]) => ({
                 value,
-                label: value,
+                label: value.length > 7 ? value.slice(0, 7) : value,
+                title: value.length > 7 ? value : undefined,
                 count: n,
                 mono: true,
             })),

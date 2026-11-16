@@ -22,6 +22,11 @@ The Projects page shows each project as a card with:
 - the last deploy
 - a deploy history for the last two weeks
 
+Projects with the most recent activity come first. With more than three projects, the header has a search field, a sort
+menu (**Recent activity** or **Name**) and a switch between cards and a list. Each project's **⋯** menu links to its
+site, deployments, logs and settings, and copies its domain. A project without services says **Empty** and offers
+**Add a service**.
+
 ## Service kinds
 
 Open **Add** in the canvas toolbar to add a service. The add sheet lists these kinds:
@@ -53,13 +58,15 @@ launchroom arranges services in three groups, drawn as frames behind the boxes:
 
 launchroom assigns the group from the kind of service. You can drag boxes anywhere (positions are saved per
 environment and apply right away) or press **Tidy up layout** in the toolbar to lay the groups out as columns. On a
-phone the canvas becomes a grouped list of the same service cards.
+phone the canvas becomes a grouped list of the same service cards, and a bar at the bottom of the screen holds Projects,
+Servers, Activity and Search.
 
 Each box shows:
 
 - the service's logo and name
 - its status with its age (Live, Deploying, Failed, …)
 - its address or, for a database, when it was last backed up
+- for a cron job, its schedule in words, such as "Weekdays at 09:00"
 - CPU and memory once metrics exist
 - its volume and where its replicas run
 
@@ -183,13 +190,16 @@ the domains and variables over.
 
 Most edits wait until you apply them. New services, settings, variables, connections and scaling collect as **staged
 changes** for the environment you're in. Staged services show a dashed outline and a **New**, **Changed** or
-**Removed** chip, and the canvas toolbar shows "4 changes" with **Review & apply**. A service staged for removal stays
-readable until you apply: its settings and variables open read-only.
+**Removed** chip, and a line under the status says what is staged, for example "1 variable and 2 settings". Click it to
+open the review. A service staged for removal is dimmed with its name struck through and "Removed when applied". It stays
+readable until you apply: its settings and variables open read-only. The canvas toolbar shows "4 changes" with
+**Review & apply**.
 
 <Screenshot id="canvas-alt" />
 
 **Review & apply** (or Shift+D on the canvas) opens the list of staged changes, grouped by service, with the effect of each
-change: a new service, a rebuild, a restart or no effect. A sentence at the top says which services redeploy, for example
+change: a new service, a rebuild, a restart or no effect. A changed setting lists only the fields that changed, each
+as old → new. A sentence at the top says which services redeploy, for example
 "Applying rebuilds web, and restarts api and worker." Discard single items or everything, add a message for the
 activity feed, and press **Apply 4 changes**. Applying creates one revision of the environment, and the services it
 affects redeploy. Only services deploy: applying changes their configuration, which can restart them.
@@ -204,8 +214,9 @@ which one.
 ## Command palette
 
 Press ⌘K (Ctrl+K on Linux and Windows) anywhere to open the command palette. It searches projects, environments,
-services, recent deployments and servers, and runs actions: redeploy a service (with an inline confirm), open its
-logs, add a variable or switch environment.
+services, recent deployments, servers and settings pages, and runs actions: redeploy a service (with an inline confirm),
+open its logs, add a variable or switch environment. Before you type, the **Create** group offers New project, Add a
+service, Add domain (with a service open), Add server and Invite people, each only when your role allows it.
 
 <Screenshot id="command-palette" />
 

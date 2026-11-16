@@ -9,6 +9,8 @@ const keys: Record<ShellKey, true> = {
     abilities: true,
     edgeOverview: true,
     projectStatuses: true,
+    environmentHealth: true,
+    environmentStatuses: true,
 };
 
 /** The props every project page shares (App\Queries\ProjectShell::props). */

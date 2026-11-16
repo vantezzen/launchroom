@@ -85,8 +85,10 @@ APP_KEY" decision under **Settings → Build & deploy**.
 
 ## Targeting
 
-A variable applies to the environments it targets. The editor shows them as chips on each row. One row can apply to
-production and staging at once, for example. When you edit a row that targets several environments, launchroom asks
+A variable applies to the environments it targets. One row can apply to production and staging at once, for example.
+When some rows reach beyond the open environment, the table gets an **Environments** column that names the others, such
+as "Also staging". Above the table, a count says how many variables there are, and with more than 8 a search field
+filters by key and visible value. When you edit a row that targets several environments, launchroom asks
 whether to change it in **this environment only** (the default, which splits the row) or in every environment of the
 row.
 

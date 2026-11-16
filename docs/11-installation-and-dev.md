@@ -302,7 +302,7 @@ Changing roles never requires touching the server. System containers are part of
 
 **How it runs.** With rootless Docker, `network_mode: host` is RootlessKit's network namespace, not the server's. launchroomd, Caddy and the mesh client all run host-network there, so everything that relies on loopback and container IPs (Caddy's admin API and `ask`, the access log, `127.0.0.1:5000`, health probes, the mesh IP) works unchanged. What does not reach the namespace by itself is the outside world: dockerd-guard exposes **exactly** 80/tcp, 443/tcp and 443/udp from the host into the namespace through RootlessKit's port API (the mechanism `docker run -p` uses on rootless hosts; guard endpoint `POST /launchroom/guard/v1/edge-ports`, idempotent). launchroomd asks for them at start and every 30 s, because RootlessKit forgets them when the rootless daemon restarts.
 
-**Capability matrix.** launchroomd reports `Report.host.runtime` (`docker: rootful|rootless`, `guard`, `capabilities[]` with a `reason` code per limited row and the facts behind it, [03](03-daemon-protocol.md) §9; the dashboard words them), shown on the server page (Settings → Network → Capabilities). Measured in `docker:29-dind-rootless`:
+**Capability matrix.** launchroomd reports `Report.host.runtime` (`docker: rootful|rootless`, `guard`, `capabilities[]` with a `reason` code per limited row and the facts behind it, [03](03-daemon-protocol.md) §9; the dashboard words them), shown on the server page (Network → What this server can do; the Docker access row is labelled "Server access" there). Measured in `docker:29-dind-rootless`:
 
 | Capability | Rootful + guard | Rootless |
 |---|---|---|
@@ -337,7 +337,7 @@ The core case: a Mac at home (a Mac mini, a MacBook) joins next to a VPS as a **
 
 **What launchroomd does.** `LR_HOST_OS` (else: darwin for OrbStack, which only exists on macOS) and the engine from `docker info` (`docker.EngineKindOf`: OS name, then Colima's VM name; never the kernel, because a dind container on OrbStack runs OrbStack's kernel) go into `Report.host.runtime` as `hostOs` and `engine`; `EnrollRequest.host.os` is `darwin`, so the dashboard knows at enrollment. `LR_HOST_MODEL` becomes `hardware.hostModel` (device art: Mac mini/Studio/iMac compact, MacBook laptop, Mac Pro tower). The hardware probe names Docker Desktop/OrbStack VMs before its container heuristic (with `pid: host`, OrbStack's PID 1 is its `simplevisor`, which read as "a container"). `buildPlatforms` is what the running buildkitd reports for its workers (asked once per container).
 
-**Capability matrix** (Settings → Network → Capabilities; reasoning below, not yet measured on a real Mac):
+**Capability matrix** (the server page, Network → What this server can do; reasoning below, not yet measured on a real Mac):
 
 | Capability | Docker Engine (Linux) | OrbStack / Colima on a Mac | Docker Desktop on a Mac |
 |---|---|---|---|

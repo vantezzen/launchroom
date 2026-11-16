@@ -50,6 +50,8 @@ test('creating an authorized token shows the plaintext once without an extra pas
     expect($created['plainText'])->toStartWith($token->id.'|lr_pat_')
         ->and($token->expires_at?->isSameDay(now()->addDays(90)))->toBeTrue()
         ->and($token->team_id)->toBe($world->team->id)
+        ->and($token->hint)->toBe('lr_pat_…'.mb_substr($created['plainText'], -4))
+        ->and($created['token']['hint'])->toBe($token->hint)
         ->and(AuditEvent::query()->where('action', 'api_token.created')->sole()->meta['abilities'])->toBe(['read', 'deploy']);
 
     Api::get('me', $created['plainText'])->assertOk();

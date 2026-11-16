@@ -45,7 +45,7 @@ Open a service, choose **Console**, then:
 <Step>
 ### Pick a replica
 
-If the service runs several replicas, choose one ("Replica 1 · fra-1"). Only running replicas are listed.
+If the service runs several replicas, choose one. Each shows the server it runs on. Only running replicas are listed.
 </Step>
 <Step>
 ### Pick a shell
@@ -84,12 +84,16 @@ Console sessions are **not recorded** by default. A team owner can turn on **Rec
 
 ## Data tab
 
-Managed databases get a **Data** tab with two modes.
+Managed databases get a **Data** tab with two modes. It opens the panel at full width.
 
 <Screenshot id="database-data" />
 
-- **Browse**: the sidebar lists schemas and tables (or keys for Redis and Valkey). Select one to page through rows, 50 at a time. Long values are cut with "…". Click one to see the full value.
+- **Browse**: the sidebar lists schemas and tables (or keys for Redis and Valkey). Select one to page through rows, 50 at a time, with ‹ and › next to the row count. Long values are cut with "…". Click one to see the full value. On a narrow panel or a phone, the sidebar becomes a picker button above the rows.
 - **Query**: write a statement and press ⌘↵ or **Run**. **History** holds your last 50 statements on this database.
+
+Click a row's number to open it in the **row inspector**: every column with its full value and a copy button. **Previous row** and **Next row** (or ↑ and ↓) move between rows.
+
+**Export**, next to a table's title or a query result, copies the rows on screen as CSV or JSON, or downloads them as a CSV file. The file is built in your browser.
 
 The database's own client runs inside the database container with the credentials launchroom already holds. The Data tab needs no extra container or exposed port.
 
@@ -109,6 +113,8 @@ Some commands are refused even with writes allowed, because they could take the 
 
 - Redis and Valkey: `SHUTDOWN`, `CONFIG`, `ACL`, `MONITOR`, `DEBUG` and similar
 - MongoDB: user and role management, `shutdown` and commands against another database
+
+With writes allowed, statements that change a lot at once ask first: an `UPDATE` or `DELETE` without `WHERE`, `DROP`, `TRUNCATE`, `ALTER … DROP`, `FLUSHALL` or `FLUSHDB`, and MongoDB commands that drop or delete everything. The warning names what the statement does, for example "This deletes every row in orders.", and when the last backup ran. When that is more than a day ago, **Back up now first** starts a backup. **Run it** runs the statement.
 
 <Callout type="warn" title="Read-only mode guards against mistakes">
 Read-only mode protects you from accidents. Access is controlled by the Data permission and the audit trail.

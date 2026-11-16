@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace App\Data\Alerts;
 
 use App\Enums\Alerts\AlertRule;
+use App\Models\Alerts\Alert;
 use Spatie\LaravelData\Data;
 
 /**
- * One row of "What we tell you about" with its bounds.
+ * One row of "What we tell you about" with its bounds and, when the rule
+ * has fired for the team, its latest alert ("Last alert 3 days ago").
  */
 final class AlertRuleData extends Data
 {
@@ -27,9 +29,13 @@ final class AlertRuleData extends Data
         public ?int $duration,
         public ?int $durationMin,
         public ?int $durationMax,
+        /** When the rule last opened an alert for the team. */
+        public ?string $lastFiredAt = null,
+        /** That alert's title ("orders-db is offline"). */
+        public ?string $lastFiredTitle = null,
     ) {}
 
-    public static function fromResolved(ResolvedRule $resolved): self
+    public static function fromResolved(ResolvedRule $resolved, ?Alert $last = null): self
     {
         $rule = $resolved->rule;
         $threshold = $rule->threshold();
@@ -48,6 +54,8 @@ final class AlertRuleData extends Data
             $resolved->duration,
             $duration['min'] ?? null,
             $duration['max'] ?? null,
+            $last?->opened_at->toIso8601String(),
+            $last?->title,
         );
     }
 }

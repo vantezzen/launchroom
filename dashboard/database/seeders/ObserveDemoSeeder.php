@@ -280,7 +280,7 @@ final class ObserveDemoSeeder extends Seeder
             return [[DeploymentStepName::Rollout, 14, null], [DeploymentStepName::Health, 6, 'TCP 5432 accepted the connection'], [DeploymentStepName::Route, 1, null]];
         }
 
-        $steps = [[DeploymentStepName::Plan, $this->random(2, 4), 'Next.js 16.1 · pnpm 9.12 · Node 22']];
+        $steps = [[DeploymentStepName::Plan, $this->random(2, 4), 'Next.js 16.1 with pnpm 9.12 on Node 22']];
 
         if ($build !== null && $build > 0) {
             $steps[] = [DeploymentStepName::Build, $build + $this->random(-6, 6), null];
@@ -354,7 +354,7 @@ final class ObserveDemoSeeder extends Seeder
             'spec' => '{}',
             'status' => $status === DeploymentStatus::Building ? 'leased' : ($failedBuild ? 'failed' : 'succeeded'),
             'deployment_id' => $deployment->id,
-            'result' => $failedBuild ? ['failure' => ['hints' => [['code' => 'pnpm-outdated-lockfile']]]] : null,
+            'result' => $failedBuild ? ['failure' => ['class' => 'build_error', 'hints' => [['code' => 'pnpm-outdated-lockfile', 'message' => 'pnpm-lock.yaml is out of date']]]] : null,
             'finished_at' => $deployment->finished_at,
         ]);
         $sha = substr((string) $deployment->commit_sha, 0, 7);

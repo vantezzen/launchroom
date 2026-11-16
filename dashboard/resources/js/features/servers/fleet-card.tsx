@@ -7,7 +7,6 @@ import { CardChip, ObjectCard } from '@/components/cards/object-card';
 import { colorForSlot } from '@/components/charts/palette';
 import { Sparkline } from '@/components/charts/sparkline';
 import { DeviceImage } from '@/components/devices/device-image';
-import { MetaLine } from '@/components/patterns/meta-line';
 import { Status } from '@/components/status';
 import { Button } from '@/components/ui/button';
 import {
@@ -25,7 +24,7 @@ import {
 } from '@/features/servers/format';
 import { RoleChipLabel, ServerStatus } from '@/features/servers/server-status';
 import { PendingCardMenu } from '@/features/servers/remove-pending';
-import { cn } from '@/lib/utils';
+import { SpecLine } from '@/features/servers/spec-line';
 import { create, replace as replaceRoute, show } from '@/routes/servers';
 import { show as enrollmentRoute } from '@/routes/servers/enrollments';
 import { formatMemory, shortAge, shortDuration } from '@/lib/format';
@@ -148,7 +147,6 @@ function UnreachableNote({
     return (
         <div className="flex flex-col gap-3 rounded-lg bg-recessed p-3.5">
             <p className="type-small text-muted-foreground">
-                No report for {shortDuration(server.lastSeenAt) ?? 'a while'}.{' '}
                 {replicas > 0
                     ? `${replicas} ${replicas === 1 ? 'replica was' : 'replicas were'} placed here.`
                     : 'Nothing was placed here.'}
@@ -218,9 +216,9 @@ export function FleetCard({
             tone={problem ? 'error' : 'default'}
             mediaLabel={placeLabel(server) ?? undefined}
             mediaMeta={
+                !problem &&
                 lastSeen && (
                     <span
-                        className={cn(problem && 'text-status-error')}
                         title={
                             server.lastSeenAt
                                 ? `Last report ${new Date(server.lastSeenAt).toLocaleString()}`
@@ -234,6 +232,7 @@ export function FleetCard({
             status={
                 <ServerStatus
                     status={server.status}
+                    lastSeenAt={server.lastSeenAt}
                     className="type-small text-muted-foreground"
                 />
             }
@@ -266,9 +265,7 @@ export function FleetCard({
             footer={
                 specs.length > 0 || disk !== null ? (
                     <>
-                        <MetaLine className="flex-nowrap overflow-hidden whitespace-nowrap">
-                            {specs}
-                        </MetaLine>
+                        <SpecLine specs={server.specs} className="min-w-0" />
                         {disk !== null && disk >= 80 && (
                             <span className="shrink-0 text-status-progress">
                                 Disk {Math.round(disk)}%

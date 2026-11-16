@@ -1,7 +1,8 @@
 import { Link } from '@inertiajs/react';
 import { useQuery } from '@tanstack/react-query';
 import { ChartColumnStacked, ChevronRight } from 'lucide-react';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
+import type { ReactNode } from 'react';
 import { Sparkline } from '@/components/charts/sparkline';
 import { StackedBars } from '@/components/charts/stacked-bars';
 import { StatTile } from '@/components/charts/stat-tile';
@@ -11,6 +12,7 @@ import { MetaLine } from '@/components/patterns/meta-line';
 import { PageHeader } from '@/components/patterns/page';
 import { Section } from '@/components/patterns/section';
 import { projectSeries, share } from '@/features/analytics/shape';
+import type { TeamMeasure } from '@/features/analytics/shape';
 import { delta } from '@/features/metrics/format';
 import { requestJson } from '@/lib/http';
 import { analyticsHref } from '@/lib/links';
@@ -30,6 +32,38 @@ const RANGES = rangeOptions(RANGE_SETS.analytics);
 const card =
     'rounded-[14px] border bg-card shadow-[0_1px_2px_rgb(0_0_0/0.04)] dark:shadow-none';
 
+const MEASURE_LABEL: Record<TeamMeasure, string> = {
+    requests: 'Requests',
+    serverErrors: 'Server errors',
+    clientErrors: 'Client errors',
+};
+
+/** A tile that picks what the chart below shows (the MetricCard selected state). */
+function Selectable({
+    selected,
+    onSelect,
+    children,
+}: {
+    selected: boolean;
+    onSelect: () => void;
+    children: ReactNode;
+}) {
+    return (
+        <button
+            type="button"
+            aria-pressed={selected}
+            onClick={onSelect}
+            className={cn(
+                'flex min-w-0 rounded-[14px] text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--signal) [&>*]:flex-1 hover:[&>*]:border-(--border-strong)',
+                selected &&
+                    '[&>*]:border-foreground [&>*]:ring-[0.5px] [&>*]:ring-foreground',
+            )}
+        >
+            {children}
+        </button>
+    );
+}
+
 /** The drill-down link of a project: its production Analytics tab, same range. */
 function projectHref(project: Project, range: Range): string | null {
     return project.environmentId
@@ -44,9 +78,11 @@ function projectHref(project: Project, range: Range): string | null {
 /**
  * Analytics (sidebar; docs/15 §5.4): requests of every project of the
  * team, all environments. Totals with the change against the period
- * before, requests per hour (per day for a month) stacked by project, one
- * row per project linking to its Analytics tab, the top paths across
- * projects and the split by server. Refetched every minute.
+ * before (Requests, Server errors and Client errors pick what the chart
+ * shows), that measure per hour (per day for a month) stacked by project,
+ * in counts or as shares of each bar, one row per project linking to its
+ * Analytics tab, the top paths across projects with a bar for their share
+ * and the split by server. Refetched every minute.
  */
 export function TeamAnalytics({ teamName }: { teamName: string }) {
     const { range, setRange, snapped } = useObserveScope(RANGE_SETS.analytics);
@@ -126,43 +162,69 @@ function Overview({
     unit: 'hour' | 'day';
 }) {
     const totals = data.totals;
-    const series = projectSeries(data);
-    const colors = new Map(series.map((s) => [s.key, s.color]));
+    const [measure, setMeasure] = useState<TeamMeasure>('requests');
+    const [mode, setMode] = useState<'absolute' | 'share'>('absolute');
+    // Project colours follow the requests ranking, whatever the chart shows.
+    const colors = new Map(projectSeries(data).map((s) => [s.key, s.color]));
+    const series = projectSeries(data, undefined, measure).map((s) => ({
+        ...s,
+        color: colors.get(s.key) ?? s.color,
+    }));
+    const measureLabel = MEASURE_LABEL[measure];
 
     return (
         <div className="flex flex-col gap-8">
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                <StatTile
-                    label="Requests"
-                    value={formatCompact(totals.requests)}
-                    delta={delta(totals.requests, totals.previousRequests)}
-                    hint={`${data.projects.length} ${data.projects.length === 1 ? 'project' : 'projects'} with traffic`}
-                />
-                <StatTile
-                    label="Server errors"
-                    value={
-                        totals.errorRatePct !== null
-                            ? formatShare(totals.errorRatePct)
-                            : null
-                    }
-                    delta={delta(
-                        totals.errorRatePct,
-                        totals.previousErrorRatePct,
-                        'lowerIsBetter',
-                        0.1,
-                    )}
-                    hint={`${formatCompact(totals.status5xx)} responses with 5xx`}
-                />
-                <StatTile
-                    label="Client errors"
-                    value={formatShare(
-                        share(totals.status4xx, totals.requests),
-                    )}
-                    hint={`${formatCompact(totals.status4xx)} responses with 4xx`}
-                />
+                <Selectable
+                    selected={measure === 'requests'}
+                    onSelect={() => setMeasure('requests')}
+                >
+                    <StatTile
+                        label="Requests"
+                        value={formatCompact(totals.requests)}
+                        unit="total"
+                        delta={delta(totals.requests, totals.previousRequests)}
+                        hint={`${data.projects.length} ${data.projects.length === 1 ? 'project' : 'projects'} with traffic`}
+                    />
+                </Selectable>
+                <Selectable
+                    selected={measure === 'serverErrors'}
+                    onSelect={() => setMeasure('serverErrors')}
+                >
+                    <StatTile
+                        label="Server errors"
+                        value={
+                            totals.errorRatePct !== null
+                                ? formatShare(totals.errorRatePct)
+                                : null
+                        }
+                        unit="of requests"
+                        delta={delta(
+                            totals.errorRatePct,
+                            totals.previousErrorRatePct,
+                            'lowerIsBetter',
+                            0.1,
+                        )}
+                        hint={`${formatCompact(totals.status5xx)} responses with 5xx`}
+                    />
+                </Selectable>
+                <Selectable
+                    selected={measure === 'clientErrors'}
+                    onSelect={() => setMeasure('clientErrors')}
+                >
+                    <StatTile
+                        label="Client errors"
+                        value={formatShare(
+                            share(totals.status4xx, totals.requests),
+                        )}
+                        unit="of requests"
+                        hint={`${formatCompact(totals.status4xx)} responses with 4xx`}
+                    />
+                </Selectable>
                 <StatTile
                     label="Blocked"
                     value={formatCompact(totals.blocked)}
+                    unit="total"
                     delta={delta(totals.blocked, totals.previousBlocked)}
                     hint={
                         totals.blocked > 0
@@ -181,17 +243,35 @@ function Overview({
             </div>
 
             <Section
-                title={`Requests per ${unit}`}
-                description={`By project, ${rangeWords(range)}`}
+                title={`${measureLabel} per ${unit}`}
+                description={`By project, ${rangeWords(range)}.`}
+                actions={
+                    <TimeRangeSelect<'absolute' | 'share'>
+                        value={mode}
+                        onChange={setMode}
+                        options={[
+                            { value: 'absolute', label: 'Absolute' },
+                            { value: 'share', label: 'Share' },
+                        ]}
+                        label="Scale"
+                    />
+                }
             >
                 <div className={cn(card, 'p-5')}>
-                    <StackedBars
-                        title={`Requests per ${unit} by project, ${rangeWords(range)}`}
-                        times={times}
-                        bucketMs={data.bucketSeconds * 1000}
-                        series={series}
-                        height={240}
-                    />
+                    {series.length > 0 ? (
+                        <StackedBars
+                            title={`${measureLabel} per ${unit} by project, ${rangeWords(range)}`}
+                            times={times}
+                            bucketMs={data.bucketSeconds * 1000}
+                            series={series}
+                            height={240}
+                            share={mode === 'share'}
+                        />
+                    ) : (
+                        <p className="py-16 text-center type-body text-muted-foreground">
+                            No {measureLabel.toLowerCase()} in this range.
+                        </p>
+                    )}
                 </div>
             </Section>
 
@@ -357,6 +437,8 @@ function ProjectRow({
 }
 
 function TopPaths({ data }: { data: Team }) {
+    const most = Math.max(1, ...data.paths.map((row) => row.requests));
+
     return (
         <Section
             title="Top paths"
@@ -397,9 +479,16 @@ function TopPaths({ data }: { data: Team }) {
                                 >
                                     <th
                                         scope="row"
-                                        className="px-4 py-2 text-left font-normal"
+                                        className="relative px-4 py-2 text-left font-normal"
                                     >
-                                        <span className="block truncate">
+                                        <span
+                                            aria-hidden="true"
+                                            className="absolute inset-y-1 left-1 rounded-md bg-foreground/[0.06]"
+                                            style={{
+                                                width: `calc(${(row.requests / most) * 100}% - 0.5rem)`,
+                                            }}
+                                        />
+                                        <span className="relative block truncate">
                                             <span className="text-muted-foreground">
                                                 {row.projectName}
                                             </span>{' '}

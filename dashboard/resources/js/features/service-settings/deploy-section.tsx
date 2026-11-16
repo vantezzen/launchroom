@@ -10,6 +10,7 @@ import services from '@/routes/projects/services';
 import { autoHealthTimeout } from './health-timeout';
 import { OverrideRow } from './override-row';
 import { SaveRow, SettingsPage } from './section';
+import type { FieldLabels } from './section';
 import type { SettingsContext } from './settings-context';
 import {
     SettingsBody,
@@ -32,6 +33,23 @@ type DeployForm = {
     rolloutTimeout: number;
     /** null: derived from the health check (autoHealthTimeout). */
     healthTimeout: number | null;
+};
+
+/** What the unsaved bar calls each field, and the row it lives in. */
+const DEPLOY_FIELDS: FieldLabels = {
+    start: ['Start command', 'start-command'],
+    port: ['Port', 'port'],
+    release: ['Release command', 'release-command'],
+    healthType: ['Health check', 'health-check'],
+    healthPath: ['Health check path', 'health-path'],
+    expectStatus: ['Expected status', 'health-path'],
+    startPeriod: ['Time to start', 'health-timing'],
+    interval: ['Check interval', 'health-timing'],
+    timeout: ['Answer within', 'health-timing'],
+    failures: ['Unhealthy after', 'health-timing'],
+    drain: ['Drain time', 'drain'],
+    rolloutTimeout: ['Start timeout', 'rollout-timeout'],
+    healthTimeout: ['Health check timeout', 'health-timeout'],
 };
 
 function fromSettings(
@@ -471,7 +489,9 @@ export function DeploySection({ context }: { context: SettingsContext }) {
                             form.reset();
                             setCommandError(null);
                         }}
-                        label="Save for next deploy"
+                        stages="restart"
+                        fields={form.data}
+                        labels={DEPLOY_FIELDS}
                     />
                 )}
             </form>

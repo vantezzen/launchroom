@@ -8,17 +8,36 @@ type TeamAnalytics = App.Data.Analytics.TeamAnalyticsData;
 /** Projects with their own colour in the team chart; the rest is "Other". */
 const TOP_PROJECTS = 4;
 
+/** What the team chart stacks by project: requests, 5xx or 4xx responses. */
+export type TeamMeasure = 'requests' | 'serverErrors' | 'clientErrors';
+
+const MEASURE: Record<
+    TeamMeasure,
+    (project: TeamAnalytics['projects'][number]) => number[]
+> = {
+    requests: (project) => project.requestsSeries,
+    serverErrors: (project) => project.serverErrorSeries,
+    clientErrors: (project) => project.clientErrorSeries,
+};
+
+const sum = (values: number[]) => values.reduce((total, v) => total + v, 0);
+
 /**
- * Requests per bucket stacked by project (design-system §3.4, §9): the
- * busiest `max` projects in their own palette slot (a slot already taken in
- * this chart moves to the next free one, so two series never share a
- * colour), every other project summed into one grey "Other (n)".
+ * A measure per bucket stacked by project (design-system §3.4, §9): the
+ * `max` projects with the most of it in their own palette slot (a slot
+ * already taken in this chart moves to the next free one, so two series
+ * never share a colour), every other project summed into one grey
+ * "Other (n)".
  */
 export function projectSeries(
     data: TeamAnalytics,
     max = TOP_PROJECTS,
+    measure: TeamMeasure = 'requests',
 ): StackedSeries[] {
-    const sorted = [...data.projects].sort((a, b) => b.requests - a.requests);
+    const pick = MEASURE[measure];
+    const sorted = [...data.projects]
+        .filter((p) => measure === 'requests' || sum(pick(p)) > 0)
+        .sort((a, b) => sum(pick(b)) - sum(pick(a)) || b.requests - a.requests);
     const used = new Set<number>();
     const series: StackedSeries[] = sorted.slice(0, max).map((project) => {
         let slot =
@@ -36,7 +55,7 @@ export function projectSeries(
             key: project.id,
             label: project.name,
             color: colorForSlot(slot),
-            values: project.requestsSeries,
+            values: pick(project),
         };
     });
     const rest = sorted.slice(max);
@@ -47,7 +66,7 @@ export function projectSeries(
             label: `Other (${rest.length})`,
             color: OTHER,
             values: data.timestamps.map((_, i) =>
-                rest.reduce((sum, p) => sum + (p.requestsSeries[i] ?? 0), 0),
+                rest.reduce((total, p) => total + (pick(p)[i] ?? 0), 0),
             ),
         });
     }

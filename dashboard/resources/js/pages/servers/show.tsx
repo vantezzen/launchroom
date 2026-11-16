@@ -10,7 +10,9 @@ import { Section } from '@/components/patterns/section';
 import { TopBarActions } from '@/components/patterns/top-bar';
 import { Button } from '@/components/ui/button';
 import { ServerCharts } from '@/features/metrics/server-charts';
+import { TypedConfirm } from '@/features/moves/typed-confirm';
 import { RemovePendingButton } from '@/features/servers/remove-pending';
+import { roleLabels } from '@/features/servers/server-status';
 import { RetiredVolumes } from '@/features/servers/retired-volumes';
 import {
     EdgeTraffic,
@@ -121,7 +123,43 @@ const TAB_LABELS: Record<App.Enums.ServerTab, string> = {
     settings: 'Settings',
 };
 
-function DangerZone({ server }: { server: App.Data.Servers.ServerDetailData }) {
+/** What runs on a server, per project environment ("shop / production, 3 replicas"). */
+function placedHere(
+    placement: App.Data.Servers.ServerPlacementData | undefined,
+): string[] {
+    const byEnv = new Map<string, number>();
+
+    for (const workload of placement?.workloads ?? []) {
+        const key = `${workload.projectName} / ${workload.environmentName}`;
+        byEnv.set(key, (byEnv.get(key) ?? 0) + 1);
+    }
+
+    return [...byEnv].map(
+        ([name, replicas]) =>
+            `${name}, ${replicas} ${replicas === 1 ? 'replica' : 'replicas'}`,
+    );
+}
+
+/** The first `max` entries, then "and 3 more project environments". */
+function capped(items: string[], max: number, nouns: string): string[] {
+    if (items.length <= max) {
+        return items;
+    }
+
+    const rest = items.length - (max - 1);
+
+    return [...items.slice(0, max - 1), `and ${rest} more ${nouns}`];
+}
+
+function DangerZone({
+    server,
+    placement,
+    edge,
+}: {
+    server: App.Data.Servers.ServerDetailData;
+    placement?: App.Data.Servers.ServerPlacementData;
+    edge: App.Data.Ingress.EdgeIngressStatusData | null;
+}) {
     if (!server.canRevoke) {
         return null;
     }
@@ -145,6 +183,13 @@ function DangerZone({ server }: { server: App.Data.Servers.ServerDetailData }) {
         );
     }
 
+    const apps = placedHere(placement);
+    const volumes = placement?.volumes ?? [];
+    const routes = edge?.routes ?? 0;
+    const occupied = apps.length > 0 || volumes.length > 0;
+    const canMove =
+        occupied && !server.isControlPlane && server.status !== 'revoked';
+
     return (
         <SettingsCard title="Danger zone">
             <MoveRow server={server} />
@@ -152,10 +197,51 @@ function DangerZone({ server }: { server: App.Data.Servers.ServerDetailData }) {
                 label={`Revoke ${server.name}`}
                 description="Its key is rejected immediately. To bring it back, add it again with a new install command."
             >
-                <ConfirmAction
+                <TypedConfirm
                     trigger="Revoke"
                     title={`Revoke ${server.name}?`}
-                    description="The server’s key is rejected immediately. It stops receiving apps and tasks, and must be added again with a new install command. This can’t be undone."
+                    object={{
+                        name: server.name,
+                        detail: server.roles
+                            .map((role) => roleLabels[role])
+                            .join(', '),
+                    }}
+                    goesHeading="Stops here"
+                    goes={[
+                        ...capped(apps, 5, 'project environments'),
+                        ...capped(
+                            volumes.map((volume) => `${volume}, with its data`),
+                            4,
+                            'services with data',
+                        ),
+                        ...(routes > 0
+                            ? [
+                                  `Public traffic for ${routes} ${routes === 1 ? 'address' : 'addresses'} no longer enters here`,
+                              ]
+                            : []),
+                        'Its key, which can’t be restored',
+                    ]}
+                    description={
+                        <span className="text-status-error">
+                            {occupied
+                                ? 'Apps here stop until they run somewhere else.'
+                                : 'It stops receiving apps and tasks.'}
+                        </span>
+                    }
+                    secondary={
+                        canMove ? (
+                            <p className="type-small text-muted-foreground">
+                                To keep them running, move them first.{' '}
+                                <Link
+                                    href={moveRoute(server.id)}
+                                    className="text-foreground underline underline-offset-4"
+                                >
+                                    Move to another server
+                                </Link>
+                            </p>
+                        ) : undefined
+                    }
+                    expected={server.name}
                     confirmLabel="Revoke server"
                     form={revoke.form(server.id)}
                     destructive
@@ -392,6 +478,7 @@ export default function ShowServer({
                             server={server}
                             mesh={mesh}
                             replacedBy={replace.replacedBy}
+                            runtime={runtime ?? null}
                         />
                     </>
                 )}
@@ -436,7 +523,11 @@ export default function ShowServer({
                             </EmptyState>
                         )}
 
-                        <DangerZone server={server} />
+                        <DangerZone
+                            server={server}
+                            placement={placement}
+                            edge={edge}
+                        />
                     </div>
                 )}
             </Page>

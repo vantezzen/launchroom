@@ -1,6 +1,5 @@
 import { useRef } from 'react';
-import type { KeyboardEvent } from 'react';
-import type { TimeRangeOption } from '@/lib/observe-scope';
+import type { KeyboardEvent, ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 
 /**
@@ -16,7 +15,8 @@ export function TimeRangeSelect<T extends string>({
 }: {
     value: T;
     onChange: (value: T) => void;
-    options: TimeRangeOption<T>[];
+    /** `TimeRangeOption`s, or any value with a rich label (counts, icons). */
+    options: { value: T; label: ReactNode }[];
     label?: string;
     className?: string;
 }) {

@@ -1,6 +1,7 @@
 import { router } from '@inertiajs/react';
 import { ArrowUpRight, DatabaseZap, Info, KeyRound } from 'lucide-react';
 import { useState } from 'react';
+import { logoLabel } from '@/components/logo';
 import { MetaLine } from '@/components/patterns/meta-line';
 import { SheetSection } from '@/components/patterns/sheet';
 import { Button } from '@/components/ui/button';
@@ -96,7 +97,21 @@ export function TemplateSetup({
             </SheetSection>
 
             <SheetSection title="What you get">
-                <BlueprintCanvas preview={template.preview} />
+                <BlueprintCanvas
+                    preview={template.preview}
+                    pending={
+                        template.needsRepository && repository === null
+                            ? {
+                                  keys: template.preview.services
+                                      .filter(
+                                          (service) => service.kind === 'app',
+                                      )
+                                      .map((service) => service.key),
+                                  label: 'Needs a repository',
+                              }
+                            : undefined
+                    }
+                />
                 {generated.length > 0 && (
                     <p className="flex items-start gap-2 type-small text-muted-foreground">
                         <KeyRound
@@ -188,6 +203,17 @@ export function TemplateSetup({
                                 value={repository}
                                 onChange={setRepository}
                                 error={errors.repository ?? errors.branch}
+                                starter={
+                                    template.starter
+                                        ? {
+                                              url: template.starter,
+                                              framework: logoLabel(
+                                                  template.logo,
+                                              ),
+                                              logo: template.logo,
+                                          }
+                                        : null
+                                }
                             />
                         </div>
                     )}
@@ -259,7 +285,8 @@ export function TemplateSetup({
                 </SheetSection>
             )}
 
-            <SheetSection>
+            {/* The actions stay in view on a long sheet (-bottom-16 cancels the scroll area's bottom padding). */}
+            <SheetSection className="sticky -bottom-16 z-10 border-t bg-card">
                 <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <MetaLine className="type-small text-muted-foreground">
                         {template.license}

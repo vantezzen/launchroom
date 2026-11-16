@@ -241,6 +241,7 @@ function Report({
                 <StatTile
                     label="Requests"
                     value={formatCompact(totals.requests)}
+                    unit="total"
                     delta={delta(totals.requests, totals.previousRequests)}
                     hint={`Peak ${formatCompact(peak)} per ${unit}`}
                 />
@@ -257,16 +258,19 @@ function Report({
                         'lowerIsBetter',
                         0.1,
                     )}
+                    unit="of requests"
                     hint={`${formatCompact(totals.status5xx)} responses with 5xx`}
                 />
                 <StatTile
                     label="Client errors"
                     value={formatShare(clientErrors)}
+                    unit="of requests"
                     hint={`${formatCompact(totals.status4xx)} responses with 4xx`}
                 />
                 <StatTile
                     label="Blocked"
                     value={formatCompact(totals.blocked)}
+                    unit="total"
                     delta={delta(totals.blocked, totals.previousBlocked)}
                     hint={
                         totals.blocked > 0
@@ -286,7 +290,7 @@ function Report({
 
             <Section
                 title={`Requests per ${unit}`}
-                description={`By status, ${rangeWords(range)}`}
+                description={`Requests your services answered, by response type, ${rangeWords(range)}.`}
             >
                 <div className={cn(card, 'p-5')}>
                     <StackedBars

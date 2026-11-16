@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Settings;
 
+use App\Data\Servers\DeviceData;
 use App\Data\Settings\NetworkMemberData;
 use App\Enums\ServerStatus;
 use App\Http\Controllers\Controller;
@@ -13,6 +14,7 @@ use App\Models\User;
 use App\Queries\AppsDomainSetup;
 use App\Queries\IngressSettingsView;
 use App\Queries\ServerMesh;
+use App\Queries\ServerTopology;
 use App\Services\Mesh\MeshPolicy;
 use Illuminate\Container\Attributes\CurrentUser;
 use Illuminate\Support\Facades\Gate;
@@ -27,7 +29,7 @@ use Inertia\Response;
  */
 final class NetworkSettingsController extends Controller
 {
-    public function edit(#[CurrentUser] User $user, ServerMesh $mesh, IngressSettingsView $ingress, AppsDomainSetup $appsDomain): Response
+    public function edit(#[CurrentUser] User $user, ServerMesh $mesh, ServerTopology $topology, IngressSettingsView $ingress, AppsDomainSetup $appsDomain): Response
     {
         Gate::authorize('manageInstance');
 
@@ -46,7 +48,10 @@ final class NetworkSettingsController extends Controller
                 $server->is_control_plane,
                 $server->status === ServerStatus::Online,
                 $mesh->summary($server, $controlPlaneIp),
+                DeviceData::fromServer($server)->kind,
             ))->values()->all(),
+            // Path and round trip per pair, for "On the network" (docs/08 §14).
+            'meshLinks' => $topology->links($servers),
             // For "bring your own Tailscale": the ACL the built-in mesh uses.
             'recommendedPolicy' => (string) json_encode(MeshPolicy::document('autogroup:admin'), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES),
             'tags' => MeshPolicy::allTags(),

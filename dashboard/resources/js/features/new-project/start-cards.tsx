@@ -1,5 +1,5 @@
 import { Link } from '@inertiajs/react';
-import { Plus } from 'lucide-react';
+import { FileCode2, Plus, SquareDashed } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { Logo } from '@/components/logo';
 import { cn } from '@/lib/utils';
@@ -65,6 +65,38 @@ export function ComposeCard({ href }: { href: string }) {
                 line="Each service in your compose.yml joins the canvas."
             />
         </Link>
+    );
+}
+
+/**
+ * The rarer ways to start as one quiet row under repositories and templates
+ * (PRJ-4): text buttons with a small icon each.
+ */
+export function OtherWaysToStart({
+    composeHref,
+    onStartEmpty,
+}: {
+    composeHref: string;
+    onStartEmpty: () => void;
+}) {
+    const item =
+        'inline-flex items-center gap-1.5 rounded-sm type-label text-muted-foreground underline-offset-4 hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none';
+
+    return (
+        <nav
+            aria-label="Other ways to start"
+            className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 border-t pt-6"
+        >
+            <span className="type-small text-faint">Other ways to start</span>
+            <button type="button" onClick={onStartEmpty} className={item}>
+                <SquareDashed aria-hidden="true" className="size-4" />
+                Blank canvas
+            </button>
+            <Link href={composeHref} className={item}>
+                <FileCode2 aria-hidden="true" className="size-4" />
+                Compose file
+            </Link>
+        </nav>
     );
 }
 

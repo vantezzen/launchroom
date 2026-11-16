@@ -24,6 +24,8 @@ final class OnboardingStateData extends Data
         public array $smallServerHintDismissed = [],
         /** The platform domain the owner continued with and whether its DNS check passed then. */
         public ?DomainConfirmationData $domainConfirmed = null,
+        /** The first-live card on the canvas was dismissed (ISO 8601). */
+        public ?string $firstAppSeenAt = null,
     ) {}
 
     public function confirmed(?string $domain): bool

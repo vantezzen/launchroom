@@ -38,6 +38,7 @@ export default function BackupSettings({
                 destinations={destinations}
                 canManage={canManage}
                 usage={usage}
+                schedules={schedules}
                 instanceDestination={instance?.destination ?? null}
             />
 

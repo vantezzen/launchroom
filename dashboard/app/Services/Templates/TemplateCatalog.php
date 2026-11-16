@@ -173,6 +173,7 @@ final class TemplateCatalog
             preview: BlueprintPreview::of($translation->blueprint),
             needsRepository: $template->needsRepository(),
             notes: $template->notes,
+            starter: $template->starter,
         );
     }
 }

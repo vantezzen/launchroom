@@ -8,8 +8,10 @@ import { Status } from '@/components/status';
 import type { StatusState } from '@/components/status';
 import { TimeAgo } from '@/components/time-ago';
 import { Button } from '@/components/ui/button';
+import { DisconnectMenu } from '@/features/git/disconnect-menu';
 import { providerLogo } from '@/features/git/providers';
 import { edit } from '@/routes/git';
+import { destroy } from '@/routes/git/connections';
 import { requestJson, RequestFailed } from '@/lib/http';
 import { recheck, webhook } from '@/routes/git/servers';
 import { vocabulary } from '@/lib/vocabulary';
@@ -70,6 +72,7 @@ export function GitConnectionCard({
     const line = health(connection);
     const plain = connection.provider === 'git';
     const ssh = plain && connection.url.startsWith('ssh://');
+    const shown = plain ? connection.name : connection.serverLabel;
     const repos = `${connection.repositoriesCount} ${connection.repositoriesCount === 1 ? 'repository' : 'repositories'}`;
 
     return (
@@ -155,6 +158,32 @@ export function GitConnectionCard({
                                     Check host key again
                                 </Button>
                             )}
+                        <DisconnectMenu
+                            name={shown}
+                            label={
+                                connection.status === 'pending'
+                                    ? 'Remove setup…'
+                                    : 'Disconnect…'
+                            }
+                            title={
+                                connection.status === 'pending'
+                                    ? `Remove ${shown}?`
+                                    : `Disconnect ${shown}?`
+                            }
+                            consequence={
+                                connection.status === 'pending'
+                                    ? 'Its setup was never finished, so nothing uses it yet.'
+                                    : plain
+                                      ? 'Services from it stop receiving pushes and can’t build until it is connected again. launchroom deletes the deploy key and the pinned host key, so remove the deploy key from the git server too.'
+                                      : `Services from it stop receiving pushes and can’t build until it is connected again. launchroom deletes its token and the webhooks it added on ${connection.host}.`
+                            }
+                            confirmLabel={
+                                connection.status === 'pending'
+                                    ? 'Remove'
+                                    : 'Disconnect'
+                            }
+                            url={destroy(connection.id).url}
+                        />
                     </div>
                 )}
             </div>

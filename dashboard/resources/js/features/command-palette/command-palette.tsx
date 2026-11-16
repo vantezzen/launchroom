@@ -1,7 +1,6 @@
 import { router, usePage } from '@inertiajs/react';
 import { useQuery } from '@tanstack/react-query';
 import {
-    Activity,
     ArrowUpRight,
     BarChart3,
     Boxes,
@@ -12,6 +11,8 @@ import {
     Keyboard,
     Layers,
     LayoutDashboard,
+    Link2,
+    Plus,
     RefreshCw,
     Rocket,
     RotateCcw,
@@ -21,6 +22,7 @@ import {
     Settings,
     SquarePlus,
     Undo2,
+    UserPlus,
     Variable,
 } from 'lucide-react';
 import type { ReactNode } from 'react';
@@ -47,18 +49,19 @@ import {
     show as deploymentShow,
 } from '@/routes/deployments';
 import { index as paletteIndex } from '@/routes/palette';
-import { index as activityIndex } from '@/routes/activity';
 import {
     canvas,
     importMethod as newProject,
     previews as projectPreviews,
-    index as projectsIndex,
     settings as projectSettings,
 } from '@/routes/projects';
 import services from '@/routes/projects/services';
-import { index as serversIndex, show as serverShow } from '@/routes/servers';
+import { create as serversCreate, show as serverShow } from '@/routes/servers';
 import { edit as teamSettings } from '@/routes/team';
+import { teamNavItems } from '@/features/app-shell/nav-items';
+import type { TeamNavItem } from '@/features/app-shell/nav-items';
 import { readRecent, recordVisit } from './recent';
+import { SETTINGS_PAGES } from './settings-pages';
 import type { RecentVisit } from './recent';
 import { openLiveUrl, ROUTE, ShortcutsDialog, useShortcuts } from './shortcuts';
 import type { OpenService } from './shortcuts';
@@ -99,6 +102,7 @@ function usePaletteIndex(environment: string | null, enabled: boolean) {
 }
 
 type CanvasProps = {
+    abilities?: App.Data.Canvas.ProjectAbilitiesData;
     nodes?: App.Data.Canvas.CanvasNodeData[];
     panel?: App.Data.Canvas.ServicePanelData | null;
     detail?: { deployment?: App.Data.Deployments.DeploymentSummaryData };
@@ -149,6 +153,9 @@ function ItemStatus({ item }: { item: Item }) {
         />
     );
 }
+
+const hrefOf = (href: TeamNavItem['href']) =>
+    typeof href === 'string' ? href : href.url;
 
 const URGENCY: Record<string, number> = {
     failed: 4,
@@ -634,6 +641,87 @@ export function CommandPalette() {
         </CommandItem>
     );
 
+    const shared = page.props;
+    const navItems = teamNavItems(shared);
+    const owner = shared.auth.user?.isInstanceOwner === true;
+    const settingsPages = SETTINGS_PAGES.filter(
+        (entry) => owner || !entry.ownerOnly,
+    );
+    const openNode = page.props.panel
+        ? page.props.nodes?.find(
+              (node) => node.id === page.props.panel?.serviceId,
+          )
+        : undefined;
+
+    // Create verbs (docs/08 §8): what people open ⌘K for most, shown
+    // before typing; each one the viewer may do.
+    const createRows: ReactNode[] = [
+        navigateRow(
+            'new project deploy repository url template create',
+            <SquarePlus aria-hidden="true" />,
+            'New project',
+            newProject().url,
+        ),
+    ];
+
+    if (
+        context.project &&
+        context.environment &&
+        page.props.abilities?.manage
+    ) {
+        createRows.push(
+            navigateRow(
+                'add a service database app image worker cron create new',
+                <Plus aria-hidden="true" />,
+                'Add a service',
+                `${canvas([context.project, context.environment]).url}?add=1`,
+            ),
+        );
+    }
+
+    if (
+        context.project &&
+        context.environment &&
+        openNode?.capabilities.web &&
+        page.props.abilities?.manage
+    ) {
+        createRows.push(
+            navigateRow(
+                `add domain to ${openNode.name} custom domain dns`,
+                <Link2 aria-hidden="true" />,
+                `Add domain to ${openNode.name}`,
+                services.section({
+                    project: context.project,
+                    environment: context.environment,
+                    service: openNode.id,
+                    section: 'domains',
+                }).url,
+            ),
+        );
+    }
+
+    if (shared.teams?.canAddServers) {
+        createRows.push(
+            navigateRow(
+                'add server connect machine host create new',
+                <Server aria-hidden="true" />,
+                'Add server',
+                serversCreate().url,
+            ),
+        );
+    }
+
+    if (shared.teams?.canInvite) {
+        createRows.push(
+            navigateRow(
+                'invite people member teammate add user',
+                <UserPlus aria-hidden="true" />,
+                'Invite people',
+                teamSettings().url,
+            ),
+        );
+    }
+
     return (
         <>
             <ShortcutsDialog open={sheet} onOpenChange={setSheet} />
@@ -805,6 +893,10 @@ export function CommandPalette() {
                                 </CommandGroup>
                             )}
 
+                            <CommandGroup heading="Create">
+                                {createRows}
+                            </CommandGroup>
+
                             <CommandSeparator />
 
                             {context.project && (
@@ -883,37 +975,16 @@ export function CommandPalette() {
                             )}
 
                             <CommandGroup heading="Navigate">
-                                {navigateRow(
-                                    'new project deploy repository url template',
-                                    <SquarePlus aria-hidden="true" />,
-                                    'New project',
-                                    newProject().url,
-                                )}
-                                {navigateRow(
-                                    'go projects',
-                                    <FolderKanban aria-hidden="true" />,
-                                    'Projects',
-                                    projectsIndex().url,
-                                    'g p',
-                                )}
-                                {navigateRow(
-                                    'go servers',
-                                    <Server aria-hidden="true" />,
-                                    'Servers',
-                                    serversIndex().url,
-                                    'g s',
-                                )}
-                                {navigateRow(
-                                    'go activity',
-                                    <Activity aria-hidden="true" />,
-                                    'Activity',
-                                    activityIndex().url,
-                                )}
-                                {navigateRow(
-                                    'go team settings',
-                                    <Settings aria-hidden="true" />,
-                                    'Team settings',
-                                    teamSettings().url,
+                                {navItems.map((item) =>
+                                    navigateRow(
+                                        `go ${item.title} ${item.keywords}`,
+                                        item.icon ? (
+                                            <item.icon aria-hidden="true" />
+                                        ) : null,
+                                        item.title,
+                                        hrefOf(item.href),
+                                        item.shortcut,
+                                    ),
                                 )}
                                 <CommandItem
                                     value="keyboard shortcuts help"
@@ -927,6 +998,26 @@ export function CommandPalette() {
                                     <CommandShortcut>?</CommandShortcut>
                                 </CommandItem>
                             </CommandGroup>
+
+                            {searching && (
+                                <CommandGroup heading="Settings">
+                                    {settingsPages.map((entry) => (
+                                        <CommandItem
+                                            key={`settings-${entry.label}`}
+                                            value={`settings ${entry.label} ${entry.group} ${entry.keywords}`}
+                                            onSelect={() => go(entry.url())}
+                                        >
+                                            <Settings aria-hidden="true" />
+                                            <span className="truncate">
+                                                {entry.label}
+                                            </span>
+                                            <span className="truncate type-small text-muted-foreground">
+                                                {entry.group}
+                                            </span>
+                                        </CommandItem>
+                                    ))}
+                                </CommandGroup>
+                            )}
 
                             {data && (
                                 <>

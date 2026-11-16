@@ -10,9 +10,9 @@ launchroom backs up databases, volumes and itself with restic into S3-compatible
 ## Where to look
 
 - **On the canvas**, every database shows its backup state under its status: "Backed up 3 hours ago", **Last backup** with a stale time, **Last backup failed**, **No backup yet** or **Backups off**.
-- **The database’s Backups page** (Settings → Backups) shows the schedule, the destination, **Last verified**, point-in-time recovery, the snapshot timeline and **History** with every run and its error. **Back up now** and **Verify now** start a run at once.
+- **The database’s Backups page** (Settings → Backups) shows the schedule, the destination, **Last verified**, point-in-time recovery, the snapshot list and **History** with every run and its error. **Back up now** and **Verify now** start a run at once.
 - **Settings → Backups** lists destinations with their state (**Connected**, **Unreachable**, **Not tested yet**), every protected database, and the recovery kit for launchroom itself.
-- **Alerts**: failed backups, failed verifications, backups overdue for 36 hours and lagging point-in-time recovery each raise a problem under Settings → Notifications. See [Alerts](/docs/observability/alerts).
+- **Alerts**: failed backups, failed verifications, backups overdue for 36 hours and lagging point-in-time recovery each raise an alert, sent to the channels under Settings → Notifications and listed on the Activity page. See [Alerts](/docs/observability/alerts).
 
 ## Last backup failed
 
@@ -45,7 +45,7 @@ The Backups page’shows **Last verified** with ✕, and **History** says what w
 
 ## Gaps in point-in-time recovery
 
-Point-in-time recovery (Postgres 15 and newer) keeps a daily base backup and ships every completed change log segment about every 30 seconds, so you can restore to any second inside the window. The first entry of the snapshot list, **Any point in time**, shows the window ("From Oct 12, 03:00 to about a minute ago").
+Point-in-time recovery (Postgres 15 and newer) keeps a daily base backup and ships every completed change log segment about every 30 seconds, so you can restore to any second inside the window. The point-in-time card on the Backups page shows the window ("between Oct 12, 03:00 and now") under its time picker.
 
 Its state on the Backups page’shows whether the window is growing:
 
@@ -59,7 +59,7 @@ Times outside the window are refused. The window starts at the oldest kept base 
 ## Restore problems
 
 - **Redis and Valkey** are backed up and verified, but can't be restored from the dashboard yet.
-- **Restore into this service** first takes a safety snapshot. If that fails, nothing is changed. Fix the backup problem first, or use **Restore as a new service**, which never touches the original.
+- A restore **Into** the service first takes a safety snapshot. If that fails, nothing is changed. Fix the backup problem first, or restore **As a new service**, which never touches the original.
 - During an in-place restore, the services connected to the database are stopped until it is done, so web services answer with errors for the duration. Treat it as a maintenance window.
 
 See [Restore and disaster recovery](/docs/databases/restore-and-disaster-recovery) for the restore flows.

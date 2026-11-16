@@ -21,6 +21,8 @@ final class ApiTokenData extends Data
     public function __construct(
         public string $id,
         public string $name,
+        /** `lr_pat_…a1b2`, not secret; null for tokens older than the hint. */
+        public ?string $hint,
         public array $abilities,
         public ApiTokenClient $client,
         public string $teamId,
@@ -38,6 +40,7 @@ final class ApiTokenData extends Data
         return new self(
             id: $token->public_id,
             name: $token->name,
+            hint: $token->hint,
             abilities: array_values(array_filter(array_map(ApiAbility::tryFrom(...), $token->abilities))),
             client: $token->client,
             teamId: $token->team->public_id,

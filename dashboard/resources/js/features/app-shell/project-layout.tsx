@@ -50,8 +50,9 @@ export default function ProjectLayout({ children }: { children: ReactNode }) {
                 className={cn(
                     'min-w-0',
                     fullBleed
-                        ? 'h-svh min-h-0 overflow-hidden md:h-[calc(100svh-1rem)]'
-                        : 'overflow-x-clip',
+                        ? // Phones: the bottom bar (PhoneNav) takes its height.
+                          'h-[calc(100svh-var(--phone-nav-h))] min-h-0 overflow-hidden md:h-[calc(100svh-1rem)]'
+                        : 'overflow-x-clip pb-(--phone-nav-h) md:pb-0',
                 )}
             >
                 <TopBarSlotProvider>

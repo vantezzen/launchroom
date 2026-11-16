@@ -127,7 +127,7 @@ def a_ai_dockerfile(page):
 
 
 def a_capabilities(page):
-    scroll_heading_top(page, "Capabilities", 250)
+    scroll_heading_top(page, "What this server can do", 250)
 
 
 def a_command_palette(page):
@@ -187,16 +187,11 @@ def a_domains_edges(page):
 def a_logs(page):
     # The seeded "timeout" errors aged out of the log store; "health" still
     # matches real deploy lines (and one failed health check) in 30 days.
+    # The scope and range are segmented radio groups ("Month" is 30 days).
     page.locator("input").first.fill("health"); page.wait_for_timeout(500)
-    try:
-        page.get_by_role("button", name="All environments").first.click()
-    except Exception:
-        page.get_by_text("All environments").first.click()
+    page.get_by_role("radio", name="All environments").first.click()
     page.wait_for_timeout(500)
-    try:
-        page.get_by_role("button", name="30d", exact=True).first.click()
-    except Exception:
-        page.get_by_text("30d", exact=True).first.click()
+    page.get_by_role("radio", name="Month", exact=True).first.click()
     page.wait_for_timeout(3500)
 
 

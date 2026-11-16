@@ -60,6 +60,12 @@ test('a plain git server has no web page', function (): void {
         ->and($origin->href)->toBeNull();
 });
 
+test('an image pinned by digest is named without its digest', function (): void {
+    $pinned = Projects::image($this->project, 'pinned');
+
+    expect(originOf($pinned, $this->production)->label)->toBe('nginx');
+});
+
 test('images link to Docker Hub, other registries stay text, databases name the engine', function (): void {
     $web = Projects::image($this->project, 'web', 'nginx:1.27');
     $api = Projects::image($this->project, 'api', 'grafana/grafana:11');

@@ -8,6 +8,7 @@ description: >-
     Laravel's variable names, and APP_KEY is generated.
 category: stacks
 logo: laravel
+starter: https://github.com/laravel/laravel
 inputs:
     - id: repository
       label: Repository

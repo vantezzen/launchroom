@@ -7,7 +7,9 @@ import { StatusIcon } from '@/components/status';
 import { Skeleton } from '@/components/ui/skeleton';
 import { formatLinkSpeed } from '@/features/servers/link-format';
 import { formatLatency, relativeTime } from '@/lib/format';
+import { ErrorDetails } from '@/features/servers/error-details';
 import { MeshStatus, pathLabels } from '@/features/servers/mesh-status';
+import { meshMemberProblems } from '@/features/servers/problems';
 import { show } from '@/routes/servers';
 
 type Peer = App.Data.Servers.MeshPeerData;
@@ -189,12 +191,17 @@ export function ServerLinks({
                         ))}
                     </div>
                 ) : (
-                    <p className="rounded-xl border bg-card px-6 py-5 type-body text-muted-foreground shadow-card">
-                        {mesh.message ??
-                            (mesh.state === 'off'
-                                ? 'Turns on when a second server joins. Your servers then reach each other over an encrypted private network.'
-                                : 'No other servers on the private network yet.')}
-                    </p>
+                    <div className="flex flex-col gap-2 rounded-xl border bg-card px-6 py-5 shadow-card">
+                        <p className="type-body text-muted-foreground">
+                            {mesh.state === 'connecting' ||
+                            mesh.state === 'error'
+                                ? meshMemberProblems[mesh.state].detail
+                                : mesh.state === 'off'
+                                  ? 'Turns on when a second server joins. Your servers then reach each other over an encrypted private network.'
+                                  : 'No other servers on the private network yet.'}
+                        </p>
+                        <ErrorDetails text={mesh.message} />
+                    </div>
                 )}
             </Section>
         );

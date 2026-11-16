@@ -50,5 +50,7 @@ final class OnboardingData extends Data
         public ?bool $appsDomainVerified = null,
         /** "This server is small" (docs/08 §14), null when hidden. */
         public ?SmallServerHintData $smallServerHint = null,
+        /** The first app: live (step 4 is done) or its first deploy running. */
+        public ?FirstAppData $firstApp = null,
     ) {}
 }

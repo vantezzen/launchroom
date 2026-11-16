@@ -36,7 +36,12 @@ MySQL), Gitea, versitygw (S3-compatible storage), Meilisearch, PocketBase and Me
 Open a template to see **What you get**: a picture of its services and connections, one line per service, and the CPU,
 memory and volumes it needs. Under **Set it up**, enter the project name and the inputs the template asks for (a
 repository for stacks, an optional domain for apps), then press **Deploy**. launchroom creates and deploys the project
-right away.
+right away. **Create without deploying** creates it so you can change settings first. Until a stack has a repository,
+its app services in **What you get** are dashed and say "Needs a repository".
+
+Some stacks offer a starter: the Laravel stack lists **Start from the Laravel starter** first under the repository. It
+deploys the framework's official public repository as it is, so you can try the stack without code of your own. To work
+on the code, fork the starter and pick your fork instead.
 
 <Screenshot id="template-detail" />
 
@@ -57,7 +62,8 @@ the new service gets the next free slug and its references are rewritten to matc
 
 ## Import a Compose file
 
-Open **New project** and choose **Import a Compose file**.
+Open **New project** and choose **Compose file** under "Other ways to start", below the repositories and templates.
+Before any Git provider is connected, it is a card right under the URL field instead.
 
 <Steps>
 <Step>
@@ -80,7 +86,8 @@ secret-looking names are generated. The rest are optional fields. You can paste 
 <Step>
 ### Name it and deploy
 
-Enter the project name and deploy. launchroom reads and translates the file again on the server, creates the services
+Enter the project name and deploy. The name is filled in from the file's top-level `name:`, else the repository's
+name, else the image name of the first public service (`ghcr.io/umami-software/umami:3.4.0` becomes "umami"). launchroom reads and translates the file again on the server, creates the services
 and deploys them.
 </Step>
 </Steps>

@@ -29,7 +29,7 @@ final class ProjectActivityController extends Controller
         return Inertia::render('projects/activity', [
             ...ProjectShell::props($project, null),
             'entries' => $activity->get($project->team_id, $filters),
-            'filters' => ['project' => $project->public_id, 'kind' => $filters->kind],
+            'filters' => ['project' => $project->public_id, 'kind' => $filters->kind, 'state' => $filters->state],
         ]);
     }
 }

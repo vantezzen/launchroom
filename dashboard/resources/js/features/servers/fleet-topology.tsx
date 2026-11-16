@@ -1,14 +1,15 @@
 import { Link } from '@inertiajs/react';
-import { Globe, LayoutDashboard, Package } from 'lucide-react';
+import { Globe, LayoutDashboard, MapPin, Package } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useState } from 'react';
+import type { ReactNode } from 'react';
 import { useMeasuredWidth } from '@/components/charts/use-measure';
 import { DeviceImage } from '@/components/devices/device-image';
 import { Status, serverStatus } from '@/components/status';
 import { deviceKind, deviceStatus } from '@/features/servers/format';
 import { formatLinkSpeed, linkLabel } from '@/features/servers/link-format';
 import { formatLatency } from '@/lib/format';
-import { roleIcons, roleTitles } from '@/features/servers/server-status';
+import { roleIcons } from '@/features/servers/server-status';
 import { cn } from '@/lib/utils';
 import { show } from '@/routes/servers';
 
@@ -64,23 +65,30 @@ function overlaps(a: Box, b: Box, pad = 4): boolean {
 
 type Box = { x: number; y: number; w: number; h: number };
 
-const NODE_W = 216;
-const NODE_H = 68;
+const NODE_W = 248;
+const NODE_H = 120;
 const INTERNET_W = 116;
 const GAP_Y = 14;
 const ROW_GAP = 26;
 const GUTTER = 28;
-const MIN_NODE_W = 172;
+const MIN_NODE_W = 200;
 
 const DASHBOARD: Duty = {
     key: 'dashboard',
     icon: LayoutDashboard,
-    label: 'Runs this dashboard',
+    label: 'Runs the dashboard',
 };
 const REGISTRY: Duty = {
     key: 'registry',
     icon: Package,
-    label: 'Stores built images',
+    label: 'Stores images',
+};
+
+/** What a role does, as the node says it. */
+const dutyWords: Record<'edge' | 'runtime' | 'build', string> = {
+    edge: 'Serves traffic',
+    runtime: 'Runs apps',
+    build: 'Builds',
 };
 
 function duties(server: Server): Duty[] {
@@ -89,7 +97,7 @@ function duties(server: Server): Duty[] {
         .map((role) => ({
             key: role,
             icon: roleIcons[role],
-            label: roleTitles[role],
+            label: dutyWords[role],
         }));
 
     // The image registry runs next to the dashboard (deploy/control-plane), or on a server with the registry role.
@@ -124,9 +132,15 @@ const pathWords: Record<'direct' | 'relay' | 'idle', string> = {
 export function FleetTopology({
     servers,
     links,
+    usage,
+    children,
 }: {
     servers: Server[];
     links: MeshLink[];
+    /** Latest CPU and memory per server id (the Servers page's fleet metrics). */
+    usage?: Map<string, App.Data.Metrics.ServerUsageData>;
+    /** System-wide facts under the diagram ("At a glance"). */
+    children?: ReactNode;
 }) {
     const [ref, width] = useMeasuredWidth<HTMLDivElement>();
     const [hover, setHover] = useState<string | null>(null);
@@ -406,25 +420,6 @@ export function FleetTopology({
     const measuredLines = lines.filter((line) => line.measured);
 
     const kinds = new Set(lines.map((line) => line.kind));
-    // Each icon once, in a fixed order, explained in the legend.
-    const shownDuties = [
-        DASHBOARD,
-        ...(['edge', 'runtime', 'build'] as const).map((role) => ({
-            key: role,
-            icon: roleIcons[role],
-            label: roleTitles[role],
-        })),
-        REGISTRY,
-    ].filter((duty) =>
-        tiers
-            .flat()
-            .some(
-                (node) =>
-                    node.kind !== 'internet' &&
-                    node.duties.some((d) => d.key === duty.key),
-            ),
-    );
-
     return (
         <section
             aria-labelledby="fleet-topology-title"
@@ -548,6 +543,11 @@ export function FleetTopology({
                                 >
                                     <TopologyNode
                                         node={node}
+                                        usage={
+                                            node.kind === 'server'
+                                                ? usage?.get(node.id)
+                                                : undefined
+                                        }
                                         dim={
                                             hover !== null &&
                                             hover !== node.id &&
@@ -598,29 +598,11 @@ export function FleetTopology({
                 </ul>
             )}
 
-            {(lines.length > 0 || shownDuties.length > 0) && (
+            {lines.length > 0 && (
                 <ul
                     aria-label="Legend"
                     className="flex flex-wrap gap-x-5 gap-y-1.5 border-t pt-4 type-small text-muted-foreground"
                 >
-                    {shownDuties.map((duty) => {
-                        const Icon = duty.icon;
-
-                        return (
-                            <li
-                                key={duty.key}
-                                className="inline-flex items-center gap-1.5"
-                            >
-                                <Icon aria-hidden="true" className="size-3" />
-                                {duty.key === 'dashboard'
-                                    ? 'Dashboard'
-                                    : duty.label}
-                            </li>
-                        );
-                    })}
-                    {shownDuties.length > 0 && lines.length > 0 && (
-                        <li aria-hidden="true" className="h-0 basis-full" />
-                    )}
                     {kinds.has('public') && (
                         <LegendItem className="border-foreground">
                             Public traffic
@@ -643,6 +625,8 @@ export function FleetTopology({
                     )}
                 </ul>
             )}
+
+            {children}
         </section>
     );
 }
@@ -665,28 +649,55 @@ function LegendItem({
     );
 }
 
-function DutyIcons({ duties }: { duties: Duty[] }) {
+function DutyWords({ duties }: { duties: Duty[] }) {
     return (
-        <span className="flex items-center gap-1.5">
-            {duties.map((duty) => {
-                const Icon = duty.icon;
-
-                return (
-                    <span
-                        key={duty.key}
-                        title={duty.label}
-                        className="inline-flex size-5 items-center justify-center rounded-md bg-hover text-muted-foreground"
-                    >
-                        <Icon aria-hidden="true" className="size-3" />
-                        <span className="sr-only">{duty.label}</span>
-                    </span>
-                );
-            })}
+        <span className="line-clamp-2 type-small text-muted-foreground">
+            {duties
+                .map((duty, i) =>
+                    i === 0 ? duty.label : duty.label.toLowerCase(),
+                )
+                .join(', ')}
         </span>
     );
 }
 
-function TopologyNode({ node, dim }: { node: Node; dim: boolean }) {
+function NodeUsage({
+    usage,
+}: {
+    usage: App.Data.Metrics.ServerUsageData | undefined;
+}) {
+    const current = usage?.current ?? null;
+    const cpu = current?.cpuPct ?? null;
+    const mem =
+        current?.memUsedMb != null && current.memTotalMb
+            ? (current.memUsedMb / current.memTotalMb) * 100
+            : null;
+
+    if (cpu === null && mem === null) {
+        return null;
+    }
+
+    return (
+        <span className="type-small text-muted-foreground tabular-nums">
+            {[
+                cpu !== null ? `CPU ${Math.round(cpu)}%` : null,
+                mem !== null ? `memory ${Math.round(mem)}%` : null,
+            ]
+                .filter(Boolean)
+                .join(', ')}
+        </span>
+    );
+}
+
+function TopologyNode({
+    node,
+    dim,
+    usage,
+}: {
+    node: Node;
+    dim: boolean;
+    usage?: App.Data.Metrics.ServerUsageData;
+}) {
     const frame = cn(
         'flex h-full w-full items-center gap-3 rounded-xl border bg-card px-3 transition-opacity duration-base',
         dim && 'opacity-45',
@@ -710,9 +721,9 @@ function TopologyNode({ node, dim }: { node: Node; dim: boolean }) {
                 <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-recessed text-muted-foreground">
                     <LayoutDashboard aria-hidden="true" className="size-4" />
                 </span>
-                <span className="flex min-w-0 flex-col gap-1">
+                <span className="flex min-w-0 flex-col gap-0.5">
                     <span className="truncate type-label">Dashboard</span>
-                    <DutyIcons duties={node.duties} />
+                    <DutyWords duties={node.duties} />
                 </span>
             </div>
         );
@@ -720,13 +731,14 @@ function TopologyNode({ node, dim }: { node: Node; dim: boolean }) {
 
     const { server } = node;
     const { state, label } = serverStatus[server.status];
+    const place = server.location?.label ?? null;
 
     return (
         <Link
             href={show(server.id)}
             className={cn(
                 frame,
-                'outline-none hover:border-border-strong focus-visible:ring-2 focus-visible:ring-signal',
+                'items-start py-3 outline-none hover:border-border-strong focus-visible:ring-2 focus-visible:ring-signal',
             )}
             title={`${server.name}: ${label}`}
             aria-label={`${server.name}, ${label}. ${node.duties.map((duty) => duty.label).join(', ')}`}
@@ -734,21 +746,32 @@ function TopologyNode({ node, dim }: { node: Node; dim: boolean }) {
             <DeviceImage
                 device={deviceKind(server)}
                 status={deviceStatus(server.status)}
-                size={60}
-                className="shrink-0"
+                size={52}
+                className="mt-1 shrink-0"
             />
-            <span className="flex min-w-0 flex-1 flex-col gap-1">
-                <span className="flex min-w-0 items-center gap-2">
-                    <span className="truncate type-label">{server.name}</span>
-                    {server.status !== 'online' && (
-                        <Status
-                            state={state}
-                            label={label}
-                            className="shrink-0 type-small"
-                        />
-                    )}
+            <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                <span className="truncate type-label" title={server.name}>
+                    {server.name}
                 </span>
-                <DutyIcons duties={node.duties} />
+                {server.status !== 'online' ? (
+                    <Status
+                        state={state}
+                        label={label}
+                        className="type-small"
+                    />
+                ) : (
+                    <NodeUsage usage={usage} />
+                )}
+                <DutyWords duties={node.duties} />
+                {place && (
+                    <span className="inline-flex min-w-0 items-center gap-1 type-small text-muted-foreground">
+                        <MapPin
+                            aria-hidden="true"
+                            className="size-3 shrink-0"
+                        />
+                        <span className="truncate">{place}</span>
+                    </span>
+                )}
             </span>
         </Link>
     );

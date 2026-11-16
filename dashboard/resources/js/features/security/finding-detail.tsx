@@ -128,11 +128,14 @@ export function FindingDetailBody({
     detail,
     onChanged,
     menu,
+    actionsInHeader = false,
 }: {
     detail: Detail;
     onChanged: () => void;
     /** Shown at the end of the severity row (the sheet has no room in its header). */
     menu?: ReactNode;
+    /** The page shows Investigate and Not affected in its header (`FindingActions`). */
+    actionsInHeader?: boolean;
 }) {
     const finding = detail.finding;
     const urgent = finding.level === 'action_needed';
@@ -328,6 +331,7 @@ export function FindingDetailBody({
             <SheetSection
                 title="Investigation"
                 control={
+                    !actionsInHeader &&
                     detail.canInvestigate &&
                     detail.investigation?.status !== 'running' ? (
                         <Button
@@ -408,6 +412,154 @@ export function FindingDetailBody({
                     </div>
                 </SheetSection>
             )}
+
+            <FindingHistory detail={detail} />
+        </>
+    );
+}
+
+type HistoryEvent = { key: string; at: string; text: string };
+
+/** Found, investigated, marked not affected and fixed, oldest first. */
+export function findingHistory(detail: Detail): HistoryEvent[] {
+    const events: HistoryEvent[] = [
+        {
+            key: 'found',
+            at: detail.finding.firstSeenAt,
+            text: `Found in ${detail.finding.service.name}`,
+        },
+    ];
+
+    if (detail.investigation) {
+        events.push({
+            key: 'investigated',
+            at: detail.investigation.startedAt,
+            text: detail.investigation.startedBy
+                ? `Investigated by ${detail.investigation.startedBy}`
+                : 'Investigated automatically',
+        });
+    }
+
+    if (detail.dismissedAt) {
+        events.push({
+            key: 'dismissed',
+            at: detail.dismissedAt,
+            text: detail.dismissedBy
+                ? `Marked not affected by ${detail.dismissedBy}`
+                : 'Marked not affected',
+        });
+    }
+
+    if (detail.resolvedAt) {
+        events.push({
+            key: 'fixed',
+            at: detail.resolvedAt,
+            text: 'Fixed: the live deployment no longer has this version',
+        });
+    }
+
+    return events.sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
+}
+
+function FindingHistory({ detail }: { detail: Detail }) {
+    return (
+        <SheetSection title="History">
+            <ol className="flex flex-col gap-2.5 border-l pl-4">
+                {findingHistory(detail).map((event) => (
+                    <li
+                        key={event.key}
+                        className="flex flex-wrap items-baseline justify-between gap-x-4 type-body"
+                    >
+                        <span>{event.text}</span>
+                        <span className="type-small text-muted-foreground">
+                            {longDate(event.at)}
+                        </span>
+                    </li>
+                ))}
+            </ol>
+        </SheetSection>
+    );
+}
+
+/**
+ * The finding page's header actions (docs/22 §9.3): Investigate (again)
+ * first, then "Not affected…" or "Reopen".
+ */
+export function FindingActions({
+    detail,
+    onChanged,
+}: {
+    detail: Detail;
+    onChanged: () => void;
+}) {
+    const [open, setOpen] = useState(false);
+    const [busy, setBusy] = useState(false);
+    const finding = detail.finding;
+    const running = detail.investigation?.status === 'running';
+
+    const investigate = async () => {
+        setBusy(true);
+
+        try {
+            await requestJson('post', investigateRoute(finding.id).url);
+            toast.success(`Checking ${finding.service.name}`);
+            onChanged();
+        } catch (error) {
+            toast.error((error as Error).message);
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    const reopen = async () => {
+        try {
+            await requestJson('post', reopenRoute(finding.id).url);
+            toast.success('Reopened');
+            onChanged();
+        } catch (error) {
+            toast.error((error as Error).message);
+        }
+    };
+
+    return (
+        <>
+            {detail.canInvestigate && finding.status !== 'resolved' && (
+                <Button
+                    size="sm"
+                    disabled={busy || running}
+                    onClick={() => void investigate()}
+                >
+                    {running
+                        ? 'Investigating…'
+                        : detail.investigation
+                          ? 'Investigate again'
+                          : 'Investigate'}
+                </Button>
+            )}
+            {detail.canDismiss &&
+                (finding.status === 'dismissed' ? (
+                    <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => void reopen()}
+                    >
+                        Reopen
+                    </Button>
+                ) : finding.status === 'open' ? (
+                    <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setOpen(true)}
+                    >
+                        Not affected…
+                    </Button>
+                ) : null)}
+            <DismissDialog
+                open={open}
+                onOpenChange={setOpen}
+                detail={detail}
+                onDismissed={onChanged}
+            />
         </>
     );
 }

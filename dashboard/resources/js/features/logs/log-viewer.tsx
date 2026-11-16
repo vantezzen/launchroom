@@ -6,10 +6,14 @@ import {
     ChevronRight,
     ChevronUp,
     Copy,
+    CircleX,
     Download,
     Search,
+    TriangleAlert,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
+import { TimeRangeSelect } from '@/components/charts/time-range-select';
 import { Elapsed } from '@/components/elapsed';
 import { MetaDivider } from '@/components/patterns/meta-line';
 import { StepChip } from '@/components/steps/step-list';
@@ -33,6 +37,7 @@ import {
     logText,
     normalizeLine,
     sectionOf,
+    warningLines,
     withLoggedSteps,
 } from './step-log';
 import { JumpToLatest, useFollowScroll } from './use-follow-scroll';
@@ -40,6 +45,8 @@ import { JumpToLatest, useFollowScroll } from './use-follow-scroll';
 export type { TimelineStep } from './step-log';
 
 const ROW_HEIGHT = 20;
+
+type Severity = 'all' | 'errors' | 'warnings';
 const STEP_HEIGHT = 40;
 
 function time(iso: string): string {
@@ -58,8 +65,9 @@ function time(iso: string): string {
  * count, lines, duration) and their log lines (mono-small, line numbers
  * with `#L42` anchors, ANSI toned to the palette, rendered as text).
  * The running step is open and followed; the failed step opens on its first
- * error with every error line marked. Search across all steps (`/`, Enter
- * / Shift+Enter, "Only matches"), expand all, wrap, timestamps, follow,
+ * error with every error line marked (warnings get an amber rule). All /
+ * Errors / Warnings narrows to those lines, each shown only when it has
+ * some. Search across all steps (`/`, Enter / Shift+Enter, "Only matches"), expand all, wrap, timestamps, follow,
  * copy and download.
  */
 export function LogViewer({
@@ -93,6 +101,7 @@ export function LogViewer({
     const [timestamps, setTimestamps] = useState(false);
     const [query, setQuery] = useState('');
     const [onlyMatches, setOnlyMatches] = useState(false);
+    const [severity, setSeverity] = useState<Severity>('all');
     // -1: matches highlighted, none selected yet (Enter jumps to the first).
     const [matchIndex, setMatchIndex] = useState(-1);
     const [selected, setSelected] = useState<number | null>(null);
@@ -152,11 +161,84 @@ export function LogViewer({
             active = false;
         };
     }, [hasMore, onLoadAll, following, needle, errors.section, loadError]);
-    const matches = useMemo(() => findMatches(lines, needle), [lines, needle]);
-    const only = useMemo(
-        () => (onlyMatches && needle !== '' ? new Set(matches) : null),
-        [onlyMatches, needle, matches],
+    const warnings = useMemo(
+        () => warningLines(lines, errors.lines),
+        [lines, errors.lines],
     );
+    const matches = useMemo(() => findMatches(lines, needle), [lines, needle]);
+    // A filter whose lines went away (a new attempt) falls back to all.
+    const shownSeverity: Severity =
+        (severity === 'errors' && errors.lines.size === 0) ||
+        (severity === 'warnings' && warnings.size === 0)
+            ? 'all'
+            : severity;
+    // "Only matches" and the severity filter narrow together.
+    const only = useMemo(() => {
+        const bySeverity =
+            shownSeverity === 'errors'
+                ? errors.lines
+                : shownSeverity === 'warnings'
+                  ? warnings
+                  : null;
+        const byMatch = onlyMatches && needle !== '' ? new Set(matches) : null;
+
+        if (bySeverity && byMatch) {
+            return new Set([...byMatch].filter((n) => bySeverity.has(n)));
+        }
+
+        return bySeverity ?? byMatch;
+    }, [shownSeverity, errors.lines, warnings, onlyMatches, needle, matches]);
+    const severityOptions: { value: Severity; label: ReactNode }[] = [
+        {
+            value: 'all',
+            label: (
+                <>
+                    All{' '}
+                    <span className="text-muted-foreground tabular-nums">
+                        {lines.length.toLocaleString('en')}
+                    </span>
+                </>
+            ),
+        },
+        ...(errors.lines.size > 0
+            ? [
+                  {
+                      value: 'errors' as const,
+                      label: (
+                          <span className="inline-flex items-center gap-1.5">
+                              <CircleX
+                                  aria-hidden="true"
+                                  className="size-3.5 text-status-error"
+                              />
+                              Errors{' '}
+                              <span className="tabular-nums">
+                                  {errors.lines.size}
+                              </span>
+                          </span>
+                      ),
+                  },
+              ]
+            : []),
+        ...(warnings.size > 0
+            ? [
+                  {
+                      value: 'warnings' as const,
+                      label: (
+                          <span className="inline-flex items-center gap-1.5">
+                              <TriangleAlert
+                                  aria-hidden="true"
+                                  className="size-3.5 text-status-progress"
+                              />
+                              Warnings{' '}
+                              <span className="tabular-nums">
+                                  {warnings.size}
+                              </span>
+                          </span>
+                      ),
+                  },
+              ]
+            : []),
+    ];
 
     const openSteps = useMemo(
         () =>
@@ -567,6 +649,14 @@ export function LogViewer({
                         </Toggle>
                     </div>
                 )}
+                {severityOptions.length > 1 && (
+                    <TimeRangeSelect<Severity>
+                        value={shownSeverity}
+                        onChange={setSeverity}
+                        options={severityOptions}
+                        label="Show lines"
+                    />
+                )}
                 <div className="ml-auto flex flex-wrap items-center gap-1">
                     <Toggle
                         size="sm"
@@ -740,6 +830,9 @@ export function LogViewer({
                                             isError={errors.lines.has(
                                                 row.line.number,
                                             )}
+                                            isWarning={warnings.has(
+                                                row.line.number,
+                                            )}
                                             isFirstError={
                                                 row.line.number === errors.first
                                             }
@@ -876,6 +969,7 @@ function LogLineRow({
     timestamps,
     query,
     isError,
+    isWarning,
     isFirstError,
     isSelected,
     isMatch,
@@ -886,6 +980,7 @@ function LogLineRow({
     timestamps: boolean;
     query: string;
     isError: boolean;
+    isWarning: boolean;
     isFirstError: boolean;
     isSelected: boolean;
     isMatch: boolean;
@@ -898,6 +993,7 @@ function LogLineRow({
             className={cn(
                 'flex border-l-2 border-transparent type-mono-small',
                 isError && 'border-status-error bg-status-error-soft',
+                isWarning && 'border-status-progress',
                 isSelected && 'bg-signal-soft',
                 isMatch && 'bg-status-progress/10',
                 line.stream === 'system' && 'text-muted-foreground',
@@ -926,6 +1022,7 @@ function LogLineRow({
                     {isFirstError ? 'First error: ' : 'Error: '}
                 </span>
             )}
+            {isWarning && <span className="sr-only">Warning: </span>}
             {timestamps && (
                 <span className="w-24 shrink-0 pr-3 text-muted-foreground tabular-nums select-none">
                     {time(line.time)}

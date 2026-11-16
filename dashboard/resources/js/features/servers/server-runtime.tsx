@@ -11,7 +11,7 @@ type CapabilityState = App.Enums.Servers.CapabilityState;
 
 /** Row labels, in display order. */
 const labels: Record<Capability, string> = {
-    dockerAccess: 'Docker access',
+    dockerAccess: 'Server access',
     edgePorts: 'Public ports 80/443',
     clientAddresses: 'Visitor addresses',
     firewall: 'Network isolation',
@@ -32,7 +32,7 @@ const states: Record<CapabilityState, { state: StatusState; label: string }> = {
 /** What a limited capability means for the apps (the warning callout). */
 const consequences: Record<Capability, string> = {
     dockerAccess:
-        'launchroom holds the full Docker socket. Re-run the installer to put the Docker guard in front of it.',
+        'launchroom has more access to this server than it needs. Run the install command on the server again to limit it.',
     edgePorts:
         'Ports 80 and 443 can’t be opened directly, so public traffic may not reach this server.',
     clientAddresses:
@@ -49,8 +49,8 @@ const consequences: Record<Capability, string> = {
 
 const engines = wordsOf(vocabulary.Servers.DockerEngine);
 
-/** "OrbStack on macOS", "Rootless Docker", "Docker". */
-function runtimeTitle(runtime: Runtime): string {
+/** "OrbStack on macOS", "Rootless Docker", "Docker" (Network → Connection). */
+export function runtimeTitle(runtime: Runtime): string {
     if (runtime.docker === 'rootless') {
         return 'Rootless Docker';
     }
@@ -69,6 +69,9 @@ function LimitedCallout({
     mac: boolean;
     limited: Row[];
 }) {
+    const accessOnly =
+        limited.length === 1 && limited[0].name === 'dockerAccess';
+
     return (
         <div
             role="note"
@@ -83,31 +86,40 @@ function LimitedCallout({
             <div className="flex min-w-0 flex-col gap-1">
                 <p className="type-body font-medium">
                     <span className="sr-only">Heads up: </span>
-                    {rootless
-                        ? 'Rootless Docker limits some features on this server.'
-                        : mac
-                          ? 'Docker runs in a Linux VM on this Mac, which limits some features.'
-                          : 'Some features are limited on this server.'}
+                    {accessOnly
+                        ? 'This server gives launchroom more access than it needs.'
+                        : rootless
+                          ? 'Rootless mode limits some features on this server.'
+                          : mac
+                            ? 'Apps run in a Linux VM on this Mac, which limits some features.'
+                            : 'Some features are limited on this server.'}
                 </p>
-                <ul className="flex flex-col gap-0.5 type-small text-muted-foreground">
-                    {limited.map((capability) => (
-                        <li key={capability.name}>
-                            <span className="text-foreground">
-                                {labels[capability.name]}:
-                            </span>{' '}
-                            {consequences[capability.name]}
-                        </li>
-                    ))}
-                </ul>
+                {accessOnly ? (
+                    <p className="type-small text-muted-foreground">
+                        Run the install command on the server again to limit it.
+                    </p>
+                ) : (
+                    <ul className="flex flex-col gap-0.5 type-small text-muted-foreground">
+                        {limited.map((capability) => (
+                            <li key={capability.name}>
+                                <span className="text-foreground">
+                                    {labels[capability.name]}:
+                                </span>{' '}
+                                {consequences[capability.name]}
+                            </li>
+                        ))}
+                    </ul>
+                )}
             </div>
         </div>
     );
 }
 
 /**
- * How Docker runs on the server and what launchroom can do there (D49) on
- * the Network tab: one row per capability with icon + word and the
- * server-worded explanation, and a callout when something is limited.
+ * What launchroom can do on the server (D49) on the Network tab: one row
+ * per capability with icon + word and the dashboard-worded explanation
+ * (CapabilityReason), and one callout when something is limited. How the
+ * engine runs is a fact under Connection.
  */
 export function ServerRuntime({
     runtime,
@@ -118,7 +130,7 @@ export function ServerRuntime({
 }) {
     if (runtime === null) {
         return (
-            <Section title="Capabilities">
+            <Section title="What this server can do">
                 <div className="rounded-xl border bg-card px-6 py-5 shadow-card">
                     <p className="type-body text-muted-foreground">
                         Reported once the server checks in.
@@ -130,14 +142,13 @@ export function ServerRuntime({
 
     const rootless = runtime.docker === 'rootless';
     const mac = runtime.hostOs === 'darwin';
-    const platforms = runtime.buildPlatforms ?? [];
     const capabilities = [...rows].sort(
         (a, b) => order.indexOf(a.name) - order.indexOf(b.name),
     );
     const limited = capabilities.filter((c) => c.state !== 'full');
 
     return (
-        <Section title="Capabilities">
+        <Section title="What this server can do">
             {limited.length > 0 && (
                 <LimitedCallout
                     rootless={rootless}
@@ -146,26 +157,6 @@ export function ServerRuntime({
                 />
             )}
             <div className="rounded-xl border bg-card shadow-card">
-                <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 border-b px-6 py-4">
-                    <div className="flex min-w-0 flex-col gap-0.5">
-                        <p className="type-body font-medium">
-                            {runtimeTitle(runtime)}
-                        </p>
-                        {platforms.length > 0 && (
-                            <p className="type-small text-muted-foreground">
-                                Builds for {platforms.join(' and ')}
-                            </p>
-                        )}
-                    </div>
-                    <Status
-                        state={runtime.guard ? 'active' : 'warning'}
-                        label={
-                            runtime.guard
-                                ? 'Docker access is guarded'
-                                : 'launchroom holds the full Docker socket'
-                        }
-                    />
-                </div>
                 {capabilities.length === 0 ? (
                     <p className="px-6 py-5 type-body text-muted-foreground">
                         No capabilities reported yet.
@@ -184,11 +175,16 @@ export function ServerRuntime({
                                         <p className="type-body">
                                             {labels[capability.name]}
                                         </p>
-                                        {capability.explanation && (
-                                            <p className="type-small break-words text-muted-foreground">
-                                                {capability.explanation}
-                                            </p>
-                                        )}
+                                        {capability.explanation &&
+                                            !(
+                                                capability.name ===
+                                                    'dockerAccess' &&
+                                                capability.state !== 'full'
+                                            ) && (
+                                                <p className="type-small break-words text-muted-foreground">
+                                                    {capability.explanation}
+                                                </p>
+                                            )}
                                     </div>
                                     <Status
                                         state={state.state}

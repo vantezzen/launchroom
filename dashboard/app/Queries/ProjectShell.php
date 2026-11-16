@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Queries;
 
 use App\Data\Canvas\EnvironmentData;
+use App\Data\Canvas\EnvironmentHealthData;
 use App\Data\Canvas\ProjectAbilitiesData;
 use App\Data\Canvas\ProjectData;
 use App\Data\Canvas\ProjectLinkData;
@@ -72,6 +73,8 @@ final class ProjectShell
                 ->values()
                 ->all(),
             'projectStatuses' => Inertia::optional(static fn (): array => resolve(ProjectStatuses::class)->forTeam($project->team_id, $current instanceof Environment ? $current : null)),
+            'environmentHealth' => Inertia::defer(static fn (): ?EnvironmentHealthData => $current instanceof Environment ? resolve(EnvironmentStatuses::class)->health($current) : null),
+            'environmentStatuses' => Inertia::optional(static fn (): array => resolve(EnvironmentStatuses::class)->of($environments())),
             'environments' => static fn (): array => $environments()->map(static fn (Environment $item): EnvironmentData => EnvironmentData::fromEnvironment($item))->values()->all(),
             'edgeOverview' => static fn (): EdgeOverviewData => resolve(EdgeOverview::class)->for($project->team_id),
             'abilities' => new ProjectAbilitiesData(

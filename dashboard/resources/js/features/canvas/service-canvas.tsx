@@ -2,7 +2,6 @@ import {
     Background,
     BackgroundVariant,
     MarkerType,
-    MiniMap,
     ReactFlow,
     useNodesState,
     useReactFlow,
@@ -26,6 +25,7 @@ import { RemoveServiceDialog } from '@/features/service-settings/remove-service-
 import { layout as layoutRoute } from '@/routes/projects';
 import { autoLayout, NODE_HEIGHT, NODE_WIDTH } from './auto-layout';
 import { StagedToolbarButton } from '@/features/staged-changes/staged-changes-pill';
+import { CanvasMap, useCanvasMap } from './canvas-map';
 import { CanvasToolbar } from './canvas-toolbar';
 import { ConnectPopover } from './connect-popover';
 import { ConnectionEdge } from './connection-edge';
@@ -185,6 +185,7 @@ export function ServiceCanvas({
     const [, copy] = useClipboard();
     const initialFit = useRef(false);
     const canConsole = abilities.console;
+    const map = useCanvasMap(nodes.length);
 
     const byId = useMemo(
         () => new Map(nodes.map((node) => [node.id, node])),
@@ -984,12 +985,8 @@ export function ServiceCanvas({
                         size={1.5}
                         color="var(--canvas-dot)"
                     />
-                    {nodes.length > 0 && (
-                        <MiniMap<CanvasNode>
-                            position="bottom-right"
-                            pannable
-                            zoomable
-                            ariaLabel="Canvas overview"
+                    {map.shown && (
+                        <CanvasMap<CanvasNode>
                             nodeColor={(node) =>
                                 isService(node) ? 'var(--card)' : 'transparent'
                             }
@@ -1000,13 +997,6 @@ export function ServiceCanvas({
                                       ? 'var(--signal)'
                                       : 'var(--border-strong)'
                             }
-                            nodeStrokeWidth={6}
-                            nodeBorderRadius={14}
-                            maskColor="color-mix(in oklab, var(--background) 55%, transparent)"
-                            maskStrokeColor="var(--signal)"
-                            maskStrokeWidth={1.5}
-                            className="hidden lg:block"
-                            style={{ width: 168, height: 108 }}
                         />
                     )}
                 </ReactFlow>
@@ -1022,6 +1012,7 @@ export function ServiceCanvas({
                     >
                         <CanvasToolbar
                             onAdd={onAdd}
+                            map={{ shown: map.shown, onToggle: map.toggle }}
                             onTidy={
                                 abilities.manage && nodes.length > 1
                                     ? () => void tidyUp(true)

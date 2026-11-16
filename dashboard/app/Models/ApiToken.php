@@ -20,7 +20,9 @@ use Laravel\Sanctum\PersonalAccessToken;
 /**
  * A personal access token bound to one team (docs/16 §1, docs/09 R11).
  * Only the SHA-256 of the secret is stored (`token`, hidden). Abilities are
- * {@see ApiAbility} values; `*` is never issued and never honoured.
+ * {@see ApiAbility} values; `*` is never issued and never honoured. `hint`
+ * (`lr_pat_…a1b2`) is not secret: the prefix and the last four characters,
+ * so a row can be matched to the string someone holds.
  *
  * @property int $id
  * @property string $public_id
@@ -33,12 +35,13 @@ use Laravel\Sanctum\PersonalAccessToken;
  * @property Carbon|null $last_used_at
  * @property string|null $last_used_ip
  * @property string|null $created_ip
+ * @property string|null $hint
  * @property Carbon|null $expires_at
  * @property Carbon $created_at
  * @property Carbon|null $updated_at
  * @property-read User $user
  */
-#[Fillable(['name', 'token', 'abilities', 'expires_at', 'team_id', 'client', 'created_ip'])]
+#[Fillable(['name', 'token', 'abilities', 'expires_at', 'team_id', 'client', 'created_ip', 'hint'])]
 #[Hidden(['token', 'tokenable_type', 'tokenable_id'])]
 #[Table(name: 'personal_access_tokens')]
 final class ApiToken extends PersonalAccessToken

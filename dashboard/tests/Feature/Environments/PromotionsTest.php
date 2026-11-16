@@ -331,14 +331,16 @@ test('"Also promote images" pins the source commit; the target deploy builds exa
     resolve(DeployEnvironment::class)->handle($staging, null, AuditActor::system());
 
     $built = Deployment::query()->where('environment_id', $staging->id)->sole();
-    $built->forceFill(['commit_sha' => str_repeat('a', 40), 'image' => '127.0.0.1:5000/apps/x@sha256:'.str_repeat('b', 64), 'status' => DeploymentStatus::Active->value, 'git_ref' => 'refs/heads/main'])->save();
+    $built->forceFill(['commit_sha' => str_repeat('a', 40), 'commit_message' => "feat: gift cards\n\nbody", 'image' => '127.0.0.1:5000/apps/x@sha256:'.str_repeat('b', 64), 'status' => DeploymentStatus::Active->value, 'git_ref' => 'refs/heads/main'])->save();
     prInstance($staging, $app)->forceFill(['active_deployment_id' => $built->id])->save();
 
     $comparison = resolve(PromotionComparison::class)->get($project, $staging, $production);
 
     expect($comparison->images)->toHaveCount(1)
         ->and($comparison->images[0]->deploymentId)->toBe($built->public_id)
-        ->and($comparison->images[0]->sameInputs)->toBeTrue();
+        ->and($comparison->images[0]->sameInputs)->toBeTrue()
+        ->and($comparison->images[0]->commitMessage)->toBe('feat: gift cards')
+        ->and($comparison->images[0]->compareUrl)->toBeNull();
 
     $promotion = prPromote($project, $staging, $production, images: [$app->public_id]);
 

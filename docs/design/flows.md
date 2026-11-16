@@ -27,9 +27,10 @@ Conventions used below:
    1. Server connected (done by itself, shown as done on arrival).
    2. Connect GitHub: the GitHub App manifest flow runs **inline**: GitHub opens in the same tab and returns to this card, which then says "Connected · acme · 12 repositories".
    3. Give your apps an address: two tiles, **Use my domain** (one input, the record to create, a live "waiting for DNS" status that re-checks every 10 s) or **Use a free address for now** (sslip.io, done instantly). Let's Encrypt rate limits are a hint on the free tile, not a paragraph.
-   4. Deploy your first app: framework logos, opens the import flow (§3).
+   4. Deploy your first app: framework logos, opens the import flow (§3). Done when the app is live, not when the project exists; while the first deploy runs the step shows it ("web is building, 41s", **Watch it**), and done it shows the live address.
    5. Keep a backup off this server (optional, clearly labelled): destination tiles (R2, Hetzner, S3, other) → credentials → "Download recovery kit" → done.
 4. Finishing step 4 lands on the project canvas with the deploy running, not back on the checklist. The sidebar keeps "Get started 4/5" until every step is done, skipped or the checklist is hidden.
+5. Complete: no subtitle; the done steps become one line ("Server, address and first app are set up."), skipped steps stay as rows with their action, and the top-bar button reads **Remove from sidebar**.
 
 **Magic.** "This server is already connected" on arrival. GitHub returns to the exact card. DNS turns green by itself. The first deploy starts from inside onboarding.
 
@@ -71,6 +72,7 @@ Plan preview states, each designed: Inspecting (skeleton card with the repo name
 - While something is staged, the canvas toolbar ends in "4 changes" and **Review & apply** (dashed signal = staged). It opens a right sheet: changes grouped by service with their effect, one sentence that says which services redeploy ("Applying rebuilds web, and restarts api and worker."), an optional message, **Apply 4 changes**. No navigation. Staged changes are applied, not deployed: only services deploy, and applying redeploys the ones it affects (D75).
 - After Apply you stay on the canvas: each affected node shows a compact progress bar and its current step ("Building · 41s", "Health check · 1 of 2"). The panel (if open) shows the step pills Build ✓ · Migrate ✓ · Health ◌ · Route.
 - When the deployment finishes, the node's status cross-fades (180 ms); a toast says "web is live · Open"; failure toasts link to the explained error.
+- The team's first app gets its own beat: a card at the top left of the canvas lists the first deploy's steps (Build, Start, Health check, Route, each waiting, running or done with its duration), then turns into "Your first app is live" with the address (**Copy**, **Open**) and three next steps (Use your own domain, Deploy on every push for public-URL sources, Keep a backup off this server). It replaces that service's toasts while it shows, is dismissed once and never comes back.
 - The project card and ⌘K show "Deploying" while it runs.
 
 **Magic.** Zero downtime is visible: during health checks the node shows the new version next to the current one, then "Live".
@@ -79,7 +81,7 @@ Plan preview states, each designed: Inspecting (skeleton card with the repo name
 
 0. From anywhere in the team: **Projects** opens with "Needs you", and the failing project's card names the service ("web failed to deploy") with **See why**, one click to step 2.
 1. The node says "Last deploy failed · still serving 3b7d5e1" (reassurance first: nothing went down).
-2. Deployment page: the overview card, then the **explained failure card** (Laravel error page style): a human title ("Build failed: pnpm lockfile is out of date"), one or two sentences of cause and fix, actions ("Jump to line 7", "Copy command"), the failure class as a small chip.
+2. Deployment page: the **explained failure card** first (Laravel error page style), above the overview: a human title ("Build failed: pnpm lockfile is out of date"), one or two sentences of cause and fix, the error line quoted with its neighbours, actions ("Jump to line 7", "Copy command"). The failure class is not shown as a chip; the card's copy button holds it with the raw message. Redeploy is the primary action only when a retry can help (timeouts, transient and runtime failures); a launchroom.json failure has no Redeploy and opens the file instead.
 3. Steps list with the failed step open and scrolled to its first error, with error lines highlighted. The same toolbar searches every step, expands all steps, and copies or downloads the whole log.
 4. Known fixes are buttons: `port_mismatch` → "Use port 5173 and redeploy"; `health_timeout` → "Allow 60s to start and redeploy"; missing variable → "Add NEXT_PUBLIC_STRIPE_KEY" (opens Settings → Variables prefilled). The fix stages the change and deploys it in the same click when it is the only staged change.
 
@@ -90,14 +92,16 @@ Plan preview states, each designed: Inspecting (skeleton card with the repo name
 ## 7. Roll back
 
 - Every earlier deployment in the panel history has a visible "Roll back" on hover.
-- The confirm is a small popover, not a dialog: "Roll back web to 9a1b2c3 (2 days ago)? Traffic switches in seconds. New pushes won't go live until you resume auto-deploy. Database migrations are not reverted." [Roll back]
+- The confirm is a small popover, not a dialog, with two rows, **Now live** above **Roll back to** (status glyph, sha, message, age): "Roll back web to 9a1b2c3 (2 days ago)? Traffic switches in seconds. New pushes won't go live until you resume auto-deploy. Database migrations are not reverted." [Roll back]
 - After a rollback, a banner under the project tabs says auto-deploy is paused, with **Resume auto-deploy** right there.
 
 ## 8. Change env vars safely (staged changes)
 
 - Variables page rows changed since the last deploy get the staged treatment (signal rule + "Changed" chip); new rows "New".
 - Paste anywhere: pasting a `.env` into the tab opens the import preview directly.
-- The staged bar floats at the bottom of the panel: "2 changes", "api will restart", Discard, **Apply**. Applying from there is the same Apply as everywhere (it applies everything staged in the environment; "Apply all" says so when other services have changes too).
+- Saving a settings page that stages is one decision, not two bars: the unsaved bar names what changed ("Replicas changed", a click scrolls there) and its Save is a split button. **Save and apply** (the default) saves, then applies everything staged in the environment ("web restarts now, and the 2 other staged changes apply too"); **Save for later** keeps it staged for the next deploy or Apply. Without the right to apply, with broken references, or before the first deploy, Save for later leads and Save and apply stays listed with its reason.
+- The staged bar floats at the bottom of the panel: "2 changes", "api will restart, 3 more elsewhere", Details (the review sheet), Discard, **Apply**. Applying from there is the same Apply as everywhere (it applies everything staged in the environment). Both buttons say their scope when other services have changes too: "Discard api’s changes" and "Apply all 5". While it shows, the panel header drops its "Review & apply", so staged changes have one home per surface.
+- The panel keeps room under its last row for the bar, so nothing stays covered once you scroll to the end.
 - Broken references are listed per row, and Deploy is disabled with the reason.
 
 **Magic.** "Restart, not rebuild": the bar tells you the deploy will be fast because only runtime variables changed.
@@ -112,24 +116,24 @@ Plan preview states, each designed: Inspecting (skeleton card with the repo name
 ## 10. Add a server (VPS) / home build server
 
 1. "What kind of machine is it?" tiles with device art: Cloud server, Dedicated server, Machine at home, Small board. This only seeds role defaults and copy (home → Build suggested, "no ports to open").
-2. "What should it do?" three large role cards (Run apps / Serve traffic / Build) with one-line explanations and role hints for this kind of machine; suggested ones pre-selected.
-3. "Run this on the server": the one-line command with a platform switcher (Ubuntu/Debian, other Linux, Docker already installed), single-use and expiring, then the **live wait**: the device render with its status LED off, "Waiting for your server…", which turns into the detected device ("Mac mini · 10 cores · 16 GB") and the LED lights up when it connects.
+2. "What should it do?" three large role cards (Run apps / Serve traffic / Build) with one-line explanations, one muted line of what the role needs from the machine ("Needs to stay on", "Needs a public IP with ports 80 and 443 open", "Best with 4 or more cores"), and role hints for this kind of machine; suggested ones pre-selected.
+3. "Run this on the server": the one-line command, single-use and expiring. The join token is masked (`lr_jt_••••••••abcd`, the dashboard key shortened) so a screenshot or screen share does not leak it; an eye button reveals it and Copy always copies the full command. The command is the same everywhere, so instead of a platform switcher a short list says what each platform needs first (Ubuntu or Debian, other Linux, Mac; Mac first for a Mac). Then then the **live wait**: the device render with its status LED off, "Waiting for your server…", which turns into the detected device ("Mac mini · 10 cores · 16 GB") and the LED lights up when it connects.
 4. If approval is required, the approve button appears right in the wait card.
-5. Done → the server card on the Servers page animates in; the second server turns on the private network by itself.
+5. Done → the connected card proves it works: when other servers exist, a small diagram joins "Dashboard" and the new server with the private network line (solid direct, dashed relayed, dotted "Connecting…" until the first mesh report), and a checklist of live rows ("Reports to the dashboard every few seconds", "On the private network, direct", "Ready to run apps and build"). The page keeps polling until the link is up. The second server turns on the private network by itself.
 
 **Magic.** "One command, and it's in." The device recognises itself; the home machine joins with no ports opened (said explicitly on the home tile).
 
 ## 11. Scale and place replicas
 
 - The Scaling page shows the live picture first: one card per runtime server with its device render and the replicas standing on it ("2 on fra-1, 1 on hel-1"), CPU and memory bars with what the server really uses and has free (other services' limits only as a footnote: they are caps), and the per-server rule. Every change asks the real scheduler.
-- Replicas use a **stepper** (Umbrel Machines style: − 3 +); size per replica uses sliders that end at the biggest eligible server. Spread/Pack and required labels follow below.
+- Replicas use a **stepper** (Umbrel Machines style: − 3 +); size per replica starts with presets (Small 0.5 core and 512 MB, Medium 1 core and 1 GB, Large 2 cores and 4 GB; one that no eligible server can give says "Bigger than any server"), and **Custom** opens sliders that end at the biggest eligible server. Spread/Pack and required labels follow below.
 - Changes surface in the floating bar ("api: restart · 3 replicas across 2 servers").
-- On the canvas node footer: "×3 · fra-1, hel-1".
+- On the canvas node footer: "×3 on fra-1, hel-1".
 
 ## 12. Staging → production promotion
 
 - The page header shows the two environments as cards with an arrow between them ("staging → production", swap on click), each card with its live revision and last deploy.
-- A summary strip: "3 changes · 1 needs a production secret · 1 environment-specific (unchecked)".
+- A summary: "3 changes to production", tiles + added / ~ changed / − removed, "Restarts api and web"; a missing production secret is named right under the disabled **Promote and deploy**. Also promote images shows the commit range per service (production 7c8d9e0 → staging 3b7d5e1, with messages) and Compare commits when the provider has a compare view.
 - Items keep the checkbox model; adds, edits and removals get distinct gutters (+ green, ~ blue, − red), rows aren't tinted.
 - The primary action is **Promote and deploy** (stages and deploys in one step); "Stage only" is secondary.
 
@@ -137,13 +141,13 @@ Plan preview states, each designed: Inspecting (skeleton card with the repo name
 
 ## 13. PR previews (incl. fork approval)
 
-- Previews page as **cards**: each PR with a URL card of its main address, title, author avatar, branch → base, status, URL with lock icon, "expires in 7 days", and the database strategy ("new empty database").
+- Previews page: the rule in one sentence under the title; open PRs as **cards**, closed and expired ones as one-line rows below. Each card: a URL card of its main address (none without one), title, author avatar, branch → base, status, URL with lock icon, "expires in 7 days", and the database strategy ("new empty database").
 - Fork PRs needing approval sit at the top in their own group "Waiting for you" with the diff summary link ("View changes on GitHub ↗"), the commit to approve, and **Approve this commit**; the copy states the safety: "It runs without secrets, data or access to your network."
 - Empty state: icon + "Open a pull request to get a preview" + "Preview settings".
 
 ## 14. Backups, restore, and replacing a dead server
 
-- Settings → Backups: destination card with provider logo, connection status, last backup, and a **donut of stored size by kind** (databases / volumes / launchroom) (Umbrel storage manager). "What's protected": one row per database/volume with a **30-day run strip** and next/last backup. The recovery kit is a card with its own state ("Saved 21 days ago"), not an always-open form.
+- Settings → Backups: destination card with provider logo, connection status, last backup, and what it holds: a **donut of stored size by kind** (databases / volumes / launchroom) when it holds more than one kind, otherwise the plain size ("47 MB", "newest copy"); "Last backup …" turns amber with a clock when it is older than its slowest schedule allows. "What's protected": a one-line summary on top ("3 backed up, 16 waiting for their first backup, 1 failing"), rows sorted failing, overdue, never backed up, waiting, healthy; one row per database/volume with a **30-day run strip** and next/last backup ("First backup tomorrow at 06:07" with a hollow dot until the first run). The recovery kit is a card with its own state ("Saved 21 days ago"), not an always-open form.
 - Schedules are edited as "Daily at 03:12 · keep 7 daily, 4 weekly" with a picker, never raw cron (cron stays under "Custom").
 - Panel → Backups: a snapshot timeline, Restore as option cards: "As a new service" (the safe default) and "Into postgres" with the consequence and a typed confirmation.
 - **Replace a dead server**: from the unreachable server card ("No report for 8 min · 2 replicas were placed here" → "Replace server"), the wizard shows the dead server's device greyed, the replacement as device tiles (or "Add a new server", which runs flow 10), and the latest backup per database and volume.
@@ -159,8 +163,9 @@ Plan preview states, each designed: Inspecting (skeleton card with the repo name
 
 ## 16. Invite a teammate
 
-- Members as rows with avatar, name, email, role chip; role and remove behind `⋯` (remove confirms in a popover). "Invite people" opens a sheet: emails (comma or one per line), role as three tiles (Admin / Developer / Viewer) with what each can do, Send.
-- Pending invitations listed with "Send again" and "Revoke" (no "Copy link": tokens are stored hashed).
+- Inline invite on top of the members card: email, role select (Viewer → Developer → Admin → Owner, Developer by default, each with what it can do), "Send invite", a toast confirms. "Invite several people at once" opens the sheet: emails (comma or one per line), role tiles in the same order, Send.
+- Members as rows with avatar, name, email, role chip; role and remove behind `⋯` (remove confirms in a popover).
+- Pending invitations are rows in the same list with an "Invited" chip and `⋯` "Send again" / "Revoke" (no "Copy link": tokens are stored hashed).
 - Invite acceptance page: team, inviter, role, "Join Acme".
 
 ## 17. ⌘K power-user paths
@@ -168,6 +173,7 @@ Plan preview states, each designed: Inspecting (skeleton card with the repo name
 - A **visible search field in the sidebar** ("Search ⌘K") makes the palette discoverable.
 - Context first: inside a project, its services come first with their status (failing ones on top), before any typing; with a service open, its commands lead; on a deployment, "Roll back to this deployment".
 - Verbs per service: "Logs of web", "Analytics of web" (Traffic with a domain, else Resources), "Open web.shop.dev", "Redeploy web", "Restart web" (both confirm inline), "Variables of web", "Data of postgres"; also "Add variable to api", "Switch to staging". "api logs" and "logs api" both find it.
+- Create verbs before typing: New project, Add a service (in this environment), Add domain (with a service open), Add server, Invite people, each only for people who may. Navigate mirrors the sidebar exactly; typing also finds the settings pages ("API tokens" with "Account" after it).
 - Recent is where you've actually been (service panels, canvases, deployments, servers), not only palette picks.
 - Rich rows: service logos, project icons, status words with their icon; deployments show commit + age. Never variable values.
 - Leader shortcuts: `g p` projects, `g s` servers, `g c` canvas, `g d` deployments, `g l` / `g a` logs / analytics (of the open service when there is one), `g v` variables; `o` opens the open service's live URL; `/` focuses log search; `?` lists every shortcut. No single key changes anything.

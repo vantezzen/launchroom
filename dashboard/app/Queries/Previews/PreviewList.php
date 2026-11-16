@@ -7,6 +7,7 @@ namespace App\Queries\Previews;
 use App\Data\Previews\PreviewData;
 use App\Data\Previews\PreviewDatabaseData;
 use App\Data\Previews\PreviewLinkData;
+use App\Data\Previews\PreviewRuleData;
 use App\Data\Previews\PreviewUrlData;
 use App\Data\Previews\ShareLinkData;
 use App\Enums\DeploymentStatus;
@@ -19,6 +20,7 @@ use App\Models\Previews\PreviewShareLink;
 use App\Models\Project;
 use App\Models\ServiceInstance;
 use App\Services\Previews\PreviewAccess;
+use App\Services\Previews\PreviewGate;
 use App\Support\Variables\SystemVariables;
 
 /**
@@ -29,7 +31,21 @@ final readonly class PreviewList
 {
     public function __construct(
         private PreviewAccess $access,
+        private PreviewGate $gate,
     ) {}
+
+    /** The project's preview rule, for the sentence under the page title. */
+    public function rule(Project $project): PreviewRuleData
+    {
+        $settings = PreviewSettings::forProject($project);
+
+        return new PreviewRuleData(
+            baseEnvironment: $this->gate->baseEnvironment($project, $settings)?->name,
+            branches: $settings->targetBranchPatterns(),
+            requiredLabel: $settings->required_label !== null && $settings->required_label !== '' ? $settings->required_label : null,
+            expiryDays: $settings->expiry_days,
+        );
+    }
 
     /**
      * @return list<PreviewData>
@@ -50,7 +66,7 @@ final readonly class PreviewList
             ->whereIn('environment_id', $environmentIds)
             ->currentPerInstance()
             ->orderByDesc('id')
-            ->get(['id', 'environment_id', 'service_instance_id', 'status'])
+            ->get(['id', 'public_id', 'environment_id', 'service_instance_id', 'status'])
             ->groupBy('environment_id');
         $instances = ServiceInstance::query()
             ->whereIn('environment_id', $environmentIds)
@@ -98,7 +114,17 @@ final readonly class PreviewList
                 );
             }
 
-            $statuses = $environment === null ? collect() : ($deployments[$environment->id] ?? collect())->pluck('status');
+            $current = $environment === null ? collect() : ($deployments[$environment->id] ?? collect());
+            $statuses = $current->pluck('status');
+            $failedDeployment = null;
+
+            foreach ($current as $deployment) {
+                if ($deployment instanceof Deployment && $deployment->status === DeploymentStatus::Failed) {
+                    $failedDeployment = $deployment->public_id;
+
+                    break;
+                }
+            }
 
             $list[] = new PreviewData(
                 id: $preview->public_id,
@@ -150,6 +176,7 @@ final readonly class PreviewList
                     ->values()
                     ->all()),
                 protected: $settings->protection,
+                failedDeploymentId: $failedDeployment,
             );
         }
 

@@ -1,20 +1,9 @@
-import { Form } from '@inertiajs/react';
+import { router } from '@inertiajs/react';
 import type { ReactNode } from 'react';
 import { useState } from 'react';
-import InputError from '@/components/input-error';
+import { TypedConfirmDialog } from '@/components/patterns/typed-confirm-dialog';
+import type { TypedConfirmObject } from '@/components/patterns/typed-confirm-dialog';
 import { Button } from '@/components/ui/button';
-import {
-    Dialog,
-    DialogClose,
-    DialogContent,
-    DialogDescription,
-    DialogFooter,
-    DialogTitle,
-    DialogTrigger,
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Spinner } from '@/components/ui/spinner';
 
 type FormDefinition = {
     action: string;
@@ -22,8 +11,9 @@ type FormDefinition = {
 };
 
 /**
- * A step that can't be taken back asks for a typed word first (the server's
- * name, "hand over"); the value is sent as `confirmation`.
+ * A move step that can't be taken back asks for a typed word first (the
+ * server's name, "hand over"); the value is sent as `confirmation`. A
+ * trigger button around the shared `TypedConfirmDialog`.
  */
 export function TypedConfirm({
     trigger,
@@ -36,6 +26,11 @@ export function TypedConfirm({
     destructive = false,
     disabled = false,
     loose = false,
+    object,
+    goes = [],
+    goesHeading,
+    kept = [],
+    secondary,
 }: {
     trigger: string;
     title: string;
@@ -48,95 +43,68 @@ export function TypedConfirm({
     disabled?: boolean;
     /** Ignore case (for a phrase rather than a name). */
     loose?: boolean;
+    /** Passed through to the dialog: the object chip, what goes, what is kept. */
+    object?: TypedConfirmObject;
+    goes?: ReactNode[];
+    goesHeading?: string;
+    kept?: ReactNode[];
+    /** Under the description: another way out ("Move to another server"). */
+    secondary?: ReactNode;
 }) {
     const [open, setOpen] = useState(false);
-    const [typed, setTyped] = useState('');
+    const [processing, setProcessing] = useState(false);
+    const [error, setError] = useState<string | undefined>();
 
     return (
-        <Dialog
-            open={open}
-            onOpenChange={(next) => {
-                setOpen(next);
-                setTyped('');
-            }}
-        >
-            <DialogTrigger asChild>
-                <Button
-                    variant={destructive ? 'destructive' : 'default'}
-                    disabled={disabled}
-                >
-                    {trigger}
-                </Button>
-            </DialogTrigger>
-            <DialogContent>
-                <DialogTitle>{title}</DialogTitle>
-                <DialogDescription asChild>
-                    <div className="flex flex-col gap-2">{description}</div>
-                </DialogDescription>
-                <Form
-                    {...form}
-                    transform={(values) => ({
-                        ...values,
-                        ...data,
-                        confirmation: typed.trim(),
-                    })}
-                    options={{ preserveScroll: true }}
-                    onSuccess={() => setOpen(false)}
-                    className="flex flex-col gap-4"
-                >
-                    {({ processing, errors }) => (
-                        <>
-                            <div className="flex flex-col gap-2">
-                                <Label htmlFor="typed-confirmation">
-                                    Type{' '}
-                                    <span className="type-mono-small">
-                                        {expected}
-                                    </span>{' '}
-                                    to confirm
-                                </Label>
-                                <Input
-                                    id="typed-confirmation"
-                                    value={typed}
-                                    autoComplete="off"
-                                    onChange={(event) =>
-                                        setTyped(event.target.value)
-                                    }
-                                />
-                                <InputError
-                                    message={
-                                        errors.confirmation ??
-                                        errors.target ??
-                                        Object.values(errors)[0]
-                                    }
-                                />
-                            </div>
-                            <DialogFooter className="gap-2">
-                                <DialogClose asChild>
-                                    <Button variant="secondary" type="button">
-                                        Cancel
-                                    </Button>
-                                </DialogClose>
-                                <Button
-                                    type="submit"
-                                    variant={
-                                        destructive ? 'destructive' : 'default'
-                                    }
-                                    disabled={
-                                        processing ||
-                                        (loose
-                                            ? typed.trim().toLowerCase() !==
-                                              expected.toLowerCase()
-                                            : typed.trim() !== expected)
-                                    }
-                                >
-                                    {processing && <Spinner />}
-                                    {confirmLabel}
-                                </Button>
-                            </DialogFooter>
-                        </>
-                    )}
-                </Form>
-            </DialogContent>
-        </Dialog>
+        <>
+            <Button
+                variant={destructive ? 'destructive' : 'default'}
+                disabled={disabled}
+                onClick={() => setOpen(true)}
+            >
+                {trigger}
+            </Button>
+            <TypedConfirmDialog
+                open={open}
+                onOpenChange={(next) => {
+                    setOpen(next);
+                    setError(undefined);
+                }}
+                title={title}
+                object={object}
+                goes={goes}
+                goesHeading={goesHeading}
+                kept={kept}
+                expected={expected}
+                loose={loose}
+                confirmLabel={confirmLabel}
+                tone={destructive ? 'destructive' : 'default'}
+                processing={processing}
+                error={error}
+                onConfirm={(typed) =>
+                    router.visit(form.action, {
+                        method: form.method,
+                        data: { ...data, confirmation: typed },
+                        preserveScroll: true,
+                        onStart: () => setProcessing(true),
+                        onFinish: () => setProcessing(false),
+                        onSuccess: () => setOpen(false),
+                        onError: (errors) =>
+                            setError(
+                                errors.confirmation ??
+                                    errors.target ??
+                                    Object.values(errors)[0],
+                            ),
+                    })
+                }
+            >
+                {description != null && (
+                    <div className="flex flex-col gap-2 type-body text-muted-foreground">
+                        {description}
+                    </div>
+                )}
+                {secondary}
+            </TypedConfirmDialog>
+        </>
     );
 }

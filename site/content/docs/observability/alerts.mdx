@@ -13,6 +13,10 @@ Open **Settings → Notifications**. Without a destination yet, the page asks "W
 
 Owners and admins can change notifications. Every team member can see them.
 
+The page is for configuration. Open alerts live on the **Activity** page. While any are open, the Notifications page
+starts with one row, for example "3 problems are open", with **View in Activity** and the two most severe alerts below
+it.
+
 ## Built-in rules
 
 | Rule | Default | Fires when | Resolves when |
@@ -38,7 +42,7 @@ Alerts are either **warning** or **critical**:
 
 ### Thresholds
 
-Under **What we tell you about**, each rule has a switch. Rules with a threshold read as a sentence with number fields, for example "CPU above 90 % for 10 min". Save with the bar that appears at the bottom.
+Under **What we tell you about**, each rule has a switch. Rules with a threshold read as a sentence with number fields, for example "CPU above 90 % for 10 min". Save with the bar that appears at the bottom. Under each rule a line says when it last opened an alert, for example "Last alert 3 days ago: orders-db is offline", or "No alerts yet".
 
 | Rule | Threshold range | Duration range |
 |---|---|---|
@@ -75,7 +79,7 @@ Alert titles and summaries name your services, servers and domains. They never c
 - **Resolved messages**: when the problem is gone, every channel that was notified gets one "resolved" message. Alerts that were never sent resolve without a message.
 - **Cooldown**: if the same problem comes back within 10 minutes of resolving, the old alert reopens instead of a new one. You're notified again only if the last message is older than 10 minutes, so a flapping service doesn't flood your channel.
 
-Alerts also appear on the **Activity** page (filter **Alerts**) with how long they were open, and project activity shows the project's alerts.
+Alerts also appear on the **Activity** page (filter **Alerts**) with how long they were open. **Open only** narrows the list to alerts that are still open. The **Activity** entry in the sidebar shows how many alerts are open, and project activity shows the project's alerts.
 
 ## Backup alerts
 

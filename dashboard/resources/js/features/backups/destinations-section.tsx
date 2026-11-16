@@ -1,5 +1,5 @@
 import { router } from '@inertiajs/react';
-import { MoreHorizontal, Plus } from 'lucide-react';
+import { Clock, MoreHorizontal, Plus } from 'lucide-react';
 import { useState } from 'react';
 import { Donut } from '@/components/charts/donut';
 import { Logo } from '@/components/logo';
@@ -21,8 +21,10 @@ import {
 import { DestinationForm } from '@/features/backups/destination-form';
 import { DestinationStatus } from '@/features/backups/destination-status';
 import { storageProvider } from '@/features/backups/format';
+import { destinationOverdue } from '@/features/backups/protection';
 import { destroy, test } from '@/routes/backups/destinations';
 import { formatBytes } from '@/lib/format';
+import { cn } from '@/lib/utils';
 
 type Destination = App.Data.Backups.BackupDestinationData;
 type Usage = App.Data.Backups.DestinationUsageData;
@@ -68,7 +70,12 @@ export function DestinationPanel({
     );
 }
 
-function UsageDonut({ usage }: { usage: Usage }) {
+/**
+ * What the destination holds: a donut only when it holds more than one
+ * kind (the split is the information); otherwise the plain size, since a
+ * full one-colour ring would only decorate (SET-11).
+ */
+function UsageStat({ usage }: { usage: Usage }) {
     const items = [
         {
             key: 'database',
@@ -90,16 +97,29 @@ function UsageDonut({ usage }: { usage: Usage }) {
         return null;
     }
 
+    if (items.length === 1) {
+        return (
+            <div className="flex shrink-0 flex-col sm:items-end">
+                <span className="type-title tabular-nums">
+                    {formatBytes(total)}
+                </span>
+                <span className="type-small text-muted-foreground">
+                    newest copy
+                </span>
+            </div>
+        );
+    }
+
     return (
         <Donut
-            items={items.length === 1 ? [{ ...items[0], slot: null }] : items}
+            items={items}
             label="Newest snapshots by kind"
             centerValue={formatBytes(total)}
-            centerLabel="latest copy"
+            centerLabel="newest copy"
             format={formatBytes}
             size={104}
             thickness={8}
-            legend={items.length > 1}
+            legend
         />
     );
 }
@@ -113,11 +133,15 @@ function DestinationCard({
     destination,
     usage,
     badge,
+    schedules = [],
 }: {
     destination: Destination;
     usage?: Usage;
     badge?: string;
+    /** Its schedules, to tell when the last backup is overdue. */
+    schedules?: App.Data.Backups.BackupScheduleData[];
 }) {
+    const overdue = destinationOverdue(usage?.lastBackupAt ?? null, schedules);
     const [editing, setEditing] = useState(false);
     const [confirming, setConfirming] = useState(false);
     const provider = storageProvider(destination.endpoint);
@@ -156,12 +180,30 @@ function DestinationCard({
                 <div className="flex flex-col gap-1">
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 type-body">
                         <DestinationStatus status={destination.status} />
-                        <span className="text-muted-foreground">
+                        <span
+                            className={cn(
+                                'inline-flex items-center gap-1.5',
+                                overdue
+                                    ? 'text-status-progress'
+                                    : 'text-muted-foreground',
+                            )}
+                        >
+                            {overdue && (
+                                <Clock
+                                    aria-hidden="true"
+                                    className="size-3.5 shrink-0"
+                                />
+                            )}
                             {usage?.lastBackupAt ? (
-                                <>
+                                <span>
                                     Last backup{' '}
                                     <TimeAgo value={usage.lastBackupAt} />
-                                </>
+                                    {overdue && (
+                                        <span className="sr-only">
+                                            , overdue
+                                        </span>
+                                    )}
+                                </span>
                             ) : (
                                 'No backup yet'
                             )}
@@ -261,7 +303,7 @@ function DestinationCard({
                 )}
             </div>
 
-            {usage && <UsageDonut usage={usage} />}
+            {usage && <UsageStat usage={usage} />}
 
             <DestinationPanel
                 open={editing}
@@ -281,11 +323,13 @@ export function DestinationsSection({
     destinations,
     canManage,
     usage,
+    schedules = [],
     instanceDestination = null,
 }: {
     destinations: Destination[];
     canManage: boolean;
     usage: Usage[];
+    schedules?: App.Data.Backups.BackupScheduleData[];
     /** launchroom's own destination (instance owners only). */
     instanceDestination?: Destination | null;
 }) {
@@ -346,6 +390,10 @@ export function DestinationsSection({
                             destination={destination}
                             usage={usage.find(
                                 (item) => item.destinationId === destination.id,
+                            )}
+                            schedules={schedules.filter(
+                                (schedule) =>
+                                    schedule.destinationId === destination.id,
                             )}
                         />
                     ))}

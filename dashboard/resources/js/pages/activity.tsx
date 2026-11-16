@@ -7,7 +7,11 @@ import { index } from '@/routes/activity';
 type Props = {
     projects: App.Data.Canvas.ProjectLinkData[];
     entries: App.Data.Activity.ActivityEntryData[];
-    filters: { project: string | null; kind: string | null };
+    filters: {
+        project: string | null;
+        kind: string | null;
+        state?: string | null;
+    };
     auditVerification: App.Data.Security.AuditVerificationData | null;
 };
 

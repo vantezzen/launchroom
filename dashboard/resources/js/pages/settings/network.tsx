@@ -14,13 +14,22 @@ import { Input } from '@/components/ui/input';
 import { Spinner } from '@/components/ui/spinner';
 import { Switch } from '@/components/ui/switch';
 import { AppDomainsSettings } from '@/features/domains/app-domains-settings';
-import { MeshStatus, meshModeLabels } from '@/features/servers/mesh-status';
+import { Callout } from '@/components/patterns/callout';
+import { ErrorDetails } from '@/features/servers/error-details';
+import {
+    MeshStatus,
+    meshModeLabels,
+    pathLabels,
+} from '@/features/servers/mesh-status';
+import { meshProblem, storageDegraded } from '@/features/servers/problems';
 import { cn } from '@/lib/utils';
-import { show as serverPage } from '@/routes/servers';
+import { show as serverPage, tab as serverTab } from '@/routes/servers';
 import { destroy, verify, update } from '@/routes/servers/ingress/dns';
 import { update as updateEdge } from '@/routes/servers/ingress/edges';
 import { enable, ownTailscale } from '@/routes/servers/mesh';
-import { shortAge } from '@/lib/format';
+import { formatLatency, shortAge } from '@/lib/format';
+import { CopyButton } from '@/components/copy-button';
+import { DeviceImage } from '@/components/devices/device-image';
 import {
     useDocsUrl,
     LearnMore,
@@ -33,6 +42,7 @@ import SettingsLayout from '@/features/settings/settings-layout';
 type Props = {
     mesh: App.Data.Servers.MeshOverviewData;
     members: App.Data.Settings.NetworkMemberData[];
+    meshLinks?: App.Data.Servers.MeshLinkData[];
     recommendedPolicy: string;
     tags: string[];
     ingress: App.Data.Ingress.IngressSettingsData;
@@ -54,9 +64,100 @@ const storageStates: Record<string, { state: StatusState; label: string }> = {
     degraded: { state: 'warning', label: 'Serving a local copy' },
 };
 
+type Member = App.Data.Settings.NetworkMemberData;
+
+/** The measured link between a server and the dashboard's server, if any. */
+function linkToDashboard(
+    member: Member,
+    members: Member[],
+    links: App.Data.Servers.MeshLinkData[],
+): App.Data.Servers.MeshLinkData | null {
+    const home = members.find((m) => m.isControlPlane);
+
+    if (!home || home.id === member.id) {
+        return null;
+    }
+
+    return (
+        links.find(
+            (l) =>
+                (l.from === member.id && l.to === home.id) ||
+                (l.to === member.id && l.from === home.id),
+        ) ?? null
+    );
+}
+
+/**
+ * One server on the private network: its picture and name (to its
+ * Network tab), the state, how it reaches the dashboard's server with the
+ * round trip, and its address to copy.
+ */
+function NetworkMember({
+    member,
+    link,
+}: {
+    member: Member;
+    link: App.Data.Servers.MeshLinkData | null;
+}) {
+    const path = link
+        ? [
+              `${pathLabels[link.path]}${link.path === 'relay' && link.relay ? ` via ${link.relay}` : ''}`,
+              link.latencyMs !== null ? formatLatency(link.latencyMs) : null,
+          ]
+              .filter(Boolean)
+              .join(', ')
+        : null;
+
+    return (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-5 py-3.5">
+            <span className="flex size-10 shrink-0 items-center justify-center rounded-lg border bg-recessed">
+                <DeviceImage
+                    device={member.device}
+                    status={member.online ? 'online' : 'offline'}
+                    size={36}
+                />
+            </span>
+            <span className="flex min-w-0 flex-1 flex-col">
+                <Link
+                    href={serverTab({ server: member.id, tab: 'network' })}
+                    className="truncate type-body font-medium hover:underline"
+                >
+                    {member.name}
+                </Link>
+                <span className="flex flex-wrap items-center gap-x-2 type-small text-muted-foreground">
+                    {member.mesh.ip ? (
+                        <span className="inline-flex items-center gap-0.5">
+                            <span className="type-mono-small">
+                                {member.mesh.ip}
+                            </span>
+                            <CopyButton
+                                value={member.mesh.ip}
+                                label={`${member.name}’s private address`}
+                                size="xs"
+                            />
+                        </span>
+                    ) : (
+                        'No private address yet'
+                    )}
+                    {member.isControlPlane && <span>Dashboard’s server</span>}
+                </span>
+            </span>
+            <span className="flex flex-col items-end gap-0.5">
+                <MeshStatus mesh={member.mesh} showPath={path === null} />
+                {path && (
+                    <span className="type-small text-muted-foreground tabular-nums">
+                        {path}
+                    </span>
+                )}
+            </span>
+        </div>
+    );
+}
+
 function PrivateNetwork({
     mesh,
     members,
+    meshLinks = [],
     recommendedPolicy,
     tags,
     errors,
@@ -81,18 +182,14 @@ function PrivateNetwork({
             }
         >
             {mesh.error !== null && (
-                <div className="flex items-start gap-3 rounded-xl border bg-card px-4 py-3">
-                    <StatusIcon state="failed" className="mt-1" />
-                    <p className="type-body">
-                        {mesh.error}
-                        {mesh.errorAt !== null && (
-                            <span className="text-muted-foreground">
-                                {' '}
-                                ({shortAge(mesh.errorAt)})
-                            </span>
-                        )}
+                <Callout tone="error" title={meshProblem.title}>
+                    <p>
+                        {meshProblem.detail}
+                        {mesh.errorAt !== null &&
+                            ` Last checked ${shortAge(mesh.errorAt)}.`}
                     </p>
-                </div>
+                    <ErrorDetails text={mesh.error} />
+                </Callout>
             )}
             <InputError message={errors?.mesh} />
 
@@ -252,28 +349,11 @@ function PrivateNetwork({
             {on && members.length > 0 && (
                 <SettingsCard title="On the network" className="mt-4">
                     {members.map((member) => (
-                        <SettingsRow
+                        <NetworkMember
                             key={member.id}
-                            label={
-                                <Link
-                                    href={serverPage(member.id)}
-                                    className="hover:underline"
-                                >
-                                    {member.name}
-                                </Link>
-                            }
-                            description={
-                                member.mesh.ip ? (
-                                    <span className="type-mono-small">
-                                        {member.mesh.ip}
-                                    </span>
-                                ) : member.isControlPlane ? (
-                                    'Dashboard’s server'
-                                ) : undefined
-                            }
-                        >
-                            <MeshStatus mesh={member.mesh} />
-                        </SettingsRow>
+                            member={member}
+                            link={linkToDashboard(member, members, meshLinks)}
+                        />
                     ))}
                 </SettingsCard>
             )}
@@ -332,42 +412,50 @@ function PublicTraffic({
                                 </Link>
                             }
                             description={
-                                <span className="flex flex-wrap gap-x-3 gap-y-1">
-                                    {edge.publicIpv4 && (
-                                        <span className="type-mono-small">
-                                            {edge.publicIpv4}
+                                <>
+                                    <span className="flex flex-wrap gap-x-3 gap-y-1">
+                                        {edge.publicIpv4 && (
+                                            <span className="type-mono-small">
+                                                {edge.publicIpv4}
+                                            </span>
+                                        )}
+                                        {routes ? (
+                                            <Status
+                                                state={routes.state}
+                                                label={
+                                                    edge.routes !== null
+                                                        ? `${edge.routes} routes`
+                                                        : routes.label
+                                                }
+                                                className="type-small"
+                                            />
+                                        ) : (
+                                            <span>Not reported yet</span>
+                                        )}
+                                        {storage && (
+                                            <Status
+                                                state={storage.state}
+                                                label={storage.label}
+                                                detail={
+                                                    edge.mirrored !== null &&
+                                                    edge.storage !== 'local'
+                                                        ? `${edge.mirrored} mirrored`
+                                                        : undefined
+                                                }
+                                                className="type-small"
+                                            />
+                                        )}
+                                    </span>
+                                    {edge.storage === 'degraded' && (
+                                        <span className="block pt-1">
+                                            {storageDegraded}
                                         </span>
                                     )}
-                                    {routes ? (
-                                        <Status
-                                            state={routes.state}
-                                            label={
-                                                edge.routes !== null
-                                                    ? `${edge.routes} routes`
-                                                    : routes.label
-                                            }
-                                            className="type-small"
-                                        />
-                                    ) : (
-                                        <span>Not reported yet</span>
-                                    )}
-                                    {storage && (
-                                        <Status
-                                            state={storage.state}
-                                            label={storage.label}
-                                            detail={
-                                                edge.mirrored !== null &&
-                                                edge.storage !== 'local'
-                                                    ? `${edge.mirrored} mirrored`
-                                                    : undefined
-                                            }
-                                            className="type-small"
-                                        />
-                                    )}
-                                    {edge.message && (
-                                        <span>{edge.message}</span>
-                                    )}
-                                </span>
+                                    <ErrorDetails
+                                        text={edge.message}
+                                        className="pt-1"
+                                    />
+                                </>
                             }
                         >
                             {edge.controlPlane ? (
@@ -692,6 +780,7 @@ function Certificates({
 export default function NetworkSettings({
     mesh,
     members,
+    meshLinks = [],
     recommendedPolicy,
     tags,
     ingress,
@@ -708,6 +797,7 @@ export default function NetworkSettings({
             <PrivateNetwork
                 mesh={mesh}
                 members={members}
+                meshLinks={meshLinks}
                 recommendedPolicy={recommendedPolicy}
                 tags={tags}
                 errors={errors}

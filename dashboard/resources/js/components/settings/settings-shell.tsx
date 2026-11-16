@@ -58,7 +58,7 @@ function typing(target: EventTarget | null): boolean {
  * (`data-setting-flash`, app.css) and focus its control. Rows that aren't
  * drawn right now fall back to their card, then the page's top.
  */
-function revealSetting(page: Element, anchors: string[]): boolean {
+export function revealSetting(page: Element, anchors: string[]): boolean {
     const element = anchors
         .map((anchor) => page.querySelector(`[data-setting="${anchor}"]`))
         .find((found): found is HTMLElement => found instanceof HTMLElement);

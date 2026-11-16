@@ -2,6 +2,7 @@ import { useForm } from '@inertiajs/react';
 import { Fragment } from 'react';
 import InputError from '@/components/input-error';
 import { UnsavedBar } from '@/components/patterns/unsaved-bar';
+import { TimeAgo } from '@/components/time-ago';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { update } from '@/routes/notifications/rules';
@@ -187,6 +188,22 @@ export function RulesCard({
                                                     }
                                                 />
                                             )}
+                                            <span className="type-small text-muted-foreground">
+                                                {rule.lastFiredAt ? (
+                                                    <>
+                                                        Last alert{' '}
+                                                        <TimeAgo
+                                                            value={
+                                                                rule.lastFiredAt
+                                                            }
+                                                        />
+                                                        {rule.lastFiredTitle &&
+                                                            `: ${rule.lastFiredTitle}`}
+                                                    </>
+                                                ) : (
+                                                    'No alerts yet'
+                                                )}
+                                            </span>
                                             <InputError
                                                 message={
                                                     errors[

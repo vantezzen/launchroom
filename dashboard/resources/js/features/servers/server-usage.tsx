@@ -4,13 +4,13 @@ import { useState } from 'react';
 import { StatTile } from '@/components/charts/stat-tile';
 import { TimeRangeSelect } from '@/components/charts/time-range-select';
 import { UsageMeter } from '@/components/charts/usage-meter';
-import { Logo } from '@/components/logo';
+import { colorForSlot } from '@/components/charts/palette';
 import { MetaLine } from '@/components/patterns/meta-line';
 import { Section } from '@/components/patterns/section';
-import { Sparkline } from '@/components/charts/sparkline';
 import { RANGE_SETS, rangeOptions } from '@/lib/observe-scope';
-import services from '@/routes/projects/services';
-import { formatCores, formatMemory } from '@/lib/format';
+import { canvas as projectCanvas } from '@/routes/projects';
+import { formatCores, formatMemory, plural } from '@/lib/format';
+import { formatOf } from '@/features/servers/format';
 
 type MetricsRange = (typeof RANGE_SETS.resources)[number];
 
@@ -56,6 +56,13 @@ export function ServerUsage({
               }
             : undefined;
     const pct = (v: number) => `${Math.round(v)}%`;
+    const cpuPct = current?.cpuPct ?? null;
+    const memPct =
+        current?.memUsedMb != null && current.memTotalMb
+            ? (current.memUsedMb / current.memTotalMb) * 100
+            : null;
+    // The big number is the latest sample; the sparkline is the range.
+    const now = <span className="type-small text-muted-foreground">now</span>;
 
     if (!current && !hasData(host?.cpuPct)) {
         return null;
@@ -77,25 +84,26 @@ export function ServerUsage({
             <div className="grid gap-5 sm:grid-cols-3">
                 <StatTile
                     label="CPU"
-                    value={
-                        current?.cpuPct != null
-                            ? String(Math.round(current.cpuPct))
-                            : null
-                    }
+                    value={cpuPct !== null ? String(Math.round(cpuPct)) : null}
                     unit="%"
-                    hint={specs?.cpus ? formatCores(specs.cpus) : undefined}
+                    action={now}
+                    hint={
+                        cpuPct !== null && specs?.cpus
+                            ? `${((cpuPct / 100) * specs.cpus).toFixed(1)} of ${formatCores(specs.cpus)}`
+                            : specs?.cpus
+                              ? formatCores(specs.cpus)
+                              : undefined
+                    }
                     series={series(host?.cpuPct, pct)}
                 />
                 <StatTile
                     label="Memory"
-                    value={
-                        current?.memUsedMb != null
-                            ? formatMemory(current.memUsedMb, '').split(' ')[0]
-                            : null
-                    }
-                    unit={
+                    value={memPct !== null ? String(Math.round(memPct)) : null}
+                    unit="%"
+                    action={now}
+                    hint={
                         current?.memUsedMb != null && current.memTotalMb
-                            ? `${formatMemory(current.memUsedMb, '').split(' ')[1]} of ${formatMemory(current.memTotalMb)}`
+                            ? formatOf(current.memUsedMb, current.memTotalMb)
                             : undefined
                     }
                     series={series(host?.memPct, pct)}
@@ -107,10 +115,15 @@ export function ServerUsage({
                             ? String(Math.round(current.diskPct))
                             : null
                     }
-                    unit={
-                        current?.diskTotalMb
-                            ? `% of ${formatMemory(current.diskTotalMb)}`
-                            : '%'
+                    unit="%"
+                    action={now}
+                    hint={
+                        current?.diskPct != null && current.diskTotalMb
+                            ? formatOf(
+                                  (current.diskPct / 100) * current.diskTotalMb,
+                                  current.diskTotalMb,
+                              )
+                            : undefined
                     }
                     series={series(host?.diskPct, pct)}
                 />
@@ -121,59 +134,99 @@ export function ServerUsage({
 
 type Workload = App.Data.Servers.ServerWorkloadData;
 
+/** One project environment on this server ("shop / production"). */
 type Row = {
     key: string;
-    serviceId: string;
-    serviceName: string;
     projectId: string;
     projectName: string;
     environmentId: string;
     environmentName: string;
+    services: number;
     replicas: number;
     rollingOut: boolean;
     draining: boolean;
     limitMb: number;
-    usage?: App.Data.Metrics.ServiceUsageSeriesData;
+    /** Measured now, summed over its services; null before the first sample. */
+    memMb: number | null;
+    cpuCores: number | null;
+    colorSlot: number | null;
 };
 
 function rows(workloads: Workload[], metrics: Metrics): Row[] {
-    const byService = new Map<string, Row>();
+    const byEnv = new Map<string, Row & { serviceIds: Set<string> }>();
 
     for (const workload of workloads) {
-        const key = `${workload.serviceId}:${workload.environmentId}`;
-        const row = byService.get(key) ?? {
+        const key = `${workload.projectId}:${workload.environmentId}`;
+        const row = byEnv.get(key) ?? {
             key,
-            serviceId: workload.serviceId,
-            serviceName: workload.serviceName,
             projectId: workload.projectId,
             projectName: workload.projectName,
             environmentId: workload.environmentId,
             environmentName: workload.environmentName,
+            services: 0,
             replicas: 0,
             rollingOut: false,
             draining: false,
             limitMb: 0,
-            usage: metrics?.services.find(
+            memMb: null,
+            cpuCores: null,
+            colorSlot: null,
+            serviceIds: new Set<string>(),
+        };
+
+        if (!row.serviceIds.has(workload.serviceId)) {
+            row.serviceIds.add(workload.serviceId);
+            const usage = metrics?.services.find(
                 (s) =>
                     s.serviceId === workload.serviceId &&
                     s.environmentId === workload.environmentId,
-            ),
-        };
+            );
+
+            if (usage?.currentMemMb != null) {
+                row.memMb = (row.memMb ?? 0) + usage.currentMemMb;
+            }
+
+            if (usage?.currentCpuCores != null) {
+                row.cpuCores = (row.cpuCores ?? 0) + usage.currentCpuCores;
+            }
+        }
+
+        row.services = row.serviceIds.size;
         row.replicas += 1;
         row.limitMb += workload.memoryMb;
         row.rollingOut ||= !workload.active && workload.role === 'serving';
         row.draining ||= workload.role === 'draining';
-        byService.set(key, row);
+        byEnv.set(key, row);
     }
 
-    return [...byService.values()].sort(
-        (a, b) =>
-            (b.usage?.currentMemMb ?? b.limitMb) -
-            (a.usage?.currentMemMb ?? a.limitMb),
+    const slots = new Map(
+        (metrics?.usedBy ?? []).map((item) => [item.projectId, item.colorSlot]),
     );
+
+    return [...byEnv.values()]
+        .map((row): Row => ({
+            key: row.key,
+            projectId: row.projectId,
+            projectName: row.projectName,
+            environmentId: row.environmentId,
+            environmentName: row.environmentName,
+            services: row.services,
+            replicas: row.replicas,
+            rollingOut: row.rollingOut,
+            draining: row.draining,
+            limitMb: row.limitMb,
+            memMb: row.memMb,
+            cpuCores: row.cpuCores,
+            colorSlot: slots.get(row.projectId) ?? null,
+        }))
+        .sort(
+            (a, b) =>
+                (b.memMb ?? 0) - (a.memMb ?? 0) ||
+                a.projectName.localeCompare(b.projectName),
+        );
 }
 
-/** CPU of a service as a share of the server ("3%"), or in cores when the core count is unknown. */
+/** CPU of a project as a share of the server ("3%"), or in cores when the core count is unknown. */
 function formatServiceCpu(
     cores: number | null | undefined,
     serverCores: number | null | undefined,
@@ -191,10 +244,41 @@ function formatServiceCpu(
     return `${cores < 1 ? cores.toFixed(2) : cores.toFixed(1)} cores`;
 }
 
+function MemoryBar({
+    usedMb,
+    totalMb,
+    slot,
+}: {
+    usedMb: number;
+    totalMb: number;
+    slot: number | null;
+}) {
+    const share = totalMb > 0 ? Math.min(100, (usedMb / totalMb) * 100) : 0;
+
+    return (
+        <span
+            aria-hidden="true"
+            className="block h-1 w-full overflow-hidden rounded-full bg-hover"
+        >
+            <span
+                className="block h-full rounded-full"
+                style={{
+                    width: `${Math.max(share, 1)}%`,
+                    backgroundColor:
+                        slot === null
+                            ? 'var(--chart-other)'
+                            : colorForSlot(slot + 1),
+                }}
+            />
+        </span>
+    );
+}
+
 /**
- * "What runs here" (direction §9.2): memory by project (top 3 in their
- * colour, the rest grey) and one row per service, largest first, with its
- * current CPU (share of the server) and memory (sparkline + value).
+ * "What runs here" (docs/08 §14): memory by project as a stacked bar (the
+ * legend), then one row per project environment with its services, the
+ * memory it uses now against the server, and CPU once it was sampled.
+ * Memory limits are caps, not use: they only show on hover.
  */
 export function WhatRunsHere({
     placement,
@@ -209,7 +293,7 @@ export function WhatRunsHere({
     const [all, setAll] = useState(false);
     const list = rows(placement.workloads, metrics);
     const visible = all ? list : list.slice(0, 6);
-    const hasUsage = list.some((row) => row.usage?.currentMemMb != null);
+    const services = new Set(placement.workloads.map((w) => w.serviceId)).size;
     // The backend folds small projects into one "Other" row (projectId
     // null): it stays grey whatever its size.
     const usedBy = (metrics?.usedBy ?? []).filter((item) => item.memMb > 0);
@@ -228,7 +312,7 @@ export function WhatRunsHere({
             title="What runs here"
             description={
                 list.length > 0
-                    ? `${list.length} ${list.length === 1 ? 'service' : 'services'}${free ? `, ${free}` : ''}`
+                    ? `${plural(services, 'service')} in ${plural(list.length, 'project environment')}${free ? `, ${free}` : ''}`
                     : undefined
             }
         >
@@ -260,133 +344,115 @@ export function WhatRunsHere({
                             : 'Nothing runs here yet.'}
                     </p>
                 ) : (
-                    <>
-                        {hasUsage && (
-                            <div
-                                aria-hidden="true"
-                                className="hidden grid-cols-[32px_minmax(0,1fr)_56px_120px_72px] gap-x-4 border-b px-6 py-2.5 type-small text-muted-foreground sm:grid"
-                            >
-                                <span />
-                                <span>Service</span>
-                                <span className="text-right">CPU</span>
-                                <span className="col-span-2 text-right">
-                                    Memory
-                                </span>
-                            </div>
-                        )}
-                        <ul className="divide-y">
-                            {visible.map((row) => {
-                                const cpu = formatServiceCpu(
-                                    row.usage?.currentCpuCores,
-                                    cores,
-                                );
-                                const memory =
-                                    row.usage?.currentMemMb != null
-                                        ? formatMemory(row.usage.currentMemMb)
-                                        : null;
+                    <ul className="divide-y">
+                        {visible.map((row) => {
+                            const cpu = formatServiceCpu(row.cpuCores, cores);
+                            const limits = `Memory limits add up to ${formatMemory(row.limitMb)}. They cap each service, they aren’t reserved.`;
 
-                                return (
-                                    <li key={row.key}>
-                                        <Link
-                                            href={
-                                                services.show({
-                                                    project: row.projectId,
-                                                    environment:
-                                                        row.environmentId,
-                                                    service: row.serviceId,
-                                                }).url
-                                            }
-                                            className="grid grid-cols-[32px_minmax(0,1fr)_auto] items-center gap-x-4 px-6 py-3.5 hover:bg-hover sm:grid-cols-[32px_minmax(0,1fr)_56px_120px_72px]"
-                                        >
-                                            <Logo
-                                                kind="app"
-                                                name={row.serviceName}
-                                                size={32}
+                            return (
+                                <li key={row.key}>
+                                    <Link
+                                        href={
+                                            projectCanvas({
+                                                project: row.projectId,
+                                                environment: row.environmentId,
+                                            }).url
+                                        }
+                                        title={limits}
+                                        className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-6 gap-y-2 px-6 py-3.5 hover:bg-hover sm:grid-cols-[minmax(0,1fr)_minmax(8rem,12rem)]"
+                                    >
+                                        <span className="flex min-w-0 items-center gap-3">
+                                            <span
+                                                aria-hidden="true"
+                                                className="size-2.5 shrink-0 rounded-full"
+                                                style={{
+                                                    backgroundColor:
+                                                        row.colorSlot === null
+                                                            ? 'var(--chart-other)'
+                                                            : colorForSlot(
+                                                                  row.colorSlot +
+                                                                      1,
+                                                              ),
+                                                }}
                                             />
                                             <span className="flex min-w-0 flex-col">
                                                 <span className="truncate type-body font-medium">
-                                                    {row.serviceName}
+                                                    {row.projectName}
                                                 </span>
                                                 <MetaLine className="type-small text-muted-foreground">
-                                                    {`${row.projectName} / ${row.environmentName}`}
-                                                    {row.replicas === 1
-                                                        ? '1 replica'
-                                                        : `${row.replicas} replicas`}
+                                                    {row.environmentName}
+                                                    {plural(
+                                                        row.services,
+                                                        'service',
+                                                    )}
+                                                    {row.replicas >
+                                                        row.services &&
+                                                        plural(
+                                                            row.replicas,
+                                                            'replica',
+                                                        )}
                                                     {row.rollingOut &&
                                                         'Rolling out'}
                                                     {row.draining && 'Draining'}
                                                 </MetaLine>
                                             </span>
-                                            <span
-                                                className="hidden text-right type-small tabular-nums sm:block"
-                                                title={
-                                                    row.usage
-                                                        ?.currentCpuCores !=
-                                                    null
-                                                        ? `${row.usage.currentCpuCores.toFixed(2)} cores`
-                                                        : undefined
-                                                }
-                                            >
-                                                {cpu ?? (
-                                                    <span className="text-muted-foreground">
-                                                        –
+                                        </span>
+                                        <span className="flex min-w-0 flex-col items-end gap-1.5 text-right type-small tabular-nums">
+                                            {row.memMb !== null ? (
+                                                <>
+                                                    <span>
+                                                        {total > 0
+                                                            ? `${formatMemory(row.memMb)} of ${formatMemory(total)}`
+                                                            : formatMemory(
+                                                                  row.memMb,
+                                                              )}
                                                     </span>
-                                                )}
-                                            </span>
-                                            <span className="hidden sm:block">
-                                                <Sparkline
-                                                    values={
-                                                        row.usage?.memMb ?? []
-                                                    }
-                                                    min={0}
-                                                    height={22}
-                                                    label={`${row.serviceName} memory`}
-                                                />
-                                            </span>
-                                            <span className="flex flex-col items-end text-right type-small tabular-nums">
-                                                {memory ?? (
-                                                    <span className="text-muted-foreground">
-                                                        {formatMemory(
-                                                            row.limitMb,
-                                                        )}{' '}
-                                                        limit
-                                                    </span>
-                                                )}
-                                                {cpu !== null && (
-                                                    <span className="text-muted-foreground sm:hidden">
-                                                        CPU {cpu}
-                                                    </span>
-                                                )}
-                                            </span>
-                                        </Link>
-                                    </li>
-                                );
-                            })}
-                        </ul>
-                    </>
+                                                    {total > 0 && (
+                                                        <MemoryBar
+                                                            usedMb={row.memMb}
+                                                            totalMb={total}
+                                                            slot={row.colorSlot}
+                                                        />
+                                                    )}
+                                                </>
+                                            ) : (
+                                                <span className="text-muted-foreground">
+                                                    Not measured yet
+                                                </span>
+                                            )}
+                                            {cpu !== null && (
+                                                <span className="text-muted-foreground">
+                                                    CPU {cpu}
+                                                </span>
+                                            )}
+                                        </span>
+                                    </Link>
+                                </li>
+                            );
+                        })}
+                    </ul>
                 )}
                 {buildCpu !== null && (
-                    <div className="grid grid-cols-[32px_minmax(0,1fr)_auto] items-center gap-x-4 border-t px-6 py-3.5 sm:grid-cols-[32px_minmax(0,1fr)_56px_120px_72px]">
-                        <span
-                            aria-hidden="true"
-                            className="flex size-8 items-center justify-center rounded-[9px] border bg-card"
-                        >
-                            <Hammer className="size-4 text-muted-foreground" />
-                        </span>
-                        <span className="flex min-w-0 flex-col">
-                            <span className="type-body font-medium">
-                                Builds
-                            </span>
-                            <span className="type-small text-muted-foreground">
-                                CPU over the last minute
+                    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-6 border-t px-6 py-3.5">
+                        <span className="flex min-w-0 items-center gap-3">
+                            <Hammer
+                                aria-hidden="true"
+                                className="size-3.5 shrink-0 text-muted-foreground"
+                            />
+                            <span className="flex min-w-0 flex-col">
+                                <span className="type-body font-medium">
+                                    Builds
+                                </span>
+                                <span className="type-small text-muted-foreground">
+                                    CPU over the last minute
+                                </span>
                             </span>
                         </span>
                         <span
                             className="text-right type-small tabular-nums"
                             title={`${buildCpu.toFixed(2)} cores`}
                         >
-                            <span className="sm:hidden">CPU </span>
-                            {formatServiceCpu(buildCpu, cores)}
+                            CPU {formatServiceCpu(buildCpu, cores)}
                         </span>
                     </div>
                 )}

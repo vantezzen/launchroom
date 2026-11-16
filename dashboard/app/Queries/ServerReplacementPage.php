@@ -66,8 +66,8 @@ final readonly class ServerReplacementPage
             'replacement' => $replacement instanceof ServerReplacement ? ServerReplacementData::fromReplacement($replacement) : null,
             'blockedReason' => $blocked,
             'canEnroll' => $user->can('create', [Server::class, $server->team]),
-            // The device picture of the dead server and each candidate.
-            'devices' => $candidates->concat([$server])
+            // The device picture of the dead server, each candidate and the replacement.
+            'devices' => $candidates->concat(array_filter([$server, $replacement?->newServer]))
                 ->mapWithKeys(static fn (Server $s): array => [$s->public_id => DeviceData::fromServer($s)->kind->value])
                 ->all(),
         ];

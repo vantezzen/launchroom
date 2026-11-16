@@ -1,6 +1,6 @@
 import { Link, router } from '@inertiajs/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { MoreHorizontal, Rocket } from 'lucide-react';
+import { MoreHorizontal, RefreshCw, Rocket, ScrollText } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { CommitAvatar } from '@/components/commit-avatar';
 import { Duration, Elapsed } from '@/components/elapsed';
@@ -31,6 +31,8 @@ import {
     deploymentUrl,
 } from './deployment-actions';
 import { DeploymentLink } from './deployment-link';
+import { RollbackRows } from './rollback-rows';
+import { deploymentLogsHref } from './related-cards';
 import {
     branchName,
     deploymentStatusState,
@@ -70,6 +72,9 @@ type DeploymentsTabProps = {
 
 type Summary = App.Data.Deployments.DeploymentSummaryData;
 
+/** History rows shown before "Show all". */
+const HISTORY = 5;
+
 /** Short step names for the row's track ("Release command" is long). */
 const TRACK_LABELS: Record<string, string> = {
     plan: 'Plan',
@@ -81,11 +86,12 @@ const TRACK_LABELS: Record<string, string> = {
 };
 
 /**
- * Service panel → Deployments (docs/08 §12, direction §9.5): one list,
- * newest first. The current deployment (the one in progress, else the live
- * one, else the newest) is its first row, expanded: the same avatar
- * column, title and meta line as every other row, plus the steps with live
- * status and times. Every row is one link to its deployment (its logs);
+ * Service panel → Deployments (docs/08 §12, direction §9.5). The current
+ * deployment (the one in progress, else the live one, else the newest) is
+ * pinned in its own card, expanded: the same avatar column, title and meta
+ * line as every other row, plus the steps with live status and times, and
+ * View logs and Redeploy under it. Then the History, newest first, five
+ * rows until "Show all". Every row is one link to its deployment (its logs);
  * actions live in the row's `⋯` menu, and the service's own (Deploy,
  * Start) in the panel header. The rest are compact rows with Roll back on
  * hover. Live over the environment channel.
@@ -102,6 +108,7 @@ export function DeploymentsTab({
     const query = serviceDeploymentsQuery(project, environment, service);
     const key = query.queryKey;
     const [action, setAction] = useState<PendingAction | null>(null);
+    const [showAll, setShowAll] = useState(false);
     const stoppedAt = controls?.stoppedAt ?? null;
     const seenStop = useRef(stoppedAt);
 
@@ -129,6 +136,7 @@ export function DeploymentsTab({
     };
 
     const head = data ? listHead(data) : null;
+    const live = data?.deployments.find((item) => item.isActive) ?? null;
     const rest =
         data?.deployments.filter((deployment) => deployment.id !== head?.id) ??
         [];
@@ -206,35 +214,101 @@ export function DeploymentsTab({
             )}
 
             {data && head !== null && (
-                <ol
-                    aria-label="Deployments"
-                    className="flex flex-col overflow-hidden rounded-xl border bg-card shadow-card"
-                >
-                    <DeploymentRow
-                        deployment={head}
-                        canDeploy={data.canDeploy}
-                        onAction={setAction}
-                        logo={logo}
-                        expanded={{
-                            steps:
-                                data.current?.id === head.id
-                                    ? data.current.steps
-                                    : [],
-                            expectsRelease:
-                                data.current?.id === head.id &&
-                                data.current.expectsRelease,
-                        }}
-                    />
-                    {rest.map((deployment) => (
-                        <DeploymentRow
-                            key={deployment.id}
-                            deployment={deployment}
-                            canDeploy={data.canDeploy}
-                            onAction={setAction}
-                            logo={logo}
-                        />
-                    ))}
-                </ol>
+                <>
+                    {/* The current deployment, pinned (DPL-9): in progress,
+                        else live, else the newest. */}
+                    <section
+                        aria-label="Current deployment"
+                        className="flex flex-col overflow-hidden rounded-xl border bg-card shadow-card"
+                    >
+                        <ol>
+                            <DeploymentRow
+                                deployment={head}
+                                live={live}
+                                canDeploy={data.canDeploy}
+                                onAction={setAction}
+                                logo={logo}
+                                expanded={{
+                                    steps:
+                                        data.current?.id === head.id
+                                            ? data.current.steps
+                                            : [],
+                                    expectsRelease:
+                                        data.current?.id === head.id &&
+                                        data.current.expectsRelease,
+                                }}
+                            />
+                        </ol>
+                        <div className="flex flex-wrap justify-end gap-2 border-t bg-(--recessed) px-4 py-2.5">
+                            <Button variant="outline" size="sm" asChild>
+                                <Link href={deploymentLogsHref(head)}>
+                                    <ScrollText aria-hidden="true" />
+                                    View logs
+                                </Link>
+                            </Button>
+                            {data.canDeploy &&
+                                !isInProgress(head.status) &&
+                                !head.stopped && (
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() =>
+                                            setAction({
+                                                kind: 'redeploy',
+                                                deployment: head,
+                                            })
+                                        }
+                                    >
+                                        <RefreshCw aria-hidden="true" />
+                                        Redeploy
+                                    </Button>
+                                )}
+                        </div>
+                    </section>
+
+                    {rest.length > 0 && (
+                        <section
+                            aria-labelledby="deployment-history"
+                            className="flex flex-col gap-2"
+                        >
+                            <h3
+                                id="deployment-history"
+                                className="type-label text-muted-foreground"
+                            >
+                                History
+                            </h3>
+                            <ol
+                                aria-label="Earlier deployments"
+                                className="flex flex-col overflow-hidden rounded-xl border bg-card shadow-card"
+                            >
+                                {(showAll ? rest : rest.slice(0, HISTORY)).map(
+                                    (deployment) => (
+                                        <DeploymentRow
+                                            key={deployment.id}
+                                            deployment={deployment}
+                                            live={live}
+                                            canDeploy={data.canDeploy}
+                                            onAction={setAction}
+                                            logo={logo}
+                                        />
+                                    ),
+                                )}
+                            </ol>
+                            {rest.length > HISTORY && (
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="self-start"
+                                    onClick={() => setShowAll(!showAll)}
+                                >
+                                    {showAll
+                                        ? 'Show fewer'
+                                        : `Show all ${rest.length}`}
+                                </Button>
+                            )}
+                        </section>
+                    )}
+                </>
             )}
 
             <DeploymentActionDialog
@@ -291,12 +365,15 @@ function RowStatus({
  */
 function DeploymentRow({
     deployment,
+    live,
     canDeploy,
     onAction,
     logo,
     expanded,
 }: {
     deployment: Summary;
+    /** The serving deployment: the rollback confirm shows it above the target. */
+    live: Summary | null;
     canDeploy: boolean;
     onAction: (action: PendingAction) => void;
     logo?: string;
@@ -364,6 +441,7 @@ function DeploymentRow({
             </div>
             <RowMenu
                 deployment={deployment}
+                live={live}
                 canDeploy={canDeploy}
                 onAction={onAction}
                 rollbackOnHover={!expanded}
@@ -471,11 +549,13 @@ function StoppedNote({
  */
 function RowMenu({
     deployment,
+    live,
     canDeploy,
     onAction,
     rollbackOnHover,
 }: {
     deployment: Summary;
+    live: Summary | null;
     canDeploy: boolean;
     onAction: (action: PendingAction) => void;
     rollbackOnHover: boolean;
@@ -491,6 +571,7 @@ function RowMenu({
             {rollbackOnHover && deployment.canRollback && (
                 <ConfirmPopover
                     title={`Roll back to ${sha ?? 'this deployment'}?`}
+                    body={<RollbackRows current={live} target={deployment} />}
                     consequence="Traffic switches back within seconds. Database migrations are not reverted, and new pushes to production wait until you resume auto-deploy."
                     confirmLabel="Roll back"
                     onConfirm={() =>
@@ -535,7 +616,11 @@ function RowMenu({
                     {deployment.canRollback && (
                         <DropdownMenuItem
                             onSelect={() =>
-                                onAction({ kind: 'rollback', deployment })
+                                onAction({
+                                    kind: 'rollback',
+                                    deployment,
+                                    current: live,
+                                })
                             }
                         >
                             Roll back to this

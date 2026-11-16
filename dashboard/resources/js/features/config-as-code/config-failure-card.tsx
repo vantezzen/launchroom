@@ -31,15 +31,10 @@ export function ConfigFailureCard({ detail }: { detail: Detail }) {
             </span>
             <div className="flex min-w-0 flex-1 flex-col gap-4">
                 <div className="flex flex-col gap-1">
-                    <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1">
-                        <h2 id="config-failure-title" className="type-heading">
-                            {config.path} has{' '}
-                            {count === 1 ? 'a problem' : `${count} problems`}
-                        </h2>
-                        <span className="rounded-full border px-2 py-px type-mono-small text-muted-foreground">
-                            config_error
-                        </span>
-                    </div>
+                    <h2 id="config-failure-title" className="type-heading">
+                        {config.path} has{' '}
+                        {count === 1 ? 'a problem' : `${count} problems`}
+                    </h2>
                     <p className="max-w-[72ch] type-body text-muted-foreground">
                         <span className="text-foreground">{serving}</span> Fix
                         the file and push again; launchroom reads it at every

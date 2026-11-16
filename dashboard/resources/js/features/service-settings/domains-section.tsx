@@ -42,6 +42,10 @@ import { cn } from '@/lib/utils';
 import domainRoutes from '@/routes/projects/domains';
 import { SettingsPage, useSettingsPage } from './section';
 import type { SettingsContext } from './settings-context';
+import {
+    DnsRecordTable,
+    recordFound,
+} from '@/features/domains/dns-record-table';
 import { CopyButton } from '@/components/copy-button';
 import { schedulePoll, useLiveProps } from '@/hooks/use-live-props';
 
@@ -370,48 +374,21 @@ function dnsRecordsHint(domain: Domain): string {
         : 'Add these records at your DNS provider.';
 }
 
-function RecordList({ records }: { records: DnsRecord[] }) {
+/** The records as a Type | Name | Value table, with what the last check found. */
+function RecordList({
+    records,
+    check,
+}: {
+    records: DnsRecord[];
+    check: App.Data.Domains.DnsCheckData | null;
+}) {
     return (
-        <ul className="divide-y overflow-hidden rounded-lg border bg-card">
-            {records.map((record) => (
-                <li
-                    key={`${record.type}-${record.name}-${record.value}`}
-                    className="grid min-w-0 grid-cols-[3.5rem_minmax(0,1fr)] items-start gap-x-3 gap-y-2 p-4"
-                >
-                    <span className="inline-flex h-6 w-fit items-center rounded-md bg-hover px-2 type-mono-small font-medium">
-                        {record.type}
-                    </span>
-                    <span className="flex min-w-0 items-start">
-                        <span className="flex min-w-0 flex-1 flex-col gap-1">
-                            <span className="type-small text-muted-foreground">
-                                Name
-                            </span>
-                            <code className="type-mono-small break-all">
-                                {record.name}
-                            </code>
-                        </span>
-                        <CopyButton
-                            value={record.name}
-                            label={`${record.type} record name`}
-                        />
-                    </span>
-                    <span className="col-start-2 flex min-w-0 items-start">
-                        <span className="flex min-w-0 flex-1 flex-col gap-1">
-                            <span className="type-small text-muted-foreground">
-                                Value
-                            </span>
-                            <code className="type-mono-small break-all">
-                                {record.value}
-                            </code>
-                        </span>
-                        <CopyButton
-                            value={record.value}
-                            label={`${record.type} record value`}
-                        />
-                    </span>
-                </li>
-            ))}
-        </ul>
+        <DnsRecordTable
+            records={records.map((record) => ({
+                ...record,
+                found: recordFound(record, check),
+            }))}
+        />
     );
 }
 
@@ -454,6 +431,7 @@ export function DnsRecords({ domain }: { domain: Domain }) {
                         </span>
                     </span>
                     <RecordList
+                        check={domain.verification}
                         records={withWww([
                             {
                                 type: 'CNAME',
@@ -474,7 +452,10 @@ export function DnsRecords({ domain }: { domain: Domain }) {
                     {addresses.length === 0 ? (
                         noAddresses
                     ) : (
-                        <RecordList records={addresses} />
+                        <RecordList
+                            records={addresses}
+                            check={domain.verification}
+                        />
                     )}
                 </div>
             </div>
@@ -486,7 +467,7 @@ export function DnsRecords({ domain }: { domain: Domain }) {
             {addresses.length === 0 ? (
                 noAddresses
             ) : (
-                <RecordList records={addresses} />
+                <RecordList records={addresses} check={domain.verification} />
             )}
             {target && domain.apex && (
                 <div className="flex flex-col gap-1 rounded-lg border bg-card px-4 py-3">

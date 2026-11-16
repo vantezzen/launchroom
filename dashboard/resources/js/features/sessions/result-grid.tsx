@@ -1,9 +1,19 @@
+import { Download } from 'lucide-react';
+import { toast } from 'sonner';
+import { Button } from '@/components/ui/button';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import {
     Popover,
     PopoverContent,
     PopoverTrigger,
 } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
+import { downloadText, exportFileName, toCsv, toJson } from './export';
 
 /** Cells longer than this are cut; the full value opens in a popover. */
 const CUT = 80;
@@ -50,17 +60,20 @@ function Cell({ value }: { value: string | null }) {
 /**
  * The result grid (docs/08 §15): sticky header, row numbers, mono cells,
  * NULL as a faint chip, long cells cut with the full value in a popover.
+ * With `onOpenRow` the row number opens that row in the inspector.
  */
 export function ResultGrid({
     columns,
     rows,
     offset = 0,
+    onOpenRow,
     className,
 }: {
     columns: string[];
     rows: (string | null)[][];
     /** Number of the first row minus one (pages). */
     offset?: number;
+    onOpenRow?: (index: number) => void;
     className?: string;
 }) {
     return (
@@ -94,7 +107,18 @@ export function ResultGrid({
                     {rows.map((row, index) => (
                         <tr key={index} className="hover:bg-hover/60">
                             <td className="sticky left-0 border-b bg-card px-3 py-1.5 text-right text-faint tabular-nums">
-                                {offset + index + 1}
+                                {onOpenRow ? (
+                                    <button
+                                        type="button"
+                                        className="cursor-pointer rounded-sm tabular-nums underline-offset-2 hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                                        aria-label={`Open row ${offset + index + 1}`}
+                                        onClick={() => onOpenRow(index)}
+                                    >
+                                        {offset + index + 1}
+                                    </button>
+                                ) : (
+                                    offset + index + 1
+                                )}
                             </td>
                             {row.map((value, cell) => (
                                 <td
@@ -109,5 +133,71 @@ export function ResultGrid({
                 </tbody>
             </table>
         </div>
+    );
+}
+
+/**
+ * Take the rows on screen out of the grid (docs/08 §15): copy as CSV or
+ * JSON, or download a CSV. Built in the browser; nothing is stored.
+ */
+export function ResultExport({
+    name,
+    columns,
+    rows,
+    offset = 0,
+}: {
+    /** Table or key name for the file ("orders-rows-1-50.csv"). */
+    name: string;
+    columns: string[];
+    rows: (string | null)[][];
+    offset?: number;
+}) {
+    const copy = async (text: string, what: string) => {
+        try {
+            await navigator.clipboard.writeText(text);
+            toast.success(
+                `Copied ${rows.length} ${rows.length === 1 ? 'row' : 'rows'} as ${what}.`,
+            );
+        } catch {
+            toast.error('Copying isn’t allowed in this browser.');
+        }
+    };
+
+    return (
+        <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="sm" disabled={rows.length === 0}>
+                    <Download aria-hidden="true" />
+                    Export
+                </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+                <DropdownMenuItem
+                    onSelect={() => void copy(toCsv(columns, rows), 'CSV')}
+                >
+                    Copy as CSV
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                    onSelect={() => void copy(toJson(columns, rows), 'JSON')}
+                >
+                    Copy as JSON
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                    onSelect={() =>
+                        downloadText(
+                            exportFileName(
+                                name,
+                                offset + 1,
+                                offset + rows.length,
+                            ),
+                            toCsv(columns, rows),
+                            'text/csv;charset=utf-8',
+                        )
+                    }
+                >
+                    Download CSV
+                </DropdownMenuItem>
+            </DropdownMenuContent>
+        </DropdownMenu>
     );
 }

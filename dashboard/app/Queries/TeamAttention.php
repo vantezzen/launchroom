@@ -162,10 +162,12 @@ final readonly class TeamAttention
      */
     private function security(Team $team): array
     {
+        // One per advisory group, like the sidebar badge and the Security hero (docs/22 §9).
         $count = SecurityFinding::query()
             ->where('team_id', $team->id)
             ->actionNeeded()
-            ->count();
+            ->distinct()
+            ->count('group_key');
 
         if ($count === 0) {
             return [];
@@ -175,7 +177,7 @@ final readonly class TeamAttention
             key: 'security',
             kind: 'security',
             state: StatusTone::Warning,
-            title: $count === 1 ? '1 security finding needs action' : "{$count} security findings need action",
+            title: $count === 1 ? '1 vulnerability needs action' : "{$count} vulnerabilities need action",
             context: null,
             detail: null,
             at: null,

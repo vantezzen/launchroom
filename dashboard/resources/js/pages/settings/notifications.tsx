@@ -1,5 +1,5 @@
 import { Head, Link, router } from '@inertiajs/react';
-import { BellOff, KeyRound, Plus } from 'lucide-react';
+import { BellOff, ChevronRight, KeyRound, Plus } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { CopyValue } from '@/components/copy-value';
 import { EmptyState } from '@/components/patterns/empty-state';
@@ -13,11 +13,13 @@ import { ChannelRow } from '@/features/alerts/channel-row';
 import { RulesCard } from '@/features/alerts/rules-card';
 import { SettingsCard, SettingsRow } from '@/components/settings/settings-card';
 import SettingsLayout from '@/features/settings/settings-layout';
+import { index as activityIndex } from '@/routes/activity';
 
 type Props = {
     channels: App.Data.Alerts.AlertChannelData[];
     rules: App.Data.Alerts.AlertRuleData[];
     openAlerts: App.Data.Alerts.AlertSummaryData[];
+    openAlertCount: number;
     canManage: boolean;
     mailConfigured: boolean;
     defaultEmail: string;
@@ -46,25 +48,50 @@ function useFlash<T>(key: string): T | null {
     return value;
 }
 
+/**
+ * Open alerts live in Activity (docs/15 §3.6): here one row says how many
+ * are open with the two most severe under it, and links there.
+ */
 function OpenAlerts({
     alerts,
+    count,
 }: {
     alerts: App.Data.Alerts.AlertSummaryData[];
+    count: number;
 }) {
-    if (alerts.length === 0) {
+    if (count === 0) {
         return null;
     }
 
+    const href = activityIndex({
+        query: { kind: 'alerts', state: 'open' },
+    }).url;
+    const critical = alerts.some((alert) => alert.severity === 'critical');
+
     return (
-        <SettingsCard
-            title="Open now"
-            description={`${alerts.length} ${alerts.length === 1 ? 'problem is' : 'problems are'} still going on.`}
+        <section
+            aria-label="Open alerts"
+            className="flex flex-col overflow-hidden rounded-xl border bg-card shadow-card"
         >
-            {alerts.map((alert) => (
-                <SettingsRow
-                    key={alert.id}
-                    media={
-                        <span className="flex size-8 items-center justify-center">
+            <Link
+                href={href}
+                className="flex min-h-14 items-center gap-3 px-4 py-3 hover:bg-(--hover)/50 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-(--signal)"
+            >
+                <StatusIcon state={critical ? 'failed' : 'warning'} />
+                <span className="flex-1 type-body font-medium">
+                    {count === 1
+                        ? '1 problem is open'
+                        : `${count} problems are open`}
+                </span>
+                <span className="inline-flex items-center gap-1 type-small text-muted-foreground">
+                    View in Activity
+                    <ChevronRight aria-hidden="true" className="size-4" />
+                </span>
+            </Link>
+            <ul className="divide-y border-t">
+                {alerts.map((alert) => {
+                    const row = (
+                        <>
                             <StatusIcon
                                 state={
                                     alert.severity === 'critical'
@@ -72,37 +99,53 @@ function OpenAlerts({
                                         : 'warning'
                                 }
                             />
-                        </span>
-                    }
-                    label={alert.title}
-                    description={
-                        <span>
-                            {alert.summary} Since{' '}
-                            <TimeAgo value={alert.openedAt} />.
-                        </span>
-                    }
-                    align="start"
-                >
-                    {alert.href && (
-                        <Button asChild size="sm" variant="ghost">
-                            <Link href={alert.href}>Look</Link>
-                        </Button>
-                    )}
-                </SettingsRow>
-            ))}
-        </SettingsCard>
+                            <span className="min-w-0 flex-1 truncate type-body">
+                                {alert.title}
+                            </span>
+                            <span className="shrink-0 type-small text-muted-foreground">
+                                <TimeAgo value={alert.openedAt} />
+                            </span>
+                            {alert.href && (
+                                <ChevronRight
+                                    aria-hidden="true"
+                                    className="size-4 shrink-0 text-muted-foreground"
+                                />
+                            )}
+                        </>
+                    );
+                    const className =
+                        'flex min-h-11 items-center gap-3 px-4 py-2';
+
+                    return (
+                        <li key={alert.id}>
+                            {alert.href ? (
+                                <Link
+                                    href={alert.href}
+                                    className={`${className} hover:bg-(--hover)/50 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-(--signal)`}
+                                >
+                                    {row}
+                                </Link>
+                            ) : (
+                                <div className={className}>{row}</div>
+                            )}
+                        </li>
+                    );
+                })}
+            </ul>
+        </section>
     );
 }
 
 /**
- * Settings → Notifications (docs/15 §3.6): what's open, where the team
- * hears about alerts (a guided "Where should we tell you?" until the first
+ * Settings → Notifications (docs/15 §3.6): how many alerts are open (they
+ * live in Activity), where the team hears about alerts (a guided "Where should we tell you?" until the first
  * channel exists) and what it hears about.
  */
 export default function NotificationSettings({
     channels,
     rules,
     openAlerts,
+    openAlertCount,
     canManage,
     mailConfigured,
     defaultEmail,
@@ -118,7 +161,7 @@ export default function NotificationSettings({
         <>
             <Head title="Notifications" />
 
-            <OpenAlerts alerts={openAlerts} />
+            <OpenAlerts alerts={openAlerts} count={openAlertCount} />
 
             {secret && (
                 <SettingsCard

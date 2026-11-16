@@ -43,5 +43,7 @@ final class PreviewData extends Data
         public string $lastActivityAt,
         public array $shareLinks,
         public bool $protected,
+        /** A failed deployment of the preview, for "See why" (DPL-6). */
+        public ?string $failedDeploymentId = null,
     ) {}
 }

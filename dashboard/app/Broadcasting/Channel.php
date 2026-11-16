@@ -22,6 +22,8 @@ enum Channel: string
     case TeamServers = 'servers';
     /** Security findings nudges of one team. */
     case TeamSecurity = 'security';
+    /** One member's own nudges (the deployments they started), keyed by the membership's public id. */
+    case Member = 'members';
     case Daemon = 'daemon';
     case Session = 'session';
 
@@ -62,6 +64,7 @@ enum Channel: string
             self::Environment => 'environment',
             self::Deployment => 'deployment',
             self::TeamServers, self::TeamSecurity => 'team',
+            self::Member => 'member',
             self::Daemon, self::Session => 'id',
         };
     }

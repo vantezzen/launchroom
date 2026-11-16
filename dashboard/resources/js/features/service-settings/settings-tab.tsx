@@ -235,6 +235,8 @@ export function SettingsTab({
                             <SettingsPageProvider
                                 id={page.id}
                                 active={page.id === current}
+                                route={context.route}
+                                serviceName={context.node.name}
                             >
                                 <ManagedByFile
                                     managed={context.settings.configFile}

@@ -9,7 +9,9 @@ use Spatie\LaravelData\Attributes\Validation\In;
 use Spatie\LaravelData\Data;
 
 /**
- * Activity filters: a project (team page) and a group of kinds.
+ * Activity filters: a project (team page), a group of kinds and, for
+ * alerts, `state=open` (only alerts still firing; Settings → Notifications
+ * links here).
  */
 final class ActivityFiltersData extends Data
 {
@@ -26,5 +28,7 @@ final class ActivityFiltersData extends Data
         public ?string $project = null,
         #[In(['deploys', 'promotions', 'changes', 'team', 'alerts'])]
         public ?string $kind = null,
+        #[In(['open'])]
+        public ?string $state = null,
     ) {}
 }

@@ -128,6 +128,76 @@ export function toggleFilter(
     });
 }
 
+/**
+ * Sets `key:value` (or `-key:value` when `negated`) in the query, replacing
+ * the same value with the other polarity: "Only this" and "Hide this" in
+ * the line details.
+ */
+export function setFilter(
+    input: string,
+    key: QueryKey,
+    value: string,
+    negated: boolean,
+): string {
+    const query = parseLogQuery(input);
+
+    return serializeLogQuery({
+        ...query,
+        filters: [
+            ...query.filters.filter(
+                (filter) => !(filter.key === key && filter.value === value),
+            ),
+            { key, value, negated },
+        ],
+    });
+}
+
+/** The query with only the given keys' filters kept and no text: the context around one line. */
+export function keepOnly(input: string, keys: QueryKey[]): string {
+    const query = parseLogQuery(input);
+
+    return serializeLogQuery({
+        filters: query.filters.filter((filter) => keys.includes(filter.key)),
+        text: [],
+    });
+}
+
+/** Removes `key:value` in either polarity. */
+export function removeFilter(
+    input: string,
+    key: QueryKey,
+    value: string,
+): string {
+    const query = parseLogQuery(input);
+
+    return serializeLogQuery({
+        ...query,
+        filters: query.filters.filter(
+            (filter) => !(filter.key === key && filter.value === value),
+        ),
+    });
+}
+
+/** Every filter removed, the text search kept: the rail's "Reset". */
+export function clearFilters(input: string): string {
+    return serializeLogQuery({ filters: [], text: parseLogQuery(input).text });
+}
+
+/** Whether the query holds `key:value` with this polarity. */
+export function hasFilter(
+    input: string,
+    key: QueryKey,
+    value: string,
+    negated = false,
+): boolean {
+    return parseLogQuery(input).filters.some(
+        (filter) =>
+            filter.key === key &&
+            filter.value === value &&
+            filter.negated === negated,
+    );
+}
+
 function field(entry: LogEntry, key: QueryKey): string {
     return String(entry[key] ?? '').toLowerCase();
 }

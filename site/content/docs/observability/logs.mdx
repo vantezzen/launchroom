@@ -21,9 +21,10 @@ Secret values are masked before lines are stored. If a variable marked secret sh
 Open a project and choose **Logs**. The explorer has one toolbar, a histogram, a filter rail and the lines themselves.
 
 - **Range**: 15 min, Hour, Day, Week or Month, starting on Day. When nothing matches, the empty state has options to widen the range or follow live. Logs and both views of Analytics keep the range and service when you switch between them.
-- **Histogram**: lines over time, with errors stacked in red and a marker for every deploy (failed deploys in red). Hover a marker to see its service and commit, and click it to open the deployment. Click a bar to look at just that stretch of time; the chip above the histogram takes you back to the whole range.
-- **Filter rail**: counts per level, environment, service, deployment and server. Click a value to filter by it.
-- **Detail drawer**: click a line to see its facts (service, replica, server, commit), similar lines and shortcuts to show only that service or only that deployment. The deployment and server link to their pages.
+- **Histogram**: lines over time, with errors stacked in red and a marker for every deploy (failed deploys in red). Hover a marker to see its service and commit, and click it to open the deployment. Click a bar to look at only that stretch of time, or drag across several bars to pick a window. The window shows as a chip in place of the range, for example "10:00 to 10:04 ×". Clear it to go back to the whole range.
+- **Filter rail**: counts per level, environment, service, deployment and server. Click a value to filter by it. Groups with many values have their own search field. On a phone, the rail opens from **Filters**.
+- **Lines**: warnings and errors carry a coloured level word. Other levels stay quiet.
+- **Detail drawer**: click a line to see its facts (level, stream, service, environment, replica, server, commit) and similar lines. Next to each fact, **Only this** narrows the search to that value and **Hide this** leaves it out. The deployment and server link to their pages. **Surrounding lines** shows what was logged around the line from the same place, and **Back to results** returns to your search. The copy menu copies the message, the line as JSON or a link to the line.
 
 Each service also has a **Logs** tab in its panel with the same explorer, scoped to that service.
 
@@ -46,6 +47,15 @@ Type into the query bar. Free text matches anywhere in a line. Quoted phrases ma
 Put `-` in front of a filter to exclude it: `service:api -level:debug "connection refused"`. The query is part of the URL, so you can share a search with a teammate.
 
 Search runs on the server, so it covers the whole range instead of only the lines loaded in your browser. The count line shows how many lines matched. Large results show the newest 5,000.
+
+### Download lines
+
+The download button after **Live** saves the search as a file:
+
+- **Lines on screen**: the lines loaded in your browser.
+- **All matching (up to 10,000)**: the same search run again on the server, the newest 10,000 matching lines, oldest first.
+
+Both come **As text** (one line each with time, level, service and message) or **As NDJSON** (one JSON object per line). Downloading needs the same permission as searching: anyone who can see the project can download its logs, and the team-wide download is for owners and admins.
 
 ### Search across environments and the team
 

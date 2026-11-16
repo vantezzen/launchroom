@@ -5,7 +5,9 @@ import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Spinner } from '@/components/ui/spinner';
 import { itemStates, kindLabels, moveStates } from '@/features/moves/format';
-import { formatBytes } from '@/lib/format';
+import { formatBytes, plural } from '@/lib/format';
+import { deviceStatus } from '@/features/servers/format';
+import { TransferStrip } from '@/features/moves/transfer-strip';
 
 type FormDefinition = {
     action: string;
@@ -25,6 +27,28 @@ export function MoveProgress({
 }) {
     const total = move.items.length;
     const [state, label] = moveStates[move.status];
+    const current = move.items.find(
+        (item) => itemStates[item.status][0] === 'progress',
+    );
+    const finished = move.status === 'ready' || move.status === 'completed';
+    const step = finished
+        ? 'Everything moved'
+        : current
+          ? [
+                `${itemStates[current.status][1]} ${current.name}`,
+                current.copiedBytes !== null && current.expectedBytes !== null
+                    ? `${formatBytes(current.copiedBytes)} of ${formatBytes(current.expectedBytes)}`
+                    : null,
+            ]
+                .filter(Boolean)
+                .join(', ')
+          : null;
+    // Public traffic follows the edge role, which moves when the source retires.
+    const sourceServes =
+        move.source.roles.includes('edge') && move.status !== 'completed';
+    const targetServes =
+        move.target.roles.includes('edge') ||
+        (move.status === 'completed' && move.source.roles.includes('edge'));
 
     return (
         <section
@@ -37,6 +61,29 @@ export function MoveProgress({
                 </h2>
                 <Status state={state} label={label} />
             </div>
+            <TransferStrip
+                source={{
+                    name: move.source.name,
+                    device: move.source.device,
+                    status: deviceStatus(move.source.status),
+                    detail:
+                        total > 0
+                            ? `${plural(total - move.done, 'service')} left`
+                            : null,
+                    serving: sourceServes,
+                }}
+                target={{
+                    name: move.target.name,
+                    device: move.target.device,
+                    status: deviceStatus(move.target.status),
+                    detail:
+                        total > 0
+                            ? `${plural(move.done, 'service')} here`
+                            : null,
+                    serving: targetServes,
+                }}
+                step={step}
+            />
             {total > 0 && (
                 <div className="flex flex-col gap-1.5">
                     <Progress

@@ -2,7 +2,8 @@ import { Link } from '@inertiajs/react';
 import { Fragment, createContext, useContext, useState } from 'react';
 import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { SidebarTrigger } from '@/components/ui/sidebar';
+import AppLogoIcon from '@/components/app-logo-icon';
+import { SidebarTrigger, useSidebar } from '@/components/ui/sidebar';
 import { cn } from '@/lib/utils';
 import type { BreadcrumbItem } from '@/types';
 
@@ -52,8 +53,29 @@ type TopBarProps = {
 };
 
 /**
+ * Phones: the launchroom mark opens the navigation sheet, so the bar
+ * reads like an app bar instead of a bare toggle icon.
+ */
+function PhoneMenuButton() {
+    const { toggleSidebar } = useSidebar();
+
+    return (
+        <button
+            type="button"
+            onClick={toggleSidebar}
+            aria-label="Open navigation"
+            className="-ml-2 flex size-11 shrink-0 items-center justify-center rounded-md text-foreground transition-colors duration-fast hover:bg-hover focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none md:hidden"
+        >
+            <AppLogoIcon className="size-7" />
+        </button>
+    );
+}
+
+/**
  * One top bar for every page (design-system §4.1): 52 px, hairline bottom
  * border, `px-6` (16 px on phones). It never animates on page changes.
+ * On phones the mark opens the navigation sheet; search is in the
+ * bottom bar (PhoneNav).
  */
 export function TopBar({ children, actions, below, className }: TopBarProps) {
     const slot = useContext(TopBarSlotContext);
@@ -67,7 +89,8 @@ export function TopBar({ children, actions, below, className }: TopBarProps) {
             )}
         >
             <div className="@container flex h-[52px] min-w-0 items-center gap-2 px-4 sm:px-6">
-                <SidebarTrigger className="-ml-1.5 shrink-0 text-muted-foreground" />
+                <PhoneMenuButton />
+                <SidebarTrigger className="-ml-1.5 hidden shrink-0 text-muted-foreground md:inline-flex" />
                 <div className="flex min-w-0 flex-1 items-center gap-2">
                     {children}
                 </div>
@@ -84,7 +107,10 @@ export function TopBar({ children, actions, below, className }: TopBarProps) {
     );
 }
 
-/** Breadcrumb for team pages: `Servers / fra-1`. The last item is the page. */
+/**
+ * Breadcrumb for team pages: `Servers / fra-1`. The last item is the page.
+ * Phones drop a one-item breadcrumb: the page's title says the same.
+ */
 export function TopBarBreadcrumbs({
     breadcrumbs,
 }: {
@@ -95,7 +121,13 @@ export function TopBarBreadcrumbs({
     }
 
     return (
-        <nav aria-label="Breadcrumb" className="min-w-0">
+        <nav
+            aria-label="Breadcrumb"
+            className={cn(
+                'min-w-0',
+                breadcrumbs.length === 1 && 'hidden md:block',
+            )}
+        >
             <ol className="flex min-w-0 items-center gap-1.5 type-label">
                 {breadcrumbs.map((item, index) => {
                     const last = index === breadcrumbs.length - 1;

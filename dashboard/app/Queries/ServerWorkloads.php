@@ -9,6 +9,7 @@ use App\Data\Servers\ServerWorkloadData;
 use App\Enums\WorkloadRole;
 use App\Models\Placement;
 use App\Models\Server;
+use App\Models\Volume;
 use App\Scheduling\SchedulableServer;
 use App\Scheduling\Scheduler;
 use App\Services\Deployments\Placer;
@@ -53,6 +54,16 @@ final readonly class ServerWorkloads
         $view = array_find($this->placer->servers($server->team_id), static fn (SchedulableServer $s): bool => $s->id === $server->id);
         $serving = $placements->filter(static fn (Placement $placement): bool => $placement->role === WorkloadRole::Serving);
 
+        $volumes = Volume::query()
+            ->where('server_id', $server->id)
+            ->with(['serviceInstance.service', 'serviceInstance.environment.project'])
+            ->limit(200)
+            ->get()
+            ->map(static fn (Volume $volume): string => "{$volume->serviceInstance->service->name} ({$volume->serviceInstance->environment->project->name} / {$volume->serviceInstance->environment->name})")
+            ->unique()
+            ->values()
+            ->all();
+
         return new ServerPlacementData(
             labels: $server->labels,
             allowPreviews: $server->allow_previews,
@@ -63,6 +74,7 @@ final readonly class ServerWorkloads
             allocatedCpus: round($serving->sum(static fn (Placement $placement): float => $placement->cpus), 2),
             workloads: array_values($workloads),
             measureLinks: $server->measure_links,
+            volumes: array_values($volumes),
         );
     }
 }

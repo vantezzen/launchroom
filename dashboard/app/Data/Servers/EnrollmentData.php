@@ -27,7 +27,8 @@ final class EnrollmentData extends Data
         public ?ServerData $server,
     ) {}
 
-    public static function fromEnrollment(ServerEnrollment $enrollment): self
+    /** `$mesh`: the server's private network state, for the waiting page's "connected" card. */
+    public static function fromEnrollment(ServerEnrollment $enrollment, ?ServerMeshData $mesh = null): self
     {
         return new self(
             $enrollment->public_id,
@@ -35,7 +36,7 @@ final class EnrollmentData extends Data
             array_values($enrollment->roles->all()),
             $enrollment->expires_at,
             $enrollment->used_at === null && ! $enrollment->expires_at->isFuture(),
-            $enrollment->server !== null ? ServerData::fromServer($enrollment->server) : null,
+            $enrollment->server !== null ? ServerData::fromServer($enrollment->server, $mesh) : null,
         );
     }
 }

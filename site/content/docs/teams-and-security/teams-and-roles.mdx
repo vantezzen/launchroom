@@ -51,25 +51,24 @@ Console and Data access are separate from deploying. Owners and admins have them
 
 ## Invite people
 
+Go to **Settings → Members**. The invite line sits at the top of the members list:
+
 <Steps>
 <Step>
-### Open Members
+### Enter an email address and a role
 
-Go to **Settings → Members** and choose **Invite people**.
-</Step>
-<Step>
-### Enter email addresses and a role
-
-Pick Owner, Admin, Developer or Viewer. You can only invite someone with a role up to your own: an admin can invite admins, developers and viewers, never owners.
+Developer is preselected. You can only invite someone with a role up to your own: an admin can invite admins, developers and viewers, never owners.
 </Step>
 <Step>
 ### Send
 
-launchroom emails each person a link. The invitation is valid for 7 days. Inviting the same address again replaces the earlier link.
+Choose **Send invite**. launchroom emails the person a link that is valid for 7 days. Inviting the same address again replaces the earlier link.
 </Step>
 </Steps>
 
-The person signs in (or creates their account) from the link and lands in the team. Open invitations are listed on the Members page, where you can revoke them.
+To invite several people at once, choose **Invite several people at once** under the invite line, paste the addresses (separated by commas or one per line), pick a role and send.
+
+The person signs in (or creates their account) from the link and lands in the team. Pending invitations appear in the members list with an **Invited** label, or **Invite expired** once the link has run out. Their **⋯** menu has **Send again** and **Revoke**.
 
 New accounts are created only through invitations. There is no public sign-up page.
 
@@ -90,7 +89,7 @@ Two different things decide what you can do:
 - **Team roles** (above) apply inside one team.
 - **Instance owner** is about the launchroom installation itself. The account created during first-run setup is the instance owner.
 
-Instance owners see a **This launchroom** group in Settings: [Updates](/docs/operations/updates), Registry, [Dashboard domain](/docs/operations/dashboard-domain), Network and Security (server certificates and [audit log forwarding](/docs/teams-and-security/audit-log)). They also see Get started, recovery after a restore, and approve settings that affect every team, such as allowing a backup destination or Git server on a private network.
+Instance owners see a **This launchroom** group in Settings: [Updates](/docs/operations/updates), Registry, [Dashboard domain](/docs/operations/dashboard-domain), Network and Certificates & audit (server certificates and [audit log forwarding](/docs/teams-and-security/audit-log)). They also see Get started, recovery after a restore, and approve settings that affect every team, such as allowing a backup destination or Git server on a private network.
 
 Being an instance owner doesn't give you a role in teams you weren't invited to.
 

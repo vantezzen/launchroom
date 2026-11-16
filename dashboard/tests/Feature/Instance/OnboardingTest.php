@@ -66,8 +66,10 @@ test('steps are derived from real state', function (): void {
             ->where('onboarding.githubAccount', fn (?string $account): bool => is_string($account) && $account !== '')
             ->where('onboarding.canConnectGitHub', true)
             ->where('onboarding.projectCount', 1)
-            ->where('onboarding.steps', fn ($steps): bool => stepStatuses($steps->all()) === ['server' => 'done', 'github' => 'done', 'domain' => 'done', 'project' => 'done', 'backups' => 'pending'])
-            ->where('onboarding.progress.done', 4));
+            // A project alone isn't a live app (FirstAppTest covers the rest).
+            ->where('onboarding.firstApp', null)
+            ->where('onboarding.steps', fn ($steps): bool => stepStatuses($steps->all()) === ['server' => 'done', 'github' => 'done', 'domain' => 'done', 'project' => 'pending', 'backups' => 'pending'])
+            ->where('onboarding.progress.done', 3));
 });
 
 test('steps follow the first-run journey: server, GitHub, address, first app, then the optional backup', function (): void {
@@ -197,7 +199,8 @@ test('realtime client settings are shared with signed-in users only, public valu
     $this->get(route('login'))->assertInertia(fn ($page) => $page->where('realtime', null));
 
     $response = $this->actingAs($this->admin)->get(route('projects.index'));
-    $response->assertInertia(fn ($page) => $page->where('realtime', ['key' => 'public-key', 'host' => null, 'port' => 443, 'scheme' => 'https']));
+    $member = $this->admin->memberships()->where('team_id', $this->admin->current_team_id)->value('public_id');
+    $response->assertInertia(fn ($page) => $page->where('realtime', ['key' => 'public-key', 'host' => null, 'port' => 443, 'scheme' => 'https', 'member' => $member]));
     expect($response->getContent())->not->toContain('very-secret');
 
     config(['broadcasting.default' => 'null']);

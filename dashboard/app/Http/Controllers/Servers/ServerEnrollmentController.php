@@ -16,6 +16,7 @@ use App\Models\Server;
 use App\Models\ServerEnrollment;
 use App\Models\Team;
 use App\Models\User;
+use App\Queries\ServerMesh;
 use App\Queries\ServerRoleHints;
 use App\Services\Crypto\Signer;
 use App\Support\InstallCommands;
@@ -70,11 +71,12 @@ final class ServerEnrollmentController extends Controller
         ]));
     }
 
-    public function show(Request $request, ServerEnrollment $enrollment, Signer $signer): Response
+    public function show(Request $request, ServerEnrollment $enrollment, Signer $signer, ServerMesh $mesh): Response
     {
         Gate::authorize('view', $enrollment);
 
         $enrollment->load('server');
+        $server = $enrollment->server;
         $token = $request->session()->get(self::TOKEN_FLASH_KEY);
 
         $machine = $request->query('machine');
@@ -83,10 +85,14 @@ final class ServerEnrollmentController extends Controller
         return Inertia::render('servers/enrollment', [
             'machine' => is_string($machine) && in_array($machine, CreateEnrollmentData::MACHINES, true) ? $machine : null,
             // Approve right in the waiting card (docs/03 §3) when approval is required.
-            'canApprove' => $enrollment->server !== null && Gate::allows('approve', $enrollment->server),
+            'canApprove' => $server instanceof Server && Gate::allows('approve', $server),
             // A server that never connected can be removed (its join token is deleted).
             'canCancel' => Gate::allows('delete', $enrollment),
-            'enrollment' => EnrollmentData::fromEnrollment($enrollment),
+            'enrollment' => EnrollmentData::fromEnrollment($enrollment, $server instanceof Server ? $mesh->summary($server) : null),
+            // The connected card draws its link to the dashboard's server once there is one to draw (docs/design/flows.md §10).
+            'otherServers' => $server instanceof Server
+                ? $enrollment->team->servers()->whereKeyNot($server->id)->notRevoked()->count()
+                : 0,
             'command' => is_string($token) ? InstallCommands::server($controlPlaneUrl, $token, $signer->publicKey()) : null,
             'controlPlaneUrl' => $controlPlaneUrl,
         ]);

@@ -507,3 +507,18 @@ button[data-setting][data-setting-flash] {
         animation: none !important;
     }
 }
+
+/*
+ * The phone bottom bar (features/app-shell/phone-nav.tsx): how much of the
+ * viewport it covers. Page padding, full-bleed heights, floating bars and
+ * toasts subtract it; 0 on wider screens and on pages without the bar.
+ */
+:root {
+    --phone-nav-h: 0px;
+}
+
+@media (width < 48rem) {
+    :root:has([data-phone-nav]) {
+        --phone-nav-h: calc(56px + env(safe-area-inset-bottom));
+    }
+}

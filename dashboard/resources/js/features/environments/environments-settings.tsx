@@ -476,7 +476,14 @@ export function EnvironmentsSettings({
         (environment) => environment.kind === 'production',
     );
     const [base, setBase] = useState(copyable[0]?.id ?? '');
-    const [creating, setCreating] = useState(false);
+    // The environment switcher's "New environment" lands here with ?add=environment.
+    const [creating, setCreating] = useState(
+        () =>
+            canCreate &&
+            typeof window !== 'undefined' &&
+            new URLSearchParams(window.location.search).get('add') ===
+                'environment',
+    );
 
     return (
         <Section

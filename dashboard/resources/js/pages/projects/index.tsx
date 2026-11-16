@@ -1,6 +1,16 @@
 import { Head, Link, router } from '@inertiajs/react';
-import { ArrowUpRight, ChevronRight, Plus, Search } from 'lucide-react';
+import {
+    ArrowUpRight,
+    ChevronRight,
+    Copy,
+    LayoutGrid,
+    List,
+    MoreHorizontal,
+    Plus,
+    Search,
+} from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import { toast } from 'sonner';
 import { ObjectCard } from '@/components/cards/object-card';
 import { MiniBars } from '@/components/charts/mini-bars';
 import { Sparkline } from '@/components/charts/sparkline';
@@ -11,7 +21,21 @@ import { Page, PageHeader } from '@/components/patterns/page';
 import { ProjectIcon } from '@/components/project-icon';
 import { Status, StatusIcon } from '@/components/status';
 import { Button } from '@/components/ui/button';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select';
 import { MiniCanvas } from '@/features/canvas/mini-canvas';
 import { DeploymentLink } from '@/features/deployments/deployment-link';
 import {
@@ -23,8 +47,11 @@ import {
 } from '@/features/deployments/format';
 import { EnvironmentLiveUpdates } from '@/features/projects/environment-live-updates';
 import { StartEmptyDialog } from '@/features/projects/start-empty-dialog';
+import { logsHref } from '@/lib/links';
+import { cn } from '@/lib/utils';
 import { index as activity } from '@/routes/activity';
-import { canvas, importMethod, index, show } from '@/routes/projects';
+import { project as projectDeployments } from '@/routes/deployments';
+import { canvas, importMethod, index, settings, show } from '@/routes/projects';
 import { compactAge, formatCompact, plural, shortSha } from '@/lib/format';
 
 type Summary = App.Data.Canvas.ProjectSummaryData;
@@ -56,6 +83,238 @@ function productionOf(project: Summary) {
     );
 }
 
+type Sort = 'recent' | 'name';
+
+type View = 'grid' | 'list';
+
+const SORT_KEY = 'launchroom.projects.sort';
+const VIEW_KEY = 'launchroom.projects.view';
+
+/** A per-viewer choice from localStorage (may be blocked or empty). */
+function readChoice<T extends string>(
+    key: string,
+    allowed: readonly T[],
+): T | null {
+    try {
+        const value = window.localStorage.getItem(key);
+
+        return allowed.find((choice) => choice === value) ?? null;
+    } catch {
+        return null;
+    }
+}
+
+function storeChoice(key: string, value: string): void {
+    try {
+        window.localStorage.setItem(key, value);
+    } catch {
+        // Storage blocked: the choice lasts until the page reloads.
+    }
+}
+
+/** Lists are easier to scan than cards on a phone. */
+function defaultView(): View {
+    return typeof window !== 'undefined' &&
+        window.matchMedia('(max-width: 639px)').matches
+        ? 'list'
+        : 'grid';
+}
+
+/** No services in any of its environments yet. */
+function isEmpty(project: Summary): boolean {
+    return project.environments.every((env) => env.services === 0);
+}
+
+/** Straight to the production canvas (no redirect hop through /p/{project}). */
+function projectHref(project: Summary) {
+    const production = productionOf(project);
+
+    return production?.kind === 'production'
+        ? canvas([project.id, production.id])
+        : show(project.id);
+}
+
+/** The canvas with the Add sheet open (`?add=1`). */
+function addServiceHref(project: Summary): string | null {
+    const production = productionOf(project);
+
+    return production
+        ? canvas([project.id, production.id], { query: { add: 1 } }).url
+        : null;
+}
+
+function ProjectStatus({
+    project,
+    className,
+}: {
+    project: Summary;
+    className?: string;
+}) {
+    const production = productionOf(project);
+
+    if (!production) {
+        return null;
+    }
+
+    return isEmpty(project) ? (
+        <Status state="idle" label="Empty" className={className} />
+    ) : (
+        <Status
+            state={production.status.state}
+            label={production.status.label}
+            className={className}
+        />
+    );
+}
+
+function DeployBars({
+    project,
+    className,
+}: {
+    project: Summary;
+    className?: string;
+}) {
+    const today = new Date().toISOString().slice(0, 10);
+
+    return (
+        <MiniBars
+            height={18}
+            className={className}
+            label={`${project.name} deploys, last 14 days`}
+            bars={project.deploys.map((day) => ({
+                key: day.date,
+                label: new Date(`${day.date}T00:00:00Z`).toLocaleDateString(
+                    undefined,
+                    { month: 'short', day: 'numeric' },
+                ),
+                value: day.total,
+                failed: day.failed,
+                current: day.date === today,
+            }))}
+        />
+    );
+}
+
+/**
+ * Quick ways into a project without opening it first (PRJ-5): only links to
+ * existing pages, nothing destructive. Visible on touch screens, revealed
+ * on hover or focus where there's a mouse.
+ */
+function ProjectMenu({ project }: { project: Summary }) {
+    const production = productionOf(project);
+    const domain = project.primaryDomain;
+
+    return (
+        <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+                <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label={`Actions for ${project.name}`}
+                    className="relative z-10 -my-1 -mr-2 shrink-0 text-muted-foreground data-[state=open]:opacity-100 pointer-fine:opacity-0 pointer-fine:group-focus-within:opacity-100 pointer-fine:group-hover:opacity-100"
+                >
+                    <MoreHorizontal aria-hidden="true" />
+                </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="min-w-44">
+                {domain && (
+                    <DropdownMenuItem asChild>
+                        <a
+                            href={`https://${domain}`}
+                            target="_blank"
+                            rel="noreferrer"
+                        >
+                            Open site
+                            <ArrowUpRight
+                                aria-hidden="true"
+                                className="ml-auto"
+                            />
+                        </a>
+                    </DropdownMenuItem>
+                )}
+                <DropdownMenuItem asChild>
+                    <Link href={projectDeployments(project.id).url}>
+                        Deployments
+                    </Link>
+                </DropdownMenuItem>
+                {production && (
+                    <DropdownMenuItem asChild>
+                        <Link
+                            href={logsHref({
+                                project: project.id,
+                                environment: production.id,
+                            })}
+                        >
+                            Logs
+                        </Link>
+                    </DropdownMenuItem>
+                )}
+                <DropdownMenuItem asChild>
+                    <Link href={settings({ project: project.id }).url}>
+                        Settings
+                    </Link>
+                </DropdownMenuItem>
+                {domain && (
+                    <>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                            onSelect={() => {
+                                void navigator.clipboard
+                                    ?.writeText(domain)
+                                    .then(() =>
+                                        toast.success(`Copied ${domain}`),
+                                    );
+                            }}
+                        >
+                            <Copy aria-hidden="true" />
+                            Copy domain
+                        </DropdownMenuItem>
+                    </>
+                )}
+            </DropdownMenuContent>
+        </DropdownMenu>
+    );
+}
+
+/** The picture of a project without services: a dashed "+" node. */
+function EmptyPicture() {
+    return (
+        <span
+            aria-hidden="true"
+            className="flex size-14 items-center justify-center rounded-xl border border-dashed border-(--border-strong) bg-card text-muted-foreground"
+        >
+            <Plus className="size-5" />
+        </span>
+    );
+}
+
+function AddServiceLink({
+    project,
+    className,
+}: {
+    project: Summary;
+    className?: string;
+}) {
+    const href = addServiceHref(project);
+
+    if (!href) {
+        return null;
+    }
+
+    return (
+        <Link
+            href={href}
+            className={cn(
+                'relative z-10 inline-flex items-center gap-1 rounded-sm type-small text-muted-foreground underline-offset-4 hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
+                className,
+            )}
+        >
+            <Plus aria-hidden="true" className="size-3.5" />
+            Add a service
+        </Link>
+    );
+}
+
 function Card({ project }: { project: Summary }) {
     const production = productionOf(project);
     const others = project.environments.filter(
@@ -64,10 +323,10 @@ function Card({ project }: { project: Summary }) {
     const persistent = others.filter((env) => env.kind !== 'preview');
     const previews = others.length - persistent.length;
     const last = project.lastDeployment;
+    const empty = isEmpty(project);
     // Name the failing service (docs/08 §13): the most urgent one links to why.
     const problem = production?.problems[0] ?? null;
     const more = Math.max(0, (production?.problems.length ?? 0) - 1);
-    const today = new Date().toISOString().slice(0, 10);
     const environments = [
         production?.name ?? 'production',
         ...persistent.map((env) => env.name),
@@ -77,14 +336,9 @@ function Card({ project }: { project: Summary }) {
     return (
         <ObjectCard
             title={project.name}
-            // Straight to the production canvas (no redirect hop through
-            // /p/{project}); prefetched on hover with a short cache so the
-            // canvas isn't served older than a click would fetch.
-            href={
-                production?.kind === 'production'
-                    ? canvas([project.id, production.id])
-                    : show(project.id)
-            }
+            // Prefetched on hover with a short cache so the canvas isn't
+            // served older than a click would fetch.
+            href={projectHref(project)}
             prefetch
             cacheFor="3s"
             titleMedia={
@@ -94,15 +348,21 @@ function Card({ project }: { project: Summary }) {
                     fallback="none"
                 />
             }
-            media={<MiniCanvas canvas={project.canvas} logos={project.logos} />}
+            media={
+                empty ? (
+                    <EmptyPicture />
+                ) : (
+                    <MiniCanvas canvas={project.canvas} logos={project.logos} />
+                )
+            }
             status={
-                production && (
-                    <Status
-                        state={production.status.state}
-                        label={production.status.label}
+                <>
+                    <ProjectStatus
+                        project={project}
                         className="ml-auto shrink-0 type-small"
                     />
-                )
+                    <ProjectMenu project={project} />
+                </>
             }
             footer={
                 <>
@@ -113,22 +373,9 @@ function Card({ project }: { project: Summary }) {
                             </span>
                         ))}
                     </MetaLine>
-                    <MiniBars
-                        height={18}
+                    <DeployBars
+                        project={project}
                         className="w-[84px] shrink-0"
-                        label={`${project.name} deploys, last 14 days`}
-                        bars={project.deploys.map((day) => ({
-                            key: day.date,
-                            label: new Date(
-                                `${day.date}T00:00:00Z`,
-                            ).toLocaleDateString(undefined, {
-                                month: 'short',
-                                day: 'numeric',
-                            }),
-                            value: day.total,
-                            failed: day.failed,
-                            current: day.date === today,
-                        }))}
                     />
                 </>
             }
@@ -157,45 +404,54 @@ function Card({ project }: { project: Summary }) {
                         </Link>
                     </p>
                 )}
-                <div className="flex min-w-0 items-center gap-3">
-                    {project.primaryDomain ? (
-                        <a
-                            href={`https://${project.primaryDomain}`}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="relative z-10 inline-flex min-w-0 flex-1 items-center gap-0.5 rounded-sm type-mono-small text-muted-foreground underline-offset-4 hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-                        >
-                            <span className="truncate">
-                                {project.primaryDomain}
-                            </span>
-                            <ArrowUpRight
-                                aria-hidden="true"
-                                className="size-3 shrink-0"
-                            />
-                            <span className="sr-only">(opens a new tab)</span>
-                        </a>
-                    ) : (
-                        <p className="min-w-0 flex-1 truncate type-mono-small text-muted-foreground">
-                            No domain yet
-                        </p>
-                    )}
-                    {project.requests && (
-                        <span className="flex shrink-0 items-center gap-2 type-small text-muted-foreground tabular-nums">
-                            <span className="w-14">
-                                <Sparkline
-                                    values={project.requests}
-                                    height={16}
-                                    min={0}
-                                    label={`${project.name} requests per hour, last 24 hours`}
+                {empty ? (
+                    <AddServiceLink project={project} className="self-start" />
+                ) : (
+                    <div className="flex min-w-0 items-center gap-3">
+                        {project.primaryDomain ? (
+                            <a
+                                href={`https://${project.primaryDomain}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="relative z-10 inline-flex min-w-0 flex-1 items-center gap-0.5 rounded-sm type-mono-small text-muted-foreground underline-offset-4 hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                            >
+                                <span className="truncate">
+                                    {project.primaryDomain}
+                                </span>
+                                <ArrowUpRight
+                                    aria-hidden="true"
+                                    className="size-3 shrink-0"
                                 />
+                                <span className="sr-only">
+                                    (opens a new tab)
+                                </span>
+                            </a>
+                        ) : (
+                            <p className="min-w-0 flex-1 truncate type-mono-small text-muted-foreground">
+                                No domain yet
+                            </p>
+                        )}
+                        {project.requests && (
+                            <span className="flex shrink-0 items-center gap-2 type-small text-muted-foreground tabular-nums">
+                                <span className="w-14">
+                                    <Sparkline
+                                        values={project.requests}
+                                        height={16}
+                                        min={0}
+                                        label={`${project.name} requests per hour, last 24 hours`}
+                                    />
+                                </span>
+                                {formatCompact(
+                                    project.requests.reduce(
+                                        (sum, v) => sum + v,
+                                        0,
+                                    ),
+                                )}{' '}
+                                req in 24h
                             </span>
-                            {formatCompact(
-                                project.requests.reduce((sum, v) => sum + v, 0),
-                            )}{' '}
-                            req in 24h
-                        </span>
-                    )}
-                </div>
+                        )}
+                    </div>
+                )}
                 {last && (
                     <p className="flex min-w-0 items-center gap-2 type-small">
                         <CommitAvatar
@@ -222,6 +478,64 @@ function Card({ project }: { project: Summary }) {
                 )}
             </div>
         </ObjectCard>
+    );
+}
+
+/**
+ * The compact view (PRJ-2): one row per project with the same facts as the
+ * card, for teams with many projects.
+ */
+function ProjectRow({ project }: { project: Summary }) {
+    const empty = isEmpty(project);
+    const last = project.lastDeployment;
+    const problem = productionOf(project)?.problems[0] ?? null;
+
+    return (
+        <li className="group relative flex min-w-0 items-center gap-3 px-4 py-3 hover:bg-(--hover) has-[a[data-row-link]:focus-visible]:bg-(--hover)">
+            <ProjectIcon
+                name={project.name}
+                iconUrl={project.iconUrl}
+                fallback="monogram"
+            />
+            <span className="flex min-w-0 flex-1 flex-col gap-0.5 sm:flex-row sm:items-baseline sm:gap-3">
+                <Link
+                    href={projectHref(project)}
+                    prefetch
+                    cacheFor="3s"
+                    data-row-link
+                    className="min-w-0 truncate type-body outline-none after:absolute after:inset-0 after:content-['']"
+                >
+                    {project.name}
+                </Link>
+                {empty ? (
+                    <AddServiceLink project={project} />
+                ) : problem ? (
+                    <span className="min-w-0 truncate type-small text-muted-foreground">
+                        {problem.sentence}
+                    </span>
+                ) : project.primaryDomain ? (
+                    <span className="min-w-0 truncate type-mono-small text-muted-foreground">
+                        {project.primaryDomain}
+                    </span>
+                ) : null}
+            </span>
+            <ProjectStatus project={project} className="shrink-0 type-small" />
+            <span className="hidden w-10 shrink-0 text-right type-small text-muted-foreground tabular-nums sm:block">
+                {last && (
+                    <time
+                        dateTime={last.createdAt}
+                        title={`Last deploy ${new Date(last.createdAt).toLocaleString()}`}
+                    >
+                        {compactAge(last.createdAt)}
+                    </time>
+                )}
+            </span>
+            <DeployBars
+                project={project}
+                className="hidden w-[84px] shrink-0 md:block"
+            />
+            <ProjectMenu project={project} />
+        </li>
     );
 }
 
@@ -441,6 +755,38 @@ function NewProjectCard({ onStartEmpty }: { onStartEmpty: () => void }) {
     );
 }
 
+/** Grid or list (PRJ-2), two icon buttons. */
+function ViewToggle({
+    view,
+    onChange,
+}: {
+    view: View;
+    onChange: (view: View) => void;
+}) {
+    const options = [
+        { value: 'grid', label: 'Show as cards', Icon: LayoutGrid },
+        { value: 'list', label: 'Show as list', Icon: List },
+    ] as const;
+
+    return (
+        <div className="flex shrink-0 rounded-md border p-px">
+            {options.map(({ value, label, Icon }) => (
+                <button
+                    key={value}
+                    type="button"
+                    aria-label={label}
+                    aria-pressed={view === value}
+                    title={label}
+                    onClick={() => onChange(value)}
+                    className="inline-flex size-8 items-center justify-center rounded-[5px] text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none aria-pressed:bg-(--hover) aria-pressed:text-foreground"
+                >
+                    <Icon aria-hidden="true" className="size-4" />
+                </button>
+            ))}
+        </div>
+    );
+}
+
 export default function ProjectsIndex({
     projects,
     attention,
@@ -449,6 +795,23 @@ export default function ProjectsIndex({
 }: Props) {
     const [startEmpty, setStartEmpty] = useState(false);
     const [query, setQuery] = useState('');
+    // Per viewer: the server sends recent activity first (docs/08 §13).
+    const [sort, setSort] = useState<Sort>(
+        () => readChoice(SORT_KEY, ['recent', 'name'] as const) ?? 'recent',
+    );
+    const [view, setView] = useState<View>(
+        () => readChoice(VIEW_KEY, ['grid', 'list'] as const) ?? defaultView(),
+    );
+
+    const changeSort = (value: Sort) => {
+        setSort(value);
+        storeChoice(SORT_KEY, value);
+    };
+
+    const changeView = (value: View) => {
+        setView(value);
+        storeChoice(VIEW_KEY, value);
+    };
 
     // `?new=1` (older links from the first-run checklist) opens the import flow.
     useEffect(() => {
@@ -462,15 +825,19 @@ export default function ProjectsIndex({
 
     const visible = useMemo(() => {
         const needle = query.trim().toLowerCase();
+        const matching =
+            needle === ''
+                ? projects
+                : projects.filter(
+                      (project) =>
+                          project.name.toLowerCase().includes(needle) ||
+                          (project.primaryDomain ?? '').includes(needle),
+                  );
 
-        return needle === ''
-            ? projects
-            : projects.filter(
-                  (project) =>
-                      project.name.toLowerCase().includes(needle) ||
-                      (project.primaryDomain ?? '').includes(needle),
-              );
-    }, [projects, query]);
+        return sort === 'name'
+            ? [...matching].sort((a, b) => a.name.localeCompare(b.name))
+            : matching;
+    }, [projects, query, sort]);
 
     const services = projects.reduce(
         (sum, project) => sum + (productionOf(project)?.services ?? 0),
@@ -510,22 +877,49 @@ export default function ProjectsIndex({
                         projects.length > 0 && (
                             <>
                                 {projects.length > 3 && (
-                                    <div className="relative w-full sm:w-60">
-                                        <Search
-                                            aria-hidden="true"
-                                            className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
-                                        />
-                                        <Input
-                                            type="search"
-                                            aria-label="Search projects"
-                                            placeholder="Search projects"
-                                            value={query}
-                                            onChange={(event) =>
-                                                setQuery(event.target.value)
+                                    <>
+                                        <div className="relative w-full sm:w-60">
+                                            <Search
+                                                aria-hidden="true"
+                                                className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
+                                            />
+                                            <Input
+                                                type="search"
+                                                aria-label="Search projects"
+                                                placeholder="Search projects"
+                                                value={query}
+                                                onChange={(event) =>
+                                                    setQuery(event.target.value)
+                                                }
+                                                className="pl-9"
+                                            />
+                                        </div>
+                                        <Select
+                                            value={sort}
+                                            onValueChange={(value) =>
+                                                changeSort(value as Sort)
                                             }
-                                            className="pl-9"
+                                        >
+                                            <SelectTrigger
+                                                aria-label="Sort projects"
+                                                className="w-auto"
+                                            >
+                                                <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent align="end">
+                                                <SelectItem value="recent">
+                                                    Recent activity
+                                                </SelectItem>
+                                                <SelectItem value="name">
+                                                    Name
+                                                </SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                        <ViewToggle
+                                            view={view}
+                                            onChange={changeView}
                                         />
-                                    </div>
+                                    </>
                                 )}
                                 {canCreate && (
                                     <Button asChild>
@@ -587,21 +981,34 @@ export default function ProjectsIndex({
                                 <RecentDeployments items={recentDeployments} />
                             </>
                         )}
-                        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                            {visible.map((project) => (
-                                <Card key={project.id} project={project} />
-                            ))}
-                            {visible.length === 0 && (
-                                <p className="col-span-full py-10 text-center type-body text-muted-foreground">
-                                    No project matches “{query}”.
-                                </p>
-                            )}
-                            {canCreate && query === '' && (
-                                <NewProjectCard
-                                    onStartEmpty={() => setStartEmpty(true)}
-                                />
-                            )}
-                        </div>
+                        {visible.length === 0 ? (
+                            <p className="py-10 text-center type-body text-muted-foreground">
+                                No project matches “{query}”.
+                            </p>
+                        ) : view === 'list' ? (
+                            <ul
+                                aria-label="Projects"
+                                className="divide-y overflow-hidden rounded-[14px] border bg-card"
+                            >
+                                {visible.map((project) => (
+                                    <ProjectRow
+                                        key={project.id}
+                                        project={project}
+                                    />
+                                ))}
+                            </ul>
+                        ) : (
+                            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                                {visible.map((project) => (
+                                    <Card key={project.id} project={project} />
+                                ))}
+                                {canCreate && query === '' && (
+                                    <NewProjectCard
+                                        onStartEmpty={() => setStartEmpty(true)}
+                                    />
+                                )}
+                            </div>
+                        )}
                     </>
                 )}
             </Page>

@@ -31,8 +31,16 @@ import {
     SettingsRow,
 } from '@/components/settings/settings-card';
 import {
+    Tooltip,
+    TooltipContent,
+    TooltipTrigger,
+} from '@/components/ui/tooltip';
+import { vocabulary } from '@/lib/vocabulary';
+import {
     AbilityFields,
+    abilitySummary,
     defaultAbilities,
+    lifetimeEnd,
     lifetimeLabel,
 } from '@/features/api-tokens/ability-fields';
 import SettingsLayout from '@/features/settings/settings-layout';
@@ -53,18 +61,26 @@ function expiryLine(expiresAt: string | null): {
     soon: boolean;
 } {
     if (expiresAt === null) {
-        return { text: 'No expiry', soon: true };
+        return { text: 'Never expires', soon: true };
     }
 
-    const left = Math.ceil((new Date(expiresAt).getTime() - Date.now()) / DAY);
+    const end = new Date(expiresAt);
+    const left = Math.ceil((end.getTime() - Date.now()) / DAY);
 
     if (left <= 0) {
         return { text: 'Expired', soon: true };
     }
 
+    if (left <= 7) {
+        return {
+            text: left === 1 ? 'Expires tomorrow' : `Expires in ${left} days`,
+            soon: true,
+        };
+    }
+
     return {
-        text: left === 1 ? 'Expires tomorrow' : `Expires in ${left} days`,
-        soon: left <= 7,
+        text: `Expires ${end.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}`,
+        soon: false,
     };
 }
 
@@ -151,7 +167,13 @@ export default function ApiTokens({
                     </SettingsBody>
                 ) : (
                     tokens.map((token) => (
-                        <TokenRow key={token.id} token={token} />
+                        <TokenRow
+                            key={token.id}
+                            token={token}
+                            team={teams.find(
+                                (entry) => entry.id === token.teamId,
+                            )}
+                        />
                     ))
                 )}
             </SettingsCard>
@@ -178,7 +200,43 @@ function IconTile({ icon: Icon }: { icon: typeof KeyRound }) {
     );
 }
 
-function TokenRow({ token }: { token: App.Data.Api.ApiTokenData }) {
+function AccessChip({
+    token,
+    team,
+}: {
+    token: App.Data.Api.ApiTokenData;
+    team: App.Data.Api.ApiTeamOptionData | undefined;
+}) {
+    const summary = abilitySummary(token.abilities, team);
+    const chip = (
+        <Badge variant="secondary" tabIndex={summary.custom ? 0 : undefined}>
+            {summary.label}
+        </Badge>
+    );
+
+    if (!summary.custom) {
+        return chip;
+    }
+
+    return (
+        <Tooltip>
+            <TooltipTrigger asChild>{chip}</TooltipTrigger>
+            <TooltipContent>
+                {token.abilities
+                    .map((ability) => vocabulary.ApiAbility[ability].label)
+                    .join(', ')}
+            </TooltipContent>
+        </Tooltip>
+    );
+}
+
+function TokenRow({
+    token,
+    team,
+}: {
+    token: App.Data.Api.ApiTokenData;
+    team: App.Data.Api.ApiTeamOptionData | undefined;
+}) {
     const expiry = expiryLine(token.expiresAt);
 
     return (
@@ -187,53 +245,50 @@ function TokenRow({ token }: { token: App.Data.Api.ApiTokenData }) {
             label={
                 <span className="flex flex-wrap items-center gap-2">
                     {token.name}
+                    {token.hint !== null && (
+                        <span className="type-mono-small font-normal text-muted-foreground">
+                            {token.hint}
+                        </span>
+                    )}
                     {token.client === 'cli' && (
                         <Badge variant="outline">CLI</Badge>
                     )}
+                    <AccessChip token={token} team={team} />
                 </span>
             }
             description={
-                <span className="flex flex-col gap-2">
-                    <MetaLine>
-                        {token.teamName}
-                        {token.lastUsedAt ? (
-                            <span>
-                                Last used <TimeAgo value={token.lastUsedAt} />
-                                {token.lastUsedIp && (
-                                    <>
-                                        {' '}
-                                        from{' '}
-                                        <span className="type-mono-small">
-                                            {token.lastUsedIp}
-                                        </span>
-                                    </>
-                                )}
-                            </span>
-                        ) : (
-                            'Never used'
-                        )}
-                        <span
-                            className={
-                                expiry.soon ? 'text-status-progress' : undefined
-                            }
-                        >
-                            {expiry.soon && (
-                                <TriangleAlert
-                                    className="mr-1 inline size-3.5 align-[-2px]"
-                                    aria-hidden="true"
-                                />
+                <MetaLine>
+                    {token.teamName}
+                    {token.lastUsedAt ? (
+                        <span>
+                            Last used <TimeAgo value={token.lastUsedAt} />
+                            {token.lastUsedIp && (
+                                <>
+                                    {' '}
+                                    from{' '}
+                                    <span className="type-mono-small">
+                                        {token.lastUsedIp}
+                                    </span>
+                                </>
                             )}
-                            {expiry.text}
                         </span>
-                    </MetaLine>
-                    <span className="flex flex-wrap gap-1.5">
-                        {token.abilities.map((ability) => (
-                            <Badge key={ability} variant="secondary">
-                                {ability}
-                            </Badge>
-                        ))}
+                    ) : (
+                        'Never used'
+                    )}
+                    <span
+                        className={
+                            expiry.soon ? 'text-status-progress' : undefined
+                        }
+                    >
+                        {expiry.soon && (
+                            <TriangleAlert
+                                className="mr-1 inline size-3.5 align-[-2px]"
+                                aria-hidden="true"
+                            />
+                        )}
+                        {expiry.text}
                     </span>
-                </span>
+                </MetaLine>
             }
         >
             <ConfirmPopover
@@ -337,8 +392,12 @@ function CreateTokenDialog({
                         <div className="flex flex-col gap-1.5">
                             <DialogTitle>Copy your token</DialogTitle>
                             <DialogDescription>
-                                It's shown only once. Store it in your CI's
-                                secrets.
+                                It's shown only once. In CI, store it as the
+                                secret{' '}
+                                <code className="type-mono-small">
+                                    LAUNCHROOM_TOKEN
+                                </code>
+                                : the CLI uses it without launchroom login.
                             </DialogDescription>
                         </div>
                         <CopyValue value={created.plainText} label="token" />
@@ -391,13 +450,14 @@ function CreateTokenDialog({
                                 options={lifetimes.map((value) => ({
                                     value: String(value),
                                     label: lifetimeLabel(value),
+                                    description: lifetimeEnd(value),
                                 }))}
                                 className="[&_label]:min-h-14"
                             />
                         </div>
 
                         <AbilityFields
-                            legend="It can"
+                            legend="Access"
                             idPrefix="ability"
                             team={team}
                             value={abilities}

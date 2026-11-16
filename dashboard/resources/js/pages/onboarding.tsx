@@ -1,7 +1,8 @@
 import { Head, Link, router } from '@inertiajs/react';
-import { Check } from 'lucide-react';
+import { ArrowUpRight, Check } from 'lucide-react';
 import type { FormEvent, ReactNode } from 'react';
 import { useState } from 'react';
+import { Elapsed } from '@/components/elapsed';
 import InputError from '@/components/input-error';
 import { Logo } from '@/components/logo';
 import { LiveWait } from '@/components/patterns/live-wait';
@@ -30,9 +31,10 @@ import { settings as backupSettings } from '@/routes/backups';
 import { edit as gitSettings } from '@/routes/git';
 import { store as startManifest } from '@/routes/git/github/manifest';
 import onboardingRoutes from '@/routes/onboarding';
+import { show as deploymentShow } from '@/routes/deployments';
 import {
+    canvas as projectCanvas,
     importMethod as importProject,
-    index as projects,
 } from '@/routes/projects';
 import { plural } from '@/lib/format';
 import { useLiveProps } from '@/hooks/use-live-props';
@@ -254,7 +256,7 @@ function githubView(
         title: installOnly ? 'Install the GitHub App' : 'Connect GitHub',
         line:
             step.status === 'skipped'
-                ? 'Skipped'
+                ? 'Skipped. Connect it to deploy on every push.'
                 : installOnly
                   ? 'Step 2 of 2: install the app and pick the repositories to deploy.'
                   : 'Create the GitHub App, then install it. After that, every push deploys.',
@@ -360,6 +362,26 @@ function domainView(data: Onboarding, step: Step): StepView {
 
 const frameworks = ['nextjs', 'laravel', 'node', 'python', 'vite'] as const;
 
+/** What the first deploy is doing now, for "web is building". */
+function deployingWord(app: App.Data.Instance.FirstAppData): string {
+    const running = app.steps.find((step) => step.status === 'running');
+
+    switch (running?.label) {
+        case 'Build':
+            return 'building';
+        case 'Start':
+            return 'starting';
+        case 'Health check':
+            return 'starting up';
+        case 'Route':
+            return 'going live';
+        default:
+            return app.steps.some((step) => step.status === 'succeeded')
+                ? 'deploying'
+                : 'waiting for a build server';
+    }
+}
+
 function projectView(data: Onboarding, step: Step): StepView {
     const tiles = (
         <span className="flex gap-1" aria-hidden="true">
@@ -368,15 +390,79 @@ function projectView(data: Onboarding, step: Step): StepView {
             ))}
         </span>
     );
+    const app = data.firstApp;
 
-    if (step.status === 'done') {
+    if (step.status === 'done' && app) {
+        const url = app.hostname ? `https://${app.hostname}` : null;
+
         return {
-            title: 'Your first app is set up',
-            line: plural(data.projectCount, 'project', 'projects'),
+            title: 'Your first app is live',
+            // Plain text: the collapsed row is a button (links go in the body).
+            line: app.hostname ? (
+                <span className="type-mono-small">{app.hostname}</span>
+            ) : (
+                `${app.serviceName} in ${app.projectName}`
+            ),
+            aside: <Logo kind={app.logo} size={32} decorative />,
             body: (
-                <div>
+                <div className="flex flex-wrap gap-2">
+                    {url && (
+                        <Button asChild>
+                            <a href={url} target="_blank" rel="noreferrer">
+                                Open {app.hostname}
+                                <ArrowUpRight aria-hidden="true" />
+                            </a>
+                        </Button>
+                    )}
                     <Button asChild variant="outline">
-                        <Link href={projects()}>Open projects</Link>
+                        <Link
+                            href={projectCanvas([
+                                app.projectId,
+                                app.environmentId,
+                            ])}
+                        >
+                            Open {app.projectName}
+                        </Link>
+                    </Button>
+                </div>
+            ),
+        };
+    }
+
+    if (app?.state === 'deploying') {
+        return {
+            title: 'Deploy your first app',
+            line: (
+                <span>
+                    {app.serviceName} is {deployingWord(app)},{' '}
+                    <Elapsed since={app.startedAt} />
+                </span>
+            ),
+            aside: <Logo kind={app.logo} size={32} decorative />,
+            body: (
+                <div className="flex flex-wrap gap-2">
+                    {app.deploymentId && (
+                        <Button asChild>
+                            <Link
+                                href={deploymentShow({
+                                    project: app.projectId,
+                                    environment: app.environmentId,
+                                    deployment: app.deploymentId,
+                                })}
+                            >
+                                Watch it
+                            </Link>
+                        </Button>
+                    )}
+                    <Button asChild variant="outline">
+                        <Link
+                            href={projectCanvas([
+                                app.projectId,
+                                app.environmentId,
+                            ])}
+                        >
+                            Open {app.projectName}
+                        </Link>
                     </Button>
                 </div>
             ),
@@ -510,6 +596,43 @@ function OnboardingStep({
     );
 }
 
+const DONE_NAMES: Record<App.Enums.Instance.OnboardingStep, string> = {
+    server: 'Server',
+    github: 'GitHub',
+    domain: 'address',
+    project: 'first app',
+    backups: 'backups',
+};
+
+/** "Server, address and first app are set up": the done steps in one row. */
+function DoneSummary({ steps }: { steps: Step[] }) {
+    const names = steps
+        .filter((step) => step.status === 'done')
+        .map((step) => DONE_NAMES[step.id]);
+
+    if (names.length === 0) {
+        return null;
+    }
+
+    const list =
+        names.length === 1
+            ? names[0]
+            : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+
+    return (
+        <li className="flex items-center gap-4 rounded-xl border bg-card px-5 py-4 shadow-card">
+            <Check
+                aria-hidden="true"
+                className="size-5 shrink-0 text-status-ok"
+            />
+            <span className="type-body">
+                {list.charAt(0).toUpperCase() + list.slice(1)}{' '}
+                {names.length === 1 ? 'is' : 'are'} set up.
+            </span>
+        </li>
+    );
+}
+
 /**
  * Get started (flows §1, direction §9.12): the hero with a progress ring
  * and the five steps as cards, only the current one open. Done steps are
@@ -543,8 +666,13 @@ export default function OnboardingPage({
     const waitingForServer = onboarding.server?.status !== 'online';
     const serverName = onboarding.server?.name;
 
-    // "Waiting for this server" updates by itself.
-    useLiveProps(['onboarding'], { while: waitingForServer, everyMs: 5000 });
+    const deploying = onboarding.firstApp?.state === 'deploying';
+
+    // "Waiting for this server" and the first deploy update by themselves.
+    useLiveProps(['onboarding'], {
+        while: waitingForServer || deploying,
+        everyMs: deploying ? 3000 : 5000,
+    });
 
     const views: Record<
         App.Enums.Instance.OnboardingStep,
@@ -578,7 +706,11 @@ export default function OnboardingPage({
                     size="sm"
                     onClick={() => update({ dismissed: !progress.dismissed })}
                 >
-                    {progress.dismissed ? 'Show after sign-in' : 'Hide for now'}
+                    {progress.dismissed
+                        ? 'Show after sign-in'
+                        : progress.complete
+                          ? 'Remove from sidebar'
+                          : 'Hide for now'}
                 </Button>
             </TopBarActions>
 
@@ -592,7 +724,7 @@ export default function OnboardingPage({
                     }
                     description={
                         progress.complete
-                            ? 'Everything is in place. Deploy away.'
+                            ? undefined
                             : projectPending
                               ? `${remaining} short ${remaining === 1 ? 'step' : 'steps'} until your first app is live${serverName ? ` on ${serverName}` : ''}.`
                               : remaining === 1
@@ -610,16 +742,23 @@ export default function OnboardingPage({
                 />
 
                 <ol className="flex flex-col gap-3">
-                    {steps.map((step, index) => (
-                        <OnboardingStep
-                            key={step.id}
-                            step={step}
-                            number={index + 1}
-                            view={views[step.id](step)}
-                            open={openId === step.id}
-                            onOpen={() => setOpenId(step.id)}
-                        />
-                    ))}
+                    {progress.complete && <DoneSummary steps={steps} />}
+                    {steps.map(
+                        (step, index) =>
+                            // Complete: the done steps are one line, what was
+                            // skipped stays as rows with its action (PRJ-7).
+                            (!progress.complete ||
+                                step.status === 'skipped') && (
+                                <OnboardingStep
+                                    key={step.id}
+                                    step={step}
+                                    number={index + 1}
+                                    view={views[step.id](step)}
+                                    open={openId === step.id}
+                                    onOpen={() => setOpenId(step.id)}
+                                />
+                            ),
+                    )}
                 </ol>
 
                 {onboarding.smallServerHint && (

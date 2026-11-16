@@ -3,15 +3,15 @@ title: Build problems
 description: Fix failed builds by symptom, from undetected frameworks and stale lockfiles to memory limits, clone errors and builds that never leave the queue.
 ---
 
-A failed build never takes your site down. The previous deployment keeps serving, and the deployment page says so ("Your site is still serving 3b7d5e1."). Above that line, an explanation card names the problem. For known errors it shows the fix as a button. This page lists common build failures with their causes and fixes.
+A failed build never takes your site down. The previous deployment keeps serving, and the deployment page says so ("Your site is still serving 3b7d5e1."). The explanation card at the top of the page names the problem and quotes the error line. For known errors it shows the fix as a button. This page lists common build failures with their causes and fixes.
 
 <Screenshot id="deployment-failed" />
 
 ## Reading a failed build
 
 - The card title starts with **Build failed:** followed by the explanation, for example "Build failed: pnpm-lock.yaml is out of date". When launchroom doesn't recognise the error, the title is "Build failed" and the card shows the first line of the error message.
-- The label next to the title is the failure class: `plan_error` (launchroom could not work out how to build the app), `build_error` (a build step exited with an error), `config_error` (a setting or the repository content is wrong), `build_timeout` (the build didn't finish before its deadline), `transient` (registry or network trouble, retried once automatically).
-- The **Build** step opens at the first error. **Jump to line** takes you to that line in **Steps**; **Expand all** opens every step.
+- The card's copy button copies the failure class with the raw error message. The classes are `plan_error` (launchroom could not work out how to build the app), `build_error` (a build step exited with an error), `config_error` (a setting or the repository content is wrong), `build_timeout` (the build didn't finish before its deadline), `transient` (registry or network trouble, retried once automatically).
+- The **Build** step opens at the first error. **Jump to line** takes you to that line in **Steps**; **Expand all** opens every step. **Errors** and **Warnings** above the steps show only those lines.
 - The service's **Settings → Build** page shows what launchroom detected: framework, package manager, versions and where each came from, and the install, build and start commands. **Detect again** re-reads the branch head after you push a fix.
 
 ## Build failed: launchroom couldn't detect how to build this app
@@ -68,7 +68,7 @@ The same out-of-memory pattern after the build (the app itself exits with code 1
 
 The build log shows `buildkitd keeps restarting` and BuildKit's last lines name
 `apparmor_restrict_unprivileged_userns` or `fork/exec /proc/self/exe: permission denied`. On the server page, the
-**Builds** row under Capabilities says **Unavailable**.
+**Builds** row under **What this server can do** says **Unavailable**.
 
 **Cause.** Ubuntu 23.10 and later restrict user namespaces through AppArmor, and rootless BuildKit needs one. launchroom
 allows it with an AppArmor profile for its build container only, and this server doesn't have that profile loaded yet.

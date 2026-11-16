@@ -101,13 +101,30 @@ export function snippets(
 
     if (access.protocol === 'postgres') {
         const db = access.database ?? 'postgres';
+        const url = `postgresql://${user}:${encodeURIComponent(password)}@${h}:${port}/${db}?sslmode=require`;
 
         return [
             {
                 id: 'url',
                 label: 'Connection URL',
-                value: `postgresql://${user}:${encodeURIComponent(password)}@${h}:${port}/${db}?sslmode=require`,
+                value: url,
                 hint: 'For TablePlus, DBeaver and most libraries.',
+                secret: true,
+            },
+            {
+                id: 'env',
+                label: '.env',
+                value: [
+                    'DB_CONNECTION=pgsql',
+                    `DB_HOST=${host}`,
+                    `DB_PORT=${port}`,
+                    `DB_DATABASE=${db}`,
+                    `DB_USERNAME=${user}`,
+                    `DB_PASSWORD=${password}`,
+                    'DB_SSLMODE=require',
+                    `DATABASE_URL=${url}`,
+                ].join('\n'),
+                hint: 'Paste it into your app’s .env. Laravel reads the DB_ lines, most Node libraries read DATABASE_URL.',
                 secret: true,
             },
             {
@@ -120,13 +137,28 @@ export function snippets(
     }
 
     const cli = access.client ?? 'redis-cli';
+    const url = `rediss://${user}:${encodeURIComponent(password)}@${h}:${port}`;
 
     return [
         {
             id: 'url',
             label: 'Connection URL',
-            value: `rediss://${user}:${encodeURIComponent(password)}@${h}:${port}`,
+            value: url,
             hint: 'For RedisInsight and most libraries.',
+            secret: true,
+        },
+        {
+            id: 'env',
+            label: '.env',
+            value: [
+                'REDIS_SCHEME=tls',
+                `REDIS_HOST=${host}`,
+                `REDIS_PORT=${port}`,
+                `REDIS_USERNAME=${user}`,
+                `REDIS_PASSWORD=${password}`,
+                `REDIS_URL=${url}`,
+            ].join('\n'),
+            hint: 'Paste it into your app’s .env. Laravel reads the REDIS_ lines, most Node libraries read REDIS_URL.',
             secret: true,
         },
         {
@@ -136,6 +168,17 @@ export function snippets(
             hint: 'Verifies the server with the downloaded certificate.',
         },
     ];
+}
+
+/**
+ * A secret snippet with its password hidden: the password in every URL,
+ * every `…PASSWORD=` line, and a bare long token.
+ */
+export function mask(value: string): string {
+    return value
+        .replace(/:[^:@/\s]+@/g, ':••••••••@')
+        .replace(/^([A-Z_]*PASSWORD=).+$/gm, '$1••••••••')
+        .replace(/^[A-Za-z0-9]{24,}$/, '••••••••••••••••');
 }
 
 /** "1:52:07" or "12:07". */

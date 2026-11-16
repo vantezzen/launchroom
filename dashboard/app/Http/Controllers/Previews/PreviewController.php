@@ -44,6 +44,7 @@ final class PreviewController extends Controller
         return Inertia::render('projects/previews', [
             ...ProjectShell::props($project, null),
             'previews' => $previews->for($project, $canShare),
+            'rule' => $previews->rule($project),
             'enabled' => $settings->enabled,
             'canShare' => $canShare,
             'canApprove' => Gate::allows('approve', new Preview(['team_id' => $project->team_id, 'is_fork' => true])),

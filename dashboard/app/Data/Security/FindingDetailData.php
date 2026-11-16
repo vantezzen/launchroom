@@ -39,5 +39,9 @@ final class FindingDetailData extends Data
         public string $firewallUrl,
         /** The deployment it was found in; null when that deployment is gone. */
         public ?FindingDeploymentData $deployment = null,
+        /** The latest check that still found it. */
+        public ?string $lastSeenAt = null,
+        /** When it was fixed (the version left the live deployment). */
+        public ?string $resolvedAt = null,
     ) {}
 }

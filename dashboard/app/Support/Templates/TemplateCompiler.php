@@ -61,7 +61,7 @@ final class TemplateCompiler
 
     public const array INPUT_TYPES = ['text', 'email', 'domain', 'repository'];
 
-    private const array TOP_LEVEL = ['schema', 'id', 'name', 'tagline', 'description', 'category', 'logo', 'website', 'license', 'repositories', 'notes', 'inputs', 'services', 'configs'];
+    private const array TOP_LEVEL = ['schema', 'id', 'name', 'tagline', 'description', 'category', 'logo', 'website', 'license', 'repositories', 'starter', 'notes', 'inputs', 'services', 'configs'];
 
     /** Upstream repositories that recommend this template when pasted (D70). */
     public const int MAX_REPOSITORIES = 4;
@@ -151,6 +151,18 @@ final class TemplateCompiler
             $repositories[] = $repository;
         }
 
+        // A public starter repository for stacks (PRJ-3): deploy without your own code.
+        $starter = $data['starter'] ?? null;
+
+        if ($starter !== null) {
+            $parsed = is_string($starter) ? PublicRepositoryUrl::tryParse($starter) : null;
+
+            if (! $parsed instanceof PublicRepositoryUrl || $parsed->canonical() !== $starter) {
+                $problems[] = 'starter must be a canonical https URL of a public repository, for example https://github.com/laravel/laravel.';
+                $starter = null;
+            }
+        }
+
         $inputs = [];
 
         foreach (is_array($data['inputs'] ?? null) ? $data['inputs'] : [] as $index => $input) {
@@ -207,6 +219,10 @@ final class TemplateCompiler
             $configs = [];
         }
 
+        if ($starter !== null && ! array_any($inputs, static fn (TemplateInputData $input): bool => $input->type === 'repository')) {
+            $problems[] = 'starter only applies to templates with a repository input.';
+        }
+
         if (count($inputs) > 6) {
             $problems[] = 'A template asks for at most 6 inputs.';
         }
@@ -222,7 +238,7 @@ final class TemplateCompiler
             throw new TemplateInvalid($problems === [] ? ['The template is incomplete.'] : $problems);
         }
 
-        return new TemplateDefinition($id, $name, $tagline, $description, $category, $logo, $website, $license, $inputs, $services, YamlLineIndex::of($yaml), $notes, $configs, $repositories);
+        return new TemplateDefinition($id, $name, $tagline, $description, $category, $logo, $website, $license, $inputs, $services, YamlLineIndex::of($yaml), $notes, $configs, $repositories, is_string($starter) ? $starter : null);
     }
 
     /**

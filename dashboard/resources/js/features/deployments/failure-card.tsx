@@ -6,8 +6,11 @@ import { fix } from '@/routes/deployments';
 import { section as serviceSection } from '@/routes/projects/services';
 import { shortSha } from '@/lib/format';
 import { CopyButton } from '@/components/copy-button';
+import { cn } from '@/lib/utils';
 
 type Detail = App.Data.Deployments.DeploymentDetailData;
+
+export type QuotedLine = { number: number; text: string };
 type Explanation = App.Data.Deployments.FailureExplanationData;
 
 /** A command in the fix text ("Run pnpm install locally…"), for "Copy command". */
@@ -142,11 +145,14 @@ export function fixAction(detail: Detail, canFix: boolean): FixAction | null {
 export function FailureCard({
     detail,
     errorLine,
+    excerpt = [],
     onJump,
     canFix,
 }: {
     detail: Detail;
     errorLine: number | null;
+    /** The error line with a line of context around it, quoted in the card (DPL-2). */
+    excerpt?: QuotedLine[];
     onJump: (line: number) => void;
     canFix: boolean;
 }) {
@@ -175,15 +181,21 @@ export function FailureCard({
                 <CircleX aria-hidden="true" className="size-[18px]" />
             </span>
             <div className="flex min-w-0 flex-1 flex-col gap-3">
-                <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1">
+                <div className="flex items-start justify-between gap-x-4">
                     <h2 id="failure-title" className="type-heading">
                         {explanation
                             ? `${failureVerb(failure.class)}: ${lower(title)}`
                             : title}
                     </h2>
-                    <span className="rounded-full border px-2 py-px type-mono-small text-muted-foreground">
-                        {failure.class}
-                    </span>
+                    {/* The failure class and the raw message, for a bug
+                        report or a support thread. */}
+                    <CopyButton
+                        value={[failure.class, failure.message]
+                            .filter(Boolean)
+                            .join('\n')}
+                        label="failure details"
+                        size="xs"
+                    />
                 </div>
                 <div className="flex max-w-[72ch] flex-col gap-1.5 type-body text-muted-foreground">
                     {serving && <p className="text-foreground">{serving}</p>}
@@ -203,6 +215,48 @@ export function FailureCard({
                         </>
                     )}
                 </div>
+                {excerpt.length > 0 && (
+                    <pre
+                        aria-label={`Log around line ${errorLine ?? ''}`}
+                        className="overflow-x-auto rounded-lg border bg-recessed py-2 type-mono-small leading-5"
+                    >
+                        {excerpt.map((line) => {
+                            const current = line.number === errorLine;
+
+                            return (
+                                <div
+                                    key={line.number}
+                                    className={cn(
+                                        'flex min-w-max',
+                                        current && 'bg-status-error-soft',
+                                    )}
+                                >
+                                    <span
+                                        aria-hidden="true"
+                                        className="w-12 shrink-0 pr-3 text-right text-muted-foreground select-none"
+                                    >
+                                        {line.number}
+                                    </span>
+                                    <span
+                                        className={cn(
+                                            'pr-4',
+                                            current
+                                                ? 'text-foreground'
+                                                : 'text-muted-foreground',
+                                        )}
+                                    >
+                                        {current && (
+                                            <span className="sr-only">
+                                                Error:{' '}
+                                            </span>
+                                        )}
+                                        {line.text || ' '}
+                                    </span>
+                                </div>
+                            );
+                        })}
+                    </pre>
+                )}
                 {(action || errorLine !== null || command) && (
                     <div className="flex flex-wrap items-center gap-2 pt-1">
                         {action &&

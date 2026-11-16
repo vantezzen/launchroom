@@ -27,6 +27,9 @@ function Toaster({ ...props }: ToasterProps) {
             className="toaster group"
             position="bottom-right"
             gap={8}
+            // Phones: above the bottom bar (PhoneNav); 0 on wider screens.
+            offset={{ bottom: 'calc(24px + var(--phone-nav-h))' }}
+            mobileOffset={{ bottom: 'calc(16px + var(--phone-nav-h))' }}
             icons={{
                 success: <CircleCheck className="size-4 text-status-ok" />,
                 error: <CircleAlert className="size-4 text-status-error" />,

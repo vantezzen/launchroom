@@ -47,7 +47,7 @@ final class TeamActivityController extends Controller
                 ->values()
                 ->all(),
             'entries' => $activity->get($team->id, $filters),
-            'filters' => ['project' => $filters->project, 'kind' => $filters->kind],
+            'filters' => ['project' => $filters->project, 'kind' => $filters->kind, 'state' => $filters->state],
             // "Audit log verified ✓ up to <time>" (docs/09 R34): instance-wide, no details.
             'auditVerification' => $user->is_instance_owner === true
                 ? InstanceSettings::current()->audit_verification

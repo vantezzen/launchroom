@@ -5,8 +5,10 @@ import { MetaLine } from '@/components/patterns/meta-line';
 import { TimeAgo } from '@/components/time-ago';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
+import { DisconnectMenu } from '@/features/git/disconnect-menu';
 import { GitHubSetupSteps } from '@/features/git/github-setup-steps';
 import { WebhookHealth } from '@/features/git/webhook-health';
+import { destroy } from '@/routes/git/github';
 import { refresh } from '@/routes/git/installations';
 import { SettingsRow } from '@/components/settings/settings-card';
 
@@ -112,16 +114,28 @@ export function GitHubAppSection({ app }: { app: App.Data.Git.GitHubAppData }) {
                         </p>
                     </div>
                 </div>
-                <Button variant="outline" size="sm" asChild>
-                    <a
-                        href={app.htmlUrl}
-                        target="_blank"
-                        rel="noreferrer noopener"
-                    >
-                        Manage on GitHub
-                        <ArrowUpRight aria-hidden="true" />
-                    </a>
-                </Button>
+                <div className="flex shrink-0 items-center gap-2">
+                    <Button variant="outline" size="sm" asChild>
+                        <a
+                            href={app.htmlUrl}
+                            target="_blank"
+                            rel="noreferrer noopener"
+                        >
+                            Manage on GitHub
+                            <ArrowUpRight aria-hidden="true" />
+                        </a>
+                    </Button>
+                    {app.canManage && (
+                        <DisconnectMenu
+                            name={app.name}
+                            label="Disconnect…"
+                            title={`Disconnect ${app.name}?`}
+                            consequence="Services from its repositories stop receiving pushes and can’t build until GitHub is connected again. The app stays on GitHub, where you can delete it."
+                            confirmLabel="Disconnect"
+                            url={destroy(app.id).url}
+                        />
+                    )}
+                </div>
             </div>
             <div className="border-t bg-recessed px-5 py-3">
                 <WebhookHealth webhook={app.webhook} />

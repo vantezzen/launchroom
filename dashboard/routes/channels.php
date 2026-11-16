@@ -6,10 +6,12 @@ use App\Broadcasting\Channel;
 use App\Http\Routing\TeamScopedBindings;
 use App\Models\Deployment;
 use App\Models\Environment;
+use App\Models\Membership;
 use App\Models\Security\SecurityFinding;
 use App\Models\Server;
 use App\Models\Team;
 use App\Models\User;
+use App\Support\PublicId;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Gate;
 
@@ -42,6 +44,10 @@ Broadcast::channel(Channel::TeamSecurity->pattern(), static function (User $user
 
     return $team instanceof Team && Gate::forUser($user)->allows('viewAny', [SecurityFinding::class, $team]);
 });
+
+// A member's own channel: only the user of that membership joins it.
+Broadcast::channel(Channel::Member->pattern(), static fn (User $user, string $member): bool => PublicId::isValid($member, Membership::publicIdPrefix())
+    && Membership::query()->where('public_id', $member)->where('user_id', $user->id)->exists());
 
 // Daemons' nudge channels (docs/03 §4) are never joinable by a browser
 // session: daemons authorize through the signed POST /daemon/v1/broadcasting/auth.

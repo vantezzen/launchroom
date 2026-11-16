@@ -28,7 +28,7 @@ Entries carry the actor (a person, a token on their behalf, or launchroom itself
 
 ## The Activity page
 
-**Activity** in the sidebar shows your team's log as a readable feed. Filter it by **Deploys**, **Promotions**, **Changes**, **Team** and **Alerts**. A project has its own activity view with only that project's entries.
+**Activity** in the sidebar shows your team's log as a readable feed. Filter it by **Deploys**, **Promotions**, **Changes**, **Team** and **Alerts**. With the Alerts filter, **Open only** shows the alerts that are still open. Identical events close together collapse into one row with a count, and a run of changes by one person in one project shares one heading. A project has its own activity view with only that project's entries.
 
 The header shows whether the log checked out: **Audit log verified ✓ up to** a time, or **Audit log check failed**. Only instance owners see the details of a failure.
 
@@ -42,7 +42,7 @@ launchroom verifies the log every 10 minutes from the last good checkpoint, and 
 
 ### Verify on demand
 
-Instance owners find the **Audit log** card under **Settings → Security** (This launchroom). It shows the status, how many entries are chained, when and how the last check ran, and **Verify now**, which queues a full check. The **Signing key** row shows the control plane's public key with a copy button, for verifying forwarded copies elsewhere.
+Instance owners find the **Audit log** card under **Settings → Certificates & audit** (This launchroom). It shows the status, how many entries are chained, when and how the last check ran, and **Verify now**, which queues a full check. The **Signing key** row shows the control plane's public key with a copy button, for verifying forwarded copies elsewhere.
 
 You can also run the check on the control-plane server:
 
@@ -64,7 +64,7 @@ Someone with both the database and the signing key file can rewrite everything l
 
 ## Forward copies outside launchroom
 
-Under **Settings → Security → Copies outside launchroom**, instance owners add destinations. Choose **Syslog**, **Webhook** or **S3 bucket** and fill in that kind's fields. Adding, changing and removing destinations needs your password and is audited.
+Under **Settings → Certificates & audit → Copies outside launchroom**, instance owners add destinations. Choose **Syslog**, **Webhook** or **S3 bucket** and fill in that kind's fields. Adding, changing and removing destinations needs your password and is audited.
 
 | Destination | What you enter | How records arrive |
 |---|---|---|

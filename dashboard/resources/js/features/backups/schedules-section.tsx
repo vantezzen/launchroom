@@ -19,7 +19,14 @@ import {
 } from '@/components/ui/select';
 import { Spinner } from '@/components/ui/spinner';
 import { Switch } from '@/components/ui/switch';
+import { Status } from '@/components/status';
 import { BackupHealthStatus } from '@/features/backups/backup-health';
+import {
+    firstRunLabel,
+    protectionSummary,
+    sortByStanding,
+    standing,
+} from '@/features/backups/protection';
 import { update } from '@/routes/backups/schedules';
 import { relativeTime, formatBytes } from '@/lib/format';
 import { SettingsCard, SettingsRow } from '@/components/settings/settings-card';
@@ -439,6 +446,8 @@ export function ScheduleRow({
     const last = protection?.lastSucceededAt ?? null;
     const healthy =
         schedule.health.status === 'ok' || schedule.health.status === 'running';
+    const stand = standing(schedule);
+    const next = schedule.nextRunAt ?? schedule.health.nextRunAt;
 
     return (
         <SettingsRow
@@ -480,6 +489,9 @@ export function ScheduleRow({
                     <MetaLine>
                         {when}
                         {`Keeps ${schedule.retentionSummary}`}
+                        {(stand === 'healthy' || stand === 'overdue') &&
+                            next !== null &&
+                            `Next ${relativeTime(next)}`}
                     </MetaLine>
                 ) : (
                     'Paused'
@@ -499,13 +511,20 @@ export function ScheduleRow({
                         className="hidden w-36 md:block"
                     />
                 )}
-            <span className="type-small text-muted-foreground tabular-nums sm:w-32 sm:text-right">
+            <span className="type-small text-muted-foreground tabular-nums sm:min-w-32 sm:text-right">
                 {healthy && last !== null ? (
                     <MetaLine className="sm:justify-end">
                         {relativeTime(last)}
                         {protection?.lastSizeBytes != null &&
                             formatBytes(protection.lastSizeBytes)}
                     </MetaLine>
+                ) : stand === 'waiting' && next !== null ? (
+                    <Status
+                        state="idle"
+                        label={`First backup ${firstRunLabel(next)}`}
+                    />
+                ) : stand === 'missed' ? (
+                    <Status state="warning" label="No backup yet" />
                 ) : (
                     <BackupHealthStatus health={schedule.health} />
                 )}
@@ -545,7 +564,9 @@ export function SchedulesSection({
     return (
         <SettingsCard
             title="What’s protected"
-            description="Last 30 days"
+            description={
+                schedules.length > 0 ? protectionSummary(schedules) : undefined
+            }
             footer={
                 schedules.length === 0
                     ? 'Databases in production and persistent environments show up here once a destination exists.'
@@ -553,7 +574,7 @@ export function SchedulesSection({
             }
         >
             {leading}
-            {schedules.map((schedule) => (
+            {sortByStanding(schedules).map((schedule) => (
                 <ScheduleRow
                     key={schedule.id}
                     schedule={schedule}

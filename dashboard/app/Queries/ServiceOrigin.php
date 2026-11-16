@@ -59,7 +59,7 @@ final readonly class ServiceOrigin
 
     private function image(ImageSource $source): ServiceOriginData
     {
-        $label = ServiceGlyph::shortImage($source->reference);
+        $label = ServiceGlyph::imageName($source->reference);
         $parsed = ImageReference::tryParse($source->reference);
 
         if (! $parsed instanceof ImageReference) {

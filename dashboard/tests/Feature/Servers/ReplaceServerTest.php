@@ -92,6 +92,13 @@ test('an online or control-plane server is not replaced from the wizard', functi
         ->assertSessionHasErrors('replacement');
 });
 
+test('the server page lists the data that lives on a server, for the revoke dialog', function (): void {
+    $this->actingAs($this->owner)->get(route('servers.tab', [$this->old->public_id, 'settings']))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page->has('placement.volumes', 1)
+            ->where('placement.volumes.0', fn (string $name): bool => str_starts_with($name, $this->postgres->service->name.' (')));
+});
+
 test('replacing moves roles, labels and data, revokes the dead server and restores the database before re-placing the rest', function (): void {
     $url = route('servers.replace.store', $this->old);
     $this->actingAs($this->owner)
@@ -111,6 +118,12 @@ test('replacing moves roles, labels and data, revokes the dead server and restor
         ->and(Projects::nodeState($old)['workloads'] ?? [])->toBe([])
         ->and(AuditEvent::query()->where('action', AuditAction::ServerReplaced->value)->exists())->toBeTrue()
         ->and(AuditEvent::query()->where('action', AuditAction::ServerRevoked->value)->exists())->toBeTrue();
+
+    // The progress strip draws both machines: the dead one and its replacement.
+    $this->actingAs($this->owner)->get(route('servers.replace', $old))
+        ->assertInertia(fn ($page) => $page->where('replacement.newServerId', $new->public_id)
+            ->has('devices.'.$new->public_id)
+            ->has('devices.'.$old->public_id));
 
     $restore = RestoreRun::query()->sole();
     expect($restore->server_replacement_id)->toBe($replacement->id)

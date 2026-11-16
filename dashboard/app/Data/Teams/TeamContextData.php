@@ -22,5 +22,9 @@ final class TeamContextData extends Data
         public bool $canCreateTeam = false,
         /** Team-wide log search (TeamPolicy::searchLogs). */
         public bool $canSearchLogs = false,
+        /** May add servers (ServerPolicy::create): ⌘K's "Add server". */
+        public bool $canAddServers = false,
+        /** May invite people (TeamInvitationPolicy::create): ⌘K's "Invite people". */
+        public bool $canInvite = false,
     ) {}
 }

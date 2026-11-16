@@ -9,6 +9,7 @@ import {
 } from '@/components/ui/dialog';
 import { analyticsHref, logsHref } from '@/lib/links';
 import { prefersReducedMotion } from '@/lib/motion';
+import { modKey } from '@/lib/platform';
 import { project as projectDeployments } from '@/routes/deployments';
 import { canvas, index as projectsIndex } from '@/routes/projects';
 import services from '@/routes/projects/services';
@@ -240,15 +241,11 @@ export function useShortcuts({
     }, []);
 }
 
-const isMac =
-    typeof navigator !== 'undefined' &&
-    /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
-
 const GROUPS: { title: string; rows: [string[], string][] }[] = [
     {
         title: 'Anywhere',
         rows: [
-            [[isMac ? '⌘' : 'Ctrl', 'K'], 'Search and run commands'],
+            [[modKey(), 'K'], 'Search and run commands'],
             [['g', 'p'], 'Projects'],
             [['g', 's'], 'Servers'],
             [['?'], 'This list'],

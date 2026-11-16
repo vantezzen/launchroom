@@ -15,7 +15,6 @@ use App\Data\Canvas\ServiceProblemData;
 use App\Enums\DeploymentStatus;
 use App\Enums\DomainKind;
 use App\Enums\EnvironmentKind;
-use App\Enums\StatusTone;
 use App\Models\CanvasLayout;
 use App\Models\Connection;
 use App\Models\Deployment;
@@ -37,8 +36,8 @@ use Illuminate\Support\Facades\DB;
  * what the project card shows (direction.md §5.2): palette slot, primary
  * domain, last deployment, 14-day deploy bars and a mini canvas of
  * production. A fixed number of queries regardless of the project count.
- * Projects whose production has a failed service come first, then ones that
- * need attention, then the rest by name (docs/08 §13).
+ * Most recent activity first (the newest deployment or project change),
+ * then by name (docs/08 §13); what's broken is listed in "Needs you".
  */
 final readonly class ProjectSummaries
 {
@@ -62,6 +61,7 @@ final readonly class ProjectSummaries
             ->where('team_id', $team->id)
             ->with(['environments' => fn ($query) => $query->where('kind', '!=', EnvironmentKind::Preview->value)->inDisplayOrder()])
             ->orderBy('name')
+            ->orderBy('id')
             ->get();
 
         $instances = ServiceInstance::query()
@@ -155,28 +155,10 @@ final readonly class ProjectSummaries
             );
         })->all());
 
-        // Problems first (stable: by name within each group).
-        usort($summaries, static fn (ProjectSummaryData $a, ProjectSummaryData $b): int => self::urgency($b) <=> self::urgency($a));
+        // Recent activity first (stable: by name among equals).
+        usort($summaries, static fn (ProjectSummaryData $a, ProjectSummaryData $b): int => ($b->updatedAt?->getTimestamp() ?? 0) <=> ($a->updatedAt?->getTimestamp() ?? 0));
 
         return $summaries;
-    }
-
-    /**
-     * 2 when production has a failed service, 1 when one needs attention.
-     */
-    private static function urgency(ProjectSummaryData $summary): int
-    {
-        $production = $summary->environments[0] ?? null;
-
-        if (! $production instanceof EnvironmentSummaryData || $production->kind !== EnvironmentKind::Production) {
-            return 0;
-        }
-
-        return match ($production->status->state) {
-            StatusTone::Failed => 2,
-            StatusTone::Warning => 1,
-            default => 0,
-        };
     }
 
     /**

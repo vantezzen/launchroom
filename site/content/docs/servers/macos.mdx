@@ -79,17 +79,18 @@ Images are built for the platform of the servers that run them. An Apple Silicon
 and Docker Desktop also run x86 programs, through Rosetta or QEMU. launchroom detects this, so the Mac takes builds for
 your x86 VPS too. Colima does when its VM is set up for it, for example `colima start --vm-type vz --vz-rosetta`.
 
-The server's **Network** tab lists the platforms it builds for under **Capabilities**. Building for another
+The server's **Network** tab lists the platforms it builds for under **Connection → Runs on**. Building for another
 architecture works, but it's slower than building natively. When a native build server for the platform is online,
 launchroom prefers it. To make the Mac your builder, remove **Build** from the VPS.
 
 ## What works on a Mac
 
-Open the server's **Network** tab. **Capabilities** shows the engine and what it allows:
+Open the server's **Network** tab. **Connection → Runs on** shows the engine, and **What this server can do** shows
+what it allows:
 
 | Capability | OrbStack, Colima | Docker Desktop |
 |---|---|---|
-| Docker access through launchroom's guard | Full | Full |
+| Server access (through launchroom's guard) | Full | Full |
 | Public ports 80/443 | Unavailable | Unavailable |
 | Visitor addresses | Limited | Limited |
 | Network isolation | Full | Full |

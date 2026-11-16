@@ -16,6 +16,8 @@ final class AnalyticsProjectData extends Data
 {
     /**
      * @param  list<int>  $requestsSeries
+     * @param  list<int>  $serverErrorSeries  5xx responses per bucket
+     * @param  list<int>  $clientErrorSeries  4xx responses per bucket, without blocked requests
      */
     public function __construct(
         public string $id,
@@ -32,5 +34,7 @@ final class AnalyticsProjectData extends Data
         public array $requestsSeries,
         /** Requests the web firewall refused. */
         public int $blocked = 0,
+        public array $serverErrorSeries = [],
+        public array $clientErrorSeries = [],
     ) {}
 }

@@ -7,6 +7,8 @@ import { Logo } from '@/components/logo';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import { Step } from '@/features/git/connect-provider-form';
+import { DisconnectMenu } from '@/features/git/disconnect-menu';
+import { destroy } from '@/routes/git/connections';
 import { confirm } from '@/routes/git/servers';
 
 /**
@@ -42,7 +44,7 @@ export function GitServerSetup({
         >
             <div className="flex items-center gap-4 p-5">
                 <Logo kind="git" size={44} decorative />
-                <div className="flex min-w-0 flex-col gap-1">
+                <div className="flex min-w-0 flex-1 flex-col gap-1">
                     <h2
                         id={`setup-${connection.id}`}
                         className="truncate type-heading"
@@ -55,6 +57,22 @@ export function GitServerSetup({
                         {connection.url}
                     </p>
                 </div>
+                <DisconnectMenu
+                    name={connection.name}
+                    label={keyChanged ? 'Disconnect…' : 'Remove setup…'}
+                    title={
+                        keyChanged
+                            ? `Disconnect ${connection.name}?`
+                            : `Remove ${connection.name}?`
+                    }
+                    consequence={
+                        keyChanged
+                            ? 'Services from it stop receiving pushes and can’t build until it is connected again. launchroom deletes the deploy key and the pinned host key, so remove the deploy key from the git server too.'
+                            : 'Its setup was never finished, so nothing uses it yet.'
+                    }
+                    confirmLabel={keyChanged ? 'Disconnect' : 'Remove'}
+                    url={destroy(connection.id).url}
+                />
             </div>
             <ol className="flex flex-col gap-7 border-t px-5 py-6">
                 <Step number={1} title="Check the server’s identity">

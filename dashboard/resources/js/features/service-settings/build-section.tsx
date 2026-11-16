@@ -679,7 +679,27 @@ export function BuildSection({ context }: { context: SettingsContext }) {
                         dirty={form.isDirty}
                         processing={form.processing}
                         onReset={() => form.reset()}
-                        label="Save for next deploy"
+                        stages="rebuild"
+                        fields={form.data.build}
+                        labels={{
+                            builder: ['Builder', 'builder'],
+                            dockerfilePath: ['Dockerfile', 'dockerfile'],
+                            installCommand: [
+                                'Install command',
+                                'install-command',
+                            ],
+                            buildCommand: ['Build command', 'build-command'],
+                            railpackVersion: [
+                                'Railpack version',
+                                'railpack-version',
+                            ],
+                            watchPaths: ['Watch paths', 'watch-paths'],
+                            disabledDecisions: [
+                                'Detected steps',
+                                'preset-decisions',
+                            ],
+                            generatedDockerfile: ['Dockerfile', 'dockerfile'],
+                        }}
                     />
                 )}
             </form>

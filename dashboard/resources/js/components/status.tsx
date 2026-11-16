@@ -88,8 +88,10 @@ type StatusProps = {
     state: StatusState;
     /** The status word from §3.3 ("Live", "Deploying", "Unreachable"). */
     label: string;
-    /** Quiet detail after the word ("Building, 41s", "for 8 min"). */
+    /** Quiet detail after the word, behind a divider ("Building | 41s"). */
     detail?: ReactNode;
+    /** How long it has been so: one phrase with the word ("Offline for 21d"). */
+    since?: string | null;
     className?: string;
 };
 
@@ -97,7 +99,13 @@ type StatusProps = {
  * State with an icon and a word: colour never stands alone
  * (design-system §3.3).
  */
-export function Status({ state, label, detail, className }: StatusProps) {
+export function Status({
+    state,
+    label,
+    detail,
+    since,
+    className,
+}: StatusProps) {
     return (
         <span
             className={cn(
@@ -106,7 +114,12 @@ export function Status({ state, label, detail, className }: StatusProps) {
             )}
         >
             <StatusIcon state={state} />
-            <span className="truncate">{label}</span>
+            <span className="truncate">
+                {label}
+                {since && (
+                    <span className="text-muted-foreground"> for {since}</span>
+                )}
+            </span>
             {detail && (
                 <>
                     <MetaDivider />
@@ -123,7 +136,13 @@ export function Status({ state, label, detail, className }: StatusProps) {
  * Pill variant for page headers and cards: soft background in the status
  * tone, icon + word.
  */
-export function StatusPill({ state, label, detail, className }: StatusProps) {
+export function StatusPill({
+    state,
+    label,
+    detail,
+    since,
+    className,
+}: StatusProps) {
     return (
         <span
             className={cn(
@@ -133,7 +152,10 @@ export function StatusPill({ state, label, detail, className }: StatusProps) {
             )}
         >
             <StatusIcon state={state} className="size-3" />
-            <span className="truncate">{label}</span>
+            <span className="truncate">
+                {label}
+                {since && <span className="font-normal"> for {since}</span>}
+            </span>
             {detail && (
                 <>
                     <MetaDivider className="bg-current opacity-30" />

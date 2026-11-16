@@ -102,13 +102,15 @@ export function ServicePanel({
             return false;
         }
     });
-    // Settings opens full width (its sidebar needs the room) and collapses
-    // again on the other tabs; the toggle narrows it for this visit only.
+    // Settings and Data open full width (the settings sidebar and the
+    // table list next to the grid need the room) and collapse again on the
+    // other tabs; the toggle narrows them for this visit only.
     const settingsTab = panel.tab === 'settings';
+    const wideTab = settingsTab || panel.tab === 'data';
     const [settingsNarrow, setSettingsNarrow] = useState(false);
-    const expanded = settingsTab ? !settingsNarrow : pinned;
+    const expanded = wideTab ? !settingsNarrow : pinned;
     const toggleExpanded = () =>
-        settingsTab
+        wideTab
             ? setSettingsNarrow((value) => !value)
             : setPinned((value) => !value);
     const ref = useRef<HTMLElement>(null);
@@ -366,12 +368,17 @@ export function ServicePanel({
                     <div
                         key={panel.tab}
                         className={cn(
-                            'mx-auto flex w-full flex-col px-5 pt-6 pb-24 md:px-6',
+                            // Settings: room under the last row for the floating
+                            // save or staged bar (design-system §6).
+                            'mx-auto flex w-full flex-col px-5 pt-6 md:px-6',
+                            settingsTab ? 'pb-32' : 'pb-24',
                             'motion-safe:animate-in motion-safe:duration-base motion-safe:fade-in-0',
                             expanded
                                 ? settingsTab
                                     ? 'max-w-[1040px]'
-                                    : 'max-w-[960px]'
+                                    : panel.tab === 'data'
+                                      ? 'max-w-[1280px]'
+                                      : 'max-w-[960px]'
                                 : 'max-w-none',
                         )}
                     >

@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Enums\ProjectSettingsSection;
 use App\Enums\ServicePanelTab;
 use App\Enums\ServiceSettingsSection;
+use App\Http\Controllers\Logs\LogDownloadController;
 use App\Http\Controllers\Projects\CanvasController;
 use App\Http\Controllers\Projects\ConfigFileController;
 use App\Http\Controllers\Projects\ConnectionController;
@@ -96,6 +97,9 @@ Route::middleware(['web', 'auth', 'verified'])
         Route::get('p/{project}/-/logs', [ProjectLogsController::class, 'projectEntries'])
             ->middleware('throttle:60,1')
             ->name('projects.logs.search');
+        Route::get('p/{project}/-/logs/download', [LogDownloadController::class, 'project'])
+            ->middleware('throttle:10,1')
+            ->name('projects.logs.project-download');
 
         Route::get('p/{project}/{environment}', [CanvasController::class, 'show'])->name('projects.canvas');
         Route::get('p/{project}/{environment}/logs', [ProjectLogsController::class, 'show'])->name('projects.logs');
@@ -109,6 +113,9 @@ Route::middleware(['web', 'auth', 'verified'])
         Route::get('p/{project}/{environment}/-/logs', [ProjectLogsController::class, 'entries'])
             ->middleware('throttle:120,1')
             ->name('projects.logs.entries');
+        Route::get('p/{project}/{environment}/-/logs/download', [LogDownloadController::class, 'environment'])
+            ->middleware('throttle:10,1')
+            ->name('projects.logs.download');
         Route::post('p/{project}/{environment}/-/logs/tail', [ProjectLogsController::class, 'startTail'])
             ->middleware('throttle:20,1')
             ->name('projects.logs.tail');

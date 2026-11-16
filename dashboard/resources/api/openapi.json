@@ -4740,6 +4740,18 @@
                         "description": "Requests the web firewall refused.",
                         "type": "integer",
                         "default": 0
+                    },
+                    "serverErrorSeries": {
+                        "type": "array",
+                        "items": {
+                            "type": "integer"
+                        }
+                    },
+                    "clientErrorSeries": {
+                        "type": "array",
+                        "items": {
+                            "type": "integer"
+                        }
                     }
                 },
                 "required": [
@@ -5044,6 +5056,13 @@
                     "name": {
                         "type": "string"
                     },
+                    "hint": {
+                        "description": "`lr_pat_…a1b2`, not secret; null for tokens older than the hint.",
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
                     "abilities": {
                         "type": "array",
                         "items": {
@@ -5084,6 +5103,7 @@
                 "required": [
                     "id",
                     "name",
+                    "hint",
                     "abilities",
                     "client",
                     "teamId",
@@ -6481,6 +6501,20 @@
                             {
                                 "type": "null"
                             }
+                        ]
+                    },
+                    "lastSeenAt": {
+                        "description": "The latest check that still found it.",
+                        "type": [
+                            "string",
+                            "null"
+                        ]
+                    },
+                    "resolvedAt": {
+                        "description": "When it was fixed (the version left the live deployment).",
+                        "type": [
+                            "string",
+                            "null"
                         ]
                     }
                 },

@@ -1,11 +1,10 @@
 import { vocabulary } from '@/lib/vocabulary';
 import { Head, router, useForm } from '@inertiajs/react';
-import { MoreHorizontal, UserPlus } from 'lucide-react';
+import { MoreHorizontal } from 'lucide-react';
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import InputError from '@/components/input-error';
 import { ChoiceTiles } from '@/components/patterns/choice-tiles';
-import { EmptyState } from '@/components/patterns/empty-state';
 import { MetaLine } from '@/components/patterns/meta-line';
 import { SidePanel, SheetSection } from '@/components/patterns/sheet';
 import { TimeAgo } from '@/components/time-ago';
@@ -22,12 +21,20 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
     Popover,
     PopoverAnchor,
     PopoverContent,
 } from '@/components/ui/popover';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select';
 import { Spinner } from '@/components/ui/spinner';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
@@ -42,7 +49,11 @@ import {
     permissions as updatePermissions,
     update as updateMember,
 } from '@/routes/team/members';
-import { SettingsCard, SettingsRow } from '@/components/settings/settings-card';
+import {
+    SettingsBody,
+    SettingsCard,
+    SettingsRow,
+} from '@/components/settings/settings-card';
 import SettingsLayout from '@/features/settings/settings-layout';
 
 type Props = {
@@ -96,6 +107,24 @@ function AccessChips({ member }: { member: App.Data.Teams.MemberData }) {
 const roles = vocabulary.TeamRole;
 
 const roleLabel = (role: App.Enums.TeamRole): string => roles[role].label;
+
+/** Least access first, so the safe choice is on top (Owner last). */
+const ROLE_ORDER: App.Enums.TeamRole[] = [
+    'viewer',
+    'developer',
+    'admin',
+    'owner',
+];
+
+function ordered(assignable: App.Enums.TeamRole[]): App.Enums.TeamRole[] {
+    return ROLE_ORDER.filter((role) => assignable.includes(role));
+}
+
+function defaultRole(assignable: App.Enums.TeamRole[]): App.Enums.TeamRole {
+    return assignable.includes('developer')
+        ? 'developer'
+        : ordered(assignable)[0];
+}
 
 function RoleChip({ role }: { role: App.Enums.TeamRole }) {
     return (
@@ -274,9 +303,7 @@ function InvitePanel({
 }) {
     const form = useForm<{ emails: string; role: App.Enums.TeamRole }>({
         emails: '',
-        role: assignableRoles.includes('developer')
-            ? 'developer'
-            : assignableRoles[0],
+        role: defaultRole(assignableRoles),
     });
     const count = form.data.emails
         .split(/[\s,;]+/)
@@ -297,7 +324,7 @@ function InvitePanel({
         <SidePanel
             open={open}
             onOpenChange={onOpenChange}
-            title="Invite people"
+            title="Invite several people"
             description="They get an email with a link that works once, for 7 days."
             size="sm"
             footer={
@@ -350,7 +377,7 @@ function InvitePanel({
                         columns={2}
                         value={form.data.role}
                         onChange={(role) => form.setData('role', role)}
-                        options={assignableRoles.map((role) => ({
+                        options={ordered(assignableRoles).map((role) => ({
                             value: role,
                             label: roleLabel(role),
                             description: roles[role].summary,
@@ -360,6 +387,104 @@ function InvitePanel({
                 </SheetSection>
             </form>
         </SidePanel>
+    );
+}
+
+/**
+ * The one-line invite at the top of the members card: address, role
+ * (Developer by default) and Send invite. Several at once go through
+ * the sheet.
+ */
+function InlineInvite({
+    assignableRoles,
+    onInviteSeveral,
+}: {
+    assignableRoles: App.Enums.TeamRole[];
+    onInviteSeveral: () => void;
+}) {
+    const form = useForm<{ email: string; role: App.Enums.TeamRole }>({
+        email: '',
+        role: defaultRole(assignableRoles),
+    });
+
+    const submit = (event: FormEvent) => {
+        event.preventDefault();
+        form.post(storeInvitation().url, {
+            preserveScroll: true,
+            onSuccess: () => form.reset('email'),
+        });
+    };
+
+    return (
+        <SettingsBody className="py-4">
+            <form onSubmit={submit} className="flex flex-col gap-2">
+                <Label htmlFor="invite-email" className="sr-only">
+                    Email address
+                </Label>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                    <Input
+                        id="invite-email"
+                        type="email"
+                        value={form.data.email}
+                        onChange={(event) =>
+                            form.setData('email', event.target.value)
+                        }
+                        placeholder="Email address"
+                        autoComplete="off"
+                        spellCheck={false}
+                        className="sm:flex-1"
+                    />
+                    <Select
+                        value={form.data.role}
+                        onValueChange={(role) =>
+                            form.setData('role', role as App.Enums.TeamRole)
+                        }
+                    >
+                        <SelectTrigger
+                            aria-label="Role"
+                            className="w-full sm:w-36"
+                        >
+                            <SelectValue>
+                                {roleLabel(form.data.role)}
+                            </SelectValue>
+                        </SelectTrigger>
+                        <SelectContent align="end">
+                            {ordered(assignableRoles).map((role) => (
+                                <SelectItem
+                                    key={role}
+                                    value={role}
+                                    textValue={roleLabel(role)}
+                                >
+                                    <span className="flex flex-col">
+                                        <span>{roleLabel(role)}</span>
+                                        <span className="type-small text-muted-foreground">
+                                            {roles[role].summary}
+                                        </span>
+                                    </span>
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                    <Button
+                        type="submit"
+                        disabled={
+                            form.processing || !form.data.email.includes('@')
+                        }
+                    >
+                        {form.processing && <Spinner />}
+                        Send invite
+                    </Button>
+                </div>
+                <InputError message={form.errors.email ?? form.errors.role} />
+                <button
+                    type="button"
+                    onClick={onInviteSeveral}
+                    className="self-start type-small text-muted-foreground underline decoration-border-strong underline-offset-4 hover:text-foreground"
+                >
+                    Invite several people at once
+                </button>
+            </form>
+        </SettingsBody>
     );
 }
 
@@ -383,10 +508,17 @@ function InvitationRow({
         <SettingsRow
             media={<MemberAvatar name={invitation.email} />}
             inline
-            label={invitation.email}
+            label={
+                <span className="inline-flex flex-wrap items-center gap-2">
+                    {invitation.email}
+                    <span className="inline-flex h-5 items-center rounded-full border border-dashed px-2 type-small font-normal text-muted-foreground">
+                        {invitation.expired ? 'Invite expired' : 'Invited'}
+                    </span>
+                </span>
+            }
             description={
                 invitation.expired ? (
-                    'Expired'
+                    'Send it again for a new link.'
                 ) : (
                     <MetaLine>
                         <span>
@@ -397,6 +529,7 @@ function InvitationRow({
                     </MetaLine>
                 )
             }
+            className="py-3.5"
         >
             <RoleChip role={invitation.role} />
             <DropdownMenu>
@@ -423,8 +556,9 @@ function InvitationRow({
 }
 
 /**
- * Settings → Members (docs/design/flows.md §16): people as rows with their
- * role, changes behind `⋯`, invitations in a sheet.
+ * Settings → Members (docs/design/flows.md §16): one invite line on top,
+ * people and pending invitations as rows with their role, changes behind
+ * `⋯`, several invitations at once in a sheet.
  */
 export default function TeamSettings({
     team,
@@ -436,6 +570,7 @@ export default function TeamSettings({
 }: Props) {
     const [inviting, setInviting] = useState(false);
     const count = members.length;
+    const pending = canManageMembers ? invitations.length : 0;
 
     return (
         <>
@@ -443,16 +578,18 @@ export default function TeamSettings({
 
             <SettingsCard
                 title={team.name}
-                description={`${count} ${count === 1 ? 'member' : 'members'}`}
-                actions={
-                    canManageMembers && (
-                        <Button onClick={() => setInviting(true)}>
-                            <UserPlus aria-hidden="true" />
-                            Invite people
-                        </Button>
-                    )
+                description={
+                    pending > 0
+                        ? `${count} ${count === 1 ? 'member' : 'members'}, ${pending} invited`
+                        : `${count} ${count === 1 ? 'member' : 'members'}`
                 }
             >
+                {canManageMembers && (
+                    <InlineInvite
+                        assignableRoles={assignableRoles}
+                        onInviteSeveral={() => setInviting(true)}
+                    />
+                )}
                 {members.map((member) => (
                     <SettingsRow
                         key={member.id}
@@ -480,35 +617,14 @@ export default function TeamSettings({
                         />
                     </SettingsRow>
                 ))}
+                {canManageMembers &&
+                    invitations.map((invitation) => (
+                        <InvitationRow
+                            key={invitation.id}
+                            invitation={invitation}
+                        />
+                    ))}
             </SettingsCard>
-
-            {canManageMembers &&
-                (invitations.length > 0 ? (
-                    <SettingsCard title="Invited">
-                        {invitations.map((invitation) => (
-                            <InvitationRow
-                                key={invitation.id}
-                                invitation={invitation}
-                            />
-                        ))}
-                    </SettingsCard>
-                ) : (
-                    count === 1 && (
-                        <EmptyState
-                            icon={UserPlus}
-                            action={
-                                <Button
-                                    variant="outline"
-                                    onClick={() => setInviting(true)}
-                                >
-                                    Invite people
-                                </Button>
-                            }
-                        >
-                            Your teammates will show up here once they join.
-                        </EmptyState>
-                    )
-                ))}
 
             {consoleRecording &&
                 (consoleRecording.canChange || consoleRecording.enabled) && (

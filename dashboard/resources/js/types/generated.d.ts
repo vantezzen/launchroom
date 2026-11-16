@@ -1,7 +1,7 @@
 declare namespace App {
 namespace Broadcasting {
 export type BroadcastEvent = 'canvas.changed' | 'deployment.updated' | 'logs.appended' | 'server.metrics' | 'service.activity' | 'security.changed';
-export type Channel = 'environments' | 'deployments' | 'servers' | 'security' | 'daemon' | 'session';
+export type Channel = 'environments' | 'deployments' | 'servers' | 'security' | 'members' | 'daemon' | 'session';
 export type ServiceActivityTopic = 'sessions' | 'remote_access' | 'backups' | 'imports';
 }
 namespace Data {
@@ -35,6 +35,7 @@ severity: string | null,
 export type ActivityFiltersData = {
 project: string | null,
 kind: string | null,
+state: string | null,
 };
 export type ProjectActivityFilterData = {
 kind: string | null,
@@ -82,6 +83,8 @@ thresholdUnit: string | null,
 duration: number | null,
 durationMin: number | null,
 durationMax: number | null,
+lastFiredAt: string | null,
+lastFiredTitle: string | null,
 };
 export type AlertRuleInput = {
 rule: App.Enums.Alerts.AlertRule,
@@ -161,6 +164,8 @@ errorRatePct: number | null,
 clientErrorPct: number | null,
 requestsSeries: number[],
 blocked: number,
+serverErrorSeries: number[],
+clientErrorSeries: number[],
 };
 export type AnalyticsQueryData = {
 range: App.Enums.AnalyticsRange,
@@ -249,6 +254,7 @@ abilities: App.Data.Api.ApiAbilityOptionData[],
 export type ApiTokenData = {
 id: string,
 name: string,
+hint: string | null,
 abilities: App.Enums.ApiAbility[],
 client: App.Enums.ApiTokenClient,
 teamId: string,
@@ -1005,6 +1011,9 @@ environmentId: string,
 serviceId: string,
 status: App.Enums.DeploymentStatus,
 statusChanged: boolean,
+projectId: string | null,
+serviceName: string | null,
+commitSha: string | null,
 };
 export type LogsAppendedData = {
 deploymentId: string,
@@ -1090,6 +1099,8 @@ backup: App.Data.Backups.ServiceBackupStatusData | null,
 placementIssue: App.Data.Canvas.PlacementIssueData | null,
 openAlerts: App.Data.Alerts.OpenAlertData[],
 analyticsView: App.Enums.AnalyticsView,
+stagedSummary: string | null,
+schedule: string | null,
 };
 export type CanvasPositionData = {
 x: number,
@@ -1235,6 +1246,15 @@ tagPattern: string | null,
 autoDeployPaused: boolean,
 keepsRuntimeLogs: boolean,
 };
+export type EnvironmentHealthData = {
+status: App.Data.Canvas.NodeStatusData,
+deploying: boolean,
+deployFailed: boolean,
+};
+export type EnvironmentStatusData = {
+environmentId: string,
+status: App.Data.Canvas.NodeStatusData,
+};
 export type EnvironmentSummaryData = {
 id: string,
 name: string,
@@ -1337,6 +1357,8 @@ projects: App.Data.Canvas.ProjectLinkData[],
 abilities: App.Data.Canvas.ProjectAbilitiesData,
 edgeOverview: App.Data.Ingress.EdgeOverviewData,
 projectStatuses?: App.Data.Canvas.ProjectStatusData[],
+environmentStatuses?: App.Data.Canvas.EnvironmentStatusData[],
+environmentHealth?: App.Data.Canvas.EnvironmentHealthData | null,
 };
 export type ProjectStatusData = {
 projectId: string,
@@ -1668,6 +1690,8 @@ buildServer: App.Data.Deployments.BuildServerData | null,
 servers: App.Data.Deployments.DeploymentServerData[],
 supersededBy: App.Data.Deployments.DeploymentRefData | null,
 expectsRelease: boolean,
+newer: App.Data.Deployments.DeploymentRefData | null,
+older: App.Data.Deployments.DeploymentRefData | null,
 };
 export type DeploymentFailureData = {
 class: App.Enums.DeploymentFailureClass,
@@ -2266,6 +2290,8 @@ realtime: App.Data.Instance.RealtimeConfigData | null,
 onboardingProgress: App.Data.Instance.OnboardingProgressData | null,
 controlPlaneLoad: App.Data.Servers.ControlPlaneLoadData | null,
 securityActionNeeded: number,
+openAlertCount: number,
+fleet: App.Data.Servers.FleetStatusData | null,
 updateAvailable: boolean,
 };
 export type ToastData = {
@@ -2455,6 +2481,28 @@ domain: string,
 verified: boolean | null,
 at: string,
 };
+export type FirstAppData = {
+state: 'deploying' | 'live',
+projectId: string,
+projectName: string,
+environmentId: string,
+serviceId: string,
+serviceName: string,
+logo: string,
+hostname: string | null,
+liveSince: string | null,
+deploymentId: string | null,
+startedAt: string | null,
+steps: App.Data.Instance.FirstAppStepData[],
+suggestGit: boolean,
+seen: boolean,
+};
+export type FirstAppStepData = {
+label: string,
+status: 'pending' | 'running' | 'succeeded' | 'failed' | 'skipped',
+startedAt: string | null,
+finishedAt: string | null,
+};
 export type LegacyOriginEntryData = {
 url: string,
 since: string,
@@ -2482,6 +2530,7 @@ canConnectGitHub: boolean,
 recommendTwoFactor: boolean,
 appsDomainVerified: boolean | null,
 smallServerHint: App.Data.Servers.SmallServerHintData | null,
+firstApp: App.Data.Instance.FirstAppData | null,
 };
 export type OnboardingProgressData = {
 done: number,
@@ -2495,6 +2544,7 @@ skipped: string[],
 twoFactorDismissed: number[],
 smallServerHintDismissed: number[],
 domainConfirmed: App.Data.Instance.DomainConfirmationData | null,
+firstAppSeenAt: string | null,
 };
 export type OnboardingStepData = {
 id: App.Enums.Instance.OnboardingStep,
@@ -2506,6 +2556,7 @@ key: string,
 host: string | null,
 port: number | null,
 scheme: string | null,
+member: string | null,
 };
 export type RecoveryChecklistData = {
 active: boolean,
@@ -2552,6 +2603,9 @@ start: number,
 end: number,
 total: number,
 errors: number,
+};
+export type LogDownloadData = {
+format: string,
 };
 export type LogEntryData = {
 id: string,
@@ -3054,6 +3108,7 @@ expiresAt: string | null,
 lastActivityAt: string,
 shareLinks: App.Data.Previews.ShareLinkData[],
 protected: boolean,
+failedDeploymentId: string | null,
 };
 export type PreviewDatabaseData = {
 service: string,
@@ -3087,6 +3142,12 @@ environmentId: string,
 number: number,
 title: string,
 status: App.Enums.Previews.PreviewStatus,
+};
+export type PreviewRuleData = {
+baseEnvironment: string | null,
+branches: string[],
+requiredLabel: string | null,
+expiryDays: number,
 };
 export type PreviewServiceData = {
 serviceId: string,
@@ -3331,6 +3392,10 @@ deploymentId: string,
 commitSha: string | null,
 sameInputs: boolean,
 differences: string[],
+commitMessage: string | null,
+targetCommitSha: string | null,
+targetCommitMessage: string | null,
+compareUrl: string | null,
 };
 export type PromotionItem = {
 path: string,
@@ -4648,6 +4713,8 @@ canInvestigate: boolean,
 canChangeFirewall: boolean,
 firewallUrl: string,
 deployment: App.Data.Security.FindingDeploymentData | null,
+lastSeenAt: string | null,
+resolvedAt: string | null,
 };
 export type FindingInvestigationData = {
 id: string,
@@ -4760,6 +4827,8 @@ baseImages: App.Data.Security.RuntimeCardData[],
 notices: string[],
 dismissed: number,
 scope: App.Data.Security.SecurityScopeData | null,
+dismissedFindings: App.Data.Security.FindingCardData[],
+fixedFindings: App.Data.Security.FindingCardData[],
 };
 export type SecurityScopeData = {
 kind: string,
@@ -4993,6 +5062,12 @@ roles: App.Enums.ServerRole[],
 expiresAt: string,
 expired: boolean,
 server: App.Data.Servers.ServerData | null,
+};
+export type FleetStatusData = {
+total: number,
+online: number,
+state: App.Enums.StatusTone,
+label: string,
 };
 export type HardwareFactsData = {
 cpuModel: string | null,
@@ -5250,6 +5325,7 @@ freeMemoryMb: number | null,
 allocatedCpus: number,
 workloads: App.Data.Servers.ServerWorkloadData[],
 measureLinks: boolean,
+volumes: string[],
 };
 export type ServerReplacementData = {
 id: string,
@@ -5627,6 +5703,7 @@ name: string,
 isControlPlane: boolean,
 online: boolean,
 mesh: App.Data.Servers.ServerMeshData,
+device: App.Enums.DeviceKind,
 };
 }
 namespace Specs {
@@ -5840,6 +5917,8 @@ current: App.Data.Teams.TeamData | null,
 all: App.Data.Teams.TeamData[],
 canCreateTeam: boolean,
 canSearchLogs: boolean,
+canAddServers: boolean,
+canInvite: boolean,
 };
 export type TeamData = {
 id: string,
@@ -5877,6 +5956,7 @@ inputs: App.Data.Templates.TemplateInputData[],
 preview: App.Data.Blueprints.BlueprintPreviewData,
 needsRepository: boolean,
 notes: string[],
+starter: string | null,
 };
 export type UseTemplateData = {
 name: string | null,

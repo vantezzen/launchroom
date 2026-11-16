@@ -17,12 +17,12 @@ Start there, then use the guides below for the symptom you see.
 
 Open the failed deployment from the canvas (click the service, then its latest deployment) or from the project's **Deployments** tab. The page shows:
 
-- An explanation card at the top, for example "Build failed: pnpm-lock.yaml is out of date", with the cause, the fix and often a one-click action such as **Use port 5173 and redeploy** or **Add NODE_OPTIONS**.
-- A status line when the previous version is still live: "Your site is still serving 3b7d5e1."
-- The step list (Plan, Build, Release command, Roll out, Health check, Switch traffic). The failed step opens on the lines around its first error, with **Show all** and **Jump to line** to see more.
+- An explanation card first, above the overview, for example "Build failed: pnpm-lock.yaml is out of date", with the error line quoted next to its neighbours, the cause, the fix and often a one-click action such as **Use port 5173 and redeploy** or **Add NODE_OPTIONS**. When the previous version is still live, the card says so: "Your site is still serving 3b7d5e1."
+- The overview with a bar of the steps and how long each took.
+- The step list (Plan, Build, Release command, Roll out, Health check, Switch traffic). The failed step opens on the lines around its first error, with **Show all** and **Jump to line** to see more. **Errors** and **Warnings** narrow the steps to those lines.
 - The full log, searchable, with links to individual lines.
 
-The label next to the title (`build_error`, `health_timeout`, `config_error` and so on) is the failure class. The guides below are organised around these.
+The card's copy button copies the failure class (`build_error`, `health_timeout`, `config_error` and so on) with the raw error message. The guides below are organised around these classes.
 
 <Screenshot id="deployment-failed" />
 
@@ -32,7 +32,7 @@ The project's **Logs** tab searches build lines and runtime lines of every servi
 
 ### The server page
 
-When a whole server misbehaves, open it under **Servers**. The Overview tab has a **Health** section with one line per check: Health report, Disk, Memory, Load, File watch limits, Docker networks, Clock, Build cache, Disk cleanup and Desired state. Anything not green carries a sentence that says what to do. The Network tab shows the private network, its path to other servers and the server's capabilities.
+When a whole server misbehaves, open it under **Servers**. The Overview tab has a **Health** section with one line per check: Health report, Disk, Memory, Load, File watch limits, Docker networks, Clock, Build cache, Disk cleanup and Desired state. Anything not green carries a sentence that says what to do. The Network tab shows the private network, its path to other servers and what the server can do.
 
 ### Activity
 

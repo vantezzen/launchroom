@@ -16,10 +16,10 @@ Your launchroom serves the full interactive reference at **`/docs/api`** on your
 Create a token under **Settings → API tokens** (in the **You** group) with **Create token**.
 
 - **One team.** A token acts as you inside the team that was current when you created it. Everything in your other teams answers `404`, as if it didn't exist.
-- **Abilities** narrow what the token can do. The effective rights are your role in the team **and** the token's abilities, whichever is less.
-- **Expiry** is mandatory: 7 days, 30 days, 90 days or 1 year.
-- **Shown once.** Copy the token when it's shown. launchroom only keeps a hash. Tokens look like `<id>|lr_pat_…`.
-- The token list shows when and from which IP each token was last used, and warns when one expires within 7 days. **Revoke** ends a token at once.
+- **Access** narrows what the token can do. Pick **Deploy** (the default: `read`, `deploy`, `env:read` and `env:write`), **Read only**, **Everything** (every ability your role allows) or **Custom** to tick [abilities](#abilities) one by one. A choice that would grant the same as a smaller one is left out, so a viewer sees only Read only and Custom. The effective rights are your role in the team **and** the token's abilities, whichever is less.
+- **Expiry** is mandatory: 7 days, 30 days, 90 days or 1 year. Each option shows the date the token stops working.
+- **Shown once.** Copy the token when it's shown. launchroom only keeps a hash. Tokens look like `<id>|lr_pat_…`. In CI, store it as `LAUNCHROOM_TOKEN`, which the [CLI](/docs/reference/cli) uses without `launchroom login`.
+- The token list shows each token's hint (its prefix and last four characters, such as `lr_pat_…a1b2`, so you can match it with the one in your CI settings), its access ("Full access", "Deploy", "Read only" or "Custom, 4 permissions"), when and from which IP it was last used, and when it expires. **Revoke** ends a token at once. Tokens created before hints existed show none.
 - Removing someone from the team deletes their tokens for that team.
 
 ### Abilities
@@ -34,7 +34,7 @@ Create a token under **Settings → API tokens** (in the **You** group) with **C
 | `domains:write` | Add and remove custom domains | Automation |
 | `data:transfer` | Import into databases and volumes, export and download their data, each audited | `launchroom db import`, `db export` |
 
-`deploy`, `env:read` and `env:write` are ticked by default. `secrets:read` and `data:transfer` are opt-in and only work for owners and admins. No token can manage servers, members, the team, backup settings or Console and Data sessions.
+**Deploy** grants `read`, `deploy`, `env:read` and `env:write`. `secrets:read` and `data:transfer` are opt-in and only work for owners and admins. No token can manage servers, members, the team, backup settings or Console and Data sessions.
 
 Actions taken with a token appear in the [audit log](/docs/teams-and-security/audit-log) like the same action in the dashboard, marked as done through that token.
 

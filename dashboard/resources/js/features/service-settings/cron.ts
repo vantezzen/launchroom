@@ -512,3 +512,170 @@ export const CRON_PRESETS: CronPreset[] = [
     { label: 'Weekly on Monday', cron: '0 9 * * 1' },
     { label: 'Monthly on the 1st', cron: '0 0 1 * *' },
 ];
+
+/**
+ * A schedule the form builder can show (Retool's "Interval | Cron"):
+ * every N minutes, every N hours at a minute, on chosen weekdays at a time
+ * (every day when none or all are chosen), or monthly on a day at a time.
+ */
+export type CronBuilder =
+    | { every: 'minutes'; step: number }
+    | { every: 'hours'; step: number; minute: number }
+    | { every: 'days'; hour: number; minute: number; weekdays: number[] }
+    | { every: 'month'; day: number; hour: number; minute: number };
+
+function whole(source: string, max: number, min = 0): number | null {
+    if (!/^\d{1,2}$/.test(source)) {
+        return null;
+    }
+
+    const value = Number(source);
+
+    return value >= min && value <= max ? value : null;
+}
+
+function stepIn(source: string, max: number): number | null {
+    if (source === '*') {
+        return 1;
+    }
+
+    const match = /^\*\/(\d{1,2})$/.exec(source);
+
+    return match ? whole(match[1], max, 1) : null;
+}
+
+function weekdayList(source: string): number[] | null {
+    if (source === '*') {
+        return [];
+    }
+
+    const days = new Set<number>();
+
+    for (const part of source.split(',')) {
+        const range = /^(\d)-(\d)$/.exec(part);
+
+        if (range) {
+            const [from, to] = [Number(range[1]), Number(range[2])];
+
+            if (from > to || to > 7) {
+                return null;
+            }
+
+            for (let day = from; day <= to; day++) {
+                days.add(day % 7);
+            }
+        } else {
+            const day = whole(part, 7);
+
+            if (day === null) {
+                return null;
+            }
+
+            days.add(day % 7);
+        }
+    }
+
+    return days.size === 7 ? [] : [...days].sort((a, b) => a - b);
+}
+
+/** The builder's view of an expression, or null when only cron can say it. */
+export function toBuilder(expression: string): CronBuilder | null {
+    const fields = normalizeCron(expression).split(' ');
+
+    if (fields.length !== 5 || fields[3] !== '*') {
+        return null;
+    }
+
+    const [minute, hour, day, , weekday] = fields;
+
+    if (day === '*' && weekday === '*' && hour === '*') {
+        const step = stepIn(minute, 59);
+
+        if (step !== null && minute !== '*') {
+            return { every: 'minutes', step };
+        }
+
+        if (minute === '*') {
+            return { every: 'minutes', step: 1 };
+        }
+    }
+
+    const m = whole(minute, 59);
+
+    if (m === null) {
+        return null;
+    }
+
+    if (day === '*' && weekday === '*') {
+        const step = stepIn(hour, 23);
+
+        if (step !== null) {
+            return { every: 'hours', step, minute: m };
+        }
+    }
+
+    const h = whole(hour, 23);
+
+    if (h === null) {
+        return null;
+    }
+
+    if (day === '*') {
+        const weekdays = weekdayList(weekday);
+
+        return weekdays === null
+            ? null
+            : { every: 'days', hour: h, minute: m, weekdays };
+    }
+
+    const d = whole(day, 31, 1);
+
+    return d !== null && weekday === '*'
+        ? { every: 'month', day: d, hour: h, minute: m }
+        : null;
+}
+
+/** "1-5" for Monday to Friday, "0,6" for the weekend; "*" for every day. */
+function weekdayField(weekdays: number[]): string {
+    const days = [...new Set(weekdays)].sort((a, b) => a - b);
+
+    if (days.length === 0 || days.length === 7) {
+        return '*';
+    }
+
+    const parts: string[] = [];
+    let start = 0;
+
+    while (start < days.length) {
+        let end = start;
+
+        while (end + 1 < days.length && days[end + 1] === days[end] + 1) {
+            end++;
+        }
+
+        parts.push(
+            end - start >= 2
+                ? `${days[start]}-${days[end]}`
+                : days.slice(start, end + 1).join(','),
+        );
+        start = end + 1;
+    }
+
+    return parts.join(',');
+}
+
+/** The cron expression the builder stands for. */
+export function fromBuilder(builder: CronBuilder): string {
+    switch (builder.every) {
+        case 'minutes':
+            return builder.step <= 1
+                ? '* * * * *'
+                : `*/${builder.step} * * * *`;
+        case 'hours':
+            return `${builder.minute} ${builder.step <= 1 ? '*' : `*/${builder.step}`} * * *`;
+        case 'days':
+            return `${builder.minute} ${builder.hour} * * ${weekdayField(builder.weekdays)}`;
+        case 'month':
+            return `${builder.minute} ${builder.hour} ${builder.day} * *`;
+    }
+}

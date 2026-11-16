@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 import { Page } from '@/components/patterns/page';
+import { TypedConfirmDialog } from '@/components/patterns/typed-confirm-dialog';
 import { UnsavedBar } from '@/components/patterns/unsaved-bar';
 import { buildSettingsIndex } from '@/components/settings/search';
 import type { SettingDraft } from '@/components/settings/search';
@@ -18,14 +19,6 @@ import type { SettingsNavGroup } from '@/components/settings/types';
 import InputError from '@/components/input-error';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-import {
-    Dialog,
-    DialogClose,
-    DialogContent,
-    DialogDescription,
-    DialogFooter,
-    DialogTitle,
-} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { PendingDeletion } from '@/features/backups/pending-deletion';
@@ -274,106 +267,69 @@ function DeleteProjectDialog({
     open: boolean;
     onOpenChange: (open: boolean) => void;
 }) {
-    const [name, setName] = useState('');
     const [skipFinalBackup, setSkipFinalBackup] = useState(false);
     const [processing, setProcessing] = useState(false);
     const [errors, setErrors] = useState<Record<string, string>>({});
     const backedUp = deletion.servicesWithBackups;
-    const ready = name === project.name;
 
     return (
-        <Dialog
+        <TypedConfirmDialog
             open={open}
             onOpenChange={(next) => {
                 onOpenChange(next);
-                setName('');
                 setSkipFinalBackup(false);
                 setErrors({});
             }}
+            title={`Delete ${project.name}?`}
+            object={{ name: project.name }}
+            goes={[
+                `${plural(deletion.services, 'service', 'services')} in ${plural(deletion.environments, 'environment', 'environments')}, with their deployments, variables and domains`,
+                'Data volumes, once the retention period ends',
+            ]}
+            kept={
+                backedUp === 0
+                    ? []
+                    : skipFinalBackup
+                      ? ['Existing snapshots in your backup destination']
+                      : [
+                            `A final backup of ${plural(backedUp, 'service', 'services')}, taken before anything is deleted`,
+                            'Every snapshot in your backup destination',
+                        ]
+            }
+            expected={project.name}
+            confirmLabel="Delete project"
+            processing={processing}
+            error={errors.confirmName ?? errors.project}
+            onConfirm={(typed) => {
+                setProcessing(true);
+                router.delete(destroy(project.id).url, {
+                    data: { confirmName: typed, skipFinalBackup },
+                    onSuccess: () => onOpenChange(false),
+                    onError: (failed) => setErrors(failed),
+                    onFinish: () => setProcessing(false),
+                });
+            }}
         >
-            <DialogContent>
-                <DialogTitle>Delete {project.name}</DialogTitle>
-                <DialogDescription>
-                    This stops and removes{' '}
-                    {plural(deletion.services, 'service', 'services')} in{' '}
-                    {plural(
-                        deletion.environments,
-                        'environment',
-                        'environments',
-                    )}
-                    , with their deployments, variables and domains. It can’t be
-                    undone.
-                </DialogDescription>
-                <form
-                    className="flex flex-col gap-4"
-                    onSubmit={(event) => {
-                        event.preventDefault();
-                        setProcessing(true);
-                        router.delete(destroy(project.id).url, {
-                            data: { confirmName: name, skipFinalBackup },
-                            onSuccess: () => onOpenChange(false),
-                            onError: (failed) => setErrors(failed),
-                            onFinish: () => setProcessing(false),
-                        });
-                    }}
-                >
-                    <p className="type-small text-muted-foreground">
-                        {backedUp > 0
-                            ? `${plural(backedUp, 'service has', 'services have')} backups. A final backup of their data is taken before the project is deleted. Snapshots stay in your backup destination, and data volumes are deleted after the retention period.`
-                            : 'Data volumes stay on their servers for the retention period, then are deleted.'}
-                    </p>
-                    {backedUp > 0 && deletion.canSkipFinalBackup && (
-                        <div className="flex items-start gap-3">
-                            <Checkbox
-                                id="skip-final-backup"
-                                checked={skipFinalBackup}
-                                onCheckedChange={(checked) =>
-                                    setSkipFinalBackup(checked === true)
-                                }
-                                className="mt-0.5"
-                            />
-                            <Label
-                                htmlFor="skip-final-backup"
-                                className="type-body font-normal"
-                            >
-                                Delete without a final backup (recorded in the
-                                audit log). Only the existing snapshots remain.
-                            </Label>
-                        </div>
-                    )}
-                    <InputError message={errors.project} />
-                    <div className="grid gap-2">
-                        <Label htmlFor="confirm-project-name">
-                            Type{' '}
-                            <span className="font-mono">{project.name}</span> to
-                            confirm
-                        </Label>
-                        <Input
-                            id="confirm-project-name"
-                            value={name}
-                            autoComplete="off"
-                            spellCheck={false}
-                            onChange={(event) => setName(event.target.value)}
-                        />
-                        <InputError message={errors.confirmName} />
-                    </div>
-                    <DialogFooter className="gap-2">
-                        <DialogClose asChild>
-                            <Button type="button" variant="secondary">
-                                Cancel
-                            </Button>
-                        </DialogClose>
-                        <Button
-                            type="submit"
-                            variant="destructive"
-                            disabled={!ready || processing}
-                        >
-                            Delete project
-                        </Button>
-                    </DialogFooter>
-                </form>
-            </DialogContent>
-        </Dialog>
+            {backedUp > 0 && deletion.canSkipFinalBackup && (
+                <div className="flex items-start gap-3">
+                    <Checkbox
+                        id="skip-final-backup"
+                        checked={skipFinalBackup}
+                        onCheckedChange={(checked) =>
+                            setSkipFinalBackup(checked === true)
+                        }
+                        className="mt-0.5"
+                    />
+                    <Label
+                        htmlFor="skip-final-backup"
+                        className="type-body font-normal"
+                    >
+                        Delete without a final backup (recorded in the audit
+                        log)
+                    </Label>
+                </div>
+            )}
+        </TypedConfirmDialog>
     );
 }
 

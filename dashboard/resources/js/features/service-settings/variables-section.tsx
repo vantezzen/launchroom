@@ -9,6 +9,7 @@ import {
     MoreHorizontal,
     Plug,
     Plus,
+    Search,
     X,
 } from 'lucide-react';
 import type { ReactNode } from 'react';
@@ -17,6 +18,7 @@ import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
 import {
     Collapsible,
     CollapsibleContent,
@@ -49,6 +51,7 @@ import {
     useStagedChanges,
 } from '@/features/staged-changes/use-staged-changes';
 import { cn } from '@/lib/utils';
+import { plural } from '@/lib/format';
 import { destroy, index } from '@/routes/variables';
 import { usage } from '@/routes/variables/shared';
 import { requestJson } from '@/lib/http';
@@ -215,6 +218,7 @@ export function VariablesSection({
     const [importing, setImporting] = useState<string | null>(null);
     const [deleting, setDeleting] = useState<Row | null>(null);
     const [rawMode, setRawMode] = useState(false);
+    const [search, setSearch] = useState('');
 
     const changed = (message: string) => {
         toast.success(message);
@@ -371,6 +375,27 @@ export function VariablesSection({
 
     const broken = data.variables.filter((row) => row.errors.length > 0).length;
     const usedShared = data.shared.filter((row) => row.used).length;
+    // The Environments column only when some row reaches past this one.
+    const showTargets = data.variables.some(
+        (row) =>
+            row.inheritedFrom !== null ||
+            (row.connection === null &&
+                otherTargets(row, environment).length > 0),
+    );
+    const query = search.trim().toLowerCase();
+    const rows =
+        query === ''
+            ? data.variables
+            : data.variables.filter((row) =>
+                  [
+                      row.key,
+                      row.type === 'secret' ? '' : row.value,
+                      row.preview ?? '',
+                  ]
+                      .join(' ')
+                      .toLowerCase()
+                      .includes(query),
+              );
 
     return (
         <SettingsPage
@@ -456,43 +481,83 @@ export function VariablesSection({
                             No variables in {environmentName} yet.
                         </EmptyState>
                     ) : (
-                        <div className="overflow-hidden rounded-xl border bg-card shadow-card">
-                            <table className="w-full table-fixed type-body">
-                                <thead>
-                                    <tr className="border-b bg-recessed text-left type-label text-muted-foreground">
-                                        <th className="w-[40%] py-2.5 pr-3 pl-5 font-medium">
-                                            Key
-                                        </th>
-                                        <th className="py-2.5 pr-3 font-medium">
-                                            Value
-                                        </th>
-                                        <th className="hidden w-32 py-2.5 pr-3 font-medium @xl:table-cell">
-                                            Environments
-                                        </th>
-                                        <th className="w-12 py-2.5 pr-3">
-                                            <span className="sr-only">
-                                                Actions
-                                            </span>
-                                        </th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y">
-                                    {data.variables.map((row) => (
-                                        <VariableRow
-                                            key={row.id}
-                                            row={row}
-                                            staged={stagedKinds.get(row.id)}
-                                            project={project}
-                                            environment={environment}
-                                            onEdit={() =>
-                                                setDialog({ variable: row })
-                                            }
-                                            onRemove={() => setDeleting(row)}
+                        <>
+                            <div className="flex min-h-8 flex-wrap items-center justify-between gap-2">
+                                <span className="type-label text-muted-foreground tabular-nums">
+                                    {query === ''
+                                        ? plural(
+                                              data.variables.length,
+                                              'variable',
+                                          )
+                                        : `${rows.length} of ${plural(data.variables.length, 'variable')}`}
+                                </span>
+                                {data.variables.length > SEARCH_FROM && (
+                                    <div className="relative w-full max-w-64">
+                                        <Search
+                                            aria-hidden="true"
+                                            className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground"
                                         />
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
+                                        <Input
+                                            type="search"
+                                            value={search}
+                                            onChange={(event) =>
+                                                setSearch(event.target.value)
+                                            }
+                                            placeholder="Search variables"
+                                            aria-label="Search variables"
+                                            className="h-8 pl-8"
+                                        />
+                                    </div>
+                                )}
+                            </div>
+                            <div className="overflow-hidden rounded-xl border bg-card shadow-card">
+                                <table className="w-full table-fixed type-body">
+                                    <thead>
+                                        <tr className="border-b bg-recessed text-left type-label text-muted-foreground">
+                                            <th className="w-[40%] py-2.5 pr-3 pl-5 font-medium">
+                                                Key
+                                            </th>
+                                            <th className="py-2.5 pr-3 font-medium">
+                                                Value
+                                            </th>
+                                            {showTargets && (
+                                                <th className="hidden w-32 py-2.5 pr-3 font-medium @xl:table-cell">
+                                                    Environments
+                                                </th>
+                                            )}
+                                            <th className="w-12 py-2.5 pr-3">
+                                                <span className="sr-only">
+                                                    Actions
+                                                </span>
+                                            </th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y">
+                                        {rows.map((row) => (
+                                            <VariableRow
+                                                key={row.id}
+                                                row={row}
+                                                showTargets={showTargets}
+                                                staged={stagedKinds.get(row.id)}
+                                                project={project}
+                                                environment={environment}
+                                                onEdit={() =>
+                                                    setDialog({ variable: row })
+                                                }
+                                                onRemove={() =>
+                                                    setDeleting(row)
+                                                }
+                                            />
+                                        ))}
+                                    </tbody>
+                                </table>
+                                {rows.length === 0 && (
+                                    <p className="px-5 py-6 text-center type-body text-muted-foreground">
+                                        No variable matches “{search.trim()}”.
+                                    </p>
+                                )}
+                            </div>
+                        </>
                     )}
                 </section>
 
@@ -675,9 +740,18 @@ export function VariablesSection({
     );
 }
 
-/** One variable: key with its cues, value (secrets masked), environments, ⋯. */
+/** Above this many variables the list gets a search field. */
+const SEARCH_FROM = 8;
+
+/** Where else a variable applies besides the open environment ("Also staging"). */
+function otherTargets(row: Row, environment: string): Row['targets'] {
+    return row.targets.filter((target) => target.environmentId !== environment);
+}
+
+/** One variable: key with its cues, value (secrets masked), other environments, ⋯. */
 function VariableRow({
     row,
+    showTargets,
     staged,
     project,
     environment,
@@ -685,6 +759,7 @@ function VariableRow({
     onRemove,
 }: {
     row: Row;
+    showTargets: boolean;
     staged: App.Enums.ChangeKind | undefined;
     project: string;
     environment: string;
@@ -765,27 +840,36 @@ function VariableRow({
                     ))}
                 </div>
             </td>
-            <td className="hidden py-3 pr-3 @xl:table-cell">
-                <span className="flex flex-wrap gap-1">
-                    {row.connection !== null ? (
-                        <span className="type-small text-muted-foreground">
-                            {row.inheritedFrom !== null
-                                ? `From ${row.inheritedFrom}`
-                                : 'Where connected'}
-                        </span>
-                    ) : (
-                        row.targets.map((target) => (
-                            <Badge
-                                key={`${target.environmentId}-${target.label}`}
-                                variant="secondary"
-                                className="font-normal"
-                            >
-                                {target.label}
-                            </Badge>
-                        ))
-                    )}
-                </span>
-            </td>
+            {showTargets && (
+                <td className="hidden py-3 pr-3 @xl:table-cell">
+                    <span className="flex flex-wrap items-center gap-1">
+                        {row.connection !== null
+                            ? row.inheritedFrom !== null && (
+                                  <span className="type-small text-muted-foreground">
+                                      From {row.inheritedFrom}
+                                  </span>
+                              )
+                            : otherTargets(row, environment).length > 0 && (
+                                  <>
+                                      <span className="type-small text-muted-foreground">
+                                          Also
+                                      </span>
+                                      {otherTargets(row, environment).map(
+                                          (target) => (
+                                              <Badge
+                                                  key={`${target.environmentId}-${target.label}`}
+                                                  variant="secondary"
+                                                  className="font-normal"
+                                              >
+                                                  {target.label}
+                                              </Badge>
+                                          ),
+                                      )}
+                                  </>
+                              )}
+                    </span>
+                </td>
+            )}
             <td className="py-2 pr-3 text-right">
                 {row.canEdit && (
                     <DropdownMenu>

@@ -8,6 +8,7 @@ use App\Data\Backups\RecoveryKitStatusData;
 use App\Data\Instance\OnboardingProgressData;
 use App\Data\Instance\RealtimeConfigData;
 use App\Data\Servers\ControlPlaneLoadData;
+use App\Data\Servers\FleetStatusData;
 use App\Data\Teams\TeamContextData;
 use Spatie\LaravelData\Data;
 
@@ -38,8 +39,12 @@ final class SharedPropsData extends Data
         public ?OnboardingProgressData $onboardingProgress,
         /** Heavy load on the control-plane server (docs/08 §4), for people who manage it. */
         public ?ControlPlaneLoadData $controlPlaneLoad,
-        /** Open "Action needed" findings of the current team (docs/22 §9.1). */
+        /** Vulnerabilities that need action in the current team, per advisory group (docs/22 §9.1). */
         public int $securityActionNeeded,
+        /** Firing alerts of the current team: the sidebar Activity count (docs/08 §1). */
+        public int $openAlertCount,
+        /** The servers' line under the team name (design-system §13.2); null without access. */
+        public ?FleetStatusData $fleet,
         /** A release is ready (instance owners, cached check only). */
         public bool $updateAvailable,
     ) {}

@@ -15,15 +15,15 @@ Nothing has to be configured by hand, so problems are usually about reachability
 
 ## Where to look
 
-- A server's **Network** tab, section **Private network**: its state (**Connected**, **Connecting**, **Error** or **Not connected**), how it reaches the dashboard's server ("Connected · direct" or "Connected · relayed"), and one row per other server with the round trip over the last 24 hours, measured speeds in both directions and how many checks failed today.
-- **Settings → Network** (instance owners): whether the built-in network or your own Tailscale is in use, and which servers are on it.
+- A server's **Network** tab, section **Private network**: its state (**Connected**, **Joining**, **Can’t join** or **Not connected**), how it reaches the dashboard's server (**Connected** with **Direct** or **Relayed**), and one row per other server with the round trip over the last 24 hours, measured speeds in both directions and how many checks failed today.
+- **Settings → Network** (instance owners): whether the built-in network or your own Tailscale is in use. **On the network** lists each server with its private address and how it reaches the dashboard's server, with the round trip ("Direct, 0.4 ms" or "Relayed via fra").
 - On a server: the private network client runs as the container `lr-system-tailscale`. `docker logs --tail=100 lr-system-tailscale` shows its log, and launchroomd's log says when it restarts it.
 
 ## A second server joined, but services can't reach each other
 
 Services in one environment reach each other by their slug and port, for example `postgres:5432`, wherever they run. On another server, launchroomd provides that name through a forwarder, so the address stays the same when services move. If an app on one server gets connection errors or "host not found" for a service on another:
 
-1. **Check that both servers are Connected.** Check the **Private network** section on both servers. A server in **Error** names the reason. The most common one is a missing `/dev/net/tun` device: some LXC containers and rootless setups don't have it, and then the server can't join. Enable TUN for the container or VM, or run apps that need each other on the same server.
+1. **Check that both servers are Connected.** Check the **Private network** section on both servers. A server that **Can’t join** says what that means, with the technical reason under **Details**. The most common one is a missing `/dev/net/tun` device: some LXC containers and rootless setups don't have it, and then the server can't join. Enable TUN for the container or VM, or run apps that need each other on the same server.
 2. **Check that both are in the same environment.** Services only reach services of their own environment. A staging app can't reach the production database by name, by design.
 3. **Check the name.** Use the service's slug (shown in its settings) and the port the service listens on, or reference its variables with `${{postgres.DATABASE_URL}}` so the value is always right. See [Variables](/docs/projects/variables#references).
 4. **Wait if it started a moment ago.** A new replica only counts as healthy once every server it needs has opened its firewall for it, and a service published on the private network waits until its server has a private address. Right after a server joined or rebooted, give it a minute.
@@ -31,7 +31,7 @@ Services in one environment reach each other by their slug and port, for example
 
 ## Links are relayed instead of direct
 
-The server shows **Connected · relayed** ("Traffic is relayed through the dashboard's server (works behind any NAT, slower)").
+The server shows **Connected** with **Relayed**. Settings → Network lists it as "Relayed via" the dashboard's server.
 
 **Cause.** The two servers couldn't open a direct UDP path to each other, so traffic goes through a relay on the dashboard's server over HTTPS (port 443). This always works, but it adds latency and limits throughput to what the dashboard's server can pass on. Typical reasons:
 

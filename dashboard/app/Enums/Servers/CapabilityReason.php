@@ -36,7 +36,7 @@ enum CapabilityReason: string
         $vm = $engine instanceof DockerEngine && $engine->inVm() ? $engine->label() : 'the engine';
 
         return match ([$this, $capability]) {
-            [self::FullSocket, RuntimeCapability::DockerAccess] => 'launchroom holds the full Docker socket. Re-run the installer to put the Docker guard in front of it.',
+            [self::FullSocket, RuntimeCapability::DockerAccess] => 'launchroom has more access to this server than it needs. Run the install command on the server again to limit it.',
             [self::Vm, RuntimeCapability::EdgePorts] => "Docker runs in {$vm}'s Linux VM here, so ports 80 and 443 open inside the VM, not on your network. Let a public server serve traffic.",
             [self::Vm, RuntimeCapability::ClientAddresses] => "Connections reach the VM through {$vm}'s port forwarding, so apps see an internal address.",
             [self::Vm, RuntimeCapability::Firewall] => "Rules apply inside {$vm}'s Linux VM, where the containers run. They also keep apps away from the machine itself, whose gateway addresses are private and dropped.",

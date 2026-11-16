@@ -109,3 +109,18 @@ test('own Tailscale input is validated', function (array $input, string $field):
     'empty key' => [['loginServer' => 'https://controlplane.tailscale.com', 'authKey' => ''], 'authKey'],
     'key with spaces' => [['loginServer' => 'https://controlplane.tailscale.com', 'authKey' => 'tskey auth'], 'authKey'],
 ]);
+
+test('"On the network" gets each server’s picture and the measured links between servers', function (): void {
+    $home = Server::factory()->online()->create(['team_id' => $this->team->id, 'name' => 'home', 'is_control_plane' => true, 'mesh_ip' => '100.64.0.1']);
+    $home->forceFill(['mesh_status' => ['state' => 'connected', 'ipv4' => '100.64.0.1', 'ipv6' => null, 'message' => null, 'checkedAt' => null, 'peers' => [['ipv4' => '100.64.0.2', 'online' => true, 'connection' => 'direct', 'relay' => null, 'lastHandshake' => null]]]])->save();
+    $other = Server::factory()->online()->create(['team_id' => $this->team->id, 'name' => 'other', 'mesh_ip' => '100.64.0.2']);
+
+    $this->actingAs($this->owner)->get(route('network-settings.edit'))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page->component('settings/network')
+            ->where('members.0.name', 'home')
+            ->has('members.0.device')
+            ->has('meshLinks', 1)
+            ->where('meshLinks.0.path', 'direct')
+            ->where('meshLinks.0.from', fn (string $id): bool => in_array($id, [$home->public_id, $other->public_id], true)));
+});

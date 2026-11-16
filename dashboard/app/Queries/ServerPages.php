@@ -12,6 +12,7 @@ use App\Enums\ServerRole;
 use App\Enums\ServerTab;
 use App\Models\Placement;
 use App\Models\Server;
+use App\Models\ServerEnrollment;
 use App\Models\Team;
 use App\Models\User;
 use App\Support\Servers\HostRoleLimits;
@@ -84,7 +85,7 @@ final readonly class ServerPages
                     ->where('expires_at', '>', now())
                     ->latest()
                     ->get()
-                    ->map(EnrollmentData::fromEnrollment(...))
+                    ->map(static fn (ServerEnrollment $enrollment): EnrollmentData => EnrollmentData::fromEnrollment($enrollment))
                     ->values()
                     ->all()
                 : [],

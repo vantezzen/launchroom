@@ -1,9 +1,15 @@
-import { TriangleAlert } from 'lucide-react';
+import { Check, ChevronDown, TriangleAlert } from 'lucide-react';
 import { createContext, useContext, useState } from 'react';
 import type { ComponentProps, ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { ProgressRing } from '@/components/progress-ring';
 import { MetaDivider } from '@/components/patterns/meta-line';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 
 type Slot = {
@@ -40,7 +46,7 @@ export function FloatingBarOutlet({ overlay = false }: { overlay?: boolean }) {
                 // Full-bleed pages (canvas): float over the surface.
                 overlay
                     ? 'absolute inset-x-0 bottom-0'
-                    : 'sticky bottom-0 mt-auto',
+                    : 'sticky bottom-(--phone-nav-h) mt-auto',
             )}
         />
     );
@@ -119,6 +125,91 @@ export function FloatingBarButton({
     );
 }
 
+export type SaveChoice = {
+    id: string;
+    label: string;
+    /** One quiet line: what happens, or why it can't run now. */
+    hint: string;
+    disabled?: boolean;
+    onSelect: () => void;
+};
+
+/**
+ * The floating bar's Save as a split button (Laravel Cloud "Save ▾"): the
+ * left half runs the default choice, the chevron lists every choice with a
+ * line saying what it does. A disabled choice stays listed with its reason.
+ */
+export function FloatingSaveSplit({
+    choices,
+    defaultId,
+    busy = false,
+}: {
+    choices: SaveChoice[];
+    defaultId: string;
+    busy?: boolean;
+}) {
+    const main =
+        choices.find((choice) => choice.id === defaultId) ?? choices[0];
+
+    return (
+        <span className="inline-flex items-center rounded-lg bg-background text-foreground">
+            <FloatingBarButton
+                variant="primary"
+                className="rounded-r-none pr-2.5"
+                busy={busy}
+                disabled={busy || main.disabled}
+                onClick={main.onSelect}
+            >
+                {main.label}
+            </FloatingBarButton>
+            <span aria-hidden="true" className="h-4 w-px bg-foreground/15" />
+            <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                    <FloatingBarButton
+                        variant="primary"
+                        aria-label="More ways to save"
+                        className="rounded-l-none px-2"
+                        disabled={busy}
+                    >
+                        <ChevronDown aria-hidden="true" className="size-3.5" />
+                    </FloatingBarButton>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" side="top" className="w-72">
+                    {choices.map((choice) => (
+                        <DropdownMenuItem
+                            key={choice.id}
+                            disabled={choice.disabled}
+                            onSelect={choice.onSelect}
+                            className="items-start data-[disabled]:opacity-100"
+                        >
+                            <Check
+                                aria-hidden="true"
+                                className={cn(
+                                    'mt-0.5',
+                                    choice.id !== main.id && 'invisible',
+                                )}
+                            />
+                            <span className="flex flex-col">
+                                <span
+                                    className={cn(
+                                        choice.disabled &&
+                                            'text-muted-foreground',
+                                    )}
+                                >
+                                    {choice.label}
+                                </span>
+                                <span className="type-small text-muted-foreground">
+                                    {choice.hint}
+                                </span>
+                            </span>
+                        </DropdownMenuItem>
+                    ))}
+                </DropdownMenuContent>
+            </DropdownMenu>
+        </span>
+    );
+}
+
 type UnsavedBarProps = {
     /** Shown while the form is dirty. */
     open: boolean;
@@ -172,6 +263,10 @@ type StagedBarProps = {
     /** Consequence in a few words: "api will restart". */
     summary?: string;
     onDiscard: () => void;
+    /** What Discard drops, when it isn't everything counted ("Discard web’s changes"). */
+    discardLabel?: string;
+    /** Opens the full review (the staged changes sheet). */
+    onDetails?: () => void;
     /** Applies the staged changes (the affected services redeploy). */
     onDeploy: () => void;
     deploying?: boolean;
@@ -182,13 +277,15 @@ type StagedBarProps = {
 };
 
 /**
- * "2 changes, api will restart, Discard, Apply" for staged changes
+ * "2 changes, api will restart, Details, Discard, Apply" for staged changes
  * (direction §5.7, D75). The count uses the staged (dashed) cue.
  */
 export function StagedBar({
     count,
     summary,
     onDiscard,
+    discardLabel = 'Discard',
+    onDetails,
     onDeploy,
     deploying = false,
     deployLabel = 'Apply',
@@ -216,8 +313,13 @@ export function StagedBar({
                     </span>
                 )}
             </span>
+            {onDetails && (
+                <FloatingBarButton onClick={onDetails}>
+                    Details
+                </FloatingBarButton>
+            )}
             <FloatingBarButton onClick={onDiscard} disabled={deploying}>
-                Discard
+                {discardLabel}
             </FloatingBarButton>
             <FloatingBarButton
                 variant="primary"

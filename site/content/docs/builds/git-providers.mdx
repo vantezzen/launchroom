@@ -143,6 +143,14 @@ Builds clone only with the pinned host key. If the server's key changes later, c
 
 Without a webhook, launchroom checks the repository for new commits every minute. For instant deploys, use **Set up a webhook** on the connection card: it shows a URL and a secret. Calls must be signed with the secret as `X-Launchroom-Signature: sha256=<hex HMAC-SHA256 of the body>` (`X-Hub-Signature-256` is also accepted). A valid call tells launchroom to check now. launchroom doesn't read the body. Gitea, Forgejo, Bitbucket Server and a `post-receive` hook can all call it.
 
+## Disconnect a provider
+
+Each connection card in **Settings → Git** has a **⋯** menu with **Disconnect…** (or **Remove setup…** for a connection you didn't finish). Confirm in the popover. Services from that connection's repositories stop receiving pushes and can't build until you connect again.
+
+- **GitHub**: the app stays on GitHub, where you can delete it.
+- **GitLab, Gitea and Forgejo**: launchroom deletes its token and the webhooks it added.
+- **Any git server**: launchroom deletes the deploy key and the pinned host key. Remove the deploy key from the git server too.
+
 ## Git servers on a private network
 
 Self-managed GitLab, Gitea, Forgejo or SSH servers are often on a private network. By default launchroom only connects to public addresses. An instance owner can tick **This server is on my private network** when connecting. The choice is audited, and only then is plain `http://` allowed. Loopback, link-local and metadata addresses, and launchroom's own services, are always refused.

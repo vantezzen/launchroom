@@ -43,6 +43,7 @@ export function RoleCard({
     disabled,
     onToggle,
     note,
+    needs,
     ...props
 }: Omit<ComponentProps<'button'>, 'role'> & {
     role: App.Enums.ServerRole;
@@ -51,6 +52,8 @@ export function RoleCard({
     onToggle?: () => void;
     /** Why this machine can't take the role (a Mac never serves traffic, D53). */
     note?: string;
+    /** What the role needs from the machine ("Needs a public IP"), Add server only. */
+    needs?: string;
 }) {
     const Icon = roleIcons[role];
 
@@ -84,6 +87,11 @@ export function RoleCard({
             <span className="type-small text-muted-foreground">
                 {roleDescriptions[role]}
             </span>
+            {needs && !note && (
+                <span className="mt-2 border-t pt-2 type-small text-muted-foreground">
+                    {needs}
+                </span>
+            )}
             {note && (
                 <span className="mt-1 type-small text-foreground">
                     <span className="sr-only">Not available: </span>

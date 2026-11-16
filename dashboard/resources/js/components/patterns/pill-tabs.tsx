@@ -1,6 +1,6 @@
 import { Link } from '@inertiajs/react';
 import { useLayoutEffect, useRef, useState } from 'react';
-import type { KeyboardEvent } from 'react';
+import type { KeyboardEvent, ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 
 export type PillTab = {
@@ -8,6 +8,11 @@ export type PillTab = {
     href: string;
     active: boolean;
     count?: number;
+    /**
+     * Live state after the label (a progress ring while a deploy runs, ✕
+     * when the last one failed). It carries its own accessible name.
+     */
+    indicator?: ReactNode;
 };
 
 /**
@@ -176,6 +181,7 @@ export function PillTabs({
                             {tab.count}
                         </span>
                     )}
+                    {tab.indicator}
                 </Link>
             ))}
         </div>

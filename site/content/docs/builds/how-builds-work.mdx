@@ -20,7 +20,7 @@ launchroom never switches builders silently. If your Dockerfile looks like a dev
 
 ## The plan, before anything builds
 
-When you add a repository, and before every deploy whose build inputs changed, launchroom runs a plan on a build server. It clones, detects and prepares a build plan in a few seconds. Settings → Build shows the result as one line, for example "Next.js 16 · npm · port 3000", with:
+When you add a repository, and before every deploy whose build inputs changed, launchroom runs a plan on a build server. It clones, detects and prepares a build plan in a few seconds. Settings → Build shows the result, with:
 
 - the detected framework, package manager and runtime, with versions and where each came from (`.nvmrc`, `package.json`, …)
 - install, build and start commands, the port and the health path
@@ -100,7 +100,7 @@ Most variables are runtime only. Changing one restarts the service with the same
 - prefixes that frameworks bake into the browser bundle: `NEXT_PUBLIC_*`, `VITE_*`, `PUBLIC_*`, `REACT_APP_*`, `EXPO_PUBLIC_*`, `GATSBY_*`
 - build tooling such as `SENTRY_AUTH_TOKEN`, `NODE_OPTIONS`, `NPM_TOKEN`, `COMPOSER_AUTH` and `PIP_INDEX_URL`
 
-You can change a variable's exposure under Advanced in the [Variables](/docs/projects/variables) tab. Build-time values reach the build only as BuildKit secrets, never as build arguments, so they don't end up in image layers. The exception is a Dockerfile that declares an `ARG` with the same name as a non-secret build-time variable. That variable is passed as a build argument. Changing a build-time variable triggers a rebuild, and the staged changes say so ("web: rebuild · api: restart").
+You can change a variable's exposure under Advanced in the [Variables](/docs/projects/variables) tab. Build-time values reach the build only as BuildKit secrets, never as build arguments, so they don't end up in image layers. The exception is a Dockerfile that declares an `ARG` with the same name as a non-secret build-time variable. That variable is passed as a build argument. Changing a build-time variable triggers a rebuild, and the staged changes say which services rebuild and which only restart.
 
 <Callout type="warn" title="Public prefixes are public">
 Variables like `NEXT_PUBLIC_*` are baked into the browser bundle and visible to anyone, so they can't be secrets.
@@ -116,7 +116,7 @@ BuildKit runs as a rootless system container that launchroomd starts on demand. 
 
 Base images and Railpack's images are pulled through launchroom's registry mirror, so upstream outages or rate limits don't break your builds. Build logs are split into steps (clone, plan, install, build, push). Every secret value is masked before a log line leaves the server. The first build has no saved build cache yet: it starts from scratch, which is informational and does not fail the build.
 
-The deployment's **Steps** section follows new output while the build runs. Scroll up to pause, then use **Jump to latest** to resume. Search covers every step; **Expand all**, **Wrap**, **Timestamps**, and full-log copy and download are in the same toolbar. A failed step opens at its first error, with error lines highlighted.
+The deployment's **Steps** section follows new output while the build runs. Scroll up to pause, then use **Jump to latest** to resume. Search covers every step; **Expand all**, **Wrap**, **Timestamps**, and full-log copy and download are in the same toolbar. A failed step opens at its first error, with error lines highlighted. When the log has errors or warnings, **All**, **Errors** and **Warnings** (each with a count) narrow the steps to those lines.
 
 ## Images and immutable deployments
 

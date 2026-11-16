@@ -95,6 +95,8 @@ final readonly class FindingDetail
             canChangeFirewall: $gate->allows('update', $instance),
             firewallUrl: "{$card->service->href}/firewall",
             deployment: $this->deployment($finding),
+            lastSeenAt: $finding->last_seen_at->toIso8601ZuluString(),
+            resolvedAt: $finding->resolved_at?->toIso8601ZuluString(),
         );
     }
 

@@ -368,6 +368,9 @@ export function SourceSection({ context }: { context: SettingsContext }) {
                             dirty={form.isDirty}
                             processing={form.processing}
                             onReset={() => form.reset()}
+                            stages="rebuild"
+                            fields={form.data}
+                            labels={{ branchOverride: ['Branch', 'branch'] }}
                         />
                     )}
                 </form>

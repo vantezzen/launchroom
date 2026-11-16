@@ -16,6 +16,10 @@ the Developer role or higher, and every use is in the audit log.
 
 Databases, workers and cron jobs have no version of their own, so they show Restart and Stop only.
 
+While a deployment you started runs, a notification at the bottom of the screen says what it is doing, for example
+"Building", with **Open** and, while it can still stop, **Cancel**. When it finishes, the notification says the service
+is live (with **Open**) or failed to deploy (with **See why**).
+
 ## Restart
 
 A restart is a deployment of its own, marked **Restart** in the deployments list. It runs like any other deploy:

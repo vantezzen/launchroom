@@ -14,7 +14,7 @@ import { DatabaseForm, ImageForm, ProcessForm } from './simple-forms';
 import type { AddChoice as Choice } from './store';
 import type { AddServicePayload } from './types';
 
-const choices: {
+export const choices: {
     id: Choice;
     logo: string;
     title: string;

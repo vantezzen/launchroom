@@ -93,6 +93,24 @@ test('deployed services show their status and are no longer staged', function ()
         ->assertInertia(fn ($page) => $page->where('projects.0.environments.0.status.label', 'Live'));
 });
 
+test('a staged node says what is staged, and an image pinned by digest shows its name only', function (): void {
+    resolve(DeployEnvironment::class)->handle($this->production, null, AuditActor::system());
+
+    $this->actingAs($this->developer)
+        ->patch(route('projects.services.settings', [$this->project, $this->production, $this->web]), [
+            'scaling' => ['replicas' => 2, 'cpus' => 0.5, 'memoryMb' => 256],
+        ])
+        ->assertRedirect();
+
+    $this->actingAs($this->viewer)->get(route('projects.canvas', [$this->project, $this->production]))
+        ->assertInertia(fn ($page) => $page
+            ->where('nodes.0.subtitle', 'nginx')
+            ->where('nodes.0.staged', 'restart')
+            ->where('nodes.0.stagedSummary', '3 settings')
+            ->where('nodes.1.stagedSummary', null)
+            ->where('nodes.1.schedule', null));
+});
+
 test('an environment of another project is not found under this project', function (): void {
     $other = Projects::create($this->team, 'Other')->production()->sole();
 

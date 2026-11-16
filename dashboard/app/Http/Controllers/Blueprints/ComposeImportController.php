@@ -54,7 +54,7 @@ final class ComposeImportController extends Controller
         Gate::authorize('create', [Project::class, $team]);
 
         try {
-            ['translation' => $translation, 'path' => $path] = $sources->translate($team, $data);
+            ['translation' => $translation, 'repository' => $repository, 'path' => $path] = $sources->translate($team, $data);
         } catch (ComposeRejected $e) {
             return new JsonResponse(new ComposePreviewData(preview: null, error: $e->getMessage(), errorLine: $e->yamlLine));
         } catch (DomainRuleViolation $e) {
@@ -70,7 +70,7 @@ final class ComposeImportController extends Controller
             inputs: $translation->inputs,
             missingFiles: $translation->missingFiles,
             skipped: $translation->skipped,
-            suggestedName: $translation->blueprint->name === ComposeTranslator::UNNAMED ? $first?->name : $translation->blueprint->name,
+            suggestedName: ComposeTranslator::suggestedName($translation->blueprint, $repository?->repositoryFullName()) ?? $first?->name,
             path: $path,
         ));
     }

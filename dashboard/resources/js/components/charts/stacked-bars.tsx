@@ -39,6 +39,12 @@ type StackedBarsProps = {
     markers?: ChartMarker[];
     /** Click or Enter on a bucket opens these links for its time (logs at that moment). */
     drill?: ChartDrill;
+    /**
+     * Each bar fills the height and shows the series' shares of its bucket
+     * (small categories stay visible); legend, readout and table keep the
+     * counts.
+     */
+    share?: boolean;
     className?: string;
 };
 
@@ -64,6 +70,7 @@ export function StackedBars({
     table = true,
     markers = [],
     drill,
+    share = false,
     className,
 }: StackedBarsProps) {
     const [ref, width] = useMeasuredWidth<HTMLDivElement>();
@@ -81,7 +88,12 @@ export function StackedBars({
         return null;
     }
 
-    const top = niceMax(Math.max(...totals));
+    const top = share ? 100 : niceMax(Math.max(...totals));
+    // Bar heights: counts, or each bucket's shares in percent.
+    const barValue = (v: number, i: number) =>
+        share ? (totals[i] > 0 ? (v / totals[i]) * 100 : 0) : v;
+    const axisValue = (v: number) =>
+        share ? `${Math.round(v)}%` : formatValue(v);
     const t0 = times[0];
     const span = times[times.length - 1] + bucketMs - t0;
     const inRange = markers.filter((m) => m.t >= t0 && m.t <= t0 + span);
@@ -304,7 +316,7 @@ export function StackedBars({
                                         textAnchor="end"
                                         className="fill-muted-foreground text-[11px] tabular-nums"
                                     >
-                                        {formatValue(top * f)}
+                                        {axisValue(top * f)}
                                     </text>
                                 </g>
                             ))}
@@ -322,7 +334,10 @@ export function StackedBars({
                                         }
                                     >
                                         {visible.map((s) => {
-                                            const v = s.values[i] ?? 0;
+                                            const v = barValue(
+                                                s.values[i] ?? 0,
+                                                i,
+                                            );
 
                                             if (v <= 0) {
                                                 return null;

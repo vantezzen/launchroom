@@ -19,6 +19,7 @@ import { Spinner } from '@/components/ui/spinner';
 import {
     AbilityFields,
     defaultAbilities,
+    lifetimeEnd,
     lifetimeLabel,
 } from '@/features/api-tokens/ability-fields';
 import { AuthFrame } from '@/features/auth/auth-frame';
@@ -232,42 +233,80 @@ function Approve({
                         </div>
                     </div>
 
-                    {teams.length > 1 && (
+                    <div
+                        className={
+                            teams.length > 1
+                                ? 'grid items-start gap-4 sm:grid-cols-2'
+                                : 'grid gap-4'
+                        }
+                    >
+                        {teams.length > 1 && (
+                            <div className="grid gap-2">
+                                <Label htmlFor="team">Team</Label>
+                                <Select
+                                    value={form.data.team}
+                                    onValueChange={(value) => {
+                                        const next = teams.find(
+                                            (entry) => entry.id === value,
+                                        );
+                                        form.setData({
+                                            ...form.data,
+                                            team: value,
+                                            abilities: defaultAbilities(next),
+                                        });
+                                    }}
+                                >
+                                    <SelectTrigger id="team" className="w-full">
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {teams.map((entry) => (
+                                            <SelectItem
+                                                key={entry.id}
+                                                value={entry.id}
+                                            >
+                                                {entry.name}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                                <InputError message={form.errors.team} />
+                            </div>
+                        )}
+
                         <div className="grid gap-2">
-                            <Label htmlFor="team">Team</Label>
+                            <Label htmlFor="lifetime">
+                                Stays signed in for
+                            </Label>
                             <Select
-                                value={form.data.team}
-                                onValueChange={(value) => {
-                                    const next = teams.find(
-                                        (entry) => entry.id === value,
-                                    );
-                                    form.setData({
-                                        ...form.data,
-                                        team: value,
-                                        abilities: defaultAbilities(next),
-                                    });
-                                }}
+                                value={String(form.data.expiresInDays)}
+                                onValueChange={(value) =>
+                                    form.setData('expiresInDays', Number(value))
+                                }
                             >
-                                <SelectTrigger id="team" className="w-full">
+                                <SelectTrigger id="lifetime" className="w-full">
                                     <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    {teams.map((entry) => (
+                                    {lifetimes.map((days) => (
                                         <SelectItem
-                                            key={entry.id}
-                                            value={entry.id}
+                                            key={days}
+                                            value={String(days)}
                                         >
-                                            {entry.name}
+                                            {lifetimeLabel(days)}
                                         </SelectItem>
                                     ))}
                                 </SelectContent>
                             </Select>
-                            <InputError message={form.errors.team} />
+                            <p className="type-small text-muted-foreground">
+                                {lifetimeEnd(form.data.expiresInDays)}
+                            </p>
                         </div>
-                    )}
+                    </div>
 
                     <AbilityFields
-                        legend="The CLI can"
+                        key={form.data.team}
+                        legend="Access"
                         idPrefix="cli-ability"
                         team={team}
                         value={form.data.abilities}
@@ -277,27 +316,6 @@ function Approve({
                     >
                         <InputError message={form.errors.abilities} />
                     </AbilityFields>
-
-                    <div className="grid gap-2">
-                        <Label htmlFor="lifetime">Stays signed in for</Label>
-                        <Select
-                            value={String(form.data.expiresInDays)}
-                            onValueChange={(value) =>
-                                form.setData('expiresInDays', Number(value))
-                            }
-                        >
-                            <SelectTrigger id="lifetime" className="w-full">
-                                <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                                {lifetimes.map((days) => (
-                                    <SelectItem key={days} value={String(days)}>
-                                        {lifetimeLabel(days)}
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                    </div>
 
                     <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                         <Button

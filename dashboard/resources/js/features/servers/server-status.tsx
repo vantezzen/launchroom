@@ -24,7 +24,7 @@ export function ServerStatus({
         <Status
             state={state}
             label={label}
-            detail={since ? `for ${since}` : undefined}
+            since={since}
             className={className}
         />
     );
@@ -54,6 +54,13 @@ export const roleDescriptions: Record<App.Enums.ServerRole, string> = {
     runtime: 'Runs your apps, workers and databases.',
     build: 'Builds images from your pushes, best on a fast machine.',
     registry: 'Stores built images.',
+};
+
+/** What a role needs from the machine, under the role cards in Add server. */
+export const roleNeeds: Partial<Record<App.Enums.ServerRole, string>> = {
+    runtime: 'Needs to stay on',
+    edge: 'Needs a public IP with ports 80 and 443 open',
+    build: 'Best with 4 or more cores',
 };
 
 /** A role chip's content: the role icon (12 px, muted) and its label. */

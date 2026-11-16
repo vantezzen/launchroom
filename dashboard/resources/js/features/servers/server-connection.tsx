@@ -3,6 +3,9 @@ import { Section } from '@/components/patterns/section';
 import { Status } from '@/components/status';
 import type { StatusState } from '@/components/status';
 import { TimeAgo } from '@/components/time-ago';
+import { ErrorDetails } from '@/features/servers/error-details';
+import { storageDegraded } from '@/features/servers/problems';
+import { runtimeTitle } from '@/features/servers/server-runtime';
 
 function Fact({ label, children }: { label: string; children: ReactNode }) {
     return (
@@ -69,10 +72,15 @@ export function EdgeTraffic({
                     <TimeAgo value={edge.reportedAt} />
                 </Fact>
             </dl>
-            {edge.message && (
-                <p className="type-small text-muted-foreground">
-                    {edge.message}
-                </p>
+            {edge.storage === 'degraded' ? (
+                <div className="flex flex-col gap-2">
+                    <p className="type-small text-muted-foreground">
+                        {storageDegraded}
+                    </p>
+                    <ErrorDetails text={edge.message} />
+                </div>
+            ) : (
+                <ErrorDetails text={edge.message} />
             )}
         </Section>
     );
@@ -86,11 +94,16 @@ export function ServerConnection({
     server,
     mesh,
     replacedBy,
+    runtime = null,
 }: {
     server: App.Data.Servers.ServerDetailData;
     mesh: App.Data.Servers.ServerMeshData;
     replacedBy: string | null;
+    /** Network tab: how the engine runs ("OrbStack on macOS") and what it builds for. */
+    runtime?: App.Data.Servers.ServerRuntimeData | null;
 }) {
+    const platforms = runtime?.buildPlatforms ?? [];
+
     return (
         <Section title="Connection">
             <div className="rounded-xl border bg-card shadow-card">
@@ -124,6 +137,16 @@ export function ServerConnection({
                             {server.facts.os ?? '?'}/{server.facts.arch ?? '?'}
                         </span>
                     </Fact>
+                    {runtime && (
+                        <Fact label="Runs on">
+                            {runtimeTitle(runtime)}
+                            {platforms.length > 0 && (
+                                <span className="block type-small text-muted-foreground">
+                                    Builds for {platforms.join(' and ')}
+                                </span>
+                            )}
+                        </Fact>
+                    )}
                     <Fact label="Private address">
                         <span className="type-mono">
                             {mesh.ip ?? 'None yet'}

@@ -14,6 +14,7 @@ import { cn } from '@/lib/utils';
 import { deploy, discard, summary } from '@/routes/staged-changes';
 import { StageOption } from './stage-option';
 import { displayValue } from './effect-badge';
+import { diffValues } from './value-diff';
 import type { StagedChanges } from './use-staged-changes';
 import { effectSummary, stagedBlockersKey } from './use-staged-changes';
 import { effectLabel } from '@/features/staged-changes/effects';
@@ -138,6 +139,9 @@ export function ChangeRow({
     managedBy?: string | null;
 }) {
     const gutter = gutters[item.kind];
+    // Objects (a health check): only the fields that changed.
+    const fields =
+        item.kind === 'changed' ? diffValues(item.before, item.after) : null;
     const label =
         prefix && item.label.startsWith(prefix)
             ? item.label.slice(prefix.length)
@@ -173,18 +177,29 @@ export function ChangeRow({
                     )}
                 </span>
                 {item.kind === 'changed' &&
-                    (item.before !== null || item.after !== null) && (
-                        <span className="flex flex-wrap items-baseline gap-x-1.5 type-mono-small text-muted-foreground">
-                            <span className="break-all line-through decoration-muted-foreground/60">
-                                {displayValue(item.before)}
-                            </span>
-                            <span aria-hidden="true">→</span>
-                            <span className="sr-only">changed to</span>
-                            <span className="break-all text-foreground">
-                                {displayValue(item.after)}
-                            </span>
-                        </span>
-                    )}
+                    (item.before !== null || item.after !== null) &&
+                    (fields ? (
+                        <dl className="grid grid-cols-[minmax(0,auto)_minmax(0,1fr)] gap-x-3 gap-y-0.5">
+                            {fields.map((field) => (
+                                <div key={field.key} className="contents">
+                                    <dt className="type-small text-muted-foreground">
+                                        {field.label}
+                                    </dt>
+                                    <dd>
+                                        <BeforeAfter
+                                            before={field.before}
+                                            after={field.after}
+                                        />
+                                    </dd>
+                                </div>
+                            ))}
+                        </dl>
+                    ) : (
+                        <BeforeAfter
+                            before={displayValue(item.before)}
+                            after={displayValue(item.after)}
+                        />
+                    ))}
             </div>
             {onDiscard && (
                 <Button
@@ -199,6 +214,20 @@ export function ChangeRow({
                 </Button>
             )}
         </li>
+    );
+}
+
+/** `old → new` in mono, the old value struck through. */
+function BeforeAfter({ before, after }: { before: string; after: string }) {
+    return (
+        <span className="flex flex-wrap items-baseline gap-x-1.5 type-mono-small text-muted-foreground">
+            <span className="break-all line-through decoration-muted-foreground/60">
+                {before}
+            </span>
+            <span aria-hidden="true">→</span>
+            <span className="sr-only">changed to</span>
+            <span className="break-all text-foreground">{after}</span>
+        </span>
     );
 }
 

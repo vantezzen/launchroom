@@ -1,4 +1,4 @@
-import { Check, GitBranch, Lock, Search } from 'lucide-react';
+import { Check, ChevronRight, GitBranch, Lock, Search } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Logo } from '@/components/logo';
 import { Button } from '@/components/ui/button';
@@ -11,7 +11,8 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import { Spinner } from '@/components/ui/spinner';
-import { requestJson } from '@/lib/http';
+import { requestJson, RequestFailed } from '@/lib/http';
+import { addUrl } from '@/routes/projects/import';
 import {
     branches as branchesRoute,
     index as repositoriesRoute,
@@ -24,20 +25,25 @@ export type RepositoryChoice = { repository: Repository; branch: string };
 /**
  * A compact repository picker for stacks and Compose files in a
  * repository: search the team's repositories, pick one, then its branch.
+ * Stacks with a public starter offer it first (PRJ-3), so trying the stack
+ * needs no repository of your own.
  */
 export function RepositoryField({
     value,
     onChange,
     error,
+    starter = null,
 }: {
     value: RepositoryChoice | null;
     onChange: (value: RepositoryChoice | null) => void;
     error?: string;
+    starter?: { url: string; framework: string; logo: string } | null;
 }) {
     const [search, setSearch] = useState('');
     const [repositories, setRepositories] = useState<Repository[] | null>(null);
     const [failed, setFailed] = useState<string | null>(null);
     const [branches, setBranches] = useState<string[] | null>(null);
+    const [starterId, setStarterId] = useState<string | null>(null);
 
     useEffect(() => {
         if (value) {
@@ -96,6 +102,8 @@ export function RepositoryField({
     }, [value]);
 
     if (value) {
+        const isStarter = value.repository.id === starterId;
+
         return (
             <div className="flex flex-col gap-1.5">
                 <div className="flex items-center gap-3 rounded-xl border bg-card p-3">
@@ -148,6 +156,12 @@ export function RepositoryField({
                         Change
                     </Button>
                 </div>
+                {isStarter && (
+                    <p className="type-small text-muted-foreground">
+                        Deploys the official starter as it is. To work on the
+                        code, fork it and pick your fork here instead.
+                    </p>
+                )}
                 {error && (
                     <p className="type-small text-status-error">{error}</p>
                 )}
@@ -157,6 +171,18 @@ export function RepositoryField({
 
     return (
         <div className="flex flex-col gap-2">
+            {starter && (
+                <StarterTile
+                    starter={starter}
+                    onPick={(repository) => {
+                        setStarterId(repository.id);
+                        onChange({
+                            repository,
+                            branch: repository.defaultBranch ?? 'main',
+                        });
+                    }}
+                />
+            )}
             <div className="relative">
                 <Search
                     aria-hidden="true"
@@ -225,6 +251,70 @@ export function RepositoryField({
                 </ul>
             )}
             {error && <p className="type-small text-status-error">{error}</p>}
+        </div>
+    );
+}
+
+/**
+ * "Start from the Laravel starter": adds the framework's public starter
+ * like a pasted URL (the import's public-repository endpoint) and picks it.
+ */
+function StarterTile({
+    starter,
+    onPick,
+}: {
+    starter: { url: string; framework: string; logo: string };
+    onPick: (repository: Repository) => void;
+}) {
+    const [adding, setAdding] = useState(false);
+    const [failed, setFailed] = useState<string | null>(null);
+
+    const add = () => {
+        setAdding(true);
+        setFailed(null);
+        requestJson<Repository>('post', addUrl().url, { url: starter.url })
+            .then(onPick)
+            .catch((failure: unknown) =>
+                setFailed(
+                    failure instanceof RequestFailed
+                        ? failure.message
+                        : 'The starter couldn’t be added. Try again.',
+                ),
+            )
+            .finally(() => setAdding(false));
+    };
+
+    return (
+        <div className="flex flex-col gap-1.5">
+            <button
+                type="button"
+                onClick={add}
+                disabled={adding}
+                className="flex w-full items-center gap-3 rounded-xl border bg-card p-3 text-left shadow-card transition-colors duration-fast hover:border-border-strong focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:opacity-70"
+            >
+                <Logo kind={starter.logo} size={32} decorative />
+                <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                    <span className="type-label">
+                        Start from the {starter.framework} starter
+                    </span>
+                    <span className="truncate type-small text-muted-foreground">
+                        No repository of your own needed. You can switch to
+                        yours later.
+                    </span>
+                </span>
+                {adding ? (
+                    <Spinner />
+                ) : (
+                    <ChevronRight
+                        aria-hidden="true"
+                        className="size-4 shrink-0 text-muted-foreground"
+                    />
+                )}
+            </button>
+            {failed && <p className="type-small text-status-error">{failed}</p>}
+            <p className="pt-1 type-small text-muted-foreground">
+                Or pick one of your repositories:
+            </p>
         </div>
     );
 }

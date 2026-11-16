@@ -11,6 +11,7 @@ use App\Http\Controllers\Dev\DesignVisualsController;
 use App\Http\Controllers\Instance\ClientVersionController;
 use App\Http\Controllers\Instance\OnboardingController;
 use App\Http\Controllers\Instance\RecoveryController;
+use App\Http\Controllers\Logs\LogDownloadController;
 use App\Http\Controllers\Logs\TeamLogsController;
 use App\Http\Controllers\Registry\RegistryTokenController;
 use App\Http\Controllers\Servers\IngressController;
@@ -95,6 +96,10 @@ Route::middleware(['auth', 'verified'])->group(function (): void {
     Route::post('onboarding/two-factor/dismiss', [OnboardingController::class, 'dismissTwoFactor'])
         ->middleware('throttle:10,1')
         ->name('onboarding.two-factor.dismiss');
+    Route::get('onboarding/first-app', [OnboardingController::class, 'firstApp'])->name('onboarding.first-app');
+    Route::post('onboarding/first-app/dismiss', [OnboardingController::class, 'dismissFirstApp'])
+        ->middleware('throttle:10,1')
+        ->name('onboarding.first-app.dismiss');
     Route::put('onboarding/domain', [OnboardingController::class, 'domain'])->name('onboarding.domain');
     Route::post('onboarding/domain/confirm', [OnboardingController::class, 'confirmDomain'])
         ->middleware('throttle:20,1')
@@ -121,6 +126,9 @@ Route::middleware(['auth', 'verified'])->group(function (): void {
     Route::get('logs/-/entries', [TeamLogsController::class, 'entries'])
         ->middleware('throttle:60,1')
         ->name('logs.entries');
+    Route::get('logs/-/download', [LogDownloadController::class, 'team'])
+        ->middleware('throttle:10,1')
+        ->name('logs.download');
 
     // Design sheets: every primitive in both themes, and the visual
     // primitives with sample data (docs/design-system.md).

@@ -87,7 +87,7 @@ final class ServiceGlyph
         return match (true) {
             $service->kind->requiresParent() => ($service->kind === ServiceKind::Cron ? 'Cron of ' : 'Worker of ').($service->parent->name ?? 'an app'),
             $source instanceof DatabaseSource => $source->engine->label().' '.$source->version,
-            $source instanceof ImageSource => self::shortImage($source->reference),
+            $source instanceof ImageSource => self::imageName($source->reference),
             $source instanceof GitSource => $framework ?? $source->fullName,
             default => $service->kind->label(),
         };
@@ -108,6 +108,23 @@ final class ServiceGlyph
         }
 
         return $name.($parsed->tag !== null ? ':'.$parsed->tag : ($parsed->digest !== null ? '@'.substr($parsed->digest, 7, 12) : ''));
+    }
+
+    /**
+     * An image as people name it: `nginx:1.27`, or `acme/shop-web` for one
+     * pinned by digest (the digest belongs to the deployment, not the node).
+     */
+    public static function imageName(string $reference): string
+    {
+        $parsed = ImageReference::tryParse($reference);
+
+        if (! $parsed instanceof ImageReference) {
+            return $reference;
+        }
+
+        $name = str_starts_with($parsed->repository, 'library/') ? substr($parsed->repository, strlen('library/')) : $parsed->repository;
+
+        return $name.($parsed->tag !== null ? ':'.$parsed->tag : '');
     }
 
     /**

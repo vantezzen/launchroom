@@ -1,4 +1,7 @@
 import {
+    ChevronDown,
+    ChevronLeft,
+    ChevronRight,
     Database,
     History,
     KeyRound,
@@ -7,6 +10,7 @@ import {
     Table2,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { toast } from 'sonner';
 import { ConfirmPopover } from '@/components/patterns/confirm-popover';
 import { EmptyState } from '@/components/patterns/empty-state';
 import { LiveWait } from '@/components/patterns/live-wait';
@@ -22,13 +26,18 @@ import {
 } from '@/components/ui/popover';
 import { Skeleton } from '@/components/ui/skeleton';
 import { RemoteAccessButton } from '@/features/remote-access/remote-access';
+import { useServiceBackups } from '@/features/backups/use-service-backups';
+import { RequestFailed, requestJson } from '@/lib/http';
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 import type { ServiceRef } from './api';
-import { NullChip, ResultGrid } from './result-grid';
+import { NullChip, ResultExport, ResultGrid } from './result-grid';
 import type { DataResult } from './result-types';
+import { riskyStatement } from './risky-statement';
+import type { Risk } from './risky-statement';
+import { RowSheet } from './row-sheet';
 import { useDataSession } from './use-data-session';
 import { useTabData } from './use-tab-data';
 
@@ -80,7 +89,14 @@ function DataView({
     const { phase } = session;
 
     if (phase.kind === 'live') {
-        return <Workspace data={data} run={session.run} onEnd={session.end} />;
+        return (
+            <Workspace
+                serviceRef={serviceRef}
+                data={data}
+                run={session.run}
+                onEnd={session.end}
+            />
+        );
     }
 
     return (
@@ -165,21 +181,21 @@ const DIALECT: Record<
     sql: {
         summary: 'Browse tables and rows or run SQL',
         noun: 'table',
-        pick: 'Pick a table on the left to see its rows.',
+        pick: 'Pick a table to see its rows.',
         statement: 'SQL statement',
         placeholder: 'SELECT * FROM users LIMIT 10',
     },
     redis: {
         summary: 'Browse keys and values or run commands',
         noun: 'key',
-        pick: 'Pick a key on the left to see its value.',
+        pick: 'Pick a key to see its value.',
         statement: 'Command',
         placeholder: 'GET user:1',
     },
     mongo: {
         summary: 'Browse collections and documents or run database commands',
         noun: 'collection',
-        pick: 'Pick a collection on the left to see its documents.',
+        pick: 'Pick a collection to see its documents.',
         statement: 'Database command (JSON)',
         placeholder:
             '{ "find": "users", "filter": { "plan": "pro" }, "limit": 20 }',
@@ -187,21 +203,47 @@ const DIALECT: Record<
 };
 
 type Selection =
-    | { kind: 'table'; schema: string; name: string }
+    | { kind: 'table'; schema: string; name: string; rows?: number }
     | { kind: 'key'; key: string }
     | null;
 
 function Workspace({
+    serviceRef,
     data,
     run,
     onEnd,
 }: {
+    serviceRef: ServiceRef;
     data: Data;
     run: Run;
     onEnd: () => void;
 }) {
     const [selection, setSelection] = useState<Selection>(null);
     const [tab, setTab] = useState('browse');
+    const [picking, setPicking] = useState(false);
+    const schema = useSchema(run, data.dialect !== 'redis');
+    const select = (next: Selection) => {
+        setSelection(next);
+        setTab('browse');
+        setPicking(false);
+    };
+    const noun = DIALECT[data.dialect].noun;
+    // The same list sits beside the grid when there is room (220 px column)
+    // and behind a picker in the toolbar when there isn't (docs/08 §15).
+    const sidebar = (
+        <>
+            {data.dialect !== 'redis' ? (
+                <SchemaSidebar
+                    noun={noun}
+                    result={schema}
+                    selection={selection}
+                    onSelect={select}
+                />
+            ) : (
+                <KeySidebar run={run} selection={selection} onSelect={select} />
+            )}
+        </>
+    );
 
     return (
         <div className="flex flex-col gap-4">
@@ -228,37 +270,60 @@ function Workspace({
             </div>
             <div className="@container">
                 <div className="grid gap-4 @3xl:grid-cols-[220px_minmax(0,1fr)]">
-                    <aside className="flex min-w-0 flex-col gap-2 @max-3xl:max-h-56 @max-3xl:overflow-y-auto">
-                        {data.dialect !== 'redis' ? (
-                            <SchemaSidebar
-                                noun={DIALECT[data.dialect].noun}
-                                run={run}
-                                selection={selection}
-                                onSelect={(next) => {
-                                    setSelection(next);
-                                    setTab('browse');
-                                }}
-                            />
-                        ) : (
-                            <KeySidebar
-                                run={run}
-                                selection={selection}
-                                onSelect={(next) => {
-                                    setSelection(next);
-                                    setTab('browse');
-                                }}
-                            />
-                        )}
+                    <aside className="hidden min-w-0 flex-col gap-2 @3xl:flex">
+                        {sidebar}
                     </aside>
                     <Tabs
                         value={tab}
                         onValueChange={setTab}
                         className="min-w-0"
                     >
-                        <TabsList>
-                            <TabsTrigger value="browse">Browse</TabsTrigger>
-                            <TabsTrigger value="query">Query</TabsTrigger>
-                        </TabsList>
+                        <div className="flex min-w-0 flex-wrap items-center gap-2">
+                            <TabsList>
+                                <TabsTrigger value="browse">Browse</TabsTrigger>
+                                <TabsTrigger value="query">Query</TabsTrigger>
+                            </TabsList>
+                            <Popover open={picking} onOpenChange={setPicking}>
+                                <PopoverTrigger asChild>
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        className="max-w-full min-w-0 @3xl:hidden"
+                                    >
+                                        {data.dialect === 'redis' ? (
+                                            <KeyRound aria-hidden="true" />
+                                        ) : (
+                                            <Table2 aria-hidden="true" />
+                                        )}
+                                        <span className="min-w-0 truncate">
+                                            {selection === null
+                                                ? `Pick a ${noun}`
+                                                : selection.kind === 'table'
+                                                  ? selection.name
+                                                  : selection.key}
+                                        </span>
+                                        {selection?.kind === 'table' &&
+                                            rowsLabel(selection.rows) !==
+                                                null && (
+                                                <span className="text-faint tabular-nums">
+                                                    {rowsLabel(selection.rows)}{' '}
+                                                    rows
+                                                </span>
+                                            )}
+                                        <ChevronDown
+                                            aria-hidden="true"
+                                            className="text-muted-foreground"
+                                        />
+                                    </Button>
+                                </PopoverTrigger>
+                                <PopoverContent
+                                    align="start"
+                                    className="flex w-[min(20rem,calc(100vw-2rem))] flex-col gap-2 p-2"
+                                >
+                                    {sidebar}
+                                </PopoverContent>
+                            </Popover>
+                        </div>
                         <TabsContent value="browse" className="min-w-0">
                             {selection?.kind === 'table' ? (
                                 <TableBrowser
@@ -286,13 +351,39 @@ function Workspace({
                             )}
                         </TabsContent>
                         <TabsContent value="query" className="min-w-0">
-                            <QueryConsole data={data} run={run} />
+                            <QueryConsole
+                                serviceRef={serviceRef}
+                                data={data}
+                                run={run}
+                            />
                         </TabsContent>
                     </Tabs>
                 </div>
             </div>
         </div>
     );
+}
+
+/** The schema (tables or collections), loaded once per session. */
+function useSchema(run: Run, enabled: boolean): DataResult | null {
+    const [result, setResult] = useState<DataResult | null>(null);
+
+    useEffect(() => {
+        if (!enabled) {
+            return;
+        }
+
+        let alive = true;
+        void run({ command: 'schema' }).then(
+            (next) => alive && setResult(next),
+        );
+
+        return () => {
+            alive = false;
+        };
+    }, [run, enabled]);
+
+    return result;
 }
 
 function SidebarFilter({
@@ -335,28 +426,16 @@ function rowsLabel(rows: number | undefined): string | null {
 
 function SchemaSidebar({
     noun,
-    run,
+    result,
     selection,
     onSelect,
 }: {
     noun: string;
-    run: Run;
+    result: DataResult | null;
     selection: Selection;
     onSelect: (s: Selection) => void;
 }) {
-    const [result, setResult] = useState<DataResult | null>(null);
     const [filter, setFilter] = useState('');
-
-    useEffect(() => {
-        let alive = true;
-        void run({ command: 'schema' }).then(
-            (next) => alive && setResult(next),
-        );
-
-        return () => {
-            alive = false;
-        };
-    }, [run]);
 
     const groups = useMemo(() => {
         const needle = filter.trim().toLowerCase();
@@ -415,6 +494,7 @@ function SchemaSidebar({
                                                 kind: 'table',
                                                 schema: group.name,
                                                 name: item.name,
+                                                rows: item.rows,
                                             })
                                         }
                                         className={cn(
@@ -607,10 +687,11 @@ function TableBrowser({
     table,
 }: {
     run: Run;
-    table: { schema: string; name: string };
+    table: { schema: string; name: string; rows?: number };
 }) {
     const [page, setPage] = useState(0);
     const [result, setResult] = useState<DataResult | null>(null);
+    const [open, setOpen] = useState<number | null>(null);
 
     useEffect(() => {
         let alive = true;
@@ -627,57 +708,83 @@ function TableBrowser({
         };
     }, [run, table.schema, table.name, page]);
 
-    if (result === null) {
-        return <Skeleton className="h-64 rounded-xl" />;
-    }
+    const go = (by: number) => {
+        setResult(null);
+        setOpen(null);
+        setPage((p) => p + by);
+    };
+    const count = result?.status === 'ok' ? (result.rows?.length ?? 0) : 0;
+    const total = rowsLabel(table.rows);
+    const rows = result?.rows ?? [];
 
-    if (result.status !== 'ok') {
-        return <ResultLine result={result} />;
-    }
-
-    const count = result.rows?.length ?? 0;
-
+    // The pager sits on the title line, so paging never needs a scroll
+    // past the rows: "orders  Rows 1–50 of ~5.1K  ‹ ›" (docs/08 §15).
     return (
         <div className="flex flex-col gap-3">
-            <div className="flex flex-wrap items-baseline gap-x-2">
-                <p className="type-label">{table.name}</p>
-                <p className="type-small text-muted-foreground tabular-nums">
-                    {count === 0
-                        ? 'No rows on this page'
-                        : `Rows ${page * PAGE + 1}–${page * PAGE + count}`}
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                <p className="hidden min-w-0 truncate type-label @3xl:block">
+                    {table.name}
                 </p>
+                <p className="type-small text-muted-foreground tabular-nums">
+                    {result === null
+                        ? 'Loading'
+                        : count === 0
+                          ? 'No rows on this page'
+                          : `Rows ${page * PAGE + 1}–${page * PAGE + count}${total !== null ? ` of ${total}` : ''}`}
+                </p>
+                <div className="ml-auto flex items-center gap-1">
+                    {result?.status === 'ok' && result.columns && (
+                        <ResultExport
+                            name={table.name}
+                            columns={result.columns}
+                            rows={rows}
+                            offset={page * PAGE}
+                        />
+                    )}
+                    <Button
+                        variant="outline"
+                        size="icon-sm"
+                        aria-label="Previous page"
+                        disabled={page === 0 || result === null}
+                        onClick={() => go(-1)}
+                    >
+                        <ChevronLeft />
+                    </Button>
+                    <Button
+                        variant="outline"
+                        size="icon-sm"
+                        aria-label="Next page"
+                        disabled={count < PAGE || result === null}
+                        onClick={() => go(1)}
+                    >
+                        <ChevronRight />
+                    </Button>
+                </div>
             </div>
-            {result.columns && (
-                <ResultGrid
-                    columns={result.columns}
-                    rows={result.rows ?? []}
-                    offset={page * PAGE}
-                />
+            {result === null ? (
+                <Skeleton className="h-64 rounded-xl" />
+            ) : result.status !== 'ok' ? (
+                <ResultLine result={result} />
+            ) : (
+                result.columns && (
+                    <>
+                        <ResultGrid
+                            columns={result.columns}
+                            rows={rows}
+                            offset={page * PAGE}
+                            onOpenRow={setOpen}
+                        />
+                        <RowSheet
+                            title={table.name}
+                            columns={result.columns}
+                            rows={rows}
+                            index={open}
+                            offset={page * PAGE}
+                            onIndexChange={setOpen}
+                        />
+                    </>
+                )
             )}
-            <div className="flex items-center gap-2">
-                <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={page === 0}
-                    onClick={() => {
-                        setResult(null);
-                        setPage((p) => p - 1);
-                    }}
-                >
-                    Previous
-                </Button>
-                <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={count < PAGE}
-                    onClick={() => {
-                        setResult(null);
-                        setPage((p) => p + 1);
-                    }}
-                >
-                    Next
-                </Button>
-            </div>
         </div>
     );
 }
@@ -764,21 +871,61 @@ function KeyBrowser({ run, name }: { run: Run; name: string }) {
     );
 }
 
-function QueryConsole({ data, run }: { data: Data; run: Run }) {
+function QueryConsole({
+    serviceRef,
+    data,
+    run,
+}: {
+    serviceRef: ServiceRef;
+    data: Data;
+    run: Run;
+}) {
     const [statement, setStatement] = useState('');
     const [allowWrites, setAllowWrites] = useState(false);
     const [busy, setBusy] = useState(false);
     const [result, setResult] = useState<DataResult | null>(null);
+    const [open, setOpen] = useState<number | null>(null);
+    /** A risky statement waiting for "Run it" (advisory, docs/08 §15). */
+    const [risk, setRisk] = useState<Risk | null>(null);
 
-    const execute = async () => {
+    const send = async () => {
+        setBusy(true);
+        setOpen(null);
+        setResult(await run({ command: 'query', statement, allowWrites }));
+        setBusy(false);
+    };
+
+    const execute = () => {
         if (statement.trim() === '' || busy) {
             return;
         }
 
-        setBusy(true);
-        setResult(await run({ command: 'query', statement, allowWrites }));
-        setBusy(false);
+        const risky = allowWrites
+            ? riskyStatement(statement, data.dialect)
+            : null;
+
+        if (risky !== null) {
+            setRisk(risky);
+
+            return;
+        }
+
+        void send();
     };
+
+    const runButton = (
+        <Button
+            size="sm"
+            onClick={execute}
+            disabled={busy || statement.trim() === ''}
+        >
+            <Play aria-hidden="true" />
+            Run
+            <kbd className="ml-1 hidden font-sans text-[11px] opacity-60 sm:inline">
+                ⌘↵
+            </kbd>
+        </Button>
+    );
 
     return (
         <div className="flex flex-col gap-3">
@@ -791,7 +938,7 @@ function QueryConsole({ data, run }: { data: Data; run: Run }) {
                         (event.metaKey || event.ctrlKey)
                     ) {
                         event.preventDefault();
-                        void execute();
+                        execute();
                     }
                 }}
                 aria-label={DIALECT[data.dialect].statement}
@@ -842,17 +989,27 @@ function QueryConsole({ data, run }: { data: Data; run: Run }) {
                         history={data.history}
                         onPick={setStatement}
                     />
-                    <Button
-                        size="sm"
-                        onClick={() => void execute()}
-                        disabled={busy || statement.trim() === ''}
+                    <ConfirmPopover
+                        open={risk !== null}
+                        onOpenChange={(next) => !next && setRisk(null)}
+                        title="Run this statement?"
+                        consequence={
+                            risk !== null && (
+                                <>
+                                    {risk.consequence}{' '}
+                                    <LastBackup serviceRef={serviceRef} />
+                                </>
+                            )
+                        }
+                        confirmLabel="Run it"
+                        tone="destructive"
+                        onConfirm={() => {
+                            setRisk(null);
+                            void send();
+                        }}
                     >
-                        <Play aria-hidden="true" />
-                        Run
-                        <kbd className="ml-1 hidden font-sans text-[11px] opacity-60 sm:inline">
-                            ⌘↵
-                        </kbd>
-                    </Button>
+                        {runButton}
+                    </ConfirmPopover>
                 </div>
             </div>
             {busy && (
@@ -860,12 +1017,33 @@ function QueryConsole({ data, run }: { data: Data; run: Run }) {
             )}
             {!busy && result && (
                 <div className="flex flex-col gap-2">
-                    <ResultLine result={result} />
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                        <ResultLine result={result} />
+                        {result.status === 'ok' &&
+                            result.columns &&
+                            (result.rows?.length ?? 0) > 0 && (
+                                <ResultExport
+                                    name="result"
+                                    columns={result.columns}
+                                    rows={result.rows ?? []}
+                                />
+                            )}
+                    </div>
                     {result.status === 'ok' && result.columns && (
-                        <ResultGrid
-                            columns={result.columns}
-                            rows={result.rows ?? []}
-                        />
+                        <>
+                            <ResultGrid
+                                columns={result.columns}
+                                rows={result.rows ?? []}
+                                onOpenRow={setOpen}
+                            />
+                            <RowSheet
+                                title="Result"
+                                columns={result.columns}
+                                rows={result.rows ?? []}
+                                index={open}
+                                onIndexChange={setOpen}
+                            />
+                        </>
                     )}
                     {result.status === 'ok' && result.reply !== undefined && (
                         <pre className="max-h-[min(60vh,560px)] overflow-auto rounded-xl border bg-recessed p-4 type-mono-small whitespace-pre-wrap">
@@ -879,6 +1057,62 @@ function QueryConsole({ data, run }: { data: Data; run: Run }) {
                 </div>
             )}
         </div>
+    );
+}
+
+/**
+ * "The last backup is from 2 days ago." under a risky statement, with a
+ * way to take one first when it is older than a day.
+ */
+function LastBackup({ serviceRef }: { serviceRef: ServiceRef }) {
+    const query = useServiceBackups(serviceRef);
+    const [started, setStarted] = useState(false);
+    const backups = query.data;
+
+    if (!backups?.supported || backups.destinationName === null) {
+        return null;
+    }
+
+    const last = backups.status.lastSuccessfulAt;
+    const stale =
+        last === null || Date.now() - new Date(last).getTime() > 86_400_000;
+
+    return (
+        <>
+            {last === null ? (
+                'There’s no backup of this database yet.'
+            ) : (
+                <>
+                    The last backup is from <TimeAgo value={last} />.
+                </>
+            )}
+            {stale && backups.canBackup && (
+                <>
+                    {' '}
+                    <button
+                        type="button"
+                        disabled={started}
+                        className="text-foreground underline underline-offset-2 hover:no-underline disabled:no-underline disabled:opacity-60"
+                        onClick={() => {
+                            setStarted(true);
+                            requestJson('post', backups.urls.backup).then(
+                                () => toast.success('Backup started.'),
+                                (e: unknown) => {
+                                    setStarted(false);
+                                    toast.error(
+                                        e instanceof RequestFailed
+                                            ? e.message
+                                            : 'The backup couldn’t start.',
+                                    );
+                                },
+                            );
+                        }}
+                    >
+                        {started ? 'Backup started' : 'Back up now first'}
+                    </button>
+                </>
+            )}
+        </>
     );
 }
 

@@ -20,6 +20,8 @@ import { previewState } from '@/features/previews/status';
 import { EnvironmentLiveUpdates } from '@/features/projects/environment-live-updates';
 import { canvas, settings } from '@/routes/projects';
 import { approve } from '@/routes/projects/previews';
+import { show as deploymentShow } from '@/routes/deployments';
+import { TimeAgo } from '@/components/time-ago';
 import { compactUntil, plural } from '@/lib/format';
 import ProjectLayout from '@/features/app-shell/project-layout';
 
@@ -27,6 +29,7 @@ type Preview = App.Data.Previews.PreviewData;
 
 type Props = App.Data.Canvas.ProjectShellPropsData & {
     previews: Preview[];
+    rule: App.Data.Previews.PreviewRuleData;
     enabled: boolean;
     canShare: boolean;
     canApprove: boolean;
@@ -100,13 +103,7 @@ function PreviewTile({
                 media={
                     url ? (
                         <UrlCard url={url.replace(/^https:\/\//, '')} />
-                    ) : (
-                        <GitPullRequest
-                            aria-hidden="true"
-                            strokeWidth={1.25}
-                            className="size-10 text-faint"
-                        />
-                    )
+                    ) : undefined
                 }
                 status={
                     <Status
@@ -190,6 +187,7 @@ function PreviewTile({
                             Share a link
                         </button>
                     )}
+                    <PreviewActions project={project} preview={preview} />
                 </div>
             </ObjectCard>
             {sharing && (
@@ -205,6 +203,143 @@ function PreviewTile({
         </>
     );
 }
+
+/**
+ * Links out of a preview card (DPL-6): the preview itself, its pull
+ * request and, when a deployment failed, the explanation.
+ */
+function PreviewActions({
+    project,
+    preview,
+}: {
+    project: string;
+    preview: Preview;
+}) {
+    const url = preview.urls[0]?.url ?? null;
+    const why =
+        preview.health === 'failed' &&
+        preview.failedDeploymentId &&
+        preview.environmentId
+            ? deploymentShow({
+                  project,
+                  environment: preview.environmentId,
+                  deployment: preview.failedDeploymentId,
+              }).url
+            : null;
+
+    if (!url && !preview.pullRequestUrl && !why) {
+        return null;
+    }
+
+    return (
+        <div className="relative z-10 flex flex-wrap gap-2 pt-1.5">
+            {why && (
+                <Button size="sm" asChild>
+                    <Link href={why}>See why</Link>
+                </Button>
+            )}
+            {url && (
+                <Button size="sm" variant="outline" asChild>
+                    <a href={url} target="_blank" rel="noreferrer">
+                        Open preview
+                        <ArrowUpRight aria-hidden="true" />
+                    </a>
+                </Button>
+            )}
+            {preview.pullRequestUrl && (
+                <Button size="sm" variant="ghost" asChild>
+                    <a
+                        href={preview.pullRequestUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                    >
+                        Pull request
+                        <ArrowUpRight aria-hidden="true" />
+                    </a>
+                </Button>
+            )}
+        </div>
+    );
+}
+
+/** Closed and expired pull requests: one line each (DPL-6). */
+function ClosedRow({ preview }: { preview: Preview }) {
+    const { state, label } = previewState(preview.status, preview.health);
+
+    return (
+        <li className="flex flex-col gap-1 px-5 py-3 sm:flex-row sm:items-center sm:gap-4">
+            <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                <p className="truncate type-label">
+                    <span className="font-normal text-muted-foreground tabular-nums">
+                        #{preview.number}
+                    </span>{' '}
+                    {preview.pullRequestUrl ? (
+                        <a
+                            href={preview.pullRequestUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="underline-offset-4 hover:underline"
+                        >
+                            {preview.title || 'Untitled'}
+                        </a>
+                    ) : (
+                        preview.title || 'Untitled'
+                    )}
+                </p>
+                <MetaLine className="type-small text-muted-foreground">
+                    {preview.author}
+                    <span className="inline-flex min-w-0 items-center gap-1">
+                        <span className="truncate font-mono">
+                            {preview.headRef}
+                        </span>
+                        <span aria-hidden="true">→</span>
+                        <span className="sr-only">into</span>
+                        <span className="font-mono">{preview.baseRef}</span>
+                    </span>
+                    {preview.statusReason ?? (
+                        <span>
+                            Last activity{' '}
+                            <TimeAgo value={preview.lastActivityAt} />
+                        </span>
+                    )}
+                </MetaLine>
+            </div>
+            <span className="flex shrink-0 items-center gap-3 type-small">
+                <Status state={state} label={label} />
+            </span>
+        </li>
+    );
+}
+
+/** "Pull requests into main get a copy of staging. Removed when …" */
+function ruleSentence(rule: App.Data.Previews.PreviewRuleData): string {
+    const every = rule.branches.length === 0;
+    const into = every
+        ? 'Every pull request'
+        : `Pull requests into ${listWords(rule.branches)}`;
+    const label = rule.requiredLabel
+        ? ` with the ${rule.requiredLabel} label`
+        : '';
+    const verb = every ? 'gets' : 'get';
+    const copy = rule.baseEnvironment
+        ? `${verb} a copy of ${rule.baseEnvironment}`
+        : `${verb} ${every ? 'its' : 'their'} own environment`;
+    const removed =
+        rule.expiryDays > 0
+            ? `Removed when closed or after ${plural(rule.expiryDays, 'day')} without activity.`
+            : 'Removed when closed.';
+
+    return `${into}${label} ${copy}. ${removed}`;
+}
+
+function listWords(items: string[]): string {
+    return items.length <= 1
+        ? (items[0] ?? '')
+        : `${items.slice(0, -1).join(', ')} or ${items.at(-1)}`;
+}
+
+/** Closed rows shown before "Show all". */
+const CLOSED_SHOWN = 5;
 
 /**
  * A fork pull request waiting for an approval (flows §13): the commit to
@@ -295,6 +430,7 @@ function ApprovalRow({
 export default function ProjectPreviews({
     project,
     previews,
+    rule,
     enabled,
     canShare,
     canApprove,
@@ -310,10 +446,11 @@ export default function ProjectPreviews({
     const rest = previews.filter(
         (preview) => preview.status !== 'awaiting_approval',
     );
-    const live = rest.filter(
-        (preview) =>
-            previewState(preview.status, preview.health).state === 'active',
-    ).length;
+    const isClosed = (preview: Preview) =>
+        preview.status === 'closed' || preview.status === 'expired';
+    const open = rest.filter((preview) => !isClosed(preview));
+    const closed = rest.filter(isClosed);
+    const [allClosed, setAllClosed] = useState(false);
 
     return (
         <>
@@ -326,18 +463,7 @@ export default function ProjectPreviews({
                 <PageHeader
                     title="Previews"
                     description={
-                        !enabled ? (
-                            'Off for this project.'
-                        ) : previews.length === 0 ? (
-                            'Each pull request gets its own environment.'
-                        ) : (
-                            <MetaLine>
-                                {plural(previews.length, 'pull request')}
-                                {`${live} live`}
-                                {waiting.length > 0 &&
-                                    `${waiting.length} waiting for you`}
-                            </MetaLine>
-                        )
+                        !enabled ? 'Off for this project.' : ruleSentence(rule)
                     }
                     actions={
                         canManage &&
@@ -374,12 +500,14 @@ export default function ProjectPreviews({
                     </Section>
                 )}
 
-                {rest.length > 0 ? (
+                {open.length > 0 && (
                     <Section
-                        title={waiting.length > 0 ? 'Pull requests' : undefined}
+                        title={
+                            <SectionCount title="Open" count={open.length} />
+                        }
                     >
                         <div className="grid gap-4 md:grid-cols-2">
-                            {rest.map((preview) => (
+                            {open.map((preview) => (
                                 <PreviewTile
                                     key={preview.id}
                                     project={project.id}
@@ -390,30 +518,62 @@ export default function ProjectPreviews({
                             ))}
                         </div>
                     </Section>
-                ) : (
-                    waiting.length === 0 && (
-                        <EmptyState
-                            icon={GitPullRequest}
-                            action={
-                                canManage && (
-                                    <Button variant="outline" asChild>
-                                        <Link
-                                            href={settings({
-                                                project: project.id,
-                                                section: 'previews',
-                                            })}
-                                        >
-                                            Preview settings
-                                        </Link>
-                                    </Button>
-                                )
-                            }
-                        >
-                            {enabled
-                                ? 'Open a pull request to get a preview.'
-                                : 'Previews are off. When they’re on, every pull request gets its own environment.'}
-                        </EmptyState>
-                    )
+                )}
+
+                {closed.length > 0 && (
+                    <Section
+                        title={
+                            <SectionCount
+                                title="Closed"
+                                count={closed.length}
+                            />
+                        }
+                    >
+                        <ul className="divide-y overflow-hidden rounded-[14px] border bg-card shadow-card">
+                            {(allClosed
+                                ? closed
+                                : closed.slice(0, CLOSED_SHOWN)
+                            ).map((preview) => (
+                                <ClosedRow key={preview.id} preview={preview} />
+                            ))}
+                        </ul>
+                        {closed.length > CLOSED_SHOWN && (
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                className="self-start"
+                                onClick={() => setAllClosed(!allClosed)}
+                            >
+                                {allClosed
+                                    ? 'Show fewer'
+                                    : `Show all ${closed.length}`}
+                            </Button>
+                        )}
+                    </Section>
+                )}
+
+                {rest.length === 0 && waiting.length === 0 && (
+                    <EmptyState
+                        icon={GitPullRequest}
+                        action={
+                            canManage && (
+                                <Button variant="outline" asChild>
+                                    <Link
+                                        href={settings({
+                                            project: project.id,
+                                            section: 'previews',
+                                        })}
+                                    >
+                                        Preview settings
+                                    </Link>
+                                </Button>
+                            )
+                        }
+                    >
+                        {enabled
+                            ? 'Open a pull request to get a preview.'
+                            : 'Previews are off. When they’re on, every pull request gets its own environment.'}
+                    </EmptyState>
                 )}
             </Page>
         </>
@@ -421,3 +581,14 @@ export default function ProjectPreviews({
 }
 
 ProjectPreviews.layout = ProjectLayout;
+
+function SectionCount({ title, count }: { title: string; count: number }) {
+    return (
+        <>
+            {title}{' '}
+            <span className="font-normal text-muted-foreground tabular-nums">
+                {count}
+            </span>
+        </>
+    );
+}

@@ -1,7 +1,7 @@
 import { Head } from '@inertiajs/react';
 import { useQueryClient } from '@tanstack/react-query';
 import { ReactFlowProvider } from '@xyflow/react';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Page } from '@/components/patterns/page';
 import { AddServiceSheet } from '@/features/add-service/add-service-sheet';
 import { CanvasList } from '@/features/canvas/canvas-list';
@@ -14,6 +14,7 @@ import { PreviewCanvasBanner } from '@/features/previews/preview-canvas-banner';
 import { DegradedServicesBanner } from '@/features/scheduling/degraded-services-banner';
 import { openAddService } from '@/features/add-service/store';
 import { EnvironmentLiveUpdates } from '@/features/projects/environment-live-updates';
+import { FirstLiveCard } from '@/features/projects/first-live-card';
 import { usePanelNavigation } from '@/features/service-panel/use-panel-navigation';
 import { ServicePanel } from '@/features/service-panel/service-panel';
 import { useIsMobile } from '@/hooks/use-mobile';
@@ -93,6 +94,23 @@ export default function ProjectCanvas({
     );
 
     const isMobile = useIsMobile();
+
+    // `?add=1` (the projects page's "Add a service") opens the Add sheet
+    // once. Other `add` values belong to the panel (Variables' `?add=NAME`).
+    useEffect(() => {
+        const url = new URL(window.location.href);
+
+        if (url.searchParams.get('add') !== '1') {
+            return;
+        }
+
+        if (abilities.manage) {
+            openAddService();
+        }
+
+        url.searchParams.delete('add');
+        window.history.replaceState(window.history.state, '', url);
+    }, [abilities.manage]);
 
     return (
         <>
@@ -189,6 +207,10 @@ export default function ProjectCanvas({
                                     }
                                 />
                             )}
+                            <FirstLiveCard
+                                project={project.id}
+                                environment={environment.id}
+                            />
                             {shownPanel && activeNode && (
                                 <ServicePanel
                                     key={activeNode.id}

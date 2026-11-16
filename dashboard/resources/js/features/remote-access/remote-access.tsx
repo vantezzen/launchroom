@@ -54,6 +54,7 @@ import {
     countdown,
     durationLabel,
     groupHex,
+    mask,
     snippets,
 } from './connection';
 import { CopyButton } from '@/components/copy-button';
@@ -1181,12 +1182,6 @@ function OtherAccess({
             )}
         </div>
     );
-}
-
-function mask(value: string): string {
-    return value
-        .replace(/:[^:@/]+@/, ':••••••••@')
-        .replace(/^[A-Za-z0-9]{24,}$/, '••••••••••••••••');
 }
 
 function RevealButton({

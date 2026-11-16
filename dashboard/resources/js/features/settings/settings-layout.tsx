@@ -4,10 +4,10 @@ import {
     Container,
     DatabaseBackup,
     FileCode2,
+    Fingerprint,
     GitBranch,
     Globe,
     KeyRound,
-    LockKeyhole,
     Network,
     Palette,
     RefreshCw,
@@ -67,7 +67,7 @@ export type AccountPage = keyof typeof routes;
 /** One sentence under each page title; Move launchroom opens with its own. */
 const descriptions: Partial<Record<AccountPage, string>> = {
     profile: 'Your name and the email you sign in with.',
-    security: 'Password, two-factor authentication and passkeys.',
+    security: 'How you sign in: two-factor, passkeys and your password.',
     'api-tokens': 'Tokens for the CLI and the API, each bound to one team.',
     appearance: 'How the dashboard looks in this browser.',
     team: 'Who is in this team and what they may do.',
@@ -80,7 +80,8 @@ const descriptions: Partial<Record<AccountPage, string>> = {
     network: 'Your apps’ domain, the private network and public traffic.',
     'dashboard-domain': 'The address this dashboard answers on.',
     registry: 'Where app images and the build cache are stored.',
-    'instance-security': 'Server certificates and the audit log.',
+    'instance-security':
+        'Server certificates, the audit log and vulnerability data sources.',
 };
 
 /**
@@ -108,10 +109,16 @@ export default function SettingsLayout({ children }: PropsWithChildren) {
                 },
                 {
                     id: 'security',
-                    label: 'Security',
-                    icon: LockKeyhole,
-                    summary: 'Password, two-factor and passkeys',
-                    keywords: ['password', '2fa', 'two-factor', 'passkey'],
+                    label: 'Sign-in',
+                    icon: Fingerprint,
+                    summary: 'Two-factor, passkeys and password',
+                    keywords: [
+                        'security',
+                        'password',
+                        '2fa',
+                        'two-factor',
+                        'passkey',
+                    ],
                 },
                 // docs/16 §1.3: personal tokens, each bound to one team.
                 {
@@ -213,10 +220,17 @@ export default function SettingsLayout({ children }: PropsWithChildren) {
                       // D50: server certificates and the audit log.
                       {
                           id: 'instance-security',
-                          label: 'Security',
+                          label: 'Certificates & audit',
                           icon: ShieldCheck,
                           summary: 'Server certificates and audit log',
-                          keywords: ['mtls', 'certificates', 'audit'],
+                          keywords: [
+                              'security',
+                              'mtls',
+                              'certificates',
+                              'audit',
+                              'vulnerability',
+                              'osv',
+                          ],
                       },
                       // docs/14 §13.4: the dashboard and everything to a new machine.
                       {

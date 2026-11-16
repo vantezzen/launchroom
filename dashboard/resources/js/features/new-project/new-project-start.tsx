@@ -10,7 +10,12 @@ import { compose, templates as templatesRoute } from '@/routes/projects';
 import { store as templateStore } from '@/routes/projects/templates';
 import { RepositoryList } from './repository-list';
 import { RepositoryUrlField } from './repository-url-field';
-import { BlankCanvasCard, ComposeCard, TemplateTile } from './start-cards';
+import {
+    BlankCanvasCard,
+    ComposeCard,
+    OtherWaysToStart,
+    TemplateTile,
+} from './start-cards';
 
 type Repository = App.Data.Git.GitRepositoryData;
 type Template = App.Data.Templates.TemplateSummaryData;
@@ -37,8 +42,10 @@ type NewProjectStartProps = {
 
 /**
  * New project's start screen (docs/08 §13): one field for any public Git
- * URL, the team's repositories beside a shelf of templates, and the other
- * two ways to start (a blank canvas, a Compose file).
+ * URL, the team's repositories beside a shelf of templates, then one quiet
+ * row with the other two ways to start (a blank canvas, a Compose file).
+ * Before any Git provider is connected those two are picture cards under
+ * the URL field instead.
  */
 export function NewProjectStart({
     providers,
@@ -56,6 +63,9 @@ export function NewProjectStart({
         setShown(template);
         setOpen(template);
     };
+    // Without a connected provider there's no repository list to lead with:
+    // the blank canvas and Compose cards help most then (PRJ-4).
+    const firstRun = providers.length === 0;
     const featured = [
         ...FEATURED.flatMap((id) => templates.filter((t) => t.id === id)),
         ...templates.filter((t) => !FEATURED.includes(t.id)),
@@ -81,10 +91,14 @@ export function NewProjectStart({
                         }
                         onUseTemplate={openTemplate}
                     />
-                    <div className="grid gap-3 pt-2 sm:grid-cols-2">
-                        <BlankCanvasCard onStart={() => setStartEmpty(true)} />
-                        <ComposeCard href={compose().url} />
-                    </div>
+                    {firstRun && (
+                        <div className="grid gap-3 pt-2 sm:grid-cols-2">
+                            <BlankCanvasCard
+                                onStart={() => setStartEmpty(true)}
+                            />
+                            <ComposeCard href={compose().url} />
+                        </div>
+                    )}
                 </section>
 
                 <div className="grid gap-x-6 gap-y-12 lg:grid-cols-2">
@@ -141,6 +155,13 @@ export function NewProjectStart({
                         </ul>
                     </section>
                 </div>
+
+                {!firstRun && (
+                    <OtherWaysToStart
+                        composeHref={compose().url}
+                        onStartEmpty={() => setStartEmpty(true)}
+                    />
+                )}
             </Page>
 
             <StartEmptyDialog open={startEmpty} onOpenChange={setStartEmpty} />

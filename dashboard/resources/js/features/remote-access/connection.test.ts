@@ -1,6 +1,12 @@
 import { describe, expect, test } from 'vite-plus/test';
 import type { Access } from './api';
-import { countdown, durationLabel, hostAlias, snippets } from './connection';
+import {
+    countdown,
+    durationLabel,
+    hostAlias,
+    mask,
+    snippets,
+} from './connection';
 
 const access = (over: Partial<Access> = {}): Access =>
     ({
@@ -61,7 +67,11 @@ describe('snippets', () => {
                 .filter((s) => s.value.includes('p'.repeat(32)))
                 .every((s) => s.secret),
         ).toBe(true);
-        expect(list.map((s) => s.id)).toEqual(['url', 'psql']);
+        expect(list.map((s) => s.id)).toEqual(['url', 'env', 'psql']);
+        expect(list[1].value).toContain('DB_CONNECTION=pgsql\n');
+        expect(list[1].value).toContain('DB_DATABASE=app\n');
+        expect(mask(list[1].value)).not.toContain('p'.repeat(32));
+        expect(mask(list[1].value)).toContain('DB_PASSWORD=••••••••');
     });
 
     test('redis-protocol databases use the client the server names', () => {
@@ -77,7 +87,10 @@ describe('snippets', () => {
         );
 
         expect(list[0].value).toMatch(/^rediss:\/\//);
-        expect(list[1].label).toBe('valkey-cli');
+        expect(list.map((s) => s.id)).toEqual(['url', 'env', 'cli']);
+        expect(list[1].value).toContain('REDIS_SCHEME=tls\n');
+        expect(mask(list[1].value)).not.toContain('p'.repeat(32));
+        expect(list[2].label).toBe('valkey-cli');
     });
 });
 

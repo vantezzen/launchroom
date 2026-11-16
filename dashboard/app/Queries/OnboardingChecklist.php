@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Queries;
 
 use App\Data\Backups\RecoveryKitStatusData;
+use App\Data\Instance\FirstAppData;
 use App\Data\Instance\OnboardingData;
 use App\Data\Instance\OnboardingProgressData;
 use App\Data\Instance\OnboardingStepData;
@@ -30,8 +31,8 @@ use Laravel\Fortify\Features;
  * The first-run checklist (docs/08 §3.1), for instance owners: this server
  * is connected, GitHub is connected, the platform domain is set, backups are
  * set up (control-plane destination + confirmed recovery kit), and the first
- * project exists (flows §1 order: server, GitHub, address, first app,
- * backup). Each step is derived from real state; the address step is done
+ * app is live, not just created (FirstApp; flows §1 order: server, GitHub,
+ * address, first app, backup). Each step is derived from real state; the address step is done
  * once the owner continued after the DNS check (`domainConfirmed`), not when
  * the domain is saved. "Skipped" (domain, GitHub, backups) and "dismissed"
  * live in `instance_settings.onboarding`.
@@ -41,12 +42,13 @@ final readonly class OnboardingChecklist
     public function __construct(
         private EdgeAddresses $edges,
         private SmallServerHint $smallServer,
+        private FirstApp $firstApp,
     ) {}
 
     public function for(User $user): OnboardingData
     {
         $settings = InstanceSettings::current();
-        ['team' => $team, 'server' => $server, 'app' => $app, 'installation' => $installation, 'recoveryKit' => $recoveryKit, 'projectCount' => $projectCount, 'steps' => $steps] = $this->state($user, $settings);
+        ['team' => $team, 'server' => $server, 'app' => $app, 'installation' => $installation, 'recoveryKit' => $recoveryKit, 'projectCount' => $projectCount, 'firstApp' => $firstApp, 'steps' => $steps] = $this->state($user, $settings);
         $githubConnected = $installation instanceof GitHubInstallation;
         $ipv4 = ServerAddress::ipv4($server?->public_ipv4);
         $address = $ipv4 ?? ServerAddress::ipv6($server?->public_ipv6);
@@ -73,6 +75,7 @@ final readonly class OnboardingChecklist
             recommendTwoFactor: $this->recommendTwoFactor($settings, $user),
             appsDomainVerified: $settings->onboarding?->verified($settings->apps_domain),
             smallServerHint: $team instanceof Team ? $this->smallServer->for($user, $team) : null,
+            firstApp: $firstApp,
         );
     }
 
@@ -107,7 +110,7 @@ final readonly class OnboardingChecklist
      * What the steps are derived from, shared by the checklist page and the
      * sidebar's progress so both always agree.
      *
-     * @return array{team: Team|null, server: Server|null, app: GitHubApp|null, installation: GitHubInstallation|null, recoveryKit: RecoveryKitStatusData, projectCount: int, confirmed: bool, steps: list<OnboardingStepData>}
+     * @return array{team: Team|null, server: Server|null, app: GitHubApp|null, installation: GitHubInstallation|null, recoveryKit: RecoveryKitStatusData, projectCount: int, firstApp: FirstAppData|null, confirmed: bool, steps: list<OnboardingStepData>}
      */
     private function state(User $user, InstanceSettings $settings): array
     {
@@ -125,6 +128,7 @@ final readonly class OnboardingChecklist
             ->first() : null;
         $recoveryKit = RecoveryKitStatusData::fromSettings($settings, BackupDestination::forInstance() instanceof BackupDestination);
         $projectCount = $team instanceof Team ? Project::query()->where('team_id', $team->id)->count() : 0;
+        $firstApp = $team instanceof Team && $projectCount > 0 ? $this->firstApp->for($team, $settings->onboarding?->firstAppSeenAt !== null) : null;
         $confirmed = $settings->onboarding?->confirmed($settings->apps_domain) === true;
 
         $steps = $this->steps($settings, [
@@ -133,10 +137,11 @@ final readonly class OnboardingChecklist
             // Done once the owner continued after the DNS check (saving alone isn't).
             OnboardingStep::Domain->value => $confirmed,
             OnboardingStep::Backups->value => ! $recoveryKit->needsAttention,
-            OnboardingStep::Project->value => $projectCount > 0,
+            // Live, not just created: a running or failed first deploy isn't done.
+            OnboardingStep::Project->value => $firstApp?->state === 'live',
         ]);
 
-        return ['team' => $team, 'server' => $server, 'app' => $app, 'installation' => $installation, 'recoveryKit' => $recoveryKit, 'projectCount' => $projectCount, 'confirmed' => $confirmed, 'steps' => $steps];
+        return ['team' => $team, 'server' => $server, 'app' => $app, 'installation' => $installation, 'recoveryKit' => $recoveryKit, 'projectCount' => $projectCount, 'firstApp' => $firstApp, 'confirmed' => $confirmed, 'steps' => $steps];
     }
 
     /**

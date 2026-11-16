@@ -156,7 +156,7 @@ All live in `resources/js/components/` (primitives) or `components/patterns/` (c
 - Card behaviour: whole card is the link (with an inner focusable title), hover lifts the border to `--border-strong` (no shadow change), focus ring 2 px signal.
 
 ### 5.3 Metrics
-- `StatTile`: label, value (`stat` role) with unit in muted small, optional delta chip (green up/red down only where direction has a meaning; otherwise neutral "avg 29%"), sparkline (40 px area, 1.75 px line, 22 % → 0 area fill), hover crosshair + tooltip with time and value.
+- `StatTile`: label, value (`stat` role) with unit and a qualifier in muted small ("total", "avg", "p95", "of requests": never a bare number whose kind you have to guess), optional delta chip (green up/red down only where direction has a meaning; otherwise neutral "avg 29%"), sparkline (40 px area, 1.75 px line, 22 % → 0 area fill), hover crosshair + tooltip with time and value.
 - `Sparkline` (inline, 16–30 px, no axes), `MiniBars` (deploy frequency: 14 bars, failures in red, today in signal blue).
 - `UsageMeter`: segmented bar with 2 px gaps, categorical colours, legend with values; "free" as the empty remainder.
 - `Donut`: total in the centre, legend beside with values; max 4 segments + "other".
@@ -166,10 +166,10 @@ All live in `resources/js/components/` (primitives) or `components/patterns/` (c
 - `StepList` (Vercel deployment): collapsible rows with chevron, status icon (✓ filled green, ✕ filled red, spinner amber, dashed hollow for skipped/pending), name, summary text, chips (error count), duration right-aligned tabular. The failing step auto-expands to an **ErrorExcerpt** (±5 lines, line numbers, highlighted line with a red left rule) and "Show all N lines".
 - `StepPills`: the compact horizontal version for cards and canvas nodes.
 - `RunStrip`: one bar per day/run (backups, health history), green/red/grey with tooltips.
-- `ActivityItem`: avatar, sentence ("**mara** deployed **api** to production"), age; grouped by day.
+- `ActivityItem`: avatar, sentence ("**mara** deployed **api** to production"), age; grouped by day. Bursts collapse (`features/activity/bursts.ts`): identical events within 10 minutes become one row with "3 times" that expands to the earlier ones (newest outcome shown), and a person's run of different events in one project shares a "**mara** in shop" heading with the rows indented under it.
 
 ### 5.5 Log explorer
-`LogExplorer` with: query bar (`service:api level:error "timeout"` with chips for parsed filters), time range, Live toggle; **histogram** (one bar per bucket, errors stacked in red, deploy markers as signal-blue ticks with labels); **filter rail** with counts (level, service, deployment, server, stream); virtualized monospace table (time with the seconds emphasised, level chip, service + replica, message, ANSI toned down); **detail drawer** (message wrapped, facts box, "similar lines", show context). Build logs on the deployment page reuse the table and search in a contained card.
+`LogExplorer` with: query bar (`service:api level:error "timeout"` with chips for parsed filters), time range, Live toggle; **histogram** (one bar per bucket, errors stacked in red, deploy markers as signal-blue ticks with labels); **filter rail** with counts (level, service, deployment, server, stream); virtualized monospace table (time with the seconds emphasised, service + replica, message, ANSI toned down; the level is a 2 px left rule plus the word "Error" or "Warning" before the message, info and debug stay silent; errors keep a faint red wash); **detail drawer** (message wrapped, facts box with **Only this** / **Hide this** beside each value (`key:value` / `-key:value`), "similar lines", **Surrounding lines** (the ±2 minutes around the line with text and level filters dropped, the line marked with a signal rule, "Back to results" restores the search) and a **Copy** menu: message, line as JSON, link to the line (`?line=`)). The rail's groups collapse (Level and Service open, the others with their selected count), long groups get a search field, and **Reset** clears every facet. A download button after Live saves the lines on screen or all matching lines (up to 10,000) as text or NDJSON; dragging across the histogram picks a time window. Phones: **Filters (n)** opens the rail in a sheet, and rows have two lines (time and source, then the message). Build logs on the deployment page reuse the table and search in a contained card, with **All / Errors / Warnings** counts that narrow the lines.
 
 ### 5.6 Choice and guided setup
 - `ChoiceTiles` ("choose your X"): 2–4 columns of logo/device tiles, selected = 1.5 px foreground ring, disabled tiles with a chip, optional full-width "other" row.
@@ -199,7 +199,7 @@ See §9.4 for the full spec: `ServiceNode`, `GroupFrame`, `ConnectionEdge` with 
 `<Status>` keeps the dot/icon + label rule. A `StatusPill` variant (soft background) for headers and cards. Unified vocabulary in [../design-system.md](../design-system.md) §3.3.
 
 ### 5.12 Settings layout
-One layout for team and project settings: grouped left nav (Team: Members, Git, Backups, Notifications, Dockerfile generation · This launchroom: Updates, Registry, Dashboard domain, Network, Security · You: Profile, Security, API tokens, Appearance), content 800 px, each section a titled block with its controls; descriptions one line; long explanations behind "Learn more". Instant settings show the `UnsavedBar`; destructive actions live in a final "Danger zone" card with outline-red buttons.
+One layout for team and project settings: grouped left nav (Team: Members, Git, Backups, Notifications, Dockerfile generation · This launchroom: Updates, Registry, Dashboard domain, Network, Certificates & audit · You: Profile, Sign-in, API tokens, Appearance), content 800 px, each section a titled block with its controls; descriptions one line; long explanations behind "Learn more". Instant settings show the `UnsavedBar`; destructive actions on the page's own subject (the project, your account) live in a final "Danger zone" card with outline-red buttons; items in a list (a git connection, an invitation, a token) are removed from their own row or `⋯` menu.
 
 ## 6. Writing
 
@@ -369,7 +369,7 @@ Hero (device 300 px on a recessed stage, name in `display`, status pill, one lin
 - **Phone**: the canvas becomes a list of group sections with node cards (tap opens the panel full screen).
 
 ### 9.5 Service panel tabs
-- **Deployments**: one list in one card. The current deployment (in progress, else live) is its first row, expanded: the same avatar column, title and meta line as the rest, plus the steps with live status and times and Cancel / View logs / Redeploy. Then the history rows (status word, message, sha, age, duration, failure reason in red, Roll back on hover). See design-system.md §13.9 "Service panel Deployments".
+- **Deployments**: the current deployment (in progress, else live) pinned in its own card, expanded: the same avatar column, title and meta line as the rest, plus the steps with live status and times, and View logs / Redeploy under it. Then **History**, five rows until "Show all" (status word, message, sha, age, duration, failure reason in red, Roll back on hover). See design-system.md §13.9 "Service panel Deployments".
 - **Variables**: table stays (it's a list of key/values) with calmer chips (icon-only lucide icons with tooltips: lock for secret, link for reference, hammer for build, plug for connection), changed rows marked staged, the `StagedBar` at the bottom, "Raw .env" and "Import" as secondary, paste-anywhere.
 - **Analytics ↗** (a link, not a tab; D75): the project's Analytics page filtered to the service, Traffic with a domain, else Resources. The charts need the page's width.
 - **Logs**: the log explorer scoped to this service.
@@ -390,7 +390,7 @@ Deployments                        [All environments ▾] [All services ▾] [St
 Grouped by day, then one card per commit with one row per service. Filters as compact selects in the header. The serving deployment per service is marked "Live". Duration bars are relative to the service median.
 
 ### 9.7 Deployment detail
-`wide` container, everything aligned: header (logo, commit message as title, "web · production · pushed by jonas 3 hours ago", actions) → overview card (URL card left; facts grid: status, duration, environment, built on; source; domains) → explained failure card (when failed) → `StepList` → related cards (Runtime logs, Configuration, Compare, Build history). The raw deployment id sits in the overview card footer with a copy button.
+`wide` container, everything aligned: header (logo, commit message as title, "web · production · pushed by jonas 3 hours ago", ↑/↓ to neighbouring deployments, actions) → explained failure card first when failed, with the error line quoted → overview card (the stage left only while under way; a finished deployment gets a summary strip with one segmented step bar and the facts grid at full width: status, duration, environment, built on; source; domains) → `StepList`, the one place steps are listed → related cards (Runtime logs, Configuration, Compare, Build history). The raw deployment id sits in the overview card footer with a copy button.
 
 ### 9.8 Logs explorer
 Full-bleed under the project top bar. Default: last hour, all services, live off. Deploy markers on the histogram. Search runs on the server; runtime lines are searchable when the environment keeps runtime logs (opt-in, [../08-dashboard-ux.md](../08-dashboard-ux.md) §12), otherwise they are shown live.
@@ -400,10 +400,10 @@ Full-bleed under the project top bar. Default: last hour, all services, live off
 - Revisions are on the `/changes` page (they're an audit tool, not part of the deploy act).
 
 ### 9.10 Promote
-Header with the two environment cards and an arrow (swap on click), a summary strip, the item list with distinct gutters, secrets inline, the images aside as a card; primary **Promote and deploy**, secondary "Stage only".
+Header with the two environment cards and an arrow (swap on click), a summary with + added / ~ changed / − removed tiles and the services it restarts, the reason under a disabled Promote, the item list with distinct gutters, secrets inline, the images aside as a card; primary **Promote and deploy**, secondary "Stage only".
 
 ### 9.11 Previews
-`PreviewCard` grid (2 columns), "Waiting for you" group for fork approvals at the top. Settings stay in project Settings → Previews, laid out as option cards for the database strategy ("New empty database" / "Clone from staging" / "Share staging's database") with the consequence on each card.
+The rule as one sentence under the title ("Pull requests into main get a copy of staging. Removed when closed or after 7 days without activity."). "Waiting for you" group for fork approvals at the top, then **Open** pull requests as a `PreviewCard` grid (2 columns; no media area without a URL; Open preview, Pull request ↗ and, when a deployment failed, See why), then **Closed** and expired ones as one-line rows, five until "Show all". Counts sit in the section headings. Settings stay in project Settings → Previews, laid out as option cards for the database strategy ("New empty database" / "Clone from staging" / "Share staging's database") with the consequence on each card.
 
 ### 9.12 Get started
 `narrow`. Hero + ring; five step cards, one open; done steps one line each with their result; the deploy step embeds the import flow. Dismiss as "Hide for now" in the top bar.
@@ -413,12 +413,12 @@ Header with the two environment cards and an arrow (swap on click), a summary st
 
 ### 9.14 Settings
 Shared settings layout (§5.12). Specific pages:
-- **Members**: avatar rows, role chips, `⋯` menu; "Invite people" sheet with role tiles; pending invitations.
-- **Git**: a provider picker (GitHub, GitLab, Gitea / Forgejo, any git server), then one card per connection with one health line.
+- **Members**: an inline invite line on top (email, role, Send invite), avatar rows, role chips, `⋯` menu; pending invitations in the same list with an "Invited" chip; a sheet only for inviting several people.
+- **Git**: a provider picker (GitHub, GitLab, Gitea / Forgejo, any git server), then one card per connection with one health line; Disconnect lives in the card's `⋯`.
 - **Backups**: destination card with donut, "What's protected" with run strips, recovery kit card, schedules as sentences.
 - **Updates**: status hero ("You're up to date · 0.4.2" / "0.5.0 is ready" + highlights + Update now), step list during updates, server version cards with "Update 3 servers".
 - **Registry, Network** (instance): cards with the current mode as `OptionCards` (built-in / your own) and the details below.
-- **Profile, Security, Appearance**: settings rows; Appearance as three theme tiles with previews.
+- **Profile, Sign-in, Appearance**: settings rows; Sign-in leads with two-factor and passkeys, the password is one row with "Change…" (a dialog); Appearance as three theme tiles with previews.
 
 ### 9.15 Auth and setup
 - Login: logo mark at 40 px, "Sign in to launchroom" (or the instance name), passkey first, then email and password, an "or" divider in muted sentence case (no ALL-CAPS eyebrow), and the instance URL under the form in mono-small. Plain background, no illustration.

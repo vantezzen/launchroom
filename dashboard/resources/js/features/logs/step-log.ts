@@ -189,6 +189,28 @@ export function failedStepErrors(
     return { section, first, lines: errors };
 }
 
+const WARNING_PATTERN = /(\bwarn(ing)?\b|\bWARN\b|\bdeprecated\b)/i;
+
+/**
+ * Lines that read like warnings (npm WARN, "warning:", deprecations),
+ * excluding the error lines: the build log's "Warnings" filter.
+ */
+export function warningLines(
+    lines: LogLine[],
+    errors: Set<number>,
+): Set<number> {
+    return new Set(
+        lines
+            .filter(
+                (line) =>
+                    !errors.has(line.number) &&
+                    !CACHE_NOTE.test(plain(line)) &&
+                    WARNING_PATTERN.test(plain(line)),
+            )
+            .map((line) => line.number),
+    );
+}
+
 /** A step opens when it has something to show. */
 export function isExpandable(
     step: TimelineStep,

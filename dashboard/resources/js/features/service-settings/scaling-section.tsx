@@ -25,6 +25,7 @@ import {
 } from './scaling-visuals';
 import type { ServerRule, ServerTile } from './scaling-visuals';
 import { SaveRow, SettingsPage, useSettingsPage } from './section';
+import type { FieldLabels } from './section';
 import type { SettingsContext } from './settings-context';
 import {
     SettingsBody,
@@ -57,6 +58,111 @@ function stepsFor(
 
     return steps.sort((a, b) => a - b);
 }
+
+/** Sizes to start from (Laravel Cloud, Supabase); Custom opens the sliders. */
+const SIZE_PRESETS = [
+    { id: 'small', title: 'Small', cpus: 0.5, memoryMb: 512 },
+    { id: 'medium', title: 'Medium', cpus: 1, memoryMb: 1024 },
+    { id: 'large', title: 'Large', cpus: 2, memoryMb: 4096 },
+] as const;
+
+type SizePreset = (typeof SIZE_PRESETS)[number]['id'] | 'custom';
+
+function presetOf(cpus: number, memoryMb: number): SizePreset {
+    return (
+        SIZE_PRESETS.find(
+            (preset) => preset.cpus === cpus && preset.memoryMb === memoryMb,
+        )?.id ?? 'custom'
+    );
+}
+
+/**
+ * Small, Medium, Large or Custom as one row of compact cards, each with its
+ * numbers. A size no eligible server can give is disabled and says so.
+ */
+function SizePresets({
+    value,
+    onChange,
+    biggestCpu,
+    biggestMemory,
+    disabled,
+}: {
+    value: SizePreset;
+    onChange: (preset: SizePreset) => void;
+    biggestCpu: number | null;
+    biggestMemory: number | null;
+    disabled: boolean;
+}) {
+    const options: {
+        id: SizePreset;
+        title: string;
+        detail: string;
+        blocked: string | null;
+    }[] = [
+        ...SIZE_PRESETS.map((preset) => ({
+            id: preset.id,
+            title: preset.title,
+            detail: `${formatCores(preset.cpus)}, ${formatMemory(preset.memoryMb)}`,
+            blocked:
+                (biggestCpu !== null && preset.cpus > biggestCpu) ||
+                (biggestMemory !== null && preset.memoryMb > biggestMemory)
+                    ? 'Bigger than any server'
+                    : null,
+        })),
+        {
+            id: 'custom',
+            title: 'Custom',
+            detail: 'Pick CPU and memory',
+            blocked: null,
+        },
+    ];
+
+    return (
+        <div
+            role="radiogroup"
+            aria-label="Size"
+            className="grid grid-cols-2 gap-2 @xl/page:grid-cols-4"
+        >
+            {options.map((option) => {
+                const selected = option.id === value;
+                const off = disabled || option.blocked !== null;
+
+                return (
+                    <button
+                        key={option.id}
+                        type="button"
+                        role="radio"
+                        aria-checked={selected}
+                        disabled={off && !selected}
+                        onClick={() => onChange(option.id)}
+                        className={cn(
+                            'flex min-w-0 flex-col items-start gap-0.5 rounded-lg border bg-card px-3 py-2.5 text-left transition-[border-color,box-shadow] duration-fast focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
+                            selected
+                                ? 'border-foreground shadow-[0_0_0_0.5px_var(--foreground)]'
+                                : 'hover:border-border-strong',
+                            off && !selected && 'cursor-not-allowed opacity-60',
+                        )}
+                    >
+                        <span className="type-label">{option.title}</span>
+                        <span className="truncate type-small text-muted-foreground tabular-nums">
+                            {option.blocked ?? option.detail}
+                        </span>
+                    </button>
+                );
+            })}
+        </div>
+    );
+}
+
+/** What the unsaved bar calls each field, and the row it lives in. */
+const SCALING_FIELDS: FieldLabels = {
+    replicas: ['Replicas', 'replicas'],
+    cpus: ['CPU', 'replica-size'],
+    memoryMb: ['Memory', 'replica-size'],
+    strategy: ['Distribution', 'distribution'],
+    labels: ['Required labels', 'labels'],
+    rules: ['Servers', 'placement'],
+};
 
 type Draft = {
     replicas: number;
@@ -305,6 +411,15 @@ export function ScalingSection({ context }: { context: SettingsContext }) {
         rules: initialRules,
     });
     const draft = form.data;
+    // Custom stays open once picked, even when the sliders land on a preset.
+    const [customSize, setCustomSize] = useState(
+        () =>
+            presetOf(settings.scaling.cpus, settings.scaling.memoryMb) ===
+            'custom',
+    );
+    const sizePreset: SizePreset = customSize
+        ? 'custom'
+        : presetOf(draft.cpus, draft.memoryMb);
     const { preview, loading } = useScalingPreview(
         context,
         draft,
@@ -470,9 +585,7 @@ export function ScalingSection({ context }: { context: SettingsContext }) {
                                             form.isDirty ? 'staged' : 'active'
                                         }
                                     />
-                                    {form.isDirty
-                                        ? 'Fits, applies with the next deploy'
-                                        : 'Fits'}
+                                    Fits
                                 </>
                             )}
                         </span>
@@ -599,57 +712,85 @@ export function ScalingSection({ context }: { context: SettingsContext }) {
                     title="Size of each replica"
                     description="The most each replica may use. Services only take what they need, so limits can add up to more than a server has."
                 >
-                    <SettingsBody className="grid gap-8 @xl/page:grid-cols-2">
-                        <ResourceSlider
-                            id="scaling-cpus"
-                            label="CPU"
-                            steps={cpuSteps}
-                            value={draft.cpus}
-                            onChange={(value) => form.setData('cpus', value)}
-                            format={formatCores}
-                            total={
-                                !stateful && draft.replicas > 1
-                                    ? `${formatCores(draft.cpus * draft.replicas)} in total`
-                                    : undefined
-                            }
+                    <SettingsBody className="flex flex-col gap-6">
+                        <SizePresets
+                            value={sizePreset}
+                            biggestCpu={biggestCpu}
+                            biggestMemory={biggestMemory}
                             disabled={!canUpdate}
-                            warn={
-                                biggestCpu !== null && draft.cpus > biggestCpu
-                            }
-                            hint={
-                                error('cpus') ??
-                                (biggestCpu !== null && draft.cpus > biggestCpu
-                                    ? 'More than any server has.'
-                                    : undefined)
-                            }
+                            onChange={(preset) => {
+                                const picked = SIZE_PRESETS.find(
+                                    (item) => item.id === preset,
+                                );
+                                setCustomSize(picked === undefined);
+
+                                if (picked) {
+                                    form.setData((data) => ({
+                                        ...data,
+                                        cpus: picked.cpus,
+                                        memoryMb: picked.memoryMb,
+                                    }));
+                                }
+                            }}
                         />
-                        <ResourceSlider
-                            id="scaling-memory"
-                            label="Memory"
-                            steps={memorySteps}
-                            value={draft.memoryMb}
-                            onChange={(value) =>
-                                form.setData('memoryMb', value)
-                            }
-                            format={(value) => formatMemory(value)}
-                            total={
-                                !stateful && draft.replicas > 1
-                                    ? `${formatMemory(draft.memoryMb * draft.replicas)} in total`
-                                    : undefined
-                            }
-                            disabled={!canUpdate}
-                            warn={
-                                biggestMemory !== null &&
-                                draft.memoryMb > biggestMemory
-                            }
-                            hint={
-                                error('memoryMb') ??
-                                (biggestMemory !== null &&
-                                draft.memoryMb > biggestMemory
-                                    ? 'More than any server can give it.'
-                                    : 'A replica that goes over the limit is restarted.')
-                            }
-                        />
+                        {sizePreset === 'custom' && (
+                            <div className="grid gap-8 @xl/page:grid-cols-2">
+                                <ResourceSlider
+                                    id="scaling-cpus"
+                                    label="CPU"
+                                    steps={cpuSteps}
+                                    value={draft.cpus}
+                                    onChange={(value) =>
+                                        form.setData('cpus', value)
+                                    }
+                                    format={formatCores}
+                                    total={
+                                        !stateful && draft.replicas > 1
+                                            ? `${formatCores(draft.cpus * draft.replicas)} in total`
+                                            : undefined
+                                    }
+                                    disabled={!canUpdate}
+                                    warn={
+                                        biggestCpu !== null &&
+                                        draft.cpus > biggestCpu
+                                    }
+                                    hint={
+                                        error('cpus') ??
+                                        (biggestCpu !== null &&
+                                        draft.cpus > biggestCpu
+                                            ? 'More than any server has.'
+                                            : undefined)
+                                    }
+                                />
+                                <ResourceSlider
+                                    id="scaling-memory"
+                                    label="Memory"
+                                    steps={memorySteps}
+                                    value={draft.memoryMb}
+                                    onChange={(value) =>
+                                        form.setData('memoryMb', value)
+                                    }
+                                    format={(value) => formatMemory(value)}
+                                    total={
+                                        !stateful && draft.replicas > 1
+                                            ? `${formatMemory(draft.memoryMb * draft.replicas)} in total`
+                                            : undefined
+                                    }
+                                    disabled={!canUpdate}
+                                    warn={
+                                        biggestMemory !== null &&
+                                        draft.memoryMb > biggestMemory
+                                    }
+                                    hint={
+                                        error('memoryMb') ??
+                                        (biggestMemory !== null &&
+                                        draft.memoryMb > biggestMemory
+                                            ? 'More than any server can give it.'
+                                            : 'A replica that goes over the limit is restarted.')
+                                    }
+                                />
+                            </div>
+                        )}
                     </SettingsBody>
                 </SettingsCard>
 
@@ -751,7 +892,9 @@ export function ScalingSection({ context }: { context: SettingsContext }) {
                         dirty={form.isDirty}
                         processing={form.processing}
                         onReset={() => form.reset()}
-                        label="Save for next deploy"
+                        stages="restart"
+                        fields={form.data}
+                        labels={SCALING_FIELDS}
                     />
                 )}
             </form>

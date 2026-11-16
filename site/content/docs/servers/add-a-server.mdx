@@ -82,15 +82,19 @@ Give it a name or keep the generated one. You can change roles later without tou
 <Step>
 ### Connect
 
-Pick your platform, then copy the command and run it on the machine:
+Copy the command and run it on the machine. The command is the same on every platform. What to have ready first:
 
-- **Ubuntu / Debian**: the command installs Docker if it's missing.
-- **Docker already installed** or **Other Linux**: the command expects Docker Engine 24 or newer with the compose plugin.
-- **macOS**: start OrbStack, Docker Desktop or Colima first, then run the command in Terminal.
+- **Ubuntu or Debian**: nothing. The command installs Docker if it's missing, after asking.
+- **Other Linux**: Docker Engine 24 or newer with the compose plugin.
+- **Mac**: start OrbStack, Colima or Docker Desktop. With Docker Desktop the Mac only builds.
+
+The join token in the command is masked so it doesn't leak in a screenshot or screen share. The eye button shows it,
+and **Copy** always copies the full command.
 
 <Screenshot id="add-server" />
 
-The page waits for the server and moves to the next step when it connects.
+The page waits for the server. Once it connects, a checklist confirms that it reports to the dashboard, that it is on
+the private network (when you have other servers) and that it is ready for its roles.
 </Step>
 </Steps>
 
@@ -175,11 +179,12 @@ The server page shows its hardware, usage, what runs on it, a health checklist a
 
 - **Added but never connected**: remove it from its card's **⋯** menu or its waiting page. The install command stops
   working immediately.
-- **Connected**: open the server, go to **Settings → Danger zone** and **Revoke** it. Its key is rejected immediately,
-  it leaves the private network and stops receiving apps and tasks. This can't be undone. To bring the machine back,
-  add it again with a new command.
+- **Connected**: open the server, go to **Settings → Danger zone** and **Revoke** it. The dialog lists what stops on
+  that server (project environments, services whose data lives there, public addresses it serves) and asks you to type
+  the server's name. Its key is rejected immediately, it leaves the private network and stops receiving apps and tasks.
+  This can't be undone. To bring the machine back, add it again with a new command.
 
-Before you revoke a server that still runs services, move them: change their placement rules and deploy. For a server
+Before you revoke a server that still runs services, move them. The revoke dialog links to **Move to another server**. For a server
 that is gone for good, use [Replace a server](/docs/servers/replace-a-server). It moves the server's roles, restores its
 databases on another server and re-places everything else.
 

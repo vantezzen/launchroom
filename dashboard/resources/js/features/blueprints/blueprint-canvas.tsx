@@ -19,11 +19,14 @@ export function BlueprintCanvas({
     preview,
     onSelect,
     selected,
+    pending,
     className,
 }: {
     preview: Preview;
     onSelect?: (key: string) => void;
     selected?: string | null;
+    /** Nodes that still need input: dashed, with this line ("Needs a repository"). */
+    pending?: { keys: string[]; label: string };
     className?: string;
 }) {
     const container = useRef<HTMLDivElement>(null);
@@ -153,6 +156,11 @@ export function BlueprintCanvas({
                                 key={service.key}
                                 service={service}
                                 selected={selected === service.key}
+                                pending={
+                                    pending?.keys.includes(service.key)
+                                        ? pending.label
+                                        : null
+                                }
                                 onSelect={onSelect}
                             />
                         ))}
@@ -166,10 +174,12 @@ export function BlueprintCanvas({
 function ServiceTile({
     service,
     selected,
+    pending = null,
     onSelect,
 }: {
     service: ServicePreview;
     selected: boolean;
+    pending?: string | null;
     onSelect?: (key: string) => void;
 }) {
     const refused = service.notes.filter(
@@ -186,7 +196,7 @@ function ServiceTile({
             <span className="flex min-w-0 flex-col">
                 <span className="truncate type-label">{service.name}</span>
                 <span className="truncate type-small text-muted-foreground">
-                    {service.subtitle}
+                    {pending ?? service.subtitle}
                 </span>
             </span>
             {refused > 0 && (
@@ -201,6 +211,7 @@ function ServiceTile({
     );
     const classes = cn(
         'relative flex min-w-0 items-center gap-3 rounded-xl border bg-card p-3 text-left shadow-card',
+        pending !== null && 'border-dashed border-border-strong shadow-none',
         selected && 'border-foreground shadow-[0_0_0_0.5px_var(--foreground)]',
     );
 

@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace App\Queries;
 
+use App\Data\Git\RepositoryRef;
 use App\Data\Promotions\PromotionComparisonData;
 use App\Data\Promotions\PromotionEnvironmentData;
 use App\Data\Promotions\PromotionImageData;
 use App\Data\Promotions\PromotionServiceData;
 use App\Data\Promotions\PromotionSnapshot;
+use App\Data\Services\GitSource;
 use App\Data\Specs\EnvironmentSpec;
 use App\Data\Specs\ServiceSpec;
 use App\Enums\DeploymentStatus;
@@ -20,6 +22,7 @@ use App\Models\EnvironmentPromotion;
 use App\Models\Project;
 use App\Models\ServiceInstance;
 use App\Services\Crypto\ProjectKeyring;
+use App\Services\Git\GitProviders;
 use App\Services\Promotions\PromotionPlan;
 use App\Services\Promotions\PromotionPlanner;
 use App\Services\Variables\ProductionSecretPolicy;
@@ -43,6 +46,7 @@ final readonly class PromotionComparison
         private SpecVariableResolver $resolver,
         private ProjectKeyring $keyring,
         private ProductionSecretPolicy $policy,
+        private GitProviders $providers,
     ) {}
 
     public function get(Project $project, Environment $from, Environment $to): PromotionComparisonData
@@ -144,7 +148,7 @@ final readonly class PromotionComparison
             $live = ServiceInstance::query()->current()
                 ->where('environment_id', $to->id)
                 ->where('service_id', $instance->service_id)
-                ->with('activeDeployment:id,image')
+                ->with('activeDeployment:id,image,commit_sha,commit_message')
                 ->first()?->activeDeployment;
 
             if ($live instanceof Deployment && $live->image === $deployment->image) {
@@ -153,6 +157,11 @@ final readonly class PromotionComparison
             }
 
             $differences = $this->differences($project, $plan, $service);
+            $target = $live instanceof Deployment ? $live : null;
+            $source = $instance->service->source;
+            $compare = $source instanceof GitSource && $target?->commit_sha !== null && $target->commit_sha !== $deployment->commit_sha
+                ? $this->providers->forSource($source)->compareUrl(RepositoryRef::fromSource($project->team_id, $source), $target->commit_sha, $deployment->commit_sha)
+                : null;
 
             $images[] = new PromotionImageData(
                 serviceId: $service->id,
@@ -161,12 +170,23 @@ final readonly class PromotionComparison
                 commitSha: $deployment->commit_sha,
                 sameInputs: $differences === [],
                 differences: $differences,
+                commitMessage: $this->firstLine($deployment->commit_message),
+                targetCommitSha: $target?->commit_sha,
+                targetCommitMessage: $this->firstLine($target?->commit_message),
+                compareUrl: $compare,
             );
         }
 
         usort($images, static fn (PromotionImageData $a, PromotionImageData $b): int => strcasecmp($a->name, $b->name));
 
         return $images;
+    }
+
+    private function firstLine(?string $message): ?string
+    {
+        $line = $message === null ? '' : trim(strtok($message, "\n") ?: '');
+
+        return $line === '' ? null : mb_substr($line, 0, 200);
     }
 
     /**

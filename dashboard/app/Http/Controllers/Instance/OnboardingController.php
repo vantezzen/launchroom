@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Instance;
 
 use App\Actions\Instance\ConfirmAppsDomain;
+use App\Actions\Instance\DismissFirstAppCard;
 use App\Actions\Instance\DismissTwoFactorRecommendation;
 use App\Actions\Instance\SetAppsDomain;
 use App\Actions\Instance\UpdateOnboarding;
@@ -17,8 +18,12 @@ use App\Data\Instance\WildcardCheckData;
 use App\Enums\Domains\DnsCheckStatus;
 use App\Enums\ToastType;
 use App\Http\Controllers\Controller;
+use App\Http\Routing\CurrentTeam;
 use App\Http\Toast;
+use App\Models\InstanceSettings;
+use App\Models\Team;
 use App\Models\User;
+use App\Queries\FirstApp;
 use App\Queries\OnboardingChecklist;
 use App\Services\Dns\DnsCheck;
 use App\Services\Dns\EdgeAddresses;
@@ -75,6 +80,30 @@ final class OnboardingController extends Controller
         Gate::authorize('manageInstance');
 
         $dismiss->handle($user);
+
+        return back();
+    }
+
+    /**
+     * The first-live card on the project canvas (flows §5): the team's first
+     * app while its first deploy runs and for a while after it went live,
+     * until dismissed. JSON; null when there is nothing to show.
+     */
+    public function firstApp(FirstApp $firstApp, #[CurrentTeam] Team $team): JsonResponse
+    {
+        Gate::authorize('manageInstance');
+        Gate::authorize('view', $team);
+
+        $seen = InstanceSettings::current()->onboarding?->firstAppSeenAt !== null;
+
+        return response()->json(['firstApp' => $firstApp->card($team, $seen)])->header('Cache-Control', 'no-store');
+    }
+
+    public function dismissFirstApp(DismissFirstAppCard $dismiss): RedirectResponse
+    {
+        Gate::authorize('manageInstance');
+
+        $dismiss->handle();
 
         return back();
     }

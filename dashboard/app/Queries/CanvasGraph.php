@@ -32,6 +32,7 @@ use App\Queries\Backups\BackupStatuses;
 use App\Services\Holds\Holds;
 use App\Support\Canvas\NodeStatus;
 use App\Support\Canvas\ServiceGlyph;
+use App\Support\Changes\ChangeTally;
 use App\Support\Changes\SpecDiff;
 use Illuminate\Database\Eloquent\Collection;
 
@@ -115,6 +116,8 @@ final readonly class CanvasGraph
                 placementIssue: $instance->placement_issue,
                 openAlerts: $instance->removed_at === null ? ($alerts[$instance->id] ?? []) : [],
                 analyticsView: AnalyticsView::forService($domain !== null),
+                stagedSummary: ChangeTally::summary(array_values(array_filter($changes->items, static fn (ChangeItem $item): bool => $item->serviceId === $service->public_id))),
+                schedule: $instance->deploy->schedule?->cron,
             );
         }
 

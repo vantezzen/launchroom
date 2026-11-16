@@ -62,8 +62,42 @@ final class LogSearch
 
     public const int BUCKETS = 60;
 
+    /** Lines a download ("All matching") holds at most (docs/08 §12). */
+    public const int EXPORT_LIMIT = 10000;
+
     /** Statement timeout for one search, so a pathological query can't hold a worker. */
     private const int TIMEOUT_MS = 15000;
+
+    /**
+     * Chunks are stored when shipped, after their lines: with an absolute
+     * window, chunks created this long after it can still hold its lines.
+     */
+    private const int SHIP_SLACK_SECONDS = 300;
+
+    /** A line's own time (null when it has none), for absolute windows. */
+    private const string LINE_TIME = "(CASE WHEN l.e->>'time' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T' THEN (l.e->>'time')::timestamptz END)";
+
+    /**
+     * Every matching line of the scope and range for a download, oldest
+     * first, at most `$limit` (the newest ones when there are more).
+     *
+     * @return list<LogEntryData>
+     */
+    public function export(LogScope $scope, LogQueryData $query, int $limit = self::EXPORT_LIMIT): array
+    {
+        [$from, $to] = $query->window();
+        $search = LogSearchQuery::parse($query->q);
+        $window = $query->absolute() ? [$from, $to] : null;
+
+        $rows = DB::transaction(function () use ($scope, $query, $search, $from, $to, $window, $limit): array {
+            DB::statement('SET LOCAL statement_timeout = '.self::TIMEOUT_MS);
+            $chunkFilter = $this->chunkFilter($scope, $query, $search, $from, $window === null ? null : $to->addSeconds(self::SHIP_SLACK_SECONDS));
+
+            return $chunkFilter instanceof \Closure ? $this->lines($chunkFilter, $search, $limit, $window) : [];
+        });
+
+        return array_reverse($this->hydrate($scope, $rows));
+    }
 
     public function page(LogScope $scope, LogQueryData $query, int $tailing = 0): LogExplorerPageData
     {
@@ -73,19 +107,23 @@ final class LogSearch
         return DB::transaction(function () use ($scope, $query, $search, $from, $to, $tailing): LogExplorerPageData {
             DB::statement('SET LOCAL statement_timeout = '.self::TIMEOUT_MS);
 
-            $chunkFilter = $this->chunkFilter($scope, $query, $search, $from, $query->absolute() ? $to : null);
+            // An absolute window (a chart, an alert, "Surrounding lines")
+            // keeps the lines whose own time is inside it, so the count, the
+            // histogram and the list agree.
+            $window = $query->absolute() ? [$from, $to] : null;
+            $chunkFilter = $this->chunkFilter($scope, $query, $search, $from, $window === null ? null : $to->addSeconds(self::SHIP_SLACK_SECONDS));
 
             if (! $chunkFilter instanceof \Closure) {
                 return $this->empty($from, $to, $query->after, $tailing);
             }
 
-            $rows = $this->lines($chunkFilter, $search);
+            $rows = $this->lines($chunkFilter, $search, self::LIMIT, $window);
             $entries = $this->hydrate($scope, $rows);
             $cursor = max([$query->after, ...array_map(static fn (array $row): int => $row['chunk_id'], $rows)]);
 
             [$buckets, $matches] = $query->after > 0
                 ? [[], count($entries)]
-                : $this->histogram($chunkFilter, $search, $from, $to);
+                : $this->histogram($chunkFilter, $search, $from, $to, $window !== null);
 
             return new LogExplorerPageData(
                 entries: array_reverse($entries),
@@ -187,10 +225,19 @@ final class LogSearch
     }
 
     /**
-     * Line-level conditions on `l.e` (text, level, stream).
+     * Line-level conditions on `l.e` (text, level, stream; the line's own
+     * time inside an absolute `$window`).
+     *
+     * @param  array{CarbonImmutable, CarbonImmutable}|null  $window
      */
-    private function lineFilter(Builder $q, LogSearchQuery $search, bool $withLevel = true): void
+    private function lineFilter(Builder $q, LogSearchQuery $search, bool $withLevel = true, ?array $window = null): void
     {
+        if ($window !== null) {
+            $q->whereRaw(self::LINE_TIME.' >= ?::timestamptz AND '.self::LINE_TIME.' < ?::timestamptz', [
+                $window[0]->utc()->format('Y-m-d H:i:sP'), $window[1]->utc()->format('Y-m-d H:i:sP'),
+            ]);
+        }
+
         foreach ($search->text as $term) {
             $q->whereRaw("l.e->>'text' ILIKE ?", ['%'.self::escapeLike($term).'%']);
         }
@@ -209,18 +256,19 @@ final class LogSearch
     }
 
     /**
+     * @param  array{CarbonImmutable, CarbonImmutable}|null  $window
      * @return list<LineRow>
      */
-    private function lines(\Closure $chunkFilter, LogSearchQuery $search): array
+    private function lines(\Closure $chunkFilter, LogSearchQuery $search, int $limit = self::LIMIT, ?array $window = null): array
     {
         $q = DB::query()
             ->fromRaw('log_chunks c CROSS JOIN LATERAL jsonb_array_elements(c.lines) WITH ORDINALITY AS l(e, ord)')
             ->select(['c.id as chunk_id', 'c.server_id', 'c.daemon_task_id', 'c.deployment_id', 'c.source_kind', 'c.source_id', 'c.runtime', 'c.project_id', 'c.environment_id', 'c.service_id', 'l.ord', DB::raw('l.e::text as line')])
             ->where($chunkFilter);
-        $this->lineFilter($q, $search);
+        $this->lineFilter($q, $search, window: $window);
 
         /** @var list<LineRow> */
-        return $q->latest('c.created_at')->orderByDesc('c.id')->orderByDesc('l.ord')->limit(self::LIMIT)->get()->map(static fn (object $row): array => (array) $row)->values()->all();
+        return $q->latest('c.created_at')->orderByDesc('c.id')->orderByDesc('l.ord')->limit($limit)->get()->map(static fn (object $row): array => (array) $row)->values()->all();
     }
 
     /**
@@ -229,12 +277,13 @@ final class LogSearch
      *
      * @return array{list<LogBucketData>, int}
      */
-    private function histogram(\Closure $chunkFilter, LogSearchQuery $search, CarbonImmutable $from, CarbonImmutable $to): array
+    private function histogram(\Closure $chunkFilter, LogSearchQuery $search, CarbonImmutable $from, CarbonImmutable $to, bool $absolute = false): array
     {
         $width = max(1, (int) ceil(($to->getTimestamp() - $from->getTimestamp()) / self::BUCKETS));
-        $bin = ['date_bin(make_interval(secs => ?), c.created_at, ?::timestamptz) as bucket', [$width, $from->utc()->format('Y-m-d H:i:sP')]];
+        // An absolute window counts lines by their own time (line by line).
+        $bin = ['date_bin(make_interval(secs => ?), '.($absolute ? self::LINE_TIME : 'c.created_at').', ?::timestamptz) as bucket', [$width, $from->utc()->format('Y-m-d H:i:sP')]];
         $levels = $search->filters['level'] ?? [];
-        $byChunk = $search->text === [] && ! $search->has('stream') && ($levels === [] || $search->positive('level') === ['error'] && $search->negative('level') === []);
+        $byChunk = ! $absolute && $search->text === [] && ! $search->has('stream') && ($levels === [] || $search->positive('level') === ['error'] && $search->negative('level') === []);
 
         if ($byChunk) {
             $q = DB::table('log_chunks as c')
@@ -253,7 +302,7 @@ final class LogSearch
             } else {
                 $q->selectRaw("count(*) FILTER (WHERE l.e->>'level' = ANY(string_to_array(?, ','))) as matched", [implode(',', $kept)]);
             }
-            $this->lineFilter($q, $search, withLevel: false);
+            $this->lineFilter($q, $search, withLevel: false, window: $absolute ? [$from, $to] : null);
         }
 
         $rows = $q->where($chunkFilter)->groupBy('bucket')->get()->keyBy(static fn (object $row): int => CarbonImmutable::parse(is_string($row->bucket) ? $row->bucket : 'now')->getTimestamp());

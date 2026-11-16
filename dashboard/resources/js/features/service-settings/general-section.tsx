@@ -274,6 +274,8 @@ export function GeneralSection({
                         dirty={form.isDirty}
                         processing={form.processing}
                         onReset={() => form.reset()}
+                        fields={form.data}
+                        labels={{ name: ['Name', 'name'] }}
                     />
                 )}
             </form>

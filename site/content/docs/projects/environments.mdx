@@ -23,16 +23,20 @@ production.
 
 ## The environment switcher
 
-The top bar shows `project / environment`. Open the environment part to switch between production, your persistent
-environments (each with the branch or tags it deploys from) and previews (listed under their own heading). The menu
-also links to **Compare & promote** and **Manage environments**. For a persistent environment it shows a hint such as
-"staging has 3 changes not in production · Compare".
+The top bar shows `project / environment`. When the open environment needs you (a failed deploy, something that needs
+attention or nothing deployed yet), its status shows after its name. Open the environment part to switch between
+production, your persistent environments and previews (listed under their own heading). Each one shows its status and
+the branch or tags it deploys from. Use ↑, ↓ and ↵ to pick. With eight or more environments, a filter field appears
+too. The menu also has **Compare & promote**,
+**New environment** and **Manage environments**. For a persistent environment it shows a hint such as "staging has 3
+changes not in production".
 
 <Screenshot id="env-switcher" />
 
 ## Create an environment
 
-Open **Manage environments** (project **Settings → Environments**) and choose **New environment**. Give it a name, pick
+Choose **New environment** in the environment switcher, or open **Manage environments** (project **Settings →
+Environments**) and choose it there. Give it a name, pick
 the environment to copy from and, optionally, the branch it deploys on.
 
 The copy takes over every service of the source with its settings, volumes and canvas layout, plus the source's
@@ -101,7 +105,13 @@ Checking an item also checks what it depends on (a new service's variables need 
 
 **Also promote images** reuses the image a service runs in the source when its build inputs match, so production
 runs what you tested without a rebuild. When the inputs differ (for example a different `NEXT_PUBLIC_API_URL`), the service is
-rebuilt from the same commit with the target's values, and the list says why.
+rebuilt from the same commit with the target's values, and the list says why. Each service shows the commit range, from
+what the target runs now to what it gets, with the commit messages. **Compare commits** opens the range at your git
+provider when it has a compare view.
+
+Above the buttons, a summary counts the selected changes as added, changed and removed, and names the services that
+restart. When a new secret still needs a value for the target, the summary names it and **Promote and deploy** stays
+disabled until you fill it in.
 
 Finish with:
 

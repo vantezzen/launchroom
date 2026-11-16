@@ -42,6 +42,18 @@ const RANGES = rangeOptions(RANGE_SETS.resources);
 
 const TOP = 3;
 
+/** One plain line under each chart: what it measures. */
+const DESCRIPTION: Record<MetricKey, string> = {
+    cpu: 'Processor time your services used, in cores.',
+    memory: 'Memory your services held.',
+    latency: 'Time to answer a request: p50 is typical, p95 the slow end.',
+    bandwidth: 'Data your services sent to visitors.',
+};
+
+/** Image-only services get their monogram, not a vendor mark. */
+const glyph = (logo: string | undefined): string | undefined =>
+    logo === 'docker' ? 'service' : logo;
+
 const card =
     'rounded-[14px] border bg-card shadow-[0_1px_2px_rgb(0_0_0/0.04)] dark:shadow-none';
 
@@ -170,7 +182,7 @@ export function ProjectResources({
         const top = list.slice(0, TOP).map((s) => ({
             key: s.serviceId,
             label: s.serviceName,
-            logo: logos.get(s.serviceId),
+            logo: glyph(logos.get(s.serviceId)),
             values: pick(s),
             value: format(s),
         }));
@@ -208,7 +220,7 @@ export function ProjectResources({
             key: 'cpu',
             label: 'CPU',
             value: totals?.cpuAvg != null ? formatCores(totals.cpuAvg) : null,
-            unit: totals?.cpuAvg != null ? 'cores, avg' : undefined,
+            unit: totals?.cpuAvg != null ? 'cores avg' : undefined,
             delta: delta(totals?.cpuAvg, totals?.previousCpuAvg),
             hint: 'No usage recorded in this range.',
             rows: rows(
@@ -260,11 +272,12 @@ export function ProjectResources({
             ? [
                   {
                       key: 'latency' as const,
-                      label: 'Latency p95',
+                      label: 'Latency',
                       value:
                           traffic.totals.p95Ms != null
                               ? formatLatency(traffic.totals.p95Ms)
                               : null,
+                      unit: traffic.totals.p95Ms != null ? 'p95' : undefined,
                       delta: delta(
                           traffic.totals.p95Ms,
                           traffic.previous?.p95Ms,
@@ -284,7 +297,7 @@ export function ProjectResources({
                       key: 'bandwidth' as const,
                       label: 'Bandwidth',
                       value: formatBytes(traffic.totals.bytesOut),
-                      unit: formatBandwidth(traffic.totals.bytesOut / seconds),
+                      unit: `total, ${formatBandwidth(traffic.totals.bytesOut / seconds)} avg`,
                       delta: delta(
                           traffic.totals.bytesOut,
                           traffic.previous?.bytesOut,
@@ -441,7 +454,7 @@ export function ProjectResources({
 
                     <Section
                         title={active.label}
-                        description={`${focus?.name ?? 'All services'}, ${rangeWords(range)}`}
+                        description={`${DESCRIPTION[active.key]} ${focus?.name ?? 'All services'}, ${rangeWords(range)}.`}
                     >
                         <div className={`${card} p-5`}>
                             <TimeSeriesChart
@@ -516,7 +529,7 @@ function ServiceRows({
                                 className="grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-4 px-5 py-3.5 text-left hover:bg-(--hover) focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-(--signal) sm:grid-cols-[auto_minmax(0,1fr)_160px_auto]"
                             >
                                 <Logo
-                                    kind={service.logo}
+                                    kind={glyph(service.logo) ?? 'service'}
                                     name={service.name}
                                     size={32}
                                     decorative

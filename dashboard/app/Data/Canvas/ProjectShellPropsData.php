@@ -19,6 +19,7 @@ final class ProjectShellPropsData extends Data
      * @param  list<EnvironmentData>  $environments
      * @param  list<ProjectLinkData>  $projects
      * @param  list<ProjectStatusData>|Optional  $projectStatuses
+     * @param  list<EnvironmentStatusData>|Optional  $environmentStatuses
      */
     public function __construct(
         public ProjectData $project,
@@ -30,5 +31,9 @@ final class ProjectShellPropsData extends Data
         public EdgeOverviewData $edgeOverview,
         /** Loaded when the project switcher opens (a partial reload). */
         public array|Optional $projectStatuses = new Optional,
+        /** Loaded when the environment switcher opens (a partial reload). */
+        public array|Optional $environmentStatuses = new Optional,
+        /** The open environment's status and deploy state (switcher, Deployments tab); deferred, so the page doesn't wait for it. */
+        public EnvironmentHealthData|Optional|null $environmentHealth = new Optional,
     ) {}
 }

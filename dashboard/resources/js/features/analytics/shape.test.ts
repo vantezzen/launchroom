@@ -154,6 +154,8 @@ const project = (
     clientErrorPct: null,
     requestsSeries: [requests - 1, 1],
     blocked: 0,
+    serverErrorSeries: [0, requests % 3],
+    clientErrorSeries: [0, 0],
 });
 
 describe('team project series', () => {
@@ -206,6 +208,23 @@ describe('team project series', () => {
             'var(--chart-4)',
             'var(--chart-5)',
         ]);
+    });
+
+    test('the error measures stack only the projects that had errors', () => {
+        const series = projectSeries(
+            team([project('shop', 100, 0), project('blog', 50, 1)]),
+            4,
+            'serverErrors',
+        );
+
+        // blog had 2 server errors, shop 1: blog leads.
+        expect(series.map((s) => [s.label, s.values])).toEqual([
+            ['blog', [0, 2]],
+            ['shop', [0, 1]],
+        ]);
+        expect(
+            projectSeries(team([project('shop', 99, 0)]), 4, 'serverErrors'),
+        ).toEqual([]);
     });
 
     test('no projects, no series', () => {

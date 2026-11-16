@@ -1,6 +1,7 @@
 import { Plus } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { Logo } from '@/components/logo';
+import { choices } from '@/features/add-service/add-service-sheet';
 import { cn } from '@/lib/utils';
 import { GROUPS } from './groups';
 import type { GroupId } from './groups';
@@ -8,16 +9,25 @@ import type { GroupId } from './groups';
 function GhostTile({
     logo,
     label,
+    description,
     onClick,
 }: {
     logo: string;
     label: string;
+    description?: string;
     onClick?: () => void;
 }) {
     const content = (
         <>
             <Logo kind={logo} decorative className="text-muted-foreground" />
-            <span className="flex-1 text-left type-label">{label}</span>
+            <span className="flex min-w-0 flex-1 flex-col text-left">
+                <span className="type-label">{label}</span>
+                {description && (
+                    <span className="type-small text-muted-foreground">
+                        {description}
+                    </span>
+                )}
+            </span>
             {onClick && (
                 <Plus
                     aria-hidden="true"
@@ -36,7 +46,7 @@ function GhostTile({
             {content}
         </button>
     ) : (
-        <div className="flex w-full items-center gap-3 rounded-[14px] border border-dashed p-3 text-muted-foreground">
+        <div className="flex w-full items-start gap-3 rounded-[14px] border border-dashed p-3 text-muted-foreground">
             {content}
         </div>
     );
@@ -52,12 +62,22 @@ export function EmptyCanvas({
 }: {
     onAdd?: (choice: 'github' | 'database') => void;
 }) {
+    // The add sheet's own lines, so both say the same.
+    const describe = (id: 'github' | 'database') =>
+        choices.find((choice) => choice.id === id)?.description;
     const tiles: Record<GroupId, ReactNode> = {
-        public: <GhostTile logo="nextjs" label="Web apps with an address" />,
+        public: (
+            <GhostTile
+                logo="nextjs"
+                label="Web apps with an address"
+                description="Apps with a domain show up here."
+            />
+        ),
         app: (
             <GhostTile
                 logo="github"
                 label="Add a repository"
+                description={describe('github')}
                 onClick={onAdd ? () => onAdd('github') : undefined}
             />
         ),
@@ -65,6 +85,7 @@ export function EmptyCanvas({
             <GhostTile
                 logo="postgres"
                 label="Add a database"
+                description={describe('database')}
                 onClick={onAdd ? () => onAdd('database') : undefined}
             />
         ),

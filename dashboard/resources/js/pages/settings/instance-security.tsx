@@ -11,7 +11,7 @@ type Props = {
 };
 
 /**
- * Settings → Security for this launchroom (D50), instance owners only:
+ * Settings → Certificates & audit for this launchroom (D50), instance owners only:
  * server certificates (mTLS, docs/03 §4.3) and the audit log (docs/09 R34).
  */
 export default function InstanceSecurity({
@@ -21,7 +21,7 @@ export default function InstanceSecurity({
 }: Props) {
     return (
         <>
-            <Head title="Security" />
+            <Head title="Certificates & audit" />
             <ClientCertificatesSection overview={certificates} />
             <AuditLogSection overview={audit} />
             <VulnerabilityDataSection sources={sources} />

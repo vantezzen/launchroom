@@ -1,23 +1,21 @@
-import { Form } from '@inertiajs/react';
-import { useRef } from 'react';
+import { useForm, usePage } from '@inertiajs/react';
+import { useRef, useState } from 'react';
 import ProfileController from '@/actions/App/Http/Controllers/Settings/ProfileController';
-import InputError from '@/components/input-error';
 import PasswordInput from '@/components/password-input';
-import { Button } from '@/components/ui/button';
-import {
-    Dialog,
-    DialogClose,
-    DialogContent,
-    DialogDescription,
-    DialogFooter,
-    DialogTitle,
-    DialogTrigger,
-} from '@/components/ui/dialog';
-import { Label } from '@/components/ui/label';
+import { TypedConfirmDialog } from '@/components/patterns/typed-confirm-dialog';
 import { SettingsCard, SettingsRow } from '@/components/settings/settings-card';
+import { Button } from '@/components/ui/button';
+import { Label } from '@/components/ui/label';
 
+/**
+ * Profile's danger zone: deleting your own account, confirmed with your
+ * password in the shared typed-confirm dialog (what goes, what stays).
+ */
 export default function DeleteUser() {
+    const { auth } = usePage().props;
+    const [open, setOpen] = useState(false);
     const passwordInput = useRef<HTMLInputElement>(null);
+    const form = useForm({ password: '' });
 
     return (
         <SettingsCard title="Danger zone" setting="delete-account">
@@ -25,84 +23,62 @@ export default function DeleteUser() {
                 label="Delete your account"
                 description="Removes you from every team. This can’t be undone."
             >
-                <Dialog>
-                    <DialogTrigger asChild>
-                        <Button
-                            variant="destructive"
-                            size="sm"
-                            data-test="delete-user-button"
-                        >
-                            Delete account
-                        </Button>
-                    </DialogTrigger>
-                    <DialogContent>
-                        <DialogTitle>Delete your account?</DialogTitle>
-                        <DialogDescription>
-                            You lose access to every team and its servers and
-                            projects. Enter your password to confirm.
-                        </DialogDescription>
-
-                        <Form
-                            {...ProfileController.destroy.form()}
-                            options={{
-                                preserveScroll: true,
-                            }}
-                            onError={() => passwordInput.current?.focus()}
-                            resetOnSuccess
-                            className="space-y-6"
-                        >
-                            {({ resetAndClearErrors, processing, errors }) => (
-                                <>
-                                    <div className="grid gap-2">
-                                        <Label
-                                            htmlFor="password"
-                                            className="sr-only"
-                                        >
-                                            Password
-                                        </Label>
-
-                                        <PasswordInput
-                                            id="password"
-                                            name="password"
-                                            ref={passwordInput}
-                                            placeholder="Password"
-                                            autoComplete="current-password"
-                                        />
-
-                                        <InputError message={errors.password} />
-                                    </div>
-
-                                    <DialogFooter className="gap-2">
-                                        <DialogClose asChild>
-                                            <Button
-                                                variant="secondary"
-                                                onClick={() =>
-                                                    resetAndClearErrors()
-                                                }
-                                            >
-                                                Cancel
-                                            </Button>
-                                        </DialogClose>
-
-                                        <Button
-                                            variant="destructive"
-                                            disabled={processing}
-                                            asChild
-                                        >
-                                            <button
-                                                type="submit"
-                                                data-test="confirm-delete-user-button"
-                                            >
-                                                Delete account
-                                            </button>
-                                        </Button>
-                                    </DialogFooter>
-                                </>
-                            )}
-                        </Form>
-                    </DialogContent>
-                </Dialog>
+                <Button
+                    variant="destructive"
+                    size="sm"
+                    data-test="delete-user-button"
+                    onClick={() => setOpen(true)}
+                >
+                    Delete account
+                </Button>
             </SettingsRow>
+            <TypedConfirmDialog
+                open={open}
+                onOpenChange={(next) => {
+                    setOpen(next);
+                    form.reset();
+                    form.clearErrors();
+                }}
+                title="Delete your account?"
+                object={
+                    auth.user
+                        ? { name: auth.user.name, detail: auth.user.email }
+                        : undefined
+                }
+                goes={[
+                    'Your user, passkeys and API tokens',
+                    'Your access to every team, its servers and projects',
+                ]}
+                kept={[
+                    'Teams, projects and servers stay with their other members',
+                ]}
+                confirmLabel="Delete account"
+                processing={form.processing}
+                ready={form.data.password !== ''}
+                error={form.errors.password}
+                onConfirm={() =>
+                    form.delete(ProfileController.destroy().url, {
+                        preserveScroll: true,
+                        onError: () => passwordInput.current?.focus(),
+                        onFinish: () => form.reset('password'),
+                    })
+                }
+            >
+                <div className="grid gap-2">
+                    <Label htmlFor="password">Your password</Label>
+                    <PasswordInput
+                        id="password"
+                        name="password"
+                        ref={passwordInput}
+                        value={form.data.password}
+                        onChange={(event) =>
+                            form.setData('password', event.target.value)
+                        }
+                        autoComplete="current-password"
+                        autoFocus
+                    />
+                </div>
+            </TypedConfirmDialog>
         </SettingsCard>
     );
 }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\Servers\MarkServerSeen;
 use App\Enums\AuditAction;
+use App\Enums\ServerRole;
 use App\Enums\ServerStatus;
 use App\Enums\TeamRole;
 use App\Models\AuditEvent;
@@ -43,6 +44,29 @@ test('server detail exposes a key fingerprint, never the key', function (): void
             ->where('server.canRevoke', false));
 
     expect($server->toArray())->not->toHaveKeys(['signing_public_key', 'sealing_public_key']);
+});
+
+test('the waiting page shows a connected server with its private network state and the team’s other servers', function (): void {
+    Server::factory()->online()->create(['team_id' => $this->team->id, 'is_control_plane' => true, 'mesh_ip' => '100.64.0.1']);
+    Server::factory()->online()->create();
+    $server = Server::factory()->online()->create(['team_id' => $this->team->id, 'name' => 'new-box']);
+    $server->forceFill(['mesh_status' => ['state' => 'connected', 'ipv4' => '100.64.0.2', 'ipv6' => null, 'message' => null, 'checkedAt' => null, 'peers' => [['ipv4' => '100.64.0.1', 'online' => true, 'connection' => 'relay', 'relay' => 'fra', 'lastHandshake' => null]]]])->save();
+    $enrollment = ServerEnrollment::query()->create([
+        'team_id' => $this->team->id,
+        'token_hash' => hash('sha256', 'unused'),
+        'roles' => [ServerRole::Runtime],
+        'expires_at' => now()->addMinutes(30),
+    ]);
+    $enrollment->forceFill(['used_at' => now(), 'server_id' => $server->id])->save();
+
+    $this->actingAs($this->admin)->get(route('servers.enrollments.show', $enrollment->public_id))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page->component('servers/enrollment')
+            ->where('enrollment.server.name', 'new-box')
+            ->where('enrollment.server.mesh.state', 'connected')
+            ->where('enrollment.server.mesh.pathToControlPlane', 'relay')
+            // The other team's server doesn't count.
+            ->where('otherServers', 1));
 });
 
 test('servers of other teams are not found', function (): void {

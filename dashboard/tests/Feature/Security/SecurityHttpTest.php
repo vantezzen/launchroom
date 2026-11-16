@@ -188,3 +188,20 @@ test('the service panel header carries the open Action needed finding', function
     $this->actingAs($this->viewer)->get("{$this->base}/deployments")->assertOk()
         ->assertInertia(fn ($page) => $page->where('panel.actionNeeded', 0)->where('panel.actionNeededFinding', null));
 });
+
+test('the finding page has its place in the open list, and a dismissed finding stays findable', function (): void {
+    $this->actingAs($this->viewer)->get("/security/findings/{$this->finding->public_id}")->assertOk()
+        ->assertInertia(fn ($page) => $page->where('siblings.position', 1)->where('siblings.total', 1)
+            ->where('siblings.previous', null)->where('siblings.next', null)
+            ->where('detail.lastSeenAt', fn (?string $at): bool => $at !== null));
+
+    $this->actingAs($this->developer)->postJson("/security/findings/{$this->finding->public_id}/dismiss", ['reason' => 'not_used'])->assertOk();
+
+    $data = $this->actingAs($this->viewer)->getJson('/security/-/data')->assertOk();
+    expect($data->json('actionNeeded'))->toBe([])
+        ->and($data->json('dismissedFindings.0.package'))->toBe('lodash')
+        ->and($data->json('fixedFindings'))->toBe([]);
+
+    $this->actingAs($this->viewer)->get("/security/findings/{$this->finding->public_id}")
+        ->assertInertia(fn ($page) => $page->where('siblings.position', null)->where('siblings.total', 0));
+});

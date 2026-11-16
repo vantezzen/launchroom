@@ -1,6 +1,8 @@
 import { Status } from '@/components/status';
 import { useLiveProps } from '@/hooks/use-live-props';
 import { vocabulary } from '@/lib/vocabulary';
+import type { DeviceKind } from '@/components/devices/device-image';
+import { TransferStrip } from '@/features/moves/transfer-strip';
 
 /** A snapshot's age: "3 h old", "2 days old". */
 export function snapshotAge(value: string | null): string {
@@ -22,10 +24,25 @@ export function snapshotAge(value: string | null): string {
 
 export function ReplacementProgress({
     replacement,
+    oldDevice = 'unknown',
+    newDevice = 'unknown',
+    serving = false,
 }: {
     replacement: App.Data.Servers.ServerReplacementData;
+    oldDevice?: DeviceKind;
+    newDevice?: DeviceKind;
+    /** The old server took public traffic: the replacement does now. */
+    serving?: boolean;
 }) {
     const running = replacement.status === 'running';
+    const current = replacement.services.find(
+        (service) => !vocabulary.ReplacedServiceStatus[service.status].isDone,
+    );
+    const step = !running
+        ? null
+        : current
+          ? `${vocabulary.ReplacedServiceStatus[current.status].label}: ${current.name}`
+          : 'Starting';
 
     useLiveProps(['replacement', 'server'], { while: running, everyMs: 3000 });
 
@@ -55,6 +72,21 @@ export function ReplacementProgress({
                     }
                 />
             </div>
+            <TransferStrip
+                source={{
+                    name: replacement.oldServer,
+                    device: oldDevice,
+                    status: 'offline',
+                    gone: true,
+                }}
+                target={{
+                    name: replacement.newServer,
+                    device: newDevice,
+                    status: 'online',
+                    serving,
+                }}
+                step={step}
+            />
             <p className="max-w-[65ch] type-body text-muted-foreground">
                 Roles and labels moved to {replacement.newServer}, and{' '}
                 {replacement.oldServer}’s key was revoked. If it comes back

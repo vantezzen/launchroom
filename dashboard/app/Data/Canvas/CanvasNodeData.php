@@ -57,5 +57,9 @@ final class CanvasNodeData extends Data
         public array $openAlerts = [],
         /** The view the service's Analytics links open (AnalyticsView::forService). */
         public AnalyticsView $analyticsView = AnalyticsView::Resources,
+        /** What is staged, in words ("1 variable and 2 settings", ChangeTally); null when nothing or only the service itself. */
+        public ?string $stagedSummary = null,
+        /** Crons: the cron expression they run on. */
+        public ?string $schedule = null,
     ) {}
 }

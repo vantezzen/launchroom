@@ -10,6 +10,7 @@ import {
     logText,
     NO_CACHE_YET,
     normalizeLine,
+    warningLines,
     withLoggedSteps,
 } from './step-log';
 
@@ -302,4 +303,15 @@ test('the full log as text, one heading per step', () => {
     expect(text).toContain('== Build (Done, 41s) ==');
     expect(text).toContain('2026-10-21T12:00:00.000Z npm ci');
     expect(text).toContain('== Roll out (Failed) ==');
+});
+
+test('warnings are the warning-like lines that are not errors', () => {
+    const all = [
+        line(1, 'npm WARN deprecated glob@7.2.3', 'build'),
+        line(2, 'warning: unused variable', 'build'),
+        line(3, 'error: warning treated as error', 'build'),
+        line(4, 'compiled in 2s', 'build'),
+    ];
+
+    expect([...warningLines(all, new Set([3]))]).toEqual([1, 2]);
 });

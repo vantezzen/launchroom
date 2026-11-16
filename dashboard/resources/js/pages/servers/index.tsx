@@ -17,7 +17,9 @@ import {
 import { FleetLoad } from '@/features/servers/fleet-load';
 import { FleetTopology } from '@/features/servers/fleet-topology';
 import { fleetMap, fleetSummary } from '@/features/servers/fleet-map';
+import { ErrorDetails } from '@/features/servers/error-details';
 import { fleetOrder } from '@/features/servers/format';
+import { meshProblem, storageProblem } from '@/features/servers/problems';
 import { formatLatency, shortAge } from '@/lib/format';
 import { roleIcons } from '@/features/servers/server-status';
 import { SmallServerHint } from '@/features/servers/small-server-hint';
@@ -53,7 +55,12 @@ function Attention({
     edgeOverview?: App.Data.Ingress.EdgeOverviewData;
     canManageIngress: boolean;
 }) {
-    const items: { key: string; text: string; detail: string }[] = [];
+    const items: {
+        key: string;
+        text: string;
+        detail: string;
+        raw?: string | null;
+    }[] = [];
 
     if (edgeOverview?.singlePointOfFailure) {
         items.push({
@@ -64,18 +71,20 @@ function Attention({
     }
 
     if (edgeOverview && edgeOverview.degradedStorage.length > 0) {
+        const problem = storageProblem(edgeOverview.degradedStorage);
         items.push({
             key: 'storage',
-            text: `${edgeOverview.degradedStorage.join(', ')} ${edgeOverview.degradedStorage.length === 1 ? 'is' : 'are'} serving certificates from a local copy.`,
-            detail: 'Shared certificate storage is unreachable.',
+            text: problem.title,
+            detail: problem.detail,
         });
     }
 
     if (mesh.canManage && mesh.error !== null) {
         items.push({
             key: 'mesh',
-            text: 'The private network has a problem.',
-            detail: mesh.error,
+            text: meshProblem.title,
+            detail: meshProblem.detail,
+            raw: mesh.error,
         });
     }
 
@@ -88,9 +97,9 @@ function Attention({
             {items.map((item) => (
                 <li
                     key={item.key}
-                    className="flex flex-wrap items-center gap-x-4 gap-y-2 px-5 py-4"
+                    className="flex flex-wrap items-start gap-x-4 gap-y-2 px-5 py-4"
                 >
-                    <StatusIcon state="warning" />
+                    <StatusIcon state="warning" className="mt-1" />
                     <div className="flex min-w-0 flex-1 flex-col">
                         <span className="type-body font-medium">
                             {item.text}
@@ -98,6 +107,7 @@ function Attention({
                         <span className="type-small text-muted-foreground">
                             {item.detail}
                         </span>
+                        <ErrorDetails text={item.raw} className="mt-1.5" />
                     </div>
                     {canManageIngress && (
                         <Button asChild size="sm" variant="ghost">
@@ -138,24 +148,22 @@ function Fact({
     children: ReactNode;
 }) {
     return (
-        <li className="flex items-start gap-3.5 py-4 first:pt-0 last:pb-0">
+        <div className="flex min-w-0 items-start gap-2.5">
             <span
                 aria-hidden="true"
-                className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg bg-recessed text-muted-foreground"
+                className="mt-0.5 shrink-0 text-muted-foreground"
             >
                 {icon}
             </span>
             <span className="flex min-w-0 flex-col">
-                <span className="type-small text-muted-foreground">
-                    {label}
-                </span>
-                <span className="type-body">{children}</span>
+                <dt className="type-small text-muted-foreground">{label}</dt>
+                <dd className="type-body">{children}</dd>
             </span>
-        </li>
+        </div>
     );
 }
 
-/** System-wide facts in four quiet rows: what runs, where traffic enters, where builds run, the private network. */
+/** System-wide facts under the topology: what runs, where traffic enters, where builds run, the private network. */
 function AtAGlance({
     servers,
     links,
@@ -186,64 +194,56 @@ function AtAGlance({
     const Apps = roleIcons.runtime;
 
     return (
-        <section
-            aria-labelledby="at-a-glance-title"
-            className="flex h-full min-w-0 flex-col gap-5 rounded-xl border bg-card p-6 shadow-card"
+        <dl
+            aria-label="At a glance"
+            className="grid gap-x-6 gap-y-4 border-t pt-4 sm:grid-cols-2 xl:grid-cols-4"
         >
-            <h2 id="at-a-glance-title" className="type-heading">
-                At a glance
-            </h2>
-            <ul className="flex flex-col divide-y">
-                <Fact icon={<Apps className="size-3.5" />} label="Running">
-                    {replicas === 0
-                        ? 'Nothing deployed yet'
-                        : `${replicas} ${replicas === 1 ? 'replica' : 'replicas'} on ${running === 1 ? 'one server' : `${running} servers`}`}
-                </Fact>
-                <Fact
-                    icon={<Edge className="size-3.5" />}
-                    label="Public traffic"
-                >
-                    {edges.length > 0 ? (
-                        `Enters through ${names(edges)}`
-                    ) : (
-                        <span className="inline-flex items-center gap-1.5">
-                            <StatusIcon state="warning" />
-                            No server takes public traffic
-                        </span>
-                    )}
-                </Fact>
-                <Fact icon={<Build className="size-3.5" />} label="Builds">
-                    {builders.length > 0 ? (
-                        `Run on ${names(builders)}`
-                    ) : (
-                        <span className="inline-flex items-center gap-1.5">
-                            <StatusIcon state="warning" />
-                            No build server yet
-                        </span>
-                    )}
-                </Fact>
-                <Fact
-                    icon={<Network className="size-3.5" />}
-                    label="Private network"
-                >
-                    {!meshEnabled
-                        ? approved.length <= 1
-                            ? 'Turns on with a second server'
-                            : 'Off'
-                        : direct + relayed === 0
-                          ? 'On'
-                          : [
-                                direct > 0 ? `${direct} direct` : null,
-                                relayed > 0 ? `${relayed} relayed` : null,
-                                typical !== null
-                                    ? `about ${formatLatency(typical)}`
-                                    : null,
-                            ]
-                                .filter(Boolean)
-                                .join(', ')}
-                </Fact>
-            </ul>
-        </section>
+            <Fact icon={<Apps className="size-3.5" />} label="Running">
+                {replicas === 0
+                    ? 'Nothing deployed yet'
+                    : `${replicas} ${replicas === 1 ? 'replica' : 'replicas'} on ${running === 1 ? 'one server' : `${running} servers`}`}
+            </Fact>
+            <Fact icon={<Edge className="size-3.5" />} label="Public traffic">
+                {edges.length > 0 ? (
+                    `Enters through ${names(edges)}`
+                ) : (
+                    <span className="inline-flex items-center gap-1.5">
+                        <StatusIcon state="warning" />
+                        No server takes public traffic
+                    </span>
+                )}
+            </Fact>
+            <Fact icon={<Build className="size-3.5" />} label="Builds">
+                {builders.length > 0 ? (
+                    `Run on ${names(builders)}`
+                ) : (
+                    <span className="inline-flex items-center gap-1.5">
+                        <StatusIcon state="warning" />
+                        No build server yet
+                    </span>
+                )}
+            </Fact>
+            <Fact
+                icon={<Network className="size-3.5" />}
+                label="Private network"
+            >
+                {!meshEnabled
+                    ? approved.length <= 1
+                        ? 'Turns on with a second server'
+                        : 'Off'
+                    : direct + relayed === 0
+                      ? 'On'
+                      : [
+                            direct > 0 ? `${direct} direct` : null,
+                            relayed > 0 ? `${relayed} relayed` : null,
+                            typical !== null
+                                ? `about ${formatLatency(typical)}`
+                                : null,
+                        ]
+                            .filter(Boolean)
+                            .join(', ')}
+            </Fact>
+        </dl>
     );
 }
 
@@ -432,14 +432,20 @@ export default function ServersIndex({
                 {active.length > 0 && (
                     <Section title="Overview" className="gap-5">
                         <div className="grid gap-6 lg:grid-cols-3">
-                            <div className="min-w-0 lg:col-span-2">
+                            <div
+                                className={
+                                    locations.length > 1
+                                        ? 'min-w-0 lg:col-span-2'
+                                        : 'min-w-0 lg:col-span-3'
+                                }
+                            >
                                 <FleetLoad
                                     capacity={capacity}
                                     serverCount={approved.length}
                                 />
                             </div>
-                            <div className="min-w-0">
-                                {locations.length > 0 ? (
+                            {locations.length > 1 && (
+                                <div className="min-w-0">
                                     <ServerMap
                                         locations={locations}
                                         links={links}
@@ -447,35 +453,21 @@ export default function ServersIndex({
                                         variant="stacked"
                                         className="h-full"
                                     />
-                                ) : (
-                                    <AtAGlance
-                                        servers={active}
-                                        links={meshLinks}
-                                        meshEnabled={mesh.enabled}
-                                    />
-                                )}
-                            </div>
-                            <div
-                                className={
-                                    locations.length > 0
-                                        ? 'min-w-0 lg:col-span-2'
-                                        : 'min-w-0 lg:col-span-3'
-                                }
-                            >
+                                </div>
+                            )}
+                            <div className="min-w-0 lg:col-span-3">
                                 <FleetTopology
                                     servers={active}
                                     links={meshLinks}
-                                />
-                            </div>
-                            {locations.length > 0 && (
-                                <div className="min-w-0">
+                                    usage={usage}
+                                >
                                     <AtAGlance
                                         servers={active}
                                         links={meshLinks}
                                         meshEnabled={mesh.enabled}
                                     />
-                                </div>
-                            )}
+                                </FleetTopology>
+                            </div>
                         </div>
                     </Section>
                 )}

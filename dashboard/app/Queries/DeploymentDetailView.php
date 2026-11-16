@@ -110,7 +110,22 @@ final readonly class DeploymentDetailView
             servers: $this->servers($deployment),
             supersededBy: $this->supersededBy($deployment),
             expectsRelease: ReleaseStep::expected($deployment),
+            newer: $this->neighbour($deployment, newer: true),
+            older: $this->neighbour($deployment, newer: false),
         );
+    }
+
+    /** The adjacent deployment of the same service instance, by creation order. */
+    private function neighbour(Deployment $deployment, bool $newer): ?DeploymentRefData
+    {
+        $next = Deployment::query()
+            ->where('team_id', $deployment->team_id)
+            ->where('service_instance_id', $deployment->service_instance_id)
+            ->where('id', $newer ? '>' : '<', $deployment->id)
+            ->orderBy('id', $newer ? 'asc' : 'desc')
+            ->first();
+
+        return $next instanceof Deployment ? DeploymentRefData::of($next) : null;
     }
 
     private function supersededBy(Deployment $deployment): ?DeploymentRefData

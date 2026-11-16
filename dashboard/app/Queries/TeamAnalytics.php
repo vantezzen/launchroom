@@ -65,11 +65,13 @@ final readonly class TeamAnalytics
             $totals['s5'] += $s5;
 
             $project = Cast::id($row->project_id ?? null);
-            $agg = $byProject[$project] ?? ['requests' => 0, 's4' => 0, 's5' => 0, 'series' => $empty];
+            $agg = $byProject[$project] ?? ['requests' => 0, 's4' => 0, 's5' => 0, 'series' => $empty, 's4Series' => $empty, 's5Series' => $empty];
             $agg['requests'] += $requests;
             $agg['s4'] += $s4;
             $agg['s5'] += $s5;
             $agg['series'][$i] = ($agg['series'][$i] ?? 0) + $requests;
+            $agg['s4Series'][$i] = ($agg['s4Series'][$i] ?? 0) + $s4;
+            $agg['s5Series'][$i] = ($agg['s5Series'][$i] ?? 0) + $s5;
             $byProject[$project] = $agg;
 
             $server = Cast::id($row->server_id ?? null);
@@ -104,6 +106,11 @@ final readonly class TeamAnalytics
 
             $refused = min(array_sum($buckets), $byProject[$project]['s4']);
             $byProject[$project]['s4'] -= $refused;
+
+            foreach ($buckets as $i => $count) {
+                $byProject[$project]['s4Series'][$i] = max(0, ($byProject[$project]['s4Series'][$i] ?? 0) - $count);
+            }
+
             $byProject[$project]['blocked'] = $refused;
             $blocked += $refused;
         }
@@ -152,7 +159,7 @@ final readonly class TeamAnalytics
     }
 
     /**
-     * @param  array<int, array{requests: int, s4: int, s5: int, series: array<int, int>, blocked?: int}>  $byProject
+     * @param  array<int, array{requests: int, s4: int, s5: int, series: array<int, int>, s4Series: array<int, int>, s5Series: array<int, int>, blocked?: int}>  $byProject
      * @param  array<int, array{int, int}>  $previous
      * @return list<AnalyticsProjectData>
      */
@@ -190,6 +197,8 @@ final readonly class TeamAnalytics
                 RequestMetrics::rate($agg['s4'], $agg['requests']),
                 array_values($agg['series']),
                 $agg['blocked'] ?? 0,
+                array_values($agg['s5Series']),
+                array_values($agg['s4Series']),
             );
         }
 

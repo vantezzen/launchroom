@@ -2,6 +2,7 @@ import { Form, Link } from '@inertiajs/react';
 import {
     ArrowUpRight,
     Check,
+    RefreshCw,
     RotateCcw,
     Sparkles,
     TriangleAlert,
@@ -49,8 +50,10 @@ const time = (iso: string | null): string =>
 
 function CheckButton({
     variant = 'outline',
+    label = 'Check for updates',
 }: {
-    variant?: 'outline' | 'ghost';
+    variant?: 'default' | 'outline' | 'ghost';
+    label?: string;
 }) {
     return (
         <Form {...check.form()} options={{ preserveScroll: true }}>
@@ -62,7 +65,7 @@ function CheckButton({
                     disabled={processing}
                 >
                     {processing && <Spinner />}
-                    Check for updates
+                    {label}
                 </Button>
             )}
         </Form>
@@ -73,7 +76,7 @@ function HeroIcon({
     tone,
     children,
 }: {
-    tone: 'ok' | 'signal' | 'progress' | 'attention';
+    tone: 'ok' | 'signal' | 'progress' | 'attention' | 'neutral';
     children: ReactNode;
 }) {
     return (
@@ -81,6 +84,7 @@ function HeroIcon({
             className={cn(
                 'flex size-11 shrink-0 items-center justify-center rounded-full',
                 tone === 'ok' && 'bg-status-ok-soft text-status-ok',
+                tone === 'neutral' && 'bg-recessed text-muted-foreground',
                 tone === 'signal' && 'bg-signal-soft text-signal',
                 tone === 'progress' &&
                     'bg-status-progress-soft text-status-progress',
@@ -142,7 +146,7 @@ function HeroCard({
 
 function Checked({ result }: { result: App.Data.Updates.ReleaseCheckData }) {
     return result.checkedAt === null ? (
-        <span>Never checked</span>
+        <span>Not checked yet</span>
     ) : (
         <span>
             Checked <TimeAgo value={result.checkedAt} />
@@ -330,6 +334,43 @@ export function UpdateHero(
                         fleetUpdate,
                         serversBehindRelease,
                     )}
+                />
+            </section>
+        );
+    }
+
+    if (available === null && result.checkedAt === null) {
+        return (
+            <section aria-live="polite">
+                <HeroCard
+                    icon={
+                        <HeroIcon tone="neutral">
+                            <RefreshCw aria-hidden="true" className="size-5" />
+                        </HeroIcon>
+                    }
+                    title="Not checked for updates yet"
+                    meta={
+                        <MetaLine>
+                            <span>
+                                You have{' '}
+                                <span className="type-mono">
+                                    {currentVersion}
+                                </span>
+                            </span>
+                            {channelLabel(result.channel)}
+                        </MetaLine>
+                    }
+                    actions={
+                        <CheckButton variant="default" label="Check now" />
+                    }
+                    footer={
+                        result.error !== null ? (
+                            <Status
+                                state="failed"
+                                label={`Couldn’t check for updates: ${result.error}`}
+                            />
+                        ) : undefined
+                    }
                 />
             </section>
         );

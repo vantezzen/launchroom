@@ -34,6 +34,7 @@ import { HowItWorks } from './how-it-works';
 import { InventorySection } from './inventory-section';
 import { SecurityHero } from './security-hero';
 import { groupActionNeeded } from './shape';
+import { PastFindings } from './past-findings';
 import { WorthKnowing } from './worth-knowing';
 import { relativeTime, plural } from '@/lib/format';
 import { securityKeys } from './query-keys';
@@ -219,22 +220,39 @@ export function SecurityOverview({
 
                     <SecurityHero data={data} groups={groups} range={range} />
 
-                    {(groups.length > 0 || scoped) && (
+                    {(groups.length > 0 ||
+                        scoped ||
+                        data.dismissedFindings.length > 0 ||
+                        data.fixedFindings.length > 0) && (
                         <Section id="action-needed" title="Action needed">
-                            {groups.length > 0 ? (
-                                <ActionNeededList
-                                    groups={groups}
+                            <div className="flex flex-col gap-4">
+                                {groups.length > 0 ? (
+                                    <ActionNeededList
+                                        groups={groups}
+                                        onOpen={(f) => setFinding(f.id)}
+                                        onInvestigate={(f) =>
+                                            void investigate(f)
+                                        }
+                                        canInvestigate={data.canManage}
+                                    />
+                                ) : (
+                                    <EmptyState
+                                        icon={ShieldCheck}
+                                        variant="framed"
+                                    >
+                                        {service
+                                            ? 'Nothing needs action in this service.'
+                                            : project
+                                              ? 'Nothing needs action in this project.'
+                                              : 'Nothing needs action.'}
+                                    </EmptyState>
+                                )}
+                                <PastFindings
+                                    dismissed={data.dismissedFindings}
+                                    fixed={data.fixedFindings}
                                     onOpen={(f) => setFinding(f.id)}
-                                    onInvestigate={(f) => void investigate(f)}
-                                    canInvestigate={data.canManage}
                                 />
-                            ) : (
-                                <EmptyState icon={ShieldCheck} variant="framed">
-                                    {service
-                                        ? 'Nothing needs action in this service.'
-                                        : 'Nothing needs action in this project.'}
-                                </EmptyState>
-                            )}
+                            </div>
                         </Section>
                     )}
 

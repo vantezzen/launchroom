@@ -13,7 +13,7 @@ import {
     UserPlus,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { TimeRangeSelect } from '@/components/charts/time-range-select';
 import { EmptyState } from '@/components/patterns/empty-state';
 import { StatusIcon } from '@/components/status';
@@ -28,6 +28,9 @@ import {
 import { cn } from '@/lib/utils';
 import { dayLabel } from '@/lib/format';
 import type { TimeRangeOption } from '@/lib/observe-scope';
+import { Toggle } from '@/components/ui/toggle';
+import type { Burst } from './bursts';
+import { groupActivity } from './bursts';
 
 type Entry = App.Data.Activity.ActivityEntryData;
 type ActivityKindFilter =
@@ -51,12 +54,44 @@ const icons: Record<string, LucideIcon> = {
     alert: BellRing,
 };
 
-function Item({ entry, showProject }: { entry: Entry; showProject: boolean }) {
+function capitalise(text: string): string {
+    return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+function Outcome({ entry }: { entry: Entry }) {
+    if (entry.status !== 'failed' && entry.status !== 'deploying') {
+        return null;
+    }
+
+    return (
+        <span className="inline-flex items-center gap-1 align-[-0.125em] type-small text-muted-foreground">
+            <StatusIcon
+                state={entry.status === 'failed' ? 'failed' : 'progress'}
+            />
+            {entry.status === 'failed' ? 'Failed' : 'Deploying'}
+        </span>
+    );
+}
+
+function Item({
+    burst,
+    showProject,
+    hideActor = false,
+}: {
+    burst: Burst;
+    showProject: boolean;
+    /** Under a "mara in shop" heading: the sentence starts with the verb. */
+    hideActor?: boolean;
+}) {
+    const { entry, earlier } = burst;
+    const [open, setOpen] = useState(false);
     const Icon = icons[entry.kind] ?? History;
     // Alerts are things that happened, not something someone did.
     const sentence =
         entry.kind === 'alert' ? (
             <span className="text-foreground">{entry.title}</span>
+        ) : hideActor ? (
+            <span className="text-foreground">{capitalise(entry.title)}</span>
         ) : (
             <>
                 <span className="font-medium text-foreground">
@@ -67,7 +102,12 @@ function Item({ entry, showProject }: { entry: Entry; showProject: boolean }) {
         );
 
     return (
-        <li className="relative flex min-h-16 items-center gap-3.5 px-4 py-3 transition-colors duration-fast hover:bg-(--hover)/50">
+        <li
+            className={cn(
+                'relative flex min-h-16 items-center gap-3.5 py-3 pr-4 transition-colors duration-fast hover:bg-(--hover)/50',
+                hideActor ? 'pl-8 sm:pl-12' : 'pl-4',
+            )}
+        >
             <span className="flex size-8 shrink-0 items-center justify-center rounded-full border bg-card text-muted-foreground">
                 <Icon aria-hidden="true" className="size-4" />
             </span>
@@ -85,16 +125,19 @@ function Item({ entry, showProject }: { entry: Entry; showProject: boolean }) {
                     )}
                     {(entry.status === 'failed' ||
                         entry.status === 'deploying') && (
-                        <span className="ml-2 inline-flex items-center gap-1 align-[-0.125em] type-small text-muted-foreground">
-                            <StatusIcon
-                                state={
-                                    entry.status === 'failed'
-                                        ? 'failed'
-                                        : 'progress'
-                                }
-                            />
-                            {entry.status === 'failed' ? 'Failed' : 'Deploying'}
+                        <span className="ml-2">
+                            <Outcome entry={entry} />
                         </span>
+                    )}
+                    {earlier.length > 0 && (
+                        <button
+                            type="button"
+                            aria-expanded={open}
+                            onClick={() => setOpen((value) => !value)}
+                            className="relative z-10 ml-2 inline-flex h-5 items-center rounded-full border px-1.5 align-[0.0625em] type-small text-muted-foreground tabular-nums hover:bg-(--hover) hover:text-foreground focus-visible:outline-2 focus-visible:outline-(--signal)"
+                        >
+                            {earlier.length + 1} times
+                        </button>
                     )}
                     {entry.kind === 'alert' && (
                         <span className="ml-2 inline-flex items-center gap-1 align-[-0.125em] type-small text-muted-foreground">
@@ -111,6 +154,24 @@ function Item({ entry, showProject }: { entry: Entry; showProject: boolean }) {
                         </span>
                     )}
                 </p>
+                {open && (
+                    <ul className="relative z-10 mt-1 flex flex-col gap-1 border-l pl-3">
+                        {earlier.map((item) => (
+                            <li
+                                key={item.id}
+                                className="flex items-center gap-2 type-small text-muted-foreground"
+                            >
+                                <TimeAgo value={item.at} />
+                                <Outcome entry={item} />
+                                {item.sha && (
+                                    <span className="type-mono-small">
+                                        {item.sha}
+                                    </span>
+                                )}
+                            </li>
+                        ))}
+                    </ul>
+                )}
                 {(entry.detail || entry.sha) && (
                     <p className="flex min-w-0 items-baseline gap-2 type-small text-muted-foreground">
                         {entry.sha && (
@@ -147,7 +208,9 @@ const KINDS: TimeRangeOption<ActivityKindFilter>[] = [
  * The activity feed (direction §5.4): items grouped by day, an icon per
  * kind, "**mara** deployed api and web to production" with the commit
  * underneath, and the age right. Only failures and running deploys carry a
- * status mark, so the page stays calm. Filters: kind (and project on the
+ * status mark, so the page stays calm. Identical events close together
+ * collapse into one row with a count, and a person's run of changes in
+ * one project shares one heading (`groupActivity`). Filters: kind (and project on the
  * team page); changing one is a GET visit, so the URL is shareable.
  */
 export function ActivityFeed({
@@ -160,7 +223,11 @@ export function ActivityFeed({
     entries: Entry[];
     /** The page URL the filters apply to. */
     url: string;
-    filters: { project: string | null; kind: string | null };
+    filters: {
+        project: string | null;
+        kind: string | null;
+        state?: string | null;
+    };
     /** Team page: the project filter's options (also shows the project per item). */
     projects?: App.Data.Canvas.ProjectLinkData[];
     teamKinds?: boolean;
@@ -182,8 +249,18 @@ export function ActivityFeed({
         return result;
     }, [entries]);
 
-    const visit = (next: { project?: string | null; kind?: string | null }) => {
+    const visit = (next: {
+        project?: string | null;
+        kind?: string | null;
+        state?: string | null;
+    }) => {
         const query = { ...filters, ...next };
+
+        // "Open only" belongs to the Alerts filter.
+        if (query.kind !== 'alerts') {
+            query.state = null;
+        }
+
         router.get(
             url,
             Object.fromEntries(
@@ -213,6 +290,19 @@ export function ActivityFeed({
                     }
                     label="Kind"
                 />
+                {filters.kind === 'alerts' && (
+                    <Toggle
+                        size="sm"
+                        variant="outline"
+                        pressed={filters.state === 'open'}
+                        onPressedChange={(pressed) =>
+                            visit({ state: pressed ? 'open' : null })
+                        }
+                        className="h-8 type-label"
+                    >
+                        Open only
+                    </Toggle>
+                )}
                 {projects && projects.length > 1 && (
                     <Select
                         value={filters.project ?? 'all'}
@@ -243,9 +333,11 @@ export function ActivityFeed({
 
             {days.length === 0 ? (
                 <EmptyState icon={History}>
-                    {filters.kind || filters.project
-                        ? 'No matching activity yet.'
-                        : 'Deploys, promotions and changes will show up here.'}
+                    {filters.state === 'open'
+                        ? 'No open alerts. Everything is running as expected.'
+                        : filters.kind || filters.project
+                          ? 'No matching activity yet.'
+                          : 'Deploys, promotions and changes will show up here.'}
                 </EmptyState>
             ) : (
                 days.map((day) => (
@@ -262,13 +354,38 @@ export function ActivityFeed({
                                 'flex flex-col divide-y overflow-hidden rounded-[14px] border bg-card shadow-card',
                             )}
                         >
-                            {day.entries.map((entry) => (
-                                <Item
-                                    key={entry.id}
-                                    entry={entry}
-                                    showProject={Boolean(projects)}
-                                />
-                            ))}
+                            {groupActivity(day.entries).map((cluster) =>
+                                cluster.bursts.length === 1 ? (
+                                    <Item
+                                        key={cluster.key}
+                                        burst={cluster.bursts[0]}
+                                        showProject={Boolean(projects)}
+                                    />
+                                ) : (
+                                    <li
+                                        key={cluster.key}
+                                        className="flex flex-col"
+                                    >
+                                        <p className="px-4 pt-3 type-body text-muted-foreground">
+                                            <span className="font-medium text-foreground">
+                                                {cluster.actor}
+                                            </span>
+                                            {cluster.projectName &&
+                                                ` in ${cluster.projectName}`}
+                                        </p>
+                                        <ol className="flex flex-col">
+                                            {cluster.bursts.map((burst) => (
+                                                <Item
+                                                    key={burst.entry.id}
+                                                    burst={burst}
+                                                    showProject={false}
+                                                    hideActor
+                                                />
+                                            ))}
+                                        </ol>
+                                    </li>
+                                ),
+                            )}
                         </ol>
                     </section>
                 ))

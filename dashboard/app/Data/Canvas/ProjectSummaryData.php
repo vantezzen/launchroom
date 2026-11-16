@@ -22,6 +22,7 @@ final class ProjectSummaryData extends Data
         public string $slug,
         public array $environments,
         public array $logos,
+        /** Last activity: the newest deployment or project change (the default sort, docs/08 §13). */
         public ?CarbonInterface $updatedAt,
         /** Slot 0–7 of the categorical data palette (direction.md §8.4). */
         public int $colorSlot = 0,

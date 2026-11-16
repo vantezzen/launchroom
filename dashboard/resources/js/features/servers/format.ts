@@ -15,19 +15,49 @@ export function formatUsedOf(usedMb: number, totalMb: number): string {
     return `${digits(scale(usedMb))} / ${digits(scale(totalMb))} ${unitGb ? 'GB' : 'MB'}`;
 }
 
-/** ["12 cores", "11.7 GB", "366 GB"] (the card footer and the hero chips). */
-export function specParts(
+export type SpecPart = { key: 'cpu' | 'memory' | 'disk'; text: string };
+
+/** "4.0 of 12 GB" (usage tiles: the value is the percentage, this the context). */
+export function formatOf(usedMb: number, totalMb: number): string {
+    return formatUsedOf(usedMb, totalMb).replace(' / ', ' of ');
+}
+
+/** ["12 cores", "11.7 GB memory", "366 GB disk"], labelled so no number stands alone. */
+export function specItems(
     specs: App.Data.Servers.ServerSpecsData | null | undefined,
-): string[] {
+): SpecPart[] {
     if (!specs) {
         return [];
     }
 
-    return [
-        specs.cpus !== null ? formatCores(specs.cpus) : null,
-        specs.memoryMb !== null ? formatMemory(specs.memoryMb) : null,
-        specs.diskTotalMb !== null ? formatMemory(specs.diskTotalMb) : null,
-    ].filter((part): part is string => part !== null);
+    const out: SpecPart[] = [];
+
+    if (specs.cpus !== null) {
+        out.push({ key: 'cpu', text: formatCores(specs.cpus) });
+    }
+
+    if (specs.memoryMb !== null) {
+        out.push({
+            key: 'memory',
+            text: `${formatMemory(specs.memoryMb)} memory`,
+        });
+    }
+
+    if (specs.diskTotalMb !== null) {
+        out.push({
+            key: 'disk',
+            text: `${formatMemory(specs.diskTotalMb)} disk`,
+        });
+    }
+
+    return out;
+}
+
+/** The spec items as text (the enrolment card's fact line). */
+export function specParts(
+    specs: App.Data.Servers.ServerSpecsData | null | undefined,
+): string[] {
+    return specItems(specs).map((part) => part.text);
 }
 
 export function deviceStatus(status: App.Enums.ServerStatus): DeviceStatus {

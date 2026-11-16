@@ -55,12 +55,13 @@ because RootlessKit forgets the ports when the rootless Docker daemon restarts.
 
 ## What the server page shows
 
-Open the server and its **Network** tab. Under **Capabilities** the server reports whether it runs Docker or Rootless
-Docker, and one row per capability with **Full**, **Limited** or **Unavailable** and the reason.
+Open the server and its **Network** tab. **Connection** says how the engine runs (**Runs on** Rootless Docker or
+Docker). **What this server can do** has one row per capability with **Full**, **Limited** or **Unavailable** and the
+reason.
 
 | Capability | Regular Docker | Rootless Docker |
 |---|---|---|
-| Docker access | Full | Full. Docker access still goes through launchroom's guard; a container escape lands as your unprivileged user. |
+| Server access | Full | Full. Docker access still goes through launchroom's guard; a container escape lands as your unprivileged user. |
 | Public ports 80/443 | Full | Full once RootlessKit exposed them. Unavailable, with the reason, when the port setting or RootlessKit's API socket is missing. |
 | Visitor addresses | Full | **Limited.** Connections are forwarded, so apps and access logs see an internal address instead of the visitor's. |
 | Network isolation | Full | **Limited.** launchroom's firewall rules apply inside the namespace, where all container traffic flows, so containers stay isolated. The server's own interfaces are outside its reach. |

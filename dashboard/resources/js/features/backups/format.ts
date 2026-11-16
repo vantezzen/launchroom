@@ -43,3 +43,28 @@ export function storageProvider(endpoint: string): StorageProvider {
 
     return { logo: 's3', label: 'S3-compatible' };
 }
+
+/** "26 Oct 2026, 08:07:15 CET": a restore point with its zone. */
+export function zonedTime(iso: string): string {
+    return new Date(iso).toLocaleString([], {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        timeZoneName: 'short',
+    });
+}
+
+/** "Europe/Berlin (UTC+01:00)": the viewer's zone, which picked times are in. */
+export function zoneLine(at: Date = new Date()): string {
+    const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const offset = -at.getTimezoneOffset();
+    const sign = offset >= 0 ? '+' : '-';
+    const abs = Math.abs(offset);
+    const hh = String(Math.floor(abs / 60)).padStart(2, '0');
+    const mm = String(abs % 60).padStart(2, '0');
+
+    return `${zone} (UTC${sign}${hh}:${mm})`;
+}

@@ -108,6 +108,9 @@ test('the previews page lists pull requests with status, URLs and expiry; the ca
             ->where('previews.0.urls.0.url', 'https://web-pr-7.shop.localhost')
             ->where('previews.0.databases.0.strategy', 'share')
             ->where('previews.0.databases.0.source', 'production')
+            ->where('previews.0.failedDeploymentId', null)
+            ->where('rule.baseEnvironment', 'production')
+            ->where('rule.branches', [])
             ->where('canShare', false)
             ->where('canApprove', false)
             ->has('environments', 2));
